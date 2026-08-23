@@ -14,10 +14,10 @@ import { query } from "../db/index.js";
  * 6. Backend creates session cookie and redirects to frontend
  */
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI!;
-const JWT_SECRET = process.env.JWT_SECRET!;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? "";
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI ?? "";
+const JWT_SECRET = process.env.JWT_SECRET ?? "";
 const SESSION_COOKIE = "velnox_session";
 
 /** Normalize email: trim + lowercase. */
@@ -215,6 +215,14 @@ function setSessionCookie(res: Response, token: string): void {
 export function setupGoogleAuth(app: Express): void {
   // Step 1: Frontend calls this to start Google OAuth flow
   app.get("/auth/google", (req: Request, res: Response) => {
+    // Validate required env vars
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
+      console.error("[auth] GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI not configured");
+      const frontendUrl = getFrontendUrl(req);
+      res.redirect(`${frontendUrl}/auth?error=google_not_configured`);
+      return;
+    }
+
     const returnTo = (req.query.returnTo as string) || "/";
 
     // Generate state parameter with returnTo
