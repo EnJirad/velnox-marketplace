@@ -1,20 +1,66 @@
-import { api } from "@/convex/_generated/api";
-import { useAuthActions } from "@convex-dev/auth/react";
-import { useConvexAuth, useQuery } from "convex/react";
+import { useCallback, useEffect, useState } from "react";
+import type { User } from "@/types";
+import { authApi } from "@/lib/api";
 
-export function useAuth() {
-  const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
-  const user = useQuery(api.users.currentUser);
-  const { signIn, signOut } = useAuthActions();
+interface AuthState {
+  user: User | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+}
 
-  // Derive isLoading directly from the dependencies instead of managing separate state
-  const isLoading = isAuthLoading || user === undefined;
+export function useAuth(): AuthState & {
+  login: () => void;
+  logout: () => void;
+  refresh: () => Promise<void>;
+} {
+  const [state, setState] = useState<AuthState>({
+    user: null,
+    isLoading: true,
+    isAuthenticated: false,
+  });
 
-  return {
-    isLoading,
-    isAuthenticated,
-    user,
-    signIn,
-    signOut,
+  const refresh = useCallback(async () => {
+    try {
+      const { user } = await authApi.me();
+      setState({ user, isLoading: false, isAuthenticated: true });
+    } catch {
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const login = useCallback(() => {
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+    window.location.href = `${apiUrl}/auth/google`;
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout();
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+      window.location.href = "/";
+    } catch {
+      // silent
+    }
+  }, []);
+
+  return { ...state, login, logout, refresh };
+}
+
+// Simple singleton for sharing auth state across components
+let authListeners: Array<() => void> = [];
+let authState: AuthState = { user: null, isLoading: true, isAuthenticated: false };
+
+export function getAuthState() {
+  return authState;
+}
+
+export function subscribeAuth(listener: () => void) {
+  authListeners.push(listener);
+  return () => {
+    authListeners = authListeners.filter((l) => l !== listener);
   };
 }
