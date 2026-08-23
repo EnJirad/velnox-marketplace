@@ -6,38 +6,39 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- All CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS statements
--- from schema.sql go here for one-shot bootstrap.
+-- ─── Customer Domain ────────────────────────────────────────────────────────
 
--- Customer Domain
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email VARCHAR(255) NOT NULL UNIQUE,
-  name VARCHAR(255) NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL DEFAULT '',
   avatar TEXT,
-  phone VARCHAR(50),
+  phone TEXT,
+  role TEXT NOT NULL DEFAULT 'customer',
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 
-CREATE TABLE IF NOT EXISTS auth_identities (
+CREATE TABLE IF NOT EXISTS provider_identities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   provider VARCHAR(50) NOT NULL,
-  provider_id VARCHAR(255) NOT NULL,
-  email VARCHAR(255) NOT NULL,
+  provider_subject VARCHAR(255) NOT NULL,
+  email TEXT NOT NULL,
+  display_name TEXT,
+  avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (provider, provider_id)
+  UNIQUE (provider, provider_subject),
+  UNIQUE (user_id, provider)
 );
-CREATE INDEX IF NOT EXISTS idx_auth_identities_provider ON auth_identities (provider, provider_id);
-CREATE INDEX IF NOT EXISTS idx_auth_identities_email ON auth_identities (email);
+CREATE INDEX IF NOT EXISTS idx_provider_identities_provider ON provider_identities (provider, provider_subject);
+CREATE INDEX IF NOT EXISTS idx_provider_identities_email ON provider_identities (email);
 
 CREATE TABLE IF NOT EXISTS customer_profiles (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
-  date_of_birth DATE,
-  gender VARCHAR(20),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   preferences JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -46,177 +47,218 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
 CREATE TABLE IF NOT EXISTS addresses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  label VARCHAR(100) NOT NULL DEFAULT 'Home',
-  full_name VARCHAR(255) NOT NULL,
-  phone VARCHAR(50) NOT NULL,
-  line1 VARCHAR(255) NOT NULL,
-  line2 VARCHAR(255),
-  city VARCHAR(100) NOT NULL,
-  state VARCHAR(100) NOT NULL,
-  postal_code VARCHAR(20) NOT NULL,
-  country VARCHAR(100) NOT NULL DEFAULT 'Thailand',
-  is_default BOOLEAN NOT NULL DEFAULT false,
+  label TEXT NOT NULL DEFAULT '',
+  recipient_name TEXT NOT NULL DEFAULT '',
+  phone TEXT,
+  line1 TEXT NOT NULL,
+  line2 TEXT,
+  city TEXT NOT NULL,
+  state TEXT,
+  postal_code TEXT,
+  country TEXT NOT NULL DEFAULT 'TH',
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses (user_id);
+CREATE INDEX IF NOT EXISTS idx_addresses_user_id ON addresses (user_id);
 
 CREATE TABLE IF NOT EXISTS carts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  total_items INTEGER NOT NULL DEFAULT 0,
-  total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (user_id)
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS cart_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
   product_id UUID NOT NULL,
-  quantity INTEGER NOT NULL DEFAULT 1,
-  price NUMERIC(12, 2) NOT NULL,
-  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (cart_id, product_id)
 );
-CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items (cart_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_cart_id ON cart_items (cart_id);
 
--- Seller Domain
+-- ─── Media & Categories ────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS media (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  url TEXT NOT NULL,
+  key TEXT NOT NULL UNIQUE,
+  content_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  uploaded_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_media_key ON media (key);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  icon TEXT,
+  parent_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug);
+CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories (parent_id);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  key TEXT NOT NULL UNIQUE,
+  value JSONB NOT NULL,
+  description TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ─── Seller Domain ─────────────────────────────────────────────────────────
+
 CREATE TABLE IF NOT EXISTS sellers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'suspended')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_sellers_user ON sellers (user_id);
 
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  name VARCHAR(255) NOT NULL,
-  slug VARCHAR(255) NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
   description TEXT,
   logo TEXT,
   cover TEXT,
-  rating NUMERIC(3, 1),
+  rating NUMERIC(3, 2),
   product_count INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_shops_slug ON shops (slug);
-CREATE INDEX IF NOT EXISTS idx_shops_seller ON shops (seller_id);
-
-CREATE TABLE IF NOT EXISTS categories (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name VARCHAR(255) NOT NULL,
-  slug VARCHAR(255) NOT NULL UNIQUE,
-  icon VARCHAR(10),
-  parent_id UUID REFERENCES categories(id) ON DELETE SET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug);
+CREATE INDEX IF NOT EXISTS idx_shops_seller_id ON shops (seller_id);
 
 CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  name VARCHAR(255) NOT NULL,
-  slug VARCHAR(255) NOT NULL,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
   description TEXT NOT NULL DEFAULT '',
-  short_description VARCHAR(500),
+  short_description TEXT,
   price NUMERIC(12, 2) NOT NULL,
   compare_at_price NUMERIC(12, 2),
-  currency VARCHAR(3) NOT NULL DEFAULT 'THB',
-  status VARCHAR(20) NOT NULL DEFAULT 'draft',
-  featured BOOLEAN NOT NULL DEFAULT false,
-  rating NUMERIC(3, 1),
+  currency TEXT NOT NULL DEFAULT 'THB',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'archived')),
+  featured BOOLEAN NOT NULL DEFAULT FALSE,
+  rating NUMERIC(3, 2),
   review_count INTEGER NOT NULL DEFAULT 0,
   sold_count INTEGER NOT NULL DEFAULT 0,
   category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_products_shop ON products (shop_id);
-CREATE INDEX IF NOT EXISTS idx_products_category ON products (category_id);
+CREATE INDEX IF NOT EXISTS idx_products_shop_id ON products (shop_id);
+CREATE INDEX IF NOT EXISTS idx_products_category_id ON products (category_id);
 CREATE INDEX IF NOT EXISTS idx_products_status ON products (status);
+CREATE INDEX IF NOT EXISTS idx_products_featured ON products (featured) WHERE featured = TRUE;
 CREATE INDEX IF NOT EXISTS idx_products_slug ON products (slug);
+CREATE INDEX IF NOT EXISTS idx_products_price ON products (price);
 
 CREATE TABLE IF NOT EXISTS product_images (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   url TEXT NOT NULL,
-  alt VARCHAR(255) NOT NULL DEFAULT '',
+  alt TEXT NOT NULL DEFAULT '',
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images (product_id);
+CREATE INDEX IF NOT EXISTS idx_product_images_product_id ON product_images (product_id);
 
 CREATE TABLE IF NOT EXISTS inventory (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  quantity INTEGER NOT NULL DEFAULT 0,
-  reserved INTEGER NOT NULL DEFAULT 0,
-  sku VARCHAR(100),
-  low_stock_threshold INTEGER DEFAULT 10,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (product_id)
+  product_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
+  quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+  low_stock_threshold INTEGER NOT NULL DEFAULT 5,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Commerce Domain
+CREATE TABLE IF NOT EXISTS seller_settings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL UNIQUE REFERENCES sellers(id) ON DELETE CASCADE,
+  settings JSONB DEFAULT '{}',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS seller_analytics (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  views INTEGER NOT NULL DEFAULT 0,
+  orders INTEGER NOT NULL DEFAULT 0,
+  revenue NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (seller_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_seller_analytics_seller_date ON seller_analytics (seller_id, date);
+
+-- ─── Commerce Domain ───────────────────────────────────────────────────────
+
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id),
-  shop_id UUID NOT NULL REFERENCES shops(id),
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  total_amount NUMERIC(12, 2) NOT NULL,
-  currency VARCHAR(3) NOT NULL DEFAULT 'THB',
-  shipping_address_id UUID REFERENCES addresses(id),
+  shop_id UUID REFERENCES shops(id),
+  status TEXT NOT NULL DEFAULT 'pending',
+  total NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  shipping_address JSONB,
+  notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id);
-CREATE INDEX IF NOT EXISTS idx_orders_shop ON orders (shop_id);
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders (user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_shop_id ON orders (shop_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
 
 CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL REFERENCES products(id),
-  quantity INTEGER NOT NULL,
+  product_id UUID NOT NULL,
+  product_name TEXT NOT NULL,
   price NUMERIC(12, 2) NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items (order_id);
 
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),
-  amount NUMERIC(12, 2) NOT NULL,
-  currency VARCHAR(3) NOT NULL DEFAULT 'THB',
-  method VARCHAR(50) NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  transaction_id VARCHAR(255),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  method TEXT NOT NULL DEFAULT 'cod',
+  status TEXT NOT NULL DEFAULT 'pending',
+  amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
 
 CREATE TABLE IF NOT EXISTS refunds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  payment_id UUID NOT NULL REFERENCES payments(id),
+  order_id UUID NOT NULL REFERENCES orders(id),
   amount NUMERIC(12, 2) NOT NULL,
   reason TEXT,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS commissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),
-  shop_id UUID NOT NULL REFERENCES shops(id),
+  seller_id UUID NOT NULL REFERENCES sellers(id),
   amount NUMERIC(12, 2) NOT NULL,
-  rate NUMERIC(5, 4) NOT NULL,
+  rate NUMERIC(5, 4) NOT NULL DEFAULT 0.05,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -224,27 +266,30 @@ CREATE TABLE IF NOT EXISTS settlements (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   seller_id UUID NOT NULL REFERENCES sellers(id),
   amount NUMERIC(12, 2) NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  period_start DATE NOT NULL,
-  period_end DATE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  seller_id UUID NOT NULL REFERENCES sellers(id),
-  plan VARCHAR(50) NOT NULL DEFAULT 'free',
-  status VARCHAR(20) NOT NULL DEFAULT 'active',
-  current_period_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  current_period_end TIMESTAMPTZ NOT NULL,
+  user_id UUID NOT NULL REFERENCES users(id),
+  product_id UUID NOT NULL,
+  shop_id UUID REFERENCES shops(id),
+  frequency TEXT NOT NULL DEFAULT 'monthly',
+  status TEXT NOT NULL DEFAULT 'active',
+  next_due_date TIMESTAMPTZ,
+  metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions (user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_next_due ON subscriptions (next_due_date) WHERE status = 'active';
 
--- Company Domain
+-- ─── Company Domain ────────────────────────────────────────────────────────
+
 CREATE TABLE IF NOT EXISTS departments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name VARCHAR(255) NOT NULL,
+  name TEXT NOT NULL,
   description TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -252,75 +297,82 @@ CREATE TABLE IF NOT EXISTS departments (
 CREATE TABLE IF NOT EXISTS employees (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  department_id UUID REFERENCES departments(id),
-  role VARCHAR(50) NOT NULL DEFAULT 'employee',
-  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
+  role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'manager', 'staff')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS company_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  key VARCHAR(255) NOT NULL UNIQUE,
+  key TEXT NOT NULL UNIQUE,
   value JSONB NOT NULL,
-  updated_by UUID REFERENCES users(id),
+  description TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS platform_settings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  key TEXT NOT NULL UNIQUE,
+  value JSONB NOT NULL,
+  description TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES users(id),
-  action VARCHAR(100) NOT NULL,
-  entity_type VARCHAR(50) NOT NULL,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
   entity_id UUID,
-  old_value JSONB,
-  new_value JSONB,
-  ip_address INET,
+  details JSONB DEFAULT '{}',
+  ip_address TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs (user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs (user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs (created_at);
 
--- Media
-CREATE TABLE IF NOT EXISTS media (
+CREATE TABLE IF NOT EXISTS moderation_records (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  owner_id UUID REFERENCES users(id),
-  object_key VARCHAR(500) NOT NULL,
-  cdn_url TEXT NOT NULL,
-  mime_type VARCHAR(100) NOT NULL,
-  file_size INTEGER NOT NULL,
-  width INTEGER,
-  height INTEGER,
-  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  moderator_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  entity_type TEXT NOT NULL,
+  entity_id UUID NOT NULL,
+  action TEXT NOT NULL,
+  reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_media_owner ON media (owner_id);
 
--- Analytics / Behavioral
-CREATE TABLE IF NOT EXISTS behavioral_events (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES users(id),
-  session_id VARCHAR(100) NOT NULL,
-  event_type VARCHAR(50) NOT NULL,
-  entity_type VARCHAR(50),
-  entity_id UUID,
-  metadata JSONB DEFAULT '{}',
-  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_behavioral_user ON behavioral_events (user_id);
-CREATE INDEX IF NOT EXISTS idx_behavioral_session ON behavioral_events (session_id);
-CREATE INDEX IF NOT EXISTS idx_behavioral_type ON behavioral_events (event_type);
-CREATE INDEX IF NOT EXISTS idx_behavioral_time ON behavioral_events (occurred_at);
+-- ─── Notifications ─────────────────────────────────────────────────────────
 
--- Notifications
 CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type VARCHAR(50) NOT NULL,
-  title VARCHAR(255) NOT NULL,
-  message TEXT NOT NULL,
-  read BOOLEAN NOT NULL DEFAULT false,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  read BOOLEAN NOT NULL DEFAULT FALSE,
+  metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications (user_id, read);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications (user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id, read) WHERE read = FALSE;
+
+-- ─── Behavioral Events ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS behavioral_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID,
+  session_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id UUID,
+  metadata JSONB DEFAULT '{}',
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_behavioral_events_user_id ON behavioral_events (user_id);
+CREATE INDEX IF NOT EXISTS idx_behavioral_events_session ON behavioral_events (session_id);
+CREATE INDEX IF NOT EXISTS idx_behavioral_events_type ON behavioral_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_behavioral_events_entity ON behavioral_events (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_behavioral_events_occurred ON behavioral_events (occurred_at);
