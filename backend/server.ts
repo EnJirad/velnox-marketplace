@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { setupRoutes } from "./routes/index.js";
 import { setupGoogleAuth } from "./routes/auth.js";
+import { setupUploadRoutes } from "./routes/upload.js";
 import { setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -36,6 +37,9 @@ app.get("/api/health", (_req, res) => {
 
 // ─── Google OAuth ─────────────────────────────────────
 setupGoogleAuth(app);
+
+// ─── Upload (R2 presigned URLs) ────────────────────────
+setupUploadRoutes(app);
 
 // ─── Routes ─────────────────────────────────────────────
 setupRoutes(app);
