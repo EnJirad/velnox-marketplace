@@ -22,28 +22,21 @@ The modern e-commerce marketplace. Three independent frontend applications backe
     PostgreSQL              Images / Files
 ```
 
-**Stack:**
-- **Frontend:** React 19 + TypeScript + Vite (Vercel)
-- **Backend:** Node.js + Express + TypeScript (Render)
-- **Database:** Neon PostgreSQL (single database, domain-separated)
-- **File Storage:** Cloudflare R2
-- **i18n:** Thai (default), English, Burmese
-- **Currency:** THB, USD, MMK
-
 ## Repository Structure
 
 ```
 velnox/
-├── src/                    # VelShop (customer storefront)
+├── src/                    # VelShop (customer storefront - root app)
 ├── apps/
+│   ├── shop/              # VelShop (standalone build for Vercel)
 │   ├── seller/            # VelSeller (merchant management)
 │   └── center/            # VelCenter (admin management)
 ├── packages/
 │   ├── i18n/              # Translation system (th, en, my)
 │   ├── api/               # Shared API client
 │   ├── types/             # Shared TypeScript types
-│   ├── hooks/             # Shared React hooks (useAuth, useCart)
-│   ├── utils/             # Shared utilities (formatPrice, etc.)
+│   ├── hooks/             # useAuth, useCart, useIsMobile
+│   ├── utils/             # formatPrice, formatDate, etc.
 │   └── ui/                # Shared UI components
 ├── backend/               # Express API server
 ├── db/                    # Database schema & migrations
@@ -53,39 +46,40 @@ velnox/
 ## Development
 
 ```bash
-# Install dependencies
 bun install
-
-# Start VelShop (customer storefront)
-bun run dev:shop
-
-# Start VelSeller (merchant management)
-bun run dev:seller
-
-# Start VelCenter (admin management)
-bun run dev:center
-
-# Typecheck all
-bun run typecheck
+bun run dev:shop       # VelShop (port 5173)
+bun run dev:seller     # VelSeller (port 5174)
+bun run dev:center     # VelCenter (port 5175)
+bun run typecheck      # Typecheck all
 ```
 
 ## i18n
 
-Three languages supported:
-- **Thai (th)** — Default
-- **English (en)**
-- **Burmese (my)**
-
-Language selector persists to localStorage. All user-facing text uses `t("key")` pattern.
+3 languages: Thai (default), English, Burmese
+3 currencies: THB, USD, MMK (independent from language)
 
 ## Deployment
 
 | App | Platform | Root |
 |-----|----------|------|
-| VelShop | Vercel | `src/` |
+| VelShop | Vercel | `apps/shop/` or root |
 | VelSeller | Vercel | `apps/seller/` |
 | VelCenter | Vercel | `apps/center/` |
 | Backend | Render | `backend/` |
+
+## Environment Variables
+
+### Frontend (Vercel)
+```
+VITE_API_URL=
+```
+
+### Backend (Render)
+```
+DATABASE_URL, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
+R2_BUCKET, R2_PUBLIC_DOMAIN, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+JWT_SECRET, PORT, CORS_ORIGINS
+```
 
 ## License
 
