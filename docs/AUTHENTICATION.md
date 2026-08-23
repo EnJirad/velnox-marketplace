@@ -1,88 +1,42 @@
-# Velnox Authentication
-
-## Overview
-
-Velnox uses Google OAuth 2.0 with JWT tokens stored in httpOnly cookies.
+# Authentication
 
 ## Flow
 
-```
-1. User clicks "Sign in with Google"
-2. Frontend redirects to /api/auth/google
+1. User clicks "Sign in with Google" in frontend
+2. Frontend redirects to backend `/api/auth/google`
 3. Backend redirects to Google OAuth consent screen
-4. User approves
-5. Google redirects to /api/auth/google/callback with authorization code
-6. Backend exchanges code for tokens with Google
-7. Backend fetches user info from Google
-8. Backend resolves user identity (find or create)
-9. Backend signs JWT with user ID and email
-10. Backend sets httpOnly cookie: velnox_session
-11. Backend redirects to frontend
-12. Frontend fetches /api/auth/me to get user data
-```
+4. Google redirects back to backend with authorization code
+5. Backend exchanges code for tokens, fetches user info
+6. Backend resolves identity (see Identity Resolution)
+7. Backend creates JWT, sets HttpOnly cookie
+8. Backend redirects to frontend
 
-## Identity Resolution (ONE PERSON = ONE USER)
+## Identity Resolution
 
-The system ensures that one Google account always maps to the same user:
+The same person MUST NEVER receive a new user record on repeated logins.
 
-### Step 1: Provider Lookup
-```sql
-SELECT user_id FROM user_auth_identities
-WHERE provider = 'google' AND provider_id = $1
-```
+### Resolution Order
+1. Look up `auth_identities` by (provider=google, provider_id)
+2. If found → return existing user
+3. If not found → normalize email (lowercase), look up `users.email`
+4. If email found → create new auth_identity linking to existing user
+5. If email not found → create new user + auth_identity
 
-### Step 2: Email Fallback
-```sql
-SELECT id, email, name, avatar FROM users
-WHERE LOWER(email) = $1
-```
-If found, link the new auth identity to the existing user.
+### Database Constraints
+- `auth_identities` has UNIQUE(provider, provider_id)
+- `users.email` has UNIQUE constraint
+- Email is normalized before all comparisons
 
-### Step 3: Create New
-If no match found, create:
-1. New `users` row
-2. New `user_auth_identities` row
-3. New `customer_profiles` row
-4. New `carts` row
+## Session
 
-## JWT Token
+- JWT stored in HttpOnly, Secure, SameSite=strict cookie
+- Cookie name: `session_token`
+- NOT stored in localStorage
+- Backend verifies on every authenticated request via `requireAuth` middleware
 
-```json
-{
-  "userId": "uuid",
-  "email": "user@example.com",
-  "iat": 1234567890,
-  "exp": 1234567890
-}
-```
+## Frontend Auth State
 
-- **Secret:** `JWT_SECRET` environment variable
-- **Expiry:** 7 days
-- **Algorithm:** HS256
-
-## Cookie
-
-| Property | Value |
-|----------|-------|
-| Name | `velnox_session` |
-| HttpOnly | true |
-| Secure | true (production) |
-| SameSite | lax |
-| MaxAge | 7 days |
-| Path | / |
-
-## Middleware
-
-### `authenticate`
-Requires valid JWT. Returns 401 if missing/invalid.
-
-### `optionalAuth`
-Attaches user if JWT is valid, but doesn't require it.
-
-## Security Notes
-
-- Google Client Secret is NEVER exposed to frontend
-- JWT secret is backend-only
-- Cookie is httpOnly (not accessible via JavaScript)
-- Cookie is Secure in production (HTTPS only)
-- SameSite=lax prevents CSRF on most requests
+The `useAuth()` hook:
+- Calls `/api/auth/me` on mount to check session
+- Provides `login()`, `logout()`, `refresh()` methods
+- Returns `{ user, isLoading, isAuthenticated }`

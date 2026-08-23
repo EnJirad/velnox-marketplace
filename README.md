@@ -1,86 +1,97 @@
-# Velnox
+# Velnox Marketplace
 
-The modern e-commerce marketplace. Three independent frontend applications backed by a unified REST API.
+A modern multi-vendor marketplace platform with four independent frontend applications, centralized backend, and Neon PostgreSQL database.
 
 ## Architecture
 
 ```
-                    Vercel
-                      │
-          ┌───────────┼───────────┐
-          ▼           ▼           ▼
-       VelShop     VelSeller    VelCenter
-          │           │           │
-          └───────────┼───────────┘
-                      ▼
-                Render Backend
-                 REST API
-                      │
-          ┌───────────┴───────────┐
-          ▼                       ▼
-       Neon DB                 Cloudflare R2
-    PostgreSQL              Images / Files
+4 Frontend Apps (Vercel)
+    ↓
+1 Backend API (Render)
+    ↓
+1 Neon PostgreSQL + Cloudflare R2 + WebSocket
 ```
 
-## Repository Structure
+## Applications
 
-```
-velnox/
-├── src/                    # VelShop (customer storefront - root app)
-├── apps/
-│   ├── shop/              # VelShop (standalone build for Vercel)
-│   ├── seller/            # VelSeller (merchant management)
-│   └── center/            # VelCenter (admin management)
-├── packages/
-│   ├── i18n/              # Translation system (th, en, my)
-│   ├── api/               # Shared API client
-│   ├── types/             # Shared TypeScript types
-│   ├── hooks/             # useAuth, useCart, useIsMobile
-│   ├── utils/             # formatPrice, formatDate, etc.
-│   └── ui/                # Shared UI components
-├── backend/               # Express API server
-├── db/                    # Database schema & migrations
-└── docs/                  # Documentation
-```
+| App | Description | URL |
+|-----|-------------|-----|
+| **velshop** | Customer marketplace | velshop.vercel.app |
+| **velseller** | Seller management | velseller.vercel.app |
+| **velcenter** | Admin management | velcenter.vercel.app |
+| **velnox** | Corporate website | velnox.vercel.app |
 
-## Development
+## Tech Stack
+
+- **Frontend:** React 19, TypeScript, Vite 7, Tailwind CSS v4
+- **UI:** shadcn/ui, Radix UI, Framer Motion
+- **Backend:** Express, TypeScript, Node.js
+- **Database:** Neon PostgreSQL
+- **Storage:** Cloudflare R2
+- **Auth:** Google OAuth + JWT cookies
+- **i18n:** Thai, English, Burmese
+
+## Getting Started
 
 ```bash
+# Install dependencies
 bun install
-bun run dev:shop       # VelShop (port 5173)
-bun run dev:seller     # VelSeller (port 5174)
-bun run dev:center     # VelCenter (port 5175)
-bun run typecheck      # Typecheck all
+
+# Run development servers
+bun run dev:velshop      # Port 5173
+bun run dev:velseller    # Port 5174
+bun run dev:velcenter    # Port 5175
+bun run dev:velnox       # Port 5176
+bun run api:dev          # Port 3001
+
+# Build all apps
+bun run build:apps
+
+# Typecheck
+bun run typecheck
 ```
 
-## i18n
+## Project Structure
 
-3 languages: Thai (default), English, Burmese
-3 currencies: THB, USD, MMK (independent from language)
-
-## Deployment
-
-| App | Platform | Root |
-|-----|----------|------|
-| VelShop | Vercel | `apps/shop/` or root |
-| VelSeller | Vercel | `apps/seller/` |
-| VelCenter | Vercel | `apps/center/` |
-| Backend | Render | `backend/` |
+```
+velnox-marketplace/
+├── apps/
+│   ├── velshop/       # Customer marketplace
+│   ├── velseller/     # Seller management
+│   ├── velcenter/     # Admin management
+│   └── velnox/        # Corporate website
+├── backend/           # Express API server
+├── packages/
+│   ├── ui/            # Shared UI components
+│   ├── api-client/    # API client
+│   ├── i18n/          # Internationalization
+│   ├── shared/        # Types, constants
+│   ├── types/         # TypeScript types
+│   ├── hooks/         # React hooks
+│   ├── utils/         # Utilities
+│   └── config/        # Configuration
+├── db/
+│   ├── schema.sql     # Complete database schema
+│   └── migrations/    # Migration files
+├── docs/              # Documentation
+└── AI_Handoff.md      # AI agent handoff document
+```
 
 ## Environment Variables
 
-### Frontend (Vercel)
-```
-VITE_API_URL=
-```
+See `.env.example` for required variables.
 
-### Backend (Render)
-```
-DATABASE_URL, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
-R2_BUCKET, R2_PUBLIC_DOMAIN, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
-JWT_SECRET, PORT, CORS_ORIGINS
-```
+- **Frontend:** Only `VITE_API_URL`
+- **Backend:** All secrets (DATABASE_URL, GOOGLE_CLIENT_ID, JWT_SECRET, R2 keys, etc.)
 
-## License
+## Documentation
 
-Private — Velnox
+- [Architecture](docs/ARCHITECTURE.md)
+- [Database](docs/DATABASE.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [Environment](docs/ENVIRONMENT.md)
+- [Authentication](docs/AUTHENTICATION.md)
+- [Realtime](docs/REALTIME.md)
+- [Media](docs/MEDIA.md)
+- [I18N](docs/I18N.md)
+- [AI Handoff](AI_Handoff.md)

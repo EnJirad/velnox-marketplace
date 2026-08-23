@@ -5,7 +5,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "./Select";
 
 export function LanguageSelector() {
   const { locale, setLocale } = useI18n();

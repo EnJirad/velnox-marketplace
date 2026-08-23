@@ -1,51 +1,42 @@
-# Velnox Realtime
-
-## Overview
-
-Velnox uses WebSocket connections on Render for realtime updates. Neon PostgreSQL is the source of truth; WebSocket is the delivery layer.
+# Realtime
 
 ## Architecture
 
-```
-Frontend → API → Neon (write) → WebSocket event → Frontend (update)
-```
+WebSocket server runs alongside the Express backend.
 
-## WebSocket Endpoint
-
+### Endpoint
 ```
-wss://your-backend.onrender.com/ws
+ws://your-backend.onrender.com/ws
 ```
 
-## Events
+## Channels
 
-| Event | Description | Payload |
-|-------|-------------|---------|
-| `PROFILE_UPDATED` | User profile changed | `{ userId, changes }` |
-| `CART_UPDATED` | Cart contents changed | `{ cartId, items }` |
-| `ORDER_CREATED` | New order placed | `{ orderId, shopId, amount }` |
-| `ORDER_UPDATED` | Order status changed | `{ orderId, status }` |
-| `PRODUCT_UPDATED` | Product info changed | `{ productId, changes }` |
-| `INVENTORY_UPDATED` | Stock level changed | `{ productId, quantity }` |
-| `NOTIFICATION_CREATED` | New notification | `{ notification }` |
+| Channel | Events |
+|---------|--------|
+| cart:updated | Cart item changed |
+| order:created | New order placed |
+| order:updated | Order status changed |
+| product:updated | Product details changed |
+| inventory:updated | Stock level changed |
+| seller:updated | Seller profile changed |
+| notification:created | New notification |
+| profile:updated | User profile changed |
 
-## Flow
+## Client Protocol
 
-1. Backend receives API request (e.g., create order)
-2. Backend writes to Neon PostgreSQL
-3. Backend publishes event to WebSocket
-4. Connected clients receive the event
-5. Frontend updates local state
+```json
+// Subscribe to channel
+{ "type": "subscribe", "channel": "order:created" }
 
-## Principle
+// Unsubscribe
+{ "type": "unsubscribe", "channel": "order:created" }
 
-**Neon = Source of Truth**
-**WebSocket = Delivery Layer**
+// Server broadcasts
+{ "type": "event_name", "channel": "order:created", "data": {...}, "timestamp": "..." }
+```
 
-The WebSocket never holds state. If a client misses an event, it can always query the API to get the current state.
+## Important
 
-## Connection Management
-
-- Clients authenticate via JWT on connect
-- Server maintains connection registry per user
-- Automatic reconnection on client side
-- Heartbeat every 30s to detect stale connections
+WebSocket is a DELIVERY MECHANISM.
+Neon PostgreSQL is the SOURCE OF TRUTH.
+Never treat WebSocket state as permanent database state.

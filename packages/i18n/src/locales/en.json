@@ -190,5 +190,33 @@
     "active_orders": "Active Orders",
     "recent_activity": "Recent Activity",
     "platform_health": "Platform Health"
+  },
+  "velnox": {
+    "about": "About",
+    "for_sellers": "For Sellers",
+    "contact": "Contact",
+    "visit_marketplace": "Visit Marketplace",
+    "hero_title": "The Modern Marketplace for",
+    "hero_highlight": "Quality Products",
+    "hero_description": "Discover unique products from trusted sellers. Every item carefully curated for you.",
+    "shop_now": "Shop Now",
+    "start_selling": "Start Selling",
+    "stat_products": "Products",
+    "stat_sellers": "Sellers",
+    "stat_customers": "Customers",
+    "stat_uptime": "Uptime",
+    "about_title": "About Velnox",
+    "about_description": "Velnox is a modern marketplace platform connecting buyers with independent sellers. We curate quality products from trusted stores.",
+    "feature_trust": "Safe & Secure",
+    "feature_trust_desc": "State-of-the-art security protecting your data and transactions.",
+    "feature_delivery": "Fast Delivery",
+    "feature_delivery_desc": "Reliable and fast shipping delivered to your doorstep.",
+    "feature_quality": "Quality Guaranteed",
+    "feature_quality_desc": "Every product passes quality inspection. Satisfaction guaranteed.",
+    "sellers_title": "For Sellers",
+    "sellers_description": "Open your online store on Velnox. Reach thousands of customers. Complete seller management tools.",
+    "become_seller": "Start Selling on Velnox",
+    "contact_title": "Contact Us",
+    "contact_description": "Have questions or feedback? Get in touch with our team."
   }
 }

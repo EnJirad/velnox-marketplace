@@ -7,7 +7,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "./Select";
 
 export function CurrencySelector() {
   const [currency, setCurrency] = useState<Currency>(getStoredCurrency);
