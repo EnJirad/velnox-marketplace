@@ -2,161 +2,50 @@
 
 ## Overview
 
-Velnox is a monorepo e-commerce marketplace with three frontend applications, a unified backend API, a single PostgreSQL database, and cloud file storage.
+Three independent frontend applications communicating with a unified REST API backend.
 
-## High-Level Architecture
+## Frontend Apps
 
-```
-                    INTERNET
-                       │
-                       ▼
-                  CLOUDFLARE (CDN + DDoS Protection)
-                       │
-             ┌─────────┴─────────┐
-             │                   │
-          VERCEL              RENDER
-          (Frontend)          (Backend)
-             │                   │
-       ┌─────┼─────┐             │
-       │     │     │             │
-   VelShop VelSeller VelCenter   API + WebSocket
-                                     │
-                              ┌──────┼──────┐
-                              │             │
-                             Neon           R2
-                           PostgreSQL    Cloud Storage
-```
+| App | Purpose | Port | Responsive |
+|-----|---------|------|------------|
+| VelShop | Customer storefront | 5173 | Mobile-first |
+| VelSeller | Merchant management | 5174 | Desktop-first |
+| VelCenter | Admin management | 5175 | Desktop-first |
 
-## Design Principles
+## Shared Packages
 
-1. **Single Source of Truth** — Neon PostgreSQL holds all business data
-2. **Backend as Gatekeeper** — All database access goes through the API
-3. **Frontend as Presentation** — React apps handle UI, routing, and local state
-4. **Domain Separation** — Database tables grouped by business domain
-5. **Shared Code** — Types, API client, and utilities shared via packages
+- `@velnox/i18n` — Translation system (th, en, my)
+- `@velnox/api` — Centralized API client
+- `@velnox/types` — Shared TypeScript types
+- `@velnox/hooks` — useAuth, useCart, useIsMobile
+- `@velnox/utils` — formatPrice, formatDate, slugify
+- `@velnox/ui` — LoadingSpinner, EmptyState, ErrorState, Skeleton, LanguageSelector, CurrencySelector, ProductCard, AvatarUpload
 
-## Frontend Architecture
+## Backend
 
-### Apps
+Express + TypeScript REST API on Render:
+- Authentication (Google OAuth + JWT)
+- Products, Categories, Shops
+- Cart, Orders, Addresses
+- File uploads (R2 presigned URLs)
 
-Each app is an independent Vite + React application deployable to Vercel:
+## Database
 
-- **VelShop** — Customer-facing storefront
-- **VelSeller** — Seller management dashboard
-- **VelCenter** — Admin/management dashboard
+Single Neon PostgreSQL with domain-separated tables:
+- Customer: users, addresses, carts, orders
+- Seller: sellers, shops, products, inventory
+- Center: employees, departments, settings
+- Shared: media, categories
 
-### Shared Packages
+## i18n
 
-- `@velnox/types` — TypeScript type definitions
-- `@velnox/api-client` — HTTP client with auth, retry, timeout
-- `@velnox/shared` — Utilities, constants, helpers
+Custom context-based system with 3 languages:
+- Thai (default)
+- English
+- Burmese
 
-### Component Structure
+All user-facing text uses `t("key")` pattern.
 
-```
-src/
-├── components/
-│   ├── layout/    # Header, Footer, Layout
-│   ├── products/  # ProductCard, ProductGrid
-│   ├── cart/      # CartDrawer
-│   └── ui/        # shadcn/ui components
-├── hooks/         # useAuth, useCart
-├── lib/           # API client, utilities
-├── pages/         # Route components
-└── types/         # App-specific types
-```
+## Currency
 
-## Backend Architecture
-
-### Express Server
-
-```
-backend/src/
-├── index.ts       # Server entry, middleware, routes
-├── db/
-│   └── index.ts   # PostgreSQL connection pool
-├── api/
-│   ├── auth.ts    # Google OAuth, JWT, session
-│   ├── products.ts
-│   ├── categories.ts
-│   ├── cart.ts
-│   ├── shops.ts
-│   ├── orders.ts
-│   └── addresses.ts
-└── middleware/
-    └── auth.ts    # JWT verification, optional auth
-```
-
-### Middleware Chain
-
-1. **Helmet** — Security headers
-2. **CORS** — Cross-origin configuration
-3. **JSON Parser** — Body parsing
-4. **Request Logger** — Console logging
-5. **Auth Middleware** — JWT verification (where required)
-6. **Route Handler** — Business logic
-7. **Error Handler** — Catch-all error response
-
-## Database Architecture
-
-### Single Database, Multiple Domains
-
-```
-Neon PostgreSQL (velnox)
-├── Customer Domain
-│   ├── users
-│   ├── user_auth_identities
-│   ├── customer_profiles
-│   ├── addresses
-│   ├── carts / cart_items
-│   ├── orders / order_items
-│   ├── notifications
-│   └── behavioral_events
-├── Seller Domain
-│   ├── sellers
-│   ├── shops
-│   ├── products / product_images
-│   ├── inventory
-│   ├── seller_settings
-│   └── seller_analytics
-├── Center Domain
-│   ├── employees / departments
-│   ├── company_settings
-│   ├── platform_settings
-│   ├── audit_logs
-│   └── moderation_records
-└── Shared Domain
-    ├── media
-    ├── categories
-    └── system_settings
-```
-
-## Security Architecture
-
-- **Authentication:** Google OAuth 2.0 → JWT → httpOnly cookie (`velnox_session`)
-- **Authorization:** Middleware checks JWT on protected routes
-- **CORS:** Configured for frontend origins only
-- **SQL:** Parameterized queries (no string concatenation)
-- **Secrets:** Backend only (Render env vars), never in frontend
-- **File Upload:** Presigned URLs (R2 keys never exposed to browser)
-
-## Realtime Architecture
-
-```
-Frontend → API → Neon (write) → WebSocket event → Frontend (update)
-```
-
-WebSocket delivers events:
-- `PROFILE_UPDATED`
-- `CART_UPDATED`
-- `ORDER_CREATED` / `ORDER_UPDATED`
-- `PRODUCT_UPDATED`
-- `INVENTORY_UPDATED`
-- `NOTIFICATION_CREATED`
-
-## Performance
-
-- **Frontend:** Code splitting, lazy loading, optimized chunks
-- **Backend:** Connection pooling (20 max), query optimization
-- **Database:** Strategic indexes on all query patterns
-- **CDN:** Cloudflare for static assets and DDoS protection
+THB, USD, MMK — independent from language.

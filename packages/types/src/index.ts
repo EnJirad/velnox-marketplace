@@ -1,4 +1,4 @@
-// Velnox Shared Types — Used by all apps and backend
+// Velnox Shared Types
 
 export interface User {
   id: string;
@@ -134,17 +134,6 @@ export interface Notification {
   createdAt: string;
 }
 
-export interface BehavioralEvent {
-  id: string;
-  userId: string | null;
-  sessionId: string;
-  eventType: string;
-  entityType: string | null;
-  entityId: string | null;
-  metadata: Record<string, unknown>;
-  occurredAt: string;
-}
-
 export interface Media {
   id: string;
   url: string;
@@ -174,3 +163,18 @@ export interface PaginatedData<T> {
   pageSize: number;
   totalPages: number;
 }
+
+export type Currency = "THB" | "USD" | "MMK";
+
+export interface CurrencyConfig {
+  code: Currency;
+  symbol: string;
+  name: string;
+  locale: string;
+}
+
+export const CURRENCIES: Record<Currency, CurrencyConfig> = {
+  THB: { code: "THB", symbol: "฿", name: "Thai Baht", locale: "th-TH" },
+  USD: { code: "USD", symbol: "$", name: "US Dollar", locale: "en-US" },
+  MMK: { code: "MMK", symbol: "K", name: "Myanmar Kyat", locale: "my-MM" },
+};

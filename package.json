@@ -1,15 +1,26 @@
 {
-  "name": "velnox-shop",
+  "name": "velnox",
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "vite",
+    "dev:shop": "vite",
+    "dev:seller": "cd apps/seller && vite",
+    "dev:center": "cd apps/center && vite",
     "build": "tsc -b && vite build",
+    "build:shop": "tsc -b && vite build",
+    "build:seller": "cd apps/seller && tsc -b && vite build",
+    "build:center": "cd apps/center && tsc -b && vite build",
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "test": "echo \"Tests not yet configured\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -40,7 +51,12 @@
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/vite": "^4.1.17",
-    "@vly-ai/integrations": "^0.6.13",
+    "@velnox/api": "workspace:*",
+    "@velnox/hooks": "workspace:*",
+    "@velnox/i18n": "workspace:*",
+    "@velnox/types": "workspace:*",
+    "@velnox/ui": "workspace:*",
+    "@velnox/utils": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

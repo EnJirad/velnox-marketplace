@@ -1,0 +1,13 @@
+{
+  "name": "@velnox/hooks",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@velnox/types": "workspace:*",
+    "@velnox/api": "workspace:*",
+    "react": "^19.2.0"
+  }
+}
