@@ -230,12 +230,15 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
 /**
  * useAction replacement — returns a callable function for POST-based actions.
  * Maps api.xxx.yyy to the corresponding API endpoint.
+ * If a function is passed directly (e.g. useAction(api.commerce.createProductAction)),
+ * it is returned as-is.
  */
-export function useAction(routeKey: string): (...args: any[]) => Promise<any> {
-  const handler = ACTION_MAP[routeKey];
+export function useAction(routeKeyOrFn: string | ((...args: any[]) => any)): (...args: any[]) => Promise<any> {
+  if (typeof routeKeyOrFn === "function") return routeKeyOrFn;
+  const handler = ACTION_MAP[routeKeyOrFn];
   if (handler) return handler;
   // Fallback: try POST to a guessed path
-  const parts = routeKey.replace(/^api\./, "").split(".");
+  const parts = routeKeyOrFn.replace(/^api\./, "").split(".");
   const path = `/api/${parts.join("/")}`;
   return (args?: any) => apiPost(path, args);
 }
@@ -252,11 +255,13 @@ export function useQuery(routeKey: string): any {
 
 /**
  * useMutation replacement — returns a callable function for mutations.
+ * If a function is passed directly, it is returned as-is.
  */
-export function useMutation(routeKey: string): (...args: any[]) => Promise<any> {
-  const handler = ACTION_MAP[routeKey];
+export function useMutation(routeKeyOrFn: string | ((...args: any[]) => any)): (...args: any[]) => Promise<any> {
+  if (typeof routeKeyOrFn === "function") return routeKeyOrFn;
+  const handler = ACTION_MAP[routeKeyOrFn];
   if (handler) return handler;
-  const parts = routeKey.replace(/^api\./, "").split(".");
+  const parts = routeKeyOrFn.replace(/^api\./, "").split(".");
   const path = `/api/${parts.join("/")}`;
   return (args?: any) => apiPost(path, args);
 }
