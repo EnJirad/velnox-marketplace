@@ -145,7 +145,7 @@ async function resolveUser(google: {
       // Link Google identity to existing user
       await poolClient.query(
         `INSERT INTO provider_identities (id, user_id, provider, provider_subject, email, display_name, avatar_url, created_at)
-         VALUES (gen_random_uuid()::text, $1, 'google', $2, $3, $4, $5, NOW())
+         VALUES (gen_random_uuid(), $1, 'google', $2, $3, $4, $5, NOW())
          ON CONFLICT (provider, provider_subject) DO NOTHING`,
         [userId, google.sub, google.email, google.name, google.picture]
       );
@@ -162,7 +162,7 @@ async function resolveUser(google: {
     // 3. Create new user
     const newUser = await poolClient.query(
       `INSERT INTO users (id, email, name, avatar, role, status, created_at, updated_at)
-       VALUES (gen_random_uuid()::text, $1, $2, $3, 'customer', 'active', NOW(), NOW())
+       VALUES (gen_random_uuid(), $1, $2, $3, 'customer', 'active', NOW(), NOW())
        RETURNING id`,
       [google.email, google.name, google.picture]
     );
@@ -171,14 +171,14 @@ async function resolveUser(google: {
     // Create provider identity
     await poolClient.query(
       `INSERT INTO provider_identities (id, user_id, provider, provider_subject, email, display_name, avatar_url, created_at)
-       VALUES (gen_random_uuid()::text, $1, 'google', $2, $3, $4, $5, NOW())`,
+       VALUES (gen_random_uuid(), $1, 'google', $2, $3, $4, $5, NOW())`,
       [userId, google.sub, google.email, google.name, google.picture]
     );
 
     // Create customer profile
     await poolClient.query(
       `INSERT INTO customer_profiles (id, user_id, created_at, updated_at)
-       VALUES (gen_random_uuid()::text, $1, NOW(), NOW())`,
+       VALUES (gen_random_uuid(), $1, NOW(), NOW())`,
       [userId]
     );
 
