@@ -50,7 +50,23 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
       credentials: "include",
     });
     if (!res.ok) return null;
-    return await res.json();
+    const json = await res.json();
+    // Backend returns { success: true, data: { user: { ... } } }
+    const raw = json?.data?.user ?? json?.user ?? json;
+    if (!raw?.id && !raw?._id) return null;
+    return {
+      id: raw.id ?? raw._id,
+      _id: raw.id ?? raw._id,
+      name: raw.name ?? null,
+      email: raw.email ?? null,
+      phone: raw.phone ?? null,
+      role: raw.role ?? "customer",
+      department: raw.department ?? null,
+      avatarUrl: raw.avatar ?? raw.avatarUrl ?? null,
+      image: raw.avatar ?? raw.avatarUrl ?? null,
+      coverUrl: raw.coverUrl ?? null,
+      createdAt: raw.created_at ?? raw.createdAt ?? 0,
+    };
   } catch {
     return null;
   }

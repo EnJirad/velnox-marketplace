@@ -13,9 +13,7 @@ import { useLanguage } from "@velnox/shared/lib/i18n";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
   GOOGLE_AUTH_START_KEY,
-  buildGoogleRedirectTo,
   classifyGoogleError,
-  hasPendingOAuthCode,
   recentGoogleAuthStart,
   type GoogleAuthErrorKind,
 } from "@velnox/shared/lib/auth-flow";
@@ -140,17 +138,13 @@ function Auth() {
       sessionStorage.removeItem(GOOGLE_AUTH_START_KEY);
       return;
     }
-    if (hasPendingOAuthCode(window.location.search)) return; // still completing
     if (recentGoogleAuthStart(raw, Date.now()) === null) {
       // Stale marker (tab was closed mid-flow, then reopened) — ignore it.
       sessionStorage.removeItem(GOOGLE_AUTH_START_KEY);
       return;
     }
-    // Give an in-flight code exchange a moment before concluding the user
-    // cancelled (the auth client cleans the `code` param from the URL as
-    // soon as it starts consuming it, and the exchange retries on flaky
-    // networks). If the session lands meanwhile, the marker is removed and
-    // this timer no-ops.
+    // Give the backend redirect a moment before concluding the user
+    // cancelled at Google's Account Chooser.
     const timer = window.setTimeout(() => {
       if (sessionStorage.getItem(GOOGLE_AUTH_START_KEY) === null) return; // completed meanwhile
       sessionStorage.removeItem(GOOGLE_AUTH_START_KEY);
@@ -160,12 +154,11 @@ function Auth() {
   }, [authLoading, isAuthenticated, t]);
 
   /**
-   * Start the Google OAuth flow. The client stores
-   * the PKCE verifier, navigates to accounts.google.com (Account Chooser),
-   * and the browser returns to THIS origin via the OAuth callback.
-   * A new account is created automatically when the Google
-   * email has no verified account yet (default role: customer); otherwise
-   * the identities are linked by the verified email.
+   * Start the Google OAuth flow.
+   * Redirects the browser to the backend /auth/google endpoint which
+   * constructs the Google OAuth URL server-side (where GOOGLE_CLIENT_ID
+   * is securely stored), handles the callback, creates a session cookie,
+   * and redirects back to the frontend.
    */
   const handleGoogleSignIn = async () => {
     if (signingInRef.current) return;
@@ -174,15 +167,9 @@ function Auth() {
     setError(null);
     try {
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
-      // Build Google OAuth URL and redirect
-      const redirectUri = buildGoogleRedirectTo(window.location.origin, returnTo);
-      const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-      googleAuthUrl.searchParams.set("client_id", import.meta.env.VITE_GOOGLE_CLIENT_ID || "");
-      googleAuthUrl.searchParams.set("redirect_uri", redirectUri);
-      googleAuthUrl.searchParams.set("response_type", "code");
-      googleAuthUrl.searchParams.set("scope", "openid email profile");
-      googleAuthUrl.searchParams.set("access_type", "offline");
-      window.location.href = googleAuthUrl.toString();
+      const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3001";
+      const backendReturnTo = returnTo || "/";
+      window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent(backendReturnTo)}`;
     } catch (error) {
       const kind = classifyGoogleError(error);
       console.error(`[auth] Google sign-in failed (${kind})`);
