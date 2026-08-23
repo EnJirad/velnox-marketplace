@@ -1,39 +1,46 @@
-import React, { StrictMode, lazy, Suspense } from "react";
+import { Toaster } from "@velnox/shared/components/ui/sonner";
+import { RequireRole } from "@velnox/shared/components/RequireRole";
+import {
+  RootErrorBoundary,
+  RouteSyncer,
+  SiteSuspense,
+} from "@velnox/shared/lib/app-shell";
+import { siteBasename } from "@velnox/shared/lib/sites";
+import { IdentityMerge } from "@velnox/shared/lib/track";
+import { lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes } from "react-router";
-import { I18nProvider } from "@velnox/i18n";
-import "./index.css";
+import "../../../packages/shared/src/index.css";
+import { initMonitoring } from "@velnox/shared/lib/monitoring";
 
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Users = lazy(() => import("./pages/Users"));
-const Sellers = lazy(() => import("./pages/Sellers"));
-const Orders = lazy(() => import("./pages/Orders"));
-const Settings = lazy(() => import("./pages/Settings"));
-const NotFound = lazy(() => import("./pages/NotFound"));
+initMonitoring();
 
-function Loading() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-primary" />
-    </div>
-  );
-}
+const Center = lazy(() => import("@/pages/Center"));
+const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
+const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <I18nProvider>
-      <BrowserRouter>
-        <Suspense fallback={<Loading />}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/users" element={<Users />} />
-            <Route path="/sellers" element={<Sellers />} />
-            <Route path="/orders" element={<Orders />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
-    </I18nProvider>
-  </StrictMode>
+  <RootErrorBoundary>
+    <IdentityMerge />
+    <BrowserRouter basename={siteBasename("velcenter")}>
+      <RouteSyncer />
+      <div className="site-app">
+      <SiteSuspense>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <RequireRole role="center">
+                <Center />
+              </RequireRole>
+            }
+          />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </SiteSuspense>
+      </div>
+    </BrowserRouter>
+    <Toaster />
+  </RootErrorBoundary>,
 );

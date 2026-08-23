@@ -12,23 +12,26 @@
     "dev:velshop": "bun --filter @velnox/velshop dev",
     "dev:velseller": "bun --filter @velnox/velseller dev",
     "dev:velcenter": "bun --filter @velnox/velcenter dev",
-    "dev:velnox": "bun --filter @velnox/corporate dev",
+    "dev:velnox": "bun --filter @velnox/velnox dev",
     "build:velshop": "bun --filter @velnox/velshop build",
     "build:velseller": "bun --filter @velnox/velseller build",
     "build:velcenter": "bun --filter @velnox/velcenter build",
-    "build:velnox": "bun --filter @velnox/corporate build",
-    "build:apps": "bun --filter '@velnox/*' build",
+    "build:velnox": "bun --filter @velnox/velnox build",
+    "build:apps": "bun --filter '@velnox/velshop' build && bun --filter '@velnox/velseller' build && bun --filter '@velnox/velcenter' build && bun --filter '@velnox/velnox' build",
     "api:dev": "bun --filter @velnox/backend dev",
     "api:start": "bun --filter @velnox/backend start",
     "db:migrate": "echo 'Run migrations via db/migrations/'",
     "db:smoke": "echo 'DB smoke test placeholder'",
     "db:consistency": "echo 'DB consistency check placeholder'",
-    "typecheck": "bun --filter '@velnox/*' typecheck",
+    "typecheck": "bun --filter '@velnox/velshop' typecheck && bun --filter '@velnox/velseller' typecheck && bun --filter '@velnox/velcenter' typecheck && bun --filter '@velnox/velnox' typecheck",
     "test": "echo 'Tests not yet configured'",
     "lint": "echo 'Lint not yet configured'",
     "format": "echo 'Format not yet configured'"
   },
   "devDependencies": {
     "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4"
   }
 }

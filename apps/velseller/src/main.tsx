@@ -1,37 +1,95 @@
-import React, { StrictMode, lazy, Suspense } from "react";
+import { Toaster } from "@velnox/shared/components/ui/sonner";
+import { RequireRole } from "@velnox/shared/components/RequireRole";
+import {
+  RootErrorBoundary,
+  RouteSyncer,
+  SiteSuspense,
+} from "@velnox/shared/lib/app-shell";
+import { siteBasename } from "@velnox/shared/lib/sites";
+import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+import { IdentityMerge } from "@velnox/shared/lib/track";
+import { RefreshCw, ShoppingBag, Store, Target, Wallet } from "lucide-react";
+import { lazy } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes } from "react-router";
-import { I18nProvider } from "@velnox/i18n";
-import "./index.css";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import "../../../packages/shared/src/index.css";
+import { initMonitoring } from "@velnox/shared/lib/monitoring";
 
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Products = lazy(() => import("./pages/Products"));
-const Orders = lazy(() => import("./pages/Orders"));
-const ShopSettings = lazy(() => import("./pages/ShopSettings"));
-const NotFound = lazy(() => import("./pages/NotFound"));
+/** App-like bottom navigation for mobile (velseller). */
+const SELLER_TABS: MobileTabItem[] = [
+  { to: "/seller/goals", label: "เป้าหมาย", icon: Target },
+  { to: "/seller/shop", label: "ร้านของฉัน", icon: Store },
+  { to: "/seller/orders", label: "ออเดอร์", icon: ShoppingBag },
+  { to: "/seller/income", label: "รายได้", icon: Wallet },
+  { to: "/seller/reorder", label: "สั่งซื้อซ้ำ", icon: RefreshCw },
+];
 
-function Loading() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-primary" />
-    </div>
-  );
-}
+initMonitoring();
+
+const SellerGoals = lazy(() => import("@/pages/SellerGoals"));
+const MyShop = lazy(() => import("@/pages/MyShop"));
+const Reorder = lazy(() => import("@/pages/Reorder"));
+const SellerOrders = lazy(() => import("@/pages/SellerOrders"));
+const Income = lazy(() => import("@/pages/Income"));
+const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
+const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <I18nProvider>
-      <BrowserRouter>
-        <Suspense fallback={<Loading />}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/products" element={<Products />} />
-            <Route path="/orders" element={<Orders />} />
-            <Route path="/settings" element={<ShopSettings />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
-    </I18nProvider>
-  </StrictMode>
+  <RootErrorBoundary>
+    <IdentityMerge />
+    <BrowserRouter basename={siteBasename("velseller")}>
+      <RouteSyncer />
+      <div className="site-app">
+      <SiteSuspense>
+        <Routes>
+          <Route path="/" element={<Navigate to="/seller/goals" replace />} />
+          <Route
+            path="/seller/goals"
+            element={
+              <RequireRole role="seller">
+                <SellerGoals />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/seller/shop"
+            element={
+              <RequireRole role="seller">
+                <MyShop />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/seller/reorder"
+            element={
+              <RequireRole role="seller">
+                <Reorder />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/seller/orders"
+            element={
+              <RequireRole role="seller">
+                <SellerOrders />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/seller/income"
+            element={
+              <RequireRole role="seller">
+                <Income />
+              </RequireRole>
+            }
+          />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </SiteSuspense>
+      <MobileTabBar items={SELLER_TABS} />
+      </div>
+    </BrowserRouter>
+    <Toaster />
+  </RootErrorBoundary>,
 );

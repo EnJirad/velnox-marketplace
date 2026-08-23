@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { setupRoutes } from "./routes/index.js";
+import { setupGoogleAuth } from "./routes/auth.js";
 import { setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -32,6 +33,9 @@ app.use(cors({
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
+
+// ─── Google OAuth ─────────────────────────────────────
+setupGoogleAuth(app);
 
 // ─── Routes ─────────────────────────────────────────────
 setupRoutes(app);

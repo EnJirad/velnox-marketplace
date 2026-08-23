@@ -1,97 +1,175 @@
-import { Toaster } from "sonner";
-import React, { StrictMode, lazy, Suspense } from "react";
+import { Toaster } from "@velnox/shared/components/ui/sonner";
+import { RequireAuth } from "@velnox/shared/components/RequireAuth";
+import { CartProvider } from "@/lib/cart";
+import { CookieConsentProvider } from "@/lib/cookie-consent";
+import { LanguageProvider, useLanguage } from "@/lib/i18n";
+import {
+  RootErrorBoundary,
+  RouteSyncer,
+  SiteSuspense,
+} from "@velnox/shared/lib/app-shell";
+import { siteBasename } from "@velnox/shared/lib/sites";
+import { initMonitoring } from "@velnox/shared/lib/monitoring";
+
+initMonitoring();
+import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+import { IdentityMerge } from "@velnox/shared/lib/track";
+import { useCart } from "@/lib/cart";
+import { Home, Package, ReceiptText, ShoppingCart, User } from "lucide-react";
+import { lazy } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
-import { I18nProvider } from "@velnox/i18n";
-import "./index.css";
+import { BrowserRouter, Route, Routes } from "react-router";
+import "../../../packages/shared/src/index.css";
 
-const Landing = lazy(() => import("./pages/Landing"));
-const Products = lazy(() => import("./pages/Products"));
-const ProductDetail = lazy(() => import("./pages/ProductDetail"));
-const AuthPage = lazy(() => import("./pages/Auth"));
-const Cart = lazy(() => import("./pages/Cart"));
-const Orders = lazy(() => import("./pages/Orders"));
-const Profile = lazy(() => import("./pages/Profile"));
-const Addresses = lazy(() => import("./pages/Addresses"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-
-function RouteLoading() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-primary" />
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    </div>
-  );
+/**
+ * VelShop mobile bottom navigation — app-like fixed tab bar (5 items).
+ */
+function ShopTabBar() {
+  const { count } = useCart();
+  const { t } = useLanguage();
+  const items: MobileTabItem[] = [
+    { to: "/", label: t("nav.home"), icon: Home, activeMatch: (p) => p === "/" },
+    { to: "/products", label: t("nav.products"), icon: Package },
+    {
+      to: "/cart",
+      label: t("nav.cart"),
+      icon: ShoppingCart,
+      badge: count,
+      activeMatch: (p) => p.startsWith("/cart") || p.startsWith("/checkout"),
+    },
+    { to: "/orders", label: t("nav.orders"), icon: ReceiptText },
+    { to: "/profile", label: t("nav.profile"), icon: User },
+  ];
+  return <MobileTabBar items={items} />;
 }
 
-class RootErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; message: string }
-> {
-  state = { hasError: false, message: "" };
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, message: error.message || "Something went wrong" };
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-6">
-          <div className="max-w-md text-center space-y-4">
-            <div className="h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-              <span className="text-destructive text-xl">!</span>
-            </div>
-            <h2 className="text-lg font-semibold">Something went wrong</h2>
-            <p className="text-sm text-muted-foreground">{this.state.message}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              Try again
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-function RouteSyncer() {
-  const location = useLocation();
-  React.useEffect(() => {
-    window.parent.postMessage(
-      { type: "iframe-route-change", path: location.pathname },
-      "*"
-    );
-  }, [location.pathname]);
-  return null;
-}
+const ShopHome = lazy(() => import("@/pages/ShopHome"));
+const ShopProducts = lazy(() => import("@/pages/ShopProducts"));
+const ShopCategories = lazy(() => import("@/pages/ShopCategories"));
+const ShopProductDetail = lazy(() => import("@/pages/ShopProductDetail"));
+const ShopDetail = lazy(() => import("@/pages/ShopDetail"));
+const ShopCart = lazy(() => import("@/pages/ShopCart"));
+const ShopCheckout = lazy(() => import("@/pages/ShopCheckout"));
+const MyOrders = lazy(() => import("@/pages/MyOrders"));
+const ShopOrderDetail = lazy(() => import("@/pages/ShopOrderDetail"));
+const ShopTracking = lazy(() => import("@/pages/ShopTracking"));
+const VelRepeatPage = lazy(() => import("@/pages/VelRepeatPage"));
+const ShopWishlist = lazy(() => import("@/pages/ShopWishlist"));
+const ShopAddresses = lazy(() => import("@/pages/ShopAddresses"));
+const ShopProfile = lazy(() => import("@/pages/ShopProfile"));
+const ShopAccount = lazy(() => import("@/pages/ShopAccount"));
+const ShopNotifications = lazy(() => import("@/pages/ShopNotifications"));
+const CookiePolicy = lazy(() => import("@/pages/CookiePolicy"));
+const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
+const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <RootErrorBoundary>
-      <I18nProvider>
-        <BrowserRouter>
-          <RouteSyncer />
-          <Suspense fallback={<RouteLoading />}>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/products" element={<Products />} />
-              <Route path="/products/:id" element={<ProductDetail />} />
-              <Route path="/auth" element={<AuthPage />} />
-              <Route path="/cart" element={<Cart />} />
-              <Route path="/orders" element={<Orders />} />
-              <Route path="/orders/:id" element={<Orders />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/addresses" element={<Addresses />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-        <Toaster />
-      </I18nProvider>
-    </RootErrorBoundary>
-  </StrictMode>
+  <RootErrorBoundary>
+    <LanguageProvider>
+      <IdentityMerge />
+      <BrowserRouter basename={siteBasename("velshop")}>
+      <RouteSyncer />
+      <CartProvider>
+      <CookieConsentProvider>
+      <div className="site-app">
+      <SiteSuspense>
+        <Routes>
+          <Route path="/" element={<ShopHome />} />
+          <Route path="/products" element={<ShopProducts />} />
+          <Route path="/categories" element={<ShopCategories />} />
+          <Route path="/products/:productId" element={<ShopProductDetail />} />
+          <Route path="/shops/:shopId" element={<ShopDetail />} />
+          <Route path="/cart" element={<ShopCart />} />
+          <Route
+            path="/checkout"
+            element={
+              <RequireAuth>
+                <ShopCheckout />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders"
+            element={
+              <RequireAuth>
+                <MyOrders />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders/:orderId"
+            element={
+              <RequireAuth>
+                <ShopOrderDetail />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders/:orderId/tracking"
+            element={
+              <RequireAuth>
+                <ShopTracking />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/velrepeat"
+            element={
+              <RequireAuth>
+                <VelRepeatPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/wishlist"
+            element={
+              <RequireAuth>
+                <ShopWishlist />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/addresses"
+            element={
+              <RequireAuth>
+                <ShopAddresses />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <ShopProfile />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile/account"
+            element={
+              <RequireAuth>
+                <ShopAccount />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <RequireAuth>
+                <ShopNotifications />
+              </RequireAuth>
+            }
+          />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="/cookies" element={<CookiePolicy />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </SiteSuspense>
+      <ShopTabBar />
+      </div>
+      </CookieConsentProvider>
+    </CartProvider>
+    </BrowserRouter>          <Toaster />
+    </LanguageProvider>
+  </RootErrorBoundary>,
 );

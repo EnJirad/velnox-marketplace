@@ -1,10 +1,12 @@
 {
   "compilerOptions": {
+    "tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.velcenter.tsbuildinfo",
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
+    "esModuleInterop": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": false,
@@ -16,16 +18,12 @@
     "noUnusedParameters": false,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@velnox/types": ["../../packages/types/src"],
-      "@velnox/api": ["../../packages/api/src"],
-      "@velnox/hooks": ["../../packages/hooks/src"],
-      "@velnox/i18n": ["../../packages/i18n/src"],
-      "@velnox/utils": ["../../packages/utils/src"],
-      "@velnox/ui": ["../../packages/ui/src"]
+      "@velnox/shared/*": ["../../packages/shared/src/*"]
     }
   },
-  "include": ["src", "../../packages/*/src"]
+  "include": ["src", "vite.config.ts"]
 }
