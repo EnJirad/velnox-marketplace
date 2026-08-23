@@ -15,7 +15,7 @@ declare global {
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const token = req.cookies?.session_token;
+  const token = req.cookies?.velnox_session;
 
   if (!token) {
     res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Not authenticated" } });
@@ -35,7 +35,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 }
 
 export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
-  const token = req.cookies?.session_token;
+  const token = req.cookies?.velnox_session;
   if (!token) { next(); return; }
 
   try {

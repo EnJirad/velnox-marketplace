@@ -20,7 +20,7 @@ export function setupRoutes(app: Express): void {
   });
 
   app.post("/api/auth/logout", (_req, res) => {
-    res.clearCookie("session_token");
+    res.clearCookie("velnox_session", { path: "/" });
     res.json({ success: true, data: { success: true } });
   });
 
