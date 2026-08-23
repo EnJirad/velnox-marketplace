@@ -20,7 +20,6 @@ import { api } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useLanguage } from "@/lib/i18n";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
-import { useAction } from "@velnox/shared/lib/api-routes";
 import { CalendarClock, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
@@ -35,7 +34,7 @@ interface SubscriptionDialogProps {
 export function SubscriptionDialog({ product, open, onOpenChange }: SubscriptionDialogProps) {
   const { isAuthenticated } = useAuth();
   const { t } = useLanguage();
-  const createVelRepeat = useAction(api.commerce.createVelRepeat);
+  const createVelRepeat = api.commerce.createVelRepeat;
   const navigate = useNavigate();
   const [intervalDays, setIntervalDays] = useState("30");
   const [quantity, setQuantity] = useState(1);
