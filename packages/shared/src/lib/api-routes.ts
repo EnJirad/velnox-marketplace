@@ -8,7 +8,20 @@
  */
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
+// ─── Simple in-memory GET cache (60s TTL) ──────────────────────────────────
+const _getCache = new Map<string, { data: any; expires: number }>();
+const GET_TTL_MS = 60_000;
+
+function invalidateGetCache(prefix?: string) {
+  if (!prefix) { _getCache.clear(); return; }
+  for (const key of _getCache.keys()) {
+    if (key.startsWith(prefix)) _getCache.delete(key);
+  }
+}
+
 async function apiPost(path: string, args?: any): Promise<any> {
+  // Invalidate GET cache on any mutation
+  invalidateGetCache(path.split("/").slice(0, 4).join("/"));
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     credentials: "include",
@@ -23,12 +36,16 @@ async function apiPost(path: string, args?: any): Promise<any> {
 }
 
 async function apiGet(path: string): Promise<any> {
+  const cached = _getCache.get(path);
+  if (cached && cached.expires > Date.now()) return cached.data;
   const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     throw new Error(data.error || `Request failed: ${res.status}`);
   }
-  return res.json();
+  const json = await res.json();
+  _getCache.set(path, { data: json, expires: Date.now() + GET_TTL_MS });
+  return json;
 }
 
 async function apiPut(path: string, args?: any): Promise<any> {

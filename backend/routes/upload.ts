@@ -171,11 +171,13 @@ export function setupUploadRoutes(app: Express): void {
       // Update user field
       if (kind === "avatar") {
         await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
+      } else if (kind === "cover") {
+        await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
       }
 
       // Return updated profile
       const result = await query(
-        "SELECT id, email, name, avatar FROM users WHERE id = $1",
+        "SELECT id, email, name, avatar, cover_url FROM users WHERE id = $1",
         [userId]
       );
       const u = result.rows[0];
@@ -184,7 +186,7 @@ export function setupUploadRoutes(app: Express): void {
         success: true,
         data: {
           avatarUrl: u?.avatar || null,
-          coverUrl: null,
+          coverUrl: u?.cover_url || null,
         },
       });
     } catch (err) {

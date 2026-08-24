@@ -52,26 +52,28 @@ const CATEGORY_ICONS: Record<StoreProductCategory, LucideIcon> = {
   other: Package,
 };
 
-function useCommerceData<T>(load: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    load()
-      .then((d) => alive && setData(d))
-      .catch(() => alive && setData(null))
-      .finally(() => alive && setLoading(false));
-    return () => { alive = false; };
-  }, [load, version]);
-  const reload = useCallback(() => { setLoading(true); setVersion((v) => v + 1); }, []);
-  return { data, loading, reload };
-}
-
 async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+function useCommerceData<T>(load: () => Promise<T>) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [version, setVersion] = useState(0);
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(() => {
+    let alive = true;
+    loadRef.current()
+      .then((d) => alive && setData(d))
+      .catch(() => alive && setData(null))
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
+  }, [version]);
+  const reload = useCallback(() => { setLoading(true); setVersion((v) => v + 1); }, []);
+  return { data, loading, reload };
 }
 
 export default function ShopHome() {

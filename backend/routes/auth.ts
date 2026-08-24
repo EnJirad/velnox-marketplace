@@ -300,7 +300,7 @@ export function setupGoogleAuth(app: Express): void {
     try {
       const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
       const result = await query(
-        "SELECT id, email, name, avatar, role, status, created_at, updated_at FROM users WHERE id = $1",
+        "SELECT id, email, name, avatar, cover_url, role, status, created_at, updated_at FROM users WHERE id = $1",
         [payload.userId]
       );
       if (result.rows.length === 0) {
@@ -316,6 +316,7 @@ export function setupGoogleAuth(app: Express): void {
             email: u.email,
             name: u.name,
             avatar: u.avatar,
+            coverUrl: u.cover_url || null,
             role: u.role,
             status: u.status,
             createdAt: u.created_at,

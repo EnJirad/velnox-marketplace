@@ -93,6 +93,79 @@ export function setupRoutes(app: Express): void {
     }
   });
 
+  // ─── Customer Profile ──────────────────────────────────
+  app.get("/api/customer/profile", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const result = await query(
+        "SELECT id, email, name, avatar, cover_url, phone, created_at FROM users WHERE id = $1",
+        [req.user!.userId]
+      );
+      if (result.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } });
+        return;
+      }
+      const u = result.rows[0];
+      res.json({
+        success: true,
+        data: {
+          name: u.name,
+          email: u.email,
+          phone: u.phone || null,
+          avatarUrl: u.avatar || null,
+          coverUrl: u.cover_url || null,
+          memberSince: new Date(u.created_at).getTime(),
+        },
+      });
+    } catch (err) {
+      console.error("[profile] fetch error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch profile" } });
+    }
+  });
+
+  app.put("/api/customer/profile", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { name, phone } = req.body;
+      const userId = req.user!.userId;
+      const updates: string[] = [];
+      const params: unknown[] = [];
+      let paramIndex = 1;
+
+      if (name !== undefined && name !== null) {
+        updates.push(`name = $${paramIndex}`);
+        params.push(name);
+        paramIndex++;
+      }
+      if (phone !== undefined) {
+        updates.push(`phone = $${paramIndex}`);
+        params.push(phone || null);
+        paramIndex++;
+      }
+
+      if (updates.length > 0) {
+        updates.push("updated_at = NOW()");
+        params.push(userId);
+        await query(`UPDATE users SET ${updates.join(", ")} WHERE id = $${paramIndex}`, params);
+      }
+
+      const result = await query(
+        "SELECT id, name, phone, created_at FROM users WHERE id = $1",
+        [userId]
+      );
+      const u = result.rows[0];
+      res.json({
+        success: true,
+        data: {
+          name: u.name,
+          phone: u.phone || null,
+          memberSince: new Date(u.created_at).getTime(),
+        },
+      });
+    } catch (err) {
+      console.error("[profile] update error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update profile" } });
+    }
+  });
+
   // ─── Placeholder routes ──────────────────────────────
   const placeholder = (name: string) => async (_req: Request, res: Response) => {
     res.json({ success: true, data: { [name]: [] } });
