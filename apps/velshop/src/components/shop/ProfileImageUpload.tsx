@@ -1,6 +1,7 @@
 import { api } from "@velnox/shared/lib/api-routes";
 import { compressImage, getOptimizedExtension } from "@velnox/shared/lib/image-optimize";
 import { useAction, useMutation } from "@velnox/shared/lib/api-routes";
+import { refetchCurrentUser } from "@velnox/shared/lib/api-client";
 import { useLanguage } from "@/lib/i18n";
 import { Loader2 } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";
@@ -12,12 +13,10 @@ const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 // ─── Safe logging helper (never logs presigned URLs) ────────────────────────
 
 function r2cLog(step: string, data: Record<string, unknown>) {
-  // Strip any full URLs from data to avoid leaking presigned URLs
   const safe = { ...data };
   for (const key of Object.keys(safe)) {
     const val = safe[key];
     if (typeof val === "string" && (val.startsWith("http://") || val.startsWith("https://"))) {
-      // Redact full URLs — only show domain
       try {
         const u = new URL(val);
         safe[key] = `${u.origin}/<redacted>`;
@@ -31,16 +30,12 @@ function r2cLog(step: string, data: Record<string, unknown>) {
 
 /**
  * Classify a fetch error into a human-readable category.
- * CORS errors show as "Failed to fetch" with no additional info.
  */
 function classifyFetchError(err: unknown): string {
   if (!(err instanceof TypeError)) return `UnknownError: ${String(err)}`;
   const msg = err.message || "";
 
   if (msg === "Failed to fetch") {
-    // Most likely CORS, network down, or DNS failure
-    // We can't distinguish CORS from other network errors in the browser
-    // but we can hint based on context
     return "CorsOrNetworkError: fetch failed — likely CORS block, network offline, or DNS failure. Check R2 CORS settings in Cloudflare dashboard.";
   }
   if (msg.includes("NetworkError")) return "NetworkError: network unavailable";
@@ -141,7 +136,7 @@ export function ProfileImageUpload({
         });
       } catch (compressErr) {
         r2cLog("compress", { status: "fallback", error: String(compressErr) });
-        uploadFile = file; // fallback to original
+        uploadFile = file;
       }
 
       try {
@@ -182,7 +177,6 @@ export function ProfileImageUpload({
           return;
         }
 
-        // intent is guaranteed non-null here (catch block returns)
         const intentData = intent!;
 
         // ── Step 2: Direct R2 PUT upload from browser ─────────────
@@ -220,7 +214,6 @@ export function ProfileImageUpload({
           return;
         }
 
-        // Check response
         if (!uploadRes.ok) {
           let responseText = "";
           try {
@@ -240,7 +233,6 @@ export function ProfileImageUpload({
           return;
         }
 
-        // PUT succeeded
         r2cLog("put", {
           status: "success",
           httpStatus: uploadRes.status,
@@ -295,6 +287,11 @@ export function ProfileImageUpload({
           if (url) {
             r2cLog("complete", { status: "success", kind, urlLength: url.length });
             onUploaded(url);
+
+            // Refetch global auth state so /api/auth/me returns the
+            // new avatar/coverUrl. This ensures ShopProfile.coverSrc
+            // (which falls back to user.coverUrl) updates immediately.
+            refetchCurrentUser().catch(() => {});
           } else {
             r2cLog("complete", { status: "failed", reason: "no_url_returned" });
             toast.error(t("profile.imageUploadFailed"));

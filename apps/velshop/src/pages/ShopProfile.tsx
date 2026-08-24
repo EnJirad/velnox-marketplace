@@ -123,8 +123,8 @@ export default function ShopProfile() {
   const displayName = profile?.name ?? user?.name ?? user?.email ?? "";
   const displayEmail = profile?.email ?? user?.email ?? "";
   const memberSince = profile?.memberSince ?? null;
-  const avatarSrc = profile?.avatarUrl ?? user?.image ?? null;
-  const coverSrc = profile?.coverUrl ?? null;
+  const avatarSrc = profile?.avatarUrl ?? user?.avatarUrl ?? user?.image ?? null;
+  const coverSrc = profile?.coverUrl ?? user?.coverUrl ?? null;
 
   const formatMemberSince = (ms: number) =>
     new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "long", year: "numeric" }).format(

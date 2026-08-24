@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, Lis
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
+import { invalidateCachedProfile } from "./auth.js";
 
 // ─── R2 Client ──────────────────────────────────────────────────────────────
 
@@ -112,12 +113,11 @@ async function getCurrentImageUrl(userId: string, kind: string): Promise<string 
       const result = await query("SELECT avatar FROM users WHERE id = $1", [userId]);
       return result.rows[0]?.avatar || null;
     } else if (kind === "cover") {
-      // Try with cover_url column; if missing, return null gracefully
       try {
         const result = await query("SELECT cover_url FROM users WHERE id = $1", [userId]);
         return result.rows[0]?.cover_url || null;
       } catch (err: any) {
-        if (err?.code === "42703") return null; // column doesn't exist yet
+        if (err?.code === "42703") return null;
         throw err;
       }
     }
@@ -129,22 +129,15 @@ async function getCurrentImageUrl(userId: string, kind: string): Promise<string 
 
 /**
  * Safely clean up old R2 objects when a new image replaces the current one.
- * Only deletes objects that belong to the authenticated user.
  */
 async function cleanupOldImage(userId: string, kind: string, currentUrl: string | null): Promise<void> {
   if (!currentUrl) return;
-
   const oldKey = objectKeyFromUrl(currentUrl);
   if (!oldKey) return;
-
-  // Safety: only delete objects under this user's prefix
   if (!validateObjectKeyOwnership(oldKey, userId)) {
     r2Log("cleanup", { kind, status: "skipped", reason: "old_key_not_owned_by_user", oldKey });
     return;
   }
-
-  // Don't delete the same object we just uploaded
-  // (caller passes the new URL separately)
   await deleteR2Object(oldKey);
 }
 
@@ -180,7 +173,7 @@ export function setupUploadRoutes(app: Express): void {
         ContentType: contentType,
       });
 
-      const uploadUrl = await getSignedUrl(R2, command, { expiresIn: 300 }); // 5 min
+      const uploadUrl = await getSignedUrl(R2, command, { expiresIn: 300 });
       const publicUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : "";
 
       r2Log("presign", { step: "presign", status: "success", bucket: !!BUCKET, hasPublicDomain: !!PUBLIC_DOMAIN });
@@ -206,14 +199,12 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      // Verify ownership
       if (!validateObjectKeyOwnership(objectKey, userId)) {
         r2Log("confirm", { step: "verify_ownership", status: "denied", objectKey });
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Cannot upload to another user's path" } });
         return;
       }
 
-      // Verify object exists in R2
       const exists = await verifyR2Object(objectKey);
       if (!exists) {
         r2Log("confirm", { step: "verify_object", status: "failed", objectKey });
@@ -222,11 +213,8 @@ export function setupUploadRoutes(app: Express): void {
       }
 
       const publicUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
-
-      // Get old image URL BEFORE updating (for cleanup)
       const oldUrl = await getCurrentImageUrl(userId, purpose);
 
-      // Save media record — production schema: url, key, content_type, size, uploaded_by
       let mediaId: string | null = null;
       try {
         const mediaResult = await query(
@@ -240,7 +228,6 @@ export function setupUploadRoutes(app: Express): void {
         r2Log("confirm", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
       }
 
-      // Update user profile based on purpose
       if (purpose === "avatar") {
         await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [publicUrl, userId]);
       } else if (purpose === "cover") {
@@ -251,7 +238,9 @@ export function setupUploadRoutes(app: Express): void {
         }
       }
 
-      // Cleanup old R2 object AFTER new one is saved (non-fatal if fails)
+      // Invalidate auth/me profile cache so next request returns fresh data
+      invalidateCachedProfile(userId);
+
       if (oldUrl && oldUrl !== publicUrl) {
         await cleanupOldImage(userId, purpose, oldUrl).catch(() => {});
       }
@@ -289,7 +278,7 @@ export function setupUploadRoutes(app: Express): void {
         ContentType: mimeType,
       });
 
-      const uploadUrl = await getSignedUrl(R2, command, { expiresIn: 300 }); // 5 min
+      const uploadUrl = await getSignedUrl(R2, command, { expiresIn: 300 });
       const cdnUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
 
       r2Log("intent", { step: "presign", status: "success" });
@@ -322,7 +311,6 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      // Verify ownership — user can only save to their own path
       r2Log("save", { step: "verify_ownership", userId, kind });
       if (!validateObjectKeyOwnership(objectKey, userId)) {
         r2Log("save", { step: "verify_ownership", status: "denied", userId, objectKey });
@@ -331,7 +319,6 @@ export function setupUploadRoutes(app: Express): void {
       }
       r2Log("save", { step: "verify_ownership", status: "passed", userId, kind });
 
-      // CRITICAL: Verify object exists in R2 before saving to Neon
       const exists = await verifyR2Object(objectKey);
       if (!exists) {
         r2Log("save", { step: "verify_object", status: "failed", objectKey });
@@ -341,11 +328,8 @@ export function setupUploadRoutes(app: Express): void {
 
       r2Log("save", { step: "save_neon", kind, objectKey, size: bytes || 0 });
 
-      // Get current image URL BEFORE updating (for old object cleanup)
       const oldUrl = await getCurrentImageUrl(userId, kind);
 
-      // Save media record — production schema: url, key, content_type, size, uploaded_by
-      // key has UNIQUE constraint; wrapped in try/catch so avatar update still works
       try {
         await query(
           `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
@@ -353,28 +337,27 @@ export function setupUploadRoutes(app: Express): void {
           [url, objectKey, `image/${format || "jpeg"}`, bytes || 0, userId]
         );
       } catch (mediaErr: any) {
-        // Duplicate key (re-upload of same image) or schema mismatch — non-fatal
         r2Log("save", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
       }
 
-      // Update user field — this is the critical operation
       if (kind === "avatar") {
         await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
       } else if (kind === "cover") {
         try {
           await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
         } catch (coverErr: any) {
-          if (coverErr?.code !== "42703") throw coverErr; // column doesn't exist yet
+          if (coverErr?.code !== "42703") throw coverErr;
         }
       }
 
-      // Cleanup old R2 object AFTER new one is safely saved
+      // Invalidate auth/me profile cache so next request returns fresh data
+      invalidateCachedProfile(userId);
+
       if (oldUrl && oldUrl !== url) {
         r2Log("save", { step: "cleanup_old", kind, oldUrl: "<redacted>" });
         await cleanupOldImage(userId, kind, oldUrl).catch(() => {});
       }
 
-      // Return updated profile
       let result;
       try {
         result = await query(
@@ -415,6 +398,7 @@ export function setupUploadRoutes(app: Express): void {
       const userId = req.user!.userId;
 
       await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [image, userId]);
+      invalidateCachedProfile(userId);
 
       res.json({ success: true, data: { avatar: image } });
     } catch (err) {
@@ -434,10 +418,8 @@ export function setupUploadRoutes(app: Express): void {
     }
 
     try {
-      // Try to list objects with max 1 to verify bucket access
       const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
       await R2.send(new ListObjectsV2Command({ Bucket: BUCKET, MaxKeys: 1 }));
-
       res.json({ configured: true, bucket: true, verify: true });
     } catch {
       res.json({ configured: true, bucket: false, verify: false });

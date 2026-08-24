@@ -3,6 +3,26 @@ import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { errorHandler } from "../middleware/error.js";
 import { query } from "../db/index.js";
 
+// ─── Profile cache for /api/customer/profile (5s TTL) ──────────────────────
+// Avoids repeated slow queries when multiple components mount simultaneously.
+const customerProfileCache = new Map<string, { data: any; expires: number }>();
+const PROFILE_CACHE_TTL = 5_000;
+
+function getCachedCustomerProfile(userId: string): any | null {
+  const entry = customerProfileCache.get(userId);
+  if (entry && entry.expires > Date.now()) return entry.data;
+  customerProfileCache.delete(userId);
+  return null;
+}
+
+function setCachedCustomerProfile(userId: string, data: any): void {
+  customerProfileCache.set(userId, { data, expires: Date.now() + PROFILE_CACHE_TTL });
+}
+
+export function invalidateCustomerProfileCache(userId: string): void {
+  customerProfileCache.delete(userId);
+}
+
 export function setupRoutes(app: Express): void {
   // NOTE: /api/auth/me and /api/auth/logout are defined in auth.ts (setupGoogleAuth)
   // to avoid route conflicts. Do NOT re-define them here.
@@ -79,17 +99,26 @@ export function setupRoutes(app: Express): void {
   // ─── Customer Profile ──────────────────────────────────
   app.get("/api/customer/profile", requireAuth, async (req: Request, res: Response) => {
     try {
+      const userId = req.user!.userId;
+
+      // Check cache first
+      const cached = getCachedCustomerProfile(userId);
+      if (cached) {
+        res.json({ success: true, data: cached });
+        return;
+      }
+
       let result;
       try {
         result = await query(
           "SELECT id, email, name, avatar, cover_url, phone, created_at FROM users WHERE id = $1",
-          [req.user!.userId]
+          [userId]
         );
       } catch (queryErr: any) {
         if (queryErr?.code === "42703") {
           result = await query(
             "SELECT id, email, name, avatar, phone, created_at FROM users WHERE id = $1",
-            [req.user!.userId]
+            [userId]
           );
         } else {
           throw queryErr;
@@ -100,17 +129,17 @@ export function setupRoutes(app: Express): void {
         return;
       }
       const u = result.rows[0];
-      res.json({
-        success: true,
-        data: {
-          name: u.name,
-          email: u.email,
-          phone: u.phone || null,
-          avatarUrl: u.avatar || null,
-          coverUrl: u.cover_url || null,
-          memberSince: new Date(u.created_at).getTime(),
-        },
-      });
+      const profileData = {
+        name: u.name,
+        email: u.email,
+        phone: u.phone || null,
+        avatarUrl: u.avatar || null,
+        coverUrl: u.cover_url || null,
+        memberSince: new Date(u.created_at).getTime(),
+      };
+
+      setCachedCustomerProfile(userId, profileData);
+      res.json({ success: true, data: profileData });
     } catch (err) {
       console.error("[profile] fetch error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch profile" } });
@@ -141,6 +170,13 @@ export function setupRoutes(app: Express): void {
         params.push(userId);
         await query(`UPDATE users SET ${updates.join(", ")} WHERE id = $${paramIndex}`, params);
       }
+
+      // Invalidate caches after profile update
+      try {
+        const { invalidateCachedProfile } = await import("./auth.js");
+        invalidateCachedProfile(userId);
+      } catch { /* ignore */ }
+      invalidateCustomerProfileCache(userId);
 
       const result = await query(
         "SELECT id, name, phone, created_at FROM users WHERE id = $1",

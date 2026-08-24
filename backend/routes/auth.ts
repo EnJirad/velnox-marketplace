@@ -20,6 +20,27 @@ const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI ?? "";
 const JWT_SECRET = process.env.JWT_SECRET ?? "";
 const SESSION_COOKIE = "velnox_session";
 
+// ─── Per-user profile cache (5s TTL) ───────────────────────────────────────
+// Prevents the same slow Neon query from being hit multiple times within a
+// short window (e.g. /api/auth/me + /api/customer/profile on page load).
+const profileCache = new Map<string, { data: any; expires: number }>();
+const PROFILE_CACHE_TTL = 5_000; // 5 seconds
+
+function getCachedProfile(userId: string): any | null {
+  const entry = profileCache.get(userId);
+  if (entry && entry.expires > Date.now()) return entry.data;
+  profileCache.delete(userId);
+  return null;
+}
+
+export function setCachedProfile(userId: string, data: any): void {
+  profileCache.set(userId, { data, expires: Date.now() + PROFILE_CACHE_TTL });
+}
+
+export function invalidateCachedProfile(userId: string): void {
+  profileCache.delete(userId);
+}
+
 /** Normalize email: trim + lowercase. */
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -130,6 +151,7 @@ async function resolveUser(google: {
          avatar = NULLIF($3, ''), updated_at = NOW() WHERE id = $1`,
         [userId, google.name, google.picture]
       );
+      invalidateCachedProfile(userId);
       await poolClient.query("COMMIT");
       return { userId, isNew: false };
     }
@@ -155,6 +177,7 @@ async function resolveUser(google: {
          avatar = NULLIF($3, ''), updated_at = NOW() WHERE id = $1`,
         [userId, google.name, google.picture]
       );
+      invalidateCachedProfile(userId);
       await poolClient.query("COMMIT");
       return { userId, isNew: false };
     }
@@ -299,6 +322,14 @@ export function setupGoogleAuth(app: Express): void {
 
     try {
       const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+
+      // Check cache first to avoid repeated slow queries
+      const cached = getCachedProfile(payload.userId);
+      if (cached) {
+        res.json({ success: true, data: { user: cached } });
+        return;
+      }
+
       let result;
       try {
         result = await query(
@@ -321,29 +352,37 @@ export function setupGoogleAuth(app: Express): void {
         return;
       }
       const u = result.rows[0];
-      res.json({
-        success: true,
-        data: {
-          user: {
-            id: u.id,
-            email: u.email,
-            name: u.name,
-            avatar: u.avatar,
-            coverUrl: u.cover_url || null,
-            role: u.role,
-            status: u.status,
-            createdAt: u.created_at,
-            updatedAt: u.updated_at,
-          },
-        },
-      });
+      const userData = {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        avatar: u.avatar,
+        coverUrl: u.cover_url || null,
+        role: u.role,
+        status: u.status,
+        createdAt: u.created_at,
+        updatedAt: u.updated_at,
+      };
+
+      // Cache the result
+      setCachedProfile(payload.userId, userData);
+
+      res.json({ success: true, data: { user: userData } });
     } catch {
       res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Invalid session" } });
     }
   });
 
   // Logout
-  app.post("/api/auth/logout", (_req: Request, res: Response) => {
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    // Clear profile cache for this user
+    try {
+      const token = req.cookies?.[SESSION_COOKIE];
+      if (token) {
+        const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+        invalidateCachedProfile(payload.userId);
+      }
+    } catch { /* ignore */ }
     res.clearCookie(SESSION_COOKIE, { path: "/" });
     res.json({ success: true, data: { success: true } });
   });

@@ -35,10 +35,11 @@ interface AuthState {
   user: ApiUser | null;
 }
 
-// ─── Auth Context ───────────────────────────────────────────────────────────
+// ─── Auth Context (singleton) ───────────────────────────────────────────────
 
 let authState: AuthState = { isLoading: true, isAuthenticated: false, user: null };
 let authListeners: Array<() => void> = [];
+let authInitPromise: Promise<void> | null = null; // singleton init guard
 
 function notifyAuthListeners() {
   authListeners.forEach((l) => l());
@@ -72,15 +73,24 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
   }
 }
 
-/** Initialize auth state (call once at app startup) */
+/**
+ * Initialize auth state (call once at app startup).
+ * Uses a singleton promise so concurrent calls share the same fetch.
+ */
 export async function initAuth(): Promise<void> {
-  const user = await fetchCurrentUser();
-  authState = {
-    isLoading: false,
-    isAuthenticated: !!user,
-    user,
-  };
-  notifyAuthListeners();
+  if (authInitPromise) return authInitPromise;
+
+  authInitPromise = (async () => {
+    const user = await fetchCurrentUser();
+    authState = {
+      isLoading: false,
+      isAuthenticated: !!user,
+      user,
+    };
+    notifyAuthListeners();
+  })();
+
+  return authInitPromise;
 }
 
 /** Get current auth state (synchronous) */
@@ -94,6 +104,22 @@ export function onAuthChange(listener: () => void): () => void {
   return () => {
     authListeners = authListeners.filter((l) => l !== listener);
   };
+}
+
+/**
+ * Force-refetch the current user from the backend.
+ * Call this after profile mutations (avatar/cover/name update)
+ * so the global auth state reflects the changes.
+ */
+export async function refetchCurrentUser(): Promise<ApiUser | null> {
+  const user = await fetchCurrentUser();
+  authState = {
+    isLoading: false,
+    isAuthenticated: !!user,
+    user,
+  };
+  notifyAuthListeners();
+  return user;
 }
 
 /** Google OAuth sign-in */
@@ -110,6 +136,7 @@ export async function signInWithGoogle(code: string): Promise<ApiUser> {
   }
   const data = await res.json();
   authState = { isLoading: false, isAuthenticated: true, user: data.user };
+  authInitPromise = null; // reset so next initAuth() will re-fetch
   notifyAuthListeners();
   return data.user;
 }
@@ -121,6 +148,7 @@ export async function signOut(): Promise<void> {
     credentials: "include",
   });
   authState = { isLoading: false, isAuthenticated: false, user: null };
+  authInitPromise = null;
   notifyAuthListeners();
 }
 
@@ -133,7 +161,7 @@ export function useAuth() {
   const [state, setState] = useState<AuthState>(authState);
 
   useEffect(() => {
-    // If auth hasn't been initialized yet, fetch now
+    // If auth hasn't been initialized yet, fetch now (singleton)
     if (authState.isLoading) {
       initAuth().then(() => setState({ ...authState }));
     }
@@ -169,10 +197,6 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 /**
  * useAction — returns a callable function that makes a POST to the API.
- *
- * Usage:
- *   const myOrders = useAction("/api/customer/orders");
- *   const result = await myOrders({ limit: 10 });
  */
 export function useAction<TArgs, TResult>(path: string) {
   return useCallback(async (args?: TArgs) => {
@@ -185,9 +209,6 @@ export function useAction<TArgs, TResult>(path: string) {
 
 /**
  * useGet — returns data and loading state for a GET endpoint.
- *
- * Usage:
- *   const { data, loading, error } = useGet("/api/customer/profile");
  */
 export function useGet<T>(path: string, enabled = true) {
   const [data, setData] = useState<T | null>(null);
@@ -225,10 +246,6 @@ export function useGet<T>(path: string, enabled = true) {
 
 /**
  * usePost — returns a callable function for POST endpoints.
- *
- * Usage:
- *   const addToCart = usePost("/api/customer/cart/add");
- *   await addToCart({ productId: "123", quantity: 1 });
  */
 export function usePost<TArgs, TResult>(path: string) {
   return useCallback(async (args: TArgs) => {
