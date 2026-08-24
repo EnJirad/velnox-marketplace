@@ -23,6 +23,37 @@ export function invalidateCustomerProfileCache(userId: string): void {
   customerProfileCache.delete(userId);
 }
 
+// ─── Ensure addresses table has required columns ────────────────────────────
+// Adds subdistrict, district, latitude, longitude columns if missing.
+// Uses ALTER TABLE IF NOT EXISTS where available, or checks and adds.
+async function ensureAddressColumns(): Promise<void> {
+  const columnsToAdd = [
+    { name: "subdistrict", def: "VARCHAR(100)" },
+    { name: "district", def: "VARCHAR(100)" },
+    { name: "latitude", def: "DOUBLE PRECISION" },
+    { name: "longitude", def: "DOUBLE PRECISION" },
+  ];
+  for (const col of columnsToAdd) {
+    try {
+      await query(`ALTER TABLE addresses ADD COLUMN IF NOT EXISTS ${col.name} ${col.def}`);
+    } catch {
+      // Column may already exist or ALTER TABLE IF NOT EXISTS not supported
+      // Try to select the column — if it fails, it doesn't exist
+      try {
+        await query(`SELECT ${col.name} FROM addresses LIMIT 0`);
+      } catch {
+        // Column doesn't exist and we can't add it — skip
+        console.warn(`[addresses] Could not ensure column ${col.name} exists`);
+      }
+    }
+  }
+}
+
+// Run once at startup
+ensureAddressColumns().catch((err) => {
+  console.error("[addresses] Failed to ensure columns:", err);
+});
+
 export function setupRoutes(app: Express): void {
   // NOTE: /api/auth/me and /api/auth/logout are defined in auth.ts (setupGoogleAuth)
   // to avoid route conflicts. Do NOT re-define them here.
@@ -226,6 +257,261 @@ export function setupRoutes(app: Express): void {
     }
   });
 
+  // ─── Addresses ────────────────────────────────────────
+  // GET /api/customer/addresses — list all addresses for the authenticated user
+  app.get("/api/customer/addresses", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      // Try to SELECT all columns including optional ones
+      let result;
+      try {
+        result = await query(
+          `SELECT id, label, full_name, phone, line1, line2, city, state, postal_code,
+                  country, is_default, subdistrict, district, latitude, longitude,
+                  created_at, updated_at
+           FROM addresses WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC`,
+          [userId]
+        );
+      } catch (colErr: any) {
+        // If a column doesn't exist (42703), fall back to base columns
+        if (colErr?.code === "42703") {
+          result = await query(
+            `SELECT id, label, full_name, phone, line1, line2, city, state, postal_code,
+                    country, is_default, created_at, updated_at
+             FROM addresses WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC`,
+            [userId]
+          );
+        } else {
+          throw colErr;
+        }
+      }
+
+      const addresses = result.rows.map((r: Record<string, unknown>) => ({
+        id: r.id,
+        label: r.label || "Home",
+        recipientName: r.full_name || "",
+        phone: r.phone || "",
+        line1: r.line1 || "",
+        line2: r.line2 || null,
+        // Map DB columns to frontend field names
+        subdistrict: r.subdistrict || r.city || null,
+        district: r.district || null,
+        province: r.state || null,
+        postalCode: r.postal_code || null,
+        country: r.country || "TH",
+        latitude: r.latitude != null ? Number(r.latitude) : null,
+        longitude: r.longitude != null ? Number(r.longitude) : null,
+        isDefault: r.is_default || false,
+      }));
+
+      res.json({ success: true, data: addresses });
+    } catch (err) {
+      console.error("[addresses] list error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch addresses" } });
+    }
+  });
+
+  // POST /api/customer/addresses — create or update an address
+  app.post("/api/customer/addresses", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const {
+        addressId,
+        label,
+        recipientName,
+        phone,
+        line1,
+        line2,
+        subdistrict,
+        district,
+        province,
+        postalCode,
+        country,
+        latitude,
+        longitude,
+        isDefault,
+      } = req.body;
+
+      // Server-side validation
+      if (!recipientName || typeof recipientName !== "string" || !recipientName.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "recipientName is required" } });
+        return;
+      }
+      if (!phone || typeof phone !== "string" || !phone.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "phone is required" } });
+        return;
+      }
+      if (!line1 || typeof line1 !== "string" || !line1.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "line1 (address) is required" } });
+        return;
+      }
+      if (!province || typeof province !== "string" || !province.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "province is required" } });
+        return;
+      }
+      if (!postalCode || typeof postalCode !== "string" || !/^\d{5}$/.test(postalCode.trim())) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "postalCode must be a 5-digit string" } });
+        return;
+      }
+      if (latitude != null && (typeof latitude !== "number" || latitude < -90 || latitude > 90)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "latitude is invalid" } });
+        return;
+      }
+      if (longitude != null && (typeof longitude !== "number" || longitude < -180 || longitude > 180)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "longitude is invalid" } });
+        return;
+      }
+
+      const trimmedLabel = (label || "Home").trim().substring(0, 100);
+      const trimmedRecipient = recipientName.trim().substring(0, 255);
+      const trimmedPhone = phone.trim().substring(0, 50);
+      const trimmedLine1 = line1.trim().substring(0, 255);
+      const trimmedLine2 = line2 ? String(line2).trim().substring(0, 255) : null;
+      const trimmedSubdistrict = subdistrict ? String(subdistrict).trim().substring(0, 100) : null;
+      const trimmedDistrict = district ? String(district).trim().substring(0, 100) : null;
+      const trimmedProvince = province.trim().substring(0, 100);
+      const trimmedPostal = postalCode.trim();
+      const trimmedCountry = (country || "TH").trim().substring(0, 100);
+
+      // Determine if this is an update or create
+      const isUpdate = addressId && typeof addressId === "string" && addressId.length > 0;
+
+      if (isUpdate) {
+        // Verify the address belongs to this user
+        const existing = await query(
+          "SELECT id FROM addresses WHERE id = $1 AND user_id = $2",
+          [addressId, userId]
+        );
+        if (existing.rows.length === 0) {
+          res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Address not found" } });
+          return;
+        }
+
+        // If setting as default, clear other defaults first
+        if (isDefault) {
+          await query(
+            "UPDATE addresses SET is_default = false, updated_at = NOW() WHERE user_id = $1 AND is_default = true",
+            [userId]
+          );
+        }
+
+        // Try updating with all columns; fall back if optional columns don't exist
+        try {
+          await query(
+            `UPDATE addresses SET
+               label = $1, full_name = $2, phone = $3, line1 = $4, line2 = $5,
+               subdistrict = $6, district = $7, city = $6, state = $8,
+               postal_code = $9, country = $10, is_default = $11,
+               latitude = $12, longitude = $13, updated_at = NOW()
+             WHERE id = $14 AND user_id = $15`,
+            [
+              trimmedLabel, trimmedRecipient, trimmedPhone, trimmedLine1, trimmedLine2,
+              trimmedSubdistrict, trimmedDistrict, trimmedProvince,
+              trimmedPostal, trimmedCountry, !!isDefault,
+              latitude ?? null, longitude ?? null,
+              addressId, userId,
+            ]
+          );
+        } catch (updateErr: any) {
+          if (updateErr?.code === "42703") {
+            // One of the new columns doesn't exist — update only base columns
+            await query(
+              `UPDATE addresses SET
+                 label = $1, full_name = $2, phone = $3, line1 = $4, line2 = $5,
+                 city = $6, state = $7,
+                 postal_code = $8, country = $9, is_default = $10,
+                 updated_at = NOW()
+               WHERE id = $11 AND user_id = $12`,
+              [
+                trimmedLabel, trimmedRecipient, trimmedPhone, trimmedLine1, trimmedLine2,
+                trimmedSubdistrict || trimmedProvince, trimmedProvince,
+                trimmedPostal, trimmedCountry, !!isDefault,
+                addressId, userId,
+              ]
+            );
+          } else {
+            throw updateErr;
+          }
+        }
+
+        res.json({ success: true, data: { id: addressId } });
+      } else {
+        // Create new address
+        // If setting as default, clear other defaults first
+        if (isDefault) {
+          await query(
+            "UPDATE addresses SET is_default = false, updated_at = NOW() WHERE user_id = $1 AND is_default = true",
+            [userId]
+          );
+        }
+
+        let result;
+        try {
+          result = await query(
+            `INSERT INTO addresses
+               (user_id, label, full_name, phone, line1, line2,
+                subdistrict, district, city, state,
+                postal_code, country, is_default, latitude, longitude)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             RETURNING id`,
+            [
+              userId, trimmedLabel, trimmedRecipient, trimmedPhone, trimmedLine1, trimmedLine2,
+              trimmedSubdistrict, trimmedDistrict, trimmedSubdistrict || trimmedProvince, trimmedProvince,
+              trimmedPostal, trimmedCountry, !!isDefault,
+              latitude ?? null, longitude ?? null,
+            ]
+          );
+        } catch (insertErr: any) {
+          if (insertErr?.code === "42703") {
+            // Optional columns don't exist — insert with base columns only
+            result = await query(
+              `INSERT INTO addresses
+                 (user_id, label, full_name, phone, line1, line2,
+                  city, state, postal_code, country, is_default)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               RETURNING id`,
+              [
+                userId, trimmedLabel, trimmedRecipient, trimmedPhone, trimmedLine1, trimmedLine2,
+                trimmedSubdistrict || trimmedProvince, trimmedProvince,
+                trimmedPostal, trimmedCountry, !!isDefault,
+              ]
+            );
+          } else {
+            throw insertErr;
+          }
+        }
+
+        res.json({ success: true, data: { id: result.rows[0].id } });
+      }
+    } catch (err) {
+      console.error("[addresses] save error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to save address" } });
+    }
+  });
+
+  // DELETE /api/customer/addresses/:id
+  app.delete("/api/customer/addresses/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const { id } = req.params;
+
+      const result = await query(
+        "DELETE FROM addresses WHERE id = $1 AND user_id = $2 RETURNING id",
+        [id, userId]
+      );
+
+      if (result.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Address not found" } });
+        return;
+      }
+
+      res.json({ success: true, data: { success: true } });
+    } catch (err) {
+      console.error("[addresses] delete error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to delete address" } });
+    }
+  });
+
   // ─── Placeholder routes ──────────────────────────────
   const placeholder = (name: string) => async (_req: Request, res: Response) => {
     res.json({ success: true, data: { [name]: [] } });
@@ -240,6 +526,7 @@ export function setupRoutes(app: Express): void {
   app.post("/api/orders", requireAuth, placeholder("order"));
   app.get("/api/orders/:id", requireAuth, placeholder("order"));
 
+  // Legacy address placeholders (kept for backward compatibility)
   app.get("/api/addresses", requireAuth, placeholder("addresses"));
   app.post("/api/addresses", requireAuth, placeholder("address"));
   app.put("/api/addresses/:id", requireAuth, placeholder("address"));
