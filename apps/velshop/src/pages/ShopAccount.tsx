@@ -170,12 +170,7 @@ export default function ShopAccount() {
                   alt={t("profile.coverAlt", { name: profile?.name || "VelShop" })}
                   className="absolute inset-0 size-full object-cover"
                 />
-                {/* Spinner overlay during cover upload */}
-                {coverUploading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                    <Loader2 className="size-8 text-white animate-spin" />
-                  </div>
-                )}
+
                 <div className="absolute bottom-3 right-3">
                   <ProfileImageUpload
                     kind="cover"
@@ -205,12 +200,7 @@ export default function ShopAccount() {
                       fallback={<>{(profile?.name ?? "?").slice(0, 1).toUpperCase()}</>}
                     />
                   </span>
-                  {/* Spinner overlay during avatar upload */}
-                  {avatarUploading && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/30">
-                      <Loader2 className="size-6 text-white animate-spin" />
-                    </div>
-                  )}
+
                   <span className="absolute -bottom-1 -right-1">
                     <ProfileImageUpload
                       kind="avatar"

@@ -27,7 +27,6 @@ import {
   LogOut,
   MapPin,
   Package,
-  Pencil,
   RefreshCw,
   ShieldCheck,
   ShoppingBag,
@@ -207,17 +206,6 @@ export default function ShopProfile() {
                       )}
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 gap-1.5 border-slate-200 text-slate-700"
-                    asChild
-                  >
-                    <Link to="/profile/account">
-                      <Pencil className="size-3.5" />
-                      {t("profile.editProfile")}
-                    </Link>
-                  </Button>
                 </div>
               </div>
             </section>
