@@ -9,6 +9,48 @@ import { toast } from "sonner";
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
+// ─── Safe logging helper (never logs presigned URLs) ────────────────────────
+
+function r2cLog(step: string, data: Record<string, unknown>) {
+  // Strip any full URLs from data to avoid leaking presigned URLs
+  const safe = { ...data };
+  for (const key of Object.keys(safe)) {
+    const val = safe[key];
+    if (typeof val === "string" && (val.startsWith("http://") || val.startsWith("https://"))) {
+      // Redact full URLs — only show domain
+      try {
+        const u = new URL(val);
+        safe[key] = `${u.origin}/<redacted>`;
+      } catch {
+        safe[key] = "<redacted>";
+      }
+    }
+  }
+  console.log(`[R2 CLIENT] step=${step}`, JSON.stringify(safe));
+}
+
+/**
+ * Classify a fetch error into a human-readable category.
+ * CORS errors show as "Failed to fetch" with no additional info.
+ */
+function classifyFetchError(err: unknown): string {
+  if (!(err instanceof TypeError)) return `UnknownError: ${String(err)}`;
+  const msg = err.message || "";
+
+  if (msg === "Failed to fetch") {
+    // Most likely CORS, network down, or DNS failure
+    // We can't distinguish CORS from other network errors in the browser
+    // but we can hint based on context
+    return "CorsOrNetworkError: fetch failed — likely CORS block, network offline, or DNS failure. Check R2 CORS settings in Cloudflare dashboard.";
+  }
+  if (msg.includes("NetworkError")) return "NetworkError: network unavailable";
+  if (msg.includes("DNS")) return "DnsError: DNS resolution failed";
+  if (msg.includes("timeout")) return "TimeoutError: request timed out";
+  if (msg.includes("AbortError")) return "AbortError: request was aborted";
+  if (msg.includes("SSL") || msg.includes("TLS")) return "TlsError: TLS/SSL handshake failed";
+  return `TypeError: ${msg}`;
+}
+
 interface ProfileImageUploadProps {
   kind: "avatar" | "cover";
   /** Called with the new URL after a successful upload. */
@@ -26,8 +68,6 @@ interface ProfileImageUploadProps {
  *   A spinner overlay is shown on the button while uploading.
  *   On success → onUploaded(newUrl) → parent swaps to new image.
  *   On error   → old image was never removed; toast shows error.
- *
- * We do NOT call onPreview() — the old image must never disappear.
  *
  * Flow:
  * 1. User selects image via native file input
@@ -60,35 +100,47 @@ export function ProfileImageUpload({
     async (file: File) => {
       // ── Validation ──────────────────────────────────────────────
       if (!ACCEPTED_TYPES.includes(file.type)) {
+        console.warn("[R2 CLIENT] step=validate status=rejected reason=invalid_type type=", file.type);
         toast.error(t("profile.imageTypeError"));
         resetInput();
         return;
       }
       if (file.size <= 0) {
+        console.warn("[R2 CLIENT] step=validate status=rejected reason=empty_file");
         toast.error(t("profile.imageTypeError"));
         resetInput();
         return;
       }
       if (file.size > MAX_BYTES) {
+        console.warn("[R2 CLIENT] step=validate status=rejected reason=too_large size=", file.size);
         toast.error(t("profile.imageSizeError"));
         resetInput();
         return;
       }
 
+      r2cLog("validate", { status: "ok", type: file.type, size: file.size, kind });
+
       // ── Start upload — old image stays visible ──────────────────
-      // We do NOT create an objectURL or call onPreview.
-      // The parent keeps showing the current image throughout.
       setUploading(true);
       onUploadingChange?.(true);
 
       // ── Compress large images before upload ─────────────────────
       let uploadFile: File;
       try {
+        r2cLog("compress", { status: "started", originalSize: file.size, kind });
         uploadFile = await compressImage(file, kind, {
           maxBytes: kind === "avatar" ? 200_000 : 500_000,
           quality: kind === "avatar" ? 0.85 : 0.80,
         });
-      } catch {
+        r2cLog("compress", {
+          status: "done",
+          originalSize: file.size,
+          finalSize: uploadFile.size,
+          finalType: uploadFile.type,
+          compressed: uploadFile.size < file.size,
+        });
+      } catch (compressErr) {
+        r2cLog("compress", { status: "fallback", error: String(compressErr) });
         uploadFile = file; // fallback to original
       }
 
@@ -103,58 +155,121 @@ export function ProfileImageUpload({
         } | null = null;
 
         try {
-          intent = await getUploadIntent({
+          r2cLog("intent", { status: "requesting", kind, mimeType: uploadFile.type });
+          const intentResult = await getUploadIntent({
             kind,
             filename: uploadFile.name,
             mimeType: uploadFile.type,
           });
+          intent = intentResult;
+          r2cLog("intent", {
+            status: "success",
+            kind: intentResult.kind,
+            objectKey: intentResult.objectKey,
+            hasUploadUrl: !!intentResult.uploadUrl,
+            expiresAt: intentResult.expiresAt,
+          });
         } catch (intentErr: unknown) {
           const errMsg =
             intentErr instanceof Error ? intentErr.message : String(intentErr);
-          console.error("[ProfileImageUpload] intent failed:", errMsg);
+          r2cLog("intent", { status: "failed", error: errMsg });
+          console.error("[R2 CLIENT] intent failed:", errMsg);
           toast.error(
             errMsg.includes("not configured")
               ? "ระบบอัปโหลดรูปภาพยังไม่พร้อมใช้งาน"
               : t("profile.imageUploadFailed"),
           );
-          // Old image was never removed — no cleanup needed.
           return;
         }
 
+        // intent is guaranteed non-null here (catch block returns)
+        const intentData = intent!;
+
         // ── Step 2: Direct R2 PUT upload from browser ─────────────
+        r2cLog("put", {
+          status: "started",
+          method: "PUT",
+          contentType: uploadFile.type,
+          bodySize: uploadFile.size,
+          credentials: "omit",
+        });
+
         let uploadRes: Response;
         try {
-          uploadRes = await fetch(intent!.uploadUrl, {
+          uploadRes = await fetch(intentData.uploadUrl, {
             method: "PUT",
             body: uploadFile,
             headers: { "Content-Type": uploadFile.type },
             credentials: "omit",
           });
         } catch (fetchErr: unknown) {
-          console.error("[ProfileImageUpload] R2 PUT failed:", fetchErr);
-          toast.error(t("profile.imageUploadFailed"));
-          // Old image was never removed — no cleanup needed.
+          const classification = classifyFetchError(fetchErr);
+          r2cLog("put", {
+            status: "failed",
+            errorType: "fetch_exception",
+            classification,
+            message: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+            name: fetchErr instanceof Error ? fetchErr.name : "unknown",
+          });
+          console.error("[R2 CLIENT] PUT failed:", classification, fetchErr);
+          toast.error(
+            classification.includes("CorsOrNetwork")
+              ? "ไม่สามารถอัปโหลดรูปได้ — ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต หรือ R2 CORS settings"
+              : t("profile.imageUploadFailed"),
+          );
           return;
         }
 
+        // Check response
         if (!uploadRes.ok) {
-          console.error(
-            "[ProfileImageUpload] R2 returned",
-            uploadRes.status,
-          );
+          let responseText = "";
+          try {
+            responseText = await uploadRes.text();
+          } catch {
+            responseText = "<could not read body>";
+          }
+          r2cLog("put", {
+            status: "failed",
+            errorType: "http_error",
+            httpStatus: uploadRes.status,
+            httpStatusText: uploadRes.statusText,
+            responsePreview: responseText.slice(0, 200),
+          });
+          console.error("[R2 CLIENT] R2 returned HTTP", uploadRes.status, uploadRes.statusText, responseText.slice(0, 200));
           toast.error(t("profile.imageUploadFailed"));
-          // Old image was never removed — no cleanup needed.
           return;
         }
+
+        // PUT succeeded
+        r2cLog("put", {
+          status: "success",
+          httpStatus: uploadRes.status,
+          httpStatusText: uploadRes.statusText,
+        });
 
         // ── Step 3: Confirm upload — persist metadata in Neon ──────
+        r2cLog("save", {
+          status: "requesting",
+          kind,
+          objectKey: intentData.objectKey,
+          format: getOptimizedExtension(uploadFile),
+          bytes: uploadFile.size,
+        });
+
         try {
           const updatedProfile = await saveProfileImage({
             kind,
-            objectKey: intent!.objectKey,
-            cdnUrl: intent!.cdnUrl,
+            objectKey: intentData.objectKey,
+            cdnUrl: intentData.cdnUrl,
             format: getOptimizedExtension(uploadFile),
             bytes: uploadFile.size,
+          });
+
+          r2cLog("save", {
+            status: "success",
+            kind,
+            avatarUrl: updatedProfile.avatarUrl ? "<present>" : null,
+            coverUrl: updatedProfile.coverUrl ? "<present>" : null,
           });
 
           const url =
@@ -167,26 +282,34 @@ export function ProfileImageUpload({
           if (kind === "avatar" && url) {
             try {
               await patchUserImage({ image: url });
+              r2cLog("patch", { status: "success", kind });
             } catch (patchErr) {
-              console.error("[ProfileImageUpload] patchUserImage failed (avatar saved to DB):", patchErr);
+              r2cLog("patch", {
+                status: "failed",
+                error: patchErr instanceof Error ? patchErr.message : String(patchErr),
+              });
+              console.error("[R2 CLIENT] patchUserImage failed (avatar saved to DB):", patchErr);
             }
           }
 
           if (url) {
-            // Upload complete — parent swaps to new image.
+            r2cLog("complete", { status: "success", kind, urlLength: url.length });
             onUploaded(url);
           } else {
+            r2cLog("complete", { status: "failed", reason: "no_url_returned" });
             toast.error(t("profile.imageUploadFailed"));
           }
         } catch (saveErr: unknown) {
           const errMsg =
             saveErr instanceof Error ? saveErr.message : String(saveErr);
-          console.error("[ProfileImageUpload] save failed:", errMsg);
+          r2cLog("save", { status: "failed", error: errMsg });
+          console.error("[R2 CLIENT] save failed:", errMsg);
           toast.error("บันทึกรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
         }
       } catch (err: unknown) {
         const e = err instanceof Error ? err : new Error(String(err));
-        console.error("[ProfileImageUpload] unexpected:", e.name, e.message);
+        r2cLog("unexpected", { status: "failed", name: e.name, message: e.message });
+        console.error("[R2 CLIENT] unexpected:", e.name, e.message);
         toast.error(`${e.name}: ${e.message}`);
       } finally {
         setUploading(false);
@@ -194,7 +317,7 @@ export function ProfileImageUpload({
         resetInput();
       }
     },
-    [kind, onUploaded, onUploadingChange, resetInput, t, getUploadIntent, saveProfileImage],
+    [kind, onUploaded, onUploadingChange, resetInput, t, getUploadIntent, saveProfileImage, patchUserImage],
   );
 
   return (
