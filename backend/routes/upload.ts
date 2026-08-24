@@ -148,15 +148,19 @@ export function setupUploadRoutes(app: Express): void {
 
       const publicUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
 
-      // Save media record (use correct schema columns)
-      const mediaResult = await query(
-        `INSERT INTO media (owner_id, object_key, cdn_url, mime_type, file_size, status, created_at)
-         VALUES ($1, $2, $3, 'image', 0, 'active', NOW())
-         RETURNING id, cdn_url`,
-        [userId, objectKey, publicUrl]
-      );
-
-      const mediaId = mediaResult.rows[0].id;
+      // Save media record — production schema: url, key, content_type, size, uploaded_by
+      let mediaId: string | null = null;
+      try {
+        const mediaResult = await query(
+          `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
+           VALUES ($1, $2, 'image', 0, $3, NOW())
+           RETURNING id`,
+          [publicUrl, objectKey, userId]
+        );
+        mediaId = mediaResult.rows[0]?.id ?? null;
+      } catch (mediaErr: any) {
+        r2Log("confirm", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
+      }
 
       // Update user profile based on purpose
       if (purpose === "avatar") {
@@ -252,16 +256,22 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      r2Log("save", { step: "save_neon", kind, objectKey, mimeType: `image/${format || "jpeg"}`, size: bytes || 0 });
+      r2Log("save", { step: "save_neon", kind, objectKey, size: bytes || 0 });
 
-      // Save media record (use correct schema columns)
-      await query(
-        `INSERT INTO media (owner_id, object_key, cdn_url, mime_type, file_size, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', NOW())`,
-        [userId, objectKey, url, `image/${format || "jpeg"}`, bytes || 0]
-      );
+      // Save media record — production schema: url, key, content_type, size, uploaded_by
+      // key has UNIQUE constraint; wrapped in try/catch so avatar update still works
+      try {
+        await query(
+          `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [url, objectKey, `image/${format || "jpeg"}`, bytes || 0, userId]
+        );
+      } catch (mediaErr: any) {
+        // Duplicate key (re-upload of same image) or schema mismatch — non-fatal
+        r2Log("save", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
+      }
 
-      // Update user field
+      // Update user field — this is the critical operation
       if (kind === "avatar") {
         await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
       } else if (kind === "cover") {
