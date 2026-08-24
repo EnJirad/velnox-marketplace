@@ -1,6 +1,6 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-08-23**
+**LAST UPDATED: 2026-08-24**
 
 ---
 
@@ -83,25 +83,40 @@ Each app imports from `@velnox/shared` via a Vite resolve alias that points to `
 - Express server with Helmet, CORS, cookie-parser
 - Google OAuth routes (backend/routes/auth.ts)
 - API routes (backend/routes/index.ts)
+- Upload routes (backend/routes/upload.ts)
 - WebSocket server (backend/realtime/index.ts)
 - Listens on process.env.PORT
 
 ### backend/routes/auth.ts
 - `GET /auth/google` — Initiate Google OAuth flow
 - `GET /auth/google/callback` — Handle Google callback, exchange code, resolve user, set session
-- `GET /api/auth/me` — Get current authenticated user
+- `GET /api/auth/me` — Get current authenticated user (with 30s per-user cache)
 - `POST /api/auth/logout` — Clear session cookie
+
+### backend/routes/upload.ts
+- `POST /api/upload/presign` — Generic R2 presigned URL generation
+- `POST /api/upload/confirm` — Generic upload confirmation
+- `POST /api/customer/profile-image/upload-intent` — Profile image presign (avatar/cover)
+- `POST /api/customer/profile-image/save` — Verify R2 + persist to Neon
+- `PATCH /api/customer/profile-image` — Direct avatar URL update
+- `GET /api/health/r2` — R2 health check
+
+### backend/routes/index.ts
+- Products: `GET /api/products`, `GET /api/products/:id`
+- Categories: `GET /api/categories`
+- Customer Profile: `GET/PUT /api/customer/profile`
+- Addresses: `GET/POST /api/customer/addresses`, `DELETE /api/customer/addresses/:id`
+- Cart, Orders, Shops: placeholder routes
 
 ### backend/middleware/auth.ts
 - JWT session verification from `velnox_session` cookie
 - requireAuth, optionalAuth middleware
 
 ### backend/db/index.ts
-- PostgreSQL pool via pg
-- query helper with slow query logging
-
-### backend/routes/index.ts
-- Products, categories, cart, orders, addresses, shops routes
+- PostgreSQL pool via pg (max: 20, idleTimeout: 30s, connectTimeout: 5s)
+- Shared pool — never creates new pool per request
+- Slow query logging (>500ms)
+- SSL mode: verify-full
 
 ### backend/realtime/index.ts
 - WebSocket server, channel subscriptions, broadcast helper
@@ -112,23 +127,23 @@ Neon PostgreSQL is the ONLY source of truth.
 
 ### Tables by Domain
 
-**Customer:** users, provider_identities, customer_profiles, addresses, carts, cart_items
-**Seller:** sellers, shops, categories, products, product_images, inventory
+**Customer:** users, auth_identities, customer_profiles, addresses, carts, cart_items
+**Seller:** sellers, shops, categories, products, product_images, inventory, seller_settings, seller_analytics
 **Commerce:** orders, order_items, payments, refunds, commissions, settlements, subscriptions
-**Company:** departments, employees, company_settings, audit_logs
+**Company:** departments, employees, company_settings, platform_settings, system_settings, audit_logs, moderation_records
 **Media:** media
 **Analytics:** behavioral_events
 **Notifications:** notifications
 
 ### Key Files
-- db/schema.sql — Complete schema
+- db/schema.sql — Complete schema (source of truth for documentation)
 - db/run-sqleditor.sql — Idempotent bootstrap for Neon SQL Editor
-- db/migrations/ — Sequential migration files
+- db/migrations/ — Sequential migration files (001–009)
 
 ## Authentication
 
 - Google OAuth handled by backend
-- HttpOnly, Secure, SameSite=lax session cookies (`velnox_session`)
+- HttpOnly, Secure, SameSite=none session cookies (`velnox_session`)
 - JWT tokens stored in cookies (NOT localStorage)
 - Backend creates session on successful Google auth
 - Frontend calls `GET /api/auth/me` with `credentials: "include"`
@@ -147,13 +162,13 @@ Neon PostgreSQL is the ONLY source of truth.
 The same person MUST NEVER receive a new user record every time they log in.
 
 ### Identity Resolution Flow (in backend/routes/auth.ts)
-1. Check provider_identities for Google provider_subject
+1. Check auth_identities for Google provider_id
 2. If found → use existing user
 3. If not → normalize email, check users.email
 4. If email exists → link Google identity to existing user
 5. If new → create new user + customer_profile
 
-Database enforces uniqueness on (provider, provider_subject).
+Database enforces uniqueness on (provider, provider_id).
 Email is normalized (trim + lowercase) before comparison.
 
 ### Rules
@@ -161,12 +176,32 @@ Email is normalized (trim + lowercase) before comparison.
 - Use INSERT ... ON CONFLICT or transactional strategy
 - Handle concurrent login requests safely (use database transactions)
 
-## Cloudflare R2
+## Cloudflare R2 — Profile Image Storage
 
-Binary file storage for avatars, covers, product images, documents.
-- Backend generates presigned upload URLs
-- Neon stores media metadata in `media` table
-- Never expose R2 secrets to frontend
+### Fixed Key Strategy (Current)
+Each user has exactly 1 R2 object per image type:
+- Avatar: `profile/avatar/{userId}.webp`
+- Cover: `profile/cover/{userId}.webp`
+
+R2 PUT automatically overwrites the existing object with the same key.
+Images are converted to WebP before upload on the frontend.
+
+### Upload Flow
+1. Frontend calls `/api/customer/profile-image/upload-intent`
+2. Backend generates presigned PUT URL for fixed key
+3. Frontend converts file to WebP, PUTs to R2
+4. Frontend calls `/api/customer/profile-image/save`
+5. Backend verifies R2 object exists, saves media record, updates user table
+6. Backend returns canonical URL
+7. Frontend appends `?v={timestamp}` for cache-busting display
+
+### Cache-Busting
+Database stores canonical URL: `https://pub-xxx.r2.dev/profile/avatar/user.webp`
+Frontend displays: `https://pub-xxx.r2.dev/profile/avatar/user.webp?v=1787612345678`
+`optimizedUrl()` in `packages/shared/src/lib/image-optimize.ts` preserves existing query params.
+
+### Legacy Cleanup
+Old timestamped objects (`profile/cover/{userId}/{timestamp}.webp`) are cleaned up automatically on first upload with the new fixed-key system.
 
 ## Realtime
 
@@ -272,6 +307,7 @@ PORT=3001
 6. R2 stores binaries, Neon stores metadata
 7. All four frontend apps must build independently
 8. Backend is the ONLY server-side gateway
+9. Profile images use deterministic fixed keys (1 object per user per type)
 
 ## Things Future AI Agents MUST NOT Change
 
@@ -284,6 +320,7 @@ PORT=3001
 7. Mix application-specific code between apps
 8. Change the package naming convention (@velnox/shared, @velnox/velshop, etc.)
 9. Replace the @velnox/shared wildcard export pattern
+10. Change profile image R2 key scheme (fixed keys are intentional)
 
 ## Things That MUST Be Updated When Architecture Changes
 
@@ -293,3 +330,42 @@ PORT=3001
 4. db/schema.sql
 5. db/run-sqleditor.sql
 6. README.md
+7. AI_RULES.md
+
+## Recent Work History
+
+### 2026-08-24 — Address Management Fix
+- **Problem:** /addresses save failed with generic error
+- **Root cause:** Frontend called `/api/customer/addresses` but backend had no routes — only placeholder routes at `/api/addresses`
+- **Fix:** Implemented full GET/POST/DELETE routes for `/api/customer/addresses` with field mapping, validation, transaction-safe default address logic, and graceful fallback for missing DB columns
+
+### 2026-08-24 — Profile Image Cache-Busting
+- **Problem:** After uploading new avatar/cover, UI showed old image until page refresh
+- **Root cause:** Fixed R2 keys meant same URL → browser served cached old image. `optimizedUrl()` stripped existing query params.
+- **Fix:** Added `?v={timestamp}` cache-busting to display URLs; fixed `optimizedUrl()` to preserve existing query params; added version state to ShopAccount and ShopProfile
+
+### 2026-08-24 — AI Project Memory
+- Created AI_RULES.md (mandatory development rules)
+- Created INSTALLATION.md (complete setup guide)
+- Created VELNOX_DESIGN_THEME.md (UI/UX design system)
+- Updated schema.sql and run-sqleditor.sql to match actual DB
+
+### 2026-08-23 — Profile Image Upload
+- Implemented deterministic R2 keys: `profile/avatar/{userId}.webp`, `profile/cover/{userId}.webp`
+- Upload flow: upload-intent → presigned URL → WebP conversion → R2 PUT → save → verify → DB update
+- Old timestamped objects cleaned up automatically
+- Media records upserted with ON CONFLICT
+
+## Known Issues
+
+- Neon cold start causes ~1.5s latency on first query after idle period (mitigated with 30s in-memory cache)
+- SSL deprecation warning from pg-connection-string (cosmetic, handled by replacing sslmode=require with sslmode=verify-full)
+
+## Next Tasks
+
+- Cart implementation (currently placeholder routes)
+- Order implementation (currently placeholder routes)
+- Seller dashboard functionality
+- Product image management
+- Search/filter improvements
+- Mobile responsive refinements

@@ -1,6 +1,6 @@
 -- Velnox Marketplace — SQL Editor Bootstrap
 -- Safe to run against an empty or existing Neon database
--- Last updated: 2026-08-23
+-- Last updated: 2026-08-24
 
 -- Extensions (idempotent)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL DEFAULT '',
   avatar TEXT,
+  cover_url TEXT,
   phone TEXT,
   role TEXT NOT NULL DEFAULT 'customer',
   status TEXT NOT NULL DEFAULT 'active',
@@ -21,20 +22,17 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 
-CREATE TABLE IF NOT EXISTS provider_identities (
+CREATE TABLE IF NOT EXISTS auth_identities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   provider VARCHAR(50) NOT NULL,
-  provider_subject VARCHAR(255) NOT NULL,
+  provider_id VARCHAR(255) NOT NULL,
   email TEXT NOT NULL,
-  display_name TEXT,
-  avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (provider, provider_subject),
-  UNIQUE (user_id, provider)
+  UNIQUE (provider, provider_id)
 );
-CREATE INDEX IF NOT EXISTS idx_provider_identities_provider ON provider_identities (provider, provider_subject);
-CREATE INDEX IF NOT EXISTS idx_provider_identities_email ON provider_identities (email);
+CREATE INDEX IF NOT EXISTS idx_auth_identities_provider ON auth_identities (provider, provider_id);
+CREATE INDEX IF NOT EXISTS idx_auth_identities_email ON auth_identities (email);
 
 CREATE TABLE IF NOT EXISTS customer_profiles (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -47,18 +45,20 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
 CREATE TABLE IF NOT EXISTS addresses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  label TEXT NOT NULL DEFAULT '',
-  recipient_name TEXT NOT NULL DEFAULT '',
-  phone TEXT,
+  label TEXT NOT NULL DEFAULT 'Home',
+  full_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
   line1 TEXT NOT NULL,
   line2 TEXT,
+  subdistrict TEXT,
+  district TEXT,
   city TEXT NOT NULL,
-  state TEXT,
-  postal_code TEXT,
+  state TEXT NOT NULL,
+  postal_code TEXT NOT NULL,
   country TEXT NOT NULL DEFAULT 'TH',
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
-  lat DOUBLE PRECISION,
-  lng DOUBLE PRECISION,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -90,10 +90,11 @@ CREATE TABLE IF NOT EXISTS media (
   key TEXT NOT NULL UNIQUE,
   content_type TEXT NOT NULL,
   size INTEGER NOT NULL,
-  uploaded_by UUID,
+  uploaded_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_media_key ON media (key);
+CREATE INDEX IF NOT EXISTS idx_media_owner ON media (uploaded_by);
 
 CREATE TABLE IF NOT EXISTS categories (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -211,8 +212,9 @@ CREATE TABLE IF NOT EXISTS orders (
   user_id UUID NOT NULL REFERENCES users(id),
   shop_id UUID REFERENCES shops(id),
   status TEXT NOT NULL DEFAULT 'pending',
-  total NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'THB',
+  shipping_address_id UUID REFERENCES addresses(id),
   shipping_address JSONB,
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -226,7 +228,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id UUID NOT NULL,
-  product_name TEXT NOT NULL,
+  product_name TEXT NOT NULL DEFAULT '',
   price NUMERIC(12, 2) NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -247,6 +249,7 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE TABLE IF NOT EXISTS refunds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),
+  payment_id UUID REFERENCES payments(id),
   amount NUMERIC(12, 2) NOT NULL,
   reason TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
@@ -273,7 +276,8 @@ CREATE TABLE IF NOT EXISTS settlements (
 CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id),
-  product_id UUID NOT NULL,
+  product_id UUID,
+  seller_id UUID REFERENCES sellers(id),
   shop_id UUID REFERENCES shops(id),
   frequency TEXT NOT NULL DEFAULT 'monthly',
   status TEXT NOT NULL DEFAULT 'active',
@@ -351,7 +355,9 @@ CREATE TABLE IF NOT EXISTS notifications (
   type TEXT NOT NULL,
   title TEXT NOT NULL,
   body TEXT,
+  message TEXT NOT NULL,
   read BOOLEAN NOT NULL DEFAULT FALSE,
+  data JSONB,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -362,7 +368,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id, r
 
 CREATE TABLE IF NOT EXISTS behavioral_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID,
+  user_id UUID REFERENCES users(id),
   session_id TEXT NOT NULL,
   event_type TEXT NOT NULL,
   entity_type TEXT,
