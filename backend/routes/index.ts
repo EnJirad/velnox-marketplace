@@ -4,25 +4,8 @@ import { errorHandler } from "../middleware/error.js";
 import { query } from "../db/index.js";
 
 export function setupRoutes(app: Express): void {
-  // ─── Auth ────────────────────────────────────────────
-  app.get("/api/auth/me", requireAuth, async (req, res) => {
-    try {
-      const result = await query("SELECT id, email, name, avatar, created_at, updated_at FROM users WHERE id = $1", [req.user!.userId]);
-      if (result.rows.length === 0) {
-        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } });
-        return;
-      }
-      const u = result.rows[0]!;
-      res.json({ success: true, data: { user: { id: u.id, email: u.email, name: u.name, avatar: u.avatar, createdAt: u.created_at, updatedAt: u.updated_at } } });
-    } catch (err) {
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch user" } });
-    }
-  });
-
-  app.post("/api/auth/logout", (_req, res) => {
-    res.clearCookie("velnox_session", { path: "/" });
-    res.json({ success: true, data: { success: true } });
-  });
+  // NOTE: /api/auth/me and /api/auth/logout are defined in auth.ts (setupGoogleAuth)
+  // to avoid route conflicts. Do NOT re-define them here.
 
   // ─── Products ────────────────────────────────────────
   app.get("/api/products", optionalAuth, async (req, res) => {

@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
   avatar TEXT,
   cover_url TEXT,
   phone VARCHAR(50),
+  role VARCHAR(50) NOT NULL DEFAULT 'customer',
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

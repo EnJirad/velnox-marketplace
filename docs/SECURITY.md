@@ -35,8 +35,8 @@
 
 - **Presigned URLs** — R2 credentials never exposed to browser
 - **Time-limited** — Upload URLs expire after a short window
-- **Content-Type Validation** — Only allowed image types
-- **Size Limits** — Max 5MB per file
+- **Content-Type Validation** — Only allowed image types (jpeg, png, webp, avif)
+- **Size Limits** — Max 10MB per file
 
 ## Environment Variables
 

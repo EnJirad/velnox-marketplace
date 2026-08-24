@@ -117,8 +117,8 @@ async function resolveUser(google: {
     // 1. Check existing Google provider identity
     const providerResult = await poolClient.query(
       `SELECT u.id FROM users u
-       JOIN provider_identities pi ON pi.user_id = u.id
-       WHERE pi.provider = 'google' AND pi.provider_subject = $1`,
+       JOIN auth_identities ai ON ai.user_id = u.id
+       WHERE ai.provider = 'google' AND ai.provider_id = $1`,
       [google.sub]
     );
 
@@ -144,10 +144,10 @@ async function resolveUser(google: {
       const userId = emailResult.rows[0].id;
       // Link Google identity to existing user
       await poolClient.query(
-        `INSERT INTO provider_identities (id, user_id, provider, provider_subject, email, display_name, avatar_url, created_at)
-         VALUES (gen_random_uuid(), $1, 'google', $2, $3, $4, $5, NOW())
-         ON CONFLICT (provider, provider_subject) DO NOTHING`,
-        [userId, google.sub, google.email, google.name, google.picture]
+        `INSERT INTO auth_identities (id, user_id, provider, provider_id, email, created_at)
+         VALUES (gen_random_uuid(), $1, 'google', $2, $3, NOW())
+         ON CONFLICT (provider, provider_id) DO NOTHING`,
+        [userId, google.sub, google.email]
       );
       // Update name/avatar
       await poolClient.query(
@@ -170,9 +170,9 @@ async function resolveUser(google: {
 
     // Create provider identity
     await poolClient.query(
-      `INSERT INTO provider_identities (id, user_id, provider, provider_subject, email, display_name, avatar_url, created_at)
-       VALUES (gen_random_uuid(), $1, 'google', $2, $3, $4, $5, NOW())`,
-      [userId, google.sub, google.email, google.name, google.picture]
+      `INSERT INTO auth_identities (id, user_id, provider, provider_id, email, created_at)
+       VALUES (gen_random_uuid(), $1, 'google', $2, $3, NOW())`,
+      [userId, google.sub, google.email]
     );
 
     // Create customer profile

@@ -38,9 +38,13 @@ export function ImageUpload({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert("ไฟล์ต้องมีขนาดไม่เกิน 5 MB");
+    const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+    if (!ALLOWED.includes(file.type)) {
+      alert("ไฟล์ต้องเป็น JPEG, PNG, WebP หรือ AVIF เท่านั้น");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert("ไฟล์ต้องมีขนาดไม่เกิน 10 MB");
       return;
     }
 
@@ -97,7 +101,7 @@ export function ImageUpload({
       <input
         ref={fileRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
+        accept="image/jpeg,image/png,image/webp,image/avif"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

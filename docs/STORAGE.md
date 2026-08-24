@@ -65,9 +65,9 @@ R2_PUBLIC_DOMAIN=      — Public URL domain (e.g., pub-xxx.r2.dev)
 - image/jpeg
 - image/png
 - image/webp
-- image/gif
+- image/avif
 
 ## Size Limits
 
-- Maximum file size: 5MB
+- Maximum file size: 10 MB
 - Maximum images per product: 10
