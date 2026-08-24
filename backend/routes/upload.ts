@@ -61,9 +61,16 @@ async function verifyR2Object(key: string): Promise<boolean> {
 // ─── Helper: validate objectKey prefix to prevent user from overwriting others ──
 
 function validateObjectKeyOwnership(objectKey: string, userId: string): boolean {
-  // Object keys must follow: {purpose}/{userId}/... pattern
   const parts = objectKey.split("/");
-  return parts.length >= 2 && parts[1] === userId;
+  // Profile keys: profile/{kind}/{userId}/{timestamp}.{ext}
+  // Generic keys:  {purpose}/{userId}/{timestamp}.{ext}
+  if (parts.length >= 4 && parts[0] === "profile") {
+    return parts[2] === userId;
+  }
+  if (parts.length >= 3) {
+    return parts[1] === userId;
+  }
+  return false;
 }
 
 /**
@@ -229,11 +236,13 @@ export function setupUploadRoutes(app: Express): void {
       }
 
       // Verify ownership — user can only save to their own path
+      r2Log("save", { step: "verify_ownership", userId, objectKey });
       if (!validateObjectKeyOwnership(objectKey, userId)) {
-        r2Log("save", { step: "verify_ownership", status: "denied", objectKey });
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Cannot save to another user's path" } });
+        r2Log("save", { step: "verify_ownership", status: "denied", userId, objectKey });
+        res.status(403).json({ success: false, error: { code: "PROFILE_IMAGE_OWNERSHIP_DENIED", message: "Cannot save to another user's path" } });
         return;
       }
+      r2Log("save", { step: "verify_ownership", status: "passed", userId, kind });
 
       // CRITICAL: Verify object exists in R2 before saving to Neon
       const exists = await verifyR2Object(objectKey);
