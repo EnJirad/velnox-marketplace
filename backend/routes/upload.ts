@@ -172,14 +172,31 @@ export function setupUploadRoutes(app: Express): void {
       if (kind === "avatar") {
         await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
       } else if (kind === "cover") {
-        await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
+        try {
+          await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
+        } catch (coverErr: any) {
+          // cover_url column may not exist yet — silently skip, image is saved to R2
+          if (coverErr?.code !== "42703") throw coverErr;
+        }
       }
 
       // Return updated profile
-      const result = await query(
-        "SELECT id, email, name, avatar, cover_url FROM users WHERE id = $1",
-        [userId]
-      );
+      let result;
+      try {
+        result = await query(
+          "SELECT id, email, name, avatar, cover_url FROM users WHERE id = $1",
+          [userId]
+        );
+      } catch (queryErr: any) {
+        if (queryErr?.code === "42703") {
+          result = await query(
+            "SELECT id, email, name, avatar FROM users WHERE id = $1",
+            [userId]
+          );
+        } else {
+          throw queryErr;
+        }
+      }
       const u = result.rows[0];
 
       res.json({

@@ -96,10 +96,22 @@ export function setupRoutes(app: Express): void {
   // ─── Customer Profile ──────────────────────────────────
   app.get("/api/customer/profile", requireAuth, async (req: Request, res: Response) => {
     try {
-      const result = await query(
-        "SELECT id, email, name, avatar, cover_url, phone, created_at FROM users WHERE id = $1",
-        [req.user!.userId]
-      );
+      let result;
+      try {
+        result = await query(
+          "SELECT id, email, name, avatar, cover_url, phone, created_at FROM users WHERE id = $1",
+          [req.user!.userId]
+        );
+      } catch (queryErr: any) {
+        if (queryErr?.code === "42703") {
+          result = await query(
+            "SELECT id, email, name, avatar, phone, created_at FROM users WHERE id = $1",
+            [req.user!.userId]
+          );
+        } else {
+          throw queryErr;
+        }
+      }
       if (result.rows.length === 0) {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } });
         return;

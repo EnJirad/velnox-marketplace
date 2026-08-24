@@ -299,10 +299,23 @@ export function setupGoogleAuth(app: Express): void {
 
     try {
       const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
-      const result = await query(
-        "SELECT id, email, name, avatar, cover_url, role, status, created_at, updated_at FROM users WHERE id = $1",
-        [payload.userId]
-      );
+      let result;
+      try {
+        result = await query(
+          "SELECT id, email, name, avatar, cover_url, role, status, created_at, updated_at FROM users WHERE id = $1",
+          [payload.userId]
+        );
+      } catch (queryErr: any) {
+        // cover_url column may not exist yet (migration pending)
+        if (queryErr?.code === "42703") {
+          result = await query(
+            "SELECT id, email, name, avatar, role, status, created_at, updated_at FROM users WHERE id = $1",
+            [payload.userId]
+          );
+        } else {
+          throw queryErr;
+        }
+      }
       if (result.rows.length === 0) {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } });
         return;
