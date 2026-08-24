@@ -24,7 +24,7 @@ const SESSION_COOKIE = "velnox_session";
 // Prevents the same slow Neon query from being hit multiple times within a
 // short window (e.g. /api/auth/me + /api/customer/profile on page load).
 const profileCache = new Map<string, { data: any; expires: number }>();
-const PROFILE_CACHE_TTL = 5_000; // 5 seconds
+const PROFILE_CACHE_TTL = 30_000; // 30 seconds — reduces Neon cold-start impact
 
 function getCachedProfile(userId: string): any | null {
   const entry = profileCache.get(userId);
@@ -331,11 +331,13 @@ export function setupGoogleAuth(app: Express): void {
       }
 
       let result;
+      let coverUrl: string | null = null;
       try {
         result = await query(
           "SELECT id, email, name, avatar, cover_url, role, status, created_at, updated_at FROM users WHERE id = $1",
           [payload.userId]
         );
+        coverUrl = result.rows[0]?.cover_url || null;
       } catch (queryErr: any) {
         // cover_url column may not exist yet (migration pending)
         if (queryErr?.code === "42703") {
@@ -352,12 +354,26 @@ export function setupGoogleAuth(app: Express): void {
         return;
       }
       const u = result.rows[0];
+
+      // If cover_url column doesn't exist, retrieve latest cover from media table
+      if (!coverUrl) {
+        try {
+          const coverResult = await query(
+            `SELECT url FROM media
+             WHERE uploaded_by = $1 AND key LIKE $2
+             ORDER BY created_at DESC LIMIT 1`,
+            [payload.userId, `profile/cover/${payload.userId}/%`]
+          );
+          coverUrl = coverResult.rows[0]?.url || null;
+        } catch { /* media table query failed — ignore */ }
+      }
+
       const userData = {
         id: u.id,
         email: u.email,
         name: u.name,
         avatar: u.avatar,
-        coverUrl: u.cover_url || null,
+        coverUrl,
         role: u.role,
         status: u.status,
         createdAt: u.created_at,

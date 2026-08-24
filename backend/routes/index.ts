@@ -6,7 +6,7 @@ import { query } from "../db/index.js";
 // ─── Profile cache for /api/customer/profile (5s TTL) ──────────────────────
 // Avoids repeated slow queries when multiple components mount simultaneously.
 const customerProfileCache = new Map<string, { data: any; expires: number }>();
-const PROFILE_CACHE_TTL = 5_000;
+const PROFILE_CACHE_TTL = 30_000; // 30 seconds — reduces Neon cold-start impact
 
 function getCachedCustomerProfile(userId: string): any | null {
   const entry = customerProfileCache.get(userId);
@@ -109,11 +109,13 @@ export function setupRoutes(app: Express): void {
       }
 
       let result;
+      let coverUrl: string | null = null;
       try {
         result = await query(
           "SELECT id, email, name, avatar, cover_url, phone, created_at FROM users WHERE id = $1",
           [userId]
         );
+        coverUrl = result.rows[0]?.cover_url || null;
       } catch (queryErr: any) {
         if (queryErr?.code === "42703") {
           result = await query(
@@ -129,12 +131,26 @@ export function setupRoutes(app: Express): void {
         return;
       }
       const u = result.rows[0];
+
+      // If cover_url column doesn't exist, retrieve latest cover from media table
+      if (!coverUrl) {
+        try {
+          const coverResult = await query(
+            `SELECT url FROM media
+             WHERE uploaded_by = $1 AND key LIKE $2
+             ORDER BY created_at DESC LIMIT 1`,
+            [userId, `profile/cover/${userId}/%`]
+          );
+          coverUrl = coverResult.rows[0]?.url || null;
+        } catch { /* media table query failed — ignore */ }
+      }
+
       const profileData = {
         name: u.name,
         email: u.email,
         phone: u.phone || null,
         avatarUrl: u.avatar || null,
-        coverUrl: u.cover_url || null,
+        coverUrl,
         memberSince: new Date(u.created_at).getTime(),
       };
 

@@ -1,7 +1,18 @@
 import pg from "pg";
 
+// ─── Fix SSL deprecation warning from pg-connection-string ─────────────────
+// The Neon DATABASE_URL typically includes sslmode=require, which triggers a
+// deprecation warning.  We explicitly set sslmode=verify-full (the secure
+// default) to silence the warning without weakening security.
+let connectionString = process.env.DATABASE_URL ?? "";
+if (connectionString.includes("sslmode=require")) {
+  connectionString = connectionString.replace("sslmode=require", "sslmode=verify-full");
+} else if (!connectionString.includes("sslmode=")) {
+  connectionString += connectionString.includes("?") ? "&sslmode=verify-full" : "?sslmode=verify-full";
+}
+
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,

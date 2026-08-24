@@ -378,11 +378,19 @@ export function setupUploadRoutes(app: Express): void {
 
       r2Log("save", { step: "save_neon", status: "success" });
 
+      // Return the URL we already computed — don't rely solely on the DB
+      // re-query, because the cover_url column may not exist yet (migration
+      // pending).  For avatar the re-query is fine; for cover we fall back to
+      // the URL we just uploaded.
+      const coverUrl = kind === "cover"
+        ? (u?.cover_url || url)   // column may be missing — use the fresh URL
+        : (u?.cover_url || null);
+
       res.json({
         success: true,
         data: {
-          avatarUrl: u?.avatar || null,
-          coverUrl: u?.cover_url || null,
+          avatarUrl: kind === "avatar" ? (u?.avatar || url) : (u?.avatar || null),
+          coverUrl,
         },
       });
     } catch (err) {
