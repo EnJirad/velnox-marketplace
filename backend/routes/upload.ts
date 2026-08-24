@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
@@ -58,6 +58,36 @@ async function verifyR2Object(key: string): Promise<boolean> {
   }
 }
 
+// ─── R2 Object Deletion ─────────────────────────────────────────────────────
+
+async function deleteR2Object(key: string): Promise<boolean> {
+  try {
+    await R2.send(
+      new DeleteObjectCommand({ Bucket: BUCKET, Key: key })
+    );
+    r2Log("cleanup", { key, status: "deleted" });
+    return true;
+  } catch (err) {
+    r2Log("cleanup", { key, status: "failed", error: String(err) });
+    return false;
+  }
+}
+
+// ─── Extract R2 objectKey from public URL ───────────────────────────────────
+
+function objectKeyFromUrl(url: string): string | null {
+  if (!url || !PUBLIC_DOMAIN) return null;
+  // URLs look like: https://pub-xxx.r2.dev/profile/avatar/userId/123.webp
+  // or: https://custom-domain.com/profile/avatar/userId/123.webp
+  const prefix = PUBLIC_DOMAIN.replace(/\/+$/, "");
+  if (url.startsWith(prefix + "/")) {
+    return url.slice(prefix.length + 1);
+  }
+  // If URL is just the object key (no domain prefix)
+  if (!url.startsWith("http")) return url;
+  return null;
+}
+
 // ─── Helper: validate objectKey prefix to prevent user from overwriting others ──
 
 function validateObjectKeyOwnership(objectKey: string, userId: string): boolean {
@@ -71,6 +101,51 @@ function validateObjectKeyOwnership(objectKey: string, userId: string): boolean 
     return parts[1] === userId;
   }
   return false;
+}
+
+/**
+ * Get the current image URL for a user + kind from the database.
+ */
+async function getCurrentImageUrl(userId: string, kind: string): Promise<string | null> {
+  try {
+    if (kind === "avatar") {
+      const result = await query("SELECT avatar FROM users WHERE id = $1", [userId]);
+      return result.rows[0]?.avatar || null;
+    } else if (kind === "cover") {
+      // Try with cover_url column; if missing, return null gracefully
+      try {
+        const result = await query("SELECT cover_url FROM users WHERE id = $1", [userId]);
+        return result.rows[0]?.cover_url || null;
+      } catch (err: any) {
+        if (err?.code === "42703") return null; // column doesn't exist yet
+        throw err;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Safely clean up old R2 objects when a new image replaces the current one.
+ * Only deletes objects that belong to the authenticated user.
+ */
+async function cleanupOldImage(userId: string, kind: string, currentUrl: string | null): Promise<void> {
+  if (!currentUrl) return;
+
+  const oldKey = objectKeyFromUrl(currentUrl);
+  if (!oldKey) return;
+
+  // Safety: only delete objects under this user's prefix
+  if (!validateObjectKeyOwnership(oldKey, userId)) {
+    r2Log("cleanup", { kind, status: "skipped", reason: "old_key_not_owned_by_user", oldKey });
+    return;
+  }
+
+  // Don't delete the same object we just uploaded
+  // (caller passes the new URL separately)
+  await deleteR2Object(oldKey);
 }
 
 /**
@@ -148,6 +223,9 @@ export function setupUploadRoutes(app: Express): void {
 
       const publicUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
 
+      // Get old image URL BEFORE updating (for cleanup)
+      const oldUrl = await getCurrentImageUrl(userId, purpose);
+
       // Save media record — production schema: url, key, content_type, size, uploaded_by
       let mediaId: string | null = null;
       try {
@@ -169,8 +247,13 @@ export function setupUploadRoutes(app: Express): void {
         try {
           await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [publicUrl, userId]);
         } catch (coverErr: any) {
-          if (coverErr?.code !== "42703") throw coverErr; // column doesn't exist yet
+          if (coverErr?.code !== "42703") throw coverErr;
         }
+      }
+
+      // Cleanup old R2 object AFTER new one is saved (non-fatal if fails)
+      if (oldUrl && oldUrl !== publicUrl) {
+        await cleanupOldImage(userId, purpose, oldUrl).catch(() => {});
       }
 
       res.json({
@@ -240,7 +323,7 @@ export function setupUploadRoutes(app: Express): void {
       }
 
       // Verify ownership — user can only save to their own path
-      r2Log("save", { step: "verify_ownership", userId, objectKey });
+      r2Log("save", { step: "verify_ownership", userId, kind });
       if (!validateObjectKeyOwnership(objectKey, userId)) {
         r2Log("save", { step: "verify_ownership", status: "denied", userId, objectKey });
         res.status(403).json({ success: false, error: { code: "PROFILE_IMAGE_OWNERSHIP_DENIED", message: "Cannot save to another user's path" } });
@@ -257,6 +340,9 @@ export function setupUploadRoutes(app: Express): void {
       }
 
       r2Log("save", { step: "save_neon", kind, objectKey, size: bytes || 0 });
+
+      // Get current image URL BEFORE updating (for old object cleanup)
+      const oldUrl = await getCurrentImageUrl(userId, kind);
 
       // Save media record — production schema: url, key, content_type, size, uploaded_by
       // key has UNIQUE constraint; wrapped in try/catch so avatar update still works
@@ -280,6 +366,12 @@ export function setupUploadRoutes(app: Express): void {
         } catch (coverErr: any) {
           if (coverErr?.code !== "42703") throw coverErr; // column doesn't exist yet
         }
+      }
+
+      // Cleanup old R2 object AFTER new one is safely saved
+      if (oldUrl && oldUrl !== url) {
+        r2Log("save", { step: "cleanup_old", kind, oldUrl: "<redacted>" });
+        await cleanupOldImage(userId, kind, oldUrl).catch(() => {});
       }
 
       // Return updated profile
