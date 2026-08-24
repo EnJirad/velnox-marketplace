@@ -28,6 +28,7 @@ export function invalidateCustomerProfileCache(userId: string): void {
 // Uses ALTER TABLE IF NOT EXISTS where available, or checks and adds.
 async function ensureAddressColumns(): Promise<void> {
   const columnsToAdd = [
+    { name: "recipient_name", def: "VARCHAR(255) NOT NULL DEFAULT ''" },
     { name: "subdistrict", def: "VARCHAR(100)" },
     { name: "district", def: "VARCHAR(100)" },
     { name: "latitude", def: "DOUBLE PRECISION" },
@@ -266,7 +267,7 @@ export function setupRoutes(app: Express): void {
       let result;
       try {
         result = await query(
-          `SELECT id, label, full_name, phone, line1, line2, city, state, postal_code,
+          `SELECT id, label, recipient_name, phone, line1, line2, city, state, postal_code,
                   country, is_default, subdistrict, district, latitude, longitude,
                   created_at, updated_at
            FROM addresses WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC`,
@@ -276,7 +277,7 @@ export function setupRoutes(app: Express): void {
         // If a column doesn't exist (42703), fall back to base columns
         if (colErr?.code === "42703") {
           result = await query(
-            `SELECT id, label, full_name, phone, line1, line2, city, state, postal_code,
+            `SELECT id, label, recipient_name, phone, line1, line2, city, state, postal_code,
                     country, is_default, created_at, updated_at
              FROM addresses WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC`,
             [userId]
@@ -289,7 +290,7 @@ export function setupRoutes(app: Express): void {
       const addresses = result.rows.map((r: Record<string, unknown>) => ({
         id: r.id,
         label: r.label || "Home",
-        recipientName: r.full_name || "",
+        recipientName: r.recipient_name || "",
         phone: r.phone || "",
         line1: r.line1 || "",
         line2: r.line2 || null,
@@ -399,7 +400,7 @@ export function setupRoutes(app: Express): void {
         try {
           await query(
             `UPDATE addresses SET
-               label = $1, full_name = $2, phone = $3, line1 = $4, line2 = $5,
+               label = $1, recipient_name = $2, phone = $3, line1 = $4, line2 = $5,
                subdistrict = $6, district = $7, city = $6, state = $8,
                postal_code = $9, country = $10, is_default = $11,
                latitude = $12, longitude = $13, updated_at = NOW()
@@ -417,7 +418,7 @@ export function setupRoutes(app: Express): void {
             // One of the new columns doesn't exist — update only base columns
             await query(
               `UPDATE addresses SET
-                 label = $1, full_name = $2, phone = $3, line1 = $4, line2 = $5,
+                 label = $1, recipient_name = $2, phone = $3, line1 = $4, line2 = $5,
                  city = $6, state = $7,
                  postal_code = $8, country = $9, is_default = $10,
                  updated_at = NOW()
@@ -449,7 +450,7 @@ export function setupRoutes(app: Express): void {
         try {
           result = await query(
             `INSERT INTO addresses
-               (user_id, label, full_name, phone, line1, line2,
+               (user_id, label, recipient_name, phone, line1, line2,
                 subdistrict, district, city, state,
                 postal_code, country, is_default, latitude, longitude)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
@@ -466,7 +467,7 @@ export function setupRoutes(app: Express): void {
             // Optional columns don't exist — insert with base columns only
             result = await query(
               `INSERT INTO addresses
-                 (user_id, label, full_name, phone, line1, line2,
+                 (user_id, label, recipient_name, phone, line1, line2,
                   city, state, postal_code, country, is_default)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                RETURNING id`,

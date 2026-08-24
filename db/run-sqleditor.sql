@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS addresses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   label TEXT NOT NULL DEFAULT 'Home',
-  full_name TEXT NOT NULL,
+  recipient_name TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL,
   line1 TEXT NOT NULL,
   line2 TEXT,
