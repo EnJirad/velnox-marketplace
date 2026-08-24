@@ -17,6 +17,7 @@ import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useAction } from "@velnox/shared/lib/api-routes";
+import { AvatarImage } from "@velnox/shared/components/ui/avatar-image";
 import {
   Bell,
   CalendarDays,
@@ -33,9 +34,19 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { toast } from "sonner";
+
+/**
+ * Append a cache-busting ?v= param to force the browser to refetch.
+ * Database stores the canonical URL without ?v=; this param is display-only.
+ */
+function bust(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const clean = url.replace(/[?&]v=\d+/, "").replace(/\?$/, "");
+  return `${clean}?v=${Date.now()}`;
+}
 
 /**
  * ShopProfile — customer profile page.
@@ -124,8 +135,18 @@ export default function ShopProfile() {
   const displayName = profile?.name ?? user?.name ?? user?.email ?? "";
   const displayEmail = profile?.email ?? user?.email ?? "";
   const memberSince = profile?.memberSince ?? null;
-  const avatarSrc = profile?.avatarUrl ?? user?.avatarUrl ?? user?.image ?? null;
-  const coverSrc = profile?.coverUrl ?? user?.coverUrl ?? null;
+
+  // Use cache-busted URLs so the browser always fetches the latest image
+  // when navigating to this page (e.g. after uploading a new avatar/cover
+  // on the Account page). The database stores canonical URLs without ?v=.
+  const avatarSrc = useMemo(
+    () => bust(profile?.avatarUrl ?? user?.avatarUrl ?? user?.image ?? null),
+    [profile?.avatarUrl, user?.avatarUrl, user?.image],
+  );
+  const coverSrc = useMemo(
+    () => bust(profile?.coverUrl ?? user?.coverUrl ?? null),
+    [profile?.coverUrl, user?.coverUrl],
+  );
 
   const formatMemberSince = (ms: number) =>
     new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "long", year: "numeric" }).format(
@@ -154,7 +175,7 @@ export default function ShopProfile() {
           </div>
         ) : isAuthenticated ? (
           <>
-            {/* Identity header — cover · avatar · name/email · edit link */}
+            {/* Identity header — cover · avatar · name/email */}
             <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
               {/* Cover */}
               <div className="relative h-40 bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399] sm:h-44">
@@ -175,13 +196,12 @@ export default function ShopProfile() {
                         : "bg-[#ECFDF5] text-3xl font-bold text-[#10B981]"
                     }`}
                   >
-                    {/* AvatarImage was removed — using plain img for simplicity.
-                        Avatar editing is in Account page. */}
                     {avatarSrc ? (
-                      <img
+                      <AvatarImage
                         src={avatarSrc}
                         alt={t("profile.avatarAlt", { name: displayName || "VelShop" })}
                         className="size-full object-cover"
+                        fallback={<>{(displayName || "?").slice(0, 1).toUpperCase()}</>}
                       />
                     ) : (
                       <>{(displayName || "?").slice(0, 1).toUpperCase()}</>

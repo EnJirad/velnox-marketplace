@@ -37,15 +37,21 @@ export function optimizedUrl(
 
   // r2.dev subdomains cannot be proxied through Cloudflare Image Resizing.
   // Only append transform params when a custom domain is in use.
+  // However, still preserve existing query params (e.g. cache-bust ?v=...)
+  // so the browser treats the URL as a different resource.
   if (originalUrl.includes(".r2.dev/")) return originalUrl;
 
-  const params = new URLSearchParams();
-  if (opts.width) params.set("width", String(opts.width));
-  if (opts.format) params.set("format", opts.format);
-  if (opts.quality) params.set("q", String(opts.quality));
+  // Preserve existing query parameters (e.g. ?v=12345) and merge new ones.
+  const qIndex = originalUrl.indexOf("?");
+  const base = qIndex >= 0 ? originalUrl.slice(0, qIndex) : originalUrl;
+  const existing = new URLSearchParams(qIndex >= 0 ? originalUrl.slice(qIndex + 1) : "");
 
-  const qs = params.toString();
-  return qs ? `${originalUrl}?${qs}` : originalUrl;
+  if (opts.width) existing.set("width", String(opts.width));
+  if (opts.format) existing.set("format", opts.format);
+  if (opts.quality) existing.set("q", String(opts.quality));
+
+  const qs = existing.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
 /**

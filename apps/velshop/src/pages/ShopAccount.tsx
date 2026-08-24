@@ -45,6 +45,9 @@ export default function ShopAccount() {
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
+  // Version timestamps for cache-busting after upload
+  const [avatarVersion, setAvatarVersion] = useState<number>(0);
+  const [coverVersion, setCoverVersion] = useState<number>(0);
 
   useEffect(() => {
     let alive = true;
@@ -88,7 +91,7 @@ export default function ShopAccount() {
       toast.error(t("account.nameError"));
       return;
     }
-    if (phone.trim() && !/^[0-9+\-\\s()]{6,20}$/.test(phone.trim())) {
+    if (phone.trim() && !/^[0-9+\-\s()]{6,20}$/.test(phone.trim())) {
       toast.error(t("account.phoneError"));
       return;
     }
@@ -123,11 +126,13 @@ export default function ShopAccount() {
 
   const handleAvatarUploaded = (url: string) => {
     setProfile((prev) => (prev ? { ...prev, avatarUrl: url || prev.avatarUrl } : prev));
+    setAvatarVersion(Date.now());
     toast.success(t("profile.avatarUpdated"));
   };
 
   const handleCoverUploaded = (url: string) => {
     setProfile((prev) => (prev ? { ...prev, coverUrl: url || prev.coverUrl } : prev));
+    setCoverVersion(Date.now());
     toast.success(t("profile.coverUpdated"));
   };
 

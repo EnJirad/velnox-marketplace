@@ -46,6 +46,18 @@ function classifyFetchError(err: unknown): string {
   return `TypeError: ${msg}`;
 }
 
+/**
+ * Append a cache-busting version query param to a URL.
+ * Database always stores the canonical URL without ?v=.
+ * This ?v= param is only for frontend display/cache invalidation.
+ */
+function cacheBust(url: string): string {
+  const version = Date.now();
+  // Strip any existing ?v= from a previous version
+  const clean = url.replace(/[?&]v=\d+/, "").replace(/\?$/, "");
+  return `${clean}?v=${version}`;
+}
+
 interface ProfileImageUploadProps {
   kind: "avatar" | "cover";
   /** Called with the new URL after a successful upload. */
@@ -300,7 +312,12 @@ export function ProfileImageUpload({
 
           if (url) {
             r2cLog("complete", { status: "success", kind, urlLength: url.length });
-            onUploaded(url);
+
+            // Append a cache-busting ?v= param so the browser/CDN
+            // fetches the fresh image instead of serving the cached old one.
+            // The database still stores the canonical URL without ?v=.
+            const displayUrl = cacheBust(url);
+            onUploaded(displayUrl);
 
             // Invalidate frontend GET cache so next profile fetch gets fresh data
             invalidateProfileCache();
