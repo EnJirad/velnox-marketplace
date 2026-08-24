@@ -1,6 +1,6 @@
 import { api } from "@velnox/shared/lib/api-routes";
 import { compressImage, getOptimizedExtension } from "@velnox/shared/lib/image-optimize";
-import { useAction, useMutation } from "@velnox/shared/lib/api-routes";
+import { useAction, useMutation, invalidateProfileCache } from "@velnox/shared/lib/api-routes";
 import { refetchCurrentUser } from "@velnox/shared/lib/api-client";
 import { useLanguage } from "@/lib/i18n";
 import { Loader2 } from "lucide-react";
@@ -302,6 +302,8 @@ export function ProfileImageUpload({
             r2cLog("complete", { status: "success", kind, urlLength: url.length });
             onUploaded(url);
 
+            // Invalidate frontend GET cache so next profile fetch gets fresh data
+            invalidateProfileCache();
             // Refetch global auth state so /api/auth/me returns the
             // new avatar/coverUrl. This ensures ShopProfile.coverSrc
             // (which falls back to user.coverUrl) updates immediately.

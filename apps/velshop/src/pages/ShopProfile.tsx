@@ -34,7 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { toast } from "sonner";
 
 /**
@@ -75,7 +75,9 @@ export default function ShopProfile() {
   } | null>(null);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const location = useLocation();
 
+  // Re-fetch profile when navigating back to this page (e.g. from Account after upload)
   useEffect(() => {
     if (!isAuthenticated) return;
     let alive = true;
@@ -105,7 +107,7 @@ export default function ShopProfile() {
     return () => {
       alive = false;
     };
-  }, [myProfile, isAuthenticated]);
+  }, [myProfile, isAuthenticated, location.pathname]);
 
   const handleSignOut = async () => {
     setSigningOut(true);

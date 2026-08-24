@@ -311,6 +311,12 @@ function createApiProxy(path: string): any {
   });
 }
 
+/** Invalidate the frontend GET cache. Call after mutations that change profile data. */
+export function invalidateProfileCache() {
+  invalidateGetCache("/api/customer/profile");
+  invalidateGetCache("/api/auth/me");
+}
+
 export const api = new Proxy({} as any, {
   get(_target, prop) {
     return createApiProxy(`api.${String(prop)}`);
