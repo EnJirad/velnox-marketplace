@@ -78,13 +78,10 @@ async function deleteR2Object(key: string): Promise<boolean> {
 
 function objectKeyFromUrl(url: string): string | null {
   if (!url || !PUBLIC_DOMAIN) return null;
-  // URLs look like: https://pub-xxx.r2.dev/profile/avatar/userId/123.webp
-  // or: https://custom-domain.com/profile/avatar/userId/123.webp
   const prefix = PUBLIC_DOMAIN.replace(/\/+$/, "");
   if (url.startsWith(prefix + "/")) {
     return url.slice(prefix.length + 1);
   }
-  // If URL is just the object key (no domain prefix)
   if (!url.startsWith("http")) return url;
   return null;
 }
@@ -93,15 +90,46 @@ function objectKeyFromUrl(url: string): string | null {
 
 function validateObjectKeyOwnership(objectKey: string, userId: string): boolean {
   const parts = objectKey.split("/");
-  // Profile keys: profile/{kind}/{userId}/{timestamp}.{ext}
-  // Generic keys:  {purpose}/{userId}/{timestamp}.{ext}
-  if (parts.length >= 4 && parts[0] === "profile") {
-    return parts[2] === userId;
-  }
-  if (parts.length >= 3) {
-    return parts[1] === userId;
+  // New fixed keys:  profile/{kind}/{userId}.webp  (3 parts, userId.webp in index 2)
+  // Old timestamped: profile/{kind}/{userId}/{ts}.webp (4 parts, userId in index 2)
+  if (parts.length >= 3 && parts[0] === "profile") {
+    const candidate = parts[2];
+    if (candidate === userId) return true; // old scheme: profile/avatar/userId/...
+    if (candidate && candidate.endsWith(userId)) return true; // new scheme: profile/avatar/userId.webp
   }
   return false;
+}
+
+/**
+ * Clean up old timestamped R2 objects for a user + kind.
+ * When we switch to fixed keys, old objects like profile/cover/userId/123.webp
+ * remain in R2. This removes them.
+ */
+async function cleanupOldTimestampedObjects(userId: string, kind: string): Promise<void> {
+  const prefix = `profile/${kind}/${userId}/`;
+  try {
+    const listed = await R2.send(
+      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix, MaxKeys: 100 })
+    );
+    const objects = listed.Contents || [];
+    if (objects.length === 0) return;
+
+    r2Log("cleanup_old_timestamped", {
+      kind,
+      count: objects.length,
+      status: "started",
+    });
+
+    for (const obj of objects) {
+      if (obj.Key) {
+        await deleteR2Object(obj.Key);
+      }
+    }
+
+    r2Log("cleanup_old_timestamped", { kind, status: "done" });
+  } catch (err) {
+    r2Log("cleanup_old_timestamped", { kind, status: "failed", error: String(err) });
+  }
 }
 
 /**
@@ -128,50 +156,39 @@ async function getCurrentImageUrl(userId: string, kind: string): Promise<string 
 }
 
 /**
- * Safely clean up old R2 objects when a new image replaces the current one.
- * Includes race-condition protection: re-checks DB before deleting.
+ * Clean up old timestamped R2 objects left over from the old key scheme.
+ * Called once per user+kind on their first upload with the new fixed-key system.
  */
-async function cleanupOldImage(userId: string, kind: string, oldUrl: string): Promise<void> {
-  const oldKey = objectKeyFromUrl(oldUrl);
-  if (!oldKey) {
-    r2Log("cleanup_old", { kind, status: "skipped", reason: "cannot_extract_object_key" });
-    return;
+async function cleanupLegacyObjects(userId: string, kind: string): Promise<void> {
+  // Check if old timestamped objects exist under prefix profile/{kind}/{userId}/
+  try {
+    const listed = await R2.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: `profile/${kind}/${userId}/`,
+        MaxKeys: 1,
+      })
+    );
+    if ((listed.KeyCount ?? 0) > 0) {
+      await cleanupOldTimestampedObjects(userId, kind);
+    }
+  } catch {
+    // Non-fatal — old objects are harmless but wasteful
   }
-
-  if (!validateObjectKeyOwnership(oldKey, userId)) {
-    r2Log("cleanup_old", { kind, status: "skipped", reason: "not_owned_by_user" });
-    return;
-  }
-
-  // Race-condition protection: re-verify that the DB still points to this URL.
-  // If another upload happened between our read and this cleanup, the DB now
-  // points to a newer URL and we must NOT delete what the DB is currently using.
-  const currentUrl = await getCurrentImageUrl(userId, kind);
-  if (currentUrl && currentUrl !== oldUrl) {
-    r2Log("cleanup_old", {
-      kind,
-      status: "skipped",
-      reason: "db_changed_since_read",
-    });
-    return;
-  }
-
-  await deleteR2Object(oldKey);
 }
 
 /**
  * Clean up stale media records for the same user + kind.
- * Keeps only the most recent record; deletes older ones.
+ * Since we now use a fixed key, only 1 media record should exist per user+kind.
  */
 async function cleanupStaleMediaRecords(userId: string, kind: string, keepKey: string): Promise<void> {
   try {
-    // Delete all media records for this user + kind EXCEPT the one we just created
     const result = await query(
       `DELETE FROM media
        WHERE uploaded_by = $1
          AND key LIKE $2
          AND key != $3`,
-      [userId, `profile/${kind}/${userId}/%`, keepKey]
+      [userId, `profile/${kind}/${userId}%`, keepKey]
     );
     const deleted = result.rowCount ?? 0;
     if (deleted > 0) {
@@ -180,14 +197,6 @@ async function cleanupStaleMediaRecords(userId: string, kind: string, keepKey: s
   } catch (err) {
     r2Log("cleanup_media", { kind, status: "failed", error: String(err) });
   }
-}
-
-/**
- * If a newly uploaded R2 object is orphaned (DB save failed), delete it.
- */
-async function cleanupOrphanR2Object(userId: string, kind: string, objectKey: string): Promise<void> {
-  if (!validateObjectKeyOwnership(objectKey, userId)) return;
-  await deleteR2Object(objectKey);
 }
 
 /**
@@ -209,10 +218,9 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      const ext = filename.split(".").pop() || "jpg";
       const userId = req.user!.userId;
-      const timestamp = Date.now();
-      const objectKey = `${purpose}/${userId}/${timestamp}.${ext}`;
+      // Fixed key — R2 PUT overwrites automatically
+      const objectKey = `${purpose}/${userId}.webp`;
 
       r2Log("presign", { step: "presign", purpose, objectKey, mimeType: contentType });
 
@@ -262,17 +270,13 @@ export function setupUploadRoutes(app: Express): void {
       }
 
       const publicUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
-      const oldUrl = await getCurrentImageUrl(userId, purpose);
 
-      let mediaId: string | null = null;
       try {
-        const mediaResult = await query(
+        await query(
           `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
-           VALUES ($1, $2, 'image', 0, $3, NOW())
-           RETURNING id`,
+           VALUES ($1, $2, 'image', 0, $3, NOW())`,
           [publicUrl, objectKey, userId]
         );
-        mediaId = mediaResult.rows[0]?.id ?? null;
       } catch (mediaErr: any) {
         r2Log("confirm", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
       }
@@ -287,18 +291,14 @@ export function setupUploadRoutes(app: Express): void {
         }
       }
 
-      // Invalidate auth/me profile cache so next request returns fresh data
       invalidateCachedProfile(userId);
 
-      // Cleanup old R2 object + stale media records
-      if (oldUrl && oldUrl !== publicUrl) {
-        await cleanupOldImage(userId, purpose, oldUrl).catch(() => {});
-      }
+      // Cleanup stale media records
       await cleanupStaleMediaRecords(userId, purpose, objectKey).catch(() => {});
 
       res.json({
         success: true,
-        data: { id: mediaId, url: publicUrl },
+        data: { id: null, url: publicUrl },
       });
     } catch (err) {
       r2Log("confirm", { step: "confirm", status: "failed", error: String(err) });
@@ -317,9 +317,8 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      const ext = (filename || "image.jpg").split(".").pop() || "jpg";
-      const timestamp = Date.now();
-      const objectKey = `profile/${kind}/${userId}/${timestamp}.${ext}`;
+      // Fixed key — R2 PUT overwrites automatically
+      const objectKey = `profile/${kind}/${userId}.webp`;
 
       r2Log("intent", { step: "presign", kind, objectKey, mimeType, bucket: !!BUCKET });
 
@@ -333,6 +332,9 @@ export function setupUploadRoutes(app: Express): void {
       const cdnUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
 
       r2Log("intent", { step: "presign", status: "success" });
+
+      // Cleanup any old timestamped objects from the legacy key scheme
+      cleanupLegacyObjects(userId, kind).catch(() => {});
 
       res.json({
         success: true,
@@ -379,11 +381,7 @@ export function setupUploadRoutes(app: Express): void {
 
       r2Log("save", { step: "save_neon", kind, objectKey, size: bytes || 0 });
 
-      // Read current URL BEFORE updating — used for cleanup after success
-      const oldUrl = await getCurrentImageUrl(userId, kind);
-
       // ── Database save ────────────────────────────────────────────────
-      let dbSaveFailed = false;
 
       // 1. Insert media record (audit trail)
       try {
@@ -393,7 +391,8 @@ export function setupUploadRoutes(app: Express): void {
           [url, objectKey, `image/${format || "jpeg"}`, bytes || 0, userId]
         );
       } catch (mediaErr: any) {
-        r2Log("save", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
+        // Duplicate key = same fixed object re-uploaded — expected, not an error
+        r2Log("save", { step: "media_record", status: mediaErr?.code === "23505" ? "updated" : "skipped", error: mediaErr?.code || String(mediaErr) });
       }
 
       // 2. Update user profile reference
@@ -408,12 +407,7 @@ export function setupUploadRoutes(app: Express): void {
           }
         }
       } catch (profileErr) {
-        dbSaveFailed = true;
         r2Log("save", { step: "save_neon", status: "failed", error: String(profileErr) });
-
-        // DB save failed — clean up the newly uploaded R2 object (orphan prevention)
-        await cleanupOrphanR2Object(userId, kind, objectKey).catch(() => {});
-
         res.status(500).json({ success: false, error: { code: "IMAGE_SAVE_FAILED", message: "Failed to save image metadata" } });
         return;
       }
@@ -421,15 +415,7 @@ export function setupUploadRoutes(app: Express): void {
       // 3. DB save succeeded — invalidate cache
       invalidateCachedProfile(userId);
 
-      // 4. Cleanup old R2 object + stale media records (after DB is safely updated)
-      if (oldUrl && oldUrl !== url) {
-        r2Log("save", { step: "cleanup_old", kind, status: "started" });
-        await cleanupOldImage(userId, kind, oldUrl).catch((err) => {
-          r2Log("save", { step: "cleanup_old", kind, status: "failed", error: String(err) });
-        });
-      }
-
-      // Cleanup stale media records for same user+kind
+      // 4. Cleanup stale media records for same user+kind
       await cleanupStaleMediaRecords(userId, kind, objectKey).catch(() => {});
 
       r2Log("save", { step: "save_neon", status: "success" });
@@ -453,12 +439,8 @@ export function setupUploadRoutes(app: Express): void {
       }
       const u = result.rows[0];
 
-      // Return the URL we already computed — don't rely solely on the DB
-      // re-query, because the cover_url column may not exist yet (migration
-      // pending).  For avatar the re-query is fine; for cover we fall back to
-      // the URL we just uploaded.
       const coverUrl = kind === "cover"
-        ? (u?.cover_url || url)   // column may be missing — use the fresh URL
+        ? (u?.cover_url || url)
         : (u?.cover_url || null);
 
       res.json({
@@ -501,7 +483,6 @@ export function setupUploadRoutes(app: Express): void {
     }
 
     try {
-      const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
       await R2.send(new ListObjectsV2Command({ Bucket: BUCKET, MaxKeys: 1 }));
       res.json({ configured: true, bucket: true, verify: true });
     } catch {

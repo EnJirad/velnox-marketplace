@@ -7,8 +7,8 @@
  * 2. Client-side compression — compress large images before upload to reduce
  *    initial payload (browser → R2).
  *
- * R2 public URLs are immutable (UUID-based objectKey) so they can be cached
- * indefinitely with `Cache-Control: public, max-age=31536000, immutable`.
+ * All profile images are always converted to WebP before upload.
+ * R2 object keys are deterministic: profile/{kind}/{userId}.webp
  */
 
 // ---------------------------------------------------------------------------
@@ -85,25 +85,21 @@ export function coverSrcSet(originalUrl: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Compress a large image file using canvas before uploading to R2.
+ * Compress an image file and ALWAYS convert to WebP before uploading to R2.
  *
  * Strategy:
- * - Avatars: resize to max 512×512, JPEG quality 85, output JPEG/WebP
- * - Covers:  resize to max 1920×1080, JPEG quality 80, output JPEG/WebP
+ * - Avatars: resize to max 512×512, WebP quality 85
+ * - Covers:  resize to max 1920×1080, WebP quality 80
  *
- * Skips compression if the file is already small enough (<threshold).
- * Returns the original file if compression fails or is unnecessary.
+ * Always outputs WebP. Returns the original file only if canvas/image decoding
+ * is not available in the browser.
  */
 export async function compressImage(
   file: File,
   kind: "avatar" | "cover",
   opts: { maxBytes?: number; quality?: number } = {},
 ): Promise<File> {
-  const threshold = opts.maxBytes ?? (kind === "avatar" ? 200_000 : 500_000); // 200KB / 500KB
   const quality = opts.quality ?? (kind === "avatar" ? 0.85 : 0.80);
-
-  // Already small enough — skip
-  if (file.size <= threshold) return file;
 
   // Max dimensions per kind
   const maxW = kind === "avatar" ? 512 : 1920;
@@ -120,12 +116,6 @@ export async function compressImage(
       h = Math.round(h * scale);
     }
 
-    // If original is already small dimensions, don't upscale
-    if (w >= bitmap.width && h >= bitmap.height) {
-      bitmap.close();
-      return file;
-    }
-
     const canvas = new OffscreenCanvas(w, h);
     const ctx = canvas.getContext("2d");
     if (!ctx) { bitmap.close(); return file; }
@@ -133,17 +123,13 @@ export async function compressImage(
     ctx.drawImage(bitmap, 0, 0, w, h);
     bitmap.close();
 
-    // Try WebP first (better compression), fall back to JPEG
-    const outputType = "image/webp";
-    const blob = await canvas.convertToBlob({ type: outputType, quality });
-    if (blob.size >= file.size) {
-      // Compression didn't help — use original
-      return file;
-    }
+    // Always output WebP
+    const blob = await canvas.convertToBlob({ type: "image/webp", quality });
 
-    const ext = outputType === "image/webp" ? "webp" : "jpg";
+    // If WebP is larger than original (rare for photos), still use WebP
+    // to maintain the deterministic key structure and consistent format.
     const baseName = file.name.replace(/\.[^.]+$/, "");
-    return new File([blob], `${baseName}.${ext}`, { type: outputType });
+    return new File([blob], `${baseName}.webp`, { type: "image/webp" });
   } catch {
     // Canvas/ImageBitmap not supported or image decode failed — use original
     return file;
@@ -151,12 +137,10 @@ export async function compressImage(
 }
 
 /**
- * Get the objectKey extension for a compressed file.
- * If the file was compressed to WebP, returns "webp".
- * Otherwise preserves the original extension.
+ * Get the file extension for an optimized file.
+ * Profile images are always WebP after compression.
  */
 export function getOptimizedExtension(file: File): string {
   if (file.type === "image/webp") return "webp";
-  if (file.type === "image/avif") return "avif";
-  return file.name.split(".").pop() ?? "jpg";
+  return "webp"; // default for profile images
 }

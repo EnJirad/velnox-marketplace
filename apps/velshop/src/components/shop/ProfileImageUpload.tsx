@@ -139,6 +139,18 @@ export function ProfileImageUpload({
         uploadFile = file;
       }
 
+      // Always force WebP — the fixed R2 key ends with .webp
+      if (uploadFile.type !== "image/webp") {
+        try {
+          uploadFile = await compressImage(uploadFile, kind, {
+            maxBytes: kind === "avatar" ? 200_000 : 500_000,
+            quality: kind === "avatar" ? 0.85 : 0.80,
+          });
+        } catch {
+          // Last resort: rename — R2 will store whatever MIME we send
+        }
+      }
+
       try {
         // ── Step 1: Request upload intent from backend ──────
         let intent: {
@@ -150,11 +162,13 @@ export function ProfileImageUpload({
         } | null = null;
 
         try {
-          r2cLog("intent", { status: "requesting", kind, mimeType: uploadFile.type });
+          // Always send image/webp as mimeType — R2 key is .webp
+          const uploadMimeType = "image/webp";
+          r2cLog("intent", { status: "requesting", kind, mimeType: uploadMimeType });
           const intentResult = await getUploadIntent({
             kind,
             filename: uploadFile.name,
-            mimeType: uploadFile.type,
+            mimeType: uploadMimeType,
           });
           intent = intentResult;
           r2cLog("intent", {
@@ -183,7 +197,7 @@ export function ProfileImageUpload({
         r2cLog("put", {
           status: "started",
           method: "PUT",
-          contentType: uploadFile.type,
+          contentType: "image/webp",
           bodySize: uploadFile.size,
           credentials: "omit",
         });
@@ -193,7 +207,7 @@ export function ProfileImageUpload({
           uploadRes = await fetch(intentData.uploadUrl, {
             method: "PUT",
             body: uploadFile,
-            headers: { "Content-Type": uploadFile.type },
+            headers: { "Content-Type": "image/webp" },
             credentials: "omit",
           });
         } catch (fetchErr: unknown) {
