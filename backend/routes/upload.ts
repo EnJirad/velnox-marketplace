@@ -129,16 +129,65 @@ async function getCurrentImageUrl(userId: string, kind: string): Promise<string 
 
 /**
  * Safely clean up old R2 objects when a new image replaces the current one.
+ * Includes race-condition protection: re-checks DB before deleting.
  */
-async function cleanupOldImage(userId: string, kind: string, currentUrl: string | null): Promise<void> {
-  if (!currentUrl) return;
-  const oldKey = objectKeyFromUrl(currentUrl);
-  if (!oldKey) return;
-  if (!validateObjectKeyOwnership(oldKey, userId)) {
-    r2Log("cleanup", { kind, status: "skipped", reason: "old_key_not_owned_by_user", oldKey });
+async function cleanupOldImage(userId: string, kind: string, oldUrl: string): Promise<void> {
+  const oldKey = objectKeyFromUrl(oldUrl);
+  if (!oldKey) {
+    r2Log("cleanup_old", { kind, status: "skipped", reason: "cannot_extract_object_key" });
     return;
   }
+
+  if (!validateObjectKeyOwnership(oldKey, userId)) {
+    r2Log("cleanup_old", { kind, status: "skipped", reason: "not_owned_by_user" });
+    return;
+  }
+
+  // Race-condition protection: re-verify that the DB still points to this URL.
+  // If another upload happened between our read and this cleanup, the DB now
+  // points to a newer URL and we must NOT delete what the DB is currently using.
+  const currentUrl = await getCurrentImageUrl(userId, kind);
+  if (currentUrl && currentUrl !== oldUrl) {
+    r2Log("cleanup_old", {
+      kind,
+      status: "skipped",
+      reason: "db_changed_since_read",
+    });
+    return;
+  }
+
   await deleteR2Object(oldKey);
+}
+
+/**
+ * Clean up stale media records for the same user + kind.
+ * Keeps only the most recent record; deletes older ones.
+ */
+async function cleanupStaleMediaRecords(userId: string, kind: string, keepKey: string): Promise<void> {
+  try {
+    // Delete all media records for this user + kind EXCEPT the one we just created
+    const result = await query(
+      `DELETE FROM media
+       WHERE uploaded_by = $1
+         AND key LIKE $2
+         AND key != $3`,
+      [userId, `profile/${kind}/${userId}/%`, keepKey]
+    );
+    const deleted = result.rowCount ?? 0;
+    if (deleted > 0) {
+      r2Log("cleanup_media", { kind, status: "deleted", count: deleted });
+    }
+  } catch (err) {
+    r2Log("cleanup_media", { kind, status: "failed", error: String(err) });
+  }
+}
+
+/**
+ * If a newly uploaded R2 object is orphaned (DB save failed), delete it.
+ */
+async function cleanupOrphanR2Object(userId: string, kind: string, objectKey: string): Promise<void> {
+  if (!validateObjectKeyOwnership(objectKey, userId)) return;
+  await deleteR2Object(objectKey);
 }
 
 /**
@@ -241,9 +290,11 @@ export function setupUploadRoutes(app: Express): void {
       // Invalidate auth/me profile cache so next request returns fresh data
       invalidateCachedProfile(userId);
 
+      // Cleanup old R2 object + stale media records
       if (oldUrl && oldUrl !== publicUrl) {
         await cleanupOldImage(userId, purpose, oldUrl).catch(() => {});
       }
+      await cleanupStaleMediaRecords(userId, purpose, objectKey).catch(() => {});
 
       res.json({
         success: true,
@@ -328,8 +379,13 @@ export function setupUploadRoutes(app: Express): void {
 
       r2Log("save", { step: "save_neon", kind, objectKey, size: bytes || 0 });
 
+      // Read current URL BEFORE updating — used for cleanup after success
       const oldUrl = await getCurrentImageUrl(userId, kind);
 
+      // ── Database save ────────────────────────────────────────────────
+      let dbSaveFailed = false;
+
+      // 1. Insert media record (audit trail)
       try {
         await query(
           `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
@@ -340,24 +396,45 @@ export function setupUploadRoutes(app: Express): void {
         r2Log("save", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
       }
 
-      if (kind === "avatar") {
-        await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
-      } else if (kind === "cover") {
-        try {
-          await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
-        } catch (coverErr: any) {
-          if (coverErr?.code !== "42703") throw coverErr;
+      // 2. Update user profile reference
+      try {
+        if (kind === "avatar") {
+          await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
+        } else if (kind === "cover") {
+          try {
+            await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [url, userId]);
+          } catch (coverErr: any) {
+            if (coverErr?.code !== "42703") throw coverErr;
+          }
         }
+      } catch (profileErr) {
+        dbSaveFailed = true;
+        r2Log("save", { step: "save_neon", status: "failed", error: String(profileErr) });
+
+        // DB save failed — clean up the newly uploaded R2 object (orphan prevention)
+        await cleanupOrphanR2Object(userId, kind, objectKey).catch(() => {});
+
+        res.status(500).json({ success: false, error: { code: "IMAGE_SAVE_FAILED", message: "Failed to save image metadata" } });
+        return;
       }
 
-      // Invalidate auth/me profile cache so next request returns fresh data
+      // 3. DB save succeeded — invalidate cache
       invalidateCachedProfile(userId);
 
+      // 4. Cleanup old R2 object + stale media records (after DB is safely updated)
       if (oldUrl && oldUrl !== url) {
-        r2Log("save", { step: "cleanup_old", kind, oldUrl: "<redacted>" });
-        await cleanupOldImage(userId, kind, oldUrl).catch(() => {});
+        r2Log("save", { step: "cleanup_old", kind, status: "started" });
+        await cleanupOldImage(userId, kind, oldUrl).catch((err) => {
+          r2Log("save", { step: "cleanup_old", kind, status: "failed", error: String(err) });
+        });
       }
 
+      // Cleanup stale media records for same user+kind
+      await cleanupStaleMediaRecords(userId, kind, objectKey).catch(() => {});
+
+      r2Log("save", { step: "save_neon", status: "success" });
+
+      // ── Build response ──────────────────────────────────────────────
       let result;
       try {
         result = await query(
@@ -375,8 +452,6 @@ export function setupUploadRoutes(app: Express): void {
         }
       }
       const u = result.rows[0];
-
-      r2Log("save", { step: "save_neon", status: "success" });
 
       // Return the URL we already computed — don't rely solely on the DB
       // re-query, because the cover_url column may not exist yet (migration
