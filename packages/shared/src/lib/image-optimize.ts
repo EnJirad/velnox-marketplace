@@ -131,8 +131,11 @@ export async function compressImage(
     const baseName = file.name.replace(/\.[^.]+$/, "");
     return new File([blob], `${baseName}.webp`, { type: "image/webp" });
   } catch {
-    // Canvas/ImageBitmap not supported or image decode failed — use original
-    return file;
+    // Canvas/ImageBitmap not supported or image decode failed.
+    // Return original file wrapped as WebP-typed so the presigned URL
+    // Content-Type (always image/webp) matches what the browser sends.
+    // R2 rejects uploads where the signed Content-Type differs from the request.
+    return new File([file], file.name.replace(/\.[^.]+$/, ".webp"), { type: "image/webp" });
   }
 }
 

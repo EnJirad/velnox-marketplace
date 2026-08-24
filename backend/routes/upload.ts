@@ -90,12 +90,15 @@ function objectKeyFromUrl(url: string): string | null {
 
 function validateObjectKeyOwnership(objectKey: string, userId: string): boolean {
   const parts = objectKey.split("/");
-  // New fixed keys:  profile/{kind}/{userId}.webp  (3 parts, userId.webp in index 2)
-  // Old timestamped: profile/{kind}/{userId}/{ts}.webp (4 parts, userId in index 2)
+  // Fixed keys:   profile/{kind}/{userId}.webp  → parts = ["profile", kind, "userId.webp"]
+  // Old keys:     profile/{kind}/{userId}/{ts}.webp → parts = ["profile", kind, userId, "ts.webp"]
   if (parts.length >= 3 && parts[0] === "profile") {
     const candidate = parts[2];
-    if (candidate === userId) return true; // old scheme: profile/avatar/userId/...
-    if (candidate && candidate.endsWith(userId)) return true; // new scheme: profile/avatar/userId.webp
+    // Old scheme: parts[2] is bare userId
+    if (candidate === userId) return true;
+    // Fixed scheme: parts[2] is "userId.webp" — strip extension for comparison
+    const candidateBase = candidate?.split(".")[0];
+    if (candidateBase === userId) return true;
   }
   return false;
 }
@@ -274,7 +277,10 @@ export function setupUploadRoutes(app: Express): void {
       try {
         await query(
           `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
-           VALUES ($1, $2, 'image', 0, $3, NOW())`,
+           VALUES ($1, $2, 'image/webp', 0, $3, NOW())
+           ON CONFLICT (key) DO UPDATE
+             SET url = EXCLUDED.url,
+                 content_type = EXCLUDED.content_type`,
           [publicUrl, objectKey, userId]
         );
       } catch (mediaErr: any) {
@@ -383,16 +389,21 @@ export function setupUploadRoutes(app: Express): void {
 
       // ── Database save ────────────────────────────────────────────────
 
-      // 1. Insert media record (audit trail)
+      // 1. Upsert media record (audit trail)
+      // ON CONFLICT: fixed key means 2nd+ upload hits UNIQUE constraint — upsert instead
       try {
         await query(
           `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
-           VALUES ($1, $2, $3, $4, $5, NOW())`,
+           VALUES ($1, $2, $3, $4, $5, NOW())
+           ON CONFLICT (key) DO UPDATE
+             SET url = EXCLUDED.url,
+                 content_type = EXCLUDED.content_type,
+                 size = EXCLUDED.size`,
           [url, objectKey, `image/${format || "jpeg"}`, bytes || 0, userId]
         );
+        r2Log("save", { step: "media_record", status: "upserted", key: objectKey });
       } catch (mediaErr: any) {
-        // Duplicate key = same fixed object re-uploaded — expected, not an error
-        r2Log("save", { step: "media_record", status: mediaErr?.code === "23505" ? "updated" : "skipped", error: mediaErr?.code || String(mediaErr) });
+        r2Log("save", { step: "media_record", status: "failed", error: mediaErr?.code || String(mediaErr) });
       }
 
       // 2. Update user profile reference

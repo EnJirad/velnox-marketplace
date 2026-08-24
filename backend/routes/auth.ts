@@ -368,6 +368,19 @@ export function setupGoogleAuth(app: Express): void {
         } catch { /* media table query failed — ignore */ }
       }
 
+      // Also try fixed-key format (no slash between userId and filename)
+      if (!coverUrl) {
+        try {
+          const fixedResult = await query(
+            `SELECT url FROM media
+             WHERE uploaded_by = $1 AND key LIKE $2
+             ORDER BY created_at DESC LIMIT 1`,
+            [payload.userId, `profile/cover/${payload.userId}%`]
+          );
+          coverUrl = fixedResult.rows[0]?.url || null;
+        } catch { /* ignore */ }
+      }
+
       const userData = {
         id: u.id,
         email: u.email,
