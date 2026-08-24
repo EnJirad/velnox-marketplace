@@ -29,10 +29,13 @@ async function apiPost(path: string, args?: any): Promise<any> {
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(data.error || `Request failed: ${res.status}`);
+    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
+    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
+    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
   }
-  return res.json();
+  const json = await res.json();
+  // Unwrap {success, data} envelope — components expect the inner payload
+  return json.data !== undefined ? json.data : json;
 }
 
 async function apiGet(path: string): Promise<any> {
@@ -40,12 +43,15 @@ async function apiGet(path: string): Promise<any> {
   if (cached && cached.expires > Date.now()) return cached.data;
   const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(data.error || `Request failed: ${res.status}`);
+    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
+    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
+    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
   }
   const json = await res.json();
-  _getCache.set(path, { data: json, expires: Date.now() + GET_TTL_MS });
-  return json;
+  // Unwrap {success, data} envelope — components expect the inner payload
+  const unwrapped = json.data !== undefined ? json.data : json;
+  _getCache.set(path, { data: unwrapped, expires: Date.now() + GET_TTL_MS });
+  return unwrapped;
 }
 
 async function apiPut(path: string, args?: any): Promise<any> {
@@ -56,10 +62,12 @@ async function apiPut(path: string, args?: any): Promise<any> {
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(data.error || `Request failed: ${res.status}`);
+    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
+    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
+    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
   }
-  return res.json();
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
 }
 
 async function apiPatch(path: string, args?: any): Promise<any> {
@@ -70,10 +78,12 @@ async function apiPatch(path: string, args?: any): Promise<any> {
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(data.error || `Request failed: ${res.status}`);
+    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
+    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
+    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
   }
-  return res.json();
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
 }
 
 async function apiDelete(path: string): Promise<any> {
