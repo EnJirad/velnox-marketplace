@@ -368,6 +368,27 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Permanent AI Development Rules Established
+- **Task:** Comprehensive rewrite of `AI_RULES.md` with 47 permanent development rules covering all aspects of the Velnox project
+- **Rules added:**
+  - **Database (Rules 3–10):** Three required SQL files (`run-update.sql`, `run-sqleditor.sql`, `schema.sql`); migration format with version/date/description/reason; every DB change must update all three files; never destroy production data; 13-step production database workflow; consistency check before declaring complete
+  - **Documentation (Rules 11–13):** AI_Handoff.md always updated; AI_RULES.md maintained; INSTALLATION.md maintained
+  - **Git (Rule 14):** Always push after completion; commit message format; never force push
+  - **Authentication (Rules 15–22):** Backend session as source of truth; Google OAuth requirements; session creation; /api/auth/me; real logout with server-side revocation; logout verification; auth cache invalidation; cross-browser auth
+  - **Cross-domain (Rules 23–24):** Cross-domain auth verification; CORS requirements
+  - **API (Rules 25, 30, 43):** API URL standardization; JSON-only error responses; centralized URL configuration
+  - **Environment (Rule 26):** Frontend VITE_* vars are public; secrets must remain server-side
+  - **Business Logic (Rules 27–29):** VelCenter authorization; seller status canonical values; seller approval flow
+  - **Performance (Rule 31):** Slow query debugging protocol
+  - **File uploads (Rules 32–34):** WebP conversion; R2 fixed keys; frontend cache invalidation
+  - **Database debugging (Rule 36):** Compare all layers before modifying backend
+  - **Quality (Rules 37–42):** No quick hacks; document architecture changes; build/typecheck; final verification checklist; never declare complete prematurely; final report format
+  - **Architecture (Rule 44):** Project structure; key invariants; things AI agents must NOT change
+  - **Bug fixes (Rule 45):** Root cause analysis protocol
+  - **Consistency (Rules 46–47):** Never guess; documentation consistency
+- **Files changed:** `AI_RULES.md` (complete rewrite — 1069 lines, 47 permanent rules)
+- **Result:** AI_RULES.md is now the single authoritative source for all permanent Velnox development rules. Every future AI agent and developer MUST read this file before any task.
+
 ### 2026-08-25 — Full Auth Overhaul: Session Revocation, Logout, Cross-Browser Auth
 - **Problem:** Logout doesn't actually invalidate the server session (JWT stays valid 7 days); `google_failed` error on different browsers/accounts; after logout user data persists; no session invalidation on the backend
 - **Root cause:**
