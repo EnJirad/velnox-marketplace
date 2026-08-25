@@ -109,6 +109,13 @@ Each app imports from `@velnox/shared` via a Vite resolve alias that points to `
 - Addresses: `GET/POST /api/customer/addresses`, `DELETE /api/customer/addresses/:id`
 - Cart, Orders, Shops: placeholder routes
 
+### backend/routes/seller.ts
+- `POST /api/seller/apply` — Submit seller application (creates seller + shop records)
+- `GET /api/seller/status` — Get current user's seller status
+- `GET /api/seller/profile` — Get seller profile with shop details
+- `GET /api/admin/sellers` — List all sellers (admin only)
+- `PATCH /api/admin/sellers/:id/status` — Approve/reject/suspend seller (admin only)
+
 ### backend/middleware/auth.ts
 - JWT session verification from `velnox_session` cookie
 - requireAuth, optionalAuth middleware
@@ -360,6 +367,25 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Complete Seller Onboarding & Approval System
+- **Problem:** Frontend seller registration ("สมัครร้าน") returned `Unexpected token '<'` HTML error because backend had no seller API routes
+- **Root cause:** Backend was missing `/api/seller/apply`, `/api/seller/status`, `/api/seller/profile`, `/api/admin/sellers`, and `/api/admin/sellers/:id/status` routes. Frontend called these endpoints, received 404 HTML → parse error
+- **Fix:**
+  - Created `backend/routes/seller.ts` with complete seller workflow endpoints
+  - `POST /api/seller/apply` — Creates seller record with status=pending, creates shop record with unique slug
+  - `GET /api/seller/status` — Returns current user's seller status with shop info and rejectionReason
+  - `GET /api/seller/profile` — Returns full seller profile with shop details
+  - `GET /api/admin/sellers` — Lists all sellers with user/shop info (admin only)
+  - `PATCH /api/admin/sellers/:id/status` — Approve/reject/suspend seller with optional rejection reason (admin only)
+  - Wired seller routes into `backend/server.ts`
+- **Security:**
+  - All seller endpoints require authentication
+  - Admin endpoints verify owner/admin/staff role
+  - Self-approval prevention (cannot approve/reject yourself)
+  - Backend determines user identity from session, never trusts frontend userId
+- **Files changed:** `backend/routes/seller.ts` (new), `backend/server.ts`, `AI_Handoff.md`
+- **Result:** All 4 frontend apps + backend pass typecheck. Seller registration workflow complete end-to-end
+
 ### 2026-08-25 — Fix Owner Bootstrap Configuration
 - **Problem:** VelCenter showed "ยังไม่ได้ตั้งค่ารหัสเปิดใช้งาน" even though `BOOTSTRAP_OWNER_SECRET` was set in Render
 - **Root cause:** Backend was missing `/api/admin/bootstrap-status` and `/api/admin/claim-owner` routes. Frontend called these endpoints, received 404 → catch → `configured: false` → warning shown
@@ -416,7 +442,6 @@ PORT=3001
 
 - Cart implementation (currently placeholder routes)
 - Order implementation (currently placeholder routes)
-- Seller dashboard functionality
 - Product image management
 - Search/filter improvements
 - Mobile responsive refinements

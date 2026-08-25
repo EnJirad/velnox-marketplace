@@ -9,6 +9,7 @@ import { setupRoutes } from "./routes/index.js";
 import { setupAdminRoutes } from "./routes/admin.js";
 import { setupGoogleAuth } from "./routes/auth.js";
 import { setupUploadRoutes } from "./routes/upload.js";
+import { setupSellerRoutes } from "./routes/seller.js";
 import { setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -44,6 +45,9 @@ setupUploadRoutes(app);
 
 // ─── Routes ─────────────────────────────────────────────
 setupRoutes(app);
+
+// ─── Seller (onboarding & approval) ────────────────────
+setupSellerRoutes(app);
 
 // ─── Admin (bootstrap / owner setup) ────────────────────
 setupAdminRoutes(app);
