@@ -105,7 +105,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((s) => { if (alive) setSeller(s); })
+      .then((s) => { if (alive) setSeller(s.data ?? null); })
       .catch((err) => {
         console.error("[seller] status fetch failed:", err);
         if (alive) setSeller({ status: null, rejectionReason: null });
