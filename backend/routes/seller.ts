@@ -487,17 +487,20 @@ export function setupSellerRoutes(app: Express): void {
         );
       }
 
-      // Record audit log entry
+      // Invalidate cached profile for the target user so /api/auth/me returns fresh role
+      invalidateCachedProfile(seller.user_id);
+
+      await client.query("COMMIT");
+
+      // Record audit log AFTER commit — must not block or ROLLBACK the approval
       try {
-        await client.query(
-          `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value, details)
-           VALUES ($1, $2, 'seller', $3, $4, $5, $6)`,
+        await query(
+          `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+           VALUES ($1, $2, 'seller', $3, $4)`,
           [
             userId,
             `SELLER_${status.toUpperCase()}`,
             sellerId,
-            JSON.stringify({ status: previousStatus }),
-            JSON.stringify({ status }),
             JSON.stringify({
               previousStatus,
               newStatus: status,
@@ -507,14 +510,8 @@ export function setupSellerRoutes(app: Express): void {
           ]
         );
       } catch (auditErr: any) {
-        // Audit log failure should not block the operation
-        console.warn("[seller] audit log write failed:", auditErr?.message);
+        console.warn("[seller] audit log write failed (non-fatal):", auditErr?.message);
       }
-
-      // Invalidate cached profile for the target user so /api/auth/me returns fresh role
-      invalidateCachedProfile(seller.user_id);
-
-      await client.query("COMMIT");
 
       console.log(`[seller] ${status}: seller ${sellerId} (user ${seller.user_id}) by admin ${userId} [${previousStatus} → ${status}]${promotedRole ? ` role→${promotedRole}` : ""}`);
 
