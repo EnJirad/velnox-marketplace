@@ -325,6 +325,11 @@ export function setupProductRoutes(app: Express): void {
       const stockQty = initialStock != null ? Math.max(0, Number(initialStock)) : 0;
       const reorder = reorderLevel != null ? Math.max(0, Number(reorderLevel)) : 5;
 
+      // category: frontend sends simple strings ("food", "general", etc.)
+      // not UUIDs. Store as TEXT in the category_id column.
+      const resolvedCategory = (category && typeof category === "string" && category.trim())
+        ? category.trim() : null;
+
       // ── Transaction: create product + inventory + update shop count ──
       const client = await getClient();
       try {
@@ -345,7 +350,7 @@ export function setupProductRoutes(app: Express): void {
             unit || "ชิ้น",
             supplier || null,
             productStatus,
-            category || null,
+            resolvedCategory,
           ]
         );
 
@@ -414,7 +419,10 @@ export function setupProductRoutes(app: Express): void {
       if (compareAtPrice !== undefined) { updates.push(`compare_at_price = $${idx++}`); values.push(compareAtPrice ? Number(compareAtPrice) : null); }
       if (unit !== undefined) { updates.push(`unit = $${idx++}`); values.push(unit); }
       if (supplier !== undefined) { updates.push(`supplier = $${idx++}`); values.push(supplier || null); }
-      if (category !== undefined) { updates.push(`category_id = $${idx++}`); values.push(category); }
+      if (category !== undefined) {
+        const catVal = (typeof category === "string" && category.trim()) ? category.trim() : null;
+        updates.push(`category_id = $${idx++}`); values.push(catVal);
+      }
       if (status !== undefined) {
         const validStatuses = ["draft", "published", "pending_review", "rejected", "archived"];
         if (validStatuses.includes(status)) {

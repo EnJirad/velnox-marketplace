@@ -561,3 +561,21 @@ ON CONFLICT (migration_name) DO NOTHING;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'ชิ้น';
 ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier TEXT;
 CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status);
+
+------------------------------------------------------------
+-- Migration: V0015
+-- Date: 2026-08-25
+-- Description:
+-- Change products.category_id from UUID FK to TEXT.
+--
+-- Reason:
+-- Frontend sends simple category strings ("food", "daily", "beauty")
+-- but category_id was UUID referencing categories(id).
+-- Causes: invalid input syntax for type uuid: "food"
+--
+-- Affected:
+-- products (category_id type change)
+------------------------------------------------------------
+
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_id_fkey;
+ALTER TABLE products ALTER COLUMN category_id TYPE TEXT;

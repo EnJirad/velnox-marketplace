@@ -157,8 +157,8 @@ CREATE TABLE IF NOT EXISTS products (
   rating NUMERIC(3, 2),
   review_count INTEGER NOT NULL DEFAULT 0,
   sold_count INTEGER NOT NULL DEFAULT 0,
-  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  category_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_products_shop ON products (shop_id);
