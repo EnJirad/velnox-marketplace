@@ -113,8 +113,9 @@ Each app imports from `@velnox/shared` via a Vite resolve alias that points to `
 - `POST /api/seller/apply` — Submit seller application (creates seller + shop records)
 - `GET /api/seller/status` — Get current user's seller status
 - `GET /api/seller/profile` — Get seller profile with shop details
-- `GET /api/admin/sellers` — List all sellers (admin only)
-- `PATCH /api/admin/sellers/:id/status` — Approve/reject/suspend seller (admin only)
+- `GET /api/admin/sellers` — List all sellers with user/shop info (admin only, returns `owner_id` for self-detection)
+- `PATCH /api/admin/sellers/:id/status` — Approve/reject/suspend seller (owner/admin only, self-approval blocked)
+- **Role separation:** Approval updates `sellers.status` only — never downgrades `users.role`
 
 ### backend/middleware/auth.ts
 - JWT session verification from `velnox_session` cookie
@@ -366,6 +367,21 @@ PORT=3001
 7. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-08-25 — Fix Seller Approval Authorization & Role Architecture
+- **Problem:** Owner trying to approve/reject a seller got "Cannot approve/reject yourself"; also `UPDATE users SET role = 'seller'` would downgrade owner/admin/staff roles
+- **Root cause:** Backend PATCH endpoint lacked proper role separation — seller status was conflated with user platform role. Also, the admin seller list endpoint returned `user_id` in SQL but didn't map it to the frontend, so the UI couldn't detect self-applications
+- **Fix:**
+  - Backend `PATCH /api/admin/sellers/:id/status`: removed `UPDATE users SET role = 'seller'` on approval — seller status is now independent from user platform role
+  - Backend `GET /api/admin/sellers`: added `owner_id: row.user_id` to the response mapping so the frontend can identify the current user's own seller application
+  - Frontend `Center.tsx`: added `owner_id` to `SellerRow` interface; added `isOwnSeller` check (`s.owner_id === user?._id`); disabled approve/reject buttons for own application with Thai message "ไม่สามารถอนุมัติร้านของตัวเอง"; added "(คุณ)" label on own seller row; backend self-approval protection remains enforced server-side
+- **Security:**
+  - Self-approval prevention: backend rejects with SELF_ACTION_FORBIDDEN if `seller.user_id === userId` on approve/reject
+  - Owner/Admin/Staff roles are NEVER downgraded on seller approval
+  - Backend determines user identity from JWT session, never trusts frontend userId
+  - `staff` role CANNOT approve/reject sellers (only `owner` and `admin`)
+- **Files changed:** `backend/routes/seller.ts`, `apps/velcenter/src/pages/Center.tsx`
+- **Result:** All 4 frontend apps + backend pass typecheck. Seller approval correctly separated from user role
 
 ### 2026-08-25 — Complete Seller Onboarding & Approval System
 - **Problem:** Frontend seller registration ("สมัครร้าน") returned `Unexpected token '<'` HTML error because backend had no seller API routes

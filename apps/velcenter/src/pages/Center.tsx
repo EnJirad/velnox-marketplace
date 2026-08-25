@@ -212,6 +212,7 @@ export default function Center() {
     business_type: string | null;
     approved_at: string | null;
     created_at: string;
+    owner_id: string | null;
     owner_name: string | null;
     owner_email: string | null;
     shop_count: number;
@@ -253,6 +254,11 @@ export default function Center() {
   const pendingProducts = (modProducts ?? []).filter((p) => p.status === "pending_review").length;
 
   const handleSellerStatus = async (seller: SellerRow, status: string) => {
+    // Frontend guard: cannot approve/reject own seller application
+    if (seller.owner_id && seller.owner_id === user?._id && (status === "approved" || status === "rejected")) {
+      toast.error("ไม่สามารถอนุมัติหรือปฏิเสธร้านของตัวเองได้");
+      return;
+    }
     setModBusy(true);
     try {
       await setSellerStatusAction({
@@ -1355,10 +1361,15 @@ export default function Center() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(sellerRows ?? []).map((s) => (
+                  {(sellerRows ?? []).map((s) => {
+                    const isOwnSeller = s.owner_id != null && s.owner_id === user?._id;
+                    return (
                     <TableRow key={s.id} className="hover:bg-slate-50/60">
                       <TableCell className="pl-5">
-                        <p className="font-medium text-slate-900">{s.name}</p>
+                        <p className="font-medium text-slate-900">
+                          {s.name}
+                          {isOwnSeller && <span className="ml-1.5 text-xs text-slate-400">(คุณ)</span>}
+                        </p>
                         <p className="text-xs text-slate-400">สมัครเมื่อ {new Date(s.created_at).toLocaleDateString("th-TH")}</p>
                       </TableCell>
                       <TableCell>
@@ -1381,7 +1392,7 @@ export default function Center() {
                       </TableCell>
                       <TableCell className="pr-5">
                         <div className="flex items-center justify-end gap-1.5">
-                          {s.status === "pending" && (
+                          {s.status === "pending" && !isOwnSeller && (
                             <>
                               <Button
                                 size="sm"
@@ -1405,6 +1416,9 @@ export default function Center() {
                               </Button>
                             </>
                           )}
+                          {s.status === "pending" && isOwnSeller && (
+                            <span className="text-xs text-slate-400">ไม่สามารถอนุมัติร้านของตัวเอง</span>
+                          )}
                           {s.status === "approved" && (
                             <Button
                               size="sm"
@@ -1419,14 +1433,17 @@ export default function Center() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
 
             {/* Mobile: app-like seller cards */}
             <div className="space-y-3 md:hidden">
-              {(sellerRows ?? []).map((s) => (
+              {(sellerRows ?? []).map((s) => {
+                const isOwnSeller = s.owner_id != null && s.owner_id === user?._id;
+                return (
                 <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1441,7 +1458,7 @@ export default function Center() {
                       <Badge className="shrink-0 gap-1 rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10">{s.status}</Badge>
                     )}
                   </div>
-                  {s.status === "pending" && (
+                  {s.status === "pending" && !isOwnSeller && (
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <Button size="sm" className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => handleSellerStatus(s, "approved")} disabled={modBusy}>
                         อนุมัติ
@@ -1451,8 +1468,12 @@ export default function Center() {
                       </Button>
                     </div>
                   )}
+                  {s.status === "pending" && isOwnSeller && (
+                    <p className="mt-3 text-xs text-slate-400">ไม่สามารถอนุมัติร้านของตัวเอง</p>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </TabsContent>
 

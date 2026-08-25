@@ -304,6 +304,7 @@ export function setupSellerRoutes(app: Express): void {
         business_type: null,
         approved_at: row.status === "approved" ? row.updated_at : null,
         created_at: row.created_at,
+        owner_id: row.user_id,
         owner_name: row.user_name,
         owner_email: row.user_email,
         shop_count: row.shop_id ? 1 : 0,
@@ -411,13 +412,12 @@ export function setupSellerRoutes(app: Express): void {
 
       console.log(`[seller] admin status update: ${sellerId} -> ${status} by user ${userId}`);
 
-      // If approved, update user role to "seller"
-      if (status === "approved") {
-        await query(
-          "UPDATE users SET role = 'seller', updated_at = NOW() WHERE id = $1",
-          [seller.user_id]
-        );
-      }
+      // NOTE: We do NOT update users.role when approving sellers.
+      // Seller status is independent from the user's primary platform role.
+      // An owner/admin/staff should retain their platform role while also
+      // being an approved seller through the sellers relationship.
+      // Seller access is determined by sellers.status = 'approved',
+      // NOT by users.role = 'seller'.
 
       res.json({
         success: true,
