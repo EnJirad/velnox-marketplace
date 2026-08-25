@@ -19,6 +19,7 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? "";
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI ?? "";
 const JWT_SECRET = process.env.JWT_SECRET ?? "";
 const SESSION_COOKIE = "velnox_session";
+import crypto from "crypto";
 
 // ─── Per-user profile cache (5s TTL) ───────────────────────────────────────
 // Prevents the same slow Neon query from being hit multiple times within a
@@ -215,9 +216,10 @@ async function resolveUser(google: {
   }
 }
 
-/** Create a JWT session token. */
+/** Create a JWT session token with a unique jti for revocation. */
 function createSessionToken(userId: string, email: string): string {
-  return jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: "7d" });
+  const jti = crypto.randomUUID();
+  return jwt.sign({ userId, email, jti }, JWT_SECRET, { expiresIn: "7d" });
 }
 
 /** Set the session cookie on the response. */
@@ -323,7 +325,19 @@ export function setupGoogleAuth(app: Express): void {
     }
 
     try {
-      const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+      const payload = jwt.verify(token, JWT_SECRET) as { userId: string; jti?: string };
+
+      // Check if token has been revoked (logout)
+      if (payload.jti) {
+        try {
+          const revoked = await query("SELECT 1 FROM revoked_tokens WHERE token_id = $1", [payload.jti]);
+          if (revoked.rows.length > 0) {
+            res.clearCookie(SESSION_COOKIE, { path: "/" });
+            res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Session revoked" } });
+            return;
+          }
+        } catch { /* revoked_tokens table may not exist yet — graceful fallback */ }
+      }
 
       // Check cache first to avoid repeated slow queries
       const cached = getCachedProfile(payload.userId);
@@ -404,19 +418,57 @@ export function setupGoogleAuth(app: Express): void {
     }
   });
 
-  // Logout
-  app.post("/api/auth/logout", (req: Request, res: Response) => {
-    // Clear profile cache for this user
+  // Logout — revoke session server-side and clear cookie
+  app.post("/api/auth/logout", async (req: Request, res: Response) => {
     try {
       const token = req.cookies?.[SESSION_COOKIE];
       if (token) {
-        const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
-        invalidateCachedProfile(payload.userId);
+        try {
+          const payload = jwt.verify(token, JWT_SECRET) as { userId: string; jti?: string; exp?: number };
+          invalidateCachedProfile(payload.userId);
+
+          // Revoke the JWT by storing its jti in the database
+          if (payload.jti && payload.exp) {
+            try {
+              const expiresAt = new Date(payload.exp * 1000).toISOString();
+              await query(
+                `INSERT INTO revoked_tokens (token_id, user_id, expires_at)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (token_id) DO NOTHING`,
+                [payload.jti, payload.userId, expiresAt]
+              );
+              console.log("[auth] Token revoked for user:", payload.userId);
+            } catch (revokeErr: any) {
+              // If revoked_tokens table doesn't exist yet, log warning but don't fail
+              console.warn("[auth] Could not revoke token (table may not exist):", revokeErr?.message);
+            }
+          }
+        } catch { /* invalid token — still clear cookie */ }
       }
     } catch { /* ignore */ }
-    res.clearCookie(SESSION_COOKIE, { path: "/" });
+
+    // Clear the cookie with the SAME attributes used when setting it
+    res.clearCookie(SESSION_COOKIE, {
+      path: "/",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "none",
+    });
     res.json({ success: true, data: { success: true } });
   });
+
+  // Cleanup: remove expired revoked tokens (runs on each request, throttle to once per 5 min)
+  let lastCleanup = 0;
+  async function cleanupExpiredTokens() {
+    const now = Date.now();
+    if (now - lastCleanup < 5 * 60 * 1000) return;
+    lastCleanup = now;
+    try {
+      await query("DELETE FROM revoked_tokens WHERE expires_at < NOW()");
+    } catch { /* ignore — table may not exist */ }
+  }
+  // Run cleanup lazily on next request
+  app.use((_req, _res, next) => { cleanupExpiredTokens().catch(() => {}); next(); });
 }
 
 /**

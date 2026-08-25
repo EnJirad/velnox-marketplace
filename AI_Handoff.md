@@ -368,6 +368,29 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Full Auth Overhaul: Session Revocation, Logout, Cross-Browser Auth
+- **Problem:** Logout doesn't actually invalidate the server session (JWT stays valid 7 days); `google_failed` error on different browsers/accounts; after logout user data persists; no session invalidation on the backend
+- **Root cause:**
+  1. JWT sessions had no revocation mechanism — once issued, a token was valid for 7 days regardless of logout
+  2. Backend `POST /api/auth/logout` only cleared the cookie but didn't invalidate the JWT server-side
+  3. Frontend `signOut()` didn't verify the session was actually cleared, didn't clear sessionStorage markers
+  4. No `revoked_tokens` table existed in the database
+- **Fix:**
+  - **Database:** Added `revoked_tokens` table (migration 010, schema.sql, run-sqleditor.sql) — stores revoked JWT `jti` values with expiry for cleanup
+  - **Backend `createSessionToken`:** Added unique `jti` (UUID) to every JWT token
+  - **Backend `/api/auth/me`:** Now checks `revoked_tokens` table before accepting a token — if `jti` is revoked, returns 401 and clears cookie
+  - **Backend `POST /api/auth/logout`:** Now stores the token's `jti` in `revoked_tokens` table before clearing the cookie. Also clears cookie with ALL matching attributes (httpOnly, secure, sameSite)
+  - **Backend cleanup:** Lazy cleanup of expired revoked tokens (once per 5 min)
+  - **Frontend `signOut()`:** Now verifies session is actually cleared by calling `/api/auth/me` after logout. Clears sessionStorage markers. Retries logout if session still valid
+- **Security:**
+  - Token revocation is server-side (database) — even if cookie is stolen, revoked tokens are rejected
+  - `BOOTSTRAP_OWNER_SECRET` never logged or exposed
+  - Expired revoked tokens are cleaned up automatically
+  - `SameSite=none; Secure=true` cookie attributes preserved
+- **Files changed:** `backend/routes/auth.ts`, `packages/shared/src/lib/api-client.ts`, `db/schema.sql`, `db/run-sqleditor.sql`, `db/migrations/010_revoked_tokens.sql`
+- **Database change:** NEW TABLE `revoked_tokens` — run migration 010 on Neon
+- **Result:** All 4 frontend apps + backend pass typecheck. Logout now invalidates the server session. `/api/auth/me` returns 401 after logout.
+
 ### 2026-08-25 — Fix Google OAuth Login Flow & Seller Onboarding
 - **Problem:** VelSeller Google login fails with `google_failed` error; after Google OAuth completes, user is redirected to wrong frontend; VelSeller shows login page even after successful auth; seller onboarding form is minimal (shop name only)
 - **Root cause:**

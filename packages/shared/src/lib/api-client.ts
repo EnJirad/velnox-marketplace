@@ -141,14 +141,34 @@ export async function signInWithGoogle(code: string): Promise<ApiUser> {
   return data.user;
 }
 
-/** Sign out */
+/** Sign out — invalidate server session and clear all local auth state. */
 export async function signOut(): Promise<void> {
-  await fetch(`${API_BASE}/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-  });
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch { /* logout request failed — still clear local state */ }
+
+  // Clear all auth-related state
   authState = { isLoading: false, isAuthenticated: false, user: null };
   authInitPromise = null;
+
+  // Clear sessionStorage markers (Google auth flow, etc.)
+  try {
+    sessionStorage.removeItem("velnox.googleAuthStart");
+  } catch { /* ignore */ }
+
+  // Verify session is actually cleared by checking /api/auth/me
+  try {
+    const verifyRes = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
+    if (verifyRes.ok) {
+      // Session still valid — this shouldn't happen but handle gracefully
+      console.warn("[auth] Session still valid after logout — retrying");
+      await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+    }
+  } catch { /* expected — session cleared */ }
+
   notifyAuthListeners();
 }
 
