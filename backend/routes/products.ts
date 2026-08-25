@@ -112,6 +112,19 @@ function publicUrl(key: string): string {
 }
 
 /**
+ * Convert a stored URL back to an R2 object key for deletion.
+ * If the URL starts with the R2 public domain prefix, strip it.
+ * Otherwise assume the URL is already the key (no publicDomain configured).
+ */
+function urlToKey(url: string): string {
+  const pd = getR2Config().publicDomain;
+  if (pd && url.startsWith(pd + "/")) {
+    return url.substring(pd.length + 1);
+  }
+  return url;
+}
+
+/**
  * Format a product row from the DB into the StoreProduct shape expected by the frontend.
  */
 function formatProduct(row: Record<string, any>, images: any[], inventory: any): any {
@@ -139,7 +152,7 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
       displayUrl: img.url,
       thumbUrl: img.url,
       storageProvider: "r2",
-      storageKey: img.url,
+      storageKey: urlToKey(img.url),
       alt: img.alt || "",
       sortOrder: img.sort_order ?? 0,
       isPrimary: (img.sort_order ?? 0) === 0,
@@ -463,7 +476,7 @@ export function setupProductRoutes(app: Express): void {
       // Delete product images from R2
       const images = await query("SELECT url FROM product_images WHERE product_id = $1", [productId]);
       for (const img of images.rows) {
-        if (img.url) deleteR2Object(img.url);
+        if (img.url) deleteR2Object(urlToKey(img.url));
       }
 
       // Delete product (CASCADE handles product_images and inventory)
@@ -744,7 +757,7 @@ export function setupProductRoutes(app: Express): void {
       const img = imgResult.rows[0];
 
       // Delete from R2
-      if (img.url) deleteR2Object(img.url);
+      if (img.url) deleteR2Object(urlToKey(img.url));
 
       // Delete from DB
       await query("DELETE FROM product_images WHERE id = $1", [imageId]);

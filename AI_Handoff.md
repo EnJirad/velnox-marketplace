@@ -373,7 +373,15 @@ PORT=3001
 
 ## Recent Work History
 
-### 2026-08-25 — Product Creation Fix: Repair Migration V0014 + Transaction
+### 2026-08-25 — Fix R2 Key Extraction for Product Image Deletion
+- **Problem:** `deleteR2Object(img.url)` passed the full CDN URL (`https://pub-xxx.r2.dev/products/...`) as the R2 object key, but R2 expects just the key (`products/...`). This caused silent deletion failures — orphaned files accumulate in R2 storage
+- **Root cause:** The `product_images.url` column stores the full CDN URL (via `publicUrl(key)` = `${R2_PUBLIC_DOMAIN}/${key}`), but `DeleteObjectCommand` requires just the key. No extraction logic existed to convert URLs back to keys
+- **Fix:**
+  - Added `urlToKey(url)` helper — strips `R2_PUBLIC_DOMAIN` prefix from URL to extract the R2 object key
+  - Updated all `deleteR2Object(img.url)` calls to `deleteR2Object(urlToKey(img.url))`
+  - Updated `storageKey` in `formatProduct` to use `urlToKey(img.url)` instead of raw URL
+  - Backend typecheck passes
+- **Files changed:** `backend/routes/products.ts`
 - **Problem:** Production error `column "unit" of relation "products" does not exist` (PostgreSQL code 42703). Product creation fails because V0012 migration (adding `unit`/`supplier` columns) was never applied to Neon despite V0013 marking it as applied in `schema_migrations`. Additionally, product creation used separate non-atomic queries — if inventory creation failed, a half-created product remained
 - **Root cause:** Migration V0013 pre-marks V0012 as applied in `schema_migrations` (`INSERT INTO schema_migrations ... ON CONFLICT DO NOTHING`), so the GitHub Action skips V0012. But V0012 was never actually applied to Neon. The product INSERT references `unit` column that doesn't exist
 - **Fix:**
