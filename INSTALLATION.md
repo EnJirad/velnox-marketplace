@@ -59,8 +59,9 @@ velnox-marketplace/
 │   └── realtime/        # WebSocket server
 ├── packages/shared/     # Shared code (components, hooks, lib, pages)
 ├── db/
-│   ├── schema.sql       # Complete database schema
-│   ├── run-sqleditor.sql # Bootstrap SQL for Neon
+│   ├── schema.sql       # Complete database schema (canonical reference)
+│   ├── run-sqleditor.sql # Bootstrap SQL for Neon (must sync with schema.sql)
+│   ├── run-update.sql    # Incremental migration history (NEVER overwrite)
 │   └── migrations/      # Sequential migration files
 └── docs/                # Documentation
 ```
@@ -162,6 +163,9 @@ For Vercel deployment, set in the Vercel dashboard for each project.
 5. Run the contents of `db/run-sqleditor.sql`
 
 This creates all tables, indexes, and constraints.
+
+**Important:** `db/run-sqleditor.sql` and `db/schema.sql` must always be synchronized.
+For incremental updates to an existing database, use `db/run-update.sql`.
 
 ### 6. Set Up Google OAuth
 
@@ -318,7 +322,7 @@ PORT=3001
 ### Database — Neon
 
 1. Create Neon project
-2. Run `db/run-sqleditor.sql` in SQL Editor
+2. Run `db/run-sqleditor.sql` in SQL Editor (or apply `db/run-update.sql` for incremental updates)
 3. Set `DATABASE_URL` in Render environment
 
 ### CORS Configuration

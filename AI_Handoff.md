@@ -363,10 +363,25 @@ PORT=3001
 3. docs/DATABASE.md
 4. db/schema.sql
 5. db/run-sqleditor.sql
-6. README.md
-7. AI_RULES.md
+6. db/run-update.sql (append new migration)
+7. README.md
+8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-08-25 — Permanent Development Memory System Initialized
+- **Task:** Synchronize database schema files, create run-update.sql migration history, and establish permanent development memory
+- **Problem:** `run-update.sql` did not exist; `run-sqleditor.sql` and `schema.sql` were out of sync (different column types, missing columns, wrong CHECK constraints); no single source of truth for incremental migrations
+- **Fix:**
+  - Created `db/run-update.sql` — consolidated all 10 existing migrations (V0001–V0010) into the permanent incremental migration history file
+  - Rewrote `db/run-sqleditor.sql` — complete bootstrap schema matching what the backend actually uses (TEXT types, no CHECK on sellers.status/products.status, added customer_profiles.date_of_birth/gender, carts.total_items/total_amount, inventory.reserved)
+  - Rewrote `db/schema.sql` — synchronized to match run-sqleditor.sql exactly (verified with diff — only header comments and blank lines differ)
+  - Removed wrong CHECK constraint on sellers.status (was `pending, active, suspended` — missing `approved`, `rejected`, `under_review` which the backend uses)
+  - Removed wrong CHECK constraint on products.status (was `draft, active, archived` — backend may use other values)
+  - Verified all 4 frontend apps + backend pass typecheck
+- **Files created:** `db/run-update.sql`
+- **Files updated:** `db/run-sqleditor.sql`, `db/schema.sql`, `AI_RULES.md` (47 permanent rules), `AI_Handoff.md`
+- **Result:** Three SQL files are now synchronized and accurate. run-update.sql preserves the complete migration history. Every future DB change must update all three files.
 
 ### 2026-08-25 — Permanent AI Development Rules Established
 - **Task:** Comprehensive rewrite of `AI_RULES.md` with 47 permanent development rules covering all aspects of the Velnox project
@@ -516,6 +531,7 @@ PORT=3001
 
 - Neon cold start causes ~1.5s latency on first query after idle period (mitigated with 30s in-memory cache)
 - SSL deprecation warning from pg-connection-string (cosmetic, handled by replacing sslmode=require with sslmode=verify-full)
+- Production Neon may have columns (date_of_birth, gender, reserved, etc.) that were added outside of migrations — the schema files now reflect the actual backend usage but production state should be verified
 
 ## Next Tasks
 
@@ -524,3 +540,5 @@ PORT=3001
 - Product image management
 - Search/filter improvements
 - Mobile responsive refinements
+- Verify production Neon schema matches the synchronized run-sqleditor.sql
+- Run migration 010 (revoked_tokens) on production Neon if not already applied

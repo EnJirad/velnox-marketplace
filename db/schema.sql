@@ -1,26 +1,25 @@
 -- Velnox Marketplace — Complete Database Schema
 -- Source of truth: Neon PostgreSQL
--- Last updated: 2026-08-24
+-- Last updated: 2026-08-25
+--
+-- This file must be kept synchronized with run-sqleditor.sql.
+-- Both represent the same final database structure.
 
 -- Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Sequences
-CREATE SEQUENCE IF NOT EXISTS user_seq START 1;
-CREATE SEQUENCE IF NOT EXISTS product_seq START 1;
-
--- ─── Customer Domain ────────────────────────────────────
+-- ─── Customer Domain ────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email VARCHAR(255) NOT NULL UNIQUE,
-  name VARCHAR(255) NOT NULL DEFAULT '',
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL DEFAULT '',
   avatar TEXT,
   cover_url TEXT,
-  phone VARCHAR(50),
-  role VARCHAR(50) NOT NULL DEFAULT 'customer',
-  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  phone TEXT,
+  role TEXT NOT NULL DEFAULT 'customer',
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -32,7 +31,7 @@ CREATE TABLE IF NOT EXISTS auth_identities (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   provider VARCHAR(50) NOT NULL,
   provider_id VARCHAR(255) NOT NULL,
-  email VARCHAR(255) NOT NULL,
+  email TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (provider, provider_id)
 );
@@ -42,9 +41,9 @@ CREATE INDEX IF NOT EXISTS idx_auth_identities_email ON auth_identities (email);
 
 CREATE TABLE IF NOT EXISTS customer_profiles (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   date_of_birth DATE,
-  gender VARCHAR(20),
+  gender TEXT,
   preferences JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -53,18 +52,18 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
 CREATE TABLE IF NOT EXISTS addresses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  label VARCHAR(100) NOT NULL DEFAULT 'Home',
-  recipient_name VARCHAR(255) NOT NULL DEFAULT '',
-  phone VARCHAR(50) NOT NULL,
-  line1 VARCHAR(255) NOT NULL,
-  line2 VARCHAR(255),
-  subdistrict VARCHAR(100),
-  district VARCHAR(100),
-  city VARCHAR(100) NOT NULL,
-  state VARCHAR(100) NOT NULL,
-  postal_code VARCHAR(20) NOT NULL,
-  country VARCHAR(100) NOT NULL DEFAULT 'TH',
-  is_default BOOLEAN NOT NULL DEFAULT false,
+  label TEXT NOT NULL DEFAULT 'Home',
+  recipient_name TEXT NOT NULL DEFAULT '',
+  phone TEXT NOT NULL,
+  line1 TEXT NOT NULL,
+  line2 TEXT,
+  subdistrict TEXT,
+  district TEXT,
+  city TEXT NOT NULL,
+  state TEXT NOT NULL,
+  postal_code TEXT NOT NULL,
+  country TEXT NOT NULL DEFAULT 'TH',
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
   latitude DOUBLE PRECISION,
   longitude DOUBLE PRECISION,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -75,11 +74,10 @@ CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses (user_id);
 
 CREATE TABLE IF NOT EXISTS carts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   total_items INTEGER NOT NULL DEFAULT 0,
   total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (user_id)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS cart_items (
@@ -94,12 +92,39 @@ CREATE TABLE IF NOT EXISTS cart_items (
 
 CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items (cart_id);
 
--- ─── Seller Domain ──────────────────────────────────────
+-- ─── Media & Categories ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS media (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  url TEXT NOT NULL,
+  key TEXT NOT NULL UNIQUE,
+  content_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  uploaded_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_key ON media (key);
+CREATE INDEX IF NOT EXISTS idx_media_owner ON media (uploaded_by);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  icon TEXT,
+  parent_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug);
+
+-- ─── Seller Domain ──────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS sellers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  status TEXT NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -109,8 +134,8 @@ CREATE INDEX IF NOT EXISTS idx_sellers_user ON sellers (user_id);
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  name VARCHAR(255) NOT NULL,
-  slug VARCHAR(255) NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
   description TEXT,
   logo TEXT,
   cover TEXT,
@@ -123,30 +148,18 @@ CREATE TABLE IF NOT EXISTS shops (
 CREATE INDEX IF NOT EXISTS idx_shops_slug ON shops (slug);
 CREATE INDEX IF NOT EXISTS idx_shops_seller ON shops (seller_id);
 
-CREATE TABLE IF NOT EXISTS categories (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name VARCHAR(255) NOT NULL,
-  slug VARCHAR(255) NOT NULL UNIQUE,
-  icon VARCHAR(10),
-  parent_id UUID REFERENCES categories(id) ON DELETE SET NULL,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug);
-
 CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  name VARCHAR(255) NOT NULL,
-  slug VARCHAR(255) NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
   description TEXT NOT NULL DEFAULT '',
-  short_description VARCHAR(500),
+  short_description TEXT,
   price NUMERIC(12, 2) NOT NULL,
   compare_at_price NUMERIC(12, 2),
-  currency VARCHAR(3) NOT NULL DEFAULT 'THB',
-  status VARCHAR(20) NOT NULL DEFAULT 'draft',
-  featured BOOLEAN NOT NULL DEFAULT false,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  status TEXT NOT NULL DEFAULT 'draft',
+  featured BOOLEAN NOT NULL DEFAULT FALSE,
   rating NUMERIC(3, 2),
   review_count INTEGER NOT NULL DEFAULT 0,
   sold_count INTEGER NOT NULL DEFAULT 0,
@@ -166,7 +179,7 @@ CREATE TABLE IF NOT EXISTS product_images (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   url TEXT NOT NULL,
-  alt VARCHAR(255) NOT NULL DEFAULT '',
+  alt TEXT NOT NULL DEFAULT '',
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -175,13 +188,11 @@ CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images (product
 
 CREATE TABLE IF NOT EXISTS inventory (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
   quantity INTEGER NOT NULL DEFAULT 0,
   reserved INTEGER NOT NULL DEFAULT 0,
-  sku VARCHAR(100),
-  low_stock_threshold INTEGER DEFAULT 10,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (product_id)
+  low_stock_threshold INTEGER NOT NULL DEFAULT 5,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS seller_settings (
@@ -204,15 +215,15 @@ CREATE TABLE IF NOT EXISTS seller_analytics (
 
 CREATE INDEX IF NOT EXISTS idx_seller_analytics_seller_date ON seller_analytics (seller_id, date);
 
--- ─── Commerce Domain ────────────────────────────────────
+-- ─── Commerce Domain ────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id),
   shop_id UUID REFERENCES shops(id),
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  total_amount NUMERIC(12, 2) NOT NULL,
-  currency VARCHAR(3) NOT NULL DEFAULT 'THB',
+  status TEXT NOT NULL DEFAULT 'pending',
+  total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'THB',
   shipping_address_id UUID REFERENCES addresses(id),
   shipping_address JSONB,
   notes TEXT,
@@ -229,7 +240,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id UUID NOT NULL,
   product_name TEXT NOT NULL DEFAULT '',
-  quantity INTEGER NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
   price NUMERIC(12, 2) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -239,14 +250,12 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id);
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),
-  amount NUMERIC(12, 2) NOT NULL,
-  currency VARCHAR(3) NOT NULL DEFAULT 'THB',
-  method VARCHAR(50) NOT NULL DEFAULT 'cod',
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  transaction_id VARCHAR(255),
+  amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  method TEXT NOT NULL DEFAULT 'cod',
+  status TEXT NOT NULL DEFAULT 'pending',
   metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
@@ -257,9 +266,8 @@ CREATE TABLE IF NOT EXISTS refunds (
   payment_id UUID REFERENCES payments(id),
   amount NUMERIC(12, 2) NOT NULL,
   reason TEXT,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS commissions (
@@ -275,9 +283,7 @@ CREATE TABLE IF NOT EXISTS settlements (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   seller_id UUID NOT NULL REFERENCES sellers(id),
   amount NUMERIC(12, 2) NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  period_start DATE,
-  period_end DATE,
+  status TEXT NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -287,12 +293,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   product_id UUID,
   seller_id UUID REFERENCES sellers(id),
   shop_id UUID REFERENCES shops(id),
-  plan VARCHAR(50) NOT NULL DEFAULT 'free',
-  frequency VARCHAR(50) NOT NULL DEFAULT 'monthly',
-  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  frequency TEXT NOT NULL DEFAULT 'monthly',
+  status TEXT NOT NULL DEFAULT 'active',
   next_due_date TIMESTAMPTZ,
-  current_period_start TIMESTAMPTZ,
-  current_period_end TIMESTAMPTZ,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -301,11 +304,11 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_next_due ON subscriptions (next_due_date) WHERE status = 'active';
 
--- ─── Company Domain ─────────────────────────────────────
+-- ─── Company Domain ─────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS departments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name VARCHAR(255) NOT NULL,
+  name TEXT NOT NULL,
   description TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -314,18 +317,16 @@ CREATE TABLE IF NOT EXISTS employees (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
-  role VARCHAR(50) NOT NULL DEFAULT 'employee',
-  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'manager', 'staff')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS company_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  key VARCHAR(255) NOT NULL UNIQUE,
+  key TEXT NOT NULL UNIQUE,
   value JSONB NOT NULL,
   description TEXT,
-  updated_by UUID REFERENCES users(id),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -348,13 +349,11 @@ CREATE TABLE IF NOT EXISTS system_settings (
 CREATE TABLE IF NOT EXISTS audit_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  action VARCHAR(100) NOT NULL,
-  entity_type VARCHAR(50) NOT NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
   entity_id UUID,
-  old_value JSONB,
-  new_value JSONB,
   details JSONB DEFAULT '{}',
-  ip_address INET,
+  ip_address TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -372,29 +371,33 @@ CREATE TABLE IF NOT EXISTS moderation_records (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ─── Media ──────────────────────────────────────────────
+-- ─── Notifications ──────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS media (
+CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  url TEXT NOT NULL,
-  key TEXT NOT NULL UNIQUE,
-  content_type TEXT NOT NULL,
-  size INTEGER NOT NULL,
-  uploaded_by UUID REFERENCES users(id),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  body TEXT,
+  read BOOLEAN NOT NULL DEFAULT FALSE,
+  data JSONB,
+  metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_media_owner ON media (uploaded_by);
-CREATE INDEX IF NOT EXISTS idx_media_key ON media (key);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications (user_id, read);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id, read) WHERE read = FALSE;
 
--- ─── Analytics / Behavioral ─────────────────────────────
+-- ─── Behavioral Events ─────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS behavioral_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES users(id),
-  session_id VARCHAR(100) NOT NULL,
-  event_type VARCHAR(50) NOT NULL,
-  entity_type VARCHAR(50),
+  session_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  entity_type TEXT,
   entity_id UUID,
   metadata JSONB DEFAULT '{}',
   occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -407,11 +410,11 @@ CREATE INDEX IF NOT EXISTS idx_behavioral_type ON behavioral_events (event_type)
 CREATE INDEX IF NOT EXISTS idx_behavioral_entity ON behavioral_events (entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_behavioral_time ON behavioral_events (occurred_at);
 
--- ─── Session Revocation ──────────────────────────────────
+-- ─── Session Revocation ────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS revoked_tokens (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  token_id VARCHAR(255) NOT NULL UNIQUE,
+  token_id TEXT NOT NULL UNIQUE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ NOT NULL
@@ -420,22 +423,3 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON revoked_tokens (token_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens (expires_at);
-
--- ─── Notifications ──────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS notifications (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type VARCHAR(50) NOT NULL,
-  title VARCHAR(255) NOT NULL,
-  message TEXT NOT NULL,
-  body TEXT,
-  read BOOLEAN NOT NULL DEFAULT false,
-  data JSONB,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications (user_id, read);
-CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id, read) WHERE read = FALSE;
