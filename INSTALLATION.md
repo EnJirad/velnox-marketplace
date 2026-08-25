@@ -167,6 +167,45 @@ This creates all tables, indexes, and constraints.
 **Important:** `db/run-sqleditor.sql` and `db/schema.sql` must always be synchronized.
 For incremental updates to an existing database, use `db/run-update.sql`.
 
+### 6. Database Migration System
+
+Velnox uses a **two-tier migration system**:
+
+| Tier | Location | When to use |
+|------|----------|-------------|
+| **GitHub Action** | `.github/workflows/migrate-neon.yml` | Production Neon — automatic on push to main |
+| **Manual** | `db/migrations/*.sql` | Development or manual production apply |
+
+#### How migrations work
+
+1. **New database changes** go into `db/migrations/` as individual files (e.g., `013_schema_migrations_and_address_fixes.sql`)
+2. **All three SQL files** must also be updated: `run-update.sql`, `schema.sql`, `run-sqleditor.sql`
+3. **Production** receives migrations via the GitHub Action — it detects pending migrations and applies them in order
+4. **Schema drift is tracked** via the `schema_migrations` table in Neon
+
+#### Migration file naming
+
+```
+db/migrations/
+  001_initial.sql
+  002_auth.sql
+  ...
+  012_product_fields.sql
+  013_schema_migrations_and_address_fixes.sql
+```
+
+#### GitHub Action setup
+
+1. Go to GitHub repo → Settings → Secrets and variables → Actions
+2. Add secret: `NEON_DATABASE_URL` = your Neon connection string
+3. The workflow runs automatically on push to main when `db/migrations/*.sql` changes
+4. It can also be triggered manually via workflow_dispatch
+
+#### Never run startup DDL
+
+Backend application startup must NOT run `ALTER TABLE` statements.
+All schema changes go through the migration system.
+
 ### 6. Set Up Google OAuth
 
 1. Go to https://console.cloud.google.com

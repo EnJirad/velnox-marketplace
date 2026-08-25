@@ -395,6 +395,14 @@ CREATE INDEX IF NOT EXISTS idx_behavioral_type ON behavioral_events (event_type)
 CREATE INDEX IF NOT EXISTS idx_behavioral_entity ON behavioral_events (entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_behavioral_time ON behavioral_events (occurred_at);
 
+-- ─── Migration Tracking ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id BIGSERIAL PRIMARY KEY,
+  migration_name TEXT UNIQUE NOT NULL,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ─── Session Revocation ────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS revoked_tokens (

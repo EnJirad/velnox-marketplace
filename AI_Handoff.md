@@ -373,6 +373,24 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Migration System & Schema Drift Fix
+- **Problem:** Backend ran `ALTER TABLE addresses ADD COLUMN IF NOT EXISTS` at every startup (schema drift). No migration tracking table existed. No GitHub Action for automated Neon migrations. Production had `column "unit" does not exist` error because V0012 migration was never applied
+- **Root cause:** Schema changes were applied via startup DDL instead of proper migrations. No `schema_migrations` tracking table. No CI/CD for database
+- **Fix:**
+  - Created `schema_migrations` tracking table in V0013 migration
+  - Created `.github/workflows/migrate-neon.yml` — automated incremental migration system for Neon production
+  - Migrated `ensureAddressColumns()` startup DDL into V0013 proper migration
+  - Removed startup ALTER TABLE from `backend/routes/index.ts`
+  - Updated all three SQL files (schema.sql, run-sqleditor.sql, run-update.sql)
+  - Updated INSTALLATION.md with migration system documentation
+  - Added rules 48-53 to AI_RULES.md (No Startup DDL, Migration System, Schema Tracking, No Duplicate Systems, Product Ownership, No Quick Schema Removal)
+- **Migration system architecture:**
+  - `db/migrations/*.sql` — individual migration files
+  - `.github/workflows/migrate-neon.yml` — auto-applies pending migrations on push to main
+  - `schema_migrations` table — tracks which migrations have been applied
+  - GitHub Secret: `NEON_DATABASE_URL`
+- **Result:** Production product creation will work after the GitHub Action applies V0012 + V0013. Backend no longer runs DDL at startup
+
 ### 2026-08-25 — Complete Seller Product Management System
 - **Problem:** Approved sellers could not create, edit, delete, or manage products on VelSeller. The entire backend product API was missing — frontend MyShop.tsx and ProductFormDialog.tsx were built but had no backend endpoints to call
 - **Root cause:** Backend had NO `products.ts` route file. The `api-routes.ts` ACTION_MAP had mappings for product CRUD, image upload, and inventory but the actual Express routes didn't exist. Also missing: `setStockAction` and `setReorderLevelAction` route mappings

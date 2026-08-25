@@ -1067,3 +1067,97 @@ AI developers must NEVER guess:
 ## 47. DOCUMENTATION CONSISTENCY
 
 If implementation and documentation disagree, investigate which is correct, then update the documentation to match. Do not leave known contradictions between source code, database, schema.sql, run-sqleditor.sql, AI_Handoff.md, or INSTALLATION.md.
+
+---
+
+## 48. NO STARTUP DDL
+
+Backend application startup must NOT execute `ALTER TABLE` or other DDL statements.
+
+All schema changes go through the migration system:
+- `db/migrations/*.sql` — individual migration files
+- `.github/workflows/migrate-neon.yml` — automated production migrations
+- `schema_migrations` table — tracks applied migrations
+
+If existing startup DDL is found, migrate it to a proper migration file and remove it from the startup code.
+
+---
+
+## 49. MIGRATION SYSTEM
+
+Velnox uses a two-tier migration system:
+
+1. **GitHub Action** (`migrate-neon.yml`) — applies pending migrations to Neon production automatically on push to main
+2. **Manual** — apply `db/migrations/*.sql` files directly
+
+When creating a new migration:
+1. Create `db/migrations/NNN_description.sql`
+2. Update `db/run-update.sql` (append migration, never overwrite)
+3. Update `db/run-sqleditor.sql` (complete latest schema)
+4. Update `db/schema.sql` (complete latest schema)
+5. Verify all three SQL files are synchronized
+
+---
+
+## 50. SCHEMA MIGRATIONS TRACKING
+
+The `schema_migrations` table in Neon tracks which migrations have been applied:
+
+```sql
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id BIGSERIAL PRIMARY KEY,
+  migration_name TEXT UNIQUE NOT NULL,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+The GitHub Action reads this table to detect pending migrations.
+Never manually modify this table unless recovering from a failed migration.
+
+---
+
+## 51. NO DUPLICATE SYSTEMS
+
+Before creating any new table, API, route, storage system, migration system, type, or component:
+
+1. Search the repository for existing implementations
+2. If one exists, reuse it
+3. If it is broken, fix it
+4. Only create new if the existing is architecturally unsuitable
+
+This applies to:
+- Database tables
+- API endpoints
+- Authentication systems
+- Upload systems
+- Migration systems
+- Frontend components
+- Type definitions
+
+---
+
+## 52. PRODUCT OWNERSHIP SECURITY
+
+Every product operation must verify seller ownership server-side:
+
+1. Authenticate user (requireAuth middleware)
+2. Verify user has seller role with approved status
+3. Look up seller record from authenticated userId
+4. Look up shop from seller record
+5. Verify product belongs to seller's shop
+6. Only then perform the operation
+
+Never trust frontend-provided sellerId, shopId, or userId.
+
+---
+
+## 53. NO QUICK SCHEMA REMOVAL
+
+When a database column or table causes a backend error:
+
+1. Determine if the column belongs in the canonical schema
+2. If yes → create a migration to add it
+3. If no → document why it was removed
+4. NEVER simply remove the field from the backend INSERT/UPDATE to hide the error
+
+The root cause is usually a missing migration, not an extra column.

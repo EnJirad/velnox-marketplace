@@ -23,37 +23,9 @@ export function invalidateCustomerProfileCache(userId: string): void {
   customerProfileCache.delete(userId);
 }
 
-// ─── Ensure addresses table has required columns ────────────────────────────
-// Adds subdistrict, district, latitude, longitude columns if missing.
-// Uses ALTER TABLE IF NOT EXISTS where available, or checks and adds.
-async function ensureAddressColumns(): Promise<void> {
-  const columnsToAdd = [
-    { name: "recipient_name", def: "VARCHAR(255) NOT NULL DEFAULT ''" },
-    { name: "subdistrict", def: "VARCHAR(100)" },
-    { name: "district", def: "VARCHAR(100)" },
-    { name: "latitude", def: "DOUBLE PRECISION" },
-    { name: "longitude", def: "DOUBLE PRECISION" },
-  ];
-  for (const col of columnsToAdd) {
-    try {
-      await query(`ALTER TABLE addresses ADD COLUMN IF NOT EXISTS ${col.name} ${col.def}`);
-    } catch {
-      // Column may already exist or ALTER TABLE IF NOT EXISTS not supported
-      // Try to select the column — if it fails, it doesn't exist
-      try {
-        await query(`SELECT ${col.name} FROM addresses LIMIT 0`);
-      } catch {
-        // Column doesn't exist and we can't add it — skip
-        console.warn(`[addresses] Could not ensure column ${col.name} exists`);
-      }
-    }
-  }
-}
-
-// Run once at startup
-ensureAddressColumns().catch((err) => {
-  console.error("[addresses] Failed to ensure columns:", err);
-});
+// NOTE: Address columns (recipient_name, subdistrict, district, latitude,
+// longitude) are managed by migration V0013 (db/migrations/013_schema_migrations_and_address_fixes.sql).
+// Do NOT add startup ALTER TABLE statements here.
 
 export function setupRoutes(app: Express): void {
   // NOTE: /api/auth/me and /api/auth/logout are defined in auth.ts (setupGoogleAuth)

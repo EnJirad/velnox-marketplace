@@ -505,3 +505,40 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'ชิ
 ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status);
+
+------------------------------------------------------------
+-- Migration: V0013
+-- Date: 2026-08-25
+-- Description:
+-- Create schema_migrations tracking table.
+-- Absorb ensureAddressColumns() startup DDL.
+--
+-- Reason:
+-- Backend was running ALTER TABLE at startup (schema drift).
+-- Database changes must go through the migration system.
+--
+-- Affected:
+-- schema_migrations (NEW)
+-- addresses
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id BIGSERIAL PRIMARY KEY,
+  migration_name TEXT UNIQUE NOT NULL,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS recipient_name VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS subdistrict VARCHAR(100);
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS district VARCHAR(100);
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+
+-- Mark previous migrations as applied
+INSERT INTO schema_migrations (migration_name) VALUES
+  ('001_initial'), ('002_auth'), ('003_customer'), ('004_seller'),
+  ('005_center'), ('006_behavior'), ('007_profile_images'),
+  ('008_upload_auth_fixes'), ('009_fix_auth_and_cover'),
+  ('010_revoked_tokens'), ('011_seller_status_constraint'),
+  ('012_product_fields')
+ON CONFLICT (migration_name) DO NOTHING;
