@@ -130,15 +130,28 @@ PORT=3001
 CORS_ORIGINS=http://localhost:5173,http://localhost:5174,http://localhost:5175
 ```
 
-#### Frontend Environment
+#### Frontend Public Environment Variables
 
-Each app needs only `VITE_API_URL`:
+All `VITE_*` variables are **PUBLIC** — they are intentionally exposed to the browser.
+Never store secrets in `VITE_*` variables.
 
 ```env
-VITE_API_URL=http://localhost:3001/api
+# Backend API base URL
+VITE_API_URL=http://localhost:3001
+
+# Sub-path basename (leave empty for root deployment)
+VITE_SITE_BASENAME=
+
+# Cross-application URLs (local dev ports)
+VITE_VELSHOP_URL=http://localhost:5173
+VITE_VELSELLER_URL=http://localhost:5174
+VITE_VELCENTER_URL=http://localhost:5175
+VITE_CORPORATE_URL=http://localhost:5176
 ```
 
 For Vercel deployment, set in the Vercel dashboard for each project.
+
+**IMPORTANT:** In Vercel, set these as type **Config** (NOT Secret), since `VITE_*` values are intentionally exposed to the browser by Vite.
 
 ### 5. Set Up Neon PostgreSQL Database
 
@@ -260,10 +273,17 @@ Each app is deployed as a separate Vercel project from the same repository.
 | velcenter | `.` | `bun run build:velcenter` | `apps/velcenter/dist` |
 | velnox | `.` | `bun run build:velnox` | `apps/velnox/dist` |
 
-**Environment Variables (Vercel):**
+**Environment Variables (Vercel) — set as type Config (NOT Secret):**
 ```
-VITE_API_URL=https://velnox-api.onrender.com/api
+VITE_API_URL=https://velnx-api.onrender.com
+VITE_SITE_BASENAME=
+VITE_VELSHOP_URL=https://shop.velnx.com
+VITE_VELSELLER_URL=https://seller.velnx.com
+VITE_VELCENTER_URL=https://center.velnx.com
+VITE_CORPORATE_URL=https://velnx.com
 ```
+
+All 4 Vercel projects use the same `VITE_*` values.
 
 ### Backend — Render
 
@@ -291,7 +311,7 @@ R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 R2_BUCKET=
 R2_PUBLIC_DOMAIN=
-CORS_ORIGINS=https://velshop.vercel.app,https://velseller.vercel.app,https://velcenter.vercel.app,https://velnox.vercel.app
+CORS_ORIGINS=https://shop.velnx.com,https://seller.velnx.com,https://center.velnx.com,https://velnx.com
 PORT=3001
 ```
 
@@ -330,13 +350,19 @@ Backend must allow all four frontend origins:
 | `CORS_ORIGINS` | Comma-separated allowed origins | Yes |
 | `PORT` | Server port (default: 3001) | No |
 
-### Frontend (PUBLIC ONLY)
+### Frontend (ALL PUBLIC — type Config in Vercel)
 
-| Variable | Description |
-|----------|-------------|
-| `VITE_API_URL` | Backend API URL |
+| Variable | Description | Example |
+|----------|-------------|--------|
+| `VITE_API_URL` | Backend API base URL | `https://velnx-api.onrender.com` |
+| `VITE_SITE_BASENAME` | Sub-path basename (empty = root) | `/center` |
+| `VITE_VELSHOP_URL` | VelShop full URL | `https://shop.velnx.com` |
+| `VITE_VELSELLER_URL` | VelSeller full URL | `https://seller.velnx.com` |
+| `VITE_VELCENTER_URL` | VelCenter full URL | `https://center.velnx.com` |
+| `VITE_CORPORATE_URL` | Corporate website URL | `https://velnx.com` |
 
 **NEVER put server secrets in frontend environment variables.**
+`VITE_*` values are intentionally exposed to the browser by Vite.
 
 ---
 

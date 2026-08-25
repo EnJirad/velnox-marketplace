@@ -8,7 +8,7 @@ import {
 } from "@velnox/shared/components/ui/card";
 
 import { Logo } from "@velnox/shared/components/Logo";
-import { SITE_URLS } from "@velnox/shared/lib/sites";
+import { SITE_URLS, apiUrl } from "@velnox/shared/lib/sites";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
@@ -167,7 +167,7 @@ function Auth() {
     setError(null);
     try {
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
-      const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3001";
+      const apiBase = apiUrl;
       const backendReturnTo = returnTo || "/";
       window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent(backendReturnTo)}`;
     } catch (error) {

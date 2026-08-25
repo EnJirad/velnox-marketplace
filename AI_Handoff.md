@@ -1,6 +1,6 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-08-24**
+**LAST UPDATED: 2026-08-25**
 
 ---
 
@@ -222,15 +222,37 @@ Events: product_view, category_view, search, add_to_cart, remove_from_cart, wish
 - All apps import i18n from their local `@/lib/i18n` which re-exports from shared
 - Translation keys cover: navigation, products, cart, orders, auth, seller, center, corporate, footer
 
+## Centralized URL Configuration
+
+All frontend URLs are centralized in `packages/shared/src/lib/sites.ts`:
+
+| Export | Purpose | Source |
+|--------|---------|--------|
+| `apiUrl` | Backend API base URL | `VITE_API_URL` (default: `http://localhost:3001`) |
+| `SITE_URLS.corporate` | Corporate website URL | `VITE_CORPORATE_URL` |
+| `SITE_URLS.velshop` | VelShop URL | `VITE_VELSHOP_URL` |
+| `SITE_URLS.velseller` | VelSeller URL | `VITE_VELSELLER_URL` |
+| `SITE_URLS.velcenter` | VelCenter URL | `VITE_VELCENTER_URL` |
+| `siteBasename()` | Router basename | `VITE_SITE_BASENAME` |
+| `joinUrl()` | Safe URL path joining helper | — |
+
+All `VITE_*` values are **PUBLIC** and intentionally exposed to the browser.
+In Vercel, configure these as type **Config** (NOT Secret).
+
+### Why centralized?
+
+If a domain changes (e.g. `shop.velnx.com` → `shop.newdomain.com`), update the Vercel environment variable and redeploy. No source code changes needed.
+
 ## Environment Variables
 
-### Frontend (Vercel) — ONLY
+### Frontend (Vercel) — ALL PUBLIC
 ```
-VITE_CORPORATE_URL=
-VITE_VELSHOP_URL=
-VITE_VELSELLER_URL=
-VITE_VELCENTER_URL=
+VITE_API_URL=https://velnx-api.onrender.com
 VITE_SITE_BASENAME=
+VITE_VELSHOP_URL=https://shop.velnox.com
+VITE_VELSELLER_URL=https://seller.velnx.com
+VITE_VELCENTER_URL=https://center.velnx.com
+VITE_CORPORATE_URL=https://velnx.com
 ```
 
 ### Backend (Render) — ALL secrets
@@ -255,6 +277,7 @@ PORT=3001
 - GOOGLE_CLIENT_SECRET
 - R2_SECRET_ACCESS_KEY
 - Any server-side credentials
+- BOOTSTRAP_OWNER_SECRET (backend only)
 
 ## Deployment
 
@@ -333,6 +356,19 @@ PORT=3001
 7. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-08-25 — Centralized Environment & URL Configuration
+- **Problem:** `VITE_API_URL` was duplicated across 4 files; `packages/shared/src/vite-env.d.ts` only declared `VITE_API_URL`; `VITE_VELSHOP_URL`, `VITE_VELSELLER_URL`, etc. missing from shared types
+- **Root cause:** URL configuration was partially centralized but incomplete
+- **Fix:**
+  - Updated `packages/shared/src/vite-env.d.ts` to declare all `VITE_*` environment variables
+  - Added `apiUrl` constant to `packages/shared/src/lib/sites.ts` (single source of truth for API base URL)
+  - Added `joinUrl(base, path)` helper for safe URL construction without double-slash issues
+  - Updated `api-client.ts`, `api-routes.ts`, `track.ts` to import `apiUrl` from sites.ts
+  - Updated `Auth.tsx` Google OAuth redirect to use `apiUrl` instead of inline `import.meta.env`
+  - Updated documentation: AI_RULES.md, AI_Handoff.md, INSTALLATION.md
+- **Files changed:** `packages/shared/src/vite-env.d.ts`, `packages/shared/src/lib/sites.ts`, `packages/shared/src/lib/api-client.ts`, `packages/shared/src/lib/api-routes.ts`, `packages/shared/src/lib/track.ts`, `packages/shared/src/pages/Auth.tsx`, `AI_RULES.md`, `AI_Handoff.md`, `INSTALLATION.md`
+- **Result:** All 4 frontend apps pass typecheck. No hardcoded API URLs remain in frontend source code.
 
 ### 2026-08-24 — Address Management Fix
 - **Problem:** /addresses save failed with generic error

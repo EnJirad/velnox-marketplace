@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 
 // ─── API Base URL ───────────────────────────────────────────────────────────
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+import { apiUrl as API_BASE } from "./sites";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

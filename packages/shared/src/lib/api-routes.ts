@@ -6,7 +6,7 @@
  *
  * New code should use api-client.ts directly with REST paths.
  */
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+import { apiUrl as API_BASE } from "./sites";
 
 // ─── Simple in-memory GET cache (60s TTL) ──────────────────────────────────
 const _getCache = new Map<string, { data: any; expires: number }>();

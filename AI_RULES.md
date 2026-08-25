@@ -155,6 +155,34 @@ Never use `git push --force` or `git push -f` unless explicitly requested by the
 
 ---
 
+## 🌐 CENTRALIZED URL CONFIGURATION
+
+Deployment-specific frontend URLs must NOT be hardcoded in source code.
+All public frontend URLs are centralized in `packages/shared/src/lib/sites.ts` and read from `VITE_*` environment variables.
+
+### Supported Environment Variables
+
+| Variable | Purpose | Example |
+|----------|---------|--------|
+| `VITE_API_URL` | Backend API base URL | `https://velnx-api.onrender.com` |
+| `VITE_SITE_BASENAME` | Sub-path basename for gateway deploys | `/center` or empty |
+| `VITE_VELSHOP_URL` | VelShop full URL | `https://shop.velnox.com` |
+| `VITE_VELSELLER_URL` | VelSeller full URL | `https://seller.velnx.com` |
+| `VITE_VELCENTER_URL` | VelCenter full URL | `https://center.velnx.com` |
+| `VITE_CORPORATE_URL` | Corporate site URL | `https://velnx.com` |
+
+### Key Rules
+
+1. **`VITE_*` variables are PUBLIC** — they are intentionally exposed to the browser by Vite.
+2. **Never store secrets in `VITE_*` variables.**
+3. Use `apiUrl` from `@velnox/shared/lib/sites` instead of `import.meta.env.VITE_API_URL`.
+4. Use `SITE_URLS` from `@velnox/shared/lib/sites` for cross-application navigation.
+5. Use `joinUrl(base, path)` from `@velnox/shared/lib/sites` to safely join base URLs and paths.
+6. If a domain changes: update the Vercel environment variable and redeploy. Do NOT modify source code.
+7. In Vercel, set `VITE_*` as type **Config** (NOT Secret).
+
+---
+
 ## 🏗️ ARCHITECTURE RULES
 
 ### Project Structure
