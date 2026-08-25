@@ -157,10 +157,10 @@ CREATE TABLE IF NOT EXISTS products (
   rating NUMERIC(3, 2),
   review_count INTEGER NOT NULL DEFAULT 0,
   sold_count INTEGER NOT NULL DEFAULT 0,
-  category_id TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),,
+  category_id TEXT,  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_products_shop ON products (shop_id);
 CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products (category_id);

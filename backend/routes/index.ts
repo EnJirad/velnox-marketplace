@@ -49,7 +49,7 @@ export function setupRoutes(app: Express): void {
       if (category) { where += ` AND c.slug = $${paramIndex}`; params.push(category); paramIndex++; }
       if (featured) { where += ` AND p.featured = true`; }
 
-      const countResult = await query(`SELECT COUNT(*) FROM products p LEFT JOIN categories c ON p.category_id = c.id ${where}`, params);
+      const countResult = await query(`SELECT COUNT(*) FROM products p LEFT JOIN categories c ON c.slug = p.category_id ${where}`, params);
       const total = parseInt(countResult.rows[0]!.count);
 
       params.push(pageSize, offset);
@@ -57,7 +57,7 @@ export function setupRoutes(app: Express): void {
         SELECT p.*, c.name as category_name, c.slug as category_slug, c.icon as category_icon,
                s.id as shop_id, s.name as shop_name, s.slug as shop_slug, s.rating as shop_rating, s.product_count as shop_product_count
         FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN categories c ON c.slug = p.category_id
         LEFT JOIN shops s ON p.shop_id = s.id
         ${where}
         ORDER BY p.created_at DESC
