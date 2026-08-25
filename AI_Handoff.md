@@ -373,6 +373,13 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Category JOIN Fix + SQL Syntax Error
+- **Problem:** After changing `products.category_id` from UUID to TEXT (V0015), the `/api/products` endpoint still JOINed `categories ON c.id = p.category_id` — UUID vs TEXT mismatch caused the JOIN to fail. Also discovered double-comma syntax error `NOW(),,` in both schema files
+- **Fix:**
+  - Changed category JOIN to `c.slug = p.category_id` (TEXT slug matching)
+  - Fixed `NOW(),,` → `NOW(),` in both `schema.sql` and `run-sqleditor.sql`
+- **All 5 typechecks pass**
+
 ### 2026-08-25 — Fix R2 Key Extraction for Product Image Deletion
 - **Problem:** `deleteR2Object(img.url)` passed the full CDN URL (`https://pub-xxx.r2.dev/products/...`) as the R2 object key, but R2 expects just the key (`products/...`). This caused silent deletion failures — orphaned files accumulate in R2 storage
 - **Root cause:** The `product_images.url` column stores the full CDN URL (via `publicUrl(key)` = `${R2_PUBLIC_DOMAIN}/${key}`), but `DeleteObjectCommand` requires just the key. No extraction logic existed to convert URLs back to keys
