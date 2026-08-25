@@ -84,6 +84,7 @@ Each app imports from `@velnox/shared` via a Vite resolve alias that points to `
 - Google OAuth routes (backend/routes/auth.ts)
 - API routes (backend/routes/index.ts)
 - Upload routes (backend/routes/upload.ts)
+- Admin routes (backend/routes/admin.ts) — bootstrap status & owner claim
 - WebSocket server (backend/realtime/index.ts)
 - Listens on process.env.PORT
 
@@ -268,6 +269,7 @@ R2_SECRET_ACCESS_KEY=
 R2_BUCKET=
 R2_PUBLIC_DOMAIN=
 CORS_ORIGINS=
+BOOTSTRAP_OWNER_SECRET=
 PORT=3001
 ```
 
@@ -356,6 +358,18 @@ PORT=3001
 7. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-08-25 — Fix Owner Bootstrap Configuration
+- **Problem:** VelCenter showed "ยังไม่ได้ตั้งค่ารหัสเปิดใช้งาน" even though `BOOTSTRAP_OWNER_SECRET` was set in Render
+- **Root cause:** Backend was missing `/api/admin/bootstrap-status` and `/api/admin/claim-owner` routes. Frontend called these endpoints, received 404 → catch → `configured: false` → warning shown
+- **Fix:**
+  - Created `backend/routes/admin.ts` with `GET /api/admin/bootstrap-status` (unauthenticated) and `POST /api/admin/claim-owner` (authenticated)
+  - Wired admin routes into `backend/server.ts`
+  - Fixed `RequireRole.tsx` to use centralized `apiUrl` from sites.ts and correctly extract `s.data` from API response
+  - Added `[bootstrap]` startup diagnostic logging (boolean only, never reveals secret)
+- **Files changed:** `backend/routes/admin.ts` (new), `backend/server.ts`, `packages/shared/src/components/RequireRole.tsx`
+- **Security:** `BOOTSTRAP_OWNER_SECRET` is never exposed to the frontend, never logged, never returned via API
+- **Result:** All 4 frontend apps + backend pass typecheck
 
 ### 2026-08-25 — Centralized Environment & URL Configuration
 - **Problem:** `VITE_API_URL` was duplicated across 4 files; `packages/shared/src/vite-env.d.ts` only declared `VITE_API_URL`; `VITE_VELSHOP_URL`, `VITE_VELSELLER_URL`, etc. missing from shared types

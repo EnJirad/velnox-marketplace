@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { setupRoutes } from "./routes/index.js";
+import { setupAdminRoutes } from "./routes/admin.js";
 import { setupGoogleAuth } from "./routes/auth.js";
 import { setupUploadRoutes } from "./routes/upload.js";
 import { setupWebSocket } from "./realtime/index.js";
@@ -44,6 +45,9 @@ setupUploadRoutes(app);
 // ─── Routes ─────────────────────────────────────────────
 setupRoutes(app);
 
+// ─── Admin (bootstrap / owner setup) ────────────────────
+setupAdminRoutes(app);
+
 // ─── WebSocket ──────────────────────────────────────────
 const wss = new WebSocketServer({ server, path: "/ws" });
 setupWebSocket(wss);
@@ -64,4 +68,7 @@ server.listen(PORT, "0.0.0.0", () => {
   } else {
     console.log("✅ All required env vars are configured.");
   }
+  // BOOTSTRAP_OWNER_SECRET is optional but must be set for owner initialization.
+  // Logged as boolean only — the actual value is never exposed.
+  console.log(`[bootstrap] BOOTSTRAP_OWNER_SECRET configured: ${Boolean(process.env.BOOTSTRAP_OWNER_SECRET)}`);
 });

@@ -3,7 +3,7 @@ import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useLanguage } from "@velnox/shared/lib/i18n";
-import { SITE_URLS } from "@velnox/shared/lib/sites";
+import { SITE_URLS, apiUrl } from "@velnox/shared/lib/sites";
 import {
   ArrowRight,
   Clock,
@@ -18,7 +18,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 import { toast } from "sonner";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const API_BASE = apiUrl;
 
 interface RequireRoleProps {
   role: "seller" | "center";
@@ -82,7 +82,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
     if (role === "center") {
       fetch(`${API_BASE}/api/admin/bootstrap-status`, { credentials: "include" })
         .then((r) => r.json())
-        .then((s) => { if (alive) setOwnerStatus(s); })
+        .then((s) => { if (alive) setOwnerStatus(s.data ?? s); })
         .catch(() => { if (alive) setOwnerStatus({ ownerExists: false, configured: false }); });
     }
 
