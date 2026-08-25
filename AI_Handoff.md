@@ -373,6 +373,22 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Product Creation Fix: Repair Migration V0014 + Transaction
+- **Problem:** Production error `column "unit" of relation "products" does not exist` (PostgreSQL code 42703). Product creation fails because V0012 migration (adding `unit`/`supplier` columns) was never applied to Neon despite V0013 marking it as applied in `schema_migrations`. Additionally, product creation used separate non-atomic queries — if inventory creation failed, a half-created product remained
+- **Root cause:** Migration V0013 pre-marks V0012 as applied in `schema_migrations` (`INSERT INTO schema_migrations ... ON CONFLICT DO NOTHING`), so the GitHub Action skips V0012. But V0012 was never actually applied to Neon. The product INSERT references `unit` column that doesn't exist
+- **Fix:**
+  - **New file `db/migrations/014_repair_product_fields.sql`** — Repair migration using `IF NOT EXISTS` to safely add `unit` and `supplier` columns even if V0012 was partially applied
+  - **Product creation wrapped in PostgreSQL transaction** — `BEGIN`/`COMMIT`/`ROLLBACK` using `getClient()` for product INSERT + inventory INSERT + shop product_count UPDATE
+  - Updated `db/run-update.sql` with V0014 repair migration
+  - Verified `db/schema.sql` and `db/run-sqleditor.sql` already contain the columns
+  - All 5 typechecks pass (backend, velshop, velseller, velcenter, velnox)
+- **Migration architecture:**
+  - V0012: adds `unit`/`supplier` (may or may not be applied to Neon)
+  - V0013: creates `schema_migrations` + marks V0012 as applied (dangerous if V0012 wasn't applied)
+  - V0014: repair — safely ensures columns exist using `IF NOT EXISTS` (always safe to run)
+- **Result:** After V0014 is applied to Neon (via GitHub Action or manual), product creation will work. Transaction ensures atomicity
+- **Status:** Code complete, typecheck passes. V0014 needs to be applied to Neon production
+
 ### 2026-08-25 — Migration System & Schema Drift Fix
 - **Problem:** Backend ran `ALTER TABLE addresses ADD COLUMN IF NOT EXISTS` at every startup (schema drift). No migration tracking table existed. No GitHub Action for automated Neon migrations. Production had `column "unit" does not exist` error because V0012 migration was never applied
 - **Root cause:** Schema changes were applied via startup DDL instead of proper migrations. No `schema_migrations` tracking table. No CI/CD for database
@@ -630,14 +646,16 @@ PORT=3001
 
 - Neon cold start causes ~1.5s latency on first query after idle period (mitigated with 30s in-memory cache)
 - SSL deprecation warning from pg-connection-string (cosmetic, handled by replacing sslmode=require with sslmode=verify-full)
+- **Migration V0012 was never applied to Neon** — V0013 incorrectly marked it as applied. V0014 (repair migration) is now available to fix this safely. It must be applied via GitHub Action or manually
 - Production Neon may have columns (date_of_birth, gender, reserved, etc.) that were added outside of migrations — the schema files now reflect the actual backend usage but production state should be verified
 
 ## Next Tasks
 
+- **Apply V0014 repair migration to Neon** (needed for product creation to work in production)
+- Verify Neon `NEON_DATABASE_URL` GitHub Secret is configured for the migration Action
 - Cart implementation (currently placeholder routes)
 - Order implementation (currently placeholder routes)
 - Search/filter improvements
 - Mobile responsive refinements
 - Verify production Neon schema matches the synchronized run-sqleditor.sql
 - Run migration 010 (revoked_tokens) on production Neon if not already applied
-- Run migration 012 (product unit/supplier fields) on production Neon

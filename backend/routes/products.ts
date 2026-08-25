@@ -309,46 +309,60 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const productStatus = status === "published" ? "pending_review" : "draft";
-
-      const insertResult = await query(
-        `INSERT INTO products (shop_id, name, slug, description, short_description, price, compare_at_price, currency, unit, supplier, status, category_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'THB', $8, $9, $10, $11)
-         RETURNING *`,
-        [
-          shop.id,
-          name.trim(),
-          slug,
-          description || "",
-          shortDescription || null,
-          priceNum,
-          compareAtPrice ? Number(compareAtPrice) : null,
-          unit || "ชิ้น",
-          supplier || null,
-          productStatus,
-          category || null,
-        ]
-      );
-
-      const product = insertResult.rows[0];
-
-      // Create inventory record
       const stockQty = initialStock != null ? Math.max(0, Number(initialStock)) : 0;
       const reorder = reorderLevel != null ? Math.max(0, Number(reorderLevel)) : 5;
-      await query(
-        `INSERT INTO inventory (product_id, quantity, reserved, low_stock_threshold)
-         VALUES ($1, $2, 0, $3)`,
-        [product.id, stockQty, reorder]
-      );
 
-      // Update shop product count
-      await query("UPDATE shops SET product_count = product_count + 1, updated_at = NOW() WHERE id = $1", [shop.id]);
+      // ── Transaction: create product + inventory + update shop count ──
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
 
-      console.log(`[products] created: ${product.id} (shop ${shop.id}) by seller ${seller.id}`);
+        const insertResult = await client.query(
+          `INSERT INTO products (shop_id, name, slug, description, short_description, price, compare_at_price, currency, unit, supplier, status, category_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'THB', $8, $9, $10, $11)
+           RETURNING *`,
+          [
+            shop.id,
+            name.trim(),
+            slug,
+            description || "",
+            shortDescription || null,
+            priceNum,
+            compareAtPrice ? Number(compareAtPrice) : null,
+            unit || "ชิ้น",
+            supplier || null,
+            productStatus,
+            category || null,
+          ]
+        );
+
+        const product = insertResult.rows[0];
+
+        await client.query(
+          `INSERT INTO inventory (product_id, quantity, reserved, low_stock_threshold)
+           VALUES ($1, $2, 0, $3)`,
+          [product.id, stockQty, reorder]
+        );
+
+        await client.query("UPDATE shops SET product_count = product_count + 1, updated_at = NOW() WHERE id = $1", [shop.id]);
+
+        await client.query("COMMIT");
+
+        // Store product for response formatting
+        var createdProduct = product;
+      } catch (txErr) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
+      }
+
+      console.log(`[products] created: ${createdProduct.id} (shop ${shop.id}) by seller ${seller.id}`);
 
       const formatResult = formatProduct(
-        { ...product, seller_id: seller.id },
+        { ...createdProduct, seller_id: seller.id },
         [],
-        { id: product.id, product_id: product.id, quantity: stockQty, reserved: 0, low_stock_threshold: reorder }
+        { id: createdProduct.id, product_id: createdProduct.id, quantity: stockQty, reserved: 0, low_stock_threshold: reorder }
       );
 
       res.json({ success: true, data: formatResult });

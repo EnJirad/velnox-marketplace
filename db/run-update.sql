@@ -542,3 +542,22 @@ INSERT INTO schema_migrations (migration_name) VALUES
   ('010_revoked_tokens'), ('011_seller_status_constraint'),
   ('012_product_fields')
 ON CONFLICT (migration_name) DO NOTHING;
+
+------------------------------------------------------------
+-- Migration: V0014
+-- Date: 2026-08-25
+-- Description:
+-- Repair: ensure products.unit and products.supplier exist.
+-- V0012 was marked as applied by V0013 but never actually
+-- applied to production Neon.
+--
+-- Reason:
+-- Production error: column "unit" of relation "products"
+-- does not exist (code: 42703).
+--
+-- Affected:\-- products (unit, supplier)
+------------------------------------------------------------
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'ชิ้น';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier TEXT;
+CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status);
