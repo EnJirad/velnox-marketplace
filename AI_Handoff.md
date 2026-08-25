@@ -368,6 +368,25 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Fix Google OAuth Login Flow & Seller Onboarding
+- **Problem:** VelSeller Google login fails with `google_failed` error; after Google OAuth completes, user is redirected to wrong frontend; VelSeller shows login page even after successful auth; seller onboarding form is minimal (shop name only)
+- **Root cause:**
+  1. `getFrontendUrl()` in `backend/routes/auth.ts` always returned `CORS_ORIGINS[0]` (VelShop), ignoring which frontend initiated the OAuth flow. When VelSeller started Google auth, the callback redirected to VelShop
+  2. `currentSite()` in `Auth.tsx` used pathname-based detection (`/velseller` prefix) which doesn't work when VelSeller runs on its own domain (`velseller.vercel.app` with `/auth` path)
+  3. OAuth callback lacked diagnostic logging, making it impossible to debug backend failures
+- **Fix:**
+  - Backend `getFrontendUrl(req, returnTo?)`: now resolves the correct frontend URL from the `returnTo` path. Checks per-app env vars (`VITE_VELSELLER_URL`, `VITE_VELCENTER_URL`, `VITE_VELSHOP_URL`), then falls back to `CORS_ORIGINS` pattern matching, then to request origin header
+  - Backend OAuth callback: added `[auth] OAuth success` and `[auth] Google OAuth callback error` diagnostic logging with error message and stack trace (no secrets logged)
+  - Frontend `currentSite()`: added hostname-based detection — checks `window.location.hostname` for `seller`/`center` keywords before falling back to pathname detection
+  - Frontend `RequireRole.tsx`: enhanced seller onboarding with multi-step mock KYC form (4 steps: shop info → personal info → identity verification → document upload), step indicator, success confirmation page with pending status, and proper error handling
+- **Files changed:** `backend/routes/auth.ts`, `packages/shared/src/pages/Auth.tsx`, `packages/shared/src/components/RequireRole.tsx`
+- **Environment variables needed on Render:**
+  - `VITE_VELSHOP_URL` — must match the VelShop frontend origin (e.g., `https://velshop.vercel.app`)
+  - `VITE_VELSELLER_URL` — must match the VelSeller frontend origin (e.g., `https://velseller.vercel.app`)
+  - `VITE_VELCENTER_URL` — must match the VelCenter frontend origin (e.g., `https://velcenter.vercel.app`)
+  - These are used by `getFrontendUrl()` to redirect to the correct frontend after OAuth
+- **Result:** All 4 frontend apps + backend pass typecheck. OAuth redirect resolves to the correct frontend based on the `returnTo` path
+
 ### 2026-08-25 — Fix Seller Approval Authorization & Role Architecture
 - **Problem:** Owner trying to approve/reject a seller got "Cannot approve/reject yourself"; also `UPDATE users SET role = 'seller'` would downgrade owner/admin/staff roles
 - **Root cause:** Backend PATCH endpoint lacked proper role separation — seller status was conflated with user platform role. Also, the admin seller list endpoint returned `user_id` in SQL but didn't map it to the frontend, so the UI couldn't detect self-applications

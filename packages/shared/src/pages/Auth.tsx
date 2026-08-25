@@ -23,10 +23,15 @@ import { useNavigate, useSearchParams } from "react-router";
 
 /** Which of the 3 SEPARATE apps this auth page is running inside. */
 function currentSite(): "velshop" | "velseller" | "velcenter" {
+  const host = window.location.hostname;
+  // Production domains (Vercel preview + custom domains)
+  if (/seller/i.test(host)) return "velseller";
+  if (/center/i.test(host)) return "velcenter";
+  // Path-based detection (legacy portal and local dev with basenames)
   const path = window.location.pathname;
   if (path.startsWith("/velseller") || path.startsWith("/seller")) return "velseller";
   if (path.startsWith("/velcenter") || path.startsWith("/center")) return "velcenter";
-  return "velshop"; // standalone shop domain (and the legacy portal) live under "/" paths
+  return "velshop";
 }
 
 /**

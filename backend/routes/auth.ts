@@ -241,7 +241,7 @@ export function setupGoogleAuth(app: Express): void {
     // Validate required env vars
     if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
       console.error("[auth] GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI not configured");
-      const frontendUrl = getFrontendUrl(req);
+      const frontendUrl = getFrontendUrl(req, req.query.returnTo as string);
       res.redirect(`${frontendUrl}/auth?error=google_not_configured`);
       return;
     }
@@ -302,12 +302,14 @@ export function setupGoogleAuth(app: Express): void {
       const sessionToken = createSessionToken(userId, email);
       setSessionCookie(res, sessionToken);
 
-      // Redirect back to frontend
-      const frontendUrl = getFrontendUrl(req);
+      // Redirect back to the correct frontend (resolved from returnTo)
+      const frontendUrl = getFrontendUrl(req, returnTo);
+      console.log("[auth] OAuth success — redirecting to:", `${frontendUrl}${returnTo}`);
       res.redirect(`${frontendUrl}${returnTo}`);
-    } catch (err) {
-      console.error("Google OAuth callback error:", err);
-      const frontendUrl = getFrontendUrl(req);
+    } catch (err: any) {
+      console.error("[auth] Google OAuth callback error:", err?.message || err);
+      console.error("[auth] Stack:", err?.stack);
+      const frontendUrl = getFrontendUrl(req, "/");
       res.redirect(`${frontendUrl}/auth?error=google_failed`);
     }
   });
@@ -417,10 +419,40 @@ export function setupGoogleAuth(app: Express): void {
   });
 }
 
-/** Determine the frontend URL from the request origin or env. */
-function getFrontendUrl(req: Request): string {
+/**
+ * Resolve the correct frontend URL based on the returnTo path.
+ * Different Velnox apps live on different domains; we must redirect
+ * the user back to the SAME frontend that started the OAuth flow.
+ */
+function getFrontendUrl(req: Request, returnTo?: string): string {
+  // 1. Determine which app owns the returnTo path
+  const rt = returnTo || "/";
+  let appKey: string | null = null;
+  if (rt.startsWith("/seller") || rt.startsWith("/velseller")) {
+    appKey = "VELSELLER";
+  } else if (rt.startsWith("/center") || rt.startsWith("/velcenter")) {
+    appKey = "VELCENTER";
+  } else {
+    // Default to VelShop for "/", "/shop", product pages, etc.
+    appKey = "VELSHOP";
+  }
+
+  // 2. Look up the frontend URL from the per-app env var
+  const envUrl = process.env[`VITE_${appKey}_URL`];
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+
+  // 3. Fall back to CORS_ORIGINS
   const origins = process.env.CORS_ORIGINS?.split(",").map((s) => s.trim()) || [];
+  if (appKey === "VELSHOP" && origins.length > 0 && origins[0]) return origins[0];
+  // If we can't determine the app, try matching any CORS origin
+  for (const o of origins) {
+    if (appKey === "VELSELLER" && /seller/i.test(o)) return o;
+    if (appKey === "VELCENTER" && /center/i.test(o)) return o;
+    if (appKey === "VELSHOP" && /shop/i.test(o)) return o;
+  }
   if (origins.length > 0 && origins[0]) return origins[0];
+
+  // 4. Fall back to request origin header
   const origin = req.headers.origin || req.headers.referer;
   if (origin) {
     try {
