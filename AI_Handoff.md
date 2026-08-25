@@ -373,6 +373,33 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Complete Seller Product Management System
+- **Problem:** Approved sellers could not create, edit, delete, or manage products on VelSeller. The entire backend product API was missing — frontend MyShop.tsx and ProductFormDialog.tsx were built but had no backend endpoints to call
+- **Root cause:** Backend had NO `products.ts` route file. The `api-routes.ts` ACTION_MAP had mappings for product CRUD, image upload, and inventory but the actual Express routes didn't exist. Also missing: `setStockAction` and `setReorderLevelAction` route mappings
+- **Fix:**
+  - **New file `backend/routes/products.ts`** — Complete product system with 13 endpoints:
+    - `GET /api/seller/products` — List seller's products with images + inventory
+    - `POST /api/seller/products` — Create product with validation, slug generation, inventory creation
+    - `PATCH /api/seller/products/:productId` — Update product fields
+    - `DELETE /api/seller/products/:productId` — Delete product + R2 images + decrement shop count
+    - `PATCH /api/seller/products/:productId/status` — Set product status (draft/published/pending_review/rejected/archived)
+    - `PATCH /api/seller/products/:productId/stock` — Set inventory quantity
+    - `PATCH /api/seller/products/:productId/reorder-level` — Set reorder threshold
+    - `POST /api/seller/products/image-upload-intent` — R2 presigned URL for product images
+    - `POST /api/seller/products/save-image` — Save image metadata to product_images
+    - `DELETE /api/seller/products/images/:imageId` — Delete image from R2 + DB + recompact sort order
+    - `PATCH /api/seller/products/:productId/primary-image` — Set primary image
+    - `PATCH /api/seller/products/:productId/reorder-images` — Reorder images
+    - `GET /api/products/catalog` — Public catalog with search, filter, sort
+  - **Public catalog routes:** `GET /api/products/catalog`, `GET /api/products/:productId`, `GET /api/shops`, `GET /api/shops/:shopId`, `GET /api/categories`
+  - **Backend `server.ts`:** Registered `setupProductRoutes`
+  - **Frontend `api-routes.ts`:** Added missing `setStockAction` and `setReorderLevelAction` mappings
+  - **Database V0012 migration:** Added `unit TEXT` and `supplier TEXT` columns to `products` table, plus `idx_products_shop_status` index
+  - **Database files:** All three SQL files updated and synchronized
+- **Security:** All seller endpoints verify authenticated user → approved seller → shop ownership before any operation. Cross-seller access is blocked. Public catalog only shows `published` products
+- **Files changed:** `backend/routes/products.ts` (NEW), `backend/server.ts`, `packages/shared/src/lib/api-routes.ts`, `db/migrations/012_product_fields.sql` (NEW), `db/run-update.sql`, `db/run-sqleditor.sql`, `db/schema.sql`
+- **Result:** All 5 typechecks pass. Approved sellers can now create, edit, delete products with images, inventory, and stock management via VelSeller MyShop page
+
 ### 2026-08-25 — Fix Seller Approval CORS, Diagnostics & Frontend Error Handling
 - **Problem:** After approving a seller in VelCenter, the seller still cannot use VelSeller. Multiple subtle issues compound:
   1. CORS silently blocks cross-origin requests when `CORS_ORIGINS` env var on Render doesn't include all production frontend domains
@@ -591,8 +618,8 @@ PORT=3001
 
 - Cart implementation (currently placeholder routes)
 - Order implementation (currently placeholder routes)
-- Product image management
 - Search/filter improvements
 - Mobile responsive refinements
 - Verify production Neon schema matches the synchronized run-sqleditor.sql
 - Run migration 010 (revoked_tokens) on production Neon if not already applied
+- Run migration 012 (product unit/supplier fields) on production Neon

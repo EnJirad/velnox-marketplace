@@ -10,6 +10,7 @@ import { setupAdminRoutes } from "./routes/admin.js";
 import { setupGoogleAuth } from "./routes/auth.js";
 import { setupUploadRoutes } from "./routes/upload.js";
 import { setupSellerRoutes } from "./routes/seller.js";
+import { setupProductRoutes } from "./routes/products.js";
 import { setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -62,6 +63,9 @@ setupRoutes(app);
 
 // ─── Seller (onboarding & approval) ────────────────────
 setupSellerRoutes(app);
+
+// ─── Products (CRUD, images, catalog) ────────────────────
+setupProductRoutes(app);
 
 // ─── Admin (bootstrap / owner setup) ────────────────────
 setupAdminRoutes(app);

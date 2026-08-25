@@ -150,6 +150,8 @@ CREATE TABLE IF NOT EXISTS products (
   price NUMERIC(12, 2) NOT NULL,
   compare_at_price NUMERIC(12, 2),
   currency TEXT NOT NULL DEFAULT 'THB',
+  unit TEXT NOT NULL DEFAULT 'ชิ้น',
+  supplier TEXT,
   status TEXT NOT NULL DEFAULT 'draft',
   featured BOOLEAN NOT NULL DEFAULT FALSE,
   rating NUMERIC(3, 2),
@@ -160,6 +162,7 @@ CREATE TABLE IF NOT EXISTS products (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_products_shop ON products (shop_id);
+CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products (category_id);
 CREATE INDEX IF NOT EXISTS idx_products_status ON products (status);
 CREATE INDEX IF NOT EXISTS idx_products_featured ON products (featured) WHERE featured = TRUE;

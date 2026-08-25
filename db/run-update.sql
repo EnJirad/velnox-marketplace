@@ -487,3 +487,21 @@ ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check;
 ALTER TABLE sellers
   ADD CONSTRAINT sellers_status_check
   CHECK (status IN ('pending', 'approved', 'rejected', 'suspended'));
+
+------------------------------------------------------------
+-- Migration: V0012
+-- Date: 2026-08-25
+-- Description:
+-- Add unit and supplier columns to products.
+--
+-- Reason:
+-- Product creation system requires unit and supplier fields.
+--
+-- Affected:
+-- products
+------------------------------------------------------------
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'ชิ้น';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status);

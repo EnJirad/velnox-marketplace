@@ -184,6 +184,8 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.deleteProductImageAction": (a) => apiDelete(`/api/seller/products/images/${a.imageId}`),
   "api.commerce.setPrimaryProductImageAction": (a) => apiPatch(`/api/seller/products/${a.productId}/primary-image`, a),
   "api.commerce.reorderProductImagesAction": (a) => apiPatch(`/api/seller/products/${a.productId}/reorder-images`, a),
+  "api.commerce.setStockAction": (a) => apiPatch(`/api/seller/products/${a.productId}/stock`, a),
+  "api.commerce.setReorderLevelAction": (a) => apiPatch(`/api/seller/products/${a.productId}/reorder-level`, a),
 
   // Center admin actions
   "api.centerAdmin.sellerList": () => apiGet("/api/admin/sellers"),
