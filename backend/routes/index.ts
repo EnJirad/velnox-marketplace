@@ -80,16 +80,9 @@ export function setupRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/products/:id", async (req, res) => {
-    try {
-      // Public access only shows published products
-      const result = await query("SELECT * FROM products WHERE id = $1 AND status = 'published'", [req.params.id]);
-      if (result.rows.length === 0) { res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } }); return; }
-      res.json({ success: true, data: { product: result.rows[0] } });
-    } catch {
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch product" } });
-    }
-  });
+  // /api/products/:id and /api/products/:productId are handled by products.ts
+  // Do NOT add parameterized product routes here — they shadow the catalog endpoint
+
 
   // ─── Categories ──────────────────────────────────────
   app.get("/api/categories", async (_req, res) => {

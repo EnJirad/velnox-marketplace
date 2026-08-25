@@ -132,7 +132,9 @@ export default function ShopProducts() {
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       });
-      setData(normalizeCatalog(raw));
+      const catalogData = normalizeCatalog(raw);
+      if (import.meta.env.DEV) console.log("[VelShop Products] catalog:", { count: catalogData.items.length, total: catalogData.total });
+      setData(catalogData);
     } catch (err) {
       console.error("Catalog error:", err);
       setError(err instanceof Error ? err.message : t("products.loadError"));
@@ -209,7 +211,10 @@ export default function ShopProducts() {
   useEffect(() => {
     if (shops.length > 0) return;
     publicShops()
-      .then((rows) => setShops((rows ?? []) as unknown as ShopRow[]))
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows as ShopRow[] : [];
+        setShops(list);
+      })
       .catch(() => setShops([]));
   }, [publicShops, shops.length]);
 

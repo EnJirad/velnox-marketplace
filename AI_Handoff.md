@@ -750,6 +750,18 @@ PORT=3001
 - Old timestamped objects cleaned up automatically
 - Media records upserted with ON CONFLICT
 
+### 2026-08-25 — Fix VelShop Product Catalog Route Shadowing + Defensive Normalization
+- **Problem:** VelShop `/products` page shows "โหลดสินค้าไม่สำเร็จ" (failed to load products) and previously crashed with `I.map is not a function`
+- **Root cause:** `backend/routes/index.ts` line 83 registered `app.get("/api/products/:id", ...)`. Since `setupRoutes(app)` runs BEFORE `setupProductRoutes(app)` in `server.ts`, Express matches the parameterized route first. When VelShop calls `/api/products/catalog`, Express matches it with `id = "catalog"`, causing SQL to fail (`WHERE id = 'catalog'`). This shadows the real catalog endpoint in `products.ts`. This is the same class of bug as the `/api/shops` placeholder issue fixed earlier.
+- **Fix:**
+  - Removed the shadowing `app.get("/api/products/:id", ...)` route from `backend/routes/index.ts` (replaced with comment). The real endpoints in `products.ts` (`/api/products/catalog` and `/api/products/:productId`) now handle these routes.
+  - Added `safeImages` defensive normalization to `formatProduct()` in `backend/routes/products.ts` — ensures `images` parameter is always an array even if null/undefined is passed.
+  - Added `Array.isArray()` check for shops data in `apps/velshop/src/pages/ShopProducts.tsx` — prevents crash if shops API returns unexpected format.
+  - Added dev logging for catalog fetch results.
+- **Key insight:** Express matches the FIRST registered route that matches the path. Parameterized routes like `/api/products/:id` registered BEFORE specific routes like `/api/products/catalog` will always shadow them. The fix is to remove the parameterized route from the earlier-registration file.
+- **Files changed:** `backend/routes/index.ts` (removed shadowing route), `backend/routes/products.ts` (defensive `safeImages` normalization), `apps/velshop/src/pages/ShopProducts.tsx` (defensive shops normalization + dev logging)
+- **Result:** VelShop `/products` page no longer crashes. Catalog endpoint correctly serves products. All 5 typechecks pass.
+
 ## Known Issues
 
 - Neon cold start causes ~1.5s latency on first query after idle period (mitigated with 30s in-memory cache)

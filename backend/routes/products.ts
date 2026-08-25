@@ -128,7 +128,8 @@ function urlToKey(url: string): string {
  * Format a product row from the DB into the StoreProduct shape expected by the frontend.
  */
 function formatProduct(row: Record<string, any>, images: any[], inventory: any): any {
-  const primaryImage = images.find((img: any) => img.sort_order === 0) ?? images[0] ?? null;
+  const safeImages = Array.isArray(images) ? images : [];
+  const primaryImage = safeImages.find((img: any) => img.sort_order === 0) ?? safeImages[0] ?? null;
 
   return {
     id: row.id,
@@ -145,7 +146,7 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     supplier: row.supplier || null,
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
     updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
-    images: images.map((img: any) => ({
+    images: safeImages.map((img: any) => ({
       id: img.id,
       productId: img.product_id,
       url: img.url,
