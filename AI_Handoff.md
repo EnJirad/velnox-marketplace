@@ -728,6 +728,16 @@ PORT=3001
 - **Files changed:** `backend/routes/products.ts` (state machine validation + auto-approval + transition logging), `backend/routes/admin.ts` (settings API endpoints), `apps/velcenter/src/pages/Center.tsx` (approval mode toggle UI), `apps/velshop/src/pages/ShopProducts.tsx` (catalog normalize fix), `apps/velshop/src/pages/ShopHome.tsx` (apiGet unwrap fix), `db/migrations/018_platform_settings.sql` (new), `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`
 - **Result:** Complete audit trail for all status changes. Sellers cannot bypass approval. VelCenter admins can toggle approval mode. VelShop no longer crashes on product catalog. All 5 typechecks pass.
 
+### 2026-08-25 — Fix VelShop Crash + Approved Products Not Appearing
+- **Problem 1:** VelShop `/products` page crashes with `I.map is not a function`
+- **Problem 2:** Approved products (status=published) do not appear on VelShop after admin approval
+- **Root cause:** `backend/routes/index.ts` registered placeholder routes for `/api/shops` and `/api/shops/:slug` **before** the real endpoints in `products.ts`. Express matches first-registered routes, so the placeholder always won. The placeholder returned `{ success: true, data: { shops: [] } }` — an **object**, not an **array**. When `ShopProducts.tsx` called `shops.map(...)`, it crashed because the value was `{ shops: [] }` instead of `[]`. This crash prevented the entire products page from rendering.
+- **Fix:** Removed the placeholder routes for `/api/shops` and `/api/shops/:slug` from `backend/routes/index.ts` (line 509-510). The real endpoints in `products.ts` now correctly handle these routes.
+- **Catalog verification:** The `/api/products/catalog` endpoint was NOT affected by the placeholder issue — it had no placeholder conflict. It correctly uses `WHERE p.status = 'published'` and returns a properly formatted array. The `normalizeCatalog()` function in ShopProducts.tsx correctly wraps the array as `{ items: [...], total: N }`.
+- **Product detail verification:** `GET /api/products/:productId` correctly uses `WHERE p.id = $1 AND p.status = 'published'` and returns the full product with images via `formatProduct()`.
+- **Files changed:** `backend/routes/index.ts` (removed placeholder routes for `/api/shops`)
+- **Result:** VelShop `/products` page no longer crashes. Approved products now appear correctly. All 5 typechecks pass.
+
 ### 2026-08-24 — AI Project Memory
 - Created AI_RULES.md (mandatory development rules)
 - Created INSTALLATION.md (complete setup guide)

@@ -506,8 +506,7 @@ export function setupRoutes(app: Express): void {
   app.put("/api/addresses/:id", requireAuth, placeholder("address"));
   app.delete("/api/addresses/:id", requireAuth, placeholder("address"));
 
-  app.get("/api/shops", placeholder("shops"));
-  app.get("/api/shops/:slug", placeholder("shop"));
+  // /api/shops and /api/shops/:slug are handled by products.ts — do NOT add placeholders here
 
   // ─── Error Handler ──────────────────────────────────
   app.use(errorHandler);
