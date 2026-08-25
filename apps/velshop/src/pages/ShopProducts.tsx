@@ -67,6 +67,13 @@ interface CatalogResult {
   total: number;
 }
 
+/** Normalize catalog response: backend may return array or {items, total}. */
+function normalizeCatalog(raw: unknown): CatalogResult {
+  if (Array.isArray(raw)) return { items: raw as StoreProduct[], total: raw.length };
+  if (raw && typeof raw === "object" && "items" in raw) return raw as CatalogResult;
+  return { items: [], total: 0 };
+}
+
 export default function ShopProducts() {
   const [params, setParams] = useSearchParams();
   const catalog = useAction(api.commerce.catalogProductsAction);
@@ -114,7 +121,7 @@ export default function ShopProducts() {
     setLoading(true);
     setError(null);
     try {
-      const result = (await catalog({
+      const raw = await catalog({
         q: q || undefined,
         category: category !== "all" ? category : undefined,
         shopId: shopId || undefined,
@@ -124,8 +131,8 @@ export default function ShopProducts() {
         sortBy,
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
-      })) as unknown as CatalogResult;
-      setData(result);
+      });
+      setData(normalizeCatalog(raw));
     } catch (err) {
       console.error("Catalog error:", err);
       setError(err instanceof Error ? err.message : t("products.loadError"));
@@ -153,7 +160,7 @@ export default function ShopProducts() {
     let alive = true;
     (async () => {
       try {
-        const result = (await catalog({
+        const raw = await catalog({
           q: q || undefined,
           category: category !== "all" ? category : undefined,
           shopId: shopId || undefined,
@@ -163,8 +170,8 @@ export default function ShopProducts() {
           sortBy,
           limit: PAGE_SIZE,
           offset: (page - 1) * PAGE_SIZE,
-        })) as unknown as CatalogResult;
-        if (alive) setData(result);
+        });
+        if (alive) setData(normalizeCatalog(raw));
       } catch (err) {
         if (alive) setError(err instanceof Error ? err.message : t("products.loadError"));
       } finally {

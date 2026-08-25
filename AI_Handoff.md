@@ -693,6 +693,41 @@ PORT=3001
 - **Files changed:** `backend/routes/products.ts` (admin endpoints + seller transition validation + public endpoint security), `backend/routes/index.ts` (catalog + product detail fixes), `db/migrations/017_product_moderation.sql` (new), `db/run-update.sql`, `db/schema.sql`, `db/run-sqleditor.sql`, `AI_Handoff.md`
 - **Result:** Complete end-to-end product moderation pipeline. Seller creates → submits → admin reviews → approve/reject → visible on VelShop. All 5 typechecks pass.
 
+### 2026-08-25 — Auto-Approval System + VelShop Crash Fix + VelCenter Settings
+- **Problem 1:** Products were being auto-published even though admins did not manually approve them. The `setProductStatusAction` seller endpoint had no state machine validation — sellers could directly set `status = 'published'`.
+- **Problem 2:** VelShop crashed with `I.map is not a function` because `ShopProducts.tsx` expected `{ items: [], total: 0 }` from the catalog API, but the backend returned a plain array.
+- **Problem 3:** No configurable auto-approval system. No platform_settings table for storing product approval mode.
+- **Root cause:**
+  1. The seller `PATCH /api/seller/products/:productId/status` endpoint accepted any status from the request body without validating state machine transitions
+  2. The VelShop `ShopProducts.tsx` normalize function didn't handle the `{success, data}` API envelope correctly
+  3. No `platform_settings` table existed for storing `product_approval_mode`
+  4. VelCenter had no UI to toggle between manual and auto approval modes
+- **Fix:**
+  - **Strict state machine:** Seller can ONLY set `draft → pending_review`, `rejected → pending_review`, `pending_review → draft`. Sellers CANNOT set published/rejected/archived directly.
+  - **Auto-approval system:** When `product_approval_mode = 'auto'` in `platform_settings`, submitting for review automatically transitions `pending_review → published`. When mode = `manual` (default), products stay `pending_review` until an admin acts.
+  - **platform_settings table (V0018):** New table for storing key-value system configuration. Initial seed: `product_approval_mode = 'manual'`.
+  - **Backend admin settings API:** `GET /api/admin/settings` and `PATCH /api/admin/settings` in `backend/routes/admin.ts`. Admin/owner only.
+  - **VelCenter settings UI:** Added product approval mode toggle (Manual/Automatic) in the Settings tab of VelCenter. Thai-language labels.
+  - **VelShop crash fix:** Fixed `ShopProducts.tsx` normalize function to properly unwrap `{success, data}` envelope. Fixed `ShopHome.tsx` `apiGet` helper to unwrap the same envelope.
+  - **Status transition logging:** All status changes are logged with: `productId`, `from`, `to`, `actor`, `role`, `source`.
+  - **Migration V0018 (`018_platform_settings.sql`):** Creates `platform_settings` table with unique key constraint and seed data.
+  - **All three SQL files updated:** `schema.sql`, `run-sqleditor.sql`, `run-update.sql` (V0018)
+- **Status lifecycle (with auto-approval):**
+  ```
+  MANUAL MODE:
+  draft → pending_review (seller submits)
+  pending_review → published (admin approves)
+  pending_review → rejected (admin rejects)
+  rejected → pending_review (seller resubmits)
+  pending_review → draft (seller withdraws)
+  
+  AUTO MODE:
+  draft → pending_review (seller submits)
+  pending_review → published (auto-approved immediately)
+  ```
+- **Files changed:** `backend/routes/products.ts` (state machine validation + auto-approval + transition logging), `backend/routes/admin.ts` (settings API endpoints), `apps/velcenter/src/pages/Center.tsx` (approval mode toggle UI), `apps/velshop/src/pages/ShopProducts.tsx` (catalog normalize fix), `apps/velshop/src/pages/ShopHome.tsx` (apiGet unwrap fix), `db/migrations/018_platform_settings.sql` (new), `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`
+- **Result:** Complete audit trail for all status changes. Sellers cannot bypass approval. VelCenter admins can toggle approval mode. VelShop no longer crashes on product catalog. All 5 typechecks pass.
+
 ### 2026-08-24 — AI Project Memory
 - Created AI_RULES.md (mandatory development rules)
 - Created INSTALLATION.md (complete setup guide)
@@ -709,13 +744,14 @@ PORT=3001
 
 - Neon cold start causes ~1.5s latency on first query after idle period (mitigated with 30s in-memory cache)
 - SSL deprecation warning from pg-connection-string (cosmetic, handled by replacing sslmode=require with sslmode=verify-full)
-- **Migrations V0014–V0016 need to be applied to production Neon** — push to main triggers the GitHub Action which detects and applies them automatically. V0015 is critical for product creation (category_id UUID→TEXT).
+- **Migrations V0014–V0018 need to be applied to production Neon** — push to main triggers the GitHub Action which detects and applies them automatically. V0015 is critical for product creation (category_id UUID→TEXT). V0018 creates platform_settings for auto-approval.
 - Production Neon may have columns (date_of_birth, gender, reserved, etc.) that were added outside of migrations — V0016 now safely adds any missing ones with IF NOT EXISTS
 
 ## Next Tasks
 
-- **Push to main to trigger GitHub Action** — this applies V0014, V0015, V0016 to Neon production
+- **Push to main to trigger GitHub Action** — this applies V0014–V0018 to Neon production
 - Verify Neon `NEON_DATABASE_URL` GitHub Secret is configured for the migration Action
+- Verify product moderation works end-to-end in production after migrations apply
 - Cart implementation (currently placeholder routes)
 - Order implementation (currently placeholder routes)
 - Search/filter improvements

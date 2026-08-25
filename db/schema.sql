@@ -416,6 +416,20 @@ CREATE INDEX IF NOT EXISTS idx_behavioral_time ON behavioral_events (occurred_at
 
 -- ─── Migration Tracking ─────────────────────────────────────────────────────
 
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  description TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by UUID REFERENCES users(id)
+);
+
+INSERT INTO platform_settings (key, value, description)
+VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto')
+ON CONFLICT (key) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_platform_settings_key ON platform_settings (key);
+
 CREATE TABLE IF NOT EXISTS schema_migrations (
   id BIGSERIAL PRIMARY KEY,
   migration_name TEXT UNIQUE NOT NULL,

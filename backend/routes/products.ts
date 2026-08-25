@@ -390,7 +390,7 @@ export function setupProductRoutes(app: Express): void {
           [product.id, stockQty, reorder]
         );
 
-        await client.query("UPDATE shops SET product_count = product_count + 1, updated_at = NOW() WHERE id = $1", [shop.id]);
+        // product_count only reflects published products — no increment here (new product starts as draft/pending_review)
 
         await client.query("COMMIT");
 
@@ -466,7 +466,7 @@ export function setupProductRoutes(app: Express): void {
           res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid status: ${status}` } });
           return;
         }
-        // Seller transition validation: sellers can only submit (→ pending_review) or withdraw (→ draft)
+        // Seller transition validation: sellers can only submit (-> pending_review) or withdraw (-> draft)
         const currentResult = await query("SELECT status FROM products WHERE id = $1", [productId]);
         if (currentResult.rows.length === 0) {
           res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
@@ -587,20 +587,84 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const { status } = req.body;
-      const validStatuses = ["draft", "published", "pending_review", "rejected", "archived"];
+      const validStatuses = ["draft", "pending_review"];
       if (!status || !validStatuses.includes(status)) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid status. Must be one of: ${validStatuses.join(", ")}` } });
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Sellers can only set status to: ${validStatuses.join(", ")}` } });
         return;
       }
 
+      // CRITICAL: Enforce state machine — sellers CANNOT set published/rejected/archived
+      const SELLER_STATUS_TRANSITIONS: Record<string, string[]> = {
+        draft: ["pending_review"],
+        rejected: ["pending_review"],
+        pending_review: ["draft"],
+      };
+      const currentStatusResult = await query("SELECT status FROM products WHERE id = $1", [productId]);
+      if (currentStatusResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+      const currentStatus = currentStatusResult.rows[0].status;
+      const allowedTransitions = SELLER_STATUS_TRANSITIONS[currentStatus];
+      if (!allowedTransitions || !allowedTransitions.includes(status)) {
+        res.status(403).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change status from '${currentStatus}' to '${status}'. Sellers can only: ${Object.entries(SELLER_STATUS_TRANSITIONS).map(([from, to]) => `${from} -> ${to.join(', ')}`).join('; ')}` } });
+        return;
+      }
+
+      // Clear rejection_reason when resubmitting
+      const statusUpdates = [`status = $1`, `updated_at = NOW()`];
+      const statusValues: any[] = [status];
+      let statusIdx = 2;
+      if (status === "pending_review") {
+        statusUpdates.push(`rejection_reason = NULL`);
+      }
+
+      // Check auto-approval mode
+      let finalStatus = status;
+      let actorLog = `seller ${seller.id}`;
+      if (status === "pending_review") {
+        try {
+          const modeResult = await query(
+            "SELECT value FROM platform_settings WHERE key = 'product_approval_mode'", []
+          );
+          const approvalMode = modeResult.rows[0]?.value ?? "manual";
+          if (approvalMode === "auto") {
+            finalStatus = "published";
+            statusUpdates[0] = `status = $1`;
+            statusValues[0] = "published";
+            console.log(`[products] auto-approval: ${productId} auto-published (mode=auto)`);
+            actorLog = `system:auto_approval`;
+          }
+        } catch {
+          // platform_settings table may not exist yet — default to manual
+        }
+      }
+
+      console.log(`[products] status transition: ${productId} from '${currentStatus}' to '${finalStatus}' by ${actorLog}`);
+
       const result = await query(
-        "UPDATE products SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
-        [status, productId]
+        `UPDATE products SET ${statusUpdates.join(", ")} WHERE id = $${statusIdx} RETURNING *`,
+        [...statusValues, productId]
       );
 
       if (result.rows.length === 0) {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
         return;
+      }
+
+      // Update shop product_count if status became published
+      if (finalStatus === "published") {
+        const shopResult = await query("SELECT shop_id FROM products WHERE id = $1", [productId]);
+        if (shopResult.rows[0]?.shop_id) {
+          const countResult = await query(
+            "SELECT COUNT(*) as cnt FROM products WHERE shop_id = $1 AND status = 'published'",
+            [shopResult.rows[0].shop_id]
+          );
+          await query(
+            "UPDATE shops SET product_count = $1, updated_at = NOW() WHERE id = $2",
+            [parseInt(countResult.rows[0].cnt), shopResult.rows[0].shop_id]
+          );
+        }
       }
 
       const row = result.rows[0];
@@ -612,7 +676,7 @@ export function setupProductRoutes(app: Express): void {
         inventoryByProduct.get(productId) ?? null
       );
 
-      console.log(`[products] status changed: ${productId} → ${status} by seller ${seller.id}`);
+      console.log(`[products] status changed: ${productId} -> ${finalStatus} by ${actorLog}`);
 
       res.json({ success: true, data: formatted });
     } catch (err) {
@@ -644,7 +708,7 @@ export function setupProductRoutes(app: Express): void {
         [productId, qty]
       );
 
-      console.log(`[products] stock set: ${productId} → ${qty} by seller ${seller.id}`);
+      console.log(`[products] stock set: ${productId} -> ${qty} by seller ${seller.id}`);
 
       res.json({ success: true, data: { productId, quantity: qty } });
     } catch (err) {
@@ -676,7 +740,7 @@ export function setupProductRoutes(app: Express): void {
         [productId, rl]
       );
 
-      console.log(`[products] reorder level set: ${productId} → ${rl} by seller ${seller.id}`);
+      console.log(`[products] reorder level set: ${productId} -> ${rl} by seller ${seller.id}`);
 
       res.json({ success: true, data: { productId, reorderLevel: rl } });
     } catch (err) {
@@ -802,7 +866,7 @@ export function setupProductRoutes(app: Express): void {
 
       const imageId = param(req, "imageId");
 
-      // Get the image and verify ownership through product → shop → seller
+      // Get the image and verify ownership through product -> shop -> seller
       const imgResult = await query(
         `SELECT pi.* FROM product_images pi
          JOIN products p ON pi.product_id = p.id
@@ -1302,7 +1366,7 @@ export function setupProductRoutes(app: Express): void {
         );
       }
 
-      console.log(`[admin] product ${status}: ${productId} by admin ${userId} [${currentStatus} → ${status}]`);
+      console.log(`[admin] product ${status}: ${productId} by admin ${userId} [${currentStatus} -> ${status}]`);
 
       // Return the full updated product with images
       const updatedResult = await query(

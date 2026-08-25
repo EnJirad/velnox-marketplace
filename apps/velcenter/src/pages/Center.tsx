@@ -472,6 +472,8 @@ export default function Center() {
   });
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [approvalMode, setApprovalMode] = useState<string>("manual");
+  const [savingApproval, setSavingApproval] = useState(false);
 
   useEffect(() => {
     if (settings && !settingsLoaded) {
@@ -482,9 +484,26 @@ export default function Center() {
         address: (settings["store_address"] as string) ?? "",
         announcement: (settings["store_announcement"] as string) ?? "",
       });
+      if (settings["product_approval_mode"]) {
+        setApprovalMode(settings["product_approval_mode"] as string);
+      }
       setSettingsLoaded(true);
     }
   }, [settings, settingsLoaded]);
+
+  const handleApprovalModeChange = async (mode: string) => {
+    setSavingApproval(true);
+    try {
+      await updatePlatformSettingAction({ key: "product_approval_mode", value: mode });
+      setApprovalMode(mode);
+      toast.success(mode === "auto" ? "เปิดระบบอนุมัติอัตโนมัติแล้ว" : "ปิดระบบอนุมัติอัตโนมัติแล้ว");
+    } catch (error) {
+      console.error("Update approval mode error:", error);
+      toast.error("ไม่สามารถเปลี่ยนโหมดอนุมัติได้");
+    } finally {
+      setSavingApproval(false);
+    }
+  };
 
   const handleSaveSettings = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1742,6 +1761,28 @@ export default function Center() {
                       บันทึกตั้งค่า
                     </Button>
                   </form>
+
+                  {/* Product Approval Mode */}
+                  <div className="mt-8 rounded-lg border border-slate-200 bg-slate-50 p-5">
+                    <h3 className="text-sm font-semibold text-slate-900">การอนุมัติสินค้า</h3>
+                    <p className="mt-1 text-xs text-slate-500">กำหนดวิธีการอนุมัติสินค้าที่ผู้ขายส่งเข้ามา</p>
+                    <div className="mt-4 space-y-3">
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-emerald-300">
+                        <input type="radio" name="approval-mode" value="manual" checked={approvalMode === "manual"} onChange={() => handleApprovalModeChange("manual")} disabled={savingApproval} className="mt-0.5" />
+                        <div>
+                          <span className="text-sm font-medium text-slate-900">อนุมัติด้วยมือ</span>
+                          <p className="text-xs text-slate-500">สินค้าทุกชิ้นต้องได้รับการตรวจสอบและอนุมัติจากผู้ดูแลก่อนแสดงบน VelShop</p>
+                        </div>
+                      </label>
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-emerald-300">
+                        <input type="radio" name="approval-mode" value="auto" checked={approvalMode === "auto"} onChange={() => handleApprovalModeChange("auto")} disabled={savingApproval} className="mt-0.5" />
+                        <div>
+                          <span className="text-sm font-medium text-slate-900">อนุมัติอัตโนมัติ</span>
+                          <p className="text-xs text-slate-500">สินค้าจะได้รับการอนุมัติและแสดงบน VelShop ทันทีหลังผ่านการตรวจสอบข้อมูล</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
                   <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
                     <Megaphone className="size-3.5 text-[#10B981]" />
                     ข้อมูลนี้แสดงบนหน้าร้าน velshop ทันทีหลังบันทึก

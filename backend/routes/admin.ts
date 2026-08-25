@@ -118,4 +118,61 @@ export function setupAdminRoutes(app: Express): void {
       });
     }
   });
+
+  // ── GET /api/admin/settings ────────────────────────────────────────────────
+  // Returns all platform settings. Admin only.
+  app.get("/api/admin/settings", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
+      if (userResult.rows.length === 0 || !["owner", "admin"].includes(userResult.rows[0].role)) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only owner or admin can access settings" } });
+        return;
+      }
+      const result = await query("SELECT key, value, description, updated_at FROM platform_settings ORDER BY key ASC");
+      const settings: Record<string, string> = {};
+      for (const row of result.rows) {
+        settings[row.key] = row.value;
+      }
+      res.json({ success: true, data: settings });
+    } catch (err) {
+      console.error("[admin] settings list error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch settings" } });
+    }
+  });
+
+  // ── PATCH /api/admin/settings ──────────────────────────────────────────────
+  // Update platform settings. Admin only.
+  app.patch("/api/admin/settings", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
+      if (userResult.rows.length === 0 || !["owner", "admin"].includes(userResult.rows[0].role)) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only owner or admin can update settings" } });
+        return;
+      }
+      const { key, value } = req.body;
+      if (!key || typeof key !== "string" || !value || typeof value !== "string") {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "key and value are required strings" } });
+        return;
+      }
+      // Validate product_approval_mode specifically
+      if (key === "product_approval_mode" && !["manual", "auto"].includes(value)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "product_approval_mode must be 'manual' or 'auto'" } });
+        return;
+      }
+      await query(
+        `INSERT INTO platform_settings (key, value, updated_at, updated_by)
+         VALUES ($1, $2, NOW(), $3)
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW(), updated_by = $3`,
+        [key, value, userId]
+      );
+      console.log(`[admin] setting updated: ${key} = ${value} by ${userId}`);
+      res.json({ success: true, data: { key, value }      });
+    } catch (err) {
+      console.error("[admin] settings update error:", err);
+      res.status(500).json({ success: false, error: { code: "SETTINGS_FAILED", message: "Failed to update settings" } });
+    }
+  });
 }
+

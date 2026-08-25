@@ -51,11 +51,13 @@ const CATEGORY_ICONS: Record<StoreProductCategory, LucideIcon> = {
   other: Package,
 };
 
+/** Local fetch helper that unwraps the {success, data} envelope. */
 async function apiGet<T>(path: string): Promise<T> {
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, { credentials: "include" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const json = await res.json();
+  return (json.data !== undefined ? json.data : json) as T;
 }
 
 function useCommerceData<T>(load: () => Promise<T>) {
