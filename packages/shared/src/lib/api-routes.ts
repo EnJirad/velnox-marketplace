@@ -101,7 +101,8 @@ async function apiDelete(path: string): Promise<any> {
     const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     throw new Error(data.error || `Request failed: ${res.status}`);
   }
-  return res.json();
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
 }
 
 // ─── API Route Mapping ──────────────────────────────────────────────────────

@@ -230,6 +230,25 @@ async function loadProductExtras(productIds: string[]): Promise<{
   return { imagesByProduct, inventoryByProduct };
 }
 
+/**
+ * Load a single product with all images + inventory, formatted for frontend.
+ * Used after image operations that need to return the full updated product.
+ */
+async function getFormattedProduct(productId: string, sellerId: string): Promise<any | null> {
+  const result = await query(
+    `SELECT p.*, sh.seller_id FROM products p JOIN shops sh ON p.shop_id = sh.id WHERE p.id = $1 AND sh.seller_id = $2`,
+    [productId, sellerId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  const { imagesByProduct, inventoryByProduct } = await loadProductExtras([productId]);
+  return formatProduct(
+    { ...row, seller_id: sellerId },
+    imagesByProduct.get(productId) ?? [],
+    inventoryByProduct.get(productId) ?? null,
+  );
+}
+
 // ─── Route Registration ───────────────────────────────────────────────────
 
 export function setupProductRoutes(app: Express): void {
@@ -724,15 +743,9 @@ export function setupProductRoutes(app: Express): void {
 
       console.log(`[products] image saved: ${result.rows[0].id} for product ${productId}`);
 
-      res.json({
-        success: true,
-        data: {
-          id: result.rows[0].id,
-          url,
-          alt: alt || "",
-          sortOrder,
-        },
-      });
+      // Return the full updated product so the frontend can update its state
+      const updatedProduct = await getFormattedProduct(productId, seller.id);
+      res.json({ success: true, data: updatedProduct });
     } catch (err) {
       console.error("[products] save-image error:", err);
       res.status(500).json({ success: false, error: { code: "IMAGE_SAVE_FAILED", message: "Failed to save image" } });
@@ -781,7 +794,9 @@ export function setupProductRoutes(app: Express): void {
 
       console.log(`[products] image deleted: ${imageId} by seller ${seller.id}`);
 
-      res.json({ success: true, data: { id: imageId } });
+      // Return the full updated product so the frontend can update its state
+      const updatedProduct = await getFormattedProduct(img.product_id, seller.id);
+      res.json({ success: true, data: updatedProduct });
     } catch (err) {
       console.error("[products] delete-image error:", err);
       res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete image" } });
@@ -831,7 +846,9 @@ export function setupProductRoutes(app: Express): void {
 
       console.log(`[products] primary image set: ${imageId} for product ${productId}`);
 
-      res.json({ success: true, data: { productId, primaryImageId: imageId } });
+      // Return the full updated product so the frontend can update its state
+      const updatedProduct = await getFormattedProduct(productId, seller.id);
+      res.json({ success: true, data: updatedProduct });
     } catch (err) {
       console.error("[products] primary-image error:", err);
       res.status(500).json({ success: false, error: { code: "PRIMARY_FAILED", message: "Failed to set primary image" } });
@@ -865,7 +882,9 @@ export function setupProductRoutes(app: Express): void {
 
       console.log(`[products] images reordered: ${productId} (${imageIds.length} images) by seller ${seller.id}`);
 
-      res.json({ success: true, data: { productId, imageIds } });
+      // Return the full updated product so the frontend can update its state
+      const updatedProduct = await getFormattedProduct(productId, seller.id);
+      res.json({ success: true, data: updatedProduct });
     } catch (err) {
       console.error("[products] reorder-images error:", err);
       res.status(500).json({ success: false, error: { code: "REORDER_FAILED", message: "Failed to reorder images" } });
