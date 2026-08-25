@@ -253,25 +253,30 @@ export function setupSellerRoutes(app: Express): void {
       }
 
       const row = result.rows[0];
+      const shop = row.shop_id
+        ? {
+            id: row.shop_id,
+            name: row.shop_name,
+            slug: row.shop_slug,
+            description: row.shop_description,
+            logo: row.shop_logo,
+            cover: row.shop_cover,
+            rating: row.shop_rating ? parseFloat(row.shop_rating) : null,
+            productCount: row.shop_product_count || 0,
+          }
+        : null;
+
+      // Return shops as array to match the SellerProfile TypeScript interface.
       res.json({
         success: true,
         data: {
-          id: row.id,
-          status: row.status,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          shop: row.shop_id
-            ? {
-                id: row.shop_id,
-                name: row.shop_name,
-                slug: row.shop_slug,
-                description: row.shop_description,
-                logo: row.shop_logo,
-                cover: row.shop_cover,
-                rating: row.shop_rating ? parseFloat(row.shop_rating) : null,
-                productCount: row.shop_product_count || 0,
-              }
-            : null,
+          seller: {
+            id: row.id,
+            status: row.status,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          },
+          shops: shop ? [shop] : [],
           settings: row.seller_settings || {},
         },
       });
