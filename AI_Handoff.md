@@ -373,6 +373,24 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-25 — Fix Seller Approval CORS, Diagnostics & Frontend Error Handling
+- **Problem:** After approving a seller in VelCenter, the seller still cannot use VelSeller. Multiple subtle issues compound:
+  1. CORS silently blocks cross-origin requests when `CORS_ORIGINS` env var on Render doesn't include all production frontend domains
+  2. When `/api/seller/status` fails (CORS, timeout, table missing), `RequireRole` shows the login/onboarding form instead of a helpful error
+  3. Backend `GET /api/seller/status` query crashes if `shops` or `seller_settings` tables don't exist in production
+  4. No diagnostic logging on seller status checks makes production debugging impossible
+- **Root cause:**
+  1. `CORS_ORIGINS` env var is the ONLY source of allowed origins — if misconfigured, every cross-origin request from VelSeller/VelCenter to the backend is silently blocked by the browser
+  2. `requireAuth` middleware only checks JWT signature (correct), but `/api/auth/me` is the only endpoint that checks revoked tokens — this is by design to avoid doubling DB load on every request
+  3. `RequireRole` catches fetch errors but falls back to `{ status: null }` without logging — the user sees the login form with no indication of what went wrong
+- **Fix:**
+  - **Backend `server.ts` CORS:** Now merges `CORS_ORIGINS` with `VITE_VELSHOP_URL`, `VITE_VELSELLER_URL`, `VITE_VELCENTER_URL`, `VITE_CORPORATE_URL` env vars plus dev origins. Production domains are always allowed even if `CORS_ORIGINS` is misconfigured
+  - **Backend `/api/seller/status`:** Added graceful fallback — if LEFT JOIN with `shops`/`seller_settings` fails (table missing), falls back to a simpler query on `sellers` only. Added `[seller] status for user X: STATUS` diagnostic logging
+  - **Backend `requireAuth`:** Documented that revoked-token check is intentionally in `/api/auth/me` only (not middleware) to avoid per-request DB overhead
+  - **Frontend `RequireRole`:** Now checks `r.ok` on the seller status fetch and logs errors — improves production debugging
+- **Files changed:** `backend/server.ts`, `backend/routes/seller.ts`, `backend/middleware/auth.ts`, `packages/shared/src/components/RequireRole.tsx`
+- **Result:** All 5 typechecks pass. CORS is resilient to misconfiguration. Seller status endpoint handles missing tables gracefully.
+
 ### 2026-08-25 — Complete Seller Approval & Role Authorization Fix
 - **Problem:** Seller approval had multiple critical issues: no database transaction (atomicity failure), no role promotion (approved sellers stayed `role='customer'`), no audit logging, no CHECK constraint on `sellers.status`, no idempotency, no concurrency protection
 - **Root cause:**

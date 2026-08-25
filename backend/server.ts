@@ -20,15 +20,29 @@ app.use(helmet());
 app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
 
-const corsOrigins = process.env.CORS_ORIGINS?.split(",").map((s) => s.trim()) || [
+const corsOrigins = process.env.CORS_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean) || [];
+
+// Always include known production origins so CORS never silently blocks
+// a valid frontend domain when CORS_ORIGINS is misconfigured.
+const knownOrigins: string[] = [
+  process.env.VITE_VELSHOP_URL,
+  process.env.VITE_VELSELLER_URL,
+  process.env.VITE_VELCENTER_URL,
+  process.env.VITE_CORPORATE_URL,
+].filter((u): u is string => typeof u === "string" && u.length > 0);
+
+const devOrigins: string[] = [
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:5175",
   "http://localhost:5176",
 ];
 
+// Merge: explicit CORS_ORIGINS + known production origins + dev origins, deduplicated
+const allOrigins = [...new Set([...corsOrigins, ...knownOrigins, ...devOrigins])];
+
 app.use(cors({
-  origin: corsOrigins,
+  origin: allOrigins,
   credentials: true,
 }));
 

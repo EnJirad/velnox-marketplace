@@ -172,7 +172,9 @@ export function setupSellerRoutes(app: Express): void {
 
       const row = result.rows[0];
       const settings = row.seller_settings || {};
-      
+
+      console.log(`[seller] status for user ${userId}: ${row.status}`);
+
       res.json({
         success: true,
         data: {
@@ -184,7 +186,36 @@ export function setupSellerRoutes(app: Express): void {
           rejectionReason: settings.rejectionReason || null,
         },
       });
-    } catch (err) {
+    } catch (err: any) {
+      // Graceful fallback: if the join fails (e.g. shops/seller_settings tables
+      // don't exist yet), try a simpler query that only reads sellers.
+      if (err?.code === "42P01" || err?.code === "42703") {
+        try {
+          const userId = req.user!.userId;
+          const fallback = await query(
+            `SELECT id, status, created_at FROM sellers WHERE user_id = $1`,
+            [userId]
+          );
+          if (fallback.rows.length === 0) {
+            res.json({ success: true, data: null });
+            return;
+          }
+          const row = fallback.rows[0];
+          console.log(`[seller] status (fallback) for user ${userId}: ${row.status}`);
+          res.json({
+            success: true,
+            data: {
+              id: row.id,
+              status: row.status,
+              shopName: null,
+              shopSlug: null,
+              createdAt: row.created_at,
+              rejectionReason: null,
+            },
+          });
+          return;
+        } catch { /* ignore fallback error */ }
+      }
       console.error("[seller] status error:", err);
       res.status(500).json({
         success: false,

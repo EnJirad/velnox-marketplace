@@ -101,9 +101,15 @@ export function RequireRole({ role, children }: RequireRoleProps) {
     }
 
     fetch(`${API_BASE}/seller/status`, { credentials: "include" })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((s) => { if (alive) setSeller(s); })
-      .catch(() => { if (alive) setSeller({ status: null, rejectionReason: null }); })
+      .catch((err) => {
+        console.error("[seller] status fetch failed:", err);
+        if (alive) setSeller({ status: null, rejectionReason: null });
+      })
       .finally(() => { if (alive) setSellerLoading(false); });
 
     return () => { alive = false; };

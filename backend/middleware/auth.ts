@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 export interface AuthPayload {
   userId: string;
   email: string;
+  jti?: string;
 }
 
 declare global {
@@ -14,6 +15,11 @@ declare global {
   }
 }
 
+/**
+ * requireAuth — verifies the JWT session cookie.
+ * Only checks token signature — does NOT check the revoked_tokens table
+ * (that check lives in /api/auth/me to avoid an extra DB query on every request).
+ */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const token = req.cookies?.velnox_session;
 
