@@ -664,6 +664,35 @@ PORT=3001
 - **Production data safety:** All changes use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, `DROP CONSTRAINT IF EXISTS`, and `ALTER COLUMN TYPE`. No data loss. No table drops.
 - **Result:** Backend now validates all inputs before they reach PostgreSQL. V0015 migration will fix the UUID type error when applied by GitHub Action.
 
+### 2026-08-25 — Complete Product Moderation Pipeline
+- **Problem:** Products created by sellers don't appear in VelCenter for admin review. No backend admin product moderation endpoints exist. Public catalog shows non-published products. No rejection_reason column for storing rejection reasons.
+- **Root cause:**
+  1. Backend had no `GET /api/admin/products/moderation` or `PATCH /api/admin/products/:productId/moderation` endpoints
+  2. `GET /api/products` in `backend/routes/index.ts` used `WHERE p.status = 'active'` (wrong status value)
+  3. `GET /api/products/:id` in both files didn't enforce `status = 'published'` for public access
+  4. No `rejection_reason` column on products table
+  5. Seller product status transitions were not validated (sellers could set any status)
+  6. `shops.product_count` didn't update when product status changed
+- **Fix:**
+  - **Backend admin endpoints:** Added `GET /api/admin/products/moderation` (list all products with images, inventory, seller info) and `PATCH /api/admin/products/:productId/moderation` (approve/reject with validation, admin-only authorization, shop product_count update)
+  - **Seller transition validation:** Added state machine for seller transitions: `draft → pending_review`, `rejected → pending_review`, `pending_review → draft`. Prevents sellers from directly publishing.
+  - **Public catalog fix:** Changed `WHERE p.status = 'active'` to `WHERE p.status = 'published'` in `backend/routes/index.ts`
+  - **Public product detail fix:** Added `AND p.status = 'published'` to both `GET /api/products/:id` endpoints
+  - **Shop product_count:** Admin approval/rejection now recalculates `shops.product_count` to only count published products
+  - **Migration V0017 (`017_product_moderation.sql`):** Added `rejection_reason TEXT` column to products
+  - **All three SQL files updated:** `schema.sql`, `run-sqleditor.sql`, `run-update.sql` (V0017)
+  - **Backend role check:** New `requireAdmin()` helper verifies user has `owner` or `admin` role before moderation actions
+- **Status lifecycle:**
+  ```
+  draft → pending_review (seller submits)
+  pending_review → draft (seller withdraws)
+  rejected → pending_review (seller resubmits, clears rejection_reason)
+  pending_review → published (admin approves)
+  pending_review → rejected (admin rejects, requires reason)
+  ```
+- **Files changed:** `backend/routes/products.ts` (admin endpoints + seller transition validation + public endpoint security), `backend/routes/index.ts` (catalog + product detail fixes), `db/migrations/017_product_moderation.sql` (new), `db/run-update.sql`, `db/schema.sql`, `db/run-sqleditor.sql`, `AI_Handoff.md`
+- **Result:** Complete end-to-end product moderation pipeline. Seller creates → submits → admin reviews → approve/reject → visible on VelShop. All 5 typechecks pass.
+
 ### 2026-08-24 — AI Project Memory
 - Created AI_RULES.md (mandatory development rules)
 - Created INSTALLATION.md (complete setup guide)

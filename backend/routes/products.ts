@@ -462,8 +462,31 @@ export function setupProductRoutes(app: Express): void {
       }
       if (status !== undefined) {
         const validStatuses = ["draft", "published", "pending_review", "rejected", "archived"];
-        if (validStatuses.includes(status)) {
-          updates.push(`status = $${idx++}`); values.push(status);
+        if (!validStatuses.includes(status)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid status: ${status}` } });
+          return;
+        }
+        // Seller transition validation: sellers can only submit (→ pending_review) or withdraw (→ draft)
+        const currentResult = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        if (currentResult.rows.length === 0) {
+          res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+          return;
+        }
+        const currentStatus = currentResult.rows[0].status;
+        const SELLER_TRANSITIONS: Record<string, string[]> = {
+          draft: ["pending_review"],
+          rejected: ["pending_review"],
+          pending_review: ["draft"],
+        };
+        const allowed = SELLER_TRANSITIONS[currentStatus];
+        if (!allowed || !allowed.includes(status)) {
+          res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change product from ${currentStatus} to ${status}. Allowed: ${(allowed ?? []).join(", ") || "none"}` } });
+          return;
+        }
+        updates.push(`status = $${idx++}`); values.push(status);
+        // Clear rejection_reason when resubmitting
+        if (status === "pending_review") {
+          updates.push(`rejection_reason = NULL`);
         }
       }
       updates.push(`updated_at = NOW()`);
@@ -988,11 +1011,12 @@ export function setupProductRoutes(app: Express): void {
   app.get("/api/products/:productId", async (req: Request, res: Response) => {
     try {
       const productId = param(req, "productId");
+      // Public access only shows published products
       const result = await query(
         `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
-         WHERE p.id = $1`,
+         WHERE p.id = $1 AND p.status = 'published'`,
         [productId]
       );
 
@@ -1102,6 +1126,254 @@ export function setupProductRoutes(app: Express): void {
     } catch (err) {
       console.error("[products] categories error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch categories" } });
+    }
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // ADMIN PRODUCT MODERATION (VelCenter)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // Helper: verify user is an authorized admin (owner or admin)
+  async function requireAdmin(req: Request, res: Response): Promise<boolean> {
+    const userId = req.user!.userId;
+    const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
+    if (userResult.rows.length === 0 || !["owner", "admin"].includes(userResult.rows[0].role)) {
+      res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only owner or admin can moderate products" } });
+      return false;
+    }
+    return true;
+  }
+
+  // ── GET /api/admin/products/moderation ──────────────────────────────────
+  // List products for moderation (all statuses). Used by VelCenter.
+  app.get("/api/admin/products/moderation", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await requireAdmin(req, res))) return;
+
+      const statusFilter = req.query.status as string | undefined;
+      let where = "";
+      const params: any[] = [];
+      if (statusFilter && ["pending_review", "published", "rejected", "draft", "archived"].includes(statusFilter)) {
+        where = "WHERE p.status = $1";
+        params.push(statusFilter);
+      }
+
+      const result = await query(
+        `SELECT p.id, p.name, p.description, p.short_description, p.price, p.compare_at_price,
+                p.currency, p.unit, p.supplier, p.status, p.rejection_reason, p.category_id,
+                p.shop_id, p.created_at, p.updated_at,
+                sh.name as shop_name, sh.slug as shop_slug,
+                u.id as seller_user_id, u.name as seller_name, u.email as seller_email,
+                i.quantity as inventory_quantity, i.reserved as inventory_reserved,
+                i.low_stock_threshold as inventory_reorder_level
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         JOIN sellers s ON sh.seller_id = s.id
+         JOIN users u ON s.user_id = u.id
+         LEFT JOIN inventory i ON i.product_id = p.id
+         ${where}
+         ORDER BY p.created_at ASC`,
+        params
+      );
+
+      const productIds = result.rows.map((r: any) => r.id);
+
+      // Load images for all products
+      let imagesByProduct = new Map<string, any[]>();
+      if (productIds.length > 0) {
+        const imagesResult = await query(
+          `SELECT * FROM product_images WHERE product_id = ANY($1) ORDER BY sort_order ASC`,
+          [productIds]
+        );
+        for (const img of imagesResult.rows) {
+          const list = imagesByProduct.get(img.product_id) ?? [];
+          list.push(img);
+          imagesByProduct.set(img.product_id, list);
+        }
+      }
+
+      const products = result.rows.map((row: any) => {
+        const images = imagesByProduct.get(row.id) ?? [];
+        const primaryImage = images.find((i: any) => i.sort_order === 0) ?? images[0] ?? null;
+        return {
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          short_description: row.short_description,
+          price: row.price,
+          compare_at_price: row.compare_at_price,
+          currency: row.currency,
+          unit: row.unit,
+          supplier: row.supplier,
+          status: row.status,
+          rejection_reason: row.rejection_reason,
+          category_id: row.category_id,
+          shop_id: row.shop_id,
+          shop_name: row.shop_name,
+          shop_slug: row.shop_slug,
+          seller_name: row.seller_name,
+          seller_email: row.seller_email,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          inventory_quantity: row.inventory_quantity,
+          inventory_reserved: row.inventory_reserved,
+          inventory_reorder_level: row.inventory_reorder_level,
+          primaryImage: primaryImage ? {
+            id: primaryImage.id,
+            url: primaryImage.url,
+            alt: primaryImage.alt,
+            sort_order: primaryImage.sort_order,
+          } : null,
+          images: images.map((img: any) => ({
+            id: img.id,
+            url: img.url,
+            alt: img.alt,
+            sort_order: img.sort_order,
+          })),
+        };
+      });
+
+      res.json({ success: true, data: products });
+    } catch (err) {
+      console.error("[admin] product moderation list error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list products for moderation" } });
+    }
+  });
+
+  // ── PATCH /api/admin/products/:productId/moderation ─────────────────────
+  // Approve or reject a product. Admin only.
+  app.patch("/api/admin/products/:productId/moderation", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await requireAdmin(req, res))) return;
+
+      const productId = param(req, "productId");
+      const { status, rejectionReason } = req.body;
+      const userId = req.user!.userId;
+
+      // Validate status
+      const VALID_ADMIN_TRANSITIONS = ["published", "rejected"];
+      if (!status || !VALID_ADMIN_TRANSITIONS.includes(status)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid status. Admin can set: ${VALID_ADMIN_TRANSITIONS.join(", ")}` } });
+        return;
+      }
+
+      // Rejection requires a reason
+      if (status === "rejected" && (!rejectionReason || typeof rejectionReason !== "string" || !rejectionReason.trim())) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Rejection reason is required" } });
+        return;
+      }
+
+      // Fetch current product status
+      const currentResult = await query("SELECT id, status FROM products WHERE id = $1", [productId]);
+      if (currentResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+
+      const currentStatus = currentResult.rows[0].status;
+      if (currentStatus !== "pending_review") {
+        res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot ${status} a product with status: ${currentStatus}. Only pending_review products can be moderated.` } });
+        return;
+      }
+
+      // Update product status
+      if (status === "rejected") {
+        await query(
+          "UPDATE products SET status = $1, rejection_reason = $2, updated_at = NOW() WHERE id = $3",
+          [status, rejectionReason.trim(), productId]
+        );
+      } else {
+        await query(
+          "UPDATE products SET status = $1, rejection_reason = NULL, updated_at = NOW() WHERE id = $2",
+          [status, productId]
+        );
+      }
+
+      // Update shop product_count to reflect published products only
+      const shopResult = await query("SELECT shop_id FROM products WHERE id = $1", [productId]);
+      if (shopResult.rows[0]?.shop_id) {
+        const countResult = await query(
+          "SELECT COUNT(*) as cnt FROM products WHERE shop_id = $1 AND status = 'published'",
+          [shopResult.rows[0].shop_id]
+        );
+        await query(
+          "UPDATE shops SET product_count = $1, updated_at = NOW() WHERE id = $2",
+          [parseInt(countResult.rows[0].cnt), shopResult.rows[0].shop_id]
+        );
+      }
+
+      console.log(`[admin] product ${status}: ${productId} by admin ${userId} [${currentStatus} → ${status}]`);
+
+      // Return the full updated product with images
+      const updatedResult = await query(
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug,
+                u.name as seller_name, u.email as seller_email,
+                i.quantity as inventory_quantity, i.reserved as inventory_reserved,
+                i.low_stock_threshold as inventory_reorder_level
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         JOIN sellers s ON sh.seller_id = s.id
+         JOIN users u ON s.user_id = u.id
+         LEFT JOIN inventory i ON i.product_id = p.id
+         WHERE p.id = $1`,
+        [productId]
+      );
+
+      if (updatedResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found after update" } });
+        return;
+      }
+
+      const row = updatedResult.rows[0];
+      const imagesResult = await query(
+        "SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC",
+        [productId]
+      );
+      const images = imagesResult.rows;
+      const primaryImage = images.find((i: any) => i.sort_order === 0) ?? images[0] ?? null;
+
+      res.json({
+        success: true,
+        data: {
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          short_description: row.short_description,
+          price: row.price,
+          compare_at_price: row.compare_at_price,
+          currency: row.currency,
+          unit: row.unit,
+          supplier: row.supplier,
+          status: row.status,
+          rejection_reason: row.rejection_reason,
+          category_id: row.category_id,
+          shop_id: row.shop_id,
+          shop_name: row.shop_name,
+          shop_slug: row.shop_slug,
+          seller_name: row.seller_name,
+          seller_email: row.seller_email,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          inventory_quantity: row.inventory_quantity,
+          inventory_reserved: row.inventory_reserved,
+          inventory_reorder_level: row.inventory_reorder_level,
+          primaryImage: primaryImage ? {
+            id: primaryImage.id,
+            url: primaryImage.url,
+            alt: primaryImage.alt,
+            sort_order: primaryImage.sort_order,
+          } : null,
+          images: images.map((img: any) => ({
+            id: img.id,
+            url: img.url,
+            alt: img.alt,
+            sort_order: img.sort_order,
+          })),
+        },
+      });
+    } catch (err) {
+      console.error("[admin] product moderation error:", err);
+      res.status(500).json({ success: false, error: { code: "MODERATION_FAILED", message: "Failed to moderate product" } });
     }
   });
 }

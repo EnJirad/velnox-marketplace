@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS products (
   unit TEXT NOT NULL DEFAULT 'ชิ้น',
   supplier TEXT,
   status TEXT NOT NULL DEFAULT 'draft',
+  rejection_reason TEXT,
   featured BOOLEAN NOT NULL DEFAULT FALSE,
   rating NUMERIC(3, 2),
   review_count INTEGER NOT NULL DEFAULT 0,

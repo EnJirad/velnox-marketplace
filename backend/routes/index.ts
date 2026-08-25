@@ -41,7 +41,7 @@ export function setupRoutes(app: Express): void {
       const featured = req.query.featured === "true";
       const offset = (page - 1) * pageSize;
 
-      let where = "WHERE p.status = 'active'";
+      let where = "WHERE p.status = 'published'";
       const params: unknown[] = [];
       let paramIndex = 1;
 
@@ -82,7 +82,8 @@ export function setupRoutes(app: Express): void {
 
   app.get("/api/products/:id", async (req, res) => {
     try {
-      const result = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
+      // Public access only shows published products
+      const result = await query("SELECT * FROM products WHERE id = $1 AND status = 'published'", [req.params.id]);
       if (result.rows.length === 0) { res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } }); return; }
       res.json({ success: true, data: { product: result.rows[0] } });
     } catch {

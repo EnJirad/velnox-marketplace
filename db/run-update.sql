@@ -622,3 +622,19 @@ ALTER TABLE addresses ADD COLUMN IF NOT EXISTS subdistrict TEXT;
 ALTER TABLE addresses ADD COLUMN IF NOT EXISTS district TEXT;
 ALTER TABLE addresses ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
 ALTER TABLE addresses ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+
+------------------------------------------------------------
+-- Migration: V0017
+-- Date: 2026-08-25
+-- Description:
+-- Add rejection_reason column to products for the product moderation pipeline.
+--
+-- Reason:
+-- When VelCenter rejects a product, the seller needs to see the rejection reason.
+--
+-- Affected:
+-- products (rejection_reason)
+------------------------------------------------------------
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+
