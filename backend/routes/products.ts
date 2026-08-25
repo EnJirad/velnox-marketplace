@@ -1172,9 +1172,33 @@ export function setupProductRoutes(app: Express): void {
         commissionRate: 0.03,
         currency: "THB",
         createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+        productCount: parseInt(row.product_count ?? '0', 10),
+        orderCount: 0,
+        rating: null,
+        reviewCount: 0,
       };
 
-      res.json({ success: true, data: shop });
+      // Fetch published products for this shop
+      const productsResult = await query(
+        `SELECT p.*,
+                i.quantity AS stock_qty,
+                i.reserved AS stock_reserved,
+                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS primary_image_url
+         FROM products p
+         LEFT JOIN inventory i ON i.product_id = p.id
+         WHERE p.shop_id = $1 AND p.status = 'published'
+         ORDER BY p.created_at DESC
+         LIMIT 50`,
+        [row.id],
+      );
+
+      const products = productsResult.rows.map((r: any) => formatProduct(
+        { ...r, seller_id: row.seller_id },
+        [],
+        r.stock_qty != null ? { quantity: r.stock_qty, reserved: r.stock_reserved ?? 0 } : null,
+      ));
+
+      res.json({ success: true, data: { shop, products } });
     } catch (err) {
       console.error("[products] shop detail error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch shop" } });
@@ -1191,6 +1215,49 @@ export function setupProductRoutes(app: Express): void {
     } catch (err) {
       console.error("[products] categories error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch categories" } });
+    }
+  });
+
+  // ── GET /api/products/:productId/reviews ───────────────────────────────
+  // Returns product reviews (empty array if no reviews table yet)
+  app.get("/api/products/:productId/reviews", async (req: Request, res: Response) => {
+    try {
+      const productId = param(req, "productId");
+      // Check if reviews table exists
+      const tableCheck = await query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'product_reviews') AS exists`
+      );
+      if (!tableCheck.rows[0]?.exists) {
+        res.json({ success: true, data: [] });
+        return;
+      }
+      const result = await query(
+        `SELECT pr.*, u.name AS customer_name
+         FROM product_reviews pr
+         LEFT JOIN users u ON pr.user_id = u.id
+         WHERE pr.product_id = $1 AND pr.status = 'approved'
+         ORDER BY pr.created_at DESC
+         LIMIT 50`,
+        [productId],
+      );
+      const reviews = result.rows.map((r: any) => ({
+        id: r.id,
+        productId: r.product_id,
+        shopId: r.shop_id ?? '',
+        userId: r.user_id,
+        orderId: r.order_id ?? null,
+        rating: r.rating,
+        title: r.title ?? null,
+        comment: r.comment ?? null,
+        images: r.images ?? [],
+        status: r.status,
+        createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+        customerName: r.customer_name ?? null,
+      }));
+      res.json({ success: true, data: reviews });
+    } catch (err) {
+      console.error("[products] reviews error:", err);
+      res.json({ success: true, data: [] });
     }
   });
 

@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { setupRoutes } from "./routes/index.js";
 import { setupAdminRoutes } from "./routes/admin.js";
+import { setupCartRoutes } from "./routes/cart.js";
 import { setupGoogleAuth } from "./routes/auth.js";
 import { setupUploadRoutes } from "./routes/upload.js";
 import { setupSellerRoutes } from "./routes/seller.js";
@@ -66,6 +67,9 @@ setupSellerRoutes(app);
 
 // ─── Products (CRUD, images, catalog) ────────────────────
 setupProductRoutes(app);
+
+// ─── Cart, Wishlist, Orders ──────────────────────────────
+setupCartRoutes(app);
 
 // ─── Admin (bootstrap / owner setup) ────────────────────
 setupAdminRoutes(app);

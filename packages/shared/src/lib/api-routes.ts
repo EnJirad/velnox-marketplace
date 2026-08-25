@@ -118,7 +118,7 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.customer.deleteAddressAction": (a) => apiDelete(`/api/customer/addresses/${a.addressId}`),
   "api.customer.myCart": () => apiGet("/api/customer/cart"),
   "api.customer.addToCartAction": (a) => apiPost("/api/customer/cart/add", a),
-  "api.customer.updateCartItemAction": (a) => apiPatch(`/api/customer/cart/item/${a.cartItemId}`, a),
+  "api.customer.updateCartItemAction": (a) => apiPut(`/api/customer/cart/item/${a.cartItemId}`, a),
   "api.customer.removeCartItemAction": (a) => apiDelete(`/api/customer/cart/item/${a.cartItemId}`),
   "api.customer.checkoutAction": (a) => apiPost("/api/customer/checkout", a),
   "api.customer.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),

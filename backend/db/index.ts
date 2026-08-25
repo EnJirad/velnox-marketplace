@@ -42,4 +42,23 @@ export async function getClient(): Promise<pg.PoolClient> {
   return pool.connect();
 }
 
+/**
+ * Execute a callback inside a database transaction.
+ * The client is automatically released (rolled back on error, committed on success).
+ */
+export async function withTransaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export default pool;

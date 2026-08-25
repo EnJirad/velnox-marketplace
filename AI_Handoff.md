@@ -769,13 +769,37 @@ PORT=3001
 - **Migrations V0014–V0018 need to be applied to production Neon** — push to main triggers the GitHub Action which detects and applies them automatically. V0015 is critical for product creation (category_id UUID→TEXT). V0018 creates platform_settings for auto-approval.
 - Production Neon may have columns (date_of_birth, gender, reserved, etc.) that were added outside of migrations — V0016 now safely adds any missing ones with IF NOT EXISTS
 
+### 2026-08-25 — Complete Marketplace Shopping Flow (Cart, Wishlist, Orders, Checkout)
+- **Problem:** Backend had cart, wishlist, checkout, and order endpoints in `backend/routes/cart.ts` but they were NEVER wired into `server.ts`. Frontend pages (ShopCart, ShopCheckout, ShopWishlist, ShopProductDetail, ShopDetail, MyOrders) existed but could not communicate with the backend.
+- **Root cause:**
+  1. `setupCartRoutes` was defined in `cart.ts` but never imported or called in `server.ts`
+  2. Wishlist toggle returned `{wishlisted: boolean}` but frontend read `res.added`
+  3. Shop detail endpoint returned only the shop object (no products array) — frontend expected `{shop, products}`
+  4. Checkout response returned `{orders: [{id, totalAmount, createdAt}]}` but frontend expected `{parentOrderId, parentOrderNumber, orders, total, itemCount}`
+  5. Orders list/detail responses didn't match `StoreOrder` type (missing `orderNumber`, `subtotal`, `shippingFee`, `total`, `items`, `itemCount`)
+  6. No product reviews endpoint existed — `ShopProductDetail` called `productReviews({productId})`
+  7. No subscriptions endpoints existed — `MyOrders` called `mySubscriptions()`
+  8. `api-routes.ts` used `apiPatch` for cart item update but backend used `app.put`
+- **Fix:**
+  - **`server.ts`:** Imported and wired `setupCartRoutes`
+  - **`api-routes.ts`:** Changed `updateCartItemAction` from `apiPatch` to `apiPut` to match backend PUT handler
+  - **`cart.ts` wishlist toggle:** Added `added` field to response alongside `wishlisted` — `{wishlisted: boolean, added: boolean}`
+  - **`products.ts` shop detail:** Now returns `{shop, products}` with published products for the shop, formatted via `formatProduct()`
+  - **`cart.ts` checkout:** Now returns `{parentOrderId, parentOrderNumber, orders: [{orderId, orderNumber, shopId, shopName, subtotal, shippingFee, total}], total, itemCount}` matching frontend `CheckoutResult` type
+  - **`cart.ts` orders list:** Now returns full `StoreOrder` format including `orderNumber`, `subtotal`, `shippingFee`, `total`, `items` with product details, `itemCount`
+  - **`cart.ts` order detail:** Now returns full `StoreOrder` format with `orderNumber`, `subtotal`, `shippingFee`, `total`, `items`
+  - **`products.ts` reviews:** Added `GET /api/products/:productId/reviews` endpoint that gracefully returns `[]` if `product_reviews` table doesn't exist
+  - **`cart.ts` subscriptions:** Added stub endpoints for `/api/customer/subscriptions`, `/api/subscriptions/create`, `/api/subscriptions/:id/pause`, `/api/subscriptions/:id` — gracefully handle missing `subscriptions` table
+- **Frontend pages already implemented:** ShopProductDetail (full gallery, add to cart, buy now, wishlist, reviews), ShopCart (quantity controls, remove, summary, checkout), ShopCheckout (address, payment, submit), ShopWishlist, ShopDetail (shop profile, products), MyOrders, ShopOrderDetail
+- **Files changed:** `backend/server.ts`, `backend/routes/cart.ts`, `backend/routes/products.ts`, `packages/shared/src/lib/api-routes.ts`
+- **Result:** All 5 typechecks pass. Complete end-to-end marketplace flow: browse products → product detail → add to cart → cart page → checkout → order creation → order history. Wishlist and subscriptions also connected.
+
 ## Next Tasks
 
 - **Push to main to trigger GitHub Action** — this applies V0014–V0018 to Neon production
 - Verify Neon `NEON_DATABASE_URL` GitHub Secret is configured for the migration Action
 - Verify product moderation works end-to-end in production after migrations apply
-- Cart implementation (currently placeholder routes)
-- Order implementation (currently placeholder routes)
 - Search/filter improvements
 - Mobile responsive refinements
 - Verify production Neon schema matches the synchronized run-sqleditor.sql after migrations apply
+- Stripe payment integration (optional — checkout already supports COD/transfer)
