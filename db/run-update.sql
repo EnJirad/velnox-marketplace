@@ -579,3 +579,46 @@ CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status
 
 ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_id_fkey;
 ALTER TABLE products ALTER COLUMN category_id TYPE TEXT;
+
+------------------------------------------------------------
+-- Migration: V0016
+-- Date: 2026-08-25
+-- Description:
+-- Sync schema discrepancies between V0004 base tables and
+-- the canonical schema.sql/run-sqleditor.sql.
+--
+-- Reason:
+-- Several columns were added to schema.sql outside of the
+-- migration system. These ALTERs use IF NOT EXISTS for safety.
+--
+-- Affected:
+-- inventory, orders, order_items, notifications, addresses
+------------------------------------------------------------
+
+-- inventory: add reserved column (customer-reserved stock)
+ALTER TABLE inventory ADD COLUMN IF NOT EXISTS reserved INTEGER NOT NULL DEFAULT 0;
+
+-- orders: add shipping_address JSONB snapshot column
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_address JSONB;
+
+-- orders: ensure total_amount has DEFAULT 0
+ALTER TABLE orders ALTER COLUMN total_amount SET DEFAULT 0;
+
+-- orders: remove restrictive CHECK constraint if it exists
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+
+-- order_items: add product_name column
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS product_name TEXT NOT NULL DEFAULT '';
+
+-- order_items: ensure quantity has DEFAULT 1
+ALTER TABLE order_items ALTER COLUMN quantity SET DEFAULT 1;
+
+-- notifications: add body and metadata columns
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS body TEXT;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
+
+-- addresses: ensure all columns exist
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS subdistrict TEXT;
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS district TEXT;
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;

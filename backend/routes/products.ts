@@ -329,6 +329,15 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
+      // Validate category — must be one of the known StoreProductCategory values
+      const VALID_CATEGORIES = ["general", "food", "daily", "beauty", "packaging", "other"];
+      if (category !== undefined && category !== null && category !== "") {
+        if (typeof category !== "string" || !VALID_CATEGORIES.includes(category.trim())) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` } });
+          return;
+        }
+      }
+
       // Generate unique slug
       const baseSlug = slugify(name.trim());
       let slug = baseSlug;
@@ -426,6 +435,15 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const { name, category, unit, price, description, supplier, status, compareAtPrice, shortDescription } = req.body;
+
+      // Validate category if provided
+      const VALID_CATEGORIES = ["general", "food", "daily", "beauty", "packaging", "other"];
+      if (category !== undefined && category !== null && category !== "") {
+        if (typeof category !== "string" || !VALID_CATEGORIES.includes(category.trim())) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` } });
+          return;
+        }
+      }
 
       const updates: string[] = [];
       const values: any[] = [];
@@ -867,9 +885,11 @@ export function setupProductRoutes(app: Express): void {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
       }
 
-      const { imageIds } = req.body;
-      if (!Array.isArray(imageIds) || imageIds.length === 0) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "imageIds array required" } });
+      // Accept both "imageIds" (backend convention) and "orderedIds" (frontend sends this)
+      const { imageIds: rawImageIds, orderedIds } = req.body;
+      const imageIds: string[] = Array.isArray(rawImageIds) ? rawImageIds : Array.isArray(orderedIds) ? orderedIds : [];
+      if (imageIds.length === 0) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "imageIds/orderedIds array required" } });
         return;
       }
 

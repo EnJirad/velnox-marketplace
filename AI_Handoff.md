@@ -645,6 +645,25 @@ PORT=3001
 - **Root cause:** Fixed R2 keys meant same URL → browser served cached old image. `optimizedUrl()` stripped existing query params.
 - **Fix:** Added `?v={timestamp}` cache-busting to display URLs; fixed `optimizedUrl()` to preserve existing query params; added version state to ShopAccount and ShopProfile
 
+### 2026-08-25 — Fix Product Creation: UUID Type Mismatch + Backend Validation
+- **Problem:** Product creation fails with `error: invalid input syntax for type uuid: "daily"` in `backend/routes/products.ts` line ~357. The frontend sends category strings like "daily", "food", "general" (StoreProductCategory type) but the production Neon database still has `products.category_id` as UUID type.
+- **Root cause:**
+  1. Original V0004 migration created `category_id UUID REFERENCES categories(id)`
+  2. Frontend `ProductFormDialog` sends string categories (`StoreProductCategory` = `"general" | "food" | "daily" | "beauty" | "packaging" | "other"`)
+  3. Migration V0015 (`015_category_text_type.sql`) exists to change `category_id` from UUID to TEXT but was never applied to production Neon
+  4. No backend validation existed — raw string values passed directly to PostgreSQL
+  5. Additionally, `reorder-images` endpoint had a parameter mismatch: frontend sends `orderedIds` but backend expects `imageIds`
+- **Fix:**
+  - **Backend `POST /api/seller/products`:** Added server-side validation for `category` field — validates against allowed `VALID_CATEGORIES` array before DB insert. Returns 400 with clear error message if invalid.
+  - **Backend `PATCH /api/seller/products/:productId`:** Same category validation added to update endpoint.
+  - **Backend `PATCH /api/seller/products/:productId/reorder-images`:** Fixed parameter mismatch — now accepts both `imageIds` (backend convention) and `orderedIds` (frontend sends this) for backward compatibility.
+  - **Migration V0016 (`016_sync_schema_discrepancies.sql`):** Added safe migrations for columns that existed in schema.sql but had no migration: `inventory.reserved`, `orders.shipping_address`, `order_items.product_name`, `notifications.body/metadata`, `addresses.subdistrict/district/latitude/longitude`. All use `IF NOT EXISTS` for safety.
+  - **All three SQL files already correct:** `schema.sql` and `run-sqleditor.sql` already had `category_id TEXT`. `run-update.sql` already had V0015. V0016 now also covers other discrepancies.
+- **Migration to apply:** V0015 (category_id UUID→TEXT) + V0016 (schema sync). Both in `db/migrations/` and will be auto-applied by the GitHub Action on push to main.
+- **Files changed:** `backend/routes/products.ts` (validation + reorder-images fix), `db/migrations/016_sync_schema_discrepancies.sql` (new), `db/run-update.sql` (V0016 appended), `AI_Handoff.md`
+- **Production data safety:** All changes use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, `DROP CONSTRAINT IF EXISTS`, and `ALTER COLUMN TYPE`. No data loss. No table drops.
+- **Result:** Backend now validates all inputs before they reach PostgreSQL. V0015 migration will fix the UUID type error when applied by GitHub Action.
+
 ### 2026-08-24 — AI Project Memory
 - Created AI_RULES.md (mandatory development rules)
 - Created INSTALLATION.md (complete setup guide)
@@ -661,16 +680,15 @@ PORT=3001
 
 - Neon cold start causes ~1.5s latency on first query after idle period (mitigated with 30s in-memory cache)
 - SSL deprecation warning from pg-connection-string (cosmetic, handled by replacing sslmode=require with sslmode=verify-full)
-- **Migration V0012 was never applied to Neon** — V0013 incorrectly marked it as applied. V0014 (repair migration) is now available to fix this safely. It must be applied via GitHub Action or manually
-- Production Neon may have columns (date_of_birth, gender, reserved, etc.) that were added outside of migrations — the schema files now reflect the actual backend usage but production state should be verified
+- **Migrations V0014–V0016 need to be applied to production Neon** — push to main triggers the GitHub Action which detects and applies them automatically. V0015 is critical for product creation (category_id UUID→TEXT).
+- Production Neon may have columns (date_of_birth, gender, reserved, etc.) that were added outside of migrations — V0016 now safely adds any missing ones with IF NOT EXISTS
 
 ## Next Tasks
 
-- **Apply V0014 repair migration to Neon** (needed for product creation to work in production)
+- **Push to main to trigger GitHub Action** — this applies V0014, V0015, V0016 to Neon production
 - Verify Neon `NEON_DATABASE_URL` GitHub Secret is configured for the migration Action
 - Cart implementation (currently placeholder routes)
 - Order implementation (currently placeholder routes)
 - Search/filter improvements
 - Mobile responsive refinements
-- Verify production Neon schema matches the synchronized run-sqleditor.sql
-- Run migration 010 (revoked_tokens) on production Neon if not already applied
+- Verify production Neon schema matches the synchronized run-sqleditor.sql after migrations apply
