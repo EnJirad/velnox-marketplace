@@ -229,7 +229,8 @@ All frontend URLs are centralized in `packages/shared/src/lib/sites.ts`:
 
 | Export | Purpose | Source |
 |--------|---------|--------|
-| `apiUrl` | Backend API base URL | `VITE_API_URL` (default: `http://localhost:3001`) |
+| `apiUrl` | Backend API origin (no path) | `VITE_API_URL` (default: `http://localhost:3001`) |
+| `apiBaseUrl` | Full API base URL with `/api` prefix | `VITE_API_URL + /api` |
 | `SITE_URLS.corporate` | Corporate website URL | `VITE_CORPORATE_URL` |
 | `SITE_URLS.velshop` | VelShop URL | `VITE_VELSHOP_URL` |
 | `SITE_URLS.velseller` | VelSeller URL | `VITE_VELSELLER_URL` |

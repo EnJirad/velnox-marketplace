@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { apiUrl as API_BASE } from "./sites";
+import { apiBaseUrl as API_BASE } from "./sites";
 
 /** Keep in sync with backend event types. */
 export type CustomerEventType =
@@ -62,7 +62,7 @@ export function useTracking(): Tracking {
 
   const track = useCallback(
     (type: CustomerEventType, options?: TrackOptions) => {
-      fetch(`${API_BASE}/api/events/track`, {
+      fetch(`${API_BASE}/events/track`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -95,7 +95,7 @@ export function IdentityMerge() {
 
   useEffect(() => {
     // Check if user is authenticated via session cookie
-    fetch(`${API_BASE}/api/auth/me`, { credentials: "include" })
+    fetch(`${API_BASE}/auth/me`, { credentials: "include" })
       .then((res) => {
         if (res.ok) setIsAuthenticated(true);
       })
@@ -110,7 +110,7 @@ export function IdentityMerge() {
       return;
     }
     attempts.current += 1;
-    fetch(`${API_BASE}/api/events/merge`, {
+    fetch(`${API_BASE}/events/merge`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

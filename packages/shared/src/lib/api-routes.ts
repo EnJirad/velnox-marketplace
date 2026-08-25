@@ -6,7 +6,7 @@
  *
  * New code should use api-client.ts directly with REST paths.
  */
-import { apiUrl as API_BASE } from "./sites";
+import { apiBaseUrl as API_BASE } from "./sites";
 
 // ─── Simple in-memory GET cache (60s TTL) ──────────────────────────────────
 const _getCache = new Map<string, { data: any; expires: number }>();
@@ -22,7 +22,9 @@ function invalidateGetCache(prefix?: string) {
 async function apiPost(path: string, args?: any): Promise<any> {
   // Invalidate GET cache on any mutation
   invalidateGetCache(path.split("/").slice(0, 4).join("/"));
-  const res = await fetch(`${API_BASE}${path}`, {
+  // Strip /api prefix if present — API_BASE already includes it
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -41,7 +43,8 @@ async function apiPost(path: string, args?: any): Promise<any> {
 async function apiGet(path: string): Promise<any> {
   const cached = _getCache.get(path);
   if (cached && cached.expires > Date.now()) return cached.data;
-  const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, { credentials: "include" });
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
     const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
@@ -55,7 +58,8 @@ async function apiGet(path: string): Promise<any> {
 }
 
 async function apiPut(path: string, args?: any): Promise<any> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -71,7 +75,8 @@ async function apiPut(path: string, args?: any): Promise<any> {
 }
 
 async function apiPatch(path: string, args?: any): Promise<any> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -87,7 +92,8 @@ async function apiPatch(path: string, args?: any): Promise<any> {
 }
 
 async function apiDelete(path: string): Promise<any> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
     method: "DELETE",
     credentials: "include",
   });

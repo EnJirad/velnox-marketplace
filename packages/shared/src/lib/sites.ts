@@ -24,13 +24,26 @@ export const SITE_URLS = {
 export type SiteId = keyof typeof SITE_URLS;
 
 /**
- * Backend API base URL.
+ * Backend API origin (no path).
  *
- * Use this instead of hardcoding `import.meta.env.VITE_API_URL` everywhere.
+ * VITE_API_URL contains ONLY the backend origin — never include /api here.
  * Falls back to the local dev server port (3001) when the env var is absent.
  */
 export const apiUrl: string =
   import.meta.env.VITE_API_URL || "http://localhost:3001";
+
+/**
+ * Full API base URL including /api prefix.
+ *
+ * All API requests must use this constant instead of apiUrl.
+ * The /api prefix is appended ONCE here — never duplicate it.
+ *
+ * Example:
+ *   apiUrl       = "https://velnox-api.onrender.com"
+ *   apiBaseUrl   = "https://velnox-api.onrender.com/api"
+ *   fetch(`${apiBaseUrl}/auth/me`)  →  https://velnox-api.onrender.com/api/auth/me
+ */
+export const apiBaseUrl: string = `${apiUrl.replace(/\/+$/, "")}/api`;
 
 /**
  * Router basename for a site entry. Each app owns its own routes under its own

@@ -3,7 +3,7 @@ import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useLanguage } from "@velnox/shared/lib/i18n";
-import { SITE_URLS, apiUrl } from "@velnox/shared/lib/sites";
+import { SITE_URLS, apiBaseUrl } from "@velnox/shared/lib/sites";
 import {
   ArrowRight,
   Clock,
@@ -18,7 +18,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 import { toast } from "sonner";
 
-const API_BASE = apiUrl;
+const API_BASE = apiBaseUrl;
 
 interface RequireRoleProps {
   role: "seller" | "center";
@@ -80,13 +80,13 @@ export function RequireRole({ role, children }: RequireRoleProps) {
     setSellerLoading(true);
 
     if (role === "center") {
-      fetch(`${API_BASE}/api/admin/bootstrap-status`, { credentials: "include" })
+      fetch(`${API_BASE}/admin/bootstrap-status`, { credentials: "include" })
         .then((r) => r.json())
         .then((s) => { if (alive) setOwnerStatus(s.data ?? s); })
         .catch(() => { if (alive) setOwnerStatus({ ownerExists: false, configured: false }); });
     }
 
-    fetch(`${API_BASE}/api/seller/status`, { credentials: "include" })
+    fetch(`${API_BASE}/seller/status`, { credentials: "include" })
       .then((r) => r.json())
       .then((s) => { if (alive) setSeller(s); })
       .catch(() => { if (alive) setSeller({ status: null, rejectionReason: null }); })
@@ -125,7 +125,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
       if (!bootstrapCode.trim()) return;
       setBusy(true);
       try {
-        await fetch(`${API_BASE}/api/admin/claim-owner`, {
+        await fetch(`${API_BASE}/admin/claim-owner`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -190,14 +190,14 @@ export function RequireRole({ role, children }: RequireRoleProps) {
     }
     setBusy(true);
     try {
-      await fetch(`${API_BASE}/api/seller/apply`, {
+      await fetch(`${API_BASE}/seller/apply`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shopName: shopName.trim() }),
       });
       toast.success(t("gate.sellerApplySuccess"));
-      const freshRes = await fetch(`${API_BASE}/api/seller/status`, { credentials: "include" });
+      const freshRes = await fetch(`${API_BASE}/seller/status`, { credentials: "include" });
       const fresh = await freshRes.json();
       setSeller(fresh);
     } catch (error) {

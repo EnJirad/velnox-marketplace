@@ -175,11 +175,14 @@ All public frontend URLs are centralized in `packages/shared/src/lib/sites.ts` a
 
 1. **`VITE_*` variables are PUBLIC** — they are intentionally exposed to the browser by Vite.
 2. **Never store secrets in `VITE_*` variables.**
-3. Use `apiUrl` from `@velnox/shared/lib/sites` instead of `import.meta.env.VITE_API_URL`.
-4. Use `SITE_URLS` from `@velnox/shared/lib/sites` for cross-application navigation.
-5. Use `joinUrl(base, path)` from `@velnox/shared/lib/sites` to safely join base URLs and paths.
-6. If a domain changes: update the Vercel environment variable and redeploy. Do NOT modify source code.
-7. In Vercel, set `VITE_*` as type **Config** (NOT Secret).
+3. Use `apiBaseUrl` from `@velnox/shared/lib/sites` for API requests — it automatically includes `/api`.
+4. Use `apiUrl` from `@velnox/shared/lib/sites` for non-API backend endpoints (e.g., OAuth redirects).
+5. **`VITE_API_URL` contains ONLY the backend origin** — never include `/api` here.
+6. The `/api` prefix is appended ONCE by `apiBaseUrl` — never duplicate it in fetch calls.
+7. Use `SITE_URLS` from `@velnox/shared/lib/sites` for cross-application navigation.
+8. Use `joinUrl(base, path)` from `@velnox/shared/lib/sites` to safely join base URLs and paths.
+9. If a domain changes: update the Vercel environment variable and redeploy. Do NOT modify source code.
+10. In Vercel, set `VITE_*` as type **Config** (NOT Secret).
 
 ---
 

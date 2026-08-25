@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 
 // ─── API Base URL ───────────────────────────────────────────────────────────
 
-import { apiUrl as API_BASE } from "./sites";
+import { apiBaseUrl as API_BASE } from "./sites";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ function notifyAuthListeners() {
 
 async function fetchCurrentUser(): Promise<ApiUser | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
+    const res = await fetch(`${API_BASE}/auth/me`, {
       credentials: "include",
     });
     if (!res.ok) return null;
@@ -124,7 +124,7 @@ export async function refetchCurrentUser(): Promise<ApiUser | null> {
 
 /** Google OAuth sign-in */
 export async function signInWithGoogle(code: string): Promise<ApiUser> {
-  const res = await fetch(`${API_BASE}/api/auth/google`, {
+  const res = await fetch(`${API_BASE}/auth/google`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -143,7 +143,7 @@ export async function signInWithGoogle(code: string): Promise<ApiUser> {
 
 /** Sign out */
 export async function signOut(): Promise<void> {
-  await fetch(`${API_BASE}/api/auth/logout`, {
+  await fetch(`${API_BASE}/auth/logout`, {
     method: "POST",
     credentials: "include",
   });
@@ -180,7 +180,9 @@ export function useAuth() {
 // ─── API Fetch Helpers ──────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  // Strip /api prefix if present — API_BASE already includes it
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
     credentials: "include",
     ...options,
     headers: {

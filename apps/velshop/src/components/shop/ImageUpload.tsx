@@ -10,8 +10,7 @@
  */
 import { useState, useRef } from "react";
 import { Camera, Loader2, X } from "lucide-react";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
 
 interface ImageUploadProps {
   currentUrl?: string | null;
@@ -56,7 +55,7 @@ export function ImageUpload({
     setUploading(true);
     try {
       // 1. Get presigned URL
-      const presignRes = await fetch(`${API_BASE}/api/upload/presign`, {
+      const presignRes = await fetch(`${API_BASE}/upload/presign`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -74,7 +73,7 @@ export function ImageUpload({
       if (!uploadRes.ok) throw new Error("Upload failed");
 
       // 3. Confirm upload on backend
-      const confirmRes = await fetch(`${API_BASE}/api/upload/confirm`, {
+      const confirmRes = await fetch(`${API_BASE}/upload/confirm`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

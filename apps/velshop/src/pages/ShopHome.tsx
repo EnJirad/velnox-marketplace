@@ -33,8 +33,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
 
 interface RecommendedRow {
   product: StoreProduct;
@@ -53,7 +52,8 @@ const CATEGORY_ICONS: Record<StoreProductCategory, LucideIcon> = {
 };
 
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, { credentials: "include" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

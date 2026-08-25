@@ -9,8 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTracking } from "@velnox/shared/lib/track";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
 
 /**
  * Cart line — the real cart lives in the backend (Neon via API).
@@ -77,12 +76,12 @@ function toLine(item: {
 let guestSeq = 0;
 
 async function apiCartGet(): Promise<{ items: unknown[] } | null> {
-  const res = await fetch(`${API_BASE}/api/customer/cart`, { credentials: "include" });
+  const res = await fetch(`${API_BASE}/customer/cart`, { credentials: "include" });
   if (!res.ok) return null;
   return res.json();
 }
 async function apiCartAdd(productId: string, quantity: number, variantId?: string | null) {
-  const res = await fetch(`${API_BASE}/api/customer/cart/add`, {
+  const res = await fetch(`${API_BASE}/customer/cart/add`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -91,7 +90,7 @@ async function apiCartAdd(productId: string, quantity: number, variantId?: strin
   return res.json();
 }
 async function apiCartItemUpdate(cartItemId: string, quantity: number) {
-  const res = await fetch(`${API_BASE}/api/customer/cart/item/${cartItemId}`, {
+  const res = await fetch(`${API_BASE}/customer/cart/item/${cartItemId}`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -100,7 +99,7 @@ async function apiCartItemUpdate(cartItemId: string, quantity: number) {
   return res.json();
 }
 async function apiCartItemRemove(cartItemId: string) {
-  const res = await fetch(`${API_BASE}/api/customer/cart/item/${cartItemId}`, {
+  const res = await fetch(`${API_BASE}/customer/cart/item/${cartItemId}`, {
     method: "DELETE",
     credentials: "include",
   });
