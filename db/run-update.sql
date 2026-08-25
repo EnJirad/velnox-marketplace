@@ -463,3 +463,27 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON revoked_tokens (token_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens (expires_at);
+
+-- -----------------------------------------------------------
+-- Migration: V0011
+-- Date: 2026-08-25
+-- Description:
+-- Add CHECK constraint to sellers.status with canonical values.
+--
+-- Reason:
+-- sellers.status previously had no constraint or an incorrect one.
+-- Backend uses: pending, approved, rejected, suspended.
+-- Normalize existing inconsistent data (active→approved, under_review→pending).
+--
+-- Affected:
+-- sellers
+-- ------------------------------------------------------------
+
+UPDATE sellers SET status = 'approved' WHERE status = 'active';
+UPDATE sellers SET status = 'pending' WHERE status = 'under_review';
+
+ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check;
+
+ALTER TABLE sellers
+  ADD CONSTRAINT sellers_status_check
+  CHECK (status IN ('pending', 'approved', 'rejected', 'suspended'));

@@ -16,7 +16,8 @@
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { query } from "../db/index.js";
+import { query, getClient } from "../db/index.js";
+import { invalidateCachedProfile } from "./auth.js";
 
 export function setupSellerRoutes(app: Express): void {
   // ── POST /api/seller/apply ─────────────────────────────────────────────
@@ -326,37 +327,18 @@ export function setupSellerRoutes(app: Express): void {
 
   // ── PATCH /api/admin/sellers/:id/status ───────────────────────────────
   // Update seller status (approve, reject, suspend)
+  // Uses a PostgreSQL transaction for atomicity.
+  // On approval: promotes user.role to 'seller' (unless owner/admin/staff).
+  // Records audit log entry for every status change.
   app.patch("/api/admin/sellers/:id/status", requireAuth, async (req: Request, res: Response) => {
+    const client = await getClient();
     try {
       const userId = req.user!.userId;
       const sellerId = req.params.id;
       const { status, reason } = req.body;
 
-      // Verify user has admin permissions
-      const userResult = await query(
-        "SELECT role FROM users WHERE id = $1",
-        [userId]
-      );
-
-      if (userResult.rows.length === 0) {
-        res.status(401).json({
-          success: false,
-          error: { code: "UNAUTHORIZED", message: "User not found" },
-        });
-        return;
-      }
-
-      const userRole = userResult.rows[0].role;
-      if (!["owner", "admin"].includes(userRole)) {
-        res.status(403).json({
-          success: false,
-          error: { code: "FORBIDDEN", message: "Only owner or admin can approve/reject sellers" },
-        });
-        return;
-      }
-
-      // Validate status value
-      const validStatuses = ["approved", "rejected", "pending", "suspended", "under_review"];
+      // Validate status value — canonical set
+      const validStatuses = ["approved", "rejected", "pending", "suspended"];
       if (!status || !validStatuses.includes(status)) {
         res.status(400).json({
           success: false,
@@ -368,13 +350,41 @@ export function setupSellerRoutes(app: Express): void {
         return;
       }
 
-      // Check if seller exists
-      const sellerResult = await query(
-        "SELECT id, user_id, status FROM sellers WHERE id = $1",
+      await client.query("BEGIN");
+
+      // Verify user has admin permissions (within transaction)
+      const userResult = await client.query(
+        "SELECT role FROM users WHERE id = $1",
+        [userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        await client.query("ROLLBACK");
+        res.status(401).json({
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "User not found" },
+        });
+        return;
+      }
+
+      const userRole = userResult.rows[0].role;
+      if (!["owner", "admin"].includes(userRole)) {
+        await client.query("ROLLBACK");
+        res.status(403).json({
+          success: false,
+          error: { code: "FORBIDDEN", message: "Only owner or admin can approve/reject sellers" },
+        });
+        return;
+      }
+
+      // Check if seller exists (within transaction, with row lock)
+      const sellerResult = await client.query(
+        "SELECT id, user_id, status FROM sellers WHERE id = $1 FOR UPDATE",
         [sellerId]
       );
 
       if (sellerResult.rows.length === 0) {
+        await client.query("ROLLBACK");
         res.status(404).json({
           success: false,
           error: { code: "NOT_FOUND", message: "Seller not found" },
@@ -383,9 +393,11 @@ export function setupSellerRoutes(app: Express): void {
       }
 
       const seller = sellerResult.rows[0];
+      const previousStatus = seller.status;
 
-      // Prevent self-approval
+      // Prevent self-approval/rejection
       if (seller.user_id === userId && (status === "approved" || status === "rejected")) {
+        await client.query("ROLLBACK");
         res.status(403).json({
           success: false,
           error: { code: "SELF_ACTION_FORBIDDEN", message: "Cannot approve/reject yourself" },
@@ -393,16 +405,50 @@ export function setupSellerRoutes(app: Express): void {
         return;
       }
 
+      // Idempotency: if seller already has the requested status, return success
+      if (previousStatus === status) {
+        await client.query("COMMIT");
+        res.json({
+          success: true,
+          data: {
+            seller: { id: sellerId, status },
+            message: `Seller already ${status}`,
+          },
+        });
+        return;
+      }
+
       // Update seller status
-      await query(
+      await client.query(
         "UPDATE sellers SET status = $1, updated_at = NOW() WHERE id = $2",
         [status, sellerId]
       );
 
-      // If rejected and reason provided, store it in seller_settings
+      // On approval: promote user.role to 'seller' (unless already owner/admin/staff)
+      let promotedRole: string | null = null;
+      if (status === "approved") {
+        const targetUser = await client.query(
+          "SELECT role FROM users WHERE id = $1",
+          [seller.user_id]
+        );
+        const targetRole = targetUser.rows[0]?.role;
+        if (targetRole && !["owner", "admin", "staff", "seller"].includes(targetRole)) {
+          await client.query(
+            "UPDATE users SET role = 'seller', updated_at = NOW() WHERE id = $1",
+            [seller.user_id]
+          );
+          promotedRole = "seller";
+        } else if (targetRole === "seller") {
+          promotedRole = "seller"; // already seller
+        } else {
+          promotedRole = targetRole; // owner/admin/staff — keep their role
+        }
+      }
+
+      // On rejection: store rejection reason in seller_settings
       if (status === "rejected" && reason) {
-        await query(
-          `UPDATE seller_settings 
+        await client.query(
+          `UPDATE seller_settings
            SET settings = jsonb_set(COALESCE(settings, '{}'), '{rejectionReason}', $1::jsonb),
                updated_at = NOW()
            WHERE seller_id = $2`,
@@ -410,14 +456,36 @@ export function setupSellerRoutes(app: Express): void {
         );
       }
 
-      console.log(`[seller] admin status update: ${sellerId} -> ${status} by user ${userId}`);
+      // Record audit log entry
+      try {
+        await client.query(
+          `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value, details)
+           VALUES ($1, $2, 'seller', $3, $4, $5, $6)`,
+          [
+            userId,
+            `SELLER_${status.toUpperCase()}`,
+            sellerId,
+            JSON.stringify({ status: previousStatus }),
+            JSON.stringify({ status }),
+            JSON.stringify({
+              previousStatus,
+              newStatus: status,
+              promotedRole,
+              reason: reason || null,
+            }),
+          ]
+        );
+      } catch (auditErr: any) {
+        // Audit log failure should not block the operation
+        console.warn("[seller] audit log write failed:", auditErr?.message);
+      }
 
-      // NOTE: We do NOT update users.role when approving sellers.
-      // Seller status is independent from the user's primary platform role.
-      // An owner/admin/staff should retain their platform role while also
-      // being an approved seller through the sellers relationship.
-      // Seller access is determined by sellers.status = 'approved',
-      // NOT by users.role = 'seller'.
+      // Invalidate cached profile for the target user so /api/auth/me returns fresh role
+      invalidateCachedProfile(seller.user_id);
+
+      await client.query("COMMIT");
+
+      console.log(`[seller] ${status}: seller ${sellerId} (user ${seller.user_id}) by admin ${userId} [${previousStatus} → ${status}]${promotedRole ? ` role→${promotedRole}` : ""}`);
 
       res.json({
         success: true,
@@ -425,15 +493,23 @@ export function setupSellerRoutes(app: Express): void {
           seller: {
             id: sellerId,
             status,
+            previousStatus,
+          },
+          user: {
+            id: seller.user_id,
+            role: promotedRole,
           },
         },
       });
     } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
       console.error("[seller] admin status update error:", err);
       res.status(500).json({
         success: false,
         error: { code: "DB_ERROR", message: "Failed to update seller status" },
       });
+    } finally {
+      client.release();
     }
   });
 }

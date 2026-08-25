@@ -115,7 +115,11 @@ Each app imports from `@velnox/shared` via a Vite resolve alias that points to `
 - `GET /api/seller/profile` — Get seller profile with shop details
 - `GET /api/admin/sellers` — List all sellers with user/shop info (admin only, returns `owner_id` for self-detection)
 - `PATCH /api/admin/sellers/:id/status` — Approve/reject/suspend seller (owner/admin only, self-approval blocked)
-- **Role separation:** Approval updates `sellers.status` only — never downgrades `users.role`
+  - Uses PostgreSQL transaction with `FOR UPDATE` row lock
+  - Promotes `users.role` to 'seller' on approval (unless owner/admin/staff)
+  - Records `audit_logs` entry for every status change
+  - Idempotent: already-approved returns success
+  - Canonical statuses: pending, approved, rejected, suspended
 
 ### backend/middleware/auth.ts
 - JWT session verification from `velnox_session` cookie
@@ -368,6 +372,38 @@ PORT=3001
 8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-08-25 — Complete Seller Approval & Role Authorization Fix
+- **Problem:** Seller approval had multiple critical issues: no database transaction (atomicity failure), no role promotion (approved sellers stayed `role='customer'`), no audit logging, no CHECK constraint on `sellers.status`, no idempotency, no concurrency protection
+- **Root cause:**
+  1. Backend PATCH `/api/admin/sellers/:id/status` used separate non-transactional queries — if one failed, the other succeeded = inconsistent state
+  2. Approval did NOT update `users.role` — a customer approved as seller still had `role='customer'` in the database
+  3. No `audit_logs` entries for seller authorization actions
+  4. `sellers.status` CHECK constraint was removed entirely in a previous fix (no constraint at all)
+  5. Backend valid statuses included `under_review` which was not in the canonical set
+  6. No idempotency — approving an already-approved seller did a redundant UPDATE
+- **Fix:**
+  - **Backend `PATCH /api/admin/sellers/:id/status`:** Complete rewrite with:
+    - PostgreSQL transaction (`BEGIN`/`COMMIT`/`ROLLBACK`) for atomicity
+    - `FOR UPDATE` row lock to prevent race conditions
+    - Role promotion: `customer` → `seller` on approval (preserves `owner`/`admin`/`staff` roles)
+    - Idempotency: already-approved returns success with message
+    - Audit logging: `audit_logs` entries for every status change
+    - Auth cache invalidation: `invalidateCachedProfile()` so `/api/auth/me` returns fresh role
+    - Canonical valid statuses: `pending`, `approved`, `rejected`, `suspended` (removed `under_review`)
+  - **Database:** Added V0011 migration with CHECK constraint: `CHECK (status IN ('pending', 'approved', 'rejected', 'suspended'))`
+  - **Database normalization:** `active` → `approved`, `under_review` → `pending` (migrates old inconsistent data)
+  - **All three SQL files updated:** `run-update.sql` (V0011), `run-sqleditor.sql`, `schema.sql`
+- **Role model:**
+  - `users.role` = platform role (`customer`, `seller`, `admin`, `owner`, `staff`)
+  - `sellers.status` = seller onboarding state (`pending`, `approved`, `rejected`, `suspended`)
+  - On approval: customer gets `role='seller'`; owner/admin/staff keep their existing role
+  - VelSeller access determined by `sellers.status = 'approved'`, not `users.role`
+- **VelCenter flow:** After approval, `reloadSellers()` re-fetches the list; admin's own auth unchanged
+- **VelSeller flow:** `RequireRole` checks `/api/seller/status` → `approved` → shows dashboard
+- **Security:** Self-approval blocked (`SELF_ACTION_FORBIDDEN`); only owner/admin can approve; backend determines identity from session
+- **Files changed:** `backend/routes/seller.ts`, `db/migrations/011_seller_status_constraint.sql`, `db/run-sqleditor.sql`, `db/schema.sql`, `db/run-update.sql`
+- **Result:** All 5 typechecks pass. Complete seller approval lifecycle works atomically with audit trail.
 
 ### 2026-08-25 — Permanent Development Memory System Initialized
 - **Task:** Synchronize database schema files, create run-update.sql migration history, and establish permanent development memory
