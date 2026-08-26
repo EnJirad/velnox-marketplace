@@ -399,15 +399,15 @@ export default function ShopProductDetail() {
               )}
             </div>
 
-            {/* Mobile: sticky bottom action bar (above the app tab bar), like a
-                native commerce app. Desktop keeps the inline buttons. */}
-            <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-5 space-y-2.5 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-5 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
+            {/* Purchase options: Buy Once + VelRepeat — equal visual weight */}
+            <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-5 space-y-3 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-5 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
               {outOfStock ? (
                 <Button className="w-full gap-1.5 bg-slate-100 text-slate-400 hover:bg-slate-100" disabled>
                   {t("product.outOfStock")}
                 </Button>
               ) : (
                 <>
+                  {/* Quantity selector */}
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1.5 py-1">
                       <Button
@@ -431,32 +431,61 @@ export default function ShopProductDetail() {
                         <Plus className="size-3.5" />
                       </Button>
                     </div>
-                    <Button
-                      className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                      onClick={handleAdd}
-                      disabled={product.price <= 0}
-                    >
-                      <ShoppingCart className="size-4" />
-                      {t("productDetail.addToCartWithTotal", { total: formatBaht(product.price * qty) })}
-                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    className="w-full gap-1.5 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white"
-                    onClick={handleBuyNow}
-                    disabled={product.price <= 0}
-                  >
-                    <Zap className="size-4" />
-                    {t("productDetail.buyNow")}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="h-10 w-full gap-1.5 text-xs text-slate-500 hover:bg-[#ECFDF5] hover:text-emerald-700"
-                    onClick={() => setSubOpen(true)}
-                  >
-                    <CalendarClock className="size-3.5" />
-                    {t("productDetail.reorderCta")}
-                  </Button>
+
+                  {/* Two equal purchase option cards */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {/* Buy Once card */}
+                    <div className="flex flex-col rounded-2xl border-2 border-slate-900 bg-white p-4">
+                      <p className="text-sm font-bold text-slate-900">ซื้อครั้งเดียว</p>
+                      <p className="mt-1 text-xs text-slate-500">ซื้อและรับสินค้าในออเดอร์นี้</p>
+                      <p className="mt-2 text-xl font-bold tabular-nums text-slate-900">
+                        {formatBaht(product.price)}
+                        <span className="ml-1 text-xs font-normal text-slate-400">/ {product.unit}</span>
+                      </p>
+                      <div className="mt-3 flex gap-2">
+                        <Button
+                          className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                          onClick={handleAdd}
+                          disabled={product.price <= 0}
+                        >
+                          <ShoppingCart className="size-4" />
+                          {t("product.addToCart")}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="gap-1.5 border-slate-200 text-slate-700 hover:bg-slate-50"
+                          onClick={handleBuyNow}
+                          disabled={product.price <= 0}
+                        >
+                          <Zap className="size-4" />
+                          {t("productDetail.buyNow")}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* VelRepeat card */}
+                    <button
+                      type="button"
+                      onClick={() => setSubOpen(true)}
+                      className="flex flex-col rounded-2xl border-2 border-[#10B981]/30 bg-[#F0FDF9] p-4 text-left transition-colors hover:border-[#10B981]/60"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <CalendarClock className="size-4 text-[#10B981]" />
+                        <p className="text-sm font-bold text-[#047857]">VelRepeat</p>
+                      </div>
+                      <p className="mt-1 text-xs text-[#047857]/70">ราคาพิเศษ · จ่ายล่วงหน้า · ส่งตามรอบ</p>
+                      <p className="mt-2 text-xs text-[#047857]/60">
+                        {t("productDetail.reorderCta")}
+                      </p>
+                      <div className="mt-auto pt-3">
+                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#10B981] px-4 py-2 text-sm font-semibold text-white">
+                          <CalendarClock className="size-3.5" />
+                          เลือกแพ็ก VelRepeat
+                        </span>
+                      </div>
+                    </button>
+                  </div>
                 </>
               )}
             </div>

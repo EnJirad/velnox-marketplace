@@ -880,3 +880,21 @@ PORT=3001
 - **VelRepeat Architecture:** Customer selects VelRepeat -> Chooses weekly/monthly package -> Creates vrepeat_package + delivery schedule -> Pays full amount upfront -> Deliveries generated -> Seller fulfills each -> Package completed when all delivered.
 - **Files changed:** `db/migrations/024_*.sql` (new), `backend/routes/velrepeat.ts` (new), `backend/server.ts`, `packages/shared/src/lib/api-routes.ts`, `SubscriptionDialog.tsx`, `VelRepeatPage.tsx`, `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`
 - **All 5 typechecks pass**
+
+### 2026-08-27 — Fix Raw Translation Keys + Purchase Options UI Redesign
+
+- **Problem 1:** `subscription.deliverySchedule` and other raw translation keys displayed to users on VelShop product detail page. The `SubscriptionDialog.tsx` used 13 translation keys (`subscription.weekly`, `subscription.weeklyDesc`, `subscription.monthly`, `subscription.monthlyDesc`, `subscription.velRepeatTitle`, `subscription.velRepeatDesc`, `subscription.save`, `subscription.deliverySchedule`, `subscription.deliveryN`, `subscription.paidOnce`, `subscription.confirmPackage`, `subscription.selectPackage`) that did NOT exist in any i18n locale file (th.ts, en.ts, my.ts). When `t()` can't find a key, it returns the raw key string.
+- **Problem 2:** VelRepeat was displayed as a tiny ghost text link (`text-xs text-slate-500`) below the primary Buy Once buttons, making it nearly invisible. Velnox needs both purchase options to have equal visual prominence.
+- **Root cause:**
+  1. The i18n `subscription` section only had OLD keys (title, desc, perCycle, interval, every30, every60, every90, qtyPerCycle, stockNote, confirm, success, failed) — the new VelRepeat package dialog keys were never added to any locale file.
+  2. The ShopProductDetail action section was designed with Buy Once as primary and VelRepeat as afterthought.
+- **Fix:**
+  - **i18n (all 3 locales):** Added 13 missing `subscription.*` keys to th.ts, en.ts, my.ts with proper VelRepeat wording ("ซื้อเป็นแพ็ก ราคาพิเศษ", not misleading "subscription/auto-reorder" language).
+  - **ShopProductDetail.tsx:** Redesigned the purchase options section. Now shows two equal-weight cards:
+    - **Buy Once card** (left/top): white card with border-slate-900, shows price/unit, Add to Cart + Buy Now buttons
+    - **VelRepeat card** (right/bottom): green-tinted card (#F0FDF9) with border-[#10B981]/30, shows "VelRepeat — ราคาพิเศษ · จ่ายล่วงหน้า · ส่งตามรอบ", green CTA button
+    - Both cards have equal visual weight, proper `aria-label` attributes, and responsive grid layout (stacked on mobile, side-by-side on sm+).
+  - Quantity selector moved above the two purchase option cards for cleaner layout.
+- **Files changed:** `packages/shared/src/lib/i18n/locales/th.ts`, `packages/shared/src/lib/i18n/locales/en.ts`, `packages/shared/src/lib/i18n/locales/my.ts`, `apps/velshop/src/pages/ShopProductDetail.tsx`
+- **No raw translation keys remain:** All `subscription.*` keys used in SubscriptionDialog.tsx now exist in all 3 locale files. Verified with grep.
+- **All 5 typechecks pass** (backend, velshop, velseller, velcenter, velnox)

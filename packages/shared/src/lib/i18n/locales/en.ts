@@ -352,6 +352,18 @@ export const en: Dict = {
     confirm: "Confirm monthly reorder",
     success: "Subscribed to “{name}” every {days} days 🗓️",
     failed: "Couldn't subscribe — please try again",
+    weekly: "Weekly package",
+    weeklyDesc: "{qty} items · delivered every week",
+    monthly: "Monthly package",
+    monthlyDesc: "{qty} items · delivered monthly",
+    velRepeatTitle: "VelRepeat — buy as a package, special price",
+    velRepeatDesc: "Pay upfront for a package at a lower price · Velnox delivers on schedule",
+    save: "Save",
+    deliverySchedule: "Delivery schedule",
+    deliveryN: "Delivery #{n}",
+    paidOnce: "One-time payment {total} · automatic scheduled delivery",
+    confirmPackage: "Confirm package · {total}",
+    selectPackage: "Choose VelRepeat package",
   },
 
   orders: {

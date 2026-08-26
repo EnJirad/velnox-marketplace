@@ -353,6 +353,18 @@ export const th = {
     confirm: "ยืนยันสั่งรายเดือน",
     success: "สมัครรับ “{name}” ทุก {days} วันแล้ว 🗓️",
     failed: "สมัครไม่สำเร็จ กรุณาลองอีกครั้ง",
+    weekly: "สั่งทุกสัปดาห์",
+    weeklyDesc: "แพ็ก {qty} ชิ้น · จัดส่งทุกสัปดาห์",
+    monthly: "สั่งรายเดือน",
+    monthlyDesc: "แพ็ก {qty} ชิ้น · จัดส่งเดือนละครั้ง",
+    velRepeatTitle: "VelRepeat — ซื้อเป็นแพ็ก ราคาพิเศษ",
+    velRepeatDesc: "จ่ายล่วงหน้าเป็นแพ็ก ได้ราคาถูกกว่า · Velnox จัดส่งให้ตามรอบ",
+    save: "ประหยัด",
+    deliverySchedule: "กำหนดการจัดส่ง",
+    deliveryN: "จัดส่งครั้งที่ {n}",
+    paidOnce: "จ่ายครั้งเดียว {total} · จัดส่งตามรอบอัตโนมัติ",
+    confirmPackage: "ยืนยันแพ็ก · {total}",
+    selectPackage: "เลือกแพ็ก VelRepeat",
   },
 
   orders: {
