@@ -10,9 +10,10 @@ import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
 import { useTracking } from "@velnox/shared/lib/track";
 import { setSeo } from "@/lib/seo";
 import { useAction } from "@velnox/shared/lib/api-routes";
-import { ArrowLeft, Heart, ImageOff, Package, Plus, ShieldCheck, Star, Store } from "lucide-react";
+import { ArrowLeft, Heart, ImageOff, Loader2, Package, Plus, ShieldCheck, Star, Store } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
+import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { toast } from "sonner";
 
 interface ShopRow {
@@ -38,10 +39,48 @@ export default function ShopDetail() {
   const shopDetail = useAction(api.customer.shopDetail);
   const { add } = useCart();
   const { track } = useTracking();
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const toggleWishlist = useAction(api.customer.toggleWishlistAction);
+  const myWishlist = useAction(api.customer.myWishlist);
   const [shop, setShop] = useState<ShopRow | null>(null);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
+  const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
+
+  // Load wishlist if authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let alive = true;
+    myWishlist()
+      .then((wl: any[]) => { if (alive) setWishlistIds(new Set((wl ?? []).map((i: any) => i.productId))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isAuthenticated, myWishlist]);
+
+  const handleWishlist = async (product: StoreProduct) => {
+    if (!isAuthenticated) {
+      navigate("/auth?returnTo=" + encodeURIComponent(`/shops/${shopId}`));
+      return;
+    }
+    setWishTogglingId(product.id);
+    try {
+      const res = await toggleWishlist({ productId: product.id });
+      setWishlistIds((prev) => {
+        const next = new Set(prev);
+        if (res.added) next.add(product.id); else next.delete(product.id);
+        return next;
+      });
+      toast.success(res.added ? t("productDetail.wishlistAdded") : t("productDetail.wishlistRemoved"));
+    } catch (err) {
+      console.error("Wishlist error:", err);
+      toast.error(t("productDetail.wishlistFailed"));
+    } finally {
+      setWishTogglingId(null);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!shopId) return;
@@ -196,20 +235,35 @@ export default function ShopDetail() {
                     key={product.id}
                     className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(15,23,42,0.07)]"
                   >
-                    <Link to={`/products/${product.id}`} className="block aspect-square w-full overflow-hidden bg-slate-50">
-                      {product.primaryImage ? (
-                        <img
-                          src={product.primaryImage.displayUrl}
-                          alt={product.name}
-                          className="size-full object-cover transition-transform duration-300 hover:scale-105"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <span className="flex size-full items-center justify-center">
-                          <ImageOff className="size-8 text-slate-300" />
-                        </span>
-                      )}
-                    </Link>
+                    <div className="relative block aspect-square w-full overflow-hidden bg-slate-50">
+                      <Link to={`/products/${product.id}`} className="block size-full">
+                        {product.primaryImage ? (
+                          <img
+                            src={product.primaryImage.displayUrl}
+                            alt={product.name}
+                            className="size-full object-cover transition-transform duration-300 hover:scale-105"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span className="flex size-full items-center justify-center">
+                            <ImageOff className="size-8 text-slate-300" />
+                          </span>
+                        )}
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleWishlist(product); }}
+                        disabled={wishTogglingId === product.id}
+                        className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm transition-colors hover:bg-white"
+                        aria-label={t("wishlist.ariaToggle")}
+                      >
+                        {wishTogglingId === product.id ? (
+                          <Loader2 className="size-4 animate-spin text-slate-400" />
+                        ) : (
+                          <Heart className={`size-4 ${wishlistIds.has(product.id) ? "fill-rose-500 text-rose-500" : "text-slate-500"}`} />
+                        )}
+                      </button>
+                    </div>
                     <div className="flex flex-1 flex-col p-4">
                       <Link to={`/products/${product.id}`} className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900 hover:text-[#10B981]">
                         {product.name}

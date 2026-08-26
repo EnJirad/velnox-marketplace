@@ -42,6 +42,7 @@ import {
   Store,
   X,
 } from "lucide-react";
+import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
@@ -97,6 +98,43 @@ export default function ShopProducts() {
   const [error, setError] = useState<string | null>(null);
   const [shops, setShops] = useState<ShopRow[]>([]);
   const [queryInput, setQueryInput] = useState(q);
+  const { isAuthenticated } = useAuth();
+  const toggleWishlist = useAction(api.customer.toggleWishlistAction);
+  const myWishlist = useAction(api.customer.myWishlist);
+  const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
+  const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
+
+  // Load wishlist on mount if authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let alive = true;
+    myWishlist()
+      .then((wl: any[]) => { if (alive) setWishlistIds(new Set((wl ?? []).map((i: any) => i.productId))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isAuthenticated, myWishlist]);
+
+  const handleWishlist = async (product: StoreProduct) => {
+    if (!isAuthenticated) {
+      navigate("/auth?returnTo=" + encodeURIComponent("/products"));
+      return;
+    }
+    setWishTogglingId(product.id);
+    try {
+      const res = await toggleWishlist({ productId: product.id });
+      setWishlistIds((prev) => {
+        const next = new Set(prev);
+        if (res.added) next.add(product.id); else next.delete(product.id);
+        return next;
+      });
+      toast.success(res.added ? t("productDetail.wishlistAdded") : t("productDetail.wishlistRemoved"));
+    } catch (err) {
+      console.error("Wishlist error:", err);
+      toast.error(t("productDetail.wishlistFailed"));
+    } finally {
+      setWishTogglingId(null);
+    }
+  };
 
   // live search box → URL param (debounced)
   useEffect(() => {
@@ -541,6 +579,9 @@ export default function ShopProducts() {
                           );
                           toast.success(t("cart.added", { name: p.name }));
                         }}
+                        wishlisted={wishlistIds.has(product.id)}
+                        onWishlist={handleWishlist}
+                        wishToggling={wishTogglingId === product.id}
                       />
                     ))}
                   </div>

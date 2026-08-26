@@ -75,35 +75,47 @@ function toLine(item: {
 
 let guestSeq = 0;
 
+/** Unwrap the {success, data} envelope that the backend sends. */
+function unwrapJson(raw: any): any {
+  if (raw && typeof raw === "object" && "data" in raw && raw.success !== undefined) {
+    return raw.data;
+  }
+  return raw;
+}
+
 async function apiCartGet(): Promise<{ items: unknown[] } | null> {
   const res = await fetch(`${API_BASE}/customer/cart`, { credentials: "include" });
   if (!res.ok) return null;
-  return res.json();
+  const raw = await res.json();
+  return unwrapJson(raw);
 }
-async function apiCartAdd(productId: string, quantity: number, variantId?: string | null) {
+async function apiCartAdd(productId: string, quantity: number, variantId?: string | null): Promise<any> {
   const res = await fetch(`${API_BASE}/customer/cart/add`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ productId, quantity, variantId }),
   });
-  return res.json();
+  const raw = await res.json();
+  return unwrapJson(raw);
 }
-async function apiCartItemUpdate(cartItemId: string, quantity: number) {
+async function apiCartItemUpdate(cartItemId: string, quantity: number): Promise<any> {
   const res = await fetch(`${API_BASE}/customer/cart/item/${cartItemId}`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ quantity }),
   });
-  return res.json();
+  const raw = await res.json();
+  return unwrapJson(raw);
 }
-async function apiCartItemRemove(cartItemId: string) {
+async function apiCartItemRemove(cartItemId: string): Promise<any> {
   const res = await fetch(`${API_BASE}/customer/cart/item/${cartItemId}`, {
     method: "DELETE",
     credentials: "include",
   });
-  return res.json();
+  const raw = await res.json();
+  return unwrapJson(raw);
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {

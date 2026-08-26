@@ -2,7 +2,6 @@ import { ProductCard } from "@/components/shop/ProductCard";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
-import { ProductDetailModal } from "@/components/shop/ProductDetailModal";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -34,6 +33,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
+import { api } from "@velnox/shared/lib/api-routes";
+import { useAction } from "@velnox/shared/lib/api-routes";
 
 interface RecommendedRow {
   product: StoreProduct;
@@ -108,8 +109,21 @@ export default function ShopHome() {
   );
 
   const [query, setQuery] = useState("");
-  const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [subProduct, setSubProduct] = useState<StoreProduct | null>(null);
+  const toggleWishlist = useAction(api.customer.toggleWishlistAction);
+  const myWishlist = useAction(api.customer.myWishlist);
+  const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
+  const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
+
+  // Load wishlist on mount if authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let alive = true;
+    myWishlist()
+      .then((wl: any[]) => { if (alive) setWishlistIds(new Set((wl ?? []).map((i: any) => i.productId))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isAuthenticated, myWishlist]);
 
   const products = useMemo(() => productsData.data ?? [], [productsData.data]);
   const recommendations = useMemo(
@@ -146,8 +160,30 @@ export default function ShopHome() {
   };
 
   const openProduct = (product: StoreProduct, source: string) => {
-    setDetailProduct(product);
     track("PRODUCT_CLICK", { entityId: product.id, value: product.name, context: { category: product.category, source } });
+    navigate(`/products/${product.id}`);
+  };
+
+  const handleWishlist = async (product: StoreProduct) => {
+    if (!isAuthenticated) {
+      navigate("/auth?returnTo=" + encodeURIComponent("/"));
+      return;
+    }
+    setWishTogglingId(product.id);
+    try {
+      const res = await toggleWishlist({ productId: product.id });
+      setWishlistIds((prev) => {
+        const next = new Set(prev);
+        if (res.added) next.add(product.id); else next.delete(product.id);
+        return next;
+      });
+      toast.success(res.added ? t("productDetail.wishlistAdded") : t("productDetail.wishlistRemoved"));
+    } catch (err) {
+      console.error("Wishlist error:", err);
+      toast.error(t("productDetail.wishlistFailed"));
+    } finally {
+      setWishTogglingId(null);
+    }
   };
 
   useEffect(() => { setSeo({ title: t("home.seoTitle", { shop: "VelShop" }), description: t("home.seoDesc", { tagline: "Commerce that remembers you · จำแทนคุณ" }) }); }, [t]);
@@ -214,7 +250,7 @@ export default function ShopHome() {
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
             <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><History className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.continueShoppingTitle")}</h2><p className="text-xs text-slate-400">{t("home.continueShoppingDesc")}</p></div></div>
-            <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{regulars.slice(0, 4).map(({ product }: any) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-regulars")} onAdd={handleAdd} />))}</div>
+            <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{regulars.slice(0, 4).map(({ product }: any) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-regulars")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
       )}
@@ -223,7 +259,7 @@ export default function ShopHome() {
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
             <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><Sparkles className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{recommendData.data?.source === "personal" ? t("home.recsPersonal") : t("home.recsPopular")}</h2><p className="text-xs text-slate-400">{recommendData.data?.source === "personal" ? t("home.recsPersonalDesc") : t("home.recsPopularDesc")}</p></div></div>
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{recommendations.slice(0, 8).map(({ product }) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-recommended")} onAdd={handleAdd} badgeLabel={t("home.badgeRecommended")} />))}</div>
+            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{recommendations.slice(0, 8).map(({ product }) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-recommended")} onAdd={handleAdd} badgeLabel={t("home.badgeRecommended")} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
       )}
@@ -235,7 +271,7 @@ export default function ShopHome() {
               <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><TrendingUp className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.trendingTitle")}</h2><p className="text-xs text-slate-400">{t("home.trendingDesc")}</p></div></div>
               <Link to="/products" className="hidden shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700 sm:inline-flex">{t("common.viewAll")}<ArrowRight className="size-3.5" /></Link>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{popularProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} />))}</div>
+            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{popularProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
       )}
@@ -251,7 +287,6 @@ export default function ShopHome() {
         {productsData.loading ? (<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => (<div key={i} className="h-64 animate-pulse rounded-xl border border-slate-200 bg-white" />))}</div>) : products.length === 0 ? (<div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]"><ShoppingBag className="size-7 text-[#10B981]" /></span><h2 className="mt-5 text-lg font-semibold text-slate-900">{t("home.emptyTitle")}</h2><p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("home.emptyDesc")}</p></div>) : null}
       </main>
       <ShopFooter />
-      <ProductDetailModal product={detailProduct} open={detailProduct !== null} onOpenChange={(open) => !open && setDetailProduct(null)} onSubscribe={(p) => { setDetailProduct(null); setSubProduct(p); }} />
       <SubscriptionDialog product={subProduct} open={subProduct !== null} onOpenChange={(open) => { if (!open) setSubProduct(null); }} />
     </div>
   );

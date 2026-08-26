@@ -1,7 +1,7 @@
 import { useLanguage } from "@/lib/i18n";
 import { Button } from "@velnox/shared/components/ui/button";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
-import { ImageOff, Plus, Star } from "lucide-react";
+import { Heart, ImageOff, Loader2, Plus, Star } from "lucide-react";
 
 interface ProductCardProps {
   product: StoreProduct;
@@ -10,6 +10,12 @@ interface ProductCardProps {
   onAdd: (product: StoreProduct) => void;
   /** Optional small overlay label (e.g. “แนะนำ”). */
   badgeLabel?: string;
+  /** Whether this product is currently wishlisted. */
+  wishlisted?: boolean;
+  /** Toggle favorite — called on heart click. Pass undefined to hide the heart. */
+  onWishlist?: (product: StoreProduct) => void;
+  /** Loading state for the wishlist toggle. */
+  wishToggling?: boolean;
 }
 
 /**
@@ -17,7 +23,7 @@ interface ProductCardProps {
  * Deliberately minimal: image, name, price, one stock/sold line and an
  * add-to-cart button. No heart, no motion, no extra badges.
  */
-export function ProductCard({ product, onOpen, onAdd, badgeLabel }: ProductCardProps) {
+export function ProductCard({ product, onOpen, onAdd, badgeLabel, wishlisted, onWishlist, wishToggling }: ProductCardProps) {
   const { t } = useLanguage();
   const available = product.inventory?.available ?? product.inventory?.quantity ?? 0;
   const outOfStock = available <= 0;
@@ -53,6 +59,21 @@ export function ProductCard({ product, onOpen, onAdd, badgeLabel }: ProductCardP
           <span className="absolute left-2 top-2 rounded-full bg-[#10B981] px-2 py-0.5 text-[10px] font-semibold text-white">
             {badgeLabel}
           </span>
+        )}
+        {onWishlist && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onWishlist(product); }}
+            disabled={wishToggling}
+            className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm transition-colors hover:bg-white"
+            aria-label={t("product.ariaWishlist")}
+          >
+            {wishToggling ? (
+              <Loader2 className="size-4 animate-spin text-slate-400" />
+            ) : (
+              <Heart className={`size-4 ${wishlisted ? "fill-rose-500 text-rose-500" : "text-slate-500"}`} />
+            )}
+          </button>
         )}
       </button>
 

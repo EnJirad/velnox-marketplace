@@ -373,6 +373,23 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-26 — Fix Marketplace Product Navigation, Cart API, and Favorites
+- **Problem 1:** Clicking a product card on the homepage opened a quick-view modal instead of navigating to `/products/:id`
+- **Problem 2:** Cart system didn't work — `cart.tsx` raw `fetch` functions returned `{success, data}` envelope but code accessed `cart.items` instead of `cart.data.items`, making the cart appear empty
+- **Problem 3:** No favorite/heart button on product cards
+- **Problem 4:** Shop detail page product cards had no favorite button
+- **Root cause:**
+  1. `ShopHome.openProduct()` called `setDetailProduct()` (modal) instead of `navigate()`
+  2. `cart.tsx` helper functions (`apiCartGet`, `apiCartAdd`, etc.) used raw `fetch` without unwrapping the `{success, data}` envelope, so `cart.items` was `undefined` → empty cart
+  3. `ProductCard` component had no `onWishlist` prop — favorites only worked on the product detail page
+- **Fix:**
+  - **`apps/velshop/src/lib/cart.tsx`:** Added `unwrapJson()` helper that strips `{success, data}` envelope. All four cart API functions now unwrap responses before returning
+  - **`apps/velshop/src/pages/ShopHome.tsx`:** Changed `openProduct()` to call `navigate(`/products/${id}`)` instead of opening modal. Removed `ProductDetailModal` import/JSX. Added wishlist state (load, toggle) with `toggleWishlistAction`/`myWishlist` API calls. Passed `wishlisted`/`onWishlist`/`wishToggling` props to all ProductCard instances
+  - **`apps/velshop/src/components/shop/ProductCard.tsx`:** Added `wishlisted`, `onWishlist`, `wishToggling` props. Renders a heart button (top-right of image) with `event.stopPropagation()` to prevent navigation. Heart toggles between outlined (♡) and filled (♥) states
+  - **`apps/velshop/src/pages/ShopProducts.tsx`:** Added wishlist state + `handleWishlist` handler. Passed wishlist props to ProductCard
+  - **`apps/velshop/src/pages/ShopDetail.tsx`:** Added wishlist state + handler. Replaced `<Link>` image wrapper with `<div>` + inner `<Link>` so a heart `<button>` with `stopPropagation` can overlay the image
+- **All 5 typechecks pass (backend, velshop, velseller, velcenter, velnox)**
+
 ### 2026-08-25 — Category JOIN Fix + SQL Syntax Error
 - **Problem:** After changing `products.category_id` from UUID to TEXT (V0015), the `/api/products` endpoint still JOINed `categories ON c.id = p.category_id` — UUID vs TEXT mismatch caused the JOIN to fail. Also discovered double-comma syntax error `NOW(),,` in both schema files
 - **Fix:**
