@@ -216,7 +216,11 @@ CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id),
   shop_id UUID REFERENCES shops(id),
+  order_number TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
+  subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  shipping_fee NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  discount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'THB',
   shipping_address_id UUID REFERENCES addresses(id),
@@ -225,6 +229,7 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_number_unique ON orders (order_number) WHERE order_number IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_shop ON orders (shop_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
@@ -233,12 +238,19 @@ CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id UUID NOT NULL,
+  shop_id UUID REFERENCES shops(id),
+  variant_id UUID,
+  product_name_snapshot TEXT NOT NULL DEFAULT '',
+  variant_name_snapshot TEXT,
+  image_url_snapshot TEXT,
   product_name TEXT NOT NULL DEFAULT '',
   quantity INTEGER NOT NULL DEFAULT 1,
   price NUMERIC(12, 2) NOT NULL,
+  subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_shop ON order_items (shop_id);
 
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -247,10 +259,30 @@ CREATE TABLE IF NOT EXISTS payments (
   currency TEXT NOT NULL DEFAULT 'THB',
   method TEXT NOT NULL DEFAULT 'cod',
   status TEXT NOT NULL DEFAULT 'pending',
+  provider TEXT NOT NULL DEFAULT 'cod',
+  provider_payment_id TEXT,
+  provider_checkout_session_id TEXT,
+  paid_at TIMESTAMPTZ,
   metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_provider_session ON payments (provider_checkout_session_id);
+CREATE INDEX IF NOT EXISTS idx_payments_provider_payment ON payments (provider_payment_id);
+
+CREATE TABLE IF NOT EXISTS payment_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  provider TEXT NOT NULL,
+  event_id TEXT NOT NULL UNIQUE,
+  event_type TEXT NOT NULL,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  payload JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_payment_events_provider ON payment_events (provider);
+CREATE INDEX IF NOT EXISTS idx_payment_events_type ON payment_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_payment_events_processed ON payment_events (processed_at);
 
 CREATE TABLE IF NOT EXISTS refunds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

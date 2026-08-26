@@ -50,6 +50,8 @@ const ShopProductDetail = lazy(() => import("@/pages/ShopProductDetail"));
 const ShopDetail = lazy(() => import("@/pages/ShopDetail"));
 const ShopCart = lazy(() => import("@/pages/ShopCart"));
 const ShopCheckout = lazy(() => import("@/pages/ShopCheckout"));
+const ShopCheckoutSuccess = lazy(() => import("@/pages/ShopCheckoutSuccess"));
+const ShopCheckoutCancel = lazy(() => import("@/pages/ShopCheckoutCancel"));
 const MyOrders = lazy(() => import("@/pages/MyOrders"));
 const ShopOrderDetail = lazy(() => import("@/pages/ShopOrderDetail"));
 const ShopTracking = lazy(() => import("@/pages/ShopTracking"));
@@ -88,6 +90,8 @@ createRoot(document.getElementById("root")!).render(
               </RequireAuth>
             }
           />
+          <Route path="/checkout/success" element={<ShopCheckoutSuccess />} />
+          <Route path="/checkout/cancel" element={<ShopCheckoutCancel />} />
           <Route
             path="/orders"
             element={

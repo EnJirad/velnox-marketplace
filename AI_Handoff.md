@@ -373,6 +373,23 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-26 — Stripe Payment Architecture + Cart Drawer Enhancement
+- **Part 1 — Cart Drawer:** Added product image display to CartDrawer (previously only showed name/price/qty). Cart icon badge with count, mini cart with +/-, remove, subtotal, checkout button already existed from previous work.
+- **Part 2 — Stripe Payment System (new):**
+  - **Backend:** Created `backend/routes/stripe.ts` with:
+    - `POST /api/stripe/checkout` — Creates Stripe Checkout Session for an order (validates ownership, creates line items from DB, stores session ID, returns checkout URL)
+    - `POST /api/payments/stripe/webhook` — Handles `checkout.session.completed`, `checkout.session.expired`, `payment_intent.payment_failed` with event dedup via `payment_events` table
+    - `GET /api/stripe/configured` — Checks if Stripe is configured
+    - `GET /api/stripe/payment-status/:sessionId` — Gets payment status from Stripe
+    - `GET /api/orders/:orderId` — Gets order with items + payment status (for success page polling)
+  - **Server.ts:** Added raw body middleware for webhook signature verification (before `express.json()`)
+  - **Database V0023 migration:** Enhanced `orders` (order_number, subtotal, shipping_fee, discount), `order_items` (shop_id, variant_id, product_name_snapshot, variant_name_snapshot, image_url_snapshot, subtotal), `payments` (provider, provider_payment_id, provider_checkout_session_id, paid_at, updated_at), created `payment_events` table
+  - **Frontend:** Created `ShopCheckoutSuccess.tsx` (polls backend for payment status, shows order details, supports all terminal states) and `ShopCheckoutCancel.tsx` (cancel page with link back to cart)
+  - **i18n:** Added checkoutSuccess and checkoutCancel translation keys in Thai, English, Burmese
+- **Files changed:** `backend/routes/stripe.ts` (NEW), `backend/server.ts`, `backend/package.json`, `apps/velshop/src/main.tsx`, `apps/velshop/src/components/shop/CartDrawer.tsx`, `apps/velshop/src/pages/ShopCheckoutSuccess.tsx` (NEW), `apps/velshop/src/pages/ShopCheckoutCancel.tsx` (NEW), `packages/shared/src/lib/i18n/locales/th.ts`, `packages/shared/src/lib/i18n/locales/en.ts`, `packages/shared/src/lib/i18n/locales/my.ts`, `db/migrations/023_stripe_payment_system.sql` (NEW), `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`
+- **Environment variables needed:** `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `API_URL` (backend URL for Stripe success/cancel redirects)
+- **All 5 typechecks pass**
+
 ### 2026-08-26 — FIX: Cart variant_id Column Missing + Wishlist Migration Files Never Applied
 - **Root causes:**
   1. `cart_items.variant_id` column does not exist in production Neon. Backend `cart.ts` line 151 does `INSERT INTO cart_items (..., variant_id)` → PostgreSQL error `42703: column "variant_id" does not exist`. Add to Cart silently fails — item appears briefly in frontend but never persists.

@@ -505,6 +505,29 @@ export const en: Dict = {
     failed: "Order failed — prices or stock may have changed, please review and try again",
   },
 
+  checkoutSuccess: {
+    loading: "Verifying payment status...",
+    verifyingPayment: "Verifying payment with Stripe",
+    polling: "Waiting for Stripe confirmation... This page will update automatically",
+    paid: "Payment successful",
+    pending: "Awaiting payment",
+    pendingPayment: "Verifying payment",
+    cancelled: "Order cancelled",
+    paymentFailed: "Payment failed",
+    paymentStatus: "Payment status",
+    thankYou: "Thank you for your order — status will update automatically",
+    noOrder: "No order found",
+    noOrderDesc: "Please try again or check your order history",
+    orderNotFound: "Order not found",
+    error: "Something went wrong",
+  },
+
+  checkoutCancel: {
+    title: "Payment cancelled",
+    description: "Your order has not been paid. You can return to complete payment later.",
+    backToCart: "Back to cart",
+  },
+
   notifications: {
     eyebrow: "velshop · Notifications",
     title: "Notifications",

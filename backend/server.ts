@@ -12,6 +12,7 @@ import { setupGoogleAuth } from "./routes/auth.js";
 import { setupUploadRoutes } from "./routes/upload.js";
 import { setupSellerRoutes } from "./routes/seller.js";
 import { setupProductRoutes } from "./routes/products.js";
+import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -20,6 +21,18 @@ const server = createServer(app);
 // ─── Middleware ──────────────────────────────────────────
 app.use(helmet());
 app.use(cookieParser());
+
+// Stripe webhook needs the raw body for signature verification.
+// Use a custom middleware: if path matches webhook, skip express.json
+// and use express.raw instead. This must run BEFORE express.json.
+app.use((req, res, next) => {
+  if (req.path === "/api/payments/stripe/webhook" && req.method === "POST") {
+    express.raw({ type: "application/json" })(req, res, next);
+  } else {
+    next();
+  }
+});
+
 app.use(express.json({ limit: "10mb" }));
 
 const corsOrigins = process.env.CORS_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean) || [];
@@ -70,6 +83,9 @@ setupProductRoutes(app);
 
 // ─── Cart, Wishlist, Orders ──────────────────────────────
 setupCartRoutes(app);
+
+// ─── Stripe Payments ──────────────────────────────────────
+setupStripeRoutes(app);
 
 // ─── Admin (bootstrap / owner setup) ────────────────────
 setupAdminRoutes(app);

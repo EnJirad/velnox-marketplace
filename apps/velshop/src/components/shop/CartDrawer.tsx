@@ -11,7 +11,7 @@ import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
 import { formatBaht } from "@velnox/shared/lib/shop";
-import { LogIn, Minus, Plus, ShoppingCart, Trash2, UserPlus } from "lucide-react";
+import { ImageOff, LogIn, Minus, Plus, ShoppingCart, Trash2, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router";
 
 interface CartDrawerProps {
@@ -107,8 +107,20 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
               {lines.map((line) => (
                 <div
                   key={line.productId}
-                  className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 p-3"
+                  className="flex items-start gap-3 rounded-xl border border-slate-200 p-3"
                 >
+                  {line.imageUrl ? (
+                    <img
+                      src={line.imageUrl}
+                      alt={line.name}
+                      className="size-14 shrink-0 rounded-lg border border-slate-100 object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="flex size-14 shrink-0 items-center rounded-lg bg-slate-50">
+                      <ImageOff className="size-4 text-slate-300" />
+                    </span>
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-900">{line.name}</p>
                     <p className="mt-0.5 text-xs text-slate-400">
