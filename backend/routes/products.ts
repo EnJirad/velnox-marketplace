@@ -728,6 +728,15 @@ export function setupProductRoutes(app: Express): void {
 
       console.log(`[products] status changed: ${productId} -> ${finalStatus} by ${actorLog}`);
 
+      // Write audit log
+      try {
+        await query(
+          `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+           VALUES ($1, 'product_status_change', 'product', $2, $3)`,
+          [userId, productId, JSON.stringify({ from: currentStatus, to: finalStatus, autoApproved: finalStatus !== status })]
+        );
+      } catch { /* audit log is best-effort */ }
+
       res.json({ success: true, data: formatted });
     } catch (err) {
       console.error("[products] status error:", err);
@@ -1527,6 +1536,20 @@ export function setupProductRoutes(app: Express): void {
 
       console.log(`[admin] product ${status}: ${productId} by admin ${userId} [${currentStatus} -> ${status}]`);
 
+
+      // Write audit log + moderation record
+      try {
+        await query(
+          `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+           VALUES ($1, 'product_moderation', 'product', $2, $3)`,
+          [userId, productId, JSON.stringify({ from: currentStatus, to: status, rejectionReason: status === 'rejected' ? (rejectionReason ?? '').trim() : null })]
+        );
+        await query(
+          `INSERT INTO moderation_records (moderator_id, entity_type, entity_id, action, reason)
+           VALUES ($1, 'product', $2, $3, $4)`,
+          [userId, productId, status, status === 'rejected' ? (rejectionReason ?? '').trim() : null]
+        );
+      } catch { /* audit is best-effort */ }
       // Return the full updated product with images
       const updatedResult = await query(
         `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug,

@@ -938,3 +938,26 @@ The `velrepeat.ts` backend route queries `vrepeat_enabled`, `vrepeat_weekly_pric
 - `db/migrations/026_product_reviews_and_fixes.sql` — New migration file (auto-created by run-update.sql append)
 
 **All 5 typechecks pass.**
+
+### 2026-08-27 — Fix Product Approval/Submission Flow (Root Cause Fix)
+
+**Problem:** When seller clicks "ส่งตรวจสินค้า" (submit for review), the backend returns: `"Sellers can only set status to: draft, pending_review"`.
+
+**Root cause:** `apps/velseller/src/pages/MyShop.tsx` line 149 in `handleTogglePublish` sent `status: "published"` to the seller status endpoint. The backend correctly validates that sellers can only set `"draft"` or `"pending_review"`. The backend already handles auto-approval internally — when the seller sends `"pending_review"`, the backend checks `product_approval_mode` in `platform_settings` and if `"auto"`, sets the final status to `"published"`.
+
+**Fix:**
+1. **`apps/velseller/src/pages/MyShop.tsx`:** Changed `status: "published"` → `status: "pending_review"` in the submit-for-review handler. The toast logic already handled both auto-approved and manual-review responses correctly.
+2. **`backend/routes/products.ts` (seller status endpoint):** Added audit log write to `audit_logs` table on every product status transition.
+3. **`backend/routes/products.ts` (admin moderation endpoint):** Added audit log writes to both `audit_logs` and `moderation_records` tables when admin approves/rejects a product.
+
+**Status lifecycle (verified end-to-end):**
+```
+draft → pending_review (seller submits)
+pending_review → published (admin approves, OR auto-approval if mode=auto)
+pending_review → rejected (admin rejects with reason)
+rejected → pending_review (seller resubmits, clears rejection_reason)
+published → draft (seller unpublishes)
+```
+
+**Files changed:** `apps/velseller/src/pages/MyShop.tsx`, `backend/routes/products.ts`
+**All 5 typechecks pass.**

@@ -144,9 +144,9 @@ export default function MyShop() {
         }
         return;
       }
-      // Publish intent -> product moderation (spec §16–17): the backend sends
-      // it to review (or publishes instantly when the platform rule is on).
-      const updated = await setStatus({ productId: product.id, status: "published" });
+      // Submit for review: seller can only send 'pending_review' (backend enforces state machine).
+      // If auto-approval is on, backend will set status to 'published' directly.
+      const updated = await setStatus({ productId: product.id, status: "pending_review" });
       toast.success(
         updated?.status === "published" ? "ประกาศขายหน้าร้านแล้ว 🛍️" : t("productModeration.submittedToast"),
       );
