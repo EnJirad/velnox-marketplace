@@ -57,7 +57,7 @@ export default function ShopCart() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
+    <div className="flex min-h-screen max-w-full flex-col overflow-x-hidden bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 pb-28 sm:px-6 sm:py-10 lg:pb-10">
@@ -217,7 +217,7 @@ export default function ShopCart() {
 
       {/* Mobile sticky checkout bar (app-like) — total + checkout always in reach */}
       {!syncing && lines.length > 0 && (
-        <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 px-3 lg:hidden">
+        <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 max-w-full px-3 lg:hidden">
           <div className="mx-auto flex w-full max-w-md items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-[0_10px_34px_rgba(15,23,42,0.16)] backdrop-blur">
             <div className="min-w-0">
               <p className="text-[11px] text-slate-400">{t("cartDrawer.totalLabel")}</p>

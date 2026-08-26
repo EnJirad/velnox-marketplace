@@ -282,7 +282,7 @@ export default function ShopCheckout() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen max-w-full overflow-x-hidden bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
@@ -301,7 +301,7 @@ export default function ShopCheckout() {
         <div className="mt-8 grid gap-6 lg:grid-cols-5">
           <div className="space-y-6 lg:col-span-3">
             {/* Address */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
                   <MapPin className="size-4 text-[#10B981]" />
@@ -363,8 +363,8 @@ export default function ShopCheckout() {
                             }`}
                           />
                         </div>
-                        <p className="mt-1 text-sm leading-5 text-slate-600">{formatAddress(a)}</p>
-                        <p className="mt-0.5 text-xs text-slate-400">
+                        <p className="mt-1 min-w-0 truncate text-sm leading-5 text-slate-600" title={formatAddress(a)}>{formatAddress(a)}</p>
+                        <p className="mt-0.5 min-w-0 truncate text-xs text-slate-400" title={`${a.recipientName} · ${a.phone}`}>
                           {a.recipientName} · {a.phone}
                         </p>
                       </button>
@@ -381,7 +381,7 @@ export default function ShopCheckout() {
             </section>
 
             {/* Payment */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
               <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
                 <CreditCard className="size-4 text-[#10B981]" />
                 {t("checkout.paymentTitle")}
@@ -417,7 +417,7 @@ export default function ShopCheckout() {
                   );
                 })}
               </div>
-              <p className="mt-3 text-xs text-slate-400">
+              <p className="mt-3 min-w-0 truncate text-xs text-slate-400" title={user?.email ? t("checkout.confirmAccount", { email: user.email }) : undefined}>
                 {user?.email ? t("checkout.confirmAccount", { email: user.email }) : t("checkout.confirmAccount", { email: "" })}
               </p>
             </section>
