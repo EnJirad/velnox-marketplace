@@ -1083,3 +1083,41 @@ Product Detail page on VelShop has horizontal overflow on mobile (320px–430px)
 - Sticky bottom bar still works on mobile with proper safe-area-inset-bottom support
 
 **Files changed:** `apps/velshop/src/pages/ShopProductDetail.tsx`
+
+---
+
+## 2026-08-26 — Product Card Name Clickable + Title Expand/Collapse
+
+### Problem 1: Product name not clickable in ProductCard
+The shared `ProductCard` component used a `<button>` for the image area (with `onOpen` callback) but the product name was a plain `<h3>` — not clickable. Users expect to click either the image OR the name to go to the product detail page.
+
+### Problem 2: "ดูเพิ่มเติม" button placement
+The expand/collapse button for long product titles was already below the title (standard e-commerce pattern used by Shopee/Lazada). This is the correct UX — no change needed.
+
+### Fixes
+
+1. **`apps/velshop/src/components/shop/ProductCard.tsx`:**
+   - Changed image area from `<button onClick={onOpen}>` to `<Link to={/products/${product.id}}>` — semantic, keyboard accessible, proper router navigation
+   - Changed product name from `<h3>` to `<Link to={/products/${product.id}}>` with `hover:text-[#10B981]` — clickable with visual feedback
+   - Wishlist heart button uses `e.stopPropagation()` to prevent triggering the Link
+   - Add to Cart button is outside the Link area — works independently
+   - `onOpen` prop kept in interface for backward compatibility (callers still pass it)
+
+2. **`apps/velshop/src/pages/ShopProductDetail.tsx`:** No changes — title expand/collapse already works correctly with button below the h1.
+
+3. **Already working (no changes needed):**
+   - `ShopDetail.tsx` — Both image and name are already `<Link>` elements ✅
+   - `ShopWishlist.tsx` — Both image and name are already `<Link>` elements ✅
+   - `VelRepeatPage.tsx` — Both image and name are already `<Link>` elements ✅
+
+### Product Card Status Summary
+
+| Location | Image clickable? | Name clickable? | Wishlist works? | Add to Cart works? |
+|----------|-----------------|-----------------|-----------------|-------------------|
+| ProductCard (Home, Products) | ✅ Link | ✅ Link (NEW) | ✅ stopPropagation | ✅ outside Link |
+| ShopDetail | ✅ Link | ✅ Link | ✅ stopPropagation | N/A (no ATC) |
+| ShopWishlist | ✅ Link | ✅ Link | N/A (remove btn) | N/A |
+| VelRepeatPage | ✅ Link | ✅ Link | N/A | N/A |
+
+**Files changed:** `apps/velshop/src/components/shop/ProductCard.tsx`
+**All 5 typechecks pass.**

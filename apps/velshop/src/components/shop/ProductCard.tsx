@@ -2,6 +2,7 @@ import { useLanguage } from "@/lib/i18n";
 import { Button } from "@velnox/shared/components/ui/button";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
 import { Heart, ImageOff, Loader2, Plus, Star } from "lucide-react";
+import { Link } from "react-router";
 
 interface ProductCardProps {
   product: StoreProduct;
@@ -32,10 +33,9 @@ export function ProductCard({ product, onOpen, onAdd, badgeLabel, wishlisted, on
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors hover:border-slate-300">
-      <button
-        type="button"
-        onClick={() => onOpen(product)}
-        className="relative block aspect-square w-full cursor-pointer overflow-hidden bg-slate-50"
+      <Link
+        to={`/products/${product.id}`}
+        className="relative block aspect-square w-full overflow-hidden bg-slate-50"
         aria-label={t("product.ariaViewDetail", { name: product.name })}
       >
         {product.primaryImage ? (
@@ -75,10 +75,16 @@ export function ProductCard({ product, onOpen, onAdd, badgeLabel, wishlisted, on
             )}
           </button>
         )}
-      </button>
+      </Link>
 
       <div className="flex flex-1 flex-col p-3 sm:p-3.5">
-        <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900">{product.name}</h3>
+        <Link
+          to={`/products/${product.id}`}
+          className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900 hover:text-[#10B981]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {product.name}
+        </Link>
 
         {hasReviews && (
           <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
