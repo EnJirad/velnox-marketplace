@@ -616,3 +616,51 @@ CREATE INDEX IF NOT EXISTS idx_customer_events_type ON customer_events (event_ty
 CREATE INDEX IF NOT EXISTS idx_customer_events_product ON customer_events (product_id);
 CREATE INDEX IF NOT EXISTS idx_customer_events_user_type ON customer_events (user_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_customer_events_created ON customer_events (created_at);
+
+-- ─── Product Option Groups & Values ──────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS product_option_groups (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  display_type TEXT NOT NULL DEFAULT 'text' CHECK (display_type IN ('text', 'color', 'image', 'button')),
+  required BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_option_groups_product ON product_option_groups (product_id);
+
+CREATE TABLE IF NOT EXISTS product_option_values (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  option_group_id UUID NOT NULL REFERENCES product_option_groups(id) ON DELETE CASCADE,
+  value TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  image_url TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_option_values_group ON product_option_values (option_group_id);
+
+CREATE TABLE IF NOT EXISTS product_variant_values (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+  option_value_id UUID NOT NULL REFERENCES product_option_values(id) ON DELETE CASCADE,
+  UNIQUE (variant_id, option_value_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_variant_values_variant ON product_variant_values (variant_id);
+CREATE INDEX IF NOT EXISTS idx_variant_values_option_value ON product_variant_values (option_value_id);
+
+CREATE TABLE IF NOT EXISTS product_attributes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  value TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_attributes_product ON product_attributes (product_id);

@@ -70,6 +70,9 @@ export default function ShopProductDetail() {
   const [wishlisted, setWishlisted] = useState(false);
   const [wishToggling, setWishToggling] = useState(false);
   const [subOpen, setSubOpen] = useState(false);
+  const [titleExpanded, setTitleExpanded] = useState(false);
+  const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     if (!productId) return;
@@ -129,7 +132,8 @@ export default function ShopProductDetail() {
     });
   }, [product, track]);
 
-  const images = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage] : [];
+  const images = Array.isArray(product?.images) && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage] : [];
+  const variants = Array.isArray((product as any)?.variants) ? (product as any).variants : [];
   const active = images[activeIndex] ?? images[0];
   const available = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const outOfStock = available <= 0;
@@ -216,6 +220,17 @@ export default function ShopProductDetail() {
       setWishToggling(false);
     }
   };
+
+  // Variant resolution: find the best matching variant based on selected options
+  const resolvedVariant = selectedVariant && product
+    ? variants.find((v: any) => v.id === selectedVariant)
+    : null;
+
+  // Determine display price/stock from variant or product
+  const displayPrice = resolvedVariant?.price ?? product?.price ?? 0;
+  const displayStock = resolvedVariant?.stock ?? available;
+  const displayOutOfStock = displayStock <= 0;
+  const displayLowStock = !displayOutOfStock && displayStock <= 5;
 
   if (loading) {
     return (
@@ -329,9 +344,19 @@ export default function ShopProductDetail() {
                     </Badge>
                   )}
                 </div>
-                <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                <h1 className={`mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${!titleExpanded ? 'line-clamp-2' : ''}`}>
                   {product.name}
                 </h1>
+                {product.name.length > 60 && (
+                  <button
+                    type="button"
+                    onClick={() => setTitleExpanded((v) => !v)}
+                    className="mt-1 text-xs font-medium text-[#10B981] hover:underline"
+                    aria-expanded={titleExpanded}
+                  >
+                    {titleExpanded ? 'ย่อ ▲' : 'ดูเพิ่มเติม ▼'}
+                  </button>
+                )}
                 <Link
                   to={`/shops/${product.shopId}`}
                   className="mt-2 inline-flex items-center gap-1.5 py-1 text-sm text-slate-500 transition-colors hover:text-[#10B981]"
@@ -352,31 +377,60 @@ export default function ShopProductDetail() {
               >
                 {wishToggling ? <Loader2 className="size-4 animate-spin" /> : <Heart className={`size-4 ${wishlisted ? "fill-rose-500" : ""}`} />}
               </Button>
-            </div>
+            </div>              {/* Variant selector (dynamic options) */}
+              {variants.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-semibold text-slate-500">ตัวเลือกสินค้า</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {variants.map((v: any) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => setSelectedVariant(v.id === selectedVariant ? null : v.id)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          selectedVariant === v.id
+                            ? "border-[#10B981] bg-[#F0FDF9] text-[#047857]"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                        } ${v.stock <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        disabled={v.stock <= 0}
+                        aria-label={v.name}
+                      >
+                        {v.name}
+                        {v.sku ? ` (${v.sku})` : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5">
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5">
               <div className="flex items-end justify-between gap-3">
                 <div>
                   <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">
-                    {formatBaht(product.price)}
+                    {formatBaht(displayPrice)}
                     <span className="ml-1 text-sm font-normal text-slate-400">
                       {t("cart.perUnit", { unit: product.unit })}
                     </span>
                   </p>
+                  {resolvedVariant?.price && resolvedVariant.price < product.price && (
+                    <p className="mt-1 text-sm text-slate-400 line-through">
+                      {formatBaht(product.price)}
+                    </p>
+                  )}
                   <p
                     className={`mt-1.5 text-xs ${
-                      outOfStock
+                      displayOutOfStock
                         ? "font-medium text-red-500"
-                        : lowStock
+                        : displayLowStock
                           ? "font-medium text-amber-600"
                           : "text-slate-400"
                     }`}
                   >
-                    {outOfStock
+                    {displayOutOfStock
                       ? t("productDetail.outOfStockDesc")
-                      : lowStock
-                        ? t("product.lowStock", { count: available, unit: product.unit })
-                        : t("product.inStock", { count: available, unit: product.unit })}
+                      : displayLowStock
+                        ? t("product.lowStock", { count: displayStock, unit: product.unit })
+                        : t("product.inStock", { count: displayStock, unit: product.unit })}
                   </p>
                 </div>
                 {reviews.length > 0 && (
@@ -401,7 +455,7 @@ export default function ShopProductDetail() {
 
             {/* CTA: quantity + Buy Once + VelRepeat — compact, equal button prominence */}
             <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-5 space-y-2.5 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-5 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
-              {outOfStock ? (
+              {displayOutOfStock ? (
                 <Button className="w-full gap-1.5 bg-slate-100 text-slate-400 hover:bg-slate-100" disabled>
                   {t("product.outOfStock")}
                 </Button>
@@ -424,8 +478,8 @@ export default function ShopProductDetail() {
                         variant="ghost"
                         size="icon"
                         className="size-8 text-slate-600"
-                        onClick={() => setQty((q) => Math.min(available, q + 1))}
-                        disabled={qty >= available}
+                        onClick={() => setQty((q) => Math.min(displayStock, q + 1))}
+                        disabled={qty >= displayStock}
                         aria-label={t("cartDrawer.ariaIncrease")}
                       >
                         <Plus className="size-3.5" />
@@ -447,7 +501,7 @@ export default function ShopProductDetail() {
                       variant="outline"
                       className="h-10 gap-1.5 border-slate-900 text-sm font-semibold text-slate-900 hover:bg-slate-900 hover:text-white"
                       onClick={handleBuyNow}
-                      disabled={product.price <= 0}
+                      disabled={displayPrice <= 0}
                     >
                       <Zap className="size-4" />
                       {t("productDetail.buyNow")}
@@ -518,6 +572,7 @@ export default function ShopProductDetail() {
         product={product}
         open={subOpen}
         onOpenChange={setSubOpen}
+        selectedVariant={selectedVariant ? variants.find((v: any) => v.id === selectedVariant) : null}
       />
     </div>
   );

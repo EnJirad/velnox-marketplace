@@ -21,6 +21,7 @@ interface SubscriptionDialogProps {
   product: StoreProduct | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  selectedVariant?: { id: string; name: string; price: number; sku?: string } | null;
 }
 
 type PackageType = "weekly" | "monthly";
@@ -35,7 +36,7 @@ interface PackageOption {
   descKey: string;
 }
 
-export function SubscriptionDialog({ product, open, onOpenChange }: SubscriptionDialogProps) {
+export function SubscriptionDialog({ product, open, onOpenChange, selectedVariant }: SubscriptionDialogProps) {
   const { isAuthenticated } = useAuth();
   const { t } = useLanguage();
   const createPackage = useAction(api.commerce.createVelRepeatPackage);
@@ -46,7 +47,7 @@ export function SubscriptionDialog({ product, open, onOpenChange }: Subscription
   if (!product) return null;
 
   const stock = (product.inventory?.available ?? product.inventory?.quantity) ?? 0;
-  const regularPrice = product.price;
+  const regularPrice = selectedVariant?.price ?? product.price;
 
   // Build available package options from product config
   // Products may not have vrepeat fields yet, so default to showing options

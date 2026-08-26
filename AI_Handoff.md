@@ -961,3 +961,34 @@ published → draft (seller unpublishes)
 
 **Files changed:** `apps/velseller/src/pages/MyShop.tsx`, `backend/routes/products.ts`
 **All 5 typechecks pass.**
+
+### 2026-08-26 — V0027: Dynamic Product Options + Mobile Overflow Fix + Product Detail Enhancement
+
+**Problem 1:** Mobile horizontal scrolling on Product Detail page. The entire page can be scrolled left/right on mobile devices (320px–430px) due to no overflow-x control on root elements.
+
+**Problem 2:** Long product titles overflow or push content wider on mobile.
+
+**Problem 3:** Product variants are displayed as a simple list from JSONB `options` column but there's no relational model for dynamic option groups (Color, Size, Flavor, etc.) that supports any product type.
+
+**Fix:**
+1. **CSS (`packages/shared/src/index.css`):** Added `overflow-x: hidden` on `html`, `body`, and `#root` with `max-width: 100vw`. This prevents horizontal page scrolling on all devices without breaking intentional scroll containers (thumbnail carousel, etc.).
+
+2. **Product Detail (`apps/velshop/src/pages/ShopProductDetail.tsx`):**
+   - **Title truncation:** Product titles >60 chars now show `line-clamp-2` with a "ดูเพิ่มเติม ▼" / "ย่อ ▲" toggle button.
+   - **Variant selection UI:** Added dynamic variant selector buttons. When a variant is selected, price and stock update accordingly. Out-of-stock variants are disabled.
+   - **Safe arrays:** `images` and `variants` wrapped in `Array.isArray()` checks. No more `.map()` on potentially non-array values.
+   - **Display price:** Uses `resolvedVariant.price` when a variant is selected, otherwise `product.price`. Compare-at price shown when variant price < product price.
+
+3. **Database V0027 (`db/migrations/027_product_option_groups_values.sql`):**
+   - `product_option_groups` — Dynamic option groups (e.g., "Color", "Size", "Flavor") with display_type (text/color/image/button)
+   - `product_option_values` — Values within each group (e.g., "Red", "Black", "White")
+   - `product_variant_values` — Maps variants to their selected option values (relational, not JSONB)
+   - `product_attributes` — Read-only informational attributes (Brand, Material, RAM, etc.)
+
+4. **Schema files updated:** `schema.sql`, `run-sqleditor.sql`, `run-update.sql` all synchronized.
+
+5. **SubscriptionDialog:** Accepts `selectedVariant` prop for variant-aware pricing.
+
+**Files changed:** `packages/shared/src/index.css`, `apps/velshop/src/pages/ShopProductDetail.tsx`, `apps/velshop/src/components/shop/SubscriptionDialog.tsx`, `db/migrations/027_product_option_groups_values.sql`, `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`
+
+**All 5 typechecks pass.**
