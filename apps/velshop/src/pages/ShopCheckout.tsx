@@ -285,7 +285,7 @@ export default function ShopCheckout() {
     <div className="min-h-screen max-w-full overflow-x-hidden bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
-      <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full max-w-6xl overflow-hidden px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" className="size-9 text-slate-500" asChild>
             <Link to="/cart" aria-label={t("checkout.backToCart")}>
@@ -336,15 +336,15 @@ export default function ShopCheckout() {
                         key={a.id}
                         type="button"
                         onClick={() => setSelectedAddressId(a.id)}
-                        className={`w-full rounded-xl border-2 p-4 text-left transition-colors ${
+                        className={`w-full overflow-hidden rounded-xl border-2 p-4 text-left transition-colors ${
                           active
                             ? "border-[#10B981] bg-[#F0FDF9]"
                             : "border-slate-200 bg-white hover:border-slate-300"
                         }`}
                         aria-pressed={active}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <div className="flex items-center justify-between gap-2 overflow-hidden">
+                          <p className="flex min-w-0 items-center gap-2 overflow-hidden text-sm font-semibold text-slate-900">
                             {a.label}
                             {a.isDefault && (
                               <Badge className="rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
@@ -425,7 +425,7 @@ export default function ShopCheckout() {
 
           {/* Review */}
           <div className="lg:col-span-2">
-            <div className="sticky top-20 rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
               <h2 className="text-base font-bold tracking-tight text-slate-900">{t("checkout.summaryTitle")}</h2>
 
               <div className="mt-4 space-y-4">
@@ -437,7 +437,7 @@ export default function ShopCheckout() {
                     </p>
                     <div className="mt-2 space-y-2">
                       {shopLines.map((line) => (
-                        <div key={line.id} className="flex min-w-0 items-center justify-between gap-3 text-sm">
+                        <div key={line.id} className="flex min-w-0 items-center justify-between gap-3 overflow-hidden text-sm">
                           <div className="min-w-0 flex-1">
                             <span className="block min-w-0 truncate text-slate-600" title={line.name}>
                               {line.name}

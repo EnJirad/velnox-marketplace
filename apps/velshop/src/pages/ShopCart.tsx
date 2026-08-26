@@ -60,7 +60,7 @@ export default function ShopCart() {
     <div className="flex min-h-screen max-w-full flex-col overflow-x-hidden bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 pb-28 sm:px-6 sm:py-10 lg:pb-10">
+      <main className="mx-auto w-full max-w-6xl flex-1 overflow-hidden px-4 py-8 pb-28 sm:px-6 sm:py-10 lg:pb-10">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t("cart.title")}</h1>
           <p className="mt-0.5 text-sm text-slate-500">
@@ -103,7 +103,7 @@ export default function ShopCart() {
                   </div>
                   <div className="divide-y divide-slate-100">
                     {shopLines.map((line) => (
-                      <div key={line.id} className="flex min-w-0 items-center gap-4 px-5 py-4">
+                      <div key={line.id} className="flex min-w-0 items-center gap-4 overflow-hidden px-5 py-4">
                         {line.imageUrl ? (
                           <img
                             src={line.imageUrl}
@@ -179,7 +179,7 @@ export default function ShopCart() {
 
             {/* Summary */}
             <div className="lg:col-span-2">
-              <div className="sticky top-20 rounded-2xl border border-slate-200 bg-white p-6">
+              <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
                 <h2 className="text-base font-bold tracking-tight text-slate-900">{t("cartPage.orderSummary")}</h2>
                 <div className="mt-4 space-y-2 text-sm">
                   <div className="flex items-center justify-between">

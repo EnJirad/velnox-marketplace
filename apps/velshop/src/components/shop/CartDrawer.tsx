@@ -37,7 +37,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
+      <SheetContent className="flex w-full max-w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
         <SheetHeader className="border-b border-slate-200 px-5 py-4 text-left">
           <SheetTitle className="flex items-center gap-2 text-base">
             <ShoppingCart className="size-4 text-[#10B981]" />
@@ -107,7 +107,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
               {lines.map((line) => (
                 <div
                   key={line.productId}
-                  className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-200 p-3"
+                  className="flex min-w-0 items-start gap-3 overflow-hidden rounded-xl border border-slate-200 p-3"
                 >
                   {line.imageUrl ? (
                     <img
