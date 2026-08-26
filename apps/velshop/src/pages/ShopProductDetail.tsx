@@ -1,6 +1,7 @@
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
+import { ProductCard } from "@/components/shop/ProductCard";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
@@ -20,11 +21,14 @@ import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   ArrowLeft,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
   Heart,
   ImageOff,
   Loader2,
   Minus,
   Plus,
+  Share2,
   ShoppingCart,
   Star,
   Store,
@@ -33,6 +37,8 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface ReviewRow {
   id: string;
@@ -49,6 +55,219 @@ interface ReviewRow {
   customerName?: string;
 }
 
+type TabKey = "recommend" | "details" | "reviews";
+
+// ─── Expandable Title ───────────────────────────────────────────────────────
+
+function ProductTitle({ name, t }: { name: string; t: (k: string) => string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Short names never need expansion — render as plain text
+  if (name.length <= 60) {
+    return (
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+        {name}
+      </h1>
+    );
+  }
+
+  return (
+    <div>
+      <h1
+        className={`text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${
+          expanded ? "" : "line-clamp-1"
+        }`}
+      >
+        {name}
+      </h1>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]"
+        aria-expanded={expanded}
+      >
+        {expanded ? t("productDetail.seeLess") : t("productDetail.seeMore")}
+        {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+// ─── Expandable Description ─────────────────────────────────────────────────
+
+function ExpandableDescription({
+  text,
+  t,
+}: {
+  text: string;
+  t: (k: string, v?: Record<string, string | number>) => string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const needsExpand = text.length > 200;
+
+  if (!text) {
+    return (
+      <p className="text-sm text-slate-400 italic">{t("productDetail.noDetails")}</p>
+    );
+  }
+
+  return (
+    <div>
+      <div className={expanded ? "" : "max-h-32 overflow-hidden"}>
+        <p className="whitespace-pre-line text-sm leading-6 text-slate-600">{text}</p>
+      </div>
+      {needsExpand && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]"
+        >
+          {expanded ? t("productDetail.hideDetails") : t("productDetail.seeAllDetails")}
+          {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Horizontal Carousel ────────────────────────────────────────────────────
+
+function ProductCarousel({
+  title,
+  viewAllLink,
+  products,
+  onAdd,
+  emptyText,
+  t,
+}: {
+  title: string;
+  viewAllLink?: string;
+  products: StoreProduct[];
+  onAdd: (p: StoreProduct) => void;
+  emptyText: string;
+  t: (k: string, v?: Record<string, string | number>) => string;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  if (products.length === 0) {
+    return null; // hide section when empty
+  }
+
+  const scroll = (dir: "left" | "right") => {
+    if (!scrollRef.current) return;
+    const amount = 200;
+    scrollRef.current.scrollBy({
+      left: dir === "left" ? -amount : amount,
+      behavior: "smooth",
+    });
+  };
+
+  return (
+    <section>
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-bold text-slate-900">{title}</h3>
+        <div className="flex items-center gap-2">
+          {viewAllLink && (
+            <Link
+              to={viewAllLink}
+              className="text-xs font-medium text-[#10B981] transition-colors hover:text-[#059669]"
+            >
+              {t("productDetail.viewAll")}
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => scroll("left")}
+            className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
+            aria-label="Scroll left"
+          >
+            <ChevronDown className="size-3.5 -rotate-90" />
+          </button>
+          <button
+            type="button"
+            onClick={() => scroll("right")}
+            className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
+            aria-label="Scroll right"
+          >
+            <ChevronDown className="size-3.5 rotate-90" />
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="mt-3 flex gap-3 overflow-x-auto scroll-smooth pb-2 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {products.map((p) => (
+          <div key={p.id} className="w-40 shrink-0 sm:w-48">
+            <ProductCard product={p} onOpen={() => {}} onAdd={onAdd} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Star Rating Distribution ───────────────────────────────────────────────
+
+function RatingDistribution({ reviews, t }: { reviews: ReviewRow[]; t: (k: string, v?: Record<string, string | number>) => string }) {
+  if (reviews.length === 0) return null;
+
+  const avg =
+    reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+  const distribution = [5, 4, 3, 2, 1].map((star) => ({
+    star,
+    count: reviews.filter((r) => r.rating === star).length,
+  }));
+  const maxCount = Math.max(...distribution.map((d) => d.count), 1);
+
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+      <div className="flex items-center gap-3">
+        <span className="text-3xl font-bold tabular-nums text-slate-900">
+          {avg.toFixed(1)}
+        </span>
+        <div>
+          <div className="flex items-center gap-0.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star
+                key={i}
+                className={`size-4 ${
+                  i < Math.round(avg)
+                    ? "fill-amber-400 text-amber-400"
+                    : "text-slate-200"
+                }`}
+              />
+            ))}
+          </div>
+          <p className="mt-0.5 text-xs text-slate-400">
+            {t("productDetail.fromReviews", { count: reviews.length })}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-1">
+        {distribution.map(({ star, count }) => (
+          <div key={star} className="flex items-center gap-2 text-xs">
+            <span className="w-3 text-right tabular-nums text-slate-400">{star}</span>
+            <Star className="size-3 fill-amber-400 text-amber-400" />
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-amber-400 transition-all"
+                style={{ width: `${(count / maxCount) * 100}%` }}
+              />
+            </div>
+            <span className="w-6 text-right tabular-nums text-slate-400">{count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ─────────────────────────────────────────────────────────
+
 export default function ShopProductDetail() {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
@@ -56,6 +275,7 @@ export default function ShopProductDetail() {
   const { t } = useLanguage();
   const getProduct = useAction(api.commerce.getProductDetail);
   const productReviews = useAction(api.customer.productReviews);
+  const catalogProducts = useAction(api.commerce.catalogProductsAction);
   const toggleWishlist = useAction(api.customer.toggleWishlistAction);
   const myWishlist = useAction(api.customer.myWishlist);
   const { add } = useCart();
@@ -114,13 +334,14 @@ export default function ShopProductDetail() {
     } finally {
       setLoading(false);
     }
-  }, [productId, getProduct, productReviews, isAuthenticated, myWishlist]);
+  }, [productId, getProduct, productReviews, isAuthenticated, myWishlist, catalogProducts]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // CPNS: opening a product page = PRODUCT_VIEW (once per product per visit).
+  // ── Product view tracking ──────────────────────────────────────────────
+
   const viewedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!product || viewedRef.current === product.id) return;
@@ -135,16 +356,28 @@ export default function ShopProductDetail() {
   const images = Array.isArray(product?.images) && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage] : [];
   const variants = Array.isArray((product as any)?.variants) ? (product as any).variants : [];
   const active = images[activeIndex] ?? images[0];
-  const available = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
+  const available =
+    product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const outOfStock = available <= 0;
   const lowStock = !outOfStock && available <= 5;
+  const displayedReviews = reviewsExpanded ? reviews : reviews.slice(0, 5);
+  const avgRating =
+    reviews.length > 0
+      ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+      : null;
 
-  // SEO (spec §44) — product page gets Product structured data
+  // ── SEO ──────────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!product) return;
     const rating =
       reviews.length > 0
-        ? { ratingValue: (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1), ratingCount: reviews.length }
+        ? {
+            ratingValue: (
+              reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+            ).toFixed(1),
+            ratingCount: reviews.length,
+          }
         : undefined;
     setSeo({
       title: `${product.name} — VelShop`,
@@ -164,30 +397,52 @@ export default function ShopProductDetail() {
         name: product.name,
         description: product.description ?? undefined,
         image: images[0]?.displayUrl ?? undefined,
-        ...(rating ? { aggregateRating: { "@type": "AggregateRating", ...rating } } : {}),
+        ...(rating
+          ? {
+              aggregateRating: {
+                "@type": "AggregateRating",
+                ...rating,
+              },
+            }
+          : {}),
         offers: {
           "@type": "Offer",
           priceCurrency: "THB",
           price: product.price,
-          availability: outOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+          availability: outOfStock
+            ? "https://schema.org/OutOfStock"
+            : "https://schema.org/InStock",
         },
       },
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, reviews, images, outOfStock, t]);
 
-  const handleAdd = () => {
-    if (!product) return;
-    if (!isAuthenticated) {
-      navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`));
-      return;
-    }
-    add(
-      { id: product.id, name: product.name, unit: product.unit, price: product.price, stock: available },
-      qty,
-    );
-    toast.success(t("productDetail.addedToast", { name: product.name, qty }));
-  };
+  // ── Handlers ─────────────────────────────────────────────────────────
+
+  const handleAddToCart = useCallback(
+    (p?: StoreProduct) => {
+      const target = p ?? product;
+      if (!target) return;
+      if (!isAuthenticated) {
+        navigate("/auth?returnTo=" + encodeURIComponent(`/products/${target.id}`));
+        return;
+      }
+      add(
+        {
+          id: target.id,
+          name: target.name,
+          unit: target.unit,
+          price: target.price,
+          stock: target.inventory?.available ?? target.inventory?.quantity ?? 0,
+        },
+        qty,
+      );
+      toast.success(
+        t("productDetail.addedToast", { name: target.name, qty }),
+      );
+    },
+    [product, isAuthenticated, navigate, add, qty, t],
+  );
 
   const handleBuyNow = () => {
     if (!product) return;
@@ -212,7 +467,11 @@ export default function ShopProductDetail() {
     try {
       const res = await toggleWishlist({ productId: product.id });
       setWishlisted(res.added);
-      toast.success(res.added ? t("productDetail.wishlistAdded") : t("productDetail.wishlistRemoved"));
+      toast.success(
+        res.added
+          ? t("productDetail.wishlistAdded")
+          : t("productDetail.wishlistRemoved"),
+      );
     } catch (err) {
       console.error("Wishlist error:", err);
       toast.error(t("productDetail.wishlistFailed"));
@@ -251,6 +510,8 @@ export default function ShopProductDetail() {
     );
   }
 
+  // ── Not found ────────────────────────────────────────────────────────
+
   if (!product) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -281,11 +542,21 @@ export default function ShopProductDetail() {
     );
   }
 
+  // ── Main render ──────────────────────────────────────────────────────
+
+  const categoryMeta = PRODUCT_CATEGORY_META[product.category];
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: "recommend", label: t("productDetail.tabsRecommend") },
+    { key: "details", label: t("productDetail.tabsDetails") },
+    { key: "reviews", label: t("productDetail.tabsReviews") },
+  ];
+
   return (
     <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
+        {/* Back button */}
         <button
           type="button"
           onClick={() => navigate(-1)}
@@ -318,11 +589,18 @@ export default function ShopProductDetail() {
                     type="button"
                     onClick={() => setActiveIndex(i)}
                     className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${
-                      i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"
+                      i === activeIndex
+                        ? "border-[#10B981]"
+                        : "border-slate-200 hover:border-slate-300"
                     }`}
                     aria-label={t("productDetail.imageAlt", { n: i + 1 })}
                   >
-                    <img src={img.thumbUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
+                    <img
+                      src={img.thumbUrl || img.url}
+                      alt=""
+                      className="size-full object-cover"
+                      loading="lazy"
+                    />
                   </button>
                 ))}
               </div>
@@ -408,7 +686,7 @@ export default function ShopProductDetail() {
                   <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">
                     {formatBaht(displayPrice)}
                     <span className="ml-1 text-sm font-normal text-slate-400">
-                      {t("cart.perUnit", { unit: product.unit })}
+                      /{product.unit}
                     </span>
                   </p>
                   {resolvedVariant?.price && resolvedVariant.price < product.price && (
@@ -432,18 +710,6 @@ export default function ShopProductDetail() {
                         : t("product.inStock", { count: displayStock, unit: product.unit })}
                   </p>
                 </div>
-                {reviews.length > 0 && (
-                  <div className="flex items-center gap-1 text-sm">
-                    <Star className="size-4 fill-amber-400 text-amber-400" />
-                    <span className="font-semibold tabular-nums text-slate-900">
-                      {(reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {t("productDetail.reviewCountShort", { count: reviews.length })}
-                    </span>
-                  </div>
-                )}
-              </div>
 
               {product.description && (
                 <p className="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm leading-6 text-slate-600" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
@@ -472,7 +738,9 @@ export default function ShopProductDetail() {
                       >
                         <Minus className="size-3.5" />
                       </Button>
-                      <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">{qty}</span>
+                      <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">
+                        {qty}
+                      </span>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -486,7 +754,7 @@ export default function ShopProductDetail() {
                     </div>
                     <Button
                       className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                      onClick={handleAdd}
+                      onClick={() => handleAddToCart()}
                       disabled={product.price <= 0}
                     >
                       <ShoppingCart className="size-4" />
@@ -532,36 +800,186 @@ export default function ShopProductDetail() {
             )}
           </div>
 
-          {reviews.length === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-              <Star className="mx-auto size-7 text-slate-300" />
-              <p className="mt-3 text-sm font-medium text-slate-600">{t("productDetail.noReviews")}</p>
-              <p className="mt-1 text-xs text-slate-400">{t("productDetail.noReviewsDesc")}</p>
-            </div>
-          ) : (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {reviews.map((r) => (
-                <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star
-                          key={i}
-                          className={`size-3.5 ${i < r.rating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`}
-                        />
-                      ))}
-                    </div>
-                    <span className="text-[11px] text-slate-400">{formatIsoDate(r.createdAt)}</span>
+          {/* Tab content */}
+          <div className="mt-6">
+            {/* ── TAB: Recommended ──────────────────────────────── */}
+            {activeTab === "recommend" && (
+              <div className="space-y-8">
+                <ProductCarousel
+                  title={t("productDetail.recommendedProducts")}
+                  products={recommended}
+                  onAdd={handleAddToCart}
+                  emptyText={t("productDetail.noRecommendedProducts")}
+                  t={t}
+                />
+
+                <ProductCarousel
+                  title={t("productDetail.similarProducts")}
+                  products={similar}
+                  onAdd={handleAddToCart}
+                  emptyText={t("productDetail.noSimilarProducts")}
+                  t={t}
+                />
+
+                {/* Empty state if both are empty */}
+                {recommended.length === 0 && similar.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+                    <p className="text-sm font-medium text-slate-500">
+                      {t("productDetail.noRecommendedProducts")}
+                    </p>
                   </div>
-                  {r.title && <p className="mt-2 text-sm font-semibold text-slate-900">{r.title}</p>}
-                  {r.comment && <p className="mt-1 text-sm leading-6 text-slate-600">{r.comment}</p>}
-                  <p className="mt-2 text-[11px] text-slate-400">
-                    {r.customerName ?? t("productDetail.customer")} · {r.orderId ? t("productDetail.verifiedPurchase") : ""}
-                  </p>
+                )}
+              </div>
+            )}
+
+            {/* ── TAB: Details ──────────────────────────────────── */}
+            {activeTab === "details" && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <h3 className="mb-3 text-base font-bold text-slate-900">
+                  {t("productDetail.detailsTabTitle")}
+                </h3>
+                <ExpandableDescription
+                  text={product.description ?? ""}
+                  t={t}
+                />
+
+                {/* Product specs */}
+                <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-100 pt-5 text-sm">
+                  <div>
+                    <span className="text-slate-400">Name</span>
+                    <p className="mt-0.5 font-medium text-slate-900">{product.name}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">{t("productDetail.shippingFrom")}</span>
+                    <p className="mt-0.5 font-medium text-slate-900">{t("productDetail.thailand")}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Category</span>
+                    <p className="mt-0.5 font-medium text-slate-900">
+                      {categoryMeta?.label ?? product.category}
+                    </p>
+                  </div>
+                  {product.supplier && (
+                    <div>
+                      <span className="text-slate-400">Supplier</span>
+                      <p className="mt-0.5 font-medium text-slate-900">{product.supplier}</p>
+                    </div>
+                  )}
                 </div>
-              ))}
+              </div>
+            )}
+
+            {/* ── TAB: Reviews ──────────────────────────────────── */}
+            {activeTab === "reviews" && (
+              <div className="space-y-5">
+                {/* Rating summary */}
+                {reviews.length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <RatingDistribution reviews={reviews} t={t} />
+                  </div>
+                )}
+
+                {/* Reviews list */}
+                {reviews.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+                    <Star className="mx-auto size-7 text-slate-300" />
+                    <p className="mt-3 text-sm font-medium text-slate-600">
+                      {t("productDetail.noReviews")}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {t("productDetail.noReviewsDesc")}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {displayedReviews.map((r) => (
+                      <div
+                        key={r.id}
+                        className="rounded-xl border border-slate-200 bg-white p-4"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`size-3.5 ${
+                                  i < r.rating
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "text-slate-200"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[11px] text-slate-400">
+                            {formatIsoDate(r.createdAt)}
+                          </span>
+                        </div>
+                        {r.title && (
+                          <p className="mt-2 text-sm font-semibold text-slate-900">
+                            {r.title}
+                          </p>
+                        )}
+                        {r.comment && (
+                          <p className="mt-1 text-sm leading-6 text-slate-600">
+                            {r.comment}
+                          </p>
+                        )}
+                        <p className="mt-2 text-[11px] text-slate-400">
+                          {r.customerName ?? t("productDetail.customer")} ·{" "}
+                          {r.orderId ? t("productDetail.verifiedPurchase") : ""}
+                        </p>
+                      </div>
+                    ))}
+
+                    {/* Show more / show less */}
+                    {reviews.length > 5 && (
+                      <button
+                        type="button"
+                        onClick={() => setReviewsExpanded((v) => !v)}
+                        className="mx-auto flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]"
+                      >
+                        {reviewsExpanded
+                          ? t("productDetail.hideReviews")
+                          : t("productDetail.seeAllReviews")}
+                        {reviewsExpanded ? (
+                          <ChevronUp className="size-3.5" />
+                        ) : (
+                          <ChevronDown className="size-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            SHOP SECTION
+            ═══════════════════════════════════════════════════════════════ */}
+        <section className="mt-8">
+          <Link
+            to={`/shops/${product.shopId}`}
+            className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300"
+          >
+            {product.primaryImage && (
+              <img
+                src={product.primaryImage.displayUrl}
+                alt=""
+                className="size-12 shrink-0 rounded-xl object-cover"
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {product.shopName ?? t("productDetail.defaultShop")}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                {t("productDetail.viewShop")}
+              </p>
             </div>
-          )}
+            <ArrowLeft className="size-4 rotate-180 text-slate-300" />
+          </Link>
         </section>
       </main>
 
