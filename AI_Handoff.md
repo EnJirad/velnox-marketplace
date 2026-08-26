@@ -373,6 +373,14 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-26 — CRITICAL FIX: Missing customer_wishlist Table + Product Detail Crash
+- **Root cause (from production logs):** The `customer_wishlist` table was never applied to Neon. V0019 migration existed in `run-update.sql` but the GitHub Action never ran it. When the product detail page loaded the product successfully, it then called `myWishlist()` which hit the `customer_wishlist` table → PostgreSQL error `42P01: relation "customer_wishlist" does not exist`. The `catch` block in the frontend `load()` function caught this error and called `setProduct(null)`, wiping out the successfully-loaded product. Result: "ไม่พบสินค้า" even though the product was found and published.
+- **Fix (backend):** Made wishlist GET endpoint gracefully handle missing table — returns `[]` instead of 500 when `customer_wishlist` doesn't exist. Made toggle endpoint return 503 with clear message.
+- **Fix (frontend):** Separated product loading from optional data loading. Product is set first, then reviews/wishlist load in a separate `try/catch` with `Promise.allSettled`. Failures in reviews/wishlist do NOT clear the product.
+- **Database:** Created V0020 migration (`020_repair_wishlist_subscriptions.sql`) that creates `customer_wishlist` and `subscriptions` tables with `IF NOT EXISTS`. Both tables use the canonical schema from `schema.sql`.
+- **Files changed:** `backend/routes/cart.ts`, `apps/velshop/src/pages/ShopProductDetail.tsx`, `db/migrations/020_repair_wishlist_subscriptions.sql`, `db/run-update.sql`
+- **All 5 typechecks pass**
+
 ### 2026-08-26 — Product Detail Debug + Enhanced Error Handling
 - **Problem:** Product detail page shows "ไม่พบสินค้า" (product not found) even though the product list displays products correctly
 - **Investigation:** Traced the complete flow: frontend route `/products/:productId` → `useParams` → `useAction(api.commerce.getProductDetail)` → `apiGet(/api/products/:id)` → backend `GET /api/products/:productId` → SQL `WHERE p.id = $1 AND p.status = 'published'`

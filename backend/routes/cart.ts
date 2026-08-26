@@ -357,7 +357,13 @@ export function setupCartRoutes(app: Express): void {
       }));
 
       res.json({ success: true, data: items });
-    } catch (err) {
+    } catch (err: any) {
+      // Gracefully handle missing table — return empty wishlist instead of 500
+      if (err?.code === "42P01" || String(err?.message ?? "").includes("does not exist")) {
+        console.warn("[wishlist] table not found — returning empty wishlist");
+        res.json({ success: true, data: [] });
+        return;
+      }
       console.error("[wishlist] get error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch wishlist" } });
     }
@@ -395,7 +401,12 @@ export function setupCartRoutes(app: Express): void {
         );
         res.json({ success: true, data: { wishlisted: true, added: true } });
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.code === "42P01" || String(err?.message ?? "").includes("does not exist")) {
+        console.warn("[wishlist] table not found — cannot toggle");
+        res.status(503).json({ success: false, error: { code: "TABLE_MISSING", message: "Wishlist is not available yet. Please try again later." } });
+        return;
+      }
       console.error("[wishlist] toggle error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to toggle wishlist" } });
     }

@@ -85,12 +85,20 @@ export default function ShopProductDetail() {
       }
       console.log("[ProductDetail] product loaded:", p.name, "status:", p.status);
       setProduct(p);
-      const [revs, wl] = await Promise.all([
-        productReviews({ productId }),
-        isAuthenticated ? myWishlist() : Promise.resolve([]),
-      ]);
-      setReviews((revs ?? []) as ReviewRow[]);
-      setWishlisted((wl ?? []).some((i: { productId: string }) => i.productId === productId));
+      setLoading(false);
+      // Load optional data (reviews + wishlist) separately — failures must NOT clear the product
+      try {
+        const [revs, wl] = await Promise.allSettled([
+          productReviews({ productId }),
+          isAuthenticated ? myWishlist() : Promise.resolve([]),
+        ]);
+        if (revs.status === "fulfilled") setReviews((revs.value ?? []) as ReviewRow[]);
+        if (wl.status === "fulfilled") setWishlisted((wl.value ?? []).some((i: { productId: string }) => i.productId === productId));
+      } catch {
+        // Wishlist/reviews failed — product still loads fine
+        console.warn("[ProductDetail] Optional data load failed (non-fatal)");
+      }
+      return; // product loaded successfully — do NOT fall into catch
     } catch (err: any) {
       console.error("[ProductDetail] Load product error:", err);
       const msg = err?.message ?? String(err);
