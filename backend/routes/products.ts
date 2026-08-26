@@ -193,6 +193,14 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     soldCount: row.sold_count ?? 0,
     rating: row.rating ? parseFloat(row.rating) : null,
     reviewCount: row.review_count ?? 0,
+    // VelRepeat configuration (V0025 columns)
+    vrepeatEnabled: row.vrepeat_enabled ?? false,
+    vrepeatWeeklyEnabled: row.vrepeat_weekly_enabled ?? false,
+    vrepeatMonthlyEnabled: row.vrepeat_monthly_enabled ?? false,
+    vrepeatWeeklyPrice: row.vrepeat_weekly_price != null ? parseFloat(row.vrepeat_weekly_price) : null,
+    vrepeatMonthlyPrice: row.vrepeat_monthly_price != null ? parseFloat(row.vrepeat_monthly_price) : null,
+    vrepeatWeeklyQty: row.vrepeat_weekly_qty ?? null,
+    vrepeatMonthlyQty: row.vrepeat_monthly_qty ?? null,
   };
 }
 
@@ -202,9 +210,10 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
 async function loadProductExtras(productIds: string[]): Promise<{
   imagesByProduct: Map<string, any[]>;
   inventoryByProduct: Map<string, any>;
+  variantsByProduct: Map<string, any[]>;
 }> {
   if (productIds.length === 0) {
-    return { imagesByProduct: new Map(), inventoryByProduct: new Map() };
+    return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map() };
   }
 
   const imagesResult = await query(
@@ -215,6 +224,23 @@ async function loadProductExtras(productIds: string[]): Promise<{
     `SELECT * FROM inventory WHERE product_id = ANY($1)`,
     [productIds]
   );
+
+  // Load variants
+  let variantsResult = { rows: [] as any[] };
+  try {
+    variantsResult = await query(
+      `SELECT * FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+      [productIds]
+    );
+  } catch {
+    // product_variants table may not have all expected columns
+    try {
+      variantsResult = await query(
+        `SELECT id, product_id, name, sku, price, stock, status, sort_order FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+        [productIds]
+      );
+    } catch { /* table may not exist yet */ }
+  }
 
   const imagesByProduct = new Map<string, any[]>();
   for (const img of imagesResult.rows) {
@@ -228,7 +254,24 @@ async function loadProductExtras(productIds: string[]): Promise<{
     inventoryByProduct.set(inv.product_id, inv);
   }
 
-  return { imagesByProduct, inventoryByProduct };
+  const variantsByProduct = new Map<string, any[]>();
+  for (const v of variantsResult.rows) {
+    const list = variantsByProduct.get(v.product_id) ?? [];
+    list.push({
+      id: v.id,
+      productId: v.product_id,
+      name: v.name,
+      sku: v.sku,
+      price: parseFloat(v.price) || 0,
+      stock: v.stock ?? 0,
+      status: v.status || "active",
+      options: v.options || {},
+      sortOrder: v.sort_order ?? 0,
+    });
+    variantsByProduct.set(v.product_id, list);
+  }
+
+  return { imagesByProduct, inventoryByProduct, variantsByProduct };
 }
 
 /**
@@ -242,12 +285,14 @@ async function getFormattedProduct(productId: string, sellerId: string): Promise
   );
   if (result.rows.length === 0) return null;
   const row = result.rows[0];
-  const { imagesByProduct, inventoryByProduct } = await loadProductExtras([productId]);
-  return formatProduct(
+  const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+  const formatted = formatProduct(
     { ...row, seller_id: sellerId },
     imagesByProduct.get(productId) ?? [],
     inventoryByProduct.get(productId) ?? null,
   );
+  formatted.variants = variantsByProduct.get(productId) ?? [];
+  return formatted;
 }
 
 // ─── Route Registration ───────────────────────────────────────────────────
@@ -284,15 +329,17 @@ export function setupProductRoutes(app: Express): void {
       );
 
       const productIds = result.rows.map((r: any) => r.id);
-      const { imagesByProduct, inventoryByProduct } = await loadProductExtras(productIds);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras(productIds);
 
-      const products = result.rows.map((row: any) =>
-        formatProduct(
+      const products = result.rows.map((row: any) => {
+        const formatted = formatProduct(
           { ...row, seller_id: seller.id },
           imagesByProduct.get(row.id) ?? [],
           inventoryByProduct.get(row.id) ?? null
-        )
-      );
+        );
+        formatted.variants = variantsByProduct.get(row.id) ?? [];
+        return formatted;
+      });
 
       res.json({ success: true, data: products });
     } catch (err) {
@@ -509,13 +556,14 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         { ...row, seller_id: seller.id },
         imagesByProduct.get(productId) ?? [],
         inventoryByProduct.get(productId) ?? null
       );
+      formatted.variants = variantsByProduct.get(productId) ?? [];
 
       console.log(`[products] updated: ${productId} by seller ${seller.id}`);
 
@@ -669,13 +717,14 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         { ...row, seller_id: seller.id },
         imagesByProduct.get(productId) ?? [],
         inventoryByProduct.get(productId) ?? null
       );
+      formatted.variants = variantsByProduct.get(productId) ?? [];
 
       console.log(`[products] status changed: ${productId} -> ${finalStatus} by ${actorLog}`);
 
@@ -1059,11 +1108,13 @@ export function setupProductRoutes(app: Express): void {
       );
 
       const productIds = result.rows.map((r: any) => r.id);
-      const { imagesByProduct, inventoryByProduct } = await loadProductExtras(productIds);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras(productIds);
 
-      const products = result.rows.map((row: any) =>
-        formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null)
-      );
+      const products = result.rows.map((row: any) => {
+        const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
+        formatted.variants = variantsByProduct.get(row.id) ?? [];
+        return formatted;
+      });
 
       res.json({ success: true, data: products });
     } catch (err) {
@@ -1105,13 +1156,33 @@ export function setupProductRoutes(app: Express): void {
       console.log(`[products] detail: found product '${result.rows[0].name}' status='${result.rows[0].status}'`);
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         row,
         imagesByProduct.get(productId) ?? [],
         inventoryByProduct.get(productId) ?? null
       );
+      formatted.variants = variantsByProduct.get(productId) ?? [];
+
+      // Also fetch shop info for the detail page
+      const shopResult = await query(
+        "SELECT id, name, slug, description, logo, cover, rating, product_count FROM shops WHERE id = $1",
+        [row.shop_id],
+      );
+      if (shopResult.rows.length > 0) {
+        const s = shopResult.rows[0];
+        formatted.shop = {
+          id: s.id,
+          name: s.name,
+          slug: s.slug,
+          description: s.description,
+          logo: s.logo,
+          cover: s.cover,
+          rating: s.rating,
+          productCount: s.product_count,
+        };
+      }
 
       res.json({ success: true, data: formatted });
     } catch (err) {
@@ -1206,11 +1277,17 @@ export function setupProductRoutes(app: Express): void {
         [row.id],
       );
 
-      const products = productsResult.rows.map((r: any) => formatProduct(
-        { ...r, seller_id: row.seller_id },
-        [],
-        r.stock_qty != null ? { quantity: r.stock_qty, reserved: r.stock_reserved ?? 0 } : null,
-      ));
+      const productIds = productsResult.rows.map((r: any) => r.id);
+      const shopExtras = productIds.length > 0 ? await loadProductExtras(productIds) : { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map() };
+      const products = productsResult.rows.map((r: any) => {
+        const formatted = formatProduct(
+          { ...r, seller_id: row.seller_id },
+          shopExtras.imagesByProduct.get(r.id) ?? [],
+          r.stock_qty != null ? { quantity: r.stock_qty, reserved: r.stock_reserved ?? 0 } : null,
+        );
+        formatted.variants = shopExtras.variantsByProduct.get(r.id) ?? [];
+        return formatted;
+      });
 
       res.json({ success: true, data: { shop, products } });
     } catch (err) {

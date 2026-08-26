@@ -160,7 +160,16 @@ CREATE TABLE IF NOT EXISTS products (
   rating NUMERIC(3, 2),
   review_count INTEGER NOT NULL DEFAULT 0,
   sold_count INTEGER NOT NULL DEFAULT 0,
-  category_id TEXT,  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  category_id TEXT,
+  -- VelRepeat configuration (V0025)
+  vrepeat_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  vrepeat_weekly_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  vrepeat_monthly_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  vrepeat_weekly_price NUMERIC(12, 2),
+  vrepeat_monthly_price NUMERIC(12, 2),
+  vrepeat_weekly_qty INTEGER,
+  vrepeat_monthly_qty INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -171,6 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_products_status ON products (status);
 CREATE INDEX IF NOT EXISTS idx_products_featured ON products (featured) WHERE featured = TRUE;
 CREATE INDEX IF NOT EXISTS idx_products_slug ON products (slug);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products (price);
+CREATE INDEX IF NOT EXISTS idx_products_vrepeat ON products (vrepeat_enabled) WHERE vrepeat_enabled = TRUE;
 
 CREATE TABLE IF NOT EXISTS product_images (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

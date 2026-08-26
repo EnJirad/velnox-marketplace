@@ -898,3 +898,25 @@ PORT=3001
 - **Files changed:** `packages/shared/src/lib/i18n/locales/th.ts`, `packages/shared/src/lib/i18n/locales/en.ts`, `packages/shared/src/lib/i18n/locales/my.ts`, `apps/velshop/src/pages/ShopProductDetail.tsx`
 - **No raw translation keys remain:** All `subscription.*` keys used in SubscriptionDialog.tsx now exist in all 3 locale files. Verified with grep.
 - **All 5 typechecks pass** (backend, velshop, velseller, velcenter, velnox)
+
+### 2026-08-26 — V0025: Product VelRepeat Fields + Variants + Shop Detail
+
+**Problem:**
+The `velrepeat.ts` backend route queries `vrepeat_enabled`, `vrepeat_weekly_price`, `vrepeat_monthly_price`, etc. from the `products` table, but these columns were never added to the database schema. This would cause PostgreSQL error `42703: column does not exist` when creating VelRepeat packages. Additionally, the product detail API didn't return variants, and the shop detail endpoint didn't include product images.
+
+**Fix:**
+1. **Migration V0025** (`025_product_vrepeat_fields.sql`): Added 7 VelRepeat columns to `products` table + index
+2. **Backend `formatProduct`**: Now returns vrepeat config (vrepeatEnabled, vrepeatWeeklyEnabled, vrepeatMonthlyEnabled, prices, quantities) and variants array
+3. **Backend `loadProductExtras`**: Now loads `product_variants` in bulk alongside images and inventory
+4. **Product detail API**: Returns shop info + variants for each product
+5. **Shop detail API**: Returns full product data with images and variants for each shop product
+6. **Schema files updated**: `schema.sql`, `run-sqleditor.sql`, `run-update.sql` all synchronized
+
+**Files changed:**
+- `db/migrations/025_product_vrepeat_fields.sql` (NEW)
+- `backend/routes/products.ts` (formatProduct + loadProductExtras + product detail + shop detail)
+- `db/schema.sql` (vrepeat columns + index)
+- `db/run-sqleditor.sql` (vrepeat columns + index)
+- `db/run-update.sql` (V0025 appended)
+
+**All 5 typechecks pass.**

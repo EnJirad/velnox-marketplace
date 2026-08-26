@@ -985,3 +985,23 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
 CREATE INDEX IF NOT EXISTS idx_sellers_status ON sellers (status);
 CREATE INDEX IF NOT EXISTS idx_carts_user ON carts (user_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items (product_id);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- V0025: Add VelRepeat configuration fields to products table
+-- Date: 2026-08-26
+-- Reason: velrepeat.ts backend route queries vrepeat_enabled, vrepeat_weekly_price,
+--         vrepeat_monthly_price, etc. from products — but these columns never existed.
+-- Safety: All ALTER TABLE use ADD COLUMN IF NOT EXISTS.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── 1. VelRepeat fields on products ───────────────────────────────────────
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_weekly_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_monthly_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_weekly_price NUMERIC(12, 2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_monthly_price NUMERIC(12, 2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_weekly_qty INTEGER;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_monthly_qty INTEGER;
+
+-- ── 2. Index for VelRepeat product filtering ─────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_products_vrepeat ON products (vrepeat_enabled) WHERE vrepeat_enabled = TRUE;
