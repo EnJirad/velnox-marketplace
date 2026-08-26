@@ -38,7 +38,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+/* ─── Types ────────────────────────────────────────────────────────────── */
 
 interface ReviewRow {
   id: string;
@@ -57,12 +57,10 @@ interface ReviewRow {
 
 type TabKey = "recommend" | "details" | "reviews";
 
-// ─── Expandable Title ───────────────────────────────────────────────────────
+/* ─── Expandable Title ─────────────────────────────────────────────────── */
 
 function ProductTitle({ name, t }: { name: string; t: (k: string) => string }) {
   const [expanded, setExpanded] = useState(false);
-
-  // Short names never need expansion — render as plain text
   if (name.length <= 60) {
     return (
       <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
@@ -70,22 +68,12 @@ function ProductTitle({ name, t }: { name: string; t: (k: string) => string }) {
       </h1>
     );
   }
-
   return (
     <div>
-      <h1
-        className={`text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${
-          expanded ? "" : "line-clamp-1"
-        }`}
-      >
+      <h1 className={`text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${expanded ? "" : "line-clamp-1"}`}>
         {name}
       </h1>
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]"
-        aria-expanded={expanded}
-      >
+      <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]" aria-expanded={expanded}>
         {expanded ? t("productDetail.seeLess") : t("productDetail.seeMore")}
         {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
       </button>
@@ -93,35 +81,19 @@ function ProductTitle({ name, t }: { name: string; t: (k: string) => string }) {
   );
 }
 
-// ─── Expandable Description ─────────────────────────────────────────────────
+/* ─── Expandable Description ───────────────────────────────────────────── */
 
-function ExpandableDescription({
-  text,
-  t,
-}: {
-  text: string;
-  t: (k: string, v?: Record<string, string | number>) => string;
-}) {
+function ExpandableDescription({ text, t }: { text: string; t: (k: string, v?: Record<string, string | number>) => string }) {
   const [expanded, setExpanded] = useState(false);
   const needsExpand = text.length > 200;
-
-  if (!text) {
-    return (
-      <p className="text-sm text-slate-400 italic">{t("productDetail.noDetails")}</p>
-    );
-  }
-
+  if (!text) return <p className="text-sm text-slate-400 italic">{t("productDetail.noDetails")}</p>;
   return (
     <div>
       <div className={expanded ? "" : "max-h-32 overflow-hidden"}>
         <p className="whitespace-pre-line text-sm leading-6 text-slate-600">{text}</p>
       </div>
       {needsExpand && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]"
-        >
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]">
           {expanded ? t("productDetail.hideDetails") : t("productDetail.seeAllDetails")}
           {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </button>
@@ -130,75 +102,34 @@ function ExpandableDescription({
   );
 }
 
-// ─── Horizontal Carousel ────────────────────────────────────────────────────
+/* ─── Horizontal Carousel ──────────────────────────────────────────────── */
 
-function ProductCarousel({
-  title,
-  viewAllLink,
-  products,
-  onAdd,
-  emptyText,
-  t,
-}: {
-  title: string;
-  viewAllLink?: string;
-  products: StoreProduct[];
-  onAdd: (p: StoreProduct) => void;
-  emptyText: string;
+function ProductCarousel({ title, viewAllLink, products, onAdd, emptyText, t }: {
+  title: string; viewAllLink?: string; products: StoreProduct[];
+  onAdd: (p: StoreProduct) => void; emptyText: string;
   t: (k: string, v?: Record<string, string | number>) => string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  if (products.length === 0) {
-    return null; // hide section when empty
-  }
-
+  if (products.length === 0) return null;
   const scroll = (dir: "left" | "right") => {
     if (!scrollRef.current) return;
-    const amount = 200;
-    scrollRef.current.scrollBy({
-      left: dir === "left" ? -amount : amount,
-      behavior: "smooth",
-    });
+    scrollRef.current.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" });
   };
-
   return (
     <section>
       <div className="flex items-center justify-between">
         <h3 className="text-base font-bold text-slate-900">{title}</h3>
         <div className="flex items-center gap-2">
-          {viewAllLink && (
-            <Link
-              to={viewAllLink}
-              className="text-xs font-medium text-[#10B981] transition-colors hover:text-[#059669]"
-            >
-              {t("productDetail.viewAll")}
-            </Link>
-          )}
-          <button
-            type="button"
-            onClick={() => scroll("left")}
-            className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
-            aria-label="Scroll left"
-          >
+          {viewAllLink && <Link to={viewAllLink} className="text-xs font-medium text-[#10B981] transition-colors hover:text-[#059669]">{t("productDetail.viewAll")}</Link>}
+          <button type="button" onClick={() => scroll("left")} className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600" aria-label="Scroll left">
             <ChevronDown className="size-3.5 -rotate-90" />
           </button>
-          <button
-            type="button"
-            onClick={() => scroll("right")}
-            className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
-            aria-label="Scroll right"
-          >
+          <button type="button" onClick={() => scroll("right")} className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600" aria-label="Scroll right">
             <ChevronDown className="size-3.5 rotate-90" />
           </button>
         </div>
       </div>
-
-      <div
-        ref={scrollRef}
-        className="mt-3 flex gap-3 overflow-x-auto scroll-smooth pb-2 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
-        style={{ scrollbarWidth: "none" }}
-      >
+      <div ref={scrollRef} className="mt-3 flex gap-3 overflow-x-auto scroll-smooth pb-2 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
         {products.map((p) => (
           <div key={p.id} className="w-40 shrink-0 sm:w-48">
             <ProductCard product={p} onOpen={() => {}} onAdd={onAdd} />
@@ -209,54 +140,33 @@ function ProductCarousel({
   );
 }
 
-// ─── Star Rating Distribution ───────────────────────────────────────────────
+/* ─── Star Rating Distribution ─────────────────────────────────────────── */
 
 function RatingDistribution({ reviews, t }: { reviews: ReviewRow[]; t: (k: string, v?: Record<string, string | number>) => string }) {
   if (reviews.length === 0) return null;
-
-  const avg =
-    reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-  const distribution = [5, 4, 3, 2, 1].map((star) => ({
-    star,
-    count: reviews.filter((r) => r.rating === star).length,
-  }));
+  const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+  const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, count: reviews.filter((r) => r.rating === star).length }));
   const maxCount = Math.max(...distribution.map((d) => d.count), 1);
-
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
       <div className="flex items-center gap-3">
-        <span className="text-3xl font-bold tabular-nums text-slate-900">
-          {avg.toFixed(1)}
-        </span>
+        <span className="text-3xl font-bold tabular-nums text-slate-900">{avg.toFixed(1)}</span>
         <div>
           <div className="flex items-center gap-0.5">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Star
-                key={i}
-                className={`size-4 ${
-                  i < Math.round(avg)
-                    ? "fill-amber-400 text-amber-400"
-                    : "text-slate-200"
-                }`}
-              />
+              <Star key={i} className={`size-4 ${i < Math.round(avg) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
             ))}
           </div>
-          <p className="mt-0.5 text-xs text-slate-400">
-            {t("productDetail.fromReviews", { count: reviews.length })}
-          </p>
+          <p className="mt-0.5 text-xs text-slate-400">{t("productDetail.fromReviews", { count: reviews.length })}</p>
         </div>
       </div>
-
       <div className="flex-1 space-y-1">
         {distribution.map(({ star, count }) => (
           <div key={star} className="flex items-center gap-2 text-xs">
             <span className="w-3 text-right tabular-nums text-slate-400">{star}</span>
             <Star className="size-3 fill-amber-400 text-amber-400" />
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-amber-400 transition-all"
-                style={{ width: `${(count / maxCount) * 100}%` }}
-              />
+              <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${(count / maxCount) * 100}%` }} />
             </div>
             <span className="w-6 text-right tabular-nums text-slate-400">{count}</span>
           </div>
@@ -266,7 +176,7 @@ function RatingDistribution({ reviews, t }: { reviews: ReviewRow[]; t: (k: strin
   );
 }
 
-// ─── Main Component ─────────────────────────────────────────────────────────
+/* ─── Main Component ───────────────────────────────────────────────────── */
 
 export default function ShopProductDetail() {
   const { productId } = useParams<{ productId: string }>();
@@ -283,213 +193,131 @@ export default function ShopProductDetail() {
 
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [qty, setQty] = useState(1);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [wishlisted, setWishlisted] = useState(false);
   const [wishToggling, setWishToggling] = useState(false);
   const [subOpen, setSubOpen] = useState(false);
-  const [titleExpanded, setTitleExpanded] = useState(false);
-  const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [activeTab, setActiveTab] = useState<TabKey>("recommend");
+  const [reviewsExpanded, setReviewsExpanded] = useState(false);
+  const [recommended, setRecommended] = useState<StoreProduct[]>([]);
+  const [similar, setSimilar] = useState<StoreProduct[]>([]);
+
+  /* ── Load product + dependent data ─────────────────────────────────── */
 
   const load = useCallback(async () => {
     if (!productId) return;
     setLoading(true);
     try {
-      console.log("[ProductDetail] loading productId:", productId);
       const p = await getProduct({ productId });
-      console.log("[ProductDetail] API response:", p);
-      if (!p || p.status !== "published") {
-        console.log("[ProductDetail] product rejected: status=", p?.status, "exists=", !!p);
-        setProduct(null);
-        return;
-      }
-      console.log("[ProductDetail] product loaded:", p.name, "status:", p.status);
+      if (!p || p.status !== "published") { setProduct(null); return; }
       setProduct(p);
-      setLoading(false);
-      // Load optional data (reviews + wishlist) separately — failures must NOT clear the product
-      try {
-        const [revs, wl] = await Promise.allSettled([
-          productReviews({ productId }),
-          isAuthenticated ? myWishlist() : Promise.resolve([]),
-        ]);
-        if (revs.status === "fulfilled") setReviews((revs.value ?? []) as ReviewRow[]);
-        if (wl.status === "fulfilled") setWishlisted((wl.value ?? []).some((i: { productId: string }) => i.productId === productId));
-      } catch {
-        // Wishlist/reviews failed — product still loads fine
-        console.warn("[ProductDetail] Optional data load failed (non-fatal)");
+      const [revs, wl] = await Promise.all([
+        productReviews({ productId }),
+        isAuthenticated ? myWishlist() : Promise.resolve([]),
+      ]);
+      setReviews((revs ?? []) as ReviewRow[]);
+      setWishlisted((wl ?? []).some((i: { productId: string }) => i.productId === productId));
+
+      // Load recommendations (same category) + similar (same shop, different product)
+      const fetches: Promise<void>[] = [];
+      if (p.category) {
+        fetches.push(
+          catalogProducts({ category: p.category, limit: 12 })
+            .then((result) => { setRecommended((result ?? []).filter((item: StoreProduct) => item.id !== p.id)); })
+            .catch(() => {}),
+        );
       }
-      return; // product loaded successfully — do NOT fall into catch
-    } catch (err: any) {
-      console.error("[ProductDetail] Load product error:", err);
-      const msg = err?.message ?? String(err);
-      if (msg.includes("404") || msg.includes("NOT_FOUND")) {
-        setLoadError(null); // 404 = genuinely not found
-      } else {
-        setLoadError(msg); // network, 500, etc.
+      if (p.shopId) {
+        fetches.push(
+          catalogProducts({ shopId: p.shopId, limit: 12 })
+            .then((result) => { setSimilar((result ?? []).filter((item: StoreProduct) => item.id !== p.id).slice(0, 8)); })
+            .catch(() => {}),
+        );
       }
+      await Promise.all(fetches);
+    } catch (err) {
+      console.error("Load product error:", err);
       setProduct(null);
     } finally {
       setLoading(false);
     }
   }, [productId, getProduct, productReviews, isAuthenticated, myWishlist, catalogProducts]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
-  // ── Product view tracking ──────────────────────────────────────────────
+  /* ── Product view tracking ────────────────────────────────────────── */
 
   const viewedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!product || viewedRef.current === product.id) return;
     viewedRef.current = product.id;
-    track("PRODUCT_VIEW", {
-      entityId: product.id,
-      value: product.name,
-      context: { category: product.category, price: product.price, shopId: product.shopId },
-    });
+    track("PRODUCT_VIEW", { entityId: product.id, value: product.name, context: { category: product.category, price: product.price, shopId: product.shopId } });
   }, [product, track]);
 
-  const images = Array.isArray(product?.images) && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage] : [];
-  const variants = Array.isArray((product as any)?.variants) ? (product as any).variants : [];
+  /* ── Derived values ──────────────────────────────────────────────── */
+
+  const images = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage] : [];
   const active = images[activeIndex] ?? images[0];
-  const available =
-    product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
+  const available = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const outOfStock = available <= 0;
   const lowStock = !outOfStock && available <= 5;
   const displayedReviews = reviewsExpanded ? reviews : reviews.slice(0, 5);
-  const avgRating =
-    reviews.length > 0
-      ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
-      : null;
+  const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
 
-  // ── SEO ──────────────────────────────────────────────────────────────
+  /* ── SEO ────────────────────────────────────────────────────────── */
 
   useEffect(() => {
     if (!product) return;
-    const rating =
-      reviews.length > 0
-        ? {
-            ratingValue: (
-              reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
-            ).toFixed(1),
-            ratingCount: reviews.length,
-          }
-        : undefined;
+    const rating = reviews.length > 0 ? { ratingValue: (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1), ratingCount: reviews.length } : undefined;
     setSeo({
       title: `${product.name} — VelShop`,
-      description:
-        product.description ??
-        t("productDetail.seoDesc", {
-          name: product.name,
-          price: formatBaht(product.price),
-          unit: product.unit,
-          shop: product.shopName ?? t("productDetail.defaultShop"),
-        }),
-      ogType: "product",
-      ogImage: images[0]?.displayUrl ?? undefined,
+      description: product.description ?? t("productDetail.seoDesc", { name: product.name, price: formatBaht(product.price), unit: product.unit, shop: product.shopName ?? t("productDetail.defaultShop") }),
+      ogType: "product", ogImage: images[0]?.displayUrl ?? undefined,
       jsonLd: {
-        "@context": "https://schema.org",
-        "@type": "Product",
-        name: product.name,
-        description: product.description ?? undefined,
-        image: images[0]?.displayUrl ?? undefined,
-        ...(rating
-          ? {
-              aggregateRating: {
-                "@type": "AggregateRating",
-                ...rating,
-              },
-            }
-          : {}),
-        offers: {
-          "@type": "Offer",
-          priceCurrency: "THB",
-          price: product.price,
-          availability: outOfStock
-            ? "https://schema.org/OutOfStock"
-            : "https://schema.org/InStock",
-        },
+        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: images[0]?.displayUrl ?? undefined,
+        ...(rating ? { aggregateRating: { "@type": "AggregateRating", ...rating } } : {}),
+        offers: { "@type": "Offer", priceCurrency: "THB", price: product.price, availability: outOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock" },
       },
     });
   }, [product, reviews, images, outOfStock, t]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────
+  /* ── Handlers ───────────────────────────────────────────────────── */
 
-  const handleAddToCart = useCallback(
-    (p?: StoreProduct) => {
-      const target = p ?? product;
-      if (!target) return;
-      if (!isAuthenticated) {
-        navigate("/auth?returnTo=" + encodeURIComponent(`/products/${target.id}`));
-        return;
-      }
-      add(
-        {
-          id: target.id,
-          name: target.name,
-          unit: target.unit,
-          price: target.price,
-          stock: target.inventory?.available ?? target.inventory?.quantity ?? 0,
-        },
-        qty,
-      );
-      toast.success(
-        t("productDetail.addedToast", { name: target.name, qty }),
-      );
-    },
-    [product, isAuthenticated, navigate, add, qty, t],
-  );
+  const handleAddToCart = useCallback((p?: StoreProduct) => {
+    const target = p ?? product;
+    if (!target) return;
+    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${target.id}`)); return; }
+    add({ id: target.id, name: target.name, unit: target.unit, price: target.price, stock: target.inventory?.available ?? target.inventory?.quantity ?? 0 }, qty);
+    toast.success(t("productDetail.addedToast", { name: target.name, qty }));
+  }, [product, isAuthenticated, navigate, add, qty, t]);
 
   const handleBuyNow = () => {
     if (!product) return;
-    if (!isAuthenticated) {
-      navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`));
-      return;
-    }
-    add(
-      { id: product.id, name: product.name, unit: product.unit, price: product.price, stock: available },
-      qty,
-    );
+    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+    add({ id: product.id, name: product.name, unit: product.unit, price: product.price, stock: available }, qty);
     navigate("/checkout");
   };
 
   const handleWishlist = async () => {
     if (!product) return;
-    if (!isAuthenticated) {
-      navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`));
-      return;
-    }
+    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
     setWishToggling(true);
     try {
       const res = await toggleWishlist({ productId: product.id });
       setWishlisted(res.added);
-      toast.success(
-        res.added
-          ? t("productDetail.wishlistAdded")
-          : t("productDetail.wishlistRemoved"),
-      );
-    } catch (err) {
-      console.error("Wishlist error:", err);
-      toast.error(t("productDetail.wishlistFailed"));
-    } finally {
-      setWishToggling(false);
-    }
+      toast.success(res.added ? t("productDetail.wishlistAdded") : t("productDetail.wishlistRemoved"));
+    } catch { toast.error(t("productDetail.wishlistFailed")); }
+    finally { setWishToggling(false); }
   };
 
-  // Variant resolution: find the best matching variant based on selected options
-  const resolvedVariant = selectedVariant && product
-    ? variants.find((v: any) => v.id === selectedVariant)
-    : null;
+  const handleShare = () => {
+    if (navigator.share && product) { navigator.share({ title: product.name, url: window.location.href }); }
+    else { navigator.clipboard?.writeText(window.location.href); toast.success("ลิงก์คัดลอกแล้ว"); }
+  };
 
-  // Determine display price/stock from variant or product
-  const displayPrice = resolvedVariant?.price ?? product?.price ?? 0;
-  const displayStock = resolvedVariant?.stock ?? available;
-  const displayOutOfStock = displayStock <= 0;
-  const displayLowStock = !displayOutOfStock && displayStock <= 5;
+  /* ── Loading skeleton ───────────────────────────────────────────── */
 
   if (loading) {
     return (
@@ -498,51 +326,30 @@ export default function ShopProductDetail() {
         <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
           <div className="grid gap-8 lg:grid-cols-2">
             <Skeleton className="aspect-square rounded-2xl" />
-            <div className="space-y-4">
-              <Skeleton className="h-8 w-2/3" />
-              <Skeleton className="h-6 w-1/3" />
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-12 w-full" />
-            </div>
+            <div className="space-y-4"><Skeleton className="h-8 w-2/3" /><Skeleton className="h-6 w-1/3" /><Skeleton className="h-24 w-full" /><Skeleton className="h-12 w-full" /></div>
           </div>
         </main>
       </div>
     );
   }
 
-  // ── Not found ────────────────────────────────────────────────────────
+  /* ── Not found ──────────────────────────────────────────────────── */
 
   if (!product) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
         <ShopHeader />
         <main className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-24 text-center sm:px-6">
-          <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100">
-            <ImageOff className="size-7 text-slate-400" />
-          </span>
-          <h1 className="mt-5 text-xl font-bold text-slate-900">
-            {loadError ? t("productDetail.loadError") : t("productDetail.notFound")}
-          </h1>
-          <p className="mt-2 text-sm text-slate-500">
-            {loadError || t("productDetail.notFoundDesc")}
-          </p>
-          {loadError && (
-            <Button className="mt-4 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
-              {t("productDetail.retry")}
-            </Button>
-          )}
-          <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild>
-            <Link to="/">
-              <ArrowLeft className="size-4" />
-              {t("productDetail.backToShop")}
-            </Link>
-          </Button>
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100"><ImageOff className="size-7 text-slate-400" /></span>
+          <h1 className="mt-5 text-xl font-bold text-slate-900">{t("productDetail.notFound")}</h1>
+          <p className="mt-2 text-sm text-slate-500">{t("productDetail.notFoundDesc")}</p>
+          <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild><Link to="/"><ArrowLeft className="size-4" />{t("productDetail.backToShop")}</Link></Button>
         </main>
       </div>
     );
   }
 
-  // ── Main render ──────────────────────────────────────────────────────
+  /* ── Main render ────────────────────────────────────────────────── */
 
   const categoryMeta = PRODUCT_CATEGORY_META[product.category];
   const tabs: { key: TabKey; label: string }[] = [
@@ -554,398 +361,173 @@ export default function ShopProductDetail() {
   return (
     <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
-
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
         {/* Back button */}
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-1.5 py-1 text-sm text-slate-500 transition-colors hover:text-slate-900"
-        >
-          <ArrowLeft className="size-4" />
-          {t("productDetail.back")}
+        <button type="button" onClick={() => navigate(-1)} className="flex items-center gap-1.5 py-1 text-sm text-slate-500 transition-colors hover:text-slate-900">
+          <ArrowLeft className="size-4" />{t("productDetail.back")}
         </button>
 
-        <div className="mt-5 grid min-w-0 gap-8 overflow-clip lg:grid-cols-2">
+        {/* ═══════════ TOP: Gallery + Info + Purchase ═══════════ */}
+        <div className="mt-5 grid gap-6 lg:grid-cols-2 lg:gap-8">
           {/* Gallery */}
           <div className="min-w-0">
-            <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ maxWidth: '100%' }}>
+            <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ maxWidth: "100%" }}>
               {active ? (
-                <img
-                  src={active.displayUrl || active.url}
-                  alt={active.alt || product.name}
-                  className="size-full object-cover"
-                />
+                <img src={active.displayUrl || active.url} alt={active.alt || product.name} className="size-full object-cover" />
               ) : (
-                <span className="flex size-full items-center justify-center">
-                  <ImageOff className="size-12 text-slate-300" />
-                </span>
+                <span className="flex size-full items-center justify-center"><ImageOff className="size-12 text-slate-300" /></span>
               )}
-            </div>              {images.length > 1 && (
-              <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1">
+              <button type="button" onClick={handleWishlist} disabled={wishToggling} className={`absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-colors ${wishlisted ? "text-rose-500" : "text-slate-400 hover:text-rose-500"}`} aria-label={t("productDetail.ariaWishlist")}>
+                {wishToggling ? <Loader2 className="size-4 animate-spin" /> : <Heart className={`size-4 ${wishlisted ? "fill-rose-500" : ""}`} />}
+              </button>
+              <button type="button" onClick={handleShare} className="absolute right-3 top-14 flex size-9 items-center justify-center rounded-full bg-white/90 text-slate-400 shadow-sm backdrop-blur transition-colors hover:text-slate-600" aria-label={t("productDetail.share")}>
+                <Share2 className="size-4" />
+              </button>
+            </div>
+            {images.length > 1 && (
+              <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
                 {images.map((img, i) => (
-                  <button
-                    key={img.id}
-                    type="button"
-                    onClick={() => setActiveIndex(i)}
-                    className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${
-                      i === activeIndex
-                        ? "border-[#10B981]"
-                        : "border-slate-200 hover:border-slate-300"
-                    }`}
-                    aria-label={t("productDetail.imageAlt", { n: i + 1 })}
-                  >
-                    <img
-                      src={img.thumbUrl || img.url}
-                      alt=""
-                      className="size-full object-cover"
-                      loading="lazy"
-                    />
+                  <button key={img.id} type="button" onClick={() => setActiveIndex(i)} className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`} aria-label={t("productDetail.imageAlt", { n: i + 1 })}>
+                    <img src={img.thumbUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Info */}
+          {/* Product Info */}
           <div className="flex min-w-0 flex-col">
-            <div className="flex min-w-0 items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
-                    {PRODUCT_CATEGORY_META[product.category].label}
-                  </Badge>
-                  {product.supplier && (
-                    <Badge className="rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
-                      {product.supplier}
-                    </Badge>
-                  )}
-                </div>
-                <h1 className={`mt-3 break-words text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${!titleExpanded ? 'line-clamp-2' : ''}`} style={{ overflowWrap: 'anywhere' }}>
-                  {product.name}
-                </h1>
-                {product.name.length > 60 && (
-                  <button
-                    type="button"
-                    onClick={() => setTitleExpanded((v) => !v)}
-                    className="mt-1 text-xs font-medium text-[#10B981] hover:underline"
-                    aria-expanded={titleExpanded}
-                  >
-                    {titleExpanded ? 'ย่อ ▲' : 'ดูเพิ่มเติม ▼'}
-                  </button>
-                )}
-                <Link
-                  to={`/shops/${product.shopId}`}
-                  className="mt-2 inline-flex min-w-0 items-center gap-1.5 py-1 text-sm text-slate-500 transition-colors hover:text-[#10B981]"
-                >
-                  <Store className="size-4 shrink-0" />
-                  <span className="truncate">{product.shopName ?? t("productDetail.defaultShop")}</span>
-                </Link>
-              </div>
-              <Button
-                variant="outline"
-                size="icon"
-                className={`size-10 shrink-0 border-slate-200 ${
-                  wishlisted ? "bg-rose-50 text-rose-500 hover:bg-rose-50" : "text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500"
-                }`}
-                onClick={handleWishlist}
-                disabled={wishToggling}
-                aria-label={t("productDetail.ariaWishlist")}
-              >
-                {wishToggling ? <Loader2 className="size-4 animate-spin" /> : <Heart className={`size-4 ${wishlisted ? "fill-rose-500" : ""}`} />}
-              </Button>
-            </div>              {/* Variant selector (dynamic options) */}
-              {variants.length > 0 && (
-                <div className="mt-4 min-w-0 space-y-2">
-                  <p className="text-xs font-semibold text-slate-500">ตัวเลือกสินค้า</p>
-                  <div className="flex min-w-0 flex-wrap gap-1.5">
-                    {variants.map((v: any) => (
-                      <button
-                        key={v.id}
-                        type="button"
-                        onClick={() => setSelectedVariant(v.id === selectedVariant ? null : v.id)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                          selectedVariant === v.id
-                            ? "border-[#10B981] bg-[#F0FDF9] text-[#047857]"
-                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                        } ${v.stock <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
-                        disabled={v.stock <= 0}
-                        aria-label={v.name}
-                      >
-                        <span className="break-words" style={{ overflowWrap: 'anywhere' }}>{v.name}</span>
-                        {v.sku ? <span className="text-slate-400"> ({v.sku})</span> : ''}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10">{categoryMeta?.label ?? product.category}</Badge>
+              {product.supplier && <Badge className="rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15">{product.supplier}</Badge>}
+            </div>
+            <div className="mt-3"><ProductTitle name={product.name} t={t} /></div>
+            <Link to={`/shops/${product.shopId}`} className="mt-2 inline-flex items-center gap-1.5 py-1 text-sm text-slate-500 transition-colors hover:text-[#10B981]">
+              <Store className="size-4" />{product.shopName ?? t("productDetail.defaultShop")}
+            </Link>
 
-              <div className="mt-5 min-w-0 rounded-2xl border border-slate-200 bg-white p-5">
-              <div className="flex min-w-0 items-end justify-between gap-3">
+            {/* Price + Rating */}
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-end justify-between gap-3">
                 <div>
-                  <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">
-                    {formatBaht(displayPrice)}
-                    <span className="ml-1 text-sm font-normal text-slate-400">
-                      /{product.unit}
-                    </span>
-                  </p>
-                  {resolvedVariant?.price && resolvedVariant.price < product.price && (
-                    <p className="mt-1 text-sm text-slate-400 line-through">
-                      {formatBaht(product.price)}
-                    </p>
-                  )}
-                  <p
-                    className={`mt-1.5 text-xs ${
-                      displayOutOfStock
-                        ? "font-medium text-red-500"
-                        : displayLowStock
-                          ? "font-medium text-amber-600"
-                          : "text-slate-400"
-                    }`}
-                  >
-                    {displayOutOfStock
-                      ? t("productDetail.outOfStockDesc")
-                      : displayLowStock
-                        ? t("product.lowStock", { count: displayStock, unit: product.unit })
-                        : t("product.inStock", { count: displayStock, unit: product.unit })}
+                  <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(product.price)}<span className="ml-1 text-sm font-normal text-slate-400">/{product.unit}</span></p>
+                  <p className={`mt-1.5 text-xs ${outOfStock ? "font-medium text-red-500" : lowStock ? "font-medium text-amber-600" : "text-slate-400"}`}>
+                    {outOfStock ? t("productDetail.outOfStockDesc") : lowStock ? t("productDetail.lowStock", { count: available, unit: product.unit }) : t("productDetail.inStock", { count: available, unit: product.unit })}
                   </p>
                 </div>
-
-              {product.description && (
-                <p className="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm leading-6 text-slate-600" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                  {product.description}
-                </p>
-              )}
+                <div className="flex items-center gap-3">
+                  {product.soldCount != null && product.soldCount > 0 && <span className="hidden text-xs text-slate-400 sm:inline">{t("productDetail.sold", { count: product.soldCount })}</span>}
+                  {reviews.length > 0 && (
+                    <div className="flex items-center gap-1 text-sm">
+                      <Star className="size-4 fill-amber-400 text-amber-400" />
+                      <span className="font-semibold tabular-nums text-slate-900">{avgRating?.toFixed(1)}</span>
+                      <span className="text-xs text-slate-400">({reviews.length})</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* CTA: quantity + Buy Once + VelRepeat — compact, equal button prominence */}
-            <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-5 min-w-0 space-y-2.5 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-5 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
-              {displayOutOfStock ? (
-                <Button className="w-full gap-1.5 bg-slate-100 text-slate-400 hover:bg-slate-100" disabled>
-                  {t("product.outOfStock")}
-                </Button>
+            {/* Shipping */}
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+              <div className="flex items-center gap-2"><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><span className="font-medium text-slate-900">{t("productDetail.thailand")}</span></div>
+            </div>
+
+            {/* Purchase controls */}
+            <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-4 space-y-2.5 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-4 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
+              {outOfStock ? (
+                <Button className="w-full gap-1.5 bg-slate-100 text-slate-400 hover:bg-slate-100" disabled>{t("product.outOfStock")}</Button>
               ) : (
                 <>
-                  {/* Row 1: Quantity + Add to Cart */}
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1.5 py-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-slate-600"
-                        onClick={() => setQty((q) => Math.max(1, q - 1))}
-                        aria-label={t("cartDrawer.ariaDecrease")}
-                      >
-                        <Minus className="size-3.5" />
-                      </Button>
-                      <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">
-                        {qty}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-slate-600"
-                        onClick={() => setQty((q) => Math.min(displayStock, q + 1))}
-                        disabled={qty >= displayStock}
-                        aria-label={t("cartDrawer.ariaIncrease")}
-                      >
-                        <Plus className="size-3.5" />
-                      </Button>
+                      <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label={t("cartDrawer.ariaDecrease")}><Minus className="size-3.5" /></Button>
+                      <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">{qty}</span>
+                      <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.min(available, q + 1))} disabled={qty >= available} aria-label={t("cartDrawer.ariaIncrease")}><Plus className="size-3.5" /></Button>
                     </div>
-                    <Button
-                      className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                      onClick={() => handleAddToCart()}
-                      disabled={product.price <= 0}
-                    >
-                      <ShoppingCart className="size-4" />
-                      {t("product.addToCartSm")}
+                    <Button className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => handleAddToCart()} disabled={product.price <= 0}>
+                      <ShoppingCart className="size-4" />{t("productDetail.addToCartWithTotal", { total: formatBaht(product.price * qty) })}
                     </Button>
                   </div>
-
-                  {/* Row 2: Buy Now + VelRepeat — equal height and weight */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      variant="outline"
-                      className="h-10 gap-1.5 border-slate-900 text-sm font-semibold text-slate-900 hover:bg-slate-900 hover:text-white"
-                      onClick={handleBuyNow}
-                      disabled={displayPrice <= 0}
-                    >
-                      <Zap className="size-4" />
-                      {t("productDetail.buyNow")}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="h-10 gap-1.5 border-[#10B981]/40 bg-[#F0FDF9] text-sm font-semibold text-[#047857] hover:border-[#10B981] hover:bg-[#ECFDF5]"
-                      onClick={() => setSubOpen(true)}
-                    >
-                      <CalendarClock className="size-4" />
-                      VelRepeat
-                    </Button>
-                  </div>
+                  <Button variant="outline" className="w-full gap-1.5 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white" onClick={handleBuyNow} disabled={product.price <= 0}>
+                    <Zap className="size-4" />{t("productDetail.buyNow")}
+                  </Button>
+                  <Button variant="ghost" className="h-10 w-full gap-1.5 text-xs text-slate-500 hover:bg-[#ECFDF5] hover:text-emerald-700" onClick={() => setSubOpen(true)}>
+                    <CalendarClock className="size-3.5" />{t("productDetail.reorderCta")}
+                  </Button>
                 </>
               )}
             </div>
           </div>
         </div>
 
-        {/* Reviews */}
-        <section className="mt-12 min-w-0">
-          <div className="flex items-center gap-2">
-            <Star className="size-4 text-amber-400" />
-            <h2 className="text-lg font-bold tracking-tight text-slate-900">{t("productDetail.reviews")}</h2>
-            {reviews.length > 0 && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-                {t("productDetail.reviewsCount", { count: reviews.length })}
-              </span>
-            )}
+        {/* ═══════════ TABS ═══════════ */}
+        <section className="mt-8">
+          <div className="flex border-b border-slate-200">
+            {tabs.map((tab) => (
+              <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`flex-1 px-4 py-3 text-center text-sm font-semibold transition-colors ${activeTab === tab.key ? "border-b-2 border-[#10B981] text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
+                {tab.label}
+                {tab.key === "reviews" && reviews.length > 0 && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-slate-500">{reviews.length}</span>}
+              </button>
+            ))}
           </div>
-
-          {/* Tab content */}
           <div className="mt-6">
-            {/* ── TAB: Recommended ──────────────────────────────── */}
+            {/* Tab: Recommend */}
             {activeTab === "recommend" && (
               <div className="space-y-8">
-                <ProductCarousel
-                  title={t("productDetail.recommendedProducts")}
-                  products={recommended}
-                  onAdd={handleAddToCart}
-                  emptyText={t("productDetail.noRecommendedProducts")}
-                  t={t}
-                />
-
-                <ProductCarousel
-                  title={t("productDetail.similarProducts")}
-                  products={similar}
-                  onAdd={handleAddToCart}
-                  emptyText={t("productDetail.noSimilarProducts")}
-                  t={t}
-                />
-
-                {/* Empty state if both are empty */}
+                <ProductCarousel title={t("productDetail.recommendedProducts")} products={recommended} onAdd={handleAddToCart} emptyText={t("productDetail.noRecommendedProducts")} t={t} />
+                <ProductCarousel title={t("productDetail.similarProducts")} products={similar} onAdd={handleAddToCart} emptyText={t("productDetail.noSimilarProducts")} t={t} />
                 {recommended.length === 0 && similar.length === 0 && (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-                    <p className="text-sm font-medium text-slate-500">
-                      {t("productDetail.noRecommendedProducts")}
-                    </p>
-                  </div>
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><p className="text-sm font-medium text-slate-500">{t("productDetail.noRecommendedProducts")}</p></div>
                 )}
               </div>
             )}
 
-            {/* ── TAB: Details ──────────────────────────────────── */}
+            {/* Tab: Details */}
             {activeTab === "details" && (
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <h3 className="mb-3 text-base font-bold text-slate-900">
-                  {t("productDetail.detailsTabTitle")}
-                </h3>
-                <ExpandableDescription
-                  text={product.description ?? ""}
-                  t={t}
-                />
-
-                {/* Product specs */}
+                <h3 className="mb-3 text-base font-bold text-slate-900">{t("productDetail.detailsTabTitle")}</h3>
+                <ExpandableDescription text={product.description ?? ""} t={t} />
                 <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-100 pt-5 text-sm">
-                  <div>
-                    <span className="text-slate-400">Name</span>
-                    <p className="mt-0.5 font-medium text-slate-900">{product.name}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">{t("productDetail.shippingFrom")}</span>
-                    <p className="mt-0.5 font-medium text-slate-900">{t("productDetail.thailand")}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Category</span>
-                    <p className="mt-0.5 font-medium text-slate-900">
-                      {categoryMeta?.label ?? product.category}
-                    </p>
-                  </div>
-                  {product.supplier && (
-                    <div>
-                      <span className="text-slate-400">Supplier</span>
-                      <p className="mt-0.5 font-medium text-slate-900">{product.supplier}</p>
-                    </div>
-                  )}
+                  <div><span className="text-slate-400">Name</span><p className="mt-0.5 font-medium text-slate-900">{product.name}</p></div>
+                  <div><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><p className="mt-0.5 font-medium text-slate-900">{t("productDetail.thailand")}</p></div>
+                  <div><span className="text-slate-400">Category</span><p className="mt-0.5 font-medium text-slate-900">{categoryMeta?.label ?? product.category}</p></div>
+                  {product.supplier && <div><span className="text-slate-400">Supplier</span><p className="mt-0.5 font-medium text-slate-900">{product.supplier}</p></div>}
                 </div>
               </div>
             )}
 
-            {/* ── TAB: Reviews ──────────────────────────────────── */}
+            {/* Tab: Reviews */}
             {activeTab === "reviews" && (
               <div className="space-y-5">
-                {/* Rating summary */}
-                {reviews.length > 0 && (
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                    <RatingDistribution reviews={reviews} t={t} />
-                  </div>
-                )}
-
-                {/* Reviews list */}
+                {reviews.length > 0 && <div className="rounded-2xl border border-slate-200 bg-white p-5"><RatingDistribution reviews={reviews} t={t} /></div>}
                 {reviews.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
                     <Star className="mx-auto size-7 text-slate-300" />
-                    <p className="mt-3 text-sm font-medium text-slate-600">
-                      {t("productDetail.noReviews")}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {t("productDetail.noReviewsDesc")}
-                    </p>
+                    <p className="mt-3 text-sm font-medium text-slate-600">{t("productDetail.noReviews")}</p>
+                    <p className="mt-1 text-xs text-slate-400">{t("productDetail.noReviewsDesc")}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {displayedReviews.map((r) => (
-                      <div
-                        key={r.id}
-                        className="rounded-xl border border-slate-200 bg-white p-4"
-                      >
+                      <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-4">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1">
                             {Array.from({ length: 5 }).map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`size-3.5 ${
-                                  i < r.rating
-                                    ? "fill-amber-400 text-amber-400"
-                                    : "text-slate-200"
-                                }`}
-                              />
+                              <Star key={i} className={`size-3.5 ${i < r.rating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
                             ))}
                           </div>
-                          <span className="text-[11px] text-slate-400">
-                            {formatIsoDate(r.createdAt)}
-                          </span>
+                          <span className="text-[11px] text-slate-400">{formatIsoDate(r.createdAt)}</span>
                         </div>
-                        {r.title && (
-                          <p className="mt-2 text-sm font-semibold text-slate-900">
-                            {r.title}
-                          </p>
-                        )}
-                        {r.comment && (
-                          <p className="mt-1 text-sm leading-6 text-slate-600">
-                            {r.comment}
-                          </p>
-                        )}
-                        <p className="mt-2 text-[11px] text-slate-400">
-                          {r.customerName ?? t("productDetail.customer")} ·{" "}
-                          {r.orderId ? t("productDetail.verifiedPurchase") : ""}
-                        </p>
+                        {r.title && <p className="mt-2 text-sm font-semibold text-slate-900">{r.title}</p>}
+                        {r.comment && <p className="mt-1 text-sm leading-6 text-slate-600">{r.comment}</p>}
+                        <p className="mt-2 text-[11px] text-slate-400">{r.customerName ?? t("productDetail.customer")} · {r.orderId ? t("productDetail.verifiedPurchase") : ""}</p>
                       </div>
                     ))}
-
-                    {/* Show more / show less */}
                     {reviews.length > 5 && (
-                      <button
-                        type="button"
-                        onClick={() => setReviewsExpanded((v) => !v)}
-                        className="mx-auto flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]"
-                      >
-                        {reviewsExpanded
-                          ? t("productDetail.hideReviews")
-                          : t("productDetail.seeAllReviews")}
-                        {reviewsExpanded ? (
-                          <ChevronUp className="size-3.5" />
-                        ) : (
-                          <ChevronDown className="size-3.5" />
-                        )}
+                      <button type="button" onClick={() => setReviewsExpanded((v) => !v)} className="mx-auto flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]">
+                        {reviewsExpanded ? t("productDetail.hideReviews") : t("productDetail.seeAllReviews")}
+                        {reviewsExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                       </button>
                     )}
                   </div>
@@ -955,28 +537,12 @@ export default function ShopProductDetail() {
           </div>
         </section>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            SHOP SECTION
-            ═══════════════════════════════════════════════════════════════ */}
+        {/* ═══════════ SHOP SECTION ═══════════ */}
         <section className="mt-8">
-          <Link
-            to={`/shops/${product.shopId}`}
-            className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300"
-          >
-            {product.primaryImage && (
-              <img
-                src={product.primaryImage.displayUrl}
-                alt=""
-                className="size-12 shrink-0 rounded-xl object-cover"
-              />
-            )}
+          <Link to={`/shops/${product.shopId}`} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {product.shopName ?? t("productDetail.defaultShop")}
-              </p>
-              <p className="mt-0.5 text-xs text-slate-400">
-                {t("productDetail.viewShop")}
-              </p>
+              <p className="truncate text-sm font-semibold text-slate-900">{product.shopName ?? t("productDetail.defaultShop")}</p>
+              <p className="mt-0.5 text-xs text-slate-400">{t("productDetail.viewShop")}</p>
             </div>
             <ArrowLeft className="size-4 rotate-180 text-slate-300" />
           </Link>
@@ -984,13 +550,7 @@ export default function ShopProductDetail() {
       </main>
 
       <ShopFooter />
-
-      <SubscriptionDialog
-        product={product}
-        open={subOpen}
-        onOpenChange={setSubOpen}
-        selectedVariant={selectedVariant ? variants.find((v: any) => v.id === selectedVariant) : null}
-      />
+      <SubscriptionDialog product={product} open={subOpen} onOpenChange={setSubOpen} />
     </div>
   );
 }
