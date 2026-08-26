@@ -868,3 +868,15 @@ PORT=3001
 - Mobile responsive refinements
 - Verify production Neon schema matches the synchronized run-sqleditor.sql after migrations apply
 - Stripe payment integration (optional — checkout already supports COD/transfer)
+
+### 2026-08-26 — VelRepeat Package/Delivery System (V0024)
+- **Goal:** Implement VelRepeat as a "buy-ahead package + scheduled delivery" system, separate from Buy Once
+- **What was built:**
+  - **Database Migration V0024:** New tables `vrepeat_packages`, `vrepeat_deliveries`, `product_variants`, `customer_events`. Product vrepeat config columns, cart `purchase_type`, performance indexes.
+  - **Backend `routes/velrepeat.ts`:** Full CRUD for packages, delivery schedule generation, delivery status management, seller delivery dashboard.
+  - **Frontend SubscriptionDialog redesigned:** Weekly/monthly package options with pricing comparison and delivery schedule preview.
+  - **Frontend VelRepeatPage:** Rewritten to use new vrepeat_packages API with progress bars and status management.
+  - **API route mappings:** Added `api.commerce.myVelRepeatPackages`, `api.commerce.createVelRepeatPackage`, etc.
+- **VelRepeat Architecture:** Customer selects VelRepeat -> Chooses weekly/monthly package -> Creates vrepeat_package + delivery schedule -> Pays full amount upfront -> Deliveries generated -> Seller fulfills each -> Package completed when all delivered.
+- **Files changed:** `db/migrations/024_*.sql` (new), `backend/routes/velrepeat.ts` (new), `backend/server.ts`, `packages/shared/src/lib/api-routes.ts`, `SubscriptionDialog.tsx`, `VelRepeatPage.tsx`, `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`
+- **All 5 typechecks pass**

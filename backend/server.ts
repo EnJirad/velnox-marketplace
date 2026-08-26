@@ -13,6 +13,7 @@ import { setupUploadRoutes } from "./routes/upload.js";
 import { setupSellerRoutes } from "./routes/seller.js";
 import { setupProductRoutes } from "./routes/products.js";
 import { setupStripeRoutes } from "./routes/stripe.js";
+import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
 import { setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -86,6 +87,9 @@ setupCartRoutes(app);
 
 // ─── Stripe Payments ──────────────────────────────────────
 setupStripeRoutes(app);
+
+// ─── VelRepeat Packages ──────────────────────────────────────
+setupVelRepeatRoutes(app);
 
 // ─── Admin (bootstrap / owner setup) ────────────────────
 setupAdminRoutes(app);

@@ -167,6 +167,15 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.sellerOrders": () => apiGet("/api/seller/orders"),
   "api.commerce.setOrderStatus": (a) => apiPatch(`/api/seller/orders/${a.orderId}/status`, a),
   "api.commerce.cancelOrderAction": (a) => apiPatch(`/api/seller/orders/${a.orderId}/status`, { status: "cancelled" }),
+  // VelRepeat packages (new system)
+  "api.commerce.myVelRepeatPackages": () => apiGet("/api/velrepeat/packages"),
+  "api.commerce.velRepeatPackageDetail": (a) => apiGet(`/api/velrepeat/packages/${a.packageId}`),
+  "api.commerce.createVelRepeatPackage": (a) => apiPost("/api/velrepeat/packages", a),
+  "api.commerce.updateVelRepeatPackage": (a) => apiPatch(`/api/velrepeat/packages/${a.packageId}`, a),
+  "api.commerce.velRepeatDeliveries": (a) => apiGet(`/api/velrepeat/packages/${a.packageId}/deliveries`),
+  "api.commerce.sellerVelRepeatDeliveries": () => apiGet("/api/seller/velrepeat/deliveries"),
+  "api.commerce.updateVelRepeatDelivery": (a) => apiPatch(`/api/seller/velrepeat/deliveries/${a.deliveryId}`, a),
+  // Legacy subscriptions (kept for backward compat)
   "api.commerce.mySubscriptions": () => apiGet("/api/customer/subscriptions"),
   "api.commerce.sellerSubscriptions": () => apiGet("/api/seller/subscriptions"),
   "api.commerce.pauseSubscription": (a) => apiPatch(`/api/subscriptions/${a.subscriptionId}/pause`, a),

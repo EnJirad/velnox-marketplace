@@ -474,3 +474,99 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON revoked_tokens (token_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens (expires_at);
+
+-- ─── VelRepeat Packages & Deliveries ──────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS vrepeat_packages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id),
+  variant_id UUID,
+  shop_id UUID NOT NULL REFERENCES shops(id),
+  seller_id UUID NOT NULL REFERENCES sellers(id),
+  package_type TEXT NOT NULL CHECK (package_type IN ('weekly', 'monthly', 'custom')),
+  quantity_total INTEGER NOT NULL CHECK (quantity_total > 0),
+  quantity_delivered INTEGER NOT NULL DEFAULT 0 CHECK (quantity_delivered >= 0),
+  unit_price NUMERIC(12, 2) NOT NULL,
+  regular_unit_price NUMERIC(12, 2) NOT NULL,
+  discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  total_amount NUMERIC(12, 2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  status TEXT NOT NULL DEFAULT 'pending_payment'
+    CHECK (status IN ('pending_payment', 'paid', 'active', 'paused', 'completed', 'cancelled', 'refunded')),
+  interval_days INTEGER NOT NULL DEFAULT 7,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  payment_id UUID,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_user ON vrepeat_packages (user_id);
+CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_product ON vrepeat_packages (product_id);
+CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_shop ON vrepeat_packages (shop_id);
+CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_seller ON vrepeat_packages (seller_id);
+CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_status ON vrepeat_packages (status);
+CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_user_status ON vrepeat_packages (user_id, status);
+
+CREATE TABLE IF NOT EXISTS vrepeat_deliveries (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  package_id UUID NOT NULL REFERENCES vrepeat_packages(id) ON DELETE CASCADE,
+  delivery_number INTEGER NOT NULL CHECK (delivery_number > 0),
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  scheduled_at TIMESTAMPTZ NOT NULL,
+  shipped_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'scheduled'
+    CHECK (status IN ('scheduled', 'processing', 'shipped', 'delivered', 'failed', 'cancelled')),
+  tracking_number TEXT,
+  order_id UUID REFERENCES orders(id),
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (package_id, delivery_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_package ON vrepeat_deliveries (package_id);
+CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_status ON vrepeat_deliveries (status);
+CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_scheduled ON vrepeat_deliveries (scheduled_at) WHERE status = 'scheduled';
+CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_order ON vrepeat_deliveries (order_id);
+
+-- ─── Product Variants ──────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS product_variants (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  sku TEXT,
+  price NUMERIC(12, 2) NOT NULL,
+  stock INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'archived')),
+  options JSONB DEFAULT '{}',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants (product_id);
+CREATE INDEX IF NOT EXISTS idx_product_variants_status ON product_variants (product_id, status);
+
+-- ─── Customer Events ───────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS customer_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  product_id UUID,
+  category_id TEXT,
+  shop_id UUID,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_events_user ON customer_events (user_id);
+CREATE INDEX IF NOT EXISTS idx_customer_events_type ON customer_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_customer_events_product ON customer_events (product_id);
+CREATE INDEX IF NOT EXISTS idx_customer_events_user_type ON customer_events (user_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_customer_events_created ON customer_events (created_at);
