@@ -1005,3 +1005,31 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_monthly_qty INTEGER;
 
 -- ── 2. Index for VelRepeat product filtering ─────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_products_vrepeat ON products (vrepeat_enabled) WHERE vrepeat_enabled = TRUE;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- V0026: Add product_reviews table + fix catalog images + order snapshots
+-- Date: 2026-08-26
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Migration tracking
+INSERT INTO schema_migrations (migration_name) VALUES ('026_product_reviews_and_fixes') ON CONFLICT (migration_name) DO NOTHING;
+
+-- Product Reviews
+CREATE TABLE IF NOT EXISTS product_reviews (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shop_id UUID REFERENCES shops(id),
+  order_id UUID,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  title TEXT,
+  comment TEXT,
+  images JSONB DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_user ON product_reviews (user_id);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_status ON product_reviews (product_id, status);

@@ -443,10 +443,11 @@ export function setupCartRoutes(app: Express): void {
       }
       const cartId = cartResult.rows[0].id;
 
-      // Get cart items with product details
+      // Get cart items with product details (include image for snapshot)
       const itemsResult = await query(
         `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
-                i.quantity AS stock_qty, i.reserved
+                i.quantity AS stock_qty, i.reserved,
+                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
          FROM cart_items ci
          JOIN products p ON ci.product_id = p.id
          LEFT JOIN inventory i ON i.product_id = p.id
@@ -510,10 +511,11 @@ export function setupCartRoutes(app: Express): void {
 
           // Create order items + decrease stock
           for (const item of shopItems) {
+            const subtotal = parseFloat(item.price) * item.quantity;
             await client.query(
-              `INSERT INTO order_items (order_id, product_id, product_name, quantity, price)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [orderId, item.product_id, item.product_name, item.quantity, item.price],
+              `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, image_url_snapshot, quantity, price, subtotal)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              [orderId, item.product_id, item.shop_id || null, item.product_name, item.product_name, item.product_image_url || null, item.quantity, item.price, subtotal],
             );
 
             // Reserve stock

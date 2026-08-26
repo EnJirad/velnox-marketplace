@@ -64,15 +64,44 @@ export function setupRoutes(app: Express): void {
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
       `, params);
 
-      const items = productsResult.rows.map((r: Record<string, unknown>) => ({
-        id: r.id, shopId: r.shop_id, name: r.name, slug: r.slug, description: r.description,
-        shortDescription: r.short_description, price: r.price, compareAtPrice: r.compare_at_price,
-        currency: r.currency, status: r.status, featured: r.featured, rating: r.rating,
-        reviewCount: r.review_count, soldCount: r.sold_count, categoryId: r.category_id,
-        category: r.category_name ? { id: r.category_id, name: r.category_name, slug: r.category_slug, icon: r.category_icon, parentId: null } : undefined,
-        shop: r.shop_id ? { id: r.shop_id, sellerId: "", name: r.shop_name, slug: r.shop_slug, description: null, logo: null, cover: null, rating: r.shop_rating, productCount: r.shop_product_count, createdAt: "" } : undefined,
-        images: [], createdAt: r.created_at, updatedAt: r.updated_at,
-      }));
+      // Load images in bulk for the product listing
+      const productIds = productsResult.rows.map((r: Record<string, unknown>) => r.id as string);
+      let imagesByProduct = new Map<string, any[]>();
+      if (productIds.length > 0) {
+        try {
+          const imagesResult = await query(
+            `SELECT product_id, id, url, alt, sort_order FROM product_images WHERE product_id = ANY($1) ORDER BY sort_order ASC`,
+            [productIds]
+          );
+          for (const img of imagesResult.rows) {
+            const list = imagesByProduct.get(img.product_id) ?? [];
+            list.push({
+              id: img.id,
+              url: img.url,
+              displayUrl: img.url,
+              thumbUrl: img.url,
+              alt: img.alt || "",
+              sortOrder: img.sort_order ?? 0,
+              isPrimary: (img.sort_order ?? 0) === 0,
+            });
+            imagesByProduct.set(img.product_id, list);
+          }
+        } catch { /* product_images table may not exist yet */ }
+      }
+
+      const items = productsResult.rows.map((r: Record<string, unknown>) => {
+        const pImages = imagesByProduct.get(r.id as string) ?? [];
+        const primaryImage = pImages.find((i: any) => i.sortOrder === 0) ?? pImages[0] ?? null;
+        return {
+          id: r.id, shopId: r.shop_id, name: r.name, slug: r.slug, description: r.description,
+          shortDescription: r.short_description, price: r.price, compareAtPrice: r.compare_at_price,
+          currency: r.currency, status: r.status, featured: r.featured, rating: r.rating,
+          reviewCount: r.review_count, soldCount: r.sold_count, categoryId: r.category_id,
+          category: r.category_name ? { id: r.category_id, name: r.category_name, slug: r.category_slug, icon: r.category_icon, parentId: null } : undefined,
+          shop: r.shop_id ? { id: r.shop_id, sellerId: "", name: r.shop_name, slug: r.shop_slug, description: null, logo: null, cover: null, rating: r.shop_rating, productCount: r.shop_product_count, createdAt: "" } : undefined,
+          images: pImages, primaryImage, createdAt: r.created_at, updatedAt: r.updated_at,
+        };
+      });
 
       res.json({ success: true, data: { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) } });
     } catch (err) {

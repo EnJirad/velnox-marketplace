@@ -373,14 +373,6 @@ CREATE TABLE IF NOT EXISTS company_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS platform_settings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  key TEXT NOT NULL UNIQUE,
-  value JSONB NOT NULL,
-  description TEXT,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS system_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   key TEXT NOT NULL UNIQUE,
@@ -561,6 +553,27 @@ CREATE TABLE IF NOT EXISTS product_variants (
 
 CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_variants_status ON product_variants (product_id, status);
+
+-- ─── Product Reviews ──────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS product_reviews (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shop_id UUID REFERENCES shops(id),
+  order_id UUID,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  title TEXT,
+  comment TEXT,
+  images JSONB DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_user ON product_reviews (user_id);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_status ON product_reviews (product_id, status);
 
 -- ─── Customer Events ───────────────────────────────────────────────────────
 

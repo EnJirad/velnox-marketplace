@@ -920,3 +920,21 @@ The `velrepeat.ts` backend route queries `vrepeat_enabled`, `vrepeat_weekly_pric
 - `db/run-update.sql` (V0025 appended)
 
 **All 5 typechecks pass.**
+
+### 2026-08-26 — V0026: Product Reviews + Catalog Images + Order Snapshots
+
+**Root cause:** Full system audit found:
+1. Duplicate `platform_settings` table in schema.sql (UUID vs TEXT primary key conflict)
+2. `product_reviews` table missing from schema (backend referenced it but gracefully returned empty)
+3. Product catalog `/api/products` hardcoded `images: []` — frontend got no images
+4. Checkout `order_items` INSERT missing snapshot columns (`product_name_snapshot`, `image_url_snapshot`, `subtotal`)
+
+**Changes:**
+- `backend/routes/cart.ts` — Added image fetch to checkout query, populate `product_name_snapshot`, `image_url_snapshot`, `shop_id`, `subtotal` in order_items INSERT
+- `backend/routes/index.ts` — Added bulk image loading for `/api/products` catalog endpoint
+- `db/schema.sql` — Removed duplicate `platform_settings` (UUID version), added `product_reviews` table
+- `db/run-sqleditor.sql` — Same: removed duplicate, added `product_reviews` table
+- `db/run-update.sql` — Appended V0026 migration
+- `db/migrations/026_product_reviews_and_fixes.sql` — New migration file (auto-created by run-update.sql append)
+
+**All 5 typechecks pass.**
