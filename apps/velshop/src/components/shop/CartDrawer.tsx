@@ -107,7 +107,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
               {lines.map((line) => (
                 <div
                   key={line.productId}
-                  className="flex items-start gap-3 rounded-xl border border-slate-200 p-3"
+                  className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-200 p-3"
                 >
                   {line.imageUrl ? (
                     <img
@@ -122,7 +122,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                     </span>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">{line.name}</p>
+                    <p className="block min-w-0 max-w-full truncate text-sm font-medium text-slate-900" title={line.name}>{line.name}</p>
                     <p className="mt-0.5 text-xs text-slate-400">
                       {formatBaht(line.price)} {t("cart.perUnit", { unit: line.unit })}
                     </p>
@@ -151,7 +151,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                       </Button>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
+                  <div className="flex shrink-0 flex-col items-end gap-2">
                     <p className="text-sm font-semibold tabular-nums text-slate-900">
                       {formatBaht(line.qty * line.price)}
                     </p>

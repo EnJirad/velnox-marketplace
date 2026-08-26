@@ -437,13 +437,15 @@ export default function ShopCheckout() {
                     </p>
                     <div className="mt-2 space-y-2">
                       {shopLines.map((line) => (
-                        <div key={line.id} className="flex items-center justify-between gap-3 text-sm">
-                          <span className="min-w-0 truncate text-slate-600">
-                            {line.name}{" "}
-                            <span className="text-slate-400">
+                        <div key={line.id} className="flex min-w-0 items-center justify-between gap-3 text-sm">
+                          <div className="min-w-0 flex-1">
+                            <span className="block min-w-0 truncate text-slate-600" title={line.name}>
+                              {line.name}
+                            </span>
+                            <span className="text-xs text-slate-400">
                               × {line.qty} {line.unit}
                             </span>
-                          </span>
+                          </div>
                           <span className="shrink-0 font-medium tabular-nums text-slate-900">
                             {formatBaht(line.qty * line.price)}
                           </span>

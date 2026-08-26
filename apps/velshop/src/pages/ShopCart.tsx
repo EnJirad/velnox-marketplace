@@ -103,7 +103,7 @@ export default function ShopCart() {
                   </div>
                   <div className="divide-y divide-slate-100">
                     {shopLines.map((line) => (
-                      <div key={line.id} className="flex items-center gap-4 px-5 py-4">
+                      <div key={line.id} className="flex min-w-0 items-center gap-4 px-5 py-4">
                         {line.imageUrl ? (
                           <img
                             src={line.imageUrl}
@@ -119,7 +119,8 @@ export default function ShopCart() {
                         <div className="min-w-0 flex-1">
                           <Link
                             to={`/products/${line.productId}`}
-                            className="block truncate text-sm font-semibold text-slate-900 hover:text-[#10B981]"
+                            className="block min-w-0 max-w-full truncate text-sm font-semibold text-slate-900 hover:text-[#10B981]"
+                            title={line.name}
                           >
                             {line.name}
                           </Link>
@@ -155,7 +156,7 @@ export default function ShopCart() {
                             </Button>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-2">
+                        <div className="flex shrink-0 flex-col items-end gap-2">
                           <p className="text-sm font-bold tabular-nums text-slate-900">
                             {formatBaht(line.qty * line.price)}
                           </p>
