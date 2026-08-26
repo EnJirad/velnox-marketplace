@@ -61,22 +61,18 @@ type TabKey = "recommend" | "details" | "reviews";
 
 function ProductTitle({ name, t }: { name: string; t: (k: string) => string }) {
   const [expanded, setExpanded] = useState(false);
-  if (name.length <= 60) {
-    return (
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-        {name}
-      </h1>
-    );
-  }
+  const needsExpand = name.length > 60;
   return (
-    <div>
-      <h1 className={`text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${expanded ? "" : "line-clamp-1"}`}>
+    <div className="flex min-w-0 items-start gap-2">
+      <h1 className={`min-w-0 flex-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${!expanded && needsExpand ? "line-clamp-1" : ""}`}>
         {name}
       </h1>
-      <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]" aria-expanded={expanded}>
-        {expanded ? t("productDetail.seeLess") : t("productDetail.seeMore")}
-        {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-      </button>
+      {needsExpand && (
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]" aria-expanded={expanded}>
+          {expanded ? t("productDetail.seeLess") : t("productDetail.seeMore")}
+          {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+        </button>
+      )}
     </div>
   );
 }
@@ -314,7 +310,7 @@ export default function ShopProductDetail() {
 
   const handleShare = () => {
     if (navigator.share && product) { navigator.share({ title: product.name, url: window.location.href }); }
-    else { navigator.clipboard?.writeText(window.location.href); toast.success("ลิงก์คัดลอกแล้ว"); }
+    else { navigator.clipboard?.writeText(window.location.href); toast.success(t("productDetail.linkCopied")); }
   };
 
   /* ── Loading skeleton ───────────────────────────────────────────── */
@@ -434,27 +430,48 @@ export default function ShopProductDetail() {
             </div>
 
             {/* Purchase controls */}
-            <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-4 space-y-2.5 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-4 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
+            <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-4 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
               {outOfStock ? (
                 <Button className="w-full gap-1.5 bg-slate-100 text-slate-400 hover:bg-slate-100" disabled>{t("product.outOfStock")}</Button>
               ) : (
                 <>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-1.5 py-1">
-                      <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label={t("cartDrawer.ariaDecrease")}><Minus className="size-3.5" /></Button>
-                      <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">{qty}</span>
-                      <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.min(available, q + 1))} disabled={qty >= available} aria-label={t("cartDrawer.ariaIncrease")}><Plus className="size-3.5" /></Button>
-                    </div>
-                    <Button className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => handleAddToCart()} disabled={product.price <= 0}>
-                      <ShoppingCart className="size-4" />{t("productDetail.addToCartWithTotal", { total: formatBaht(product.price * qty) })}
+                  {/* Quantity selector */}
+                  <div className="mb-3 flex items-center justify-center gap-1 rounded-[10px] border border-slate-200 bg-white px-2 py-1.5">
+                    <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label={t("cartDrawer.ariaDecrease")}><Minus className="size-3.5" /></Button>
+                    <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">{qty}</span>
+                    <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.min(available, q + 1))} disabled={qty >= available} aria-label={t("cartDrawer.ariaIncrease")}><Plus className="size-3.5" /></Button>
+                  </div>
+
+                  {/* 3 primary purchase actions — equal visual weight */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button
+                      className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                      onClick={() => handleAddToCart()}
+                      disabled={product.price <= 0}
+                    >
+                      <ShoppingCart className="size-4" />
+                      <span className="hidden sm:inline">ใส่ตะกร้า</span>
+                      <span className="sm:hidden">ตะกร้า</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-1.5 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white"
+                      onClick={handleBuyNow}
+                      disabled={product.price <= 0}
+                    >
+                      <Zap className="size-4" />
+                      {t("productDetail.buyNow")}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-1.5 border-[#10B981] text-[#10B981] hover:bg-[#10B981] hover:text-white"
+                      onClick={() => setSubOpen(true)}
+                    >
+                      <CalendarClock className="size-4" />
+                      <span className="hidden sm:inline">VelRepeat</span>
+                      <span className="sm:hidden">ซ้ำ</span>
                     </Button>
                   </div>
-                  <Button variant="outline" className="w-full gap-1.5 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white" onClick={handleBuyNow} disabled={product.price <= 0}>
-                    <Zap className="size-4" />{t("productDetail.buyNow")}
-                  </Button>
-                  <Button variant="ghost" className="h-10 w-full gap-1.5 text-xs text-slate-500 hover:bg-[#ECFDF5] hover:text-emerald-700" onClick={() => setSubOpen(true)}>
-                    <CalendarClock className="size-3.5" />{t("productDetail.reorderCta")}
-                  </Button>
                 </>
               )}
             </div>

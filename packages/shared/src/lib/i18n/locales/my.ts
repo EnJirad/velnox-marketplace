@@ -247,6 +247,7 @@ export const my = {
     noRecommendedProducts: "အကြံပြုထားသည့် ကုန်ပစ္စည်း မရှိသေးပါ",
     sold: "{count} ရောင်းပြီး",
     share: "မျှဝေရန်",
+    linkCopied: "လင့်ခ်ကူးယူပြီးပါပြီ",
     inStock: "ရရှိနိုင်ပါသည် ({count} {unit})",
     lowStock: "အနည်းငယ်သာကျန်ပါသည် ({count} {unit})",
   },

@@ -349,6 +349,7 @@ export const th = {
     noRecommendedProducts: "ยังไม่มีสินค้าแนะนำ",
     sold: "ขายแล้ว {count}",
     share: "แชร์",
+    linkCopied: "ลิงก์คัดลอกแล้ว",
     inStock: "มีสินค้า ({count} {unit})",
     lowStock: "เหลือน้อย ({count} {unit})",
   },

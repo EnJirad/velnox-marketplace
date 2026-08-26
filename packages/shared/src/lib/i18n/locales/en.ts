@@ -348,6 +348,7 @@ export const en: Dict = {
     noRecommendedProducts: "No recommended products yet",
     sold: "{count} sold",
     share: "Share",
+    linkCopied: "Link copied",
     inStock: "In stock ({count} {unit})",
     lowStock: "Low stock ({count} {unit})",
   },
