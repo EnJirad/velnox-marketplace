@@ -1193,6 +1193,71 @@ export function setupProductRoutes(app: Express): void {
         };
       }
 
+      // Load dynamic option groups + values (V0027 tables)
+      try {
+        const groupsResult = await query(
+          "SELECT * FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC",
+          [productId]
+        );
+        const optionGroups = [];
+        for (const group of groupsResult.rows) {
+          const valuesResult = await query(
+            "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
+            [group.id]
+          );
+          optionGroups.push({
+            id: group.id,
+            name: group.name,
+            displayType: group.display_type,
+            required: group.required,
+            sortOrder: group.sort_order,
+            values: valuesResult.rows.map((v: any) => ({
+              id: v.id,
+              value: v.value,
+              label: v.label || v.value,
+              imageUrl: v.image_url,
+              sortOrder: v.sort_order,
+            })),
+          });
+        }
+        formatted.optionGroups = optionGroups;
+      } catch { /* product_option_groups table may not exist yet */ }
+
+      // Load product attributes (V0027 tables)
+      try {
+        const attrsResult = await query(
+          "SELECT * FROM product_attributes WHERE product_id = $1 ORDER BY sort_order ASC",
+          [productId]
+        );
+        formatted.attributes = attrsResult.rows.map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          value: a.value,
+          sortOrder: a.sort_order,
+        }));
+      } catch { /* product_attributes table may not exist yet */ }
+
+      // Load variant-to-option mappings (V0027 tables)
+      try {
+        const variantValuesResult = await query(
+          `SELECT pvv.variant_id, pvv.option_value_id,
+                  pov.option_group_id, pov.value
+           FROM product_variant_values pvv
+           JOIN product_option_values pov ON pvv.option_value_id = pov.id
+           JOIN product_variants pv ON pvv.variant_id = pv.id
+           WHERE pv.product_id = $1`,
+          [productId]
+        );
+        const variantOptions: Record<string, Record<string, string>> = {};
+        for (const row of variantValuesResult.rows) {
+          const vid = row.variant_id as string;
+          const gid = row.option_group_id as string;
+          if (!variantOptions[vid]) variantOptions[vid] = {};
+          variantOptions[vid][gid] = row.value as string;
+        }
+        formatted.variantOptions = variantOptions;
+      } catch { /* product_variant_values table may not exist yet */ }
+
       res.json({ success: true, data: formatted });
     } catch (err) {
       console.error("[products] detail error:", err);

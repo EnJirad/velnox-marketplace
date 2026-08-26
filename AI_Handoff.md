@@ -992,3 +992,41 @@ published → draft (seller unpublishes)
 **Files changed:** `packages/shared/src/index.css`, `apps/velshop/src/pages/ShopProductDetail.tsx`, `apps/velshop/src/components/shop/SubscriptionDialog.tsx`, `db/migrations/027_product_option_groups_values.sql`, `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`
 
 **All 5 typechecks pass.**
+
+---
+
+## 2026-08-26 — V0028: Product Options & Attributes Backend API
+
+### Problem
+V0027 migration created `product_option_groups`, `product_option_values`, `product_variant_values`, and `product_attributes` tables, but there were:
+- Zero backend API routes for managing these tables
+- Product detail API did not return option groups, attributes, or variant option mappings
+- No way for sellers to create/manage option groups or attributes via API
+
+### Solution
+1. **Created `backend/routes/product-options.ts`** — Full CRUD API for:
+   - `GET /api/products/:productId/options` (public) — option groups, values, attributes, variant options
+   - `GET /api/seller/products/:productId/options` (seller) — same but for seller management
+   - `POST /api/seller/products/:productId/option-groups` — create option group
+   - `PATCH /api/seller/products/:productId/option-groups/:groupId` — update option group
+   - `DELETE /api/seller/products/:productId/option-groups/:groupId` — delete option group
+   - `POST /api/seller/products/:productId/option-groups/:groupId/values` — add option value
+   - `DELETE /api/seller/products/:productId/option-values/:valueId` — delete option value
+   - `POST /api/seller/products/:productId/variants/generate` — generate variants from option combinations
+   - `GET /api/seller/products/:productId/attributes` — list attributes
+   - `POST /api/seller/products/:productId/attributes` — add attribute
+   - `DELETE /api/seller/products/:productId/attributes/:attrId` — delete attribute
+
+2. **Enhanced `GET /api/products/:productId`** — Product detail now returns:
+   - `optionGroups[]` — with nested `values[]`
+   - `attributes[]` — product information attributes
+   - `variantOptions{}` — variant-to-option mapping
+
+3. **Registered in `server.ts`** — `setupProductOptionRoutes(app)`
+
+### All queries wrapped in try-catch for graceful degradation
+If V0027 tables don't exist in production yet, the endpoint still returns products without options/attributes (no crash).
+
+**Files changed:** `backend/routes/product-options.ts` (NEW), `backend/routes/products.ts`, `backend/server.ts`
+
+**All 5 typechecks pass.**

@@ -14,6 +14,7 @@ import { setupSellerRoutes } from "./routes/seller.js";
 import { setupProductRoutes } from "./routes/products.js";
 import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
+import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -87,6 +88,9 @@ setupCartRoutes(app);
 
 // ─── Stripe Payments ──────────────────────────────────────
 setupStripeRoutes(app);
+
+// ─── Product Options & Attributes ──────────────────────────────
+setupProductOptionRoutes(app);
 
 // ─── VelRepeat Packages ──────────────────────────────────────
 setupVelRepeatRoutes(app);
