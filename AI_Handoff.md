@@ -1030,3 +1030,56 @@ If V0027 tables don't exist in production yet, the endpoint still returns produc
 **Files changed:** `backend/routes/product-options.ts` (NEW), `backend/routes/products.ts`, `backend/server.ts`
 
 **All 5 typechecks pass.**
+
+---
+
+## 2026-08-26 — Fix Product Detail Mobile Horizontal Overflow (Root Cause Fix)
+
+### Problem
+Product Detail page on VelShop has horizontal overflow on mobile (320px–430px). The entire page can be scrolled left/right, with content pushing beyond the viewport from the image gallery through the purchase buttons.
+
+### Root Cause Analysis
+1. **Flex children without `min-width: 0`** — The product info column (`flex flex-col`) and nested flex items (price section, header row, variant buttons) can expand beyond the container when content is wide. In CSS flexbox, `min-width` defaults to `auto`, meaning flex children won't shrink below their content size. This causes the flex column to expand wider than the grid cell.
+
+2. **The sticky CTA bar's `-mx-4`** extends 1rem beyond each side of its parent grid cell. While `overflow-x: hidden` on html/body hides visible scrolling, the layout overflow at the grid level causes touch-scroll behavior to extend horizontally.
+
+3. **Long product text** (names, descriptions, variant labels, shop names) without `overflow-wrap: anywhere` / `word-break: break-word` can push their containers wider than the viewport.
+
+### Fixes Applied
+
+1. **Grid container** (`<div className="mt-5 grid ...">`): Added `min-w-0 overflow-clip` — `min-width: 0` prevents grid items from expanding beyond the grid, `overflow-clip` clips any overflow at the grid level without creating a scroll container.
+
+2. **Product info column** (`<div className="flex flex-col">`): Added `min-w-0` — prevents the flex column from expanding beyond the grid cell.
+
+3. **Header row** (`<div className="flex items-start justify-between gap-2">`): Added `min-w-0` on both the flex container and the text child `<div>`.
+
+4. **Product title** (`<h1>`): Added `break-words` + `overflowWrap: 'anywhere'` — ensures long product names wrap properly at any character.
+
+5. **Shop link**: Added `min-w-0` on the link, `shrink-0` on the icon, and `truncate` on the shop name text — prevents long shop names from expanding the layout.
+
+6. **Price section**: Added `min-w-0` on both the card container and the flex row inside it.
+
+7. **Product description**: Added `overflowWrap: 'anywhere'` + `wordBreak: 'break-word'` — handles long URLs, long Thai/English strings, and mixed-language text.
+
+8. **Sticky CTA bar**: Added `min-w-0` — prevents the sticky bar from expanding the grid cell.
+
+9. **Variant selector**: Added `min-w-0` on the container and flex-wrap div. Variant button text uses `break-words` with `overflowWrap: 'anywhere'` to handle long variant names/SKUs.
+
+10. **Gallery**: Added `min-w-0` on the gallery container. Main image uses `maxWidth: '100%'`. Thumbnail carousel uses `min-w-0` on its container.
+
+11. **Reviews section**: Added `min-w-0` as defensive protection.
+
+### What Was NOT Changed
+- CSS `overflow-x: hidden` on html/body/#root was already in place as defensive protection — kept as-is
+- All existing features preserved: Add to Cart, Buy Now, Wishlist, VelRepeat, Reviews, Shop link, Image Gallery
+- Desktop layout unchanged (lg:grid-cols-2 still applies)
+- No new components created
+- No business logic changed
+
+### Verification
+- All 5 typechecks pass (backend, velshop, velseller, velcenter, velnox)
+- The `overflow-clip` + `min-width: 0` combination prevents horizontal overflow at the structural level, not just hiding it
+- Thumbnail carousel still scrolls horizontally (its `overflow-x-auto` is contained within its own container)
+- Sticky bottom bar still works on mobile with proper safe-area-inset-bottom support
+
+**Files changed:** `apps/velshop/src/pages/ShopProductDetail.tsx`

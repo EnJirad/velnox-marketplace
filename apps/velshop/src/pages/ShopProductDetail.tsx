@@ -295,10 +295,10 @@ export default function ShopProductDetail() {
           {t("productDetail.back")}
         </button>
 
-        <div className="mt-5 grid gap-8 lg:grid-cols-2">
+        <div className="mt-5 grid min-w-0 gap-8 overflow-clip lg:grid-cols-2">
           {/* Gallery */}
-          <div>
-            <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="min-w-0">
+            <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ maxWidth: '100%' }}>
               {active ? (
                 <img
                   src={active.displayUrl || active.url}
@@ -310,9 +310,8 @@ export default function ShopProductDetail() {
                   <ImageOff className="size-12 text-slate-300" />
                 </span>
               )}
-            </div>
-            {images.length > 1 && (
-              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            </div>              {images.length > 1 && (
+              <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1">
                 {images.map((img, i) => (
                   <button
                     key={img.id}
@@ -331,10 +330,10 @@ export default function ShopProductDetail() {
           </div>
 
           {/* Info */}
-          <div className="flex flex-col">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-col">
+            <div className="flex min-w-0 items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
                     {PRODUCT_CATEGORY_META[product.category].label}
                   </Badge>
@@ -344,7 +343,7 @@ export default function ShopProductDetail() {
                     </Badge>
                   )}
                 </div>
-                <h1 className={`mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${!titleExpanded ? 'line-clamp-2' : ''}`}>
+                <h1 className={`mt-3 break-words text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${!titleExpanded ? 'line-clamp-2' : ''}`} style={{ overflowWrap: 'anywhere' }}>
                   {product.name}
                 </h1>
                 {product.name.length > 60 && (
@@ -359,10 +358,10 @@ export default function ShopProductDetail() {
                 )}
                 <Link
                   to={`/shops/${product.shopId}`}
-                  className="mt-2 inline-flex items-center gap-1.5 py-1 text-sm text-slate-500 transition-colors hover:text-[#10B981]"
+                  className="mt-2 inline-flex min-w-0 items-center gap-1.5 py-1 text-sm text-slate-500 transition-colors hover:text-[#10B981]"
                 >
-                  <Store className="size-4" />
-                  {product.shopName ?? t("productDetail.defaultShop")}
+                  <Store className="size-4 shrink-0" />
+                  <span className="truncate">{product.shopName ?? t("productDetail.defaultShop")}</span>
                 </Link>
               </div>
               <Button
@@ -379,9 +378,9 @@ export default function ShopProductDetail() {
               </Button>
             </div>              {/* Variant selector (dynamic options) */}
               {variants.length > 0 && (
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 min-w-0 space-y-2">
                   <p className="text-xs font-semibold text-slate-500">ตัวเลือกสินค้า</p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex min-w-0 flex-wrap gap-1.5">
                     {variants.map((v: any) => (
                       <button
                         key={v.id}
@@ -395,16 +394,16 @@ export default function ShopProductDetail() {
                         disabled={v.stock <= 0}
                         aria-label={v.name}
                       >
-                        {v.name}
-                        {v.sku ? ` (${v.sku})` : ''}
+                        <span className="break-words" style={{ overflowWrap: 'anywhere' }}>{v.name}</span>
+                        {v.sku ? <span className="text-slate-400"> ({v.sku})</span> : ''}
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5">
-              <div className="flex items-end justify-between gap-3">
+              <div className="mt-5 min-w-0 rounded-2xl border border-slate-200 bg-white p-5">
+              <div className="flex min-w-0 items-end justify-between gap-3">
                 <div>
                   <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">
                     {formatBaht(displayPrice)}
@@ -447,14 +446,14 @@ export default function ShopProductDetail() {
               </div>
 
               {product.description && (
-                <p className="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm leading-6 text-slate-600">
+                <p className="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm leading-6 text-slate-600" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                   {product.description}
                 </p>
               )}
             </div>
 
             {/* CTA: quantity + Buy Once + VelRepeat — compact, equal button prominence */}
-            <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-5 space-y-2.5 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-5 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
+            <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-5 min-w-0 space-y-2.5 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-5 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
               {displayOutOfStock ? (
                 <Button className="w-full gap-1.5 bg-slate-100 text-slate-400 hover:bg-slate-100" disabled>
                   {t("product.outOfStock")}
@@ -522,7 +521,7 @@ export default function ShopProductDetail() {
         </div>
 
         {/* Reviews */}
-        <section className="mt-12">
+        <section className="mt-12 min-w-0">
           <div className="flex items-center gap-2">
             <Star className="size-4 text-amber-400" />
             <h2 className="text-lg font-bold tracking-tight text-slate-900">{t("productDetail.reviews")}</h2>
