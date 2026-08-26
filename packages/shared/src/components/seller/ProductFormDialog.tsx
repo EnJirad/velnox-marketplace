@@ -27,8 +27,15 @@ import { Switch } from "@velnox/shared/components/ui/switch";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { ImageUploader } from "@velnox/shared/components/seller/ImageUploader";
 import { useAction } from "@velnox/shared/lib/api-routes";
-import { Loader2, Store } from "lucide-react";
-import { useState } from "react";
+import {
+  Loader2,
+  Store,
+  Plus,
+  X,
+  ListOrdered,
+  Tag,
+} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface ProductFormDialogProps {
@@ -45,6 +52,26 @@ interface InnerProps {
   product: StoreProduct | null;
   onClose: () => void;
   onSaved?: (product: StoreProduct) => void;
+}
+
+// ─── Option Group / Value types ────────────────────────────────────────
+interface OptionValueForm {
+  id?: string; // existing server value
+  value: string;
+  label: string;
+}
+
+interface OptionGroupForm {
+  id?: string;
+  name: string;
+  displayType: string;
+  values: OptionValueForm[];
+}
+
+interface AttributeForm {
+  id?: string;
+  name: string;
+  value: string;
 }
 
 const defaultForm = {
@@ -84,8 +111,159 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const [saving, setSaving] = useState(false);
   const isEdit = product !== null;
 
+  // ─── Option groups state ──────────────────────────────────────────────
+  const [optionGroups, setOptionGroups] = useState<OptionGroupForm[]>([]);
+  const [attributes, setAttributes] = useState<AttributeForm[]>([]);
+  const [optionsLoaded, setOptionsLoaded] = useState(false);
+
+  // Load existing options when editing
+  useEffect(() => {
+    if (!current?.id || optionsLoaded) return;
+    const loadOptions = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_API_URL || "";
+        const res = await fetch(`${baseUrl}/api/seller/products/${current.id}/options`, {
+          credentials: "include",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && data.data) {
+          const groups = (data.data.optionGroups ?? []).map((g: any) => ({
+            id: g.id,
+            name: g.name,
+            displayType: g.displayType ?? "text",
+            values: (g.values ?? []).map((v: any) => ({
+              id: v.id,
+              value: v.value,
+              label: v.label ?? v.value,
+            })),
+          }));
+          setOptionGroups(groups);
+          setAttributes((data.data.attributes ?? []).map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            value: a.value,
+          })));
+        }
+      } catch { /* ignore — options may not exist yet */ }
+      setOptionsLoaded(true);
+    };
+    void loadOptions();
+  }, [current?.id, optionsLoaded]);
+
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  // ─── Option group helpers ─────────────────────────────────────────────
+  const addOptionGroup = () => {
+    setOptionGroups((prev) => [...prev, { name: "", displayType: "text", values: [{ value: "", label: "" }] }]);
+  };
+
+  const removeOptionGroup = (index: number) => {
+    setOptionGroups((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateGroupName = (index: number, name: string) => {
+    setOptionGroups((prev) => prev.map((g, i) => i === index ? { ...g, name } : g));
+  };
+
+  const addOptionValue = (groupIndex: number) => {
+    setOptionGroups((prev) => prev.map((g, i) =>
+      i === groupIndex ? { ...g, values: [...g.values, { value: "", label: "" }] } : g
+    ));
+  };
+
+  const removeOptionValue = (groupIndex: number, valueIndex: number) => {
+    setOptionGroups((prev) => prev.map((g, i) =>
+      i === groupIndex ? { ...g, values: g.values.filter((_, vi) => vi !== valueIndex) } : g
+    ));
+  };
+
+  const updateOptionValue = (groupIndex: number, valueIndex: number, value: string) => {
+    setOptionGroups((prev) => prev.map((g, i) =>
+      i === groupIndex
+        ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, value, label: value } : v) }
+        : g
+    ));
+  };
+
+  // ─── Attribute helpers ────────────────────────────────────────────────
+  const addAttribute = () => {
+    setAttributes((prev) => [...prev, { name: "", value: "" }]);
+  };
+
+  const removeAttribute = (index: number) => {
+    setAttributes((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateAttribute = (index: number, field: "name" | "value", val: string) => {
+    setAttributes((prev) => prev.map((a, i) => i === index ? { ...a, [field]: val } : a));
+  };
+
+  // ─── Save options to server ───────────────────────────────────────────
+  const saveOptions = useCallback(async (productId: string) => {
+    const baseUrl = import.meta.env.VITE_API_URL || "";
+
+    // Save option groups
+    for (const group of optionGroups) {
+      if (!group.name.trim()) continue;
+
+      let groupId = group.id;
+      if (groupId) {
+        // Update existing group name
+        try {
+          await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ name: group.name.trim() }),
+          });
+        } catch { /* best effort */ }
+      } else {
+        // Create new group
+        try {
+          const res = await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ name: group.name.trim(), displayType: group.displayType }),
+          });
+          const data = await res.json();
+          if (data.success && data.data?.id) groupId = data.data.id;
+        } catch { continue; }
+      }
+
+      if (!groupId) continue;
+
+      // Save option values
+      for (const val of group.values) {
+        if (!val.value.trim()) continue;
+        if (val.id) continue; // existing value, skip
+        try {
+          await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}/values`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ value: val.value.trim(), label: val.label || val.value.trim() }),
+          });
+        } catch { /* best effort */ }
+      }
+    }
+
+    // Save attributes
+    for (const attr of attributes) {
+      if (!attr.name.trim() || !attr.value.trim()) continue;
+      if (attr.id) continue; // existing, skip
+      try {
+        await fetch(`${baseUrl}/api/seller/products/${productId}/attributes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ name: attr.name.trim(), value: attr.value.trim() }),
+        });
+      } catch { /* best effort */ }
+    }
+  }, [optionGroups, attributes]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -122,6 +300,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         if (updated) {
           if (form.stock !== "") await setStock({ productId: current.id, quantity: Math.max(0, Number(form.stock)) });
           if (form.reorderLevel !== "") await setReorderLevel({ productId: current.id, reorderLevel: Math.max(0, Number(form.reorderLevel)) });
+          await saveOptions(current.id);
           toast.success("บันทึกสินค้าแล้ว");
           setCurrent(updated);
           onSaved?.(updated);
@@ -139,8 +318,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           initialStock: form.stock ? Math.max(0, Number(form.stock)) : 0,
           reorderLevel: form.reorderLevel ? Math.max(0, Number(form.reorderLevel)) : undefined,
         });
-        toast.success("เพิ่มสินค้าแล้ว — อัปโหลดรูปได้เลย 🖼️");
         if (created) {
+          await saveOptions(created.id);
+          toast.success("เพิ่มสินค้าแล้ว — อัปโหลดรูปได้เลย 🖼️");
           setCurrent(created);
           onSaved?.(created);
         }
@@ -153,12 +333,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     }
   };
 
+  const hasOptions = optionGroups.some((g) => g.name.trim() && g.values.some((v) => v.value.trim()));
+
   return (
     <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>{current ? "แก้ไขสินค้า" : "เพิ่มสินค้าใหม่"}</DialogTitle>
         <DialogDescription>
-          จัดการสินค้าของร้าน {shop.name} — ราคา สต็อก และรูปภาพ (อัปโหลดผ่าน R2 CDN)
+          จัดการสินค้าของร้าน {shop.name} — ราคา สต็อก ตัวเลือก และรูปภาพ
         </DialogDescription>
       </DialogHeader>
 
@@ -264,6 +446,136 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           />
         </div>
 
+        {/* ═══ Option Groups ═══════════════════════════════════════════ */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center gap-2">
+            <ListOrdered className="size-4 text-[#10B981]" />
+            <h3 className="text-sm font-semibold text-slate-900">ตัวเลือกสินค้า (Option Groups)</h3>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            สร้างตัวเลือกสินค้า เช่น สี, ขนาด, รสชาติ — ลูกค้าจะเลือกตัวเลือกเหล่านี้ก่อนเพิ่มลงตะกร้า
+          </p>
+
+          <div className="mt-3 space-y-3">
+            {optionGroups.map((group, gi) => (
+              <div key={gi} className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={group.name}
+                    onChange={(e) => updateGroupName(gi, e.target.value)}
+                    placeholder="เช่น สี, ขนาด, รสชาติ"
+                    className="h-8 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 text-red-400 hover:text-red-600"
+                    onClick={() => removeOptionGroup(gi)}
+                    aria-label="ลบกลุ่มตัวเลือก"
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {group.values.map((val, vi) => (
+                    <div key={vi} className="flex items-center gap-1">
+                      <Input
+                        value={val.value}
+                        onChange={(e) => updateOptionValue(gi, vi, e.target.value)}
+                        placeholder="ค่า"
+                        className="h-7 w-24 text-xs"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-6 text-slate-400 hover:text-red-500"
+                        onClick={() => removeOptionValue(gi, vi)}
+                        aria-label="ลบค่า"
+                      >
+                        <X className="size-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 text-xs text-[#10B981]"
+                    onClick={() => addOptionValue(gi)}
+                  >
+                    <Plus className="size-3" />
+                    เพิ่มค่า
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-1.5 border-dashed border-slate-300 text-sm text-slate-600"
+              onClick={addOptionGroup}
+            >
+              <Plus className="size-4" />
+              เพิ่มกลุ่มตัวเลือก
+            </Button>
+          </div>
+        </div>
+
+        {/* ═══ Product Attributes ═══════════════════════════════════ */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center gap-2">
+            <Tag className="size-4 text-amber-500" />
+            <h3 className="text-sm font-semibold text-slate-900">ข้อมูลสินค้า (Attributes)</h3>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            ข้อมูลเพิ่มเติม เช่น แบรนด์, วัสดุ, น้ำหนัก — ไม่ได้ใช้สำหรับเลือกซื้อ
+          </p>
+
+          <div className="mt-3 space-y-2">
+            {attributes.map((attr, ai) => (
+              <div key={ai} className="flex items-center gap-2">
+                <Input
+                  value={attr.name}
+                  onChange={(e) => updateAttribute(ai, "name", e.target.value)}
+                  placeholder="ชื่อ เช่น แบรนด์"
+                  className="h-8 flex-1 text-sm"
+                />
+                <Input
+                  value={attr.value}
+                  onChange={(e) => updateAttribute(ai, "value", e.target.value)}
+                  placeholder="ค่า เช่น Nike"
+                  className="h-8 flex-1 text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 shrink-0 text-slate-400 hover:text-red-500"
+                  onClick={() => removeAttribute(ai)}
+                  aria-label="ลบ attribute"
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+            ))}
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-1.5 border-dashed border-slate-300 text-sm text-slate-600"
+              onClick={addAttribute}
+            >
+              <Plus className="size-4" />
+              เพิ่มข้อมูลสินค้า
+            </Button>
+          </div>
+        </div>
+
+        {/* ═══ Submit for review ═══════════════════════════════════════ */}
         <div className="flex items-center gap-2 rounded-[10px] border border-slate-200 px-3 py-2.5">
           <Store className="size-4 shrink-0 text-[#10B981]" />
           <div className="flex-1">
@@ -285,6 +597,12 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               }}
             />
           </div>
+        )}
+
+        {hasOptions && (
+          <p className="text-xs text-slate-500">
+            ℹ️ ตัวเลือกสินค้าที่กรอกจะถูกบันทึกหลังกดบันทึกสินค้า — จากนั้นสามารถสร้าง Variant อัตโนมัติได้
+          </p>
         )}
 
         <DialogFooter className="mt-2 gap-2">
