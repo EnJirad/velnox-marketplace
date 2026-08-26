@@ -63,6 +63,7 @@ export default function ShopProductDetail() {
 
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [qty, setQty] = useState(1);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
@@ -74,11 +75,15 @@ export default function ShopProductDetail() {
     if (!productId) return;
     setLoading(true);
     try {
+      console.log("[ProductDetail] loading productId:", productId);
       const p = await getProduct({ productId });
+      console.log("[ProductDetail] API response:", p);
       if (!p || p.status !== "published") {
+        console.log("[ProductDetail] product rejected: status=", p?.status, "exists=", !!p);
         setProduct(null);
         return;
       }
+      console.log("[ProductDetail] product loaded:", p.name, "status:", p.status);
       setProduct(p);
       const [revs, wl] = await Promise.all([
         productReviews({ productId }),
@@ -86,8 +91,14 @@ export default function ShopProductDetail() {
       ]);
       setReviews((revs ?? []) as ReviewRow[]);
       setWishlisted((wl ?? []).some((i: { productId: string }) => i.productId === productId));
-    } catch (err) {
-      console.error("Load product error:", err);
+    } catch (err: any) {
+      console.error("[ProductDetail] Load product error:", err);
+      const msg = err?.message ?? String(err);
+      if (msg.includes("404") || msg.includes("NOT_FOUND")) {
+        setLoadError(null); // 404 = genuinely not found
+      } else {
+        setLoadError(msg); // network, 500, etc.
+      }
       setProduct(null);
     } finally {
       setLoading(false);
@@ -225,8 +236,17 @@ export default function ShopProductDetail() {
           <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100">
             <ImageOff className="size-7 text-slate-400" />
           </span>
-          <h1 className="mt-5 text-xl font-bold text-slate-900">{t("productDetail.notFound")}</h1>
-          <p className="mt-2 text-sm text-slate-500">{t("productDetail.notFoundDesc")}</p>
+          <h1 className="mt-5 text-xl font-bold text-slate-900">
+            {loadError ? t("productDetail.loadError") : t("productDetail.notFound")}
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            {loadError || t("productDetail.notFoundDesc")}
+          </p>
+          {loadError && (
+            <Button className="mt-4 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
+              {t("productDetail.retry")}
+            </Button>
+          )}
           <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild>
             <Link to="/">
               <ArrowLeft className="size-4" />

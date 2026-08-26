@@ -299,6 +299,8 @@ export const en: Dict = {
   productDetail: {
     notFound: "Product not found",
     notFoundDesc: "The product may have been removed or isn't on sale yet",
+    loadError: "Failed to load product",
+    retry: "Retry",
     backToShop: "Back to the store",
     back: "Go back",
     outOfStockDesc: "Out of stock — it may be restocked soon",

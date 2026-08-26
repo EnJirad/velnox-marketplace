@@ -1076,6 +1076,8 @@ export function setupProductRoutes(app: Express): void {
   app.get("/api/products/:productId", async (req: Request, res: Response) => {
     try {
       const productId = param(req, "productId");
+      console.log(`[products] detail request: id=${productId}`);
+
       // Public access only shows published products
       const result = await query(
         `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id
@@ -1086,9 +1088,21 @@ export function setupProductRoutes(app: Express): void {
       );
 
       if (result.rows.length === 0) {
+        // Check if product exists but has different status
+        const anyResult = await query(
+          `SELECT id, status, shop_id FROM products WHERE id = $1`,
+          [productId]
+        );
+        if (anyResult.rows.length > 0) {
+          const p = anyResult.rows[0];
+          console.log(`[products] detail: product found but status='${p.status}' (not published), shop_id=${p.shop_id}`);
+        } else {
+          console.log(`[products] detail: no product found with id=${productId}`);
+        }
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
         return;
       }
+      console.log(`[products] detail: found product '${result.rows[0].name}' status='${result.rows[0].status}'`);
 
       const row = result.rows[0];
       const { imagesByProduct, inventoryByProduct } = await loadProductExtras([productId]);

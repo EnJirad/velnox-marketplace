@@ -373,6 +373,18 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-08-26 — Product Detail Debug + Enhanced Error Handling
+- **Problem:** Product detail page shows "ไม่พบสินค้า" (product not found) even though the product list displays products correctly
+- **Investigation:** Traced the complete flow: frontend route `/products/:productId` → `useParams` → `useAction(api.commerce.getProductDetail)` → `apiGet(/api/products/:id)` → backend `GET /api/products/:productId` → SQL `WHERE p.id = $1 AND p.status = 'published'`
+- **Both catalog and detail endpoints use `WHERE p.status = 'published'`** — if a product appears in the catalog, it should also appear in the detail page
+- **Root cause analysis in progress:** Added comprehensive diagnostic logging to both backend and frontend to trace the exact issue:
+  - Backend: logs requested ID, product existence check, status mismatch detection, successful product found
+  - Frontend: logs API response, status check result, and error details
+  - Frontend: added `loadError` state to distinguish between 404 (not found) vs network/500 errors
+  - Added `productDetail.loadError` and `productDetail.retry` i18n keys in all 3 languages (th, en, my)
+- **Files changed:** `backend/routes/products.ts`, `apps/velshop/src/pages/ShopProductDetail.tsx`, `packages/shared/src/lib/i18n/locales/th.ts`, `packages/shared/src/lib/i18n/locales/en.ts`, `packages/shared/src/lib/i18n/locales/my.ts`
+- **Next step:** Deploy and check Render logs for `[products] detail` output to identify exact failure point
+
 ### 2026-08-26 — Fix Marketplace Product Navigation, Cart API, and Favorites
 - **Problem 1:** Clicking a product card on the homepage opened a quick-view modal instead of navigating to `/products/:id`
 - **Problem 2:** Cart system didn't work — `cart.tsx` raw `fetch` functions returned `{success, data}` envelope but code accessed `cart.items` instead of `cart.data.items`, making the cart appear empty

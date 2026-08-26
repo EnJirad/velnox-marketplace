@@ -300,6 +300,8 @@ export const th = {
   productDetail: {
     notFound: "ไม่พบสินค้า",
     notFoundDesc: "สินค้าอาจถูกนำออกหรือยังไม่วางขาย",
+    loadError: "เกิดข้อผิดพลาดในการโหลดสินค้า",
+    retry: "ลองใหม่",
     backToShop: "กลับไปหน้าร้าน",
     back: "ย้อนกลับ",
     outOfStockDesc: "หมดชั่วคราว — สินค้าอาจกลับมามีสต็อกเร็ว ๆ นี้",
