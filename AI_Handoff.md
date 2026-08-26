@@ -1,6 +1,6 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-08-25**
+**LAST UPDATED: 2026-08-26**
 
 ---
 
@@ -372,6 +372,17 @@ PORT=3001
 8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-08-26 — FIX: Cart variant_id Column Missing + Wishlist Migration Files Never Applied
+- **Root causes:**
+  1. `cart_items.variant_id` column does not exist in production Neon. Backend `cart.ts` line 151 does `INSERT INTO cart_items (..., variant_id)` → PostgreSQL error `42703: column "variant_id" does not exist`. Add to Cart silently fails — item appears briefly in frontend but never persists.
+  2. V0019/V0020 migration files were written as inline SQL in `run-update.sql` but NEVER existed as actual files in `db/migrations/`. The GitHub Action (`migrate-neon.yml`) scans `db/migrations/*.sql` — the directory was empty. So `customer_wishlist` and `subscriptions` tables were never created in production.
+- **Fix (backend):** Changed cart INSERT to use try-catch: if `variant_id` column doesn't exist (error 42703), retry without it. Cart add now works immediately.
+- **Fix (database):** Created proper migration files:
+  - `db/migrations/021_add_cart_item_variant_id.sql` — adds nullable `variant_id` column, replaces UNIQUE constraint with expression-based constraint to support variants
+  - `db/migrations/022_create_customer_wishlist.sql` — creates `customer_wishlist` table (the actual migration file that GitHub Action will run)
+- **Fix (schema files):** Updated `schema.sql`, `run-sqleditor.sql`, and `run-update.sql` (V0021, V0022) to include `variant_id` column and `customer_wishlist` table
+- **After migration runs:** The `variant_id` column will exist, and the try-catch will take the success path
 
 ### 2026-08-26 — CRITICAL FIX: Missing customer_wishlist Table + Product Detail Crash
 - **Root cause (from production logs):** The `customer_wishlist` table was never applied to Neon. V0019 migration existed in `run-update.sql` but the GitHub Action never ran it. When the product detail page loaded the product successfully, it then called `myWishlist()` which hit the `customer_wishlist` table → PostgreSQL error `42P01: relation "customer_wishlist" does not exist`. The `catch` block in the frontend `load()` function caught this error and called `setProduct(null)`, wiping out the successfully-loaded product. Result: "ไม่พบสินค้า" even though the product was found and published.

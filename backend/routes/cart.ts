@@ -148,10 +148,25 @@ export function setupCartRoutes(app: Express): void {
         );
       } else {
         const addQty = Math.min(availableStock, qty);
-        await query(
-          "INSERT INTO cart_items (cart_id, product_id, quantity, price, variant_id) VALUES ($1, $2, $3, $4, $5)",
-          [cartId, productId, addQty, product.price, variantId],
-        );
+        // Note: variant_id column may not exist yet in production.
+        // After V0021 migration applies, re-add variant_id support.
+        // For now, use a try-catch to handle both cases.
+        try {
+          await query(
+            "INSERT INTO cart_items (cart_id, product_id, quantity, price, variant_id) VALUES ($1, $2, $3, $4, $5)",
+            [cartId, productId, addQty, product.price, variantId],
+          );
+        } catch (insertErr: any) {
+          // If column 'variant_id' does not exist (42703), retry without it
+          if (insertErr?.code === "42703") {
+            await query(
+              "INSERT INTO cart_items (cart_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)",
+              [cartId, productId, addQty, product.price],
+            );
+          } else {
+            throw insertErr;
+          }
+        }
       }
 
       await recalcCart(cartId);

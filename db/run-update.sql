@@ -739,3 +739,66 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_next_due ON subscriptions (next_due_date) WHERE status = 'active';
+
+-- =============================================================
+-- Migration: V0021
+-- Date: 2026-08-26
+-- Description: Add variant_id to cart_items for product variant support
+-- Reason: Backend cart.ts INSERT includes variant_id column but the
+--         production cart_items table does not have this column.
+--         PostgreSQL error: 42703 - column "variant_id" does not exist
+-- Affected: cart_items
+-- Safety: Uses IF NOT EXISTS — safe to run repeatedly
+-- =============================================================
+
+ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS variant_id UUID;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'cart_items'::regclass
+    AND conname = 'cart_items_cart_id_product_id_key'
+    AND contype = 'u'
+  ) THEN
+    ALTER TABLE cart_items DROP CONSTRAINT cart_items_cart_id_product_id_key;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'cart_items'::regclass
+    AND conname = 'cart_items_cart_product_variant_key'
+    AND contype = 'u'
+  ) THEN
+    ALTER TABLE cart_items
+      ADD CONSTRAINT cart_items_cart_product_variant_key
+      UNIQUE (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_cart_items_variant ON cart_items (variant_id);
+
+-- =============================================================
+-- Migration: V0022
+-- Date: 2026-08-26
+-- Description: Create customer_wishlist table (migration file)
+-- Reason: V0020 existed only as inline SQL but never as a migration
+--         file in db/migrations/. The GitHub Action never applied it.
+--         This caused: relation "customer_wishlist" does not exist
+-- Affected: customer_wishlist
+-- Safety: Uses IF NOT EXISTS — safe to run repeatedly
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS customer_wishlist (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_wishlist_user ON customer_wishlist (user_id);
+CREATE INDEX IF NOT EXISTS idx_customer_wishlist_product ON customer_wishlist (product_id);

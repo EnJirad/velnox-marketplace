@@ -81,12 +81,14 @@ CREATE TABLE IF NOT EXISTS cart_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
   product_id UUID NOT NULL,
+  variant_id UUID,
   quantity INTEGER NOT NULL DEFAULT 1,
   price NUMERIC(12, 2) NOT NULL,
   added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (cart_id, product_id)
+  UNIQUE (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))
 );
 CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items (cart_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_variant ON cart_items (variant_id);
 
 -- ─── Media & Categories ─────────────────────────────────────────────────────
 
