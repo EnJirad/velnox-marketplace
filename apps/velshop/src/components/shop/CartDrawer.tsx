@@ -122,7 +122,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                     </span>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="block min-w-0 max-w-full truncate text-sm font-medium text-slate-900" title={line.name}>{line.name}</p>
+                    <p className="block min-w-0 max-w-full truncate text-sm font-medium text-slate-900" title={line.name} style={{ overflowWrap: "anywhere" }}>{line.name}</p>
                     <p className="mt-0.5 text-xs text-slate-400">
                       {formatBaht(line.price)} {t("cart.perUnit", { unit: line.unit })}
                     </p>

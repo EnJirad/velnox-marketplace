@@ -132,7 +132,7 @@
     @apply bg-background text-foreground;
     -webkit-tap-highlight-color: transparent;
     overflow-x: hidden;
-    max-width: 100vw;
+    max-width: 100%;
   }
   #root {
     width: 100%;

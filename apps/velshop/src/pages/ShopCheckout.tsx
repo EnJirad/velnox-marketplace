@@ -298,8 +298,8 @@ export default function ShopCheckout() {
           </div>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-5">
-          <div className="space-y-6 lg:col-span-3">
+        <div className="mt-8 grid min-w-0 gap-6 lg:grid-cols-5">
+          <div className="min-w-0 space-y-6 lg:col-span-3">
             {/* Address */}
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
               <div className="flex items-center justify-between gap-2">
@@ -363,8 +363,8 @@ export default function ShopCheckout() {
                             }`}
                           />
                         </div>
-                        <p className="mt-1 min-w-0 truncate text-sm leading-5 text-slate-600" title={formatAddress(a)}>{formatAddress(a)}</p>
-                        <p className="mt-0.5 min-w-0 truncate text-xs text-slate-400" title={`${a.recipientName} · ${a.phone}`}>
+                        <p className="mt-1 min-w-0 truncate text-sm leading-5 text-slate-600" title={formatAddress(a)} style={{ overflowWrap: "anywhere" }}>{formatAddress(a)}</p>
+                        <p className="mt-0.5 min-w-0 truncate text-xs text-slate-400" title={`${a.recipientName} · ${a.phone}`} style={{ overflowWrap: "anywhere" }}>
                           {a.recipientName} · {a.phone}
                         </p>
                       </button>
@@ -417,7 +417,7 @@ export default function ShopCheckout() {
                   );
                 })}
               </div>
-              <p className="mt-3 min-w-0 truncate text-xs text-slate-400" title={user?.email ? t("checkout.confirmAccount", { email: user.email }) : undefined}>
+              <p className="mt-3 min-w-0 truncate text-xs text-slate-400" title={user?.email ? t("checkout.confirmAccount", { email: user.email }) : undefined} style={{ overflowWrap: "anywhere" }}>
                 {user?.email ? t("checkout.confirmAccount", { email: user.email }) : t("checkout.confirmAccount", { email: "" })}
               </p>
             </section>
@@ -431,7 +431,7 @@ export default function ShopCheckout() {
               <div className="mt-4 space-y-4">
                 {grouped.map(([shopName, shopLines]) => (
                   <div key={shopName}>
-                    <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                    <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-semibold text-slate-500">
                       <Store className="size-3.5 text-[#10B981]" />
                       {shopName}
                     </p>
@@ -439,7 +439,7 @@ export default function ShopCheckout() {
                       {shopLines.map((line) => (
                         <div key={line.id} className="flex min-w-0 items-center justify-between gap-3 overflow-hidden text-sm">
                           <div className="min-w-0 flex-1">
-                            <span className="block min-w-0 truncate text-slate-600" title={line.name}>
+                            <span className="block min-w-0 truncate text-slate-600" title={line.name} style={{ overflowWrap: "anywhere" }}>
                               {line.name}
                             </span>
                             <span className="text-xs text-slate-400">

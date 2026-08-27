@@ -92,14 +92,14 @@ export default function ShopCart() {
             </Button>
           </div>
         ) : (
-          <div className="mt-8 grid gap-6 lg:grid-cols-5">
+          <div className="mt-8 grid min-w-0 gap-6 lg:grid-cols-5">
             {/* Lines grouped by shop */}
-            <div className="space-y-5 lg:col-span-3">
+            <div className="min-w-0 space-y-5 lg:col-span-3">
               {grouped.map(([shopName, shopLines]) => (
                 <div key={shopName} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                  <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
+                  <div className="flex min-w-0 items-center gap-2 border-b border-slate-100 px-5 py-3">
                     <Store className="size-4 text-[#10B981]" />
-                    <p className="text-sm font-semibold text-slate-900">{shopName}</p>
+                    <p className="min-w-0 truncate text-sm font-semibold text-slate-900">{shopName}</p>
                   </div>
                   <div className="divide-y divide-slate-100">
                     {shopLines.map((line) => (
@@ -121,6 +121,7 @@ export default function ShopCart() {
                             to={`/products/${line.productId}`}
                             className="block min-w-0 max-w-full truncate text-sm font-semibold text-slate-900 hover:text-[#10B981]"
                             title={line.name}
+                            style={{ overflowWrap: "anywhere" }}
                           >
                             {line.name}
                           </Link>
