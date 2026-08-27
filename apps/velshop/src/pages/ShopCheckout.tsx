@@ -282,19 +282,19 @@ export default function ShopCheckout() {
   }
 
   return (
-    <div className="min-h-screen max-w-full overflow-x-hidden bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen max-w-full overflow-clip bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl overflow-hidden px-4 py-8 sm:px-6 sm:py-10">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="size-9 text-slate-500" asChild>
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" size="icon" className="size-9 shrink-0 text-slate-500" asChild>
             <Link to="/cart" aria-label={t("checkout.backToCart")}>
               <ArrowLeft className="size-4" />
             </Link>
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t("checkout.title")}</h1>
-            <p className="mt-0.5 text-sm text-slate-500">{t("checkout.desc")}</p>
+          <div className="min-w-0">
+            <h1 className="min-w-0 truncate text-2xl font-bold tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{t("checkout.title")}</h1>
+            <p className="mt-0.5 min-w-0 truncate text-sm text-slate-500" style={{ overflowWrap: "anywhere" }}>{t("checkout.desc")}</p>
           </div>
         </div>
 
@@ -303,9 +303,9 @@ export default function ShopCheckout() {
             {/* Address */}
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-                  <MapPin className="size-4 text-[#10B981]" />
-                  {t("checkout.addressTitle")}
+                <h2 className="flex min-w-0 items-center gap-2 text-base font-bold tracking-tight text-slate-900">
+                  <MapPin className="size-4 shrink-0 text-[#10B981]" />
+                  <span className="min-w-0 truncate" style={{ overflowWrap: "anywhere" }}>{t("checkout.addressTitle")}</span>
                 </h2>
                 <Button variant="ghost" size="sm" className="gap-1 text-xs text-[#10B981] hover:bg-[#ECFDF5]" asChild>
                   <Link to="/addresses">{t("checkout.manage")}</Link>
@@ -382,11 +382,11 @@ export default function ShopCheckout() {
 
             {/* Payment */}
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
-              <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-                <CreditCard className="size-4 text-[#10B981]" />
-                {t("checkout.paymentTitle")}
+              <h2 className="flex min-w-0 items-center gap-2 text-base font-bold tracking-tight text-slate-900">
+                <CreditCard className="size-4 shrink-0 text-[#10B981]" />
+                <span className="min-w-0 truncate" style={{ overflowWrap: "anywhere" }}>{t("checkout.paymentTitle")}</span>
               </h2>
-              <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+              <div className="mt-4 grid min-w-0 gap-2.5 sm:grid-cols-2">
                 {PAYMENT_METHODS.filter((m) => m.id !== "online" || stripeReady !== false).map((m) => {
                   const Icon = m.icon;
                   const active = paymentMethod === m.id;
@@ -424,7 +424,7 @@ export default function ShopCheckout() {
           </div>
 
           {/* Review */}
-          <div className="lg:col-span-2">
+          <div className="min-w-0 lg:col-span-2">
             <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
               <h2 className="text-base font-bold tracking-tight text-slate-900">{t("checkout.summaryTitle")}</h2>
 
@@ -457,17 +457,17 @@ export default function ShopCheckout() {
               </div>
 
               <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">{t("checkout.itemsCount", { count })}</span>
-                  <span className="font-medium tabular-nums text-slate-900">{formatBaht(total)}</span>
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-slate-500">{t("checkout.itemsCount", { count })}</span>
+                  <span className="shrink-0 font-medium tabular-nums text-slate-900">{formatBaht(total)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">{t("checkout.shipping")}</span>
-                  <span className="text-slate-400">{t("checkout.shippingFree")}</span>
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-slate-500">{t("checkout.shipping")}</span>
+                  <span className="shrink-0 text-slate-400">{t("checkout.shippingFree")}</span>
                 </div>
-                <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-                  <span className="text-sm font-medium text-slate-500">{t("checkout.total")}</span>
-                  <span className="text-2xl font-bold tabular-nums tracking-tight text-slate-900">
+                <div className="flex min-w-0 items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                  <span className="min-w-0 truncate text-sm font-medium text-slate-500">{t("checkout.total")}</span>
+                  <span className="shrink-0 text-2xl font-bold tabular-nums tracking-tight text-slate-900">
                     {formatBaht(total)}
                   </span>
                 </div>
