@@ -251,6 +251,9 @@ export const my = {
     linkCopied: "လင့်ခ်ကူးယူပြီးပါပြီ",
     inStock: "ရရှိနိုင်ပါသည် ({count} {unit})",
     lowStock: "အနည်းငယ်သာကျန်ပါသည် ({count} {unit})",
+    selectOptions: "မဖြစ်မနေရွေးချယ်ရန် ရွေးချယ်ပါ",
+    pleaseSelectOption: "{options} ကို ရွေးချယ်ပါ",
+    variantUnavailable: "ဤရွေးချယ်မှု မရှိပါ",
   },
 
   cartPage: {

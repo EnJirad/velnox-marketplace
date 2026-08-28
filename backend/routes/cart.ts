@@ -54,6 +54,51 @@ async function recalcCart(cartId: string): Promise<void> {
   );
 }
 
+const CART_ITEMS_QUERY = `
+  SELECT ci.*,
+    p.name AS product_name,
+    p.unit AS unit,
+    i.quantity AS available_stock,
+    sh.name AS shop_name,
+    (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
+    pv.name AS variant_name,
+    pv.sku AS variant_sku,
+    COALESCE(
+      (SELECT string_agg(pov.label, ' / ' ORDER BY pog.sort_order)
+       FROM product_variant_values pvv
+       JOIN product_option_values pov ON pvv.option_value_id = pov.id
+       JOIN product_option_groups pog ON pov.option_group_id = pog.id
+       WHERE pvv.variant_id = ci.variant_id),
+      ''
+    ) AS variant_option_labels
+  FROM cart_items ci
+  JOIN products p ON ci.product_id = p.id
+  LEFT JOIN inventory i ON i.product_id = p.id
+  LEFT JOIN shops sh ON p.shop_id = sh.id
+  LEFT JOIN product_variants pv ON ci.variant_id = pv.id
+  WHERE ci.cart_id = $1
+  ORDER BY ci.added_at DESC
+`;
+
+function formatCartRow(r: any) {
+  return {
+    id: r.id,
+    productId: r.product_id,
+    variantId: r.variant_id ?? null,
+    variantName: r.variant_name ?? null,
+    variantSku: r.variant_sku ?? null,
+    variantOptionLabels: r.variant_option_labels || null,
+    productName: r.product_name,
+    unit: r.unit,
+    quantity: r.quantity,
+    priceSnapshot: parseFloat(r.price),
+    availableStock: r.available_stock ?? 0,
+    shopName: r.shop_name,
+    productImageUrl: r.product_image_url,
+    addedAt: r.added_at,
+  };
+}
+
 // ─── CART ─────────────────────────────────────────────────────────────────────
 
 export function setupCartRoutes(app: Express): void {
@@ -63,35 +108,8 @@ export function setupCartRoutes(app: Express): void {
       const userId = req.user!.userId;
       const cartId = await ensureCart(userId);
 
-      const result = await query(
-        `SELECT ci.*,
-                p.name AS product_name,
-                p.unit AS unit,
-                i.quantity AS available_stock,
-                sh.name AS shop_name,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-         FROM cart_items ci
-         JOIN products p ON ci.product_id = p.id
-         LEFT JOIN inventory i ON i.product_id = p.id
-         LEFT JOIN shops sh ON p.shop_id = sh.id
-         WHERE ci.cart_id = $1
-         ORDER BY ci.added_at DESC`,
-        [cartId],
-      );
-
-      const items = result.rows.map((r: any) => ({
-        id: r.id,
-        productId: r.product_id,
-        productName: r.product_name,
-        unit: r.unit,
-        quantity: r.quantity,
-        priceSnapshot: parseFloat(r.price),
-        availableStock: r.available_stock ?? 0,
-        shopName: r.shop_name,
-        productImageUrl: r.product_image_url,
-        addedAt: r.added_at,
-      }));
-
+      const result = await query(CART_ITEMS_QUERY, [cartId]);
+      const items = result.rows.map(formatCartRow);
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] get error:", err);
@@ -127,41 +145,73 @@ export function setupCartRoutes(app: Express): void {
         return;
       }
 
-      // Check stock
-      const invResult = await query("SELECT quantity, reserved FROM inventory WHERE product_id = $1", [productId]);
-      const inv = invResult.rows[0];
-      const availableStock = inv ? inv.quantity - inv.reserved : 999;
+      // Validate variant if provided
+      let cartPrice = parseFloat(product.price);
+      let availableStock = 999;
+      let validatedVariantId: string | null = null;
+
+      if (variantId && typeof variantId === "string") {
+        const varResult = await query(
+          "SELECT id, price, stock, status, product_id FROM product_variants WHERE id = $1",
+          [variantId],
+        );
+        if (varResult.rows.length === 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant not found" } });
+          return;
+        }
+        const variant = varResult.rows[0];
+        if (variant.product_id !== productId) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant does not belong to this product" } });
+          return;
+        }
+        if (variant.status !== "active") {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant is not available" } });
+          return;
+        }
+        if (variant.stock <= 0) {
+          res.status(400).json({ success: false, error: { code: "OUT_OF_STOCK", message: "Variant is out of stock" } });
+          return;
+        }
+        // Server determines authoritative price and stock from variant
+        cartPrice = parseFloat(variant.price);
+        availableStock = variant.stock;
+        validatedVariantId = variant.id;
+      } else {
+        // No variant — check product-level stock
+        const invResult = await query("SELECT quantity, reserved FROM inventory WHERE product_id = $1", [productId]);
+        const inv = invResult.rows[0];
+        availableStock = inv ? inv.quantity - inv.reserved : 999;
+      }
 
       const cartId = await ensureCart(userId);
 
-      // Check if item already in cart
+      // Check if item already in cart — match by productId + variantId
+      const variantClause = validatedVariantId ? " AND variant_id = $3" : " AND variant_id IS NULL";
+      const existingParams: any[] = [cartId, productId];
+      if (validatedVariantId) existingParams.push(validatedVariantId);
       const existing = await query(
-        "SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND product_id = $2",
-        [cartId, productId],
+        `SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND product_id = $2${variantClause}`,
+        existingParams,
       );
 
       if (existing.rows.length > 0) {
         const newQty = Math.min(availableStock, existing.rows[0].quantity + qty);
         await query(
-          "UPDATE cart_items SET quantity = $1 WHERE id = $2",
-          [newQty, existing.rows[0].id],
+          "UPDATE cart_items SET quantity = $1, price = $2 WHERE id = $3",
+          [newQty, cartPrice, existing.rows[0].id],
         );
       } else {
         const addQty = Math.min(availableStock, qty);
-        // Note: variant_id column may not exist yet in production.
-        // After V0021 migration applies, re-add variant_id support.
-        // For now, use a try-catch to handle both cases.
         try {
           await query(
             "INSERT INTO cart_items (cart_id, product_id, quantity, price, variant_id) VALUES ($1, $2, $3, $4, $5)",
-            [cartId, productId, addQty, product.price, variantId],
+            [cartId, productId, addQty, cartPrice, validatedVariantId],
           );
         } catch (insertErr: any) {
-          // If column 'variant_id' does not exist (42703), retry without it
           if (insertErr?.code === "42703") {
             await query(
               "INSERT INTO cart_items (cart_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)",
-              [cartId, productId, addQty, product.price],
+              [cartId, productId, addQty, cartPrice],
             );
           } else {
             throw insertErr;
@@ -171,36 +221,8 @@ export function setupCartRoutes(app: Express): void {
 
       await recalcCart(cartId);
 
-      // Return updated cart
-      const cartResult = await query(
-        `SELECT ci.*,
-                p.name AS product_name,
-                p.unit AS unit,
-                i.quantity AS available_stock,
-                sh.name AS shop_name,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-         FROM cart_items ci
-         JOIN products p ON ci.product_id = p.id
-         LEFT JOIN inventory i ON i.product_id = p.id
-         LEFT JOIN shops sh ON p.shop_id = sh.id
-         WHERE ci.cart_id = $1
-         ORDER BY ci.added_at DESC`,
-        [cartId],
-      );
-
-      const items = cartResult.rows.map((r: any) => ({
-        id: r.id,
-        productId: r.product_id,
-        productName: r.product_name,
-        unit: r.unit,
-        quantity: r.quantity,
-        priceSnapshot: parseFloat(r.price),
-        availableStock: r.available_stock ?? 0,
-        shopName: r.shop_name,
-        productImageUrl: r.product_image_url,
-        addedAt: r.added_at,
-      }));
-
+      const cartResult = await query(CART_ITEMS_QUERY, [cartId]);
+      const items = cartResult.rows.map(formatCartRow);
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] add error:", err);
@@ -252,36 +274,8 @@ export function setupCartRoutes(app: Express): void {
       const cartId = await ensureCart(userId);
       await recalcCart(cartId);
 
-      // Return updated cart
-      const cartResult = await query(
-        `SELECT ci.*,
-                p.name AS product_name,
-                p.unit AS unit,
-                i.quantity AS available_stock,
-                sh.name AS shop_name,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-         FROM cart_items ci
-         JOIN products p ON ci.product_id = p.id
-         LEFT JOIN inventory i ON i.product_id = p.id
-         LEFT JOIN shops sh ON p.shop_id = sh.id
-         WHERE ci.cart_id = $1
-         ORDER BY ci.added_at DESC`,
-        [cartId],
-      );
-
-      const items = cartResult.rows.map((r: any) => ({
-        id: r.id,
-        productId: r.product_id,
-        productName: r.product_name,
-        unit: r.unit,
-        quantity: r.quantity,
-        priceSnapshot: parseFloat(r.price),
-        availableStock: r.available_stock ?? 0,
-        shopName: r.shop_name,
-        productImageUrl: r.product_image_url,
-        addedAt: r.added_at,
-      }));
-
+      const cartResult = await query(CART_ITEMS_QUERY, [cartId]);
+      const items = cartResult.rows.map(formatCartRow);
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] update error:", err);
@@ -303,36 +297,8 @@ export function setupCartRoutes(app: Express): void {
       const cartId = await ensureCart(userId);
       await recalcCart(cartId);
 
-      // Return updated cart
-      const cartResult = await query(
-        `SELECT ci.*,
-                p.name AS product_name,
-                p.unit AS unit,
-                i.quantity AS available_stock,
-                sh.name AS shop_name,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-         FROM cart_items ci
-         JOIN products p ON ci.product_id = p.id
-         LEFT JOIN inventory i ON i.product_id = p.id
-         LEFT JOIN shops sh ON p.shop_id = sh.id
-         WHERE ci.cart_id = $1
-         ORDER BY ci.added_at DESC`,
-        [cartId],
-      );
-
-      const items = cartResult.rows.map((r: any) => ({
-        id: r.id,
-        productId: r.product_id,
-        productName: r.product_name,
-        unit: r.unit,
-        quantity: r.quantity,
-        priceSnapshot: parseFloat(r.price),
-        availableStock: r.available_stock ?? 0,
-        shopName: r.shop_name,
-        productImageUrl: r.product_image_url,
-        addedAt: r.added_at,
-      }));
-
+      const cartResult = await query(CART_ITEMS_QUERY, [cartId]);
+      const items = cartResult.rows.map(formatCartRow);
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] remove error:", err);

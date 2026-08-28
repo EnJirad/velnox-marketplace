@@ -353,6 +353,9 @@ export const th = {
     linkCopied: "ลิงก์คัดลอกแล้ว",
     inStock: "มีสินค้า ({count} {unit})",
     lowStock: "เหลือน้อย ({count} {unit})",
+    selectOptions: "กรุณาเลือกตัวเลือกที่จำเป็น",
+    pleaseSelectOption: "กรุณาเลือก {options}",
+    variantUnavailable: "ตัวเลือกนี้ไม่มีสินค้า",
   },
 
   cartPage: {

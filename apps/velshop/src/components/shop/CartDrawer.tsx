@@ -106,7 +106,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
               {lines.map((line) => (
                 <div
-                  key={line.productId}
+                  key={`${line.productId}::${line.variantId ?? ""}`}
                   className="flex min-w-0 items-start gap-3 overflow-hidden rounded-xl border border-slate-200 p-3"
                 >
                   {line.imageUrl ? (
@@ -123,6 +123,9 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="block min-w-0 max-w-full truncate text-sm font-medium text-slate-900" title={line.name} style={{ overflowWrap: "anywhere" }}>{line.name}</p>
+                    {line.variantOptionLabels && (
+                      <p className="mt-0.5 text-xs text-[#10B981] font-medium">{line.variantOptionLabels}</p>
+                    )}
                     <p className="mt-0.5 text-xs text-slate-400">
                       {formatBaht(line.price)} {t("cart.perUnit", { unit: line.unit })}
                     </p>
@@ -131,7 +134,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                         variant="outline"
                         size="icon"
                         className="size-8 border-slate-200 text-slate-600"
-                        onClick={() => setQty(line.productId, line.qty - 1)}
+                        onClick={() => setQty(line.productId, line.qty - 1, line.variantId)}
                         aria-label={t("cartDrawer.ariaDecrease")}
                       >
                         <Minus className="size-3" />
@@ -143,7 +146,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                         variant="outline"
                         size="icon"
                         className="size-8 border-slate-200 text-slate-600"
-                        onClick={() => setQty(line.productId, line.qty + 1)}
+                        onClick={() => setQty(line.productId, line.qty + 1, line.variantId)}
                         disabled={line.qty >= line.stock}
                         aria-label={t("cartDrawer.ariaIncrease")}
                       >
@@ -159,7 +162,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                       variant="ghost"
                       size="icon"
                       className="size-8 text-slate-400 hover:text-red-600"
-                      onClick={() => remove(line.productId)}
+                      onClick={() => remove(line.productId, line.variantId)}
                       aria-label={t("cartDrawer.ariaRemove", { name: line.name })}
                     >
                       <Trash2 className="size-3.5" />

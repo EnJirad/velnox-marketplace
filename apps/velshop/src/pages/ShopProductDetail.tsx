@@ -204,6 +204,7 @@ export default function ShopProductDetail() {
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
   const [optionGroups, setOptionGroups] = useState<any[]>([]);
   const [variantOptions, setVariantOptions] = useState<Record<string, any>>({});
+  const [optionError, setOptionError] = useState<string | null>(null);
   const [recommended, setRecommended] = useState<StoreProduct[]>([]);
   const [similar, setSimilar] = useState<StoreProduct[]>([]);
 
@@ -296,24 +297,63 @@ export default function ShopProductDetail() {
 
   /* ── Handlers ───────────────────────────────────────────────────── */
 
+  /** Validate required option groups. Returns true if all required options are selected. */
+  const validateRequiredOptions = useCallback((): boolean => {
+    const missing = optionGroups
+      .filter((g: any) => g.required && !selectedOptions[g.id])
+      .map((g: any) => g.name);
+    if (missing.length > 0) {
+      setOptionError(t("productDetail.pleaseSelectOption", { options: missing.join(", ") }));
+      return false;
+    }
+    setOptionError(null);
+    return true;
+  }, [optionGroups, selectedOptions, t]);
+
+  /** Resolve variant from selected options */
+  const resolveVariant = useCallback(() => {
+    const pVariants = (product as any)?.variants;
+    if (!Array.isArray(pVariants) || pVariants.length === 0) return null;
+    if (!variantOptions || Object.keys(variantOptions).length === 0) return null;
+    return pVariants.find((v: any) => {
+      const vOpts = variantOptions[v.id];
+      if (!vOpts) return false;
+      return Object.entries(selectedOptions).every(([gId, vId]) =>
+        typeof vOpts === "object" && !Array.isArray(vOpts) ? vOpts[gId] === vId : false
+      );
+    }) ?? null;
+  }, [product, variantOptions, selectedOptions]);
+
   const handleAddToCart = useCallback(() => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+    // Validate required options
+    if (!validateRequiredOptions()) return;
     const displayPrice = selectedVariant?.price ?? product.price;
     const displayStock = selectedVariant?.stock ?? available;
-    add({ id: product.id, name: product.name, unit: product.unit, price: displayPrice, stock: displayStock }, qty);
-    // Fly animation — dot travels to cart icon
+    if (displayStock <= 0) return;
+    add({
+      id: product.id, name: product.name, unit: product.unit,
+      price: displayPrice, stock: displayStock,
+      variantId: selectedVariant?.id ?? null,
+    }, qty);
     fly(addBtnRef.current);
-  }, [product, isAuthenticated, navigate, add, qty, selectedVariant, available, fly]);
+  }, [product, isAuthenticated, navigate, add, qty, selectedVariant, available, fly, validateRequiredOptions]);
 
-  const handleBuyNow = () => {
+  const handleBuyNow = useCallback(() => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+    if (!validateRequiredOptions()) return;
     const displayPrice = selectedVariant?.price ?? product.price;
     const displayStock = selectedVariant?.stock ?? available;
-    add({ id: product.id, name: product.name, unit: product.unit, price: displayPrice, stock: displayStock }, qty);
+    if (displayStock <= 0) return;
+    add({
+      id: product.id, name: product.name, unit: product.unit,
+      price: displayPrice, stock: displayStock,
+      variantId: selectedVariant?.id ?? null,
+    }, qty);
     navigate("/checkout");
-  };
+  }, [product, isAuthenticated, navigate, add, qty, selectedVariant, available, validateRequiredOptions]);
 
   const handleWishlist = async () => {
     if (!product) return;
@@ -460,6 +500,7 @@ export default function ShopProductDetail() {
                             key={val.id}
                             type="button"
                             onClick={() => {
+                              setOptionError(null);
                               const next = { ...selectedOptions, [group.id]: val.id };
                               setSelectedOptions(next);
                               // Find matching variant
@@ -467,10 +508,8 @@ export default function ShopProductDetail() {
                               if (Array.isArray(pVariants) && pVariants.length > 0 && Object.keys(variantOptions).length > 0) {
                                 const match = pVariants.find((v: any) => {
                                   const vOpts = variantOptions[v.id];
-                                  if (!vOpts) return false;
-                                  return Object.entries(next).every(([gId, vId]) =>
-                                    Array.isArray(vOpts) ? vOpts.some((o: any) => o.optionValueId === vId) : false
-                                  );
+                                  if (!vOpts || typeof vOpts !== "object" || Array.isArray(vOpts)) return false;
+                                  return Object.entries(next).every(([gId, vId]) => vOpts[gId] === vId);
                                 });
                                 setSelectedVariant(match ?? null);
                               }
@@ -491,6 +530,13 @@ export default function ShopProductDetail() {
               </div>
             )}
 
+            {/* Option validation error */}
+            {optionError && (
+              <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
+                {optionError}
+              </p>
+            )}
+
             {/* Shipping */}
             <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
               <div className="flex items-center gap-2"><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><span className="font-medium text-slate-900">{t("productDetail.thailand")}</span></div>
@@ -498,10 +544,22 @@ export default function ShopProductDetail() {
 
             {/* Purchase controls */}
             <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-4 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
-              {outOfStock ? (
-                <Button className="w-full gap-1.5 bg-slate-100 text-slate-400 hover:bg-slate-100" disabled>{t("product.outOfStock")}</Button>
-              ) : (
+              {(() => {
+                const hasRequiredOptions = optionGroups.some((g: any) => g.required);
+                const allRequiredSelected = !hasRequiredOptions || optionGroups.filter((g: any) => g.required).every((g: any) => selectedOptions[g.id]);
+                const displayStock = selectedVariant?.stock ?? available;
+                const isOutOfStock = displayStock <= 0 || outOfStock;
+                const shouldDisable = isOutOfStock || (hasRequiredOptions && !allRequiredSelected);
+
+                return (
                 <>
+                  {/* Stock / status indicator */}
+                  {isOutOfStock && (
+                    <p className="mb-2 text-center text-sm font-medium text-red-500">{t("product.outOfStock")}</p>
+                  )}
+                  {!isOutOfStock && hasRequiredOptions && !allRequiredSelected && (
+                    <p className="mb-2 text-center text-sm text-slate-400">{t("productDetail.selectOptions")}</p>
+                  )}
                   {/* Quantity selector */}
                   <div className="mb-3 flex items-center justify-center gap-1 rounded-[10px] border border-slate-200 bg-white px-2 py-1.5">
                     <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label={t("cartDrawer.ariaDecrease")}><Minus className="size-3.5" /></Button>
@@ -515,7 +573,7 @@ export default function ShopProductDetail() {
                       ref={addBtnRef}
                       className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
                       onClick={handleAddToCart}
-                      disabled={product.price <= 0}
+                      disabled={shouldDisable}
                     >
                       <ShoppingCart className="size-4" />
                       <span className="hidden sm:inline">ใส่ตะกร้า</span>
@@ -525,7 +583,7 @@ export default function ShopProductDetail() {
                       variant="outline"
                       className="gap-1.5 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white"
                       onClick={handleBuyNow}
-                      disabled={product.price <= 0}
+                      disabled={shouldDisable}
                     >
                       <Zap className="size-4" />
                       {t("productDetail.buyNow")}
@@ -541,7 +599,8 @@ export default function ShopProductDetail() {
                     </Button>
                   </div>
                 </>
-              )}
+                );
+              })()}
             </div>
           </div>
         </div>

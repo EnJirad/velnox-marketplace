@@ -1317,3 +1317,78 @@ PRODUCT DETAIL
 - ✅ ShopDetail compact cards still work (compact mode, no ATC)
 - ✅ Dynamic option groups render when backend provides them
 - ✅ Cart fly animation targets real cart icon via DOM
+
+---
+
+## 2026-08-28 — Fix Product Variant Selection, Cart Flow, and Validation
+
+### Root Cause Analysis
+
+**6 broken parts in the variant → cart pipeline:**
+
+1. **Frontend `cart.tsx` never sent `variantId`** — `apiCartAdd(productId, qty)` was called without variantId, so variant products merged into one cart line.
+
+2. **Cart identity was only `productId`** — both guest and server cart matched by `productId` alone. Black/M and White/M of the same shirt became one line.
+
+3. **Backend cart existing-item check didn't use variantId** — `WHERE cart_id = $1 AND product_id = $2` ignored variant_id.
+
+4. **Backend cart response didn't include variant info** — no `variantId`, `variantName`, or `variantOptionLabels` in the response.
+
+5. **Variant resolution logic was broken** — `variantOptions[variantId]` returns `Record<string, string>` (groupId → optionValueId), but the code checked `Array.isArray(vOpts)` which was always false.
+
+6. **No required option validation** — Add to Cart / Buy Now worked even when required options weren't selected.
+
+### Fixes Applied
+
+**Backend (`backend/routes/cart.ts`):**
+- Cart add now **validates variant**: checks variant exists, belongs to product, is active, has stock
+- Server determines **authoritative price** from variant (never trusts frontend price)
+- Existing-item check now matches on `productId + variantId` (same variant = merge qty, different variant = separate line)
+- Cart GET response includes `variantId`, `variantName`, `variantSku`, `variantOptionLabels` (aggregated option labels like "Black / M")
+- Extracted shared `CART_ITEMS_QUERY` + `formatCartRow()` helper to eliminate duplicated query code
+
+**Frontend cart (`apps/velshop/src/lib/cart.tsx`):**
+- `CartLine` now has `variantId`, `variantName`, `variantSku`, `variantOptionLabels`
+- `AddToCartProduct` now has `variantId`
+- `add()` sends `variantId` to API and uses `productId::variantId` as guest cart identity
+- `setQty()` and `remove()` accept `variantId` parameter
+- Guest cart: same product + same variant → merge qty; same product + different variant → separate line
+
+**Product Detail (`apps/velshop/src/pages/ShopProductDetail.tsx`):**
+- **Variant resolution** fixed: uses `variantOptions[variantId][groupId] === optionValueId` instead of broken array check
+- **Required option validation**: `validateRequiredOptions()` checks all required groups before add/buy
+- **Error display**: shows "กรุณาเลือก Color, Size" when required options missing
+- **Buy Now** uses same validation as Add to Cart (shared `validateRequiredOptions()`)
+- **Buttons disabled** when: out of stock, required options not selected
+- Passes `variantId: selectedVariant?.id` to cart add
+
+**Cart Drawer (`apps/velshop/src/components/shop/CartDrawer.tsx`):**
+- Shows variant option labels (e.g. "Black / M") below product name in green
+- Cart item key uses `productId::variantId` for correct deduplication
+- `setQty()` and `remove()` pass `line.variantId`
+
+**i18n (th, en, my):**
+- `productDetail.selectOptions` — "กรุณาเลือกตัวเลือกที่จำเป็น" / "Please select required options"
+- `productDetail.pleaseSelectOption` — "กรุณาเลือก {options}" / "Please select {options}"
+- `productDetail.variantUnavailable` — "ตัวเลือกนี้ไม่มีสินค้า" / "This option is not available"
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `backend/routes/cart.ts` | Variant validation, variantId in existing-item check, variant info in response |
+| `apps/velshop/src/lib/cart.tsx` | CartLine variantId, add() sends variantId, guest cart by productId+variantId |
+| `apps/velshop/src/pages/ShopProductDetail.tsx` | Fixed variant resolution, required option validation, Buy Now validation |
+| `apps/velshop/src/components/shop/CartDrawer.tsx` | Shows variant labels, passes variantId to setQty/remove |
+| `packages/shared/src/lib/i18n/locales/th.ts` | 3 new i18n keys |
+| `packages/shared/src/lib/i18n/locales/en.ts` | 3 new i18n keys |
+| `packages/shared/src/lib/i18n/locales/my.ts` | 3 new i18n keys |
+
+### Verification
+- ✅ All 5 typechecks pass (backend, velshop, velseller, velcenter, velnox)
+- ✅ No database changes needed (cart_items.variant_id already exists from V0021)
+- ✅ Cart identity: `productId::variantId` — different variants create separate lines
+- ✅ Same variant: quantity merges (Black/M × 1 + Black/M × 1 = Black/M × 2)
+- ✅ Server determines price from variant (not frontend)
+- ✅ Required option validation blocks Add to Cart / Buy Now
+- ✅ Cart fly animation targets `[data-cart-icon]`
+- ✅ Products without variants continue to work normally
