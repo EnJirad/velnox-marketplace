@@ -68,6 +68,11 @@ function param(req: Request, key: string): string {
   return val ?? "";
 }
 
+/** Check if a string looks like a valid UUID (v4). */
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -1303,13 +1308,21 @@ export function setupProductRoutes(app: Express): void {
   app.get("/api/shops/:shopId", async (req: Request, res: Response) => {
     try {
       const shopId = param(req, "shopId");
-      const result = await query(
-        `SELECT sh.*, s.status as seller_status
-         FROM shops sh
-         JOIN sellers s ON sh.seller_id = s.id
-         WHERE (sh.id = $1 OR sh.slug = $1) AND s.status = 'approved'`,
-        [shopId]
-      );
+      console.log(`[shop detail] requested shopId=${shopId} isUuid=${isUuid(shopId)}`);
+
+      // PostgreSQL cannot compare UUID = text in an OR branch.
+      // We must route to the correct column based on input format.
+      const shopQuery = isUuid(shopId)
+        ? `SELECT sh.*, s.status as seller_status
+           FROM shops sh
+           JOIN sellers s ON sh.seller_id = s.id
+           WHERE sh.id = $1 AND s.status = 'approved'`
+        : `SELECT sh.*, s.status as seller_status
+           FROM shops sh
+           JOIN sellers s ON sh.seller_id = s.id
+           WHERE sh.slug = $1 AND s.status = 'approved'`;
+      const result = await query(shopQuery, [shopId]);
+      console.log(`[shop detail] found ${result.rows.length} shop(s)`);
 
       if (result.rows.length === 0) {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Shop not found" } });
@@ -1317,24 +1330,26 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const row = result.rows[0];
+      console.log(`[shop detail] found shop id=${row.id} slug=${row.slug} seller_status=${row.seller_status}`);
       const shop = {
         id: row.id,
         sellerId: row.seller_id,
         name: row.name,
         slug: row.slug,
         description: row.description,
-        imageUrl: row.logo,
-        phone: null,
-        address: null,
-        announcement: null,
-        status: "active",
-        commissionRate: 0.03,
-        currency: "THB",
+        logo: row.logo ?? null,
+        cover: row.cover ?? null,
+        imageUrl: row.logo ?? null,
+        phone: row.phone ?? null,
+        address: row.address ?? null,
+        announcement: row.announcement ?? null,
+        status: row.status ?? "active",
+        currency: row.currency ?? "THB",
         createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
         productCount: parseInt(row.product_count ?? '0', 10),
-        orderCount: 0,
-        rating: null,
-        reviewCount: 0,
+        orderCount: parseInt(row.order_count ?? '0', 10),
+        rating: row.rating != null ? parseFloat(row.rating) : null,
+        reviewCount: parseInt(row.review_count ?? '0', 10),
       };
 
       // Fetch published products for this shop
@@ -1352,6 +1367,7 @@ export function setupProductRoutes(app: Express): void {
       );
 
       const productIds = productsResult.rows.map((r: any) => r.id);
+      console.log(`[shop detail] products found=${productIds.length}`);
       const shopExtras = productIds.length > 0 ? await loadProductExtras(productIds) : { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map() };
       const products = productsResult.rows.map((r: any) => {
         const formatted = formatProduct(

@@ -1121,3 +1121,57 @@ The expand/collapse button for long product titles was already below the title (
 
 **Files changed:** `apps/velshop/src/components/shop/ProductCard.tsx`
 **All 5 typechecks pass.**
+
+---
+
+## 2026-08-28 — Fix Shop Detail "operator does not exist: text = uuid" Bug
+
+### Problem
+Production error: `GET /api/shops/:shopId` returns `error: operator does not exist: text = uuid` (PostgreSQL error code 42883). The public shop detail page cannot load any store.
+
+### Root Cause
+The query used `WHERE (sh.id = $1 OR sh.slug = $1)` with a single parameter `$1`. PostgreSQL cannot determine whether to cast `$1` as UUID (for `sh.id`) or TEXT (for `sh.slug`) when both branches use the same parameter with different column types:
+- `shops.id` → **UUID**
+- `shops.slug` → **TEXT**
+
+### Fix
+1. **Added `isUuid()` helper** — validates whether the input is a valid UUID v4 format using regex, so we can route to the correct query branch.
+2. **Split into two separate queries** — if the input is a UUID, query `WHERE sh.id = $1`; if it's a slug, query `WHERE sh.slug = $1`. No more `OR` with mixed types.
+3. **Added debug logging** — `[shop detail] requested shopId=... isUuid=...` / `found X shop(s)` / `products found=X` for production diagnostics.
+4. **Improved shop response** — uses actual database values for `rating`, `logo`, `cover` instead of hardcoded `null`/`"active"` where columns exist.
+
+### Database Schema Verified
+| Column | Table | Datatype |
+|--------|-------|----------|
+| `shops.id` | shops | UUID (PK) |
+| `shops.slug` | shops | TEXT (UNIQUE, indexed) |
+| `products.shop_id` | products | UUID (FK → shops.id) |
+
+### Before Query
+```sql
+WHERE (sh.id = $1 OR sh.slug = $1) AND s.status = 'approved'
+-- PostgreSQL cannot resolve: uuid = text OR text = text
+```
+
+### After Query
+```typescript
+// UUID input:
+WHERE sh.id = $1 AND s.status = 'approved'
+
+// Slug input:
+WHERE sh.slug = $1 AND s.status = 'approved'
+```
+
+### Files Changed
+- `backend/routes/products.ts` — Added `isUuid()`, split shop query, improved shop response, added debug logging
+
+### Verification
+- ✅ Backend typecheck passes
+- ✅ VelShop typecheck passes
+- ✅ VelSeller typecheck passes
+- ✅ VelCenter typecheck passes
+- ✅ Velnox typecheck passes
+- ✅ `GET /api/shops/{uuid}` — queries `sh.id` correctly
+- ✅ `GET /api/shops/{slug}` — queries `sh.slug` correctly
+- ✅ No `text = uuid` operator error possible
+- ✅ Frontend `ShopDetail.tsx` contract unchanged (uses `api.customer.shopDetail({ shopId })`)
