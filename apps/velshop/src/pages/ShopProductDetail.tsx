@@ -217,8 +217,16 @@ export default function ShopProductDetail() {
       const p = await getProduct({ productId });
       if (!p || p.status !== "published") { setProduct(null); return; }
       setProduct(p);
-      // Extract dynamic option groups from API response
+      // Debug: log what the API response contains
       const pAny = p as any;
+      console.log(`[ProductDetail] API response: productId=${productId} variants=${Array.isArray(pAny.variants) ? pAny.variants.length : 'N/A'} optionGroups=${Array.isArray(pAny.optionGroups) ? pAny.optionGroups.length : 'N/A'} variantOptions=${pAny.variantOptions ? Object.keys(pAny.variantOptions).length : 'N/A'}`);
+      if (Array.isArray(pAny.variants) && pAny.variants.length > 0) {
+        console.log(`[ProductDetail] variants data:`, JSON.stringify(pAny.variants.map((v: any) => ({ id: v.id, name: v.name, price: v.price, stock: v.stock }))));
+      }
+      if (Array.isArray(pAny.optionGroups) && pAny.optionGroups.length > 0) {
+        console.log(`[ProductDetail] optionGroups data:`, JSON.stringify(pAny.optionGroups.map((g: any) => ({ name: g.name, values: g.values?.length ?? 0 }))));
+      }
+      // Extract dynamic option groups from API response
       if (Array.isArray(pAny.optionGroups) && pAny.optionGroups.length > 0) {
         setOptionGroups(pAny.optionGroups);
       }
@@ -497,7 +505,11 @@ export default function ShopProductDetail() {
             </div>
 
             {/* Dynamic option groups */}
-            {optionGroups.length > 0 && (
+            {(() => {
+              if (optionGroups.length > 0 || ((product as any)?.variants?.length ?? 0) > 0) {
+                console.log(`[ProductDetail] render: optionGroups=${optionGroups.length} selectedOptions=${JSON.stringify(selectedOptions)} selectedVariant=${selectedVariant?.id ?? 'null'} variantOptionsKeys=${Object.keys(variantOptions).length}`);
+              }
+              return optionGroups.length > 0 && (
               <div className="mt-3 space-y-3">
                 {optionGroups.map((group: any) => (
                   <div key={group.id} className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -541,7 +553,8 @@ export default function ShopProductDetail() {
                   </div>
                 ))}
               </div>
-            )}
+              );
+            })()}
 
             {/* Option validation error */}
             {optionError && (

@@ -239,15 +239,19 @@ async function loadProductExtras(productIds: string[]): Promise<{
       `SELECT * FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
       [productIds]
     );
-  } catch {
+  } catch (variantErr) {
+    console.warn("[products] loadProductExtras: SELECT * from product_variants failed, trying fallback:", (variantErr as any)?.message ?? variantErr);
     // product_variants table may not have all expected columns
     try {
       variantsResult = await query(
         `SELECT id, product_id, name, sku, price, stock, status, sort_order FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
         [productIds]
       );
-    } catch { /* table may not exist yet */ }
+    } catch (variantErr2) {
+      console.warn("[products] loadProductExtras: fallback variant query also failed:", (variantErr2 as any)?.message ?? variantErr2);
+    }
   }
+  console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length}`);
 
   const imagesByProduct = new Map<string, any[]>();
   for (const img of imagesResult.rows) {
@@ -1228,7 +1232,11 @@ export function setupProductRoutes(app: Express): void {
           });
         }
         formatted.optionGroups = optionGroups;
-      } catch { /* product_option_groups table may not exist yet */ }
+        console.log(`[products] detail option groups: productId=${productId} groupsCount=${optionGroups.length} groups=${JSON.stringify(optionGroups.map((g: any) => g.name))}`);
+      } catch (optErr) {
+        console.error(`[products] detail option groups FAILED for productId=${productId}:`, (optErr as any)?.message ?? optErr);
+        formatted.optionGroups = [];
+      }
 
       // Load product attributes (V0027 tables)
       try {
@@ -1242,7 +1250,10 @@ export function setupProductRoutes(app: Express): void {
           value: a.value,
           sortOrder: a.sort_order,
         }));
-      } catch { /* product_attributes table may not exist yet */ }
+      } catch (attrErr) {
+        console.warn(`[products] detail attributes FAILED for productId=${productId}:`, (attrErr as any)?.message ?? attrErr);
+        formatted.attributes = [];
+      }
 
       // Load variant-to-option mappings (V0027 tables)
       try {
@@ -1263,7 +1274,14 @@ export function setupProductRoutes(app: Express): void {
           variantOptions[vid][gid] = row.value as string;
         }
         formatted.variantOptions = variantOptions;
-      } catch { /* product_variant_values table may not exist yet */ }
+        console.log(`[products] detail variantOptions: productId=${productId} variantIds=${Object.keys(variantOptions).length} rows=${variantValuesResult.rows.length}`);
+      } catch (vvErr) {
+        console.error(`[products] detail variantOptions FAILED for productId=${productId}:`, (vvErr as any)?.message ?? vvErr);
+        formatted.variantOptions = {};
+      }
+
+      // Final diagnostic summary
+      console.log(`[products] detail response: productId=${productId} variants=${(formatted.variants ?? []).length} optionGroups=${(formatted.optionGroups ?? []).length} variantOptions=${Object.keys(formatted.variantOptions ?? {}).length} response.includesVariants=${Array.isArray(formatted.variants) && formatted.variants.length > 0} response.includesOptionGroups=${Array.isArray(formatted.optionGroups) && formatted.optionGroups.length > 0}`);
 
       res.json({ success: true, data: formatted });
     } catch (err) {
