@@ -49,6 +49,7 @@ interface CartContextValue {
   remove: (productId: string, variantId?: string | null) => void;
   clear: () => void;
   syncing: boolean;
+  error: string | null;
   reload: () => void;
 }
 
@@ -137,6 +138,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const [lines, setLines] = useState<CartLine[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [cartError, setCartError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
@@ -157,13 +159,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
       })
       .catch((err) => {
         console.error("[cart] load failed:", err);
-        if (alive) setLines([]);
+        if (alive) setCartError("ไม่สามารถโหลดตะกร้าได้");
       })
       .finally(() => alive && setSyncing(false));
     return () => { alive = false; };
   }, [isAuthenticated, authLoading, version]);
 
   const applyServer = useCallback((items: unknown[]) => {
+    setCartError(null);
     setLines(items.map(toLine as (i: unknown) => CartLine));
   }, []);
 
@@ -286,8 +289,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }), [lines]);
 
   const value = useMemo(
-    () => ({ lines, count, total, add, setQty, remove, clear, syncing, reload }),
-    [lines, count, total, add, setQty, remove, clear, syncing, reload],
+    () => ({ lines, count, total, add, setQty, remove, clear, syncing, error: cartError, reload }),
+    [lines, count, total, add, setQty, remove, clear, syncing, cartError, reload],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

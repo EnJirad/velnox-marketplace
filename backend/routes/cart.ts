@@ -54,7 +54,7 @@ async function recalcCart(cartId: string): Promise<void> {
   );
 }
 
-const CART_ITEMS_QUERY = `
+const CART_ITEMS_QUERY_FULL = `
   SELECT ci.*,
     p.name AS product_name,
     p.unit AS unit,
@@ -80,6 +80,43 @@ const CART_ITEMS_QUERY = `
   ORDER BY ci.added_at DESC
 `;
 
+const CART_ITEMS_QUERY_BASIC = `
+  SELECT ci.*,
+    p.name AS product_name,
+    p.unit AS unit,
+    i.quantity AS available_stock,
+    sh.name AS shop_name,
+    (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
+  FROM cart_items ci
+  JOIN products p ON ci.product_id = p.id
+  LEFT JOIN inventory i ON i.product_id = p.id
+  LEFT JOIN shops sh ON p.shop_id = sh.id
+  WHERE ci.cart_id = $1
+  ORDER BY ci.added_at DESC
+`;
+
+let _cartQueryFailed = false;
+
+async function fetchCartItems(cartId: string) {
+  // Try full query with variant info first; fall back if variant tables are missing
+  if (!_cartQueryFailed) {
+    try {
+      const result = await query(CART_ITEMS_QUERY_FULL, [cartId]);
+      return result.rows;
+    } catch (err: any) {
+      // 42P01 = relation does not exist — variant tables not yet migrated
+      if (err?.code === "42P01") {
+        console.warn("[cart] variant tables not found, using basic query");
+        _cartQueryFailed = true;
+      } else {
+        throw err;
+      }
+    }
+  }
+  const result = await query(CART_ITEMS_QUERY_BASIC, [cartId]);
+  return result.rows;
+}
+
 function formatCartRow(r: any) {
   return {
     id: r.id,
@@ -88,7 +125,7 @@ function formatCartRow(r: any) {
     variantName: r.variant_name ?? null,
     variantSku: r.variant_sku ?? null,
     variantOptionLabels: r.variant_option_labels || null,
-    productName: r.product_name,
+    productName: r.product_name ?? r.name ?? "สินค้า",
     unit: r.unit,
     quantity: r.quantity,
     priceSnapshot: parseFloat(r.price),
@@ -108,8 +145,8 @@ export function setupCartRoutes(app: Express): void {
       const userId = req.user!.userId;
       const cartId = await ensureCart(userId);
 
-      const result = await query(CART_ITEMS_QUERY, [cartId]);
-      const items = result.rows.map(formatCartRow);
+      const rows = await fetchCartItems(cartId);
+      const items = rows.map(formatCartRow);
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] get error:", err);
@@ -151,10 +188,19 @@ export function setupCartRoutes(app: Express): void {
       let validatedVariantId: string | null = null;
 
       if (variantId && typeof variantId === "string") {
-        const varResult = await query(
-          "SELECT id, price, stock, status, product_id FROM product_variants WHERE id = $1",
-          [variantId],
-        );
+        let varResult;
+        try {
+          varResult = await query(
+            "SELECT id, price, stock, status, product_id FROM product_variants WHERE id = $1",
+            [variantId],
+          );
+        } catch (varErr: any) {
+          if (varErr?.code === "42P01") {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant system not available" } });
+            return;
+          }
+          throw varErr;
+        }
         if (varResult.rows.length === 0) {
           res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant not found" } });
           return;
@@ -221,8 +267,8 @@ export function setupCartRoutes(app: Express): void {
 
       await recalcCart(cartId);
 
-      const cartResult = await query(CART_ITEMS_QUERY, [cartId]);
-      const items = cartResult.rows.map(formatCartRow);
+      const rows = await fetchCartItems(cartId);
+      const items = rows.map(formatCartRow);
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] add error:", err);
@@ -274,8 +320,8 @@ export function setupCartRoutes(app: Express): void {
       const cartId = await ensureCart(userId);
       await recalcCart(cartId);
 
-      const cartResult = await query(CART_ITEMS_QUERY, [cartId]);
-      const items = cartResult.rows.map(formatCartRow);
+      const rows = await fetchCartItems(cartId);
+      const items = rows.map(formatCartRow);
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] update error:", err);
@@ -297,8 +343,8 @@ export function setupCartRoutes(app: Express): void {
       const cartId = await ensureCart(userId);
       await recalcCart(cartId);
 
-      const cartResult = await query(CART_ITEMS_QUERY, [cartId]);
-      const items = cartResult.rows.map(formatCartRow);
+      const rows = await fetchCartItems(cartId);
+      const items = rows.map(formatCartRow);
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] remove error:", err);
