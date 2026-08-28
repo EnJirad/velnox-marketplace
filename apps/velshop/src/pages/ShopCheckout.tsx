@@ -25,7 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { toast } from "sonner";
 
 interface AddressRow {
@@ -77,6 +77,14 @@ export default function ShopCheckout() {
   const { t } = useLanguage();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { lines, total, count, clear, reload, syncing } = useCart();
+  const location = useLocation();
+  const navState = (location.state ?? {}) as {
+    selectedCartItems?: string[];
+    buyNow?: boolean;
+    buyNowProductId?: string;
+    buyNowVariantId?: string | null;
+    buyNowQty?: number;
+  };
   const myAddresses = useAction(api.customer.myAddresses);
   const checkoutAction = useAction(api.customer.checkoutAction);
   const createStripeCheckout = useAction(api.stripe.createStripeCheckoutAction);
@@ -118,34 +126,61 @@ export default function ShopCheckout() {
     if (isAuthenticated && addresses === null) void loadAddresses();
   }, [isAuthenticated, addresses, loadAddresses]);
 
-  // CPNS: starting checkout is a strong intent signal.
-  const checkoutTracked = useRef(false);
-  useEffect(() => {
-    if (checkoutTracked.current || count === 0) return;
-    checkoutTracked.current = true;
-    track("CHECKOUT_START", {
-      value: `${t("checkout.itemsCount", { count })}`,
-      context: { itemCount: count, total },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [count]);
-
   const selectedAddress = useMemo(
     () => addresses?.find((a) => a.id === selectedAddressId) ?? null,
     [addresses, selectedAddressId],
   );
   const hasGps = selectedAddress?.latitude != null && selectedAddress.longitude != null;
 
+  /** Filter lines based on checkout mode (selected items or buy-now). */
+  const checkoutLines = useMemo(() => {
+    // Buy Now mode — only show the product that was just added
+    if (navState.buyNow && navState.buyNowProductId) {
+      return lines.filter((l) => {
+        if (l.productId !== navState.buyNowProductId) return false;
+        if (navState.buyNowVariantId != null) return l.variantId === navState.buyNowVariantId;
+        return l.variantId == null;
+      });
+    }
+    // Selected-items mode — only show checked items
+    if (navState.selectedCartItems && navState.selectedCartItems.length > 0) {
+      return lines.filter((l) => navState.selectedCartItems!.includes(l.id));
+    }
+    // Default: show all cart lines
+    return lines;
+  }, [lines, navState]);
+
+  const checkoutTotal = useMemo(
+    () => checkoutLines.reduce((s, l) => s + l.qty * l.price, 0),
+    [checkoutLines],
+  );
+  const checkoutCount = useMemo(
+    () => checkoutLines.reduce((s, l) => s + l.qty, 0),
+    [checkoutLines],
+  );
+
   const grouped = useMemo(() => {
-    const map = new Map<string, typeof lines>();
-    for (const line of lines) {
+    const map = new Map<string, typeof checkoutLines>();
+    for (const line of checkoutLines) {
       const key = line.shopName ?? t("wishlist.defaultShop");
       const list = map.get(key) ?? [];
       list.push(line);
       map.set(key, list);
     }
     return Array.from(map.entries());
-  }, [lines, t]);
+  }, [checkoutLines, t]);
+
+  // CPNS: starting checkout is a strong intent signal.
+  const checkoutTracked = useRef(false);
+  useEffect(() => {
+    if (checkoutTracked.current || checkoutCount === 0) return;
+    checkoutTracked.current = true;
+    track("CHECKOUT_START", {
+      value: `${t("checkout.itemsCount", { count: checkoutCount })}`,
+      context: { itemCount: checkoutCount, total: checkoutTotal },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkoutCount]);
 
   const handleSubmit = async () => {
     if (!selectedAddressId) {
@@ -158,11 +193,19 @@ export default function ShopCheckout() {
     }
     setSubmitting(true);
     try {
-      const res = (await checkoutAction({
+      const checkoutPayload: Record<string, unknown> = {
         addressId: selectedAddressId,
         paymentMethod,
         shippingMethod: "standard",
-      })) as unknown as CheckoutResult;
+      };
+      // Send specific cart item IDs when in selected-items or buy-now mode.
+      // Backend can use this to only process the selected items.
+      if (navState.selectedCartItems && navState.selectedCartItems.length > 0) {
+        checkoutPayload.cartItemIds = navState.selectedCartItems;
+      } else if (navState.buyNow) {
+        checkoutPayload.cartItemIds = checkoutLines.map((l) => l.id);
+      }
+      const res = (await checkoutAction(checkoutPayload)) as unknown as CheckoutResult;
       setResult(res);
       clear();
       toast.success(t("checkout.success"));
@@ -260,7 +303,7 @@ export default function ShopCheckout() {
   }
 
   // ---- empty cart ---------------------------------------------------------
-  if (!syncing && !authLoading && isAuthenticated && count === 0) {
+  if (!syncing && !authLoading && isAuthenticated && checkoutCount === 0) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
         <ShopHeader />
@@ -458,8 +501,8 @@ export default function ShopCheckout() {
 
               <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-sm">
                 <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-slate-500">{t("checkout.itemsCount", { count })}</span>
-                  <span className="shrink-0 font-medium tabular-nums text-slate-900">{formatBaht(total)}</span>
+                  <span className="min-w-0 truncate text-slate-500">{t("checkout.itemsCount", { count: checkoutCount })}</span>
+                  <span className="shrink-0 font-medium tabular-nums text-slate-900">{formatBaht(checkoutTotal)}</span>
                 </div>
                 <div className="flex min-w-0 items-center justify-between gap-2">
                   <span className="min-w-0 truncate text-slate-500">{t("checkout.shipping")}</span>
@@ -468,7 +511,7 @@ export default function ShopCheckout() {
                 <div className="flex min-w-0 items-center justify-between gap-2 border-t border-slate-100 pt-3">
                   <span className="min-w-0 truncate text-sm font-medium text-slate-500">{t("checkout.total")}</span>
                   <span className="shrink-0 text-2xl font-bold tabular-nums tracking-tight text-slate-900">
-                    {formatBaht(total)}
+                    {formatBaht(checkoutTotal)}
                   </span>
                 </div>
               </div>
@@ -476,7 +519,7 @@ export default function ShopCheckout() {
               <Button
                 className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
                 onClick={handleSubmit}
-                disabled={submitting || count === 0 || addresses === null}
+                disabled={submitting || checkoutCount === 0 || addresses === null}
               >
                 {submitting ? (
                   <>
@@ -486,11 +529,11 @@ export default function ShopCheckout() {
                 ) : (
                   <>
                     <ShieldCheck className="size-4" />
-                    {t("checkout.submit", { total: formatBaht(total) })}
-                  </>
-                )}
-              </Button>
-              <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
+                {t("checkout.submit", { total: formatBaht(checkoutTotal) })}
+              </>
+            )}
+          </Button>
+          <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
             </div>
           </div>
         </div>

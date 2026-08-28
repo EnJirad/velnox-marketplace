@@ -369,6 +369,11 @@ export const en: Dict = {
     maxStock: "Reached max stock",
     checkoutNote: "Prices are re-verified by the system before confirming your order",
     ariaBack: "Back to the store",
+    selectAll: "Select all",
+    deselectAll: "Deselect all",
+    selectedItems: "{count} items selected",
+    checkoutSelected: "Checkout ({count})",
+    checkoutAll: "Checkout all items",
   },
 
   subscription: {

@@ -347,12 +347,25 @@ export default function ShopProductDetail() {
     const displayPrice = selectedVariant?.price ?? product.price;
     const displayStock = selectedVariant?.stock ?? available;
     if (displayStock <= 0) return;
+    // Buy Now: add to cart, then navigate to checkout with buyNow flag
+    // so checkout only processes this single product/variant.
     add({
       id: product.id, name: product.name, unit: product.unit,
       price: displayPrice, stock: displayStock,
       variantId: selectedVariant?.id ?? null,
     }, qty);
-    navigate("/checkout");
+    // Short delay to let the add-to-cart API call fire, then navigate.
+    // The checkout page will read the cart and identify the buyNow item.
+    setTimeout(() => {
+      navigate("/checkout", {
+        state: {
+          buyNow: true,
+          buyNowProductId: product.id,
+          buyNowVariantId: selectedVariant?.id ?? null,
+          buyNowQty: qty,
+        },
+      });
+    }, 300);
   }, [product, isAuthenticated, navigate, add, qty, selectedVariant, available, validateRequiredOptions]);
 
   const handleWishlist = async () => {

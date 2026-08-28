@@ -370,6 +370,11 @@ export const th = {
     maxStock: "ถึงสต็อกสูงสุดแล้ว",
     checkoutNote: "ราคาจะถูกตรวจสอบอีกครั้งจากระบบก่อนยืนยันออเดอร์",
     ariaBack: "กลับไปหน้าร้าน",
+    selectAll: "เลือกทั้งหมด",
+    deselectAll: "ยกเลิกเลือกทั้งหมด",
+    selectedItems: "เลือกแล้ว {count} รายการ",
+    checkoutSelected: "ชำระเงิน ({count})",
+    checkoutAll: "ชำระเงินทั้งหมด",
   },
 
   subscription: {
