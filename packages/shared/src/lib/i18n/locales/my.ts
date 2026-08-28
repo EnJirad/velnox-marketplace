@@ -94,6 +94,7 @@ export const my = {
     interestToastDesc: "Velnox သည် ဤကဲ့သို့သော ကုန်ပစ္စည်းများကို ပိုမိုအကြံပြုပါမည်",
     ariaInterest: "{name} ကို စိတ်ဝင်စားသည်",
     ariaViewDetail: "{name} ၏ အသေးစိတ်ကြည့်ရန်",
+    shopVisit: "{name} ဆိုင်သို့ သွားရန်",
   },
 
   home: {
@@ -384,6 +385,16 @@ export const my = {
     notFound: "ဆိုင်ကို ရှာမတွေ့ပါ",
     notFoundDesc: "ဤဆိုင်သည် ပိတ်ထားခြင်း သို့မဟုတ် မဖွင့်ရသေးခြင်း ဖြစ်နိုင်သည်",
     backHome: "ဆိုင်ရှေ့သို့ ပြန်သွားရန်",
+    searchProducts: "ဤဆိုင်တွင် ရှာဖွေရန်...",
+    sortNewest: "အသစ်ဆုံး",
+    sortPopular: "ရောင်းအားအကောင်းဆုံး",
+    sortPriceLow: "စျေနည်း → စျေမြင့်",
+    sortPriceHigh: "စျေမြင့် → စျေနည်း",
+    sortRating: "အဆင့်သတ်မှတ်ချက်",
+    showMore: "ပိုပြီးဖတ်ရန်",
+    showLess: "ချုံ့ရန်",
+    noSearchResults: "ရှာဖွေမှုနှင့် ကိုက်ညီသော ကုန်ပစ္စည်း မရှိပါ",
+    clearSearch: "ရှာဖွေမှု ရှင်းလင်းရန်",
   },
 
   gate: {

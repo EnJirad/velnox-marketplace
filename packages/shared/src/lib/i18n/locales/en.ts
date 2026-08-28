@@ -158,6 +158,7 @@ export const en: Dict = {
     interestToastDesc: "Velnox will recommend products like this more often",
     ariaInterest: "Interested in {name}",
     ariaViewDetail: "View details of {name}",
+    shopVisit: "Visit {name}",
   },
 
   home: {
@@ -489,6 +490,16 @@ export const en: Dict = {
     notFound: "Store not found",
     notFoundDesc: "This store may be closed or not open yet",
     backHome: "Back to the storefront",
+    searchProducts: "Search in this store...",
+    sortNewest: "Newest",
+    sortPopular: "Most popular",
+    sortPriceLow: "Price: Low → High",
+    sortPriceHigh: "Price: High → Low",
+    sortRating: "Rating",
+    showMore: "Read more",
+    showLess: "Show less",
+    noSearchResults: "No products match your search",
+    clearSearch: "Clear search",
   },
 
   checkout: {

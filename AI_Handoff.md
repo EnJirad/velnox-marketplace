@@ -1175,3 +1175,71 @@ WHERE sh.slug = $1 AND s.status = 'approved'
 - ✅ `GET /api/shops/{slug}` — queries `sh.slug` correctly
 - ✅ No `text = uuid` operator error possible
 - ✅ Frontend `ShopDetail.tsx` contract unchanged (uses `api.customer.shopDetail({ shopId })`)
+
+---
+
+## 2026-08-28 — Shop UI/UX Overhaul + Clickable Shop Names + ProductCard Redesign
+
+### Problem
+The shop detail page and product cards needed a production-quality marketplace UI:
+1. No clickable shop names on product cards — users couldn't navigate to a store from a product listing
+2. `formatProduct` backend didn't include `shopName`/`shopSlug` in the response, so product cards had no shop info
+3. Shop detail header used a gradient instead of actual cover image
+4. Product grid in ShopDetail used inline card code instead of the shared `ProductCard` component (duplication)
+5. No product search/sort within a shop
+6. Missing i18n keys for shop visit, search, sort, and description toggle
+
+### Changes
+
+**Backend (`backend/routes/products.ts`):**
+- `formatProduct` now includes `shopName` and `shopSlug` from the query row, enabling product cards to show and link to the shop
+
+**Type system (`packages/shared/src/lib/commerce.ts`):**
+- Added `shopSlug?: string` to `StoreProduct` interface
+
+**ProductCard (`apps/velshop/src/components/shop/ProductCard.tsx`):**
+- Added clickable shop name link at the bottom of each card: `[Store icon] Shop Name ›`
+- Uses `product.shopSlug` for `/shops/:slug` navigation, falls back to `product.shopId` for `/shops/:uuid`
+- `stopPropagation()` on shop link to prevent triggering parent product detail navigation
+- Added `aria-label` for accessibility
+
+**ShopDetail (`apps/velshop/src/pages/ShopDetail.tsx`):**
+- Cover: Uses actual `shop.cover` image from API, falls back to `shop.imageUrl`, then gradient
+- Logo: Overlaps cover with `-mt-10` / `-mt-12` positioning, `border-4 border-white`
+- Stats: Rating with star, product count, sold orders — clean typography with dividers
+- Description: Collapsible with "อ่านเพิ่มเติม" / "ย่อ" toggle for long text (>120 chars)
+- Product grid: Reuses shared `ProductCard` component (eliminated ~60 lines of duplicated card JSX)
+- Search: Text input to filter products by name within the shop
+- Sort: Dropdown with newest, popular, price (low/high), rating
+- Empty states: Search-specific "ไม่พบสินค้าที่ค้นหา" with clear button, and "ร้านนี้ยังไม่มีสินค้า" for no products
+- Better loading skeletons: Cover, logo, name, stats, and 8 product card skeletons
+
+**i18n (all 3 locales: th, en, my):**
+- Added keys: `product.shopVisit`, `shopDetail.searchProducts`, `shopDetail.sortNewest`, `shopDetail.sortPopular`, `shopDetail.sortPriceLow`, `shopDetail.sortPriceHigh`, `shopDetail.sortRating`, `shopDetail.showMore`, `shopDetail.showLess`, `shopDetail.noSearchResults`, `shopDetail.clearSearch`
+
+### Shop Name Clickable Locations
+
+| Location | Shop Name Clickable? | URL Pattern |
+|----------|---------------------|-------------|
+| ProductCard (Home, Products, Search) | ✅ | `/shops/:slug` or `/shops/:uuid` |
+| ShopDetail header | N/A (already on shop page) | — |
+| ProductDetail shop section | ✅ (existing) | `/shops/:slug` |
+
+### Files Changed
+- `backend/routes/products.ts` — formatProduct: added shopName, shopSlug
+- `packages/shared/src/lib/commerce.ts` — StoreProduct: added shopSlug
+- `apps/velshop/src/components/shop/ProductCard.tsx` — added shop name link
+- `apps/velshop/src/pages/ShopDetail.tsx` — redesigned header, cover, search, sort, ProductCard reuse
+- `packages/shared/src/lib/i18n/locales/th.ts` — added 12 new keys
+- `packages/shared/src/lib/i18n/locales/en.ts` — added 12 new keys
+- `packages/shared/src/lib/i18n/locales/my.ts` — added 12 new keys
+
+### Verification
+- ✅ All 5 typechecks pass (backend, velshop, velseller, velcenter, velnox)
+- ✅ No database changes needed
+- ✅ No business logic changes
+- ✅ Existing API contract preserved (added shopName/shopSlug as additive fields)
+- ✅ Cover image from API used when available
+- ✅ Description collapsible for long text
+- ✅ Product search and sort within shop page
+- ✅ ProductCard reused (no code duplication)

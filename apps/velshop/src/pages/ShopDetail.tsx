@@ -1,5 +1,6 @@
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
+import { ProductCard } from "@/components/shop/ProductCard";
 import { useLanguage } from "@/lib/i18n";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -10,7 +11,7 @@ import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
 import { useTracking } from "@velnox/shared/lib/track";
 import { setSeo } from "@/lib/seo";
 import { useAction } from "@velnox/shared/lib/api-routes";
-import { ArrowLeft, Heart, ImageOff, Loader2, Package, Plus, ShieldCheck, Star, Store } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, Package, ShieldCheck, Star, Store } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -22,6 +23,8 @@ interface ShopRow {
   name: string;
   slug: string | null;
   description: string | null;
+  logo: string | null;
+  cover: string | null;
   imageUrl: string | null;
   announcement: string | null;
   status: string;
@@ -49,6 +52,9 @@ export default function ShopDetail() {
   const [error, setError] = useState<string | null>(null);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<string>("newest");
 
   // Load wishlist if authenticated
   useEffect(() => {
@@ -109,11 +115,11 @@ export default function ShopDetail() {
     void load();
   }, [load]);
 
-  // CPNS: visiting a store page = SHOP_VIEW (one per visit).
+  // Track shop visit
   useEffect(() => {
     if (!shop) return;
     track("SHOP_VIEW", { entityId: shop.id, value: shop.name });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shop?.id]);
 
   const handleAdd = (product: StoreProduct) => {
@@ -124,15 +130,41 @@ export default function ShopDetail() {
     toast.success(t("shopDetail.added", { name: product.name }));
   };
 
+  // Filter + sort products
+  const filteredProducts = products
+    .filter((p) => {
+      if (!searchQuery) return true;
+      return p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    })
+    .sort((a, b) => {
+      if (sortBy === "price_asc") return a.price - b.price;
+      if (sortBy === "price_desc") return b.price - a.price;
+      if (sortBy === "popular") return (b.soldCount ?? 0) - (a.soldCount ?? 0);
+      if (sortBy === "rating") return (b.rating ?? 0) - (a.rating ?? 0);
+      return b.createdAt - a.createdAt; // newest
+    });
+
+  // ── Loading state ──
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
         <ShopHeader />
         <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
-          <Skeleton className="h-36 rounded-2xl" />
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-64 rounded-2xl" />
+          {/* Cover skeleton */}
+          <Skeleton className="h-40 rounded-2xl sm:h-56" />
+          {/* Logo + info skeleton */}
+          <div className="relative -mt-10 flex flex-col gap-4 px-4 sm:px-6">
+            <Skeleton className="size-20 shrink-0 rounded-2xl border-4 border-white sm:size-24" />
+            <div className="space-y-2">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-64" />
+            </div>
+          </div>
+          {/* Product skeletons */}
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-72 rounded-2xl" />
             ))}
           </div>
         </main>
@@ -140,6 +172,7 @@ export default function ShopDetail() {
     );
   }
 
+  // ── Error state ──
   if (error || !shop) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -159,27 +192,44 @@ export default function ShopDetail() {
     );
   }
 
+  const coverUrl = shop.cover || shop.imageUrl;
+  const logoUrl = shop.logo || shop.imageUrl;
+  const descriptionLong = (shop.description ?? "").length > 120;
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
-      <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        <Link to="/" className="flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900">
+      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+        {/* Back navigation */}
+        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900">
           <ArrowLeft className="size-4" />
           {t("shopDetail.back")}
         </Link>
 
-        {/* Shop profile */}
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <div className="h-28 bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399]" />
-          <div className="flex flex-col gap-4 px-6 pb-6 sm:flex-row sm:items-end">
-            <span className="-mt-9 flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-[#ECFDF5] shadow-sm">
-              {shop.imageUrl ? (
-                <img src={shop.imageUrl} alt={shop.name} className="size-full object-cover" />
+        {/* ── Shop Header ── */}
+        <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          {/* Cover image */}
+          <div className="relative h-40 w-full overflow-hidden sm:h-56">
+            {coverUrl ? (
+              <img src={coverUrl} alt="" className="size-full object-cover" />
+            ) : (
+              <div className="size-full bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399]" />
+            )}
+          </div>
+
+          {/* Logo + Info */}
+          <div className="relative flex flex-col gap-3 px-4 pb-5 sm:flex-row sm:items-end sm:px-6 sm:pb-6">
+            {/* Logo */}
+            <span className="-mt-10 flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-[#ECFDF5] shadow-sm sm:-mt-12 sm:size-24">
+              {logoUrl ? (
+                <img src={logoUrl} alt={shop.name} className="size-full object-cover" />
               ) : (
                 <Store className="size-8 text-[#10B981]" />
               )}
             </span>
+
+            {/* Name + Stats */}
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{shop.name}</h1>
@@ -188,7 +238,9 @@ export default function ShopDetail() {
                   {t("shopDetail.verified")}
                 </Badge>
               </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+
+              {/* Stats row */}
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
                 {shop.rating != null && (
                   <span className="flex items-center gap-1">
                     <Star className="size-3.5 fill-amber-400 text-amber-400" />
@@ -200,14 +252,36 @@ export default function ShopDetail() {
                   <Package className="size-3.5" />
                   {t("shopDetail.productCount", { count: shop.productCount })}
                 </span>
-                <span className="flex items-center gap-1">
-                  <Heart className="size-3.5" />
-                  {t("shopDetail.soldOrders", { count: shop.orderCount })}
-                </span>
+                {shop.orderCount > 0 && (
+                  <span className="text-slate-300">·</span>
+                )}
+                {shop.orderCount > 0 && (
+                  <span>{t("shopDetail.soldOrders", { count: shop.orderCount })}</span>
+                )}
               </div>
+
+              {/* Description */}
               {shop.description && (
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{shop.description}</p>
+                <div className="mt-3">
+                  <p
+                    className={`max-w-2xl text-sm leading-6 text-slate-600 ${!descExpanded && descriptionLong ? "line-clamp-3" : ""}`}
+                  >
+                    {shop.description}
+                  </p>
+                  {descriptionLong && (
+                    <button
+                      type="button"
+                      onClick={() => setDescExpanded(!descExpanded)}
+                      className="mt-1 flex items-center gap-0.5 text-xs font-medium text-[#10B981] hover:text-emerald-700"
+                    >
+                      {descExpanded ? t("shopDetail.showLess") : t("shopDetail.showMore")}
+                      {descExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                    </button>
+                  )}
+                </div>
               )}
+
+              {/* Announcement */}
               {shop.announcement && (
                 <p className="mt-2 inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
                   {shop.announcement}
@@ -217,81 +291,67 @@ export default function ShopDetail() {
           </div>
         </section>
 
-        {/* Products */}
+        {/* ── Products Section ── */}
         <section className="mt-8">
-          <h2 className="text-lg font-bold tracking-tight text-slate-900">{t("shopDetail.productsTitle")}</h2>
-          {products.length === 0 ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-bold tracking-tight text-slate-900">
+              {t("shopDetail.productsTitle")}
+              <span className="ml-2 text-sm font-normal text-slate-400">({filteredProducts.length})</span>
+            </h2>
+            {products.length > 0 && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t("shopDetail.searchProducts")}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-[#10B981] focus:outline-none focus:ring-1 focus:ring-[#10B981]/30 sm:w-56"
+                />
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700 focus:border-[#10B981] focus:outline-none"
+                >
+                  <option value="newest">{t("shopDetail.sortNewest")}</option>
+                  <option value="popular">{t("shopDetail.sortPopular")}</option>
+                  <option value="price_asc">{t("shopDetail.sortPriceLow")}</option>
+                  <option value="price_desc">{t("shopDetail.sortPriceHigh")}</option>
+                  <option value="rating">{t("shopDetail.sortRating")}</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {filteredProducts.length === 0 ? (
             <div className="mt-4 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
               <Package className="size-7 text-slate-300" />
-              <p className="mt-3 text-sm font-medium text-slate-600">{t("shopDetail.noProducts")}</p>
+              <p className="mt-3 text-sm font-medium text-slate-600">
+                {searchQuery ? t("shopDetail.noSearchResults") : t("shopDetail.noProducts")}
+              </p>
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 text-[#10B981]"
+                  onClick={() => setSearchQuery("")}
+                >
+                  {t("shopDetail.clearSearch")}
+                </Button>
+              )}
             </div>
           ) : (
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {products.map((product) => {
-                const available = product.inventory?.available ?? product.inventory?.quantity ?? 0;
-                const outOfStock = available <= 0;
-                return (
-                  <div
-                    key={product.id}
-                    className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(15,23,42,0.07)]"
-                  >
-                    <div className="relative block aspect-square w-full overflow-hidden bg-slate-50">
-                      <Link to={`/products/${product.id}`} className="block size-full">
-                        {product.primaryImage ? (
-                          <img
-                            src={product.primaryImage.displayUrl}
-                            alt={product.name}
-                            className="size-full object-cover transition-transform duration-300 hover:scale-105"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <span className="flex size-full items-center justify-center">
-                            <ImageOff className="size-8 text-slate-300" />
-                          </span>
-                        )}
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleWishlist(product); }}
-                        disabled={wishTogglingId === product.id}
-                        className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm transition-colors hover:bg-white"
-                        aria-label={t("wishlist.ariaToggle")}
-                      >
-                        {wishTogglingId === product.id ? (
-                          <Loader2 className="size-4 animate-spin text-slate-400" />
-                        ) : (
-                          <Heart className={`size-4 ${wishlistIds.has(product.id) ? "fill-rose-500 text-rose-500" : "text-slate-500"}`} />
-                        )}
-                      </button>
-                    </div>
-                    <div className="flex flex-1 flex-col p-4">
-                      <Link to={`/products/${product.id}`} className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900 hover:text-[#10B981]">
-                        {product.name}
-                      </Link>
-                      <p
-                        className={`mt-1.5 text-xs ${outOfStock ? "font-medium text-red-500" : "text-slate-400"}`}
-                      >
-                        {outOfStock ? t("shopDetail.outOfStock") : t("shopDetail.left", { count: available, unit: product.unit })}
-                      </p>
-                      <div className="mt-3 flex items-end justify-between gap-2 border-t border-slate-100 pt-3">
-                        <p className="text-base font-bold tabular-nums tracking-tight text-slate-900">
-                          {formatBaht(product.price)}
-                          <span className="ml-1 text-[11px] font-normal text-slate-400">{t("shopDetail.perUnit", { unit: product.unit })}</span>
-                        </p>
-                        <Button
-                          size="sm"
-                          className="gap-1 bg-slate-900 text-white hover:bg-slate-800"
-                          disabled={outOfStock || product.price <= 0}
-                          onClick={() => handleAdd(product)}
-                        >
-                          <Plus className="size-3.5" />
-                          {t("shopDetail.addToCart")}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {filteredProducts.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onOpen={() => navigate(`/products/${product.id}`)}
+                  onAdd={handleAdd}
+                  wishlisted={wishlistIds.has(product.id)}
+                  onWishlist={handleWishlist}
+                  wishToggling={wishTogglingId === product.id}
+                />
+              ))}
             </div>
           )}
         </section>

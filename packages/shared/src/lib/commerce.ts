@@ -60,6 +60,7 @@ export interface StoreProduct {
   primaryImage?: StoreImage | null;
   inventory?: StoreInventory;
   shopName?: string;
+  shopSlug?: string;
   sellerName?: string;
   /** real storefront stats (from the backend — never invented) */
   soldCount?: number;

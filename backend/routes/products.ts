@@ -195,6 +195,8 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
           available: (inventory.quantity ?? 0) - (inventory.reserved ?? 0),
         }
       : null,
+    shopName: row.shop_name ?? null,
+    shopSlug: row.shop_slug ?? null,
     soldCount: row.sold_count ?? 0,
     rating: row.rating ? parseFloat(row.rating) : null,
     reviewCount: row.review_count ?? 0,

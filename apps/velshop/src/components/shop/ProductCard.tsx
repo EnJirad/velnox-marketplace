@@ -1,7 +1,7 @@
 import { useLanguage } from "@/lib/i18n";
 import { Button } from "@velnox/shared/components/ui/button";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
-import { Heart, ImageOff, Loader2, Plus, Star } from "lucide-react";
+import { Heart, ImageOff, Loader2, Plus, Star, Store } from "lucide-react";
 import { Link } from "react-router";
 
 interface ProductCardProps {
@@ -9,7 +9,7 @@ interface ProductCardProps {
   /** Open the product (detail page or quick-view modal). */
   onOpen: (product: StoreProduct) => void;
   onAdd: (product: StoreProduct) => void;
-  /** Optional small overlay label (e.g. “แนะนำ”). */
+  /** Optional small overlay label (e.g. "แนะนำ"). */
   badgeLabel?: string;
   /** Whether this product is currently wishlisted. */
   wishlisted?: boolean;
@@ -21,8 +21,8 @@ interface ProductCardProps {
 
 /**
  * VelShop product card — the single card used on Home and the catalog.
- * Deliberately minimal: image, name, price, one stock/sold line and an
- * add-to-cart button. No heart, no motion, no extra badges.
+ * Hierarchy: image → name → rating → price → stock → shop → add-to-cart.
+ * Shop name is a clickable link to the shop detail page.
  */
 export function ProductCard({ product, onOpen, onAdd, badgeLabel, wishlisted, onWishlist, wishToggling }: ProductCardProps) {
   const { t } = useLanguage();
@@ -120,6 +120,19 @@ export function ProductCard({ product, onOpen, onAdd, badgeLabel, wishlisted, on
                 ? t("product.soldShort", { count: product.soldCount })
                 : t("product.inStockShort")}
         </p>
+
+        {/* Shop name — clickable link to shop detail */}
+        {product.shopName && (
+          <Link
+            to={product.shopSlug ? `/shops/${product.shopSlug}` : product.shopId ? `/shops/${product.shopId}` : "#"}
+            className="mt-2 flex items-center gap-1.5 text-xs text-slate-400 hover:text-[#10B981] transition-colors"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={t("product.shopVisit", { name: product.shopName })}
+          >
+            <Store className="size-3 shrink-0" />
+            <span className="truncate">{product.shopName}</span>
+          </Link>
+        )}
 
         <div className="flex-1" />
         <Button

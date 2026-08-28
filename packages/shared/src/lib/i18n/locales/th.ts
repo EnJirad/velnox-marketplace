@@ -159,6 +159,7 @@ export const th = {
     interestToastDesc: "Velnox จะแนะนำสินค้าแบบนี้ให้คุณบ่อยขึ้น",
     ariaInterest: "สนใจ {name}",
     ariaViewDetail: "ดูรายละเอียด {name}",
+    shopVisit: "เยี่ยมชมร้าน {name}",
   },
 
   home: {
@@ -490,6 +491,16 @@ export const th = {
     notFound: "ไม่พบร้านค้า",
     notFoundDesc: "ร้านค้าอาจถูกปิดหรือยังไม่เปิดขาย",
     backHome: "กลับไปหน้าร้าน",
+    searchProducts: "ค้นหาสินค้าในร้าน...",
+    sortNewest: "ใหม่ล่าสุด",
+    sortPopular: "ขายดีที่สุด",
+    sortPriceLow: "ราคา: ต่ำ → สูง",
+    sortPriceHigh: "ราคา: สูง → ต่ำ",
+    sortRating: "คะแนนรีวิว",
+    showMore: "อ่านเพิ่มเติม",
+    showLess: "ย่อ",
+    noSearchResults: "ไม่พบสินค้าที่ค้นหา",
+    clearSearch: "ล้างคำค้นหา",
   },
 
   checkout: {
