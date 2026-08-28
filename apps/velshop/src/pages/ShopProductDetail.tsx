@@ -2,6 +2,7 @@ import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
 import { ProductCard } from "@/components/shop/ProductCard";
+import { useCartFlyAnimation } from "@/components/shop/CartFlyAnimation";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
@@ -100,9 +101,9 @@ function ExpandableDescription({ text, t }: { text: string; t: (k: string, v?: R
 
 /* ─── Horizontal Carousel ──────────────────────────────────────────────── */
 
-function ProductCarousel({ title, viewAllLink, products, onAdd, emptyText, t }: {
+function ProductCarousel({ title, viewAllLink, products, emptyText, t }: {
   title: string; viewAllLink?: string; products: StoreProduct[];
-  onAdd: (p: StoreProduct) => void; emptyText: string;
+  emptyText: string;
   t: (k: string, v?: Record<string, string | number>) => string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -128,7 +129,7 @@ function ProductCarousel({ title, viewAllLink, products, onAdd, emptyText, t }: 
       <div ref={scrollRef} className="mt-3 flex gap-3 overflow-x-auto scroll-smooth pb-2 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
         {products.map((p) => (
           <div key={p.id} className="w-40 shrink-0 sm:w-48">
-            <ProductCard product={p} onOpen={() => {}} onAdd={onAdd} />
+            <ProductCard product={p} />
           </div>
         ))}
       </div>
@@ -186,6 +187,7 @@ export default function ShopProductDetail() {
   const myWishlist = useAction(api.customer.myWishlist);
   const { add } = useCart();
   const { track } = useTracking();
+  const { fly } = useCartFlyAnimation();
 
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
@@ -197,6 +199,11 @@ export default function ShopProductDetail() {
   const [subOpen, setSubOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("recommend");
   const [reviewsExpanded, setReviewsExpanded] = useState(false);
+  const addBtnRef = useRef<HTMLButtonElement>(null);
+  const [selectedVariant, setSelectedVariant] = useState<any>(null);
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [optionGroups, setOptionGroups] = useState<any[]>([]);
+  const [variantOptions, setVariantOptions] = useState<Record<string, any>>({});
   const [recommended, setRecommended] = useState<StoreProduct[]>([]);
   const [similar, setSimilar] = useState<StoreProduct[]>([]);
 
@@ -209,6 +216,14 @@ export default function ShopProductDetail() {
       const p = await getProduct({ productId });
       if (!p || p.status !== "published") { setProduct(null); return; }
       setProduct(p);
+      // Extract dynamic option groups from API response
+      const pAny = p as any;
+      if (Array.isArray(pAny.optionGroups) && pAny.optionGroups.length > 0) {
+        setOptionGroups(pAny.optionGroups);
+      }
+      if (pAny.variantOptions && typeof pAny.variantOptions === "object") {
+        setVariantOptions(pAny.variantOptions);
+      }
       const [revs, wl] = await Promise.all([
         productReviews({ productId }),
         isAuthenticated ? myWishlist() : Promise.resolve([]),
@@ -281,18 +296,22 @@ export default function ShopProductDetail() {
 
   /* ── Handlers ───────────────────────────────────────────────────── */
 
-  const handleAddToCart = useCallback((p?: StoreProduct) => {
-    const target = p ?? product;
-    if (!target) return;
-    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${target.id}`)); return; }
-    add({ id: target.id, name: target.name, unit: target.unit, price: target.price, stock: target.inventory?.available ?? target.inventory?.quantity ?? 0 }, qty);
-    toast.success(t("productDetail.addedToast", { name: target.name, qty }));
-  }, [product, isAuthenticated, navigate, add, qty, t]);
+  const handleAddToCart = useCallback(() => {
+    if (!product) return;
+    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+    const displayPrice = selectedVariant?.price ?? product.price;
+    const displayStock = selectedVariant?.stock ?? available;
+    add({ id: product.id, name: product.name, unit: product.unit, price: displayPrice, stock: displayStock }, qty);
+    // Fly animation — dot travels to cart icon
+    fly(addBtnRef.current);
+  }, [product, isAuthenticated, navigate, add, qty, selectedVariant, available, fly]);
 
   const handleBuyNow = () => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    add({ id: product.id, name: product.name, unit: product.unit, price: product.price, stock: available }, qty);
+    const displayPrice = selectedVariant?.price ?? product.price;
+    const displayStock = selectedVariant?.stock ?? available;
+    add({ id: product.id, name: product.name, unit: product.unit, price: displayPrice, stock: displayStock }, qty);
     navigate("/checkout");
   };
 
@@ -424,6 +443,54 @@ export default function ShopProductDetail() {
               </div>
             </div>
 
+            {/* Dynamic option groups */}
+            {optionGroups.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {optionGroups.map((group: any) => (
+                  <div key={group.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="mb-2 text-sm font-medium text-slate-900">
+                      {group.name}
+                      {group.required && <span className="ml-1 text-xs text-red-400">*</span>}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
+                        const isSelected = selectedOptions[group.id] === val.id;
+                        return (
+                          <button
+                            key={val.id}
+                            type="button"
+                            onClick={() => {
+                              const next = { ...selectedOptions, [group.id]: val.id };
+                              setSelectedOptions(next);
+                              // Find matching variant
+                              const pVariants = (product as any)?.variants;
+                              if (Array.isArray(pVariants) && pVariants.length > 0 && Object.keys(variantOptions).length > 0) {
+                                const match = pVariants.find((v: any) => {
+                                  const vOpts = variantOptions[v.id];
+                                  if (!vOpts) return false;
+                                  return Object.entries(next).every(([gId, vId]) =>
+                                    Array.isArray(vOpts) ? vOpts.some((o: any) => o.optionValueId === vId) : false
+                                  );
+                                });
+                                setSelectedVariant(match ?? null);
+                              }
+                            }}
+                            className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                              isSelected
+                                ? "border-[#10B981] bg-[#ECFDF5] text-[#047857] font-medium"
+                                : "border-slate-200 text-slate-700 hover:border-slate-300"
+                            }`}
+                          >
+                            {val.label || val.value}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Shipping */}
             <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
               <div className="flex items-center gap-2"><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><span className="font-medium text-slate-900">{t("productDetail.thailand")}</span></div>
@@ -445,8 +512,9 @@ export default function ShopProductDetail() {
                   {/* 3 primary purchase actions — equal visual weight */}
                   <div className="grid grid-cols-3 gap-2">
                     <Button
+                      ref={addBtnRef}
                       className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                      onClick={() => handleAddToCart()}
+                      onClick={handleAddToCart}
                       disabled={product.price <= 0}
                     >
                       <ShoppingCart className="size-4" />
@@ -492,8 +560,8 @@ export default function ShopProductDetail() {
             {/* Tab: Recommend */}
             {activeTab === "recommend" && (
               <div className="space-y-8">
-                <ProductCarousel title={t("productDetail.recommendedProducts")} products={recommended} onAdd={handleAddToCart} emptyText={t("productDetail.noRecommendedProducts")} t={t} />
-                <ProductCarousel title={t("productDetail.similarProducts")} products={similar} onAdd={handleAddToCart} emptyText={t("productDetail.noSimilarProducts")} t={t} />
+                <ProductCarousel title={t("productDetail.recommendedProducts")} products={recommended} emptyText={t("productDetail.noRecommendedProducts")} t={t} />
+                <ProductCarousel title={t("productDetail.similarProducts")} products={similar} emptyText={t("productDetail.noSimilarProducts")} t={t} />
                 {recommended.length === 0 && similar.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><p className="text-sm font-medium text-slate-500">{t("productDetail.noRecommendedProducts")}</p></div>
                 )}

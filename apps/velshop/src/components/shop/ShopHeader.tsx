@@ -102,6 +102,7 @@ export function ShopHeader() {
           <Button
             variant="ghost"
             size="icon"
+            data-cart-icon="true"
             className="relative size-10 cursor-pointer rounded-[10px] text-slate-600 hover:bg-slate-100"
             onClick={() => {
               if (!isAuthenticated && !isLoading) {

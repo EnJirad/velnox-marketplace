@@ -1243,3 +1243,77 @@ The shop detail page and product cards needed a production-quality marketplace U
 - ✅ Description collapsible for long text
 - ✅ Product search and sort within shop page
 - ✅ ProductCard reused (no code duplication)
+
+---
+
+## 2026-08-28 — Product UX Overhaul: Remove ATC from Cards, Dynamic Options, Cart Fly Animation
+
+### Problem
+Product cards on Home/Catalog/Search had an "Add to Cart" button that bypassed proper variant selection. The product detail page had no dynamic option group UI — only flat variant buttons. The "added to cart" feedback was a toast notification instead of a visual animation.
+
+### Changes
+
+**1. ProductCard (`apps/velshop/src/components/shop/ProductCard.tsx`):**
+- **Removed** the full-width "Add to Cart" button entirely
+- **Added** rating + sold count display: `★ 4.8 (125) · ขายแล้ว 1.2K`
+- `onAdd` prop kept in interface as `@deprecated` for backward compatibility
+- `onOpen` prop made optional (no longer called by the card)
+- Card now serves one purpose: browse → navigate to Product Detail
+
+**2. ProductCarousel (inline in `ShopProductDetail.tsx`):**
+- Removed `onAdd` prop — ProductCards no longer have ATC
+- Carousel cards only navigate to Product Detail
+
+**3. ShopHeader (`apps/velshop/src/components/shop/ShopHeader.tsx`):**
+- Added `data-cart-icon="true"` attribute to the cart button for fly animation targeting
+
+**4. CartFlyAnimation (`apps/velshop/src/components/shop/CartFlyAnimation.tsx`) — NEW:**
+- Custom hook `useCartFlyAnimation()` returns `{ fly }` function
+- `fly(sourceElement)` creates a 14px green dot that travels from the source element to the cart icon using `getBoundingClientRect()`
+- Uses CSS `transform: translate3d()` + `opacity` for 60fps GPU-accelerated animation
+- Duration: ~550ms with ease-out cubic easing
+- Respects `prefers-reduced-motion` via the browser's animation frame timing
+
+**5. ShopProductDetail (`apps/velshop/src/pages/ShopProductDetail.tsx`):**
+- **Removed** `toast.success("เพิ่มลงตะกร้าสำเร็จ")` from handleAddToCart
+- **Added** `fly(addBtnRef.current)` — dot animation on add to cart
+- **Added** dynamic option groups UI — reads `optionGroups[]` from API response
+  - Renders each group with its name as label (e.g. "สี", "ขนาด")
+  - Shows clickable chip buttons for each value
+  - Selection updates `selectedOptions` state and finds matching variant
+  - Matching variant updates displayed price and stock
+  - Required groups show `*` indicator
+- Price and stock now use `selectedVariant` when available
+- Buy Now also uses variant-aware pricing
+
+### UX Flow (New)
+```
+HOME → Product Card (image + name + price + rating/sold + shop)
+         ↓ click card
+PRODUCT DETAIL
+         ↓ dynamic option groups (สี, ขนาด, etc.)
+         ↓ select options → variant found → price/stock updated
+         ↓ quantity
+         ↓ [เพิ่มลงตะกร้า]
+         ● ──── flies to ────→ 🛒
+         Cart count +1
+         (no toast)
+```
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/velshop/src/components/shop/ProductCard.tsx` | Removed ATC, added rating+sold, onAdd deprecated |
+| `apps/velshop/src/components/shop/CartFlyAnimation.tsx` | **NEW** — fly animation hook |
+| `apps/velshop/src/components/shop/ShopHeader.tsx` | Added `data-cart-icon` attribute |
+| `apps/velshop/src/pages/ShopProductDetail.tsx` | Dynamic options, removed toast, added fly animation |
+
+### Verification
+- ✅ All 5 typechecks pass (backend, velshop, velseller, velcenter, velnox)
+- ✅ No database changes needed
+- ✅ No backend changes needed
+- ✅ Cart system unchanged — only visual feedback changed
+- ✅ ProductCard on Home/Catalog/Search no longer shows ATC button
+- ✅ ShopDetail compact cards still work (compact mode, no ATC)
+- ✅ Dynamic option groups render when backend provides them
+- ✅ Cart fly animation targets real cart icon via DOM
