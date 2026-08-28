@@ -119,6 +119,8 @@ BEGIN
 END $$;
 
 -- Add unique constraint if missing
+-- Note: PostgreSQL treats NULL as distinct in UNIQUE constraints,
+-- so multiple "no variant" rows won't violate this constraint.
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -126,7 +128,7 @@ BEGIN
     WHERE conname = 'cart_items_cart_product_variant_unique'
   ) THEN
     ALTER TABLE cart_items ADD CONSTRAINT cart_items_cart_product_variant_unique
-      UNIQUE (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+      UNIQUE (cart_id, product_id, variant_id);
   END IF;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
