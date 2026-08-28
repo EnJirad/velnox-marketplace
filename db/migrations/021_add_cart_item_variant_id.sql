@@ -14,9 +14,9 @@ ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS variant_id UUID;
 
 -- Update UNIQUE constraint: (cart_id, product_id) → (cart_id, product_id, variant_id)
 -- This allows the same product with different variants to coexist in the cart.
--- NULL variant_id values are treated as distinct by PostgreSQL UNIQUE constraints,
--- so multiple "no variant" rows for the same product in the same cart are prevented
--- by the ON CONFLICT logic in the backend.
+-- Note: PostgreSQL treats NULLs as distinct in UNIQUE constraints, so multiple
+-- "no variant" rows for the same product in the same cart won't violate this.
+-- The backend ON CONFLICT logic handles upsert deduplication.
 
 -- Drop old constraint if it exists
 DO $$
@@ -32,7 +32,6 @@ BEGIN
 END $$;
 
 -- Add new unique constraint including variant_id
--- Use an expression index to handle NULL variant_id as a specific default UUID
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -43,7 +42,7 @@ BEGIN
   ) THEN
     ALTER TABLE cart_items
       ADD CONSTRAINT cart_items_cart_product_variant_key
-      UNIQUE (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+      UNIQUE (cart_id, product_id, variant_id);
   END IF;
 END $$;
 
