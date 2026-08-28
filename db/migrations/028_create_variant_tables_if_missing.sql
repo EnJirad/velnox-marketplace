@@ -76,6 +76,36 @@ CREATE TABLE IF NOT EXISTS product_attributes (
 
 CREATE INDEX IF NOT EXISTS idx_product_attributes_product ON product_attributes (product_id);
 
+-- ── 7. customer_wishlist (from V0019/V0022) ──────────────────
+CREATE TABLE IF NOT EXISTS customer_wishlist (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_wishlist_user ON customer_wishlist (user_id);
+CREATE INDEX IF NOT EXISTS idx_customer_wishlist_product ON customer_wishlist (product_id);
+
+-- ── 8. product_reviews (from V0026) ──────────────────────────
+CREATE TABLE IF NOT EXISTS product_reviews (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shop_id UUID REFERENCES shops(id),
+  order_id UUID,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  title TEXT,
+  comment TEXT,
+  images JSONB DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);
+
 -- ── 6. cart_items.variant_id (from V0021) ─────────────────────
 -- Add variant_id column if it doesn't exist
 DO $$

@@ -68,6 +68,40 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// ─── Schema Diagnostic (temporary — check production tables) ─────────────
+app.get("/api/_diag/schema", async (_req, res) => {
+  try {
+    const { query } = await import("./db/index.js");
+    const tables = [
+      "product_variants", "product_option_groups", "product_option_values",
+      "product_variant_values", "product_attributes", "customer_wishlist",
+      "product_reviews", "cart_items",
+    ];
+    const results: Record<string, any> = {};
+    for (const t of tables) {
+      try {
+        const r = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1) AS exists`, [t]);
+        results[t] = r.rows[0]?.exists ?? false;
+      } catch { results[t] = false; }
+    }
+    // Check cart_items.variant_id
+    try {
+      const r = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'cart_items' AND column_name = 'variant_id'`);
+      results["cart_items.variant_id"] = r.rows.length > 0;
+    } catch { results["cart_items.variant_id"] = false; }
+    // Check migration state
+    let migrations: string[] = [];
+    try {
+      const r = await query(`SELECT migration_name FROM schema_migrations ORDER BY id`);
+      migrations = r.rows.map((r: any) => r.migration_name);
+    } catch { migrations = ["schema_migrations table missing"];
+    }
+    res.json({ tables: results, migrations });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Google OAuth ─────────────────────────────────────
 setupGoogleAuth(app);
 

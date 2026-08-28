@@ -95,26 +95,15 @@ const CART_ITEMS_QUERY_BASIC = `
   ORDER BY ci.added_at DESC
 `;
 
-let _cartQueryFailed = false;
-
-async function fetchCartItems(cartId: string) {
-  // Try full query with variant info first; fall back if variant tables are missing
-  if (!_cartQueryFailed) {
-    try {
-      const result = await query(CART_ITEMS_QUERY_FULL, [cartId]);
-      return result.rows;
-    } catch (err: any) {
-      // 42P01 = relation does not exist — variant tables not yet migrated
-      if (err?.code === "42P01") {
-        console.warn("[cart] variant tables not found, using basic query");
-        _cartQueryFailed = true;
-      } else {
-        throw err;
-      }
-    }
+async function fetchCartItems(cartId: string): Promise<any[]> {
+  try {
+    return (await query(CART_ITEMS_QUERY_FULL, [cartId])).rows;
+  } catch (err: any) {
+    // 42P01 = relation does not exist — variant tables not yet migrated to production
+    if (err?.code !== "42P01") throw err;
+    console.warn("[cart] variant tables not found in DB, using basic cart query (run V0028 migration)");
+    return (await query(CART_ITEMS_QUERY_BASIC, [cartId])).rows;
   }
-  const result = await query(CART_ITEMS_QUERY_BASIC, [cartId]);
-  return result.rows;
 }
 
 function formatCartRow(r: any) {
@@ -254,7 +243,9 @@ export function setupCartRoutes(app: Express): void {
             [cartId, productId, addQty, cartPrice, validatedVariantId],
           );
         } catch (insertErr: any) {
+          // 42703 = column does not exist — cart_items.variant_id not yet added by V0028
           if (insertErr?.code === "42703") {
+            console.warn("[cart] variant_id column missing, inserting without it (run V0028 migration)");
             await query(
               "INSERT INTO cart_items (cart_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)",
               [cartId, productId, addQty, cartPrice],
@@ -387,7 +378,7 @@ export function setupCartRoutes(app: Express): void {
     } catch (err: any) {
       // Gracefully handle missing table — return empty wishlist instead of 500
       if (err?.code === "42P01" || String(err?.message ?? "").includes("does not exist")) {
-        console.warn("[wishlist] table not found — returning empty wishlist");
+        console.warn("[wishlist] customer_wishlist table not found — run V0028 migration");
         res.json({ success: true, data: [] });
         return;
       }
@@ -430,7 +421,7 @@ export function setupCartRoutes(app: Express): void {
       }
     } catch (err: any) {
       if (err?.code === "42P01" || String(err?.message ?? "").includes("does not exist")) {
-        console.warn("[wishlist] table not found — cannot toggle");
+        console.warn("[wishlist] customer_wishlist table not found — run V0028 migration");
         res.status(503).json({ success: false, error: { code: "TABLE_MISSING", message: "Wishlist is not available yet. Please try again later." } });
         return;
       }

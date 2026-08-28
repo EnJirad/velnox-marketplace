@@ -1169,3 +1169,30 @@ BEGIN
     ALTER TABLE cart_items ADD COLUMN variant_id UUID;
   END IF;
 END $$;
+
+-- V0028 additional: customer_wishlist + product_reviews
+CREATE TABLE IF NOT EXISTS customer_wishlist (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, product_id)
+);
+CREATE INDEX IF NOT EXISTS idx_customer_wishlist_user ON customer_wishlist (user_id);
+CREATE INDEX IF NOT EXISTS idx_customer_wishlist_product ON customer_wishlist (product_id);
+
+CREATE TABLE IF NOT EXISTS product_reviews (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shop_id UUID REFERENCES shops(id),
+  order_id UUID,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  title TEXT,
+  comment TEXT,
+  images JSONB DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);
