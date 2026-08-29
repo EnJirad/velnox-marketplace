@@ -63,6 +63,34 @@ app.use(cors({
   credentials: true,
 }));
 
+// ─── Auto-create variant tables if missing (V0028) ─────────────────────
+async function ensureVariantTables(): Promise<void> {
+  try {
+    const { query } = await import("./db/index.js");
+    const checks = ["product_variants", "product_option_groups", "product_option_values", "product_variant_values"];
+    const missing: string[] = [];
+    for (const t of checks) {
+      const r = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1) AS exists`, [t]);
+      if (!r.rows[0]?.exists) missing.push(t);
+    }
+    if (missing.length === 0) {
+      console.log("[startup] variant/option tables exist — no migration needed");
+      return;
+    }
+    console.log(`[startup] missing variant tables: ${missing.join(", ")} — creating...`);
+    // Run V0028 SQL (all CREATE TABLE IF NOT EXISTS — idempotent)
+    const fs = await import("fs");
+    const path = await import("path");
+    const sqlPath = path.join(process.cwd(), "db", "migrations", "028_create_variant_tables_if_missing.sql");
+    const sql = fs.readFileSync(sqlPath, "utf-8");
+    await query(sql);
+    console.log("[startup] variant/option tables created successfully");
+  } catch (err: any) {
+    console.error("[startup] ensureVariantTables failed:", err?.message ?? err);
+  }
+}
+ensureVariantTables();
+
 // ─── Health Check ───────────────────────────────────────
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

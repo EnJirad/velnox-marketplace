@@ -236,19 +236,15 @@ async function loadProductExtras(productIds: string[]): Promise<{
   let variantsResult = { rows: [] as any[] };
   try {
     variantsResult = await query(
-      `SELECT * FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+      `SELECT id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
       [productIds]
     );
-  } catch (variantErr) {
-    console.warn("[products] loadProductExtras: SELECT * from product_variants failed, trying fallback:", (variantErr as any)?.message ?? variantErr);
-    // product_variants table may not have all expected columns
-    try {
-      variantsResult = await query(
-        `SELECT id, product_id, name, sku, price, stock, status, sort_order FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
-        [productIds]
-      );
-    } catch (variantErr2) {
-      console.warn("[products] loadProductExtras: fallback variant query also failed:", (variantErr2 as any)?.message ?? variantErr2);
+  } catch (variantErr: any) {
+    // 42P01 = relation does not exist — tables not yet created
+    if (variantErr?.code === "42P01") {
+      console.warn("[products] product_variants table does not exist — run V0028 migration");
+    } else {
+      console.warn("[products] loadProductExtras: variant query failed:", variantErr?.message ?? variantErr);
     }
   }
   console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length}`);
