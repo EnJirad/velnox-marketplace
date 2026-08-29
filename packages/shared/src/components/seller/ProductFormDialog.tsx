@@ -84,6 +84,8 @@ interface VariantRow {
   name: string;
   sku: string | null;
   price: number;
+  compareAtPrice?: number | null;
+  discountPercent?: number | null;
   stock: number;
   status: string;
   optionLabels: string;
@@ -96,7 +98,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editFields, setEditFields] = useState<{ price: string; stock: string; sku: string; status: string }>({ price: "", stock: "", sku: "", status: "active" });
+  const [editFields, setEditFields] = useState<{ price: string; compareAtPrice: string; discountPercent: string; stock: string; sku: string; status: string }>({ price: "", compareAtPrice: "", discountPercent: "", stock: "", sku: "", status: "active" });
   const [loaded, setLoaded] = useState(false);
 
   const baseUrl = import.meta.env.VITE_API_URL || "";
@@ -149,7 +151,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
 
   const startEdit = (v: VariantRow) => {
     setEditingId(v.id);
-    setEditFields({ price: String(v.price), stock: String(v.stock), sku: v.sku ?? "", status: v.status });
+    setEditFields({ price: String(v.price), compareAtPrice: v.compareAtPrice != null ? String(v.compareAtPrice) : "", discountPercent: v.discountPercent != null ? String(v.discountPercent) : "", stock: String(v.stock), sku: v.sku ?? "", status: v.status });
   };
 
   const saveEdit = async (variantId: string) => {
@@ -160,6 +162,8 @@ function VariantManager({ productId, price }: { productId: string; price: number
         credentials: "include",
         body: JSON.stringify({
           price: Number(editFields.price),
+          compareAtPrice: editFields.compareAtPrice ? Number(editFields.compareAtPrice) : null,
+          discountPercent: editFields.discountPercent ? Number(editFields.discountPercent) : null,
           stock: Number(editFields.stock),
           sku: editFields.sku || null,
           status: editFields.status,
@@ -266,8 +270,10 @@ function VariantManager({ productId, price }: { productId: string; price: number
             {editingId === v.id ? (
               <>
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
-                <Input value={editFields.price} onChange={(e) => setEditFields((f) => ({ ...f, price: e.target.value }))} type="number" className="h-7 w-20 text-xs" placeholder="ราคา" />
-                <Input value={editFields.stock} onChange={(e) => setEditFields((f) => ({ ...f, stock: e.target.value }))} type="number" className="h-7 w-16 text-xs" placeholder="stock" />
+                <Input value={editFields.price} onChange={(e) => setEditFields((f) => ({ ...f, price: e.target.value }))} type="number" className="h-7 w-16 text-xs" placeholder="ราคา" />
+                <Input value={editFields.compareAtPrice} onChange={(e) => setEditFields((f) => ({ ...f, compareAtPrice: e.target.value }))} type="number" className="h-7 w-16 text-xs" placeholder="ราคาเดิม" />
+                <Input value={editFields.discountPercent} onChange={(e) => setEditFields((f) => ({ ...f, discountPercent: e.target.value }))} type="number" min="0" max="100" className="h-7 w-12 text-xs" placeholder="%" />
+                <Input value={editFields.stock} onChange={(e) => setEditFields((f) => ({ ...f, stock: e.target.value }))} type="number" className="h-7 w-14 text-xs" placeholder="stock" />
                 <Input value={editFields.sku} onChange={(e) => setEditFields((f) => ({ ...f, sku: e.target.value }))} className="h-7 w-20 text-xs" placeholder="SKU" />
                 <Button type="button" size="sm" className="h-7 text-xs" onClick={() => saveEdit(v.id)}>บันทึก</Button>
                 <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}>ยกเลิก</Button>
@@ -292,7 +298,13 @@ function VariantManager({ productId, price }: { productId: string; price: number
                   />
                 </label>
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
-                <span className="shrink-0 tabular-nums text-slate-600">฿{v.price}</span>
+                <span className="shrink-0 tabular-nums font-semibold text-slate-900">฿{v.price}</span>
+                {v.compareAtPrice && v.compareAtPrice > v.price && (
+                  <span className="shrink-0 text-[10px] text-slate-400 line-through">฿{v.compareAtPrice}</span>
+                )}
+                {v.discountPercent != null && v.discountPercent > 0 && (
+                  <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(v.discountPercent)}%</span>
+                )}
                 <span className={`shrink-0 tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} ชิ้น</span>
                 {v.sku && <span className="shrink-0 font-mono text-[10px] text-slate-400">{v.sku}</span>}
                 <Badge className={`shrink-0 text-[10px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>

@@ -366,6 +366,8 @@ export default function ShopProductDetail() {
   const active = images[activeIndex] ?? images[0];
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
+  const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
+  const displayDiscountPct = selectedVariant?.discountPercent ?? null;
   const displayStock = selectedVariant?.stock ?? baseAvailable;
   const outOfStock = displayStock <= 0;
   const lowStock = !outOfStock && displayStock <= 5;
@@ -399,7 +401,6 @@ export default function ShopProductDetail() {
 
   const compactThumbnails = useMemo(() => {
     if (optionGroups.length === 0) return [];
-    // Collect images from first option group values
     const firstGroup = optionGroups[0];
     if (!firstGroup?.values) return [];
     return firstGroup.values.slice(0, 5).map((val: any) => ({
@@ -414,6 +415,75 @@ export default function ShopProductDetail() {
   const totalOptionValues = useMemo(() => {
     return optionGroups.reduce((sum: number, g: any) => sum + (Array.isArray(g.values) ? g.values.length : 0), 0);
   }, [optionGroups]);
+
+  /* ── Gallery thumbnails: product images + variant images ──────── */
+
+  const productThumbnails = useMemo(() => {
+    if (product?.images && product.images.length > 0) return product.images;
+    if (product?.primaryImage) return [product.primaryImage];
+    return [];
+  }, [product]);
+
+  const variantThumbnails = useMemo(() => {
+    if (!selectedVariant) return [];
+    if (selectedVariant.images && selectedVariant.images.length > 0) {
+      return selectedVariant.images.map((img: any, i: number) => ({
+        id: `vi-${img.id ?? i}`,
+        url: img.url,
+        displayUrl: img.url,
+        thumbUrl: img.url,
+        label: selectedVariant.name ?? '',
+        isVariant: true as const,
+      }));
+    }
+    // Fallback: option value images
+    const result: { id: string; url: string; displayUrl: string; thumbUrl: string; label: string; isVariant: true }[] = [];
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (!valId) continue;
+      const val = (group.values ?? []).find((v: any) => v.value === valId);
+      if (val?.imageUrl) {
+        result.push({
+          id: `opt-${val.id}`,
+          url: val.imageUrl,
+          displayUrl: val.imageUrl,
+          thumbUrl: val.imageUrl,
+          label: val.label || val.value,
+          isVariant: true,
+        });
+      }
+    }
+    return result;
+  }, [selectedVariant, optionGroups, selectedOptions]);
+
+  const handleSelectVariantFromThumbnail = useCallback((variantId: string) => {
+    const pVariants = (product as any)?.variants;
+    if (!Array.isArray(pVariants)) return;
+    const variant = pVariants.find((v: any) => v.id === variantId);
+    if (!variant) return;
+    const vOpts = variantOptions[variantId];
+    if (vOpts && typeof vOpts === 'object') {
+      setSelectedOptions((prev) => {
+        const next = { ...prev };
+        for (const [gId, vId] of Object.entries(vOpts)) {
+          next[gId] = vId as string;
+        }
+        return next;
+      });
+    }
+  }, [product, variantOptions]);
+
+  const variantThumbsWithActive = useMemo(() => {
+    if (variantThumbnails.length === 0) return [];
+    return variantThumbnails.map((vt: any) => ({
+      id: vt.id,
+      url: vt.thumbUrl || vt.url,
+      label: vt.label,
+      onClick: () => handleSelectVariantFromThumbnail(selectedVariant?.id ?? ''),
+      isActive: true,
+      isVariant: true as const,
+    }));
+  }, [variantThumbnails, selectedVariant, handleSelectVariantFromThumbnail]);
 
   const selectedSummary = useMemo(() => {
     if (!hasOptionGroups || Object.keys(selectedOptions).length === 0) return null;
@@ -446,44 +516,16 @@ export default function ShopProductDetail() {
   const handleAddToCart = useCallback(() => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    if (needsVariant) {
-      openVariantSheet("cart");
-      return;
-    }
     if (outOfStock) return;
-    add({
-      id: product.id, name: product.name, unit: product.unit,
-      price: displayPrice, stock: displayStock,
-      variantId: selectedVariant?.id ?? null,
-    }, 1);
-    fly(addBtnRef.current);
-    toast.success(t("productDetail.addedToast", { name: product.name, qty: 1 }));
-  }, [product, isAuthenticated, navigate, needsVariant, outOfStock, add, displayPrice, displayStock, selectedVariant, fly, openVariantSheet, t]);
+    openVariantSheet("cart");
+  }, [product, isAuthenticated, navigate, outOfStock, openVariantSheet]);
 
   const handleBuyNow = useCallback(() => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    if (needsVariant) {
-      openVariantSheet("buy");
-      return;
-    }
     if (outOfStock) return;
-    add({
-      id: product.id, name: product.name, unit: product.unit,
-      price: displayPrice, stock: displayStock,
-      variantId: selectedVariant?.id ?? null,
-    }, 1);
-    setTimeout(() => {
-      navigate("/checkout", {
-        state: {
-          buyNow: true,
-          buyNowProductId: product.id,
-          buyNowVariantId: selectedVariant?.id ?? null,
-          buyNowQty: 1,
-        },
-      });
-    }, 300);
-  }, [product, isAuthenticated, navigate, needsVariant, outOfStock, add, displayPrice, displayStock, selectedVariant]);
+    openVariantSheet("buy");
+  }, [product, isAuthenticated, navigate, outOfStock, openVariantSheet]);
 
   const handleSheetConfirm = useCallback(() => {
     if (!product || !pendingAction) return;
@@ -620,15 +662,43 @@ export default function ShopProductDetail() {
                 <Share2 className="size-4" />
               </button>
             </div>
-            {images.length > 1 && (
-              <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
-                {images.map((img: { id: string; url: string; thumbUrl?: string }, i: number) => (
-                  <button key={img.id} type="button" onClick={() => setActiveIndex(i)} className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`} aria-label={t("productDetail.imageAlt", { n: i + 1 })}>
-                    <img src={img.thumbUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Gallery thumbnails: product images + divider + variant images */}
+            {(() => {
+              const allThumbs: { id: string; url: string; label?: string; onClick: () => void; isActive: boolean; isVariant?: boolean }[] = [];
+              // Product gallery images
+              productThumbnails.forEach((img: any, i: number) => {
+                allThumbs.push({
+                  id: `pg-${img.id ?? i}`,
+                  url: img.thumbUrl || img.displayUrl || img.url,
+                  onClick: () => setActiveIndex(i),
+                  isActive: !selectedVariant && i === activeIndex,
+                });
+              });
+              // Variant images (from selected variant)
+              variantThumbsWithActive.forEach((vt: any) => {
+                allThumbs.push(vt);
+              });
+              if (allThumbs.length <= 1) return null;
+              return (
+                <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+                  {allThumbs.map((thumb, i) => (
+                    <span key={thumb.id} className="flex items-center gap-2">
+                      {i === productThumbnails.length && variantThumbsWithActive.length > 0 && (
+                        <span className="h-8 w-px shrink-0 bg-slate-200" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={thumb.onClick}
+                        className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${thumb.isActive ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
+                        aria-label={thumb.label || t("productDetail.imageAlt", { n: i + 1 })}
+                      >
+                        <img src={thumb.url} alt="" className="size-full object-cover" loading="lazy" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Product Info */}
@@ -643,7 +713,20 @@ export default function ShopProductDetail() {
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(displayPrice)}<span className="ml-1 text-sm font-normal text-slate-400">/{product.unit}</span></p>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(displayPrice)}</p>
+                    <span className="text-sm font-normal text-slate-400">/{product.unit}</span>
+                  </div>
+                  {(displayCompareAt && displayCompareAt > displayPrice) || (displayDiscountPct && displayDiscountPct > 0) ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      {displayCompareAt && displayCompareAt > displayPrice && (
+                        <span className="text-sm text-slate-400 line-through">{formatBaht(displayCompareAt)}</span>
+                      )}
+                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">
+                        -{Math.round(displayDiscountPct ?? ((displayCompareAt! - displayPrice) / displayCompareAt!) * 100)}%
+                      </span>
+                    </div>
+                  ) : null}
                   <p className={`mt-1.5 text-xs ${outOfStock ? "font-medium text-red-500" : lowStock ? "font-medium text-amber-600" : "text-slate-400"}`}>
                     {outOfStock ? t("productDetail.outOfStockDesc") : lowStock ? t("productDetail.lowStock", { count: displayStock, unit: product.unit }) : t("productDetail.inStock", { count: displayStock, unit: product.unit })}
                   </p>
@@ -858,21 +941,36 @@ export default function ShopProductDetail() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
-            {/* Product header */}
-            <div className="flex gap-3 pt-2">
-              <div className="size-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+            {/* Product header — larger preview */}
+            <div className="flex gap-4 pt-2">
+              <div className="h-[180px] w-[180px] shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[220px] sm:w-[220px]">
                 {active ? (
-                  <img src={active.displayUrl || active.url} alt={active.alt || product.name} className="size-full object-cover" />
+                  <img src={active.displayUrl || active.url} alt={active.alt || product.name} className="size-full object-contain" />
                 ) : (
-                  <span className="flex size-full items-center justify-center"><ImageOff className="size-6 text-slate-300" /></span>
+                  <span className="flex size-full items-center justify-center"><ImageOff className="size-8 text-slate-300" /></span>
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-lg font-bold tabular-nums text-slate-900">
-                  {formatBaht(displayPrice)}
-                  <span className="ml-1 text-xs font-normal text-slate-400">/{product.unit}</span>
-                </p>
-                <p className={`mt-1 text-xs ${outOfStock ? "font-medium text-red-500" : displayStock <= 5 ? "font-medium text-amber-600" : "text-slate-400"}`}>
+                {/* Selected summary */}
+                {selectedSummary && (
+                  <p className="mb-1 text-xs font-medium text-[#047857]">{selectedSummary}</p>
+                )}
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-bold tabular-nums text-slate-900">{formatBaht(displayPrice)}</p>
+                  <span className="text-xs font-normal text-slate-400">/{product.unit}</span>
+                </div>
+                {displayCompareAt && displayCompareAt > displayPrice && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-sm text-slate-400 line-through">{formatBaht(displayCompareAt)}</span>
+                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">-{Math.round(((displayCompareAt - displayPrice) / displayCompareAt) * 100)}%</span>
+                  </div>
+                )}
+                {!displayCompareAt && displayDiscountPct && displayDiscountPct > 0 && (
+                  <div className="mt-1">
+                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">-{Math.round(displayDiscountPct)}%</span>
+                  </div>
+                )}
+                <p className={`mt-2 text-xs ${outOfStock ? "font-medium text-red-500" : displayStock <= 5 ? "font-medium text-amber-600" : "text-slate-400"}`}>
                   {outOfStock ? t("product.outOfStock") : displayStock <= 5 ? t("product.lowStock", { count: displayStock, unit: product.unit }) : t("product.inStockShort")}
                 </p>
               </div>

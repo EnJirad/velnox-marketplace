@@ -49,6 +49,7 @@ export interface StoreProduct {
   category: StoreProductCategory;
   unit: string;
   price: number;
+  compareAtPrice?: number | null;
   currency: string;
   status: StoreProductStatus;
   rejectionReason: string | null;
@@ -107,10 +108,13 @@ export interface ProductVariant {
   name: string;
   sku: string | null;
   price: number;
+  compareAtPrice?: number | null;
+  discountPercent?: number | null;
   stock: number;
   status: string;
   options?: Record<string, any>;
   sortOrder: number;
+  images?: { id: string; url: string; alt?: string; sortOrder?: number }[];
 }
 
 export interface StoreShop {

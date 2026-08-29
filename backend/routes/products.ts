@@ -261,7 +261,7 @@ async function loadProductExtras(productIds: string[]): Promise<{
   let variantsResult = { rows: [] as any[] };
   try {
     variantsResult = await query(
-      `SELECT id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+      `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
       [productIds]
     );
   } catch (variantErr: any) {
@@ -315,6 +315,8 @@ async function loadProductExtras(productIds: string[]): Promise<{
       name: v.name,
       sku: v.sku,
       price: parseFloat(v.price) || 0,
+      compareAtPrice: v.compare_at_price != null ? parseFloat(v.compare_at_price) : null,
+      discountPercent: v.discount_percent != null ? parseFloat(v.discount_percent) : null,
       stock: v.stock ?? 0,
       status: v.status || "active",
       options: v.options || {},

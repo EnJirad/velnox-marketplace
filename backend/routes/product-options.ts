@@ -606,10 +606,10 @@ export function setupProductOptionRoutes(app: Express): void {
 
           // Create the variant
           const variantResult = await client.query(
-            `INSERT INTO product_variants (product_id, name, sku, price, stock, status, sort_order)
-             VALUES ($1, $2, $3, $4, $5, 'active', $6)
+            `INSERT INTO product_variants (product_id, name, sku, price, compare_at_price, discount_percent, stock, status, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8)
              RETURNING *`,
-            [productId, variantName, null, defaultPrice, 0, i]
+            [productId, variantName, null, defaultPrice, null, null, 0, i]
           );
           const variant = variantResult.rows[0];
 
@@ -628,6 +628,8 @@ export function setupProductOptionRoutes(app: Express): void {
             name: variant.name,
             sku: variant.sku,
             price: parseFloat(variant.price),
+            compareAtPrice: variant.compare_at_price != null ? parseFloat(variant.compare_at_price) : null,
+            discountPercent: variant.discount_percent != null ? parseFloat(variant.discount_percent) : null,
             stock: variant.stock,
             status: variant.status,
             sortOrder: variant.sort_order,
@@ -858,7 +860,7 @@ export function setupProductOptionRoutes(app: Express): void {
         return;
       }
 
-      const { price, stock, sku, status, sortOrder } = req.body;
+      const { price, stock, sku, status, sortOrder, compareAtPrice, discountPercent } = req.body;
       const updates: string[] = [];
       const values: any[] = [];
       let idx = 1;
@@ -871,6 +873,24 @@ export function setupProductOptionRoutes(app: Express): void {
         }
         updates.push(`price = $${idx++}`);
         values.push(priceNum);
+      }
+      if (compareAtPrice !== undefined) {
+        const capNum = compareAtPrice != null ? Number(compareAtPrice) : null;
+        if (capNum !== null && (!Number.isFinite(capNum) || capNum < 0)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid compareAtPrice" } });
+          return;
+        }
+        updates.push(`compare_at_price = $${idx++}`);
+        values.push(capNum);
+      }
+      if (discountPercent !== undefined) {
+        const dpNum = discountPercent != null ? Number(discountPercent) : null;
+        if (dpNum !== null && (!Number.isFinite(dpNum) || dpNum < 0 || dpNum > 100)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid discountPercent (0-100)" } });
+          return;
+        }
+        updates.push(`discount_percent = $${idx++}`);
+        values.push(dpNum);
       }
       if (stock !== undefined) {
         const stockNum = Number(stock);

@@ -106,6 +106,14 @@ async function ensureVariantTables(): Promise<void> {
       if (imgErr?.code !== "42P01") console.warn("[startup] product_variant_images creation warning:", imgErr?.message);
     }
     console.log("[startup] variant/option tables created successfully");
+    // V0029: Add discount columns to product_variants if missing
+    try {
+      await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC(12,2)`);
+      await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2)`);
+      console.log("[startup] V0029 discount columns ensured");
+    } catch (v29Err: any) {
+      console.warn("[startup] V0029 discount columns warning:", v29Err?.message);
+    }
   } catch (err: any) {
     console.error("[startup] ensureVariantTables failed:", err?.message ?? err);
   }
