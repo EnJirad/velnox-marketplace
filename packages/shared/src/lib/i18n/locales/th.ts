@@ -295,6 +295,7 @@ export const th = {
     ariaIncrease: "เพิ่มจำนวน",
     ariaRemove: "ลบ {name}",
     summary: "สินค้าในตะกร้าของคุณ",
+    quantity: "จำนวน",
     tagline: "Commerce that remembers you · จำแทนคุณ",
   },
 

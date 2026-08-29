@@ -906,7 +906,7 @@ export default function ShopProductDetail() {
                         </button>
                       )}
                     </div>
-                    <div className={`mt-1.5 flex flex-wrap ${compactSheet ? "gap-1" : "gap-1.5"}`}>
+                    <div className={`mt-2 flex flex-wrap ${compactSheet ? "gap-2" : "gap-3"}`}>
                       {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
                         const isSelected = selectedOptions[group.id] === val.id;
                         // Check in-stock availability using real variant combinations
@@ -934,23 +934,23 @@ export default function ShopProductDetail() {
                             type="button"
                             disabled={!valueInStock}
                             onClick={() => handleOptionSelect(group.id, val.id)}
-                            className={`${compactSheet ? "size-12 p-0.5" : "size-16 p-1"} flex flex-col items-center justify-center gap-0.5 rounded-xl border transition-colors ${
+                            className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                               isSelected
                                 ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
                                 : valueInStock
-                                  ? "border-slate-200 bg-white hover:border-slate-300"
+                                  ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
                                   : "border-slate-100 bg-slate-50 opacity-40"
                             }`}
                             aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
                           >
                             {val.imageUrl ? (
-                              <img src={val.imageUrl} alt="" className={`${compactSheet ? "size-7" : "size-9"} rounded-md object-cover`} />
+                              <img src={val.imageUrl} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
                             ) : (
-                              <span className={`${compactSheet ? "size-7 text-[9px]" : "size-9 text-[10px]"} flex items-center justify-center rounded-md bg-slate-100 font-semibold text-slate-500`}>
+                              <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
                                 {(val.label || val.value).slice(0, 3)}
                               </span>
                             )}
-                            <span className={`max-w-full truncate ${compactSheet ? "text-[9px]" : "text-[10px]"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                            <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
                               {val.label || val.value}
                             </span>
                           </button>

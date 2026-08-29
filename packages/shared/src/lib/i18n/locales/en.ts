@@ -294,6 +294,7 @@ export const en: Dict = {
     ariaIncrease: "Increase quantity",
     ariaRemove: "Remove {name}",
     summary: "Items in your cart",
+    quantity: "Qty",
     tagline: "Commerce that remembers you",
   },
 

@@ -193,6 +193,7 @@ export const my = {
     ariaIncrease: "အရေအတွက်တိုးမည်",
     ariaRemove: "{name} ဖယ်ရှားမည်",
     summary: "သင့်ခြင်းတောင်းထဲရှိ ပစ္စည်းများ",
+    quantity: "အရေအတွက်",
     tagline: "Commerce that remembers you · မှတ်မိနေသော ဈေးဝယ်မှု",
   },
 
