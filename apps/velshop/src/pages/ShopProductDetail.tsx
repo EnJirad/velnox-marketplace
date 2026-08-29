@@ -2,6 +2,7 @@ import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
 import { ProductCard } from "@/components/shop/ProductCard";
+import { ProductSelectionSheet } from "@/components/shop/ProductSelectionSheet";
 import { useCartFlyAnimation } from "@/components/shop/CartFlyAnimation";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -101,10 +102,11 @@ function ExpandableDescription({ text, t }: { text: string; t: (k: string, v?: R
 
 /* ─── Horizontal Carousel ──────────────────────────────────────────────── */
 
-function ProductCarousel({ title, viewAllLink, products, emptyText, t }: {
+function ProductCarousel({ title, viewAllLink, products, emptyText, t, onProductOpen }: {
   title: string; viewAllLink?: string; products: StoreProduct[];
   emptyText: string;
   t: (k: string, v?: Record<string, string | number>) => string;
+  onProductOpen?: (product: StoreProduct) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   if (products.length === 0) return null;
@@ -129,7 +131,7 @@ function ProductCarousel({ title, viewAllLink, products, emptyText, t }: {
       <div ref={scrollRef} className="mt-3 flex gap-3 overflow-x-auto scroll-smooth pb-2 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
         {products.map((p) => (
           <div key={p.id} className="w-40 shrink-0 sm:w-48">
-            <ProductCard product={p} />
+            <ProductCard product={p} onOpen={onProductOpen} />
           </div>
         ))}
       </div>
@@ -202,6 +204,7 @@ export default function ShopProductDetail() {
   const addBtnRef = useRef<HTMLButtonElement>(null);
   const [selectedVariant, setSelectedVariant] = useState<any>(null);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [selectedProduct, setSelectedProduct] = useState<StoreProduct | null>(null);
   const [optionGroups, setOptionGroups] = useState<any[]>([]);
   const [variantOptions, setVariantOptions] = useState<Record<string, any>>({});
   const [optionError, setOptionError] = useState<string | null>(null);
@@ -645,8 +648,8 @@ export default function ShopProductDetail() {
             {/* Tab: Recommend */}
             {activeTab === "recommend" && (
               <div className="space-y-8">
-                <ProductCarousel title={t("productDetail.recommendedProducts")} products={recommended} emptyText={t("productDetail.noRecommendedProducts")} t={t} />
-                <ProductCarousel title={t("productDetail.similarProducts")} products={similar} emptyText={t("productDetail.noSimilarProducts")} t={t} />
+                <ProductCarousel title={t("productDetail.recommendedProducts")} products={recommended} emptyText={t("productDetail.noRecommendedProducts")} t={t} onProductOpen={setSelectedProduct} />
+                <ProductCarousel title={t("productDetail.similarProducts")} products={similar} emptyText={t("productDetail.noSimilarProducts")} t={t} onProductOpen={setSelectedProduct} />
                 {recommended.length === 0 && similar.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><p className="text-sm font-medium text-slate-500">{t("productDetail.noRecommendedProducts")}</p></div>
                 )}
@@ -719,6 +722,11 @@ export default function ShopProductDetail() {
         </section>
       </main>
 
+      <ProductSelectionSheet
+        product={selectedProduct}
+        open={selectedProduct !== null}
+        onOpenChange={(o) => { if (!o) setSelectedProduct(null); }}
+      />
       <ShopFooter />
       <SubscriptionDialog product={product} open={subOpen} onOpenChange={setSubOpen} />
     </div>

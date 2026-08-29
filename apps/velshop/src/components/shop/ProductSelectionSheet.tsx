@@ -189,14 +189,16 @@ export function ProductSelectionSheet({
       qty,
     );
 
+    // Capture source position BEFORE closing sheet (DOM may unmount)
+    const addToCartBtn = (document.querySelector('[data-add-to-cart]') as HTMLElement)?.getBoundingClientRect();
+    const sourceRect = addToCartBtn ?? { left: window.innerWidth / 2 - 12, top: window.innerHeight - 120, width: 24, height: 24, right: 0, bottom: 0, x: 0, y: 0 };
+    const targetRect = cartIconRef?.current?.getBoundingClientRect();
+
     // Close sheet
     onOpenChange(false);
 
     // Fly animation
-    if (cartIconRef?.current) {
-      const cartEl = cartIconRef.current;
-      const cartRect = cartEl.getBoundingClientRect();
-      // Create fly element
+    if (targetRect) {
       const fly = document.createElement("div");
       fly.style.cssText = `
         position: fixed;
@@ -206,16 +208,16 @@ export function ProductSelectionSheet({
         border-radius: 50%;
         background: #10B981;
         pointer-events: none;
-        transition: all 0.6s cubic-bezier(0.2, 1, 0.3, 1);
       `;
-      fly.style.left = `${cartRect.left + cartRect.width / 2 - 12}px`;
-      fly.style.top = `${cartRect.top + cartRect.height / 2 - 12}px`;
+      fly.style.left = `${sourceRect.left + sourceRect.width / 2 - 12}px`;
+      fly.style.top = `${sourceRect.top + sourceRect.height / 2 - 12}px`;
       document.body.appendChild(fly);
 
       // Animate to cart icon
       requestAnimationFrame(() => {
-        fly.style.left = `${cartRect.left + cartRect.width / 2 - 12}px`;
-        fly.style.top = `${cartRect.top + cartRect.height / 2 - 12}px`;
+        fly.style.transition = "all 0.6s cubic-bezier(0.2, 1, 0.3, 1)";
+        fly.style.left = `${targetRect.left + targetRect.width / 2 - 12}px`;
+        fly.style.top = `${targetRect.top + targetRect.height / 2 - 12}px`;
         fly.style.opacity = "0";
         fly.style.transform = "scale(0.3)";
       });
@@ -223,8 +225,11 @@ export function ProductSelectionSheet({
       setTimeout(() => {
         fly.remove();
         // Pulse the cart icon
-        cartEl.classList.add("scale-125");
-        setTimeout(() => cartEl.classList.remove("scale-125"), 200);
+        const cartEl = cartIconRef?.current;
+        if (cartEl) {
+          cartEl.classList.add("scale-125");
+          setTimeout(() => cartEl.classList.remove("scale-125"), 200);
+        }
       }, 650);
     }
 
@@ -307,12 +312,7 @@ export function ProductSelectionSheet({
                     })
                   : t("product.inStockShort")}
             </p>
-            {product.shopName && (
-              <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
-                <Store className="size-3 shrink-0" />
-                <span className="truncate">{product.shopName}</span>
-              </p>
-            )}
+
           </div>
         </div>
 
@@ -417,6 +417,21 @@ export function ProductSelectionSheet({
           </div>
         )}
 
+        {/* Shop info (below quantity) */}
+        {product.shopName && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-700">
+                {t("product.shopVisit", { name: "" }).trim().replace(/\s+/, " ").split(" ")[0] || t("shopDetail.title")}
+              </p>
+              <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Store className="size-3.5 shrink-0" />
+                <span className="truncate max-w-[160px]">{product.shopName}</span>
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Quantity selector */}
         {!outOfStock && (
           <div className="mt-4 border-t border-slate-100 pt-4">
@@ -473,6 +488,7 @@ export function ProductSelectionSheet({
           </Button>
         ) : (
           <Button
+            data-add-to-cart
             className="w-full gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
             onClick={handleAddToCart}
           >
