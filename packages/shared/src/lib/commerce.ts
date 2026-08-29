@@ -67,6 +67,50 @@ export interface StoreProduct {
   /** average published review rating (0–5), null = no reviews yet */
   rating?: number | null;
   reviewCount?: number;
+  // VelRepeat configuration
+  vrepeatEnabled?: boolean;
+  vrepeatWeeklyEnabled?: boolean;
+  vrepeatMonthlyEnabled?: boolean;
+  vrepeatWeeklyPrice?: number | null;
+  vrepeatMonthlyPrice?: number | null;
+  vrepeatWeeklyQty?: number | null;
+  vrepeatMonthlyQty?: number | null;
+
+  /** Dynamic option groups loaded from product_option_groups */
+  optionGroups?: ProductOptionGroup[];
+  /** Variant objects loaded from product_variants */
+  variants?: ProductVariant[];
+  /** Map of variantId → { groupId → optionValueId } */
+  variantOptions?: Record<string, Record<string, string>>;
+}
+
+export interface ProductOptionGroup {
+  id: string;
+  name: string;
+  displayType: string;
+  required: boolean;
+  sortOrder: number;
+  values: ProductOptionValue[];
+}
+
+export interface ProductOptionValue {
+  id: string;
+  value: string;
+  label: string;
+  imageUrl: string | null;
+  sortOrder: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  sku: string | null;
+  price: number;
+  stock: number;
+  status: string;
+  options?: Record<string, any>;
+  sortOrder: number;
 }
 
 export interface StoreShop {

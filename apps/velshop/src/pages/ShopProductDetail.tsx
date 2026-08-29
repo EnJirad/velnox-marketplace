@@ -761,6 +761,29 @@ export default function ShopProductDetail() {
             <ArrowLeft className="size-4 rotate-180 text-slate-300" />
           </Link>
         </section>
+
+        {/* ═══════════ VELREPEAT ═══════════ */}
+        {(product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) && (
+          <section className="mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+                setSubOpen(true);
+              }}
+              className="flex w-full items-center gap-3 rounded-2xl border border-[#10B981]/20 bg-[#ECFDF5] p-4 text-left transition-colors hover:border-[#10B981]/40"
+            >
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#10B981]/10">
+                <CalendarClock className="size-5 text-[#10B981]" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">🔄 VelRepeat — ซื้อซ้ำอัตโนมัติ</p>
+                <p className="mt-0.5 text-xs text-slate-500">ให้ระบบสั่งซื้อสินค้านี้ให้อัตโนมัติตามรอบที่เลือก</p>
+              </div>
+              <ArrowLeft className="size-4 rotate-180 shrink-0 text-[#10B981]" />
+            </button>
+          </section>
+        )}
       </main>
 
       {/* ═══════════ VARIANT BOTTOM SHEET ═══════════ */}
@@ -912,7 +935,7 @@ export default function ShopProductDetail() {
       </Sheet>
 
       <ShopFooter />
-      <SubscriptionDialog product={product} open={subOpen} onOpenChange={setSubOpen} />
+      <SubscriptionDialog product={product} open={subOpen} onOpenChange={setSubOpen} selectedVariant={selectedVariant ? { id: selectedVariant.id, name: selectedVariant.name, price: selectedVariant.price, sku: selectedVariant.sku } : null} />
     </div>
   );
 }
