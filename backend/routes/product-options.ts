@@ -17,6 +17,8 @@
  *   GET /api/products/:productId/options                         — Get option groups + values (published only)
  */
 import type { Express, Request, Response } from "express";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 
@@ -42,6 +44,38 @@ async function verifyProductOwnership(productId: string, sellerId: string): Prom
   );
   return r.rows.length > 0;
 }
+
+// ─── R2 Client ──────────────────────────────────────────────────────────────
+function getR2Config() {
+  return {
+    accountId: process.env.R2_ACCOUNT_ID || "",
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+    bucket: process.env.R2_BUCKET || "",
+    publicDomain: process.env.R2_PUBLIC_DOMAIN || "",
+  };
+}
+
+let _r2: S3Client | null = null;
+function getR2(): S3Client {
+  if (!_r2) {
+    const cfg = getR2Config();
+    _r2 = new S3Client({
+      region: "auto",
+      endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+    });
+  }
+  return _r2;
+}
+
+function publicUrl(key: string): string {
+  const domain = getR2Config().publicDomain;
+  if (!domain) return "";
+  return `https://${domain}/${key}`;
+}
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
 // ─── Route Registration ───────────────────────────────────────────────────
 
@@ -949,6 +983,126 @@ export function setupProductOptionRoutes(app: Express): void {
     } catch (err) {
       console.error("[product-options] update option value error:", err);
       res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update option value" } });
+    }
+  });
+
+  // ── POST /api/seller/products/:productId/option-values/:valueId/image ──
+  // Get a signed R2 upload URL for an option value image
+  app.post("/api/seller/products/:productId/option-values/:valueId/image", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const valueId = param(req, "valueId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Verify option value belongs to this product
+      const valueCheck = await query(
+        `SELECT pov.id FROM product_option_values pov
+         JOIN product_option_groups pog ON pov.option_group_id = pog.id
+         WHERE pov.id = $1 AND pog.product_id = $2`,
+        [valueId, productId]
+      );
+      if (valueCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Option value not found" } }); return;
+      }
+
+      const { filename, mimeType } = req.body;
+      if (!filename || !mimeType) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "filename and mimeType required" } }); return;
+      }
+      if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed" } }); return;
+      }
+
+      const uniqueId = crypto.randomUUID().replace(/-/g, "").substring(0, 12);
+      const objectKey = `option-values/${productId}/${valueId}/${uniqueId}.webp`;
+
+      const command = new PutObjectCommand({
+        Bucket: getR2Config().bucket,
+        Key: objectKey,
+        ContentType: mimeType,
+      });
+
+      const uploadUrl = await getSignedUrl(getR2(), command, { expiresIn: 300 });
+      const cdnUrl = publicUrl(objectKey);
+
+      console.log(`[product-options] option value image intent: ${objectKey} for value ${valueId}`);
+
+      res.json({
+        success: true,
+        data: { uploadUrl, objectKey, cdnUrl, expiresAt: Date.now() + 300_000 },
+      });
+    } catch (err) {
+      console.error("[product-options] option value image intent error:", err);
+      res.status(500).json({ success: false, error: { code: "R2_PRESIGN_FAILED", message: "Failed to generate upload URL" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/option-values/:valueId/save-image ──
+  // After R2 upload, save the image URL to the option value
+  app.patch("/api/seller/products/:productId/option-values/:valueId/save-image", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const valueId = param(req, "valueId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      const valueCheck = await query(
+        `SELECT pov.id FROM product_option_values pov
+         JOIN product_option_groups pog ON pov.option_group_id = pog.id
+         WHERE pov.id = $1 AND pog.product_id = $2`,
+        [valueId, productId]
+      );
+      if (valueCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Option value not found" } }); return;
+      }
+
+      const { imageUrl } = req.body;
+      if (!imageUrl || typeof imageUrl !== "string") {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "imageUrl required" } }); return;
+      }
+
+      await query(`UPDATE product_option_values SET image_url = $1 WHERE id = $2`, [imageUrl, valueId]);
+
+      console.log(`[product-options] saved option value image: ${valueId} → ${imageUrl}`);
+      res.json({ success: true, data: { id: valueId, imageUrl } });
+    } catch (err) {
+      console.error("[product-options] save option value image error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to save option value image" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId/option-values/:valueId/image ──
+  // Remove option value image
+  app.delete("/api/seller/products/:productId/option-values/:valueId/image", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const valueId = param(req, "valueId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      await query(`UPDATE product_option_values SET image_url = NULL WHERE id = $1`, [valueId]);
+
+      console.log(`[product-options] removed option value image: ${valueId}`);
+      res.json({ success: true, data: { id: valueId, imageUrl: null } });
+    } catch (err) {
+      console.error("[product-options] delete option value image error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete option value image" } });
     }
   });
 
