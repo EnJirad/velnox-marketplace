@@ -1,5 +1,4 @@
 import { ProductCard } from "@/components/shop/ProductCard";
-import { ProductSelectionSheet } from "@/components/shop/ProductSelectionSheet";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
@@ -111,7 +110,6 @@ export default function ShopHome() {
 
   const [query, setQuery] = useState("");
   const [subProduct, setSubProduct] = useState<StoreProduct | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<StoreProduct | null>(null);
   const toggleWishlist = useAction(api.customer.toggleWishlistAction);
   const myWishlist = useAction(api.customer.myWishlist);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
@@ -162,7 +160,7 @@ export default function ShopHome() {
 
   const openProduct = (product: StoreProduct, source: string) => {
     track("PRODUCT_CLICK", { entityId: product.id, value: product.name, context: { category: product.category, source } });
-    setSelectedProduct(product);
+    navigate(`/products/${product.id}`);
   };
 
   const handleWishlist = async (product: StoreProduct) => {
@@ -289,12 +287,7 @@ export default function ShopHome() {
       </main>
       <ShopFooter />
       <SubscriptionDialog product={subProduct} open={subProduct !== null} onOpenChange={(open) => { if (!open) setSubProduct(null); }} />
-      <ProductSelectionSheet
-        product={selectedProduct}
-        open={selectedProduct !== null}
-        onOpenChange={(open) => { if (!open) setSelectedProduct(null); }}
-        cartIconRef={undefined}
-      />
+
     </div>
   );
 }

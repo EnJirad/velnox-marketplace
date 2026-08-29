@@ -1,5 +1,4 @@
 import { ProductCard } from "@/components/shop/ProductCard";
-import { ProductSelectionSheet } from "@/components/shop/ProductSelectionSheet";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -104,8 +103,6 @@ export default function ShopProducts() {
   const myWishlist = useAction(api.customer.myWishlist);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<StoreProduct | null>(null);
-
   // Load wishlist on mount if authenticated
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -571,7 +568,7 @@ export default function ShopProducts() {
                             value: p.name,
                             context: { category: p.category },
                           });
-                          setSelectedProduct(p);
+                          navigate(`/products/${p.id}`);
                         }}
                         onAdd={(p) => {
                           const available = p.inventory?.available ?? p.inventory?.quantity ?? 0;
@@ -636,12 +633,6 @@ export default function ShopProducts() {
           </div>
         </div>
       </main>
-
-      <ProductSelectionSheet
-        product={selectedProduct}
-        open={selectedProduct !== null}
-        onOpenChange={(open) => { if (!open) setSelectedProduct(null); }}
-      />
 
       <ShopFooter />
     </div>

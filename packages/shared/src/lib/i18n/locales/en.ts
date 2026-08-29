@@ -352,6 +352,7 @@ export const en: Dict = {
     linkCopied: "Link copied",
     inStock: "In stock ({count} {unit})",
     lowStock: "Low stock ({count} {unit})",
+    options: "Options",
     selectOptions: "Please select required options",
     pleaseSelectOption: "Please select {options}",
     variantUnavailable: "This option is not available",
