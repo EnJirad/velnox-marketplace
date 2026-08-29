@@ -34,7 +34,10 @@ import {
   X,
   ListOrdered,
   Tag,
+  Pencil,
+  Trash2,
 } from "lucide-react";
+import { Badge } from "@velnox/shared/components/ui/badge";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -72,6 +75,161 @@ interface AttributeForm {
   id?: string;
   name: string;
   value: string;
+}
+
+interface VariantRow {
+  id: string;
+  name: string;
+  sku: string | null;
+  price: number;
+  stock: number;
+  status: string;
+  optionLabels: string;
+}
+
+/** Inline variant manager — generates and edits variants for a saved product. */
+function VariantManager({ productId, price }: { productId: string; price: number }) {
+  const [variants, setVariants] = useState<VariantRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFields, setEditFields] = useState<{ price: string; stock: string; sku: string; status: string }>({ price: "", stock: "", sku: "", status: "active" });
+  const [loaded, setLoaded] = useState(false);
+
+  const baseUrl = import.meta.env.VITE_API_URL || "";
+
+  const fetchVariants = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${baseUrl}/api/seller/products/${productId}/variants`, { credentials: "include" });
+      const data = await res.json();
+      if (data.success) setVariants(data.data ?? []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [productId, baseUrl]);
+
+  useEffect(() => {
+    if (!loaded) { fetchVariants(); setLoaded(true); }
+  }, [loaded, fetchVariants]);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const res = await fetch(`${baseUrl}/api/seller/products/${productId}/variants/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`สร้าง ${data.data?.variants?.length ?? 0} variants สำเร็จ`);
+        await fetchVariants();
+      } else {
+        toast.error(data.error?.message || "สร้าง variant ไม่สำเร็จ");
+      }
+    } catch { toast.error("สร้าง variant ไม่สำเร็จ"); }
+    setGenerating(false);
+  };
+
+  const startEdit = (v: VariantRow) => {
+    setEditingId(v.id);
+    setEditFields({ price: String(v.price), stock: String(v.stock), sku: v.sku ?? "", status: v.status });
+  };
+
+  const saveEdit = async (variantId: string) => {
+    try {
+      const res = await fetch(`${baseUrl}/api/seller/products/${productId}/variants/${variantId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          price: Number(editFields.price),
+          stock: Number(editFields.stock),
+          sku: editFields.sku || null,
+          status: editFields.status,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEditingId(null);
+        await fetchVariants();
+        toast.success("บันทึก variant แล้ว");
+      } else {
+        toast.error(data.error?.message || "บันทึกไม่สำเร็จ");
+      }
+    } catch { toast.error("บันทึกไม่สำเร็จ"); }
+  };
+
+  const handleDelete = async (variantId: string) => {
+    try {
+      await fetch(`${baseUrl}/api/seller/products/${productId}/variants/${variantId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      await fetchVariants();
+    } catch { /* best effort */ }
+  };
+
+  if (variants.length === 0 && !loading) {
+    return (
+      <div className="mt-3 border-t border-slate-200 pt-3">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full gap-1.5 border-dashed border-[#10B981] text-sm text-[#10B981] hover:bg-[#ECFDF5]"
+          onClick={handleGenerate}
+          disabled={generating}
+        >
+          {generating ? <Loader2 className="size-4 animate-spin" /> : <ListOrdered className="size-4" />}
+          สร้าง Variants จากตัวเลือก
+        </Button>
+        <p className="mt-1 text-[11px] text-slate-400">สร้าง combination ของตัวเลือกอัตโนมัติ เช่น สีแดง+S, สีแดง+M</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 border-t border-slate-200 pt-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-slate-700">Variants ({variants.length})</p>
+        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 text-xs text-[#10B981]" onClick={handleGenerate} disabled={generating}>
+          {generating ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+          สร้างใหม่
+        </Button>
+      </div>
+      <div className="mt-2 space-y-1.5">
+        {variants.map((v) => (
+          <div key={v.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs">
+            {editingId === v.id ? (
+              <>
+                <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
+                <Input value={editFields.price} onChange={(e) => setEditFields((f) => ({ ...f, price: e.target.value }))} type="number" className="h-7 w-20 text-xs" placeholder="ราคา" />
+                <Input value={editFields.stock} onChange={(e) => setEditFields((f) => ({ ...f, stock: e.target.value }))} type="number" className="h-7 w-16 text-xs" placeholder="stock" />
+                <Input value={editFields.sku} onChange={(e) => setEditFields((f) => ({ ...f, sku: e.target.value }))} className="h-7 w-20 text-xs" placeholder="SKU" />
+                <Button type="button" size="sm" className="h-7 text-xs" onClick={() => saveEdit(v.id)}>บันทึก</Button>
+                <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}>ยกเลิก</Button>
+              </>
+            ) : (
+              <>
+                <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
+                <span className="shrink-0 tabular-nums text-slate-600">฿{v.price}</span>
+                <span className={`shrink-0 tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} ชิ้น</span>
+                {v.sku && <span className="shrink-0 font-mono text-[10px] text-slate-400">{v.sku}</span>}
+                <Badge className={`shrink-0 text-[10px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
+                <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-slate-700" onClick={() => startEdit(v)} aria-label="แก้ไข">
+                  <Pencil className="size-3" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => handleDelete(v.id)} aria-label="ลบ">
+                  <Trash2 className="size-3" />
+                </Button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 const defaultForm = {
@@ -523,6 +681,11 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               เพิ่มกลุ่มตัวเลือก
             </Button>
           </div>
+
+          {/* Generate + Manage Variants (existing products only) */}
+          {current && (
+            <VariantManager productId={current.id} price={Number(form.price) || 0} />
+          )}
         </div>
 
         {/* ═══ Product Attributes ═══════════════════════════════════ */}

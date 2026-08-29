@@ -463,7 +463,7 @@ export function setupCartRoutes(app: Express): void {
         return;
       }
 
-      // Validate all items
+      // Validate all items — variant-aware stock check
       const items = itemsResult.rows;
       for (const item of items) {
         if (item.product_status !== "published") {
@@ -473,13 +473,48 @@ export function setupCartRoutes(app: Express): void {
           });
           return;
         }
-        const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
-        if (item.quantity > available) {
-          res.status(400).json({
-            success: false,
-            error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}"` },
-          });
-          return;
+        if (item.variant_id) {
+          // Check variant-level stock
+          try {
+            const varStock = await query(
+              `SELECT stock, status FROM product_variants WHERE id = $1`,
+              [item.variant_id],
+            );
+            if (varStock.rows.length === 0) {
+              res.status(400).json({
+                success: false,
+                error: { code: "VARIANT_UNAVAILABLE", message: `Variant for "${item.product_name}" is no longer available` },
+              });
+              return;
+            }
+            const v = varStock.rows[0];
+            if (v.status !== "active" || item.quantity > v.stock) {
+              res.status(400).json({
+                success: false,
+                error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}" (variant: ${v.stock} available)` },
+              });
+              return;
+            }
+          } catch {
+            // Variant table may not exist — fallback to inventory check
+            const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
+            if (item.quantity > available) {
+              res.status(400).json({
+                success: false,
+                error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}"` },
+              });
+              return;
+            }
+          }
+        } else {
+          const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
+          if (item.quantity > available) {
+            res.status(400).json({
+              success: false,
+              error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}"` },
+            });
+            return;
+          }
         }
       }
 
@@ -515,17 +550,66 @@ export function setupCartRoutes(app: Express): void {
           // Create order items + decrease stock
           for (const item of shopItems) {
             const subtotal = parseFloat(item.price) * item.quantity;
+
+            // Load variant info for snapshot
+            let variantNameSnapshot: string | null = null;
+            let skuSnapshot: string | null = null;
+            let optionLabelsSnapshot: string | null = null;
+            if (item.variant_id) {
+              try {
+                const varRes = await client.query(
+                  `SELECT pv.name AS vname, pv.sku,
+                          COALESCE(
+                            (SELECT string_agg(pov.label, ' / ' ORDER BY pog.sort_order)
+                             FROM product_variant_values pvv
+                             JOIN product_option_values pov ON pvv.option_value_id = pov.id
+                             JOIN product_option_groups pog ON pov.option_group_id = pog.id
+                             WHERE pvv.variant_id = pv.id),
+                            ''
+                          ) AS option_labels
+                   FROM product_variants pv WHERE pv.id = $1`,
+                  [item.variant_id],
+                );
+                if (varRes.rows[0]) {
+                  variantNameSnapshot = varRes.rows[0].vname;
+                  skuSnapshot = varRes.rows[0].sku;
+                  optionLabelsSnapshot = varRes.rows[0].option_labels;
+                }
+              } catch { /* variant table may not exist */ }
+            }
+
             await client.query(
-              `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, image_url_snapshot, quantity, price, subtotal)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-              [orderId, item.product_id, item.shop_id || null, item.product_name, item.product_name, item.product_image_url || null, item.quantity, item.price, subtotal],
+              `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, image_url_snapshot, variant_id, variant_name_snapshot, quantity, price, subtotal)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+              [orderId, item.product_id, item.shop_id || null, item.product_name, item.product_name, item.product_image_url || null, item.variant_id || null, variantNameSnapshot, item.quantity, item.price, subtotal],
             );
 
-            // Reserve stock
-            await client.query(
-              `UPDATE inventory SET reserved = reserved + $1 WHERE product_id = $2`,
-              [item.quantity, item.product_id],
-            );
+            // Decrease stock: if variant, use atomic variant stock decrement; otherwise use inventory
+            if (item.variant_id) {
+              try {
+                const updResult = await client.query(
+                  `UPDATE product_variants SET stock = stock - $1, updated_at = NOW()
+                   WHERE id = $2 AND stock >= $1
+                   RETURNING id`,
+                  [item.quantity, item.variant_id],
+                );
+                if (updResult.rows.length === 0) {
+                  throw new Error(`INSUFFICIENT_STOCK: variant ${item.variant_id}`);
+                }
+              } catch (varErr: any) {
+                if (varErr?.message?.startsWith('INSUFFICIENT_STOCK')) throw varErr;
+                // Variant table may not exist — fallback to inventory
+                await client.query(
+                  `UPDATE inventory SET reserved = reserved + $1 WHERE product_id = $2`,
+                  [item.quantity, item.product_id],
+                );
+              }
+            } else {
+              await client.query(
+                `UPDATE inventory SET reserved = reserved + $1 WHERE product_id = $2`,
+                [item.quantity, item.product_id],
+              );
+            }
           }
 
           createdOrders.push({ orderId, orderNumber: orderId, shopId, shopName: shopItems[0]?.shop_name ?? '', subtotal: totalAmount, shippingFee: 0, total: totalAmount });

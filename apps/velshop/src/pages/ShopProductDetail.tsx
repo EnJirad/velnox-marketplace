@@ -376,6 +376,13 @@ export default function ShopProductDetail() {
     setVariantSheetOpen(true);
   }, []);
 
+  // Auto-clip qty when variant stock changes while sheet is open
+  useEffect(() => {
+    if (variantSheetOpen && sheetQty > displayStock && displayStock > 0) {
+      setSheetQty(displayStock);
+    }
+  }, [variantSheetOpen, displayStock, sheetQty]);
+
   const handleAddToCart = useCallback(() => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
