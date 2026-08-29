@@ -206,7 +206,6 @@ export const my = {
     outOfStockDesc: "ပစ္စည်းပြတ်နေသည် — မကြာမီ ပြန်လည်ဖြည့်တင်းနိုင်သည်",
     buyNow: "ချက်ချင်းဝယ်မည်",
     addToCartWithTotal: "ခြင်းတောင်းထဲထည့်မည် · {total}",
-    selectOptions: "ကျေးဇူးပြု၍ထုတ်ကုန်ရွေးချယ်ပါ",
     reorderCta: "လစဉ် ပြန်မှာယူမည် (VelRepeat) — စနစ်က အလိုအလျောက် မှာပေးပါသည်",
     reviews: "ကုန်ပစ္စည်း သုံးသပ်ချက်များ",
     reviewsCount: "{count} ခု",

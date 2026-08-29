@@ -307,7 +307,6 @@ export const en: Dict = {
     outOfStockDesc: "Out of stock — it may be restocked soon",
     buyNow: "Buy now",
     addToCartWithTotal: "Add to Cart · {total}",
-    selectOptions: "Please select product options",
     reorderCta: "Reorder monthly (VelRepeat) — we order it for you automatically",
     reviews: "Product reviews",
     reviewsCount: "{count} reviews",

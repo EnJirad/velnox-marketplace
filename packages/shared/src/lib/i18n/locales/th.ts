@@ -308,7 +308,6 @@ export const th = {
     outOfStockDesc: "หมดชั่วคราว — สินค้าอาจกลับมามีสต็อกเร็ว ๆ นี้",
     buyNow: "ซื้อเลย",
     addToCartWithTotal: "ใส่ตะกร้า · {total}",
-    selectOptions: "กรุณาเลือกตัวเลือกสินค้า",
     reorderCta: "สั่งรายเดือน (VelRepeat) — ให้ระบบสั่งให้อัตโนมัติทุกช่วงเวลา",
     reviews: "รีวิวสินค้า",
     reviewsCount: "{count} รายการ",
