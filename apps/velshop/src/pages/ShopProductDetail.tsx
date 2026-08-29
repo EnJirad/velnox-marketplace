@@ -29,6 +29,8 @@ import {
   Heart,
   ImageOff,
   Loader2,
+  Maximize2,
+  Minimize2,
   Minus,
   Plus,
   Share2,
@@ -216,6 +218,7 @@ export default function ShopProductDetail() {
   const [variantSheetOpen, setVariantSheetOpen] = useState(false);
   const [sheetQty, setSheetQty] = useState(1);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [compactSheet, setCompactSheet] = useState(false);
   const addBtnRef = useRef<HTMLButtonElement>(null);
 
   /* ── Recommendation state ───────────────────────────────────────── */
@@ -887,25 +890,42 @@ export default function ShopProductDetail() {
               <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
                 {optionGroups.map((group: any) => (
                   <div key={group.id}>
-                    <p className="text-xs font-semibold text-slate-700">
-                      {group.name}
-                      {group.required && <span className="ml-1 text-red-400">*</span>}
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-slate-700">
+                        {group.name}
+                        {group.required && <span className="ml-1 text-red-400">*</span>}
+                      </p>
+                      {group === optionGroups[0] && (
+                        <button
+                          type="button"
+                          onClick={() => setCompactSheet((c) => !c)}
+                          className="flex size-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                          aria-label={compactSheet ? "ขยายขนาดตัวเลือก" : "ย่อขนาดตัวเลือก"}
+                        >
+                          {compactSheet ? <Maximize2 className="size-3.5" /> : <Minimize2 className="size-3.5" />}
+                        </button>
+                      )}
+                    </div>
+                    <div className={`mt-1.5 flex flex-wrap ${compactSheet ? "gap-1" : "gap-1.5"}`}>
                       {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
                         const isSelected = selectedOptions[group.id] === val.id;
-                        // Check in-stock availability
+                        // Check in-stock availability using real variant combinations
                         const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
                         const vOptsMap = (product as any)?.variantOptions as Record<string, Record<string, string>> | undefined;
                         let valueInStock = true;
                         if (pVariants && vOptsMap) {
+                          // Build candidate options: current selection + this candidate value
+                          const candidateOptions = { ...selectedOptions, [group.id]: val.id };
                           valueInStock = pVariants.some((v) => {
                             const vOpts = vOptsMap[v.id];
-                            if (!vOpts || vOpts[group.id] !== val.id) return false;
-                            return Object.entries(selectedOptions).every(([gId, vId]) => {
-                              if (gId === group.id) return true;
+                            if (!vOpts) return false;
+                            // Variant must match ALL non-empty candidate options
+                            const matches = Object.entries(candidateOptions).every(([gId, vId]) => {
+                              // Skip empty selections — not yet chosen by user
+                              if (!vId) return true;
                               return vOpts[gId] === vId;
-                            }) && (v.stock ?? 0) > 0;
+                            });
+                            return matches && (v.stock ?? 0) > 0;
                           });
                         }
                         return (
@@ -914,20 +934,25 @@ export default function ShopProductDetail() {
                             type="button"
                             disabled={!valueInStock}
                             onClick={() => handleOptionSelect(group.id, val.id)}
-                            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            className={`${compactSheet ? "size-12 p-0.5" : "size-16 p-1"} flex flex-col items-center justify-center gap-0.5 rounded-xl border transition-colors ${
                               isSelected
-                                ? "border-[#10B981] bg-[#ECFDF5] text-[#10B981]"
+                                ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
                                 : valueInStock
-                                  ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                                  : "border-slate-100 bg-slate-50 text-slate-300 line-through"
+                                  ? "border-slate-200 bg-white hover:border-slate-300"
+                                  : "border-slate-100 bg-slate-50 opacity-40"
                             }`}
+                            aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
                           >
-                            {val.imageUrl && (
-                              <span className="mr-1 inline-block size-4 overflow-hidden rounded align-middle">
-                                <img src={val.imageUrl} alt="" className="size-full object-cover" />
+                            {val.imageUrl ? (
+                              <img src={val.imageUrl} alt="" className={`${compactSheet ? "size-7" : "size-9"} rounded-md object-cover`} />
+                            ) : (
+                              <span className={`${compactSheet ? "size-7 text-[9px]" : "size-9 text-[10px]"} flex items-center justify-center rounded-md bg-slate-100 font-semibold text-slate-500`}>
+                                {(val.label || val.value).slice(0, 3)}
                               </span>
                             )}
-                            {val.label || val.value}
+                            <span className={`max-w-full truncate ${compactSheet ? "text-[9px]" : "text-[10px]"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                              {val.label || val.value}
+                            </span>
                           </button>
                         );
                       })}
