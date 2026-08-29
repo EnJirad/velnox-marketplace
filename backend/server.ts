@@ -67,7 +67,7 @@ app.use(cors({
 async function ensureVariantTables(): Promise<void> {
   try {
     const { query } = await import("./db/index.js");
-    const checks = ["product_variants", "product_option_groups", "product_option_values", "product_variant_values"];
+    const checks = ["product_variants", "product_option_groups", "product_option_values", "product_variant_values", "product_variant_images"];
     const missing: string[] = [];
     for (const t of checks) {
       const r = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1) AS exists`, [t]);
@@ -84,6 +84,27 @@ async function ensureVariantTables(): Promise<void> {
     const sqlPath = path.join(process.cwd(), "db", "migrations", "028_create_variant_tables_if_missing.sql");
     const sql = fs.readFileSync(sqlPath, "utf-8");
     await query(sql);
+    // Also ensure product_variant_images exists (not in V0028)
+    try {
+      await query(`
+        CREATE TABLE IF NOT EXISTS product_variant_images (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+          product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          url TEXT NOT NULL,
+          alt TEXT DEFAULT '',
+          storage_key TEXT,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_variant_images_variant ON product_variant_images (variant_id);
+        CREATE INDEX IF NOT EXISTS idx_variant_images_product ON product_variant_images (product_id);
+      `);
+      console.log("[startup] product_variant_images table ensured");
+    } catch (imgErr: any) {
+      // 42P01 = table already exists with different schema — safe to ignore
+      if (imgErr?.code !== "42P01") console.warn("[startup] product_variant_images creation warning:", imgErr?.message);
+    }
     console.log("[startup] variant/option tables created successfully");
   } catch (err: any) {
     console.error("[startup] ensureVariantTables failed:", err?.message ?? err);

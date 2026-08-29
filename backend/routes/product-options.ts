@@ -951,4 +951,139 @@ export function setupProductOptionRoutes(app: Express): void {
       res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update option value" } });
     }
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VARIANT IMAGE ROUTES
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/seller/products/:productId/variants/:variantId/images ────
+  app.get("/api/seller/products/:productId/variants/:variantId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Verify variant exists and belongs to product
+      const variantCheck = await query("SELECT id FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+      if (variantCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant not found" } }); return;
+      }
+
+      const result = await query(
+        "SELECT * FROM product_variant_images WHERE variant_id = $1 ORDER BY sort_order ASC",
+        [variantId]
+      );
+
+      const images = result.rows.map((r: any) => ({
+        id: r.id,
+        variantId: r.variant_id,
+        productId: r.product_id,
+        url: r.url,
+        alt: r.alt || '',
+        storageKey: r.storage_key || null,
+        sortOrder: r.sort_order ?? 0,
+      }));
+
+      res.json({ success: true, data: images });
+    } catch (err) {
+      console.error("[product-options] list variant images error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch variant images" } });
+    }
+  });
+
+  // ── POST /api/seller/products/:productId/variants/:variantId/images ────
+  app.post("/api/seller/products/:productId/variants/:variantId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Verify variant belongs to product
+      const variantCheck = await query("SELECT id FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+      if (variantCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant not found" } }); return;
+      }
+
+      const { url, alt, storageKey, sortOrder } = req.body;
+      if (!url || typeof url !== "string" || !url.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Image URL is required" } }); return;
+      }
+
+      const maxSort = await query(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 as next_sort FROM product_variant_images WHERE variant_id = $1",
+        [variantId]
+      );
+      const resolvedSortOrder = sortOrder ?? maxSort.rows[0]?.next_sort ?? 0;
+
+      const result = await query(
+        `INSERT INTO product_variant_images (variant_id, product_id, url, alt, storage_key, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [variantId, productId, url.trim(), alt || '', storageKey || null, resolvedSortOrder]
+      );
+
+      const img = result.rows[0];
+      console.log(`[product-options] added variant image: ${img.id} for variant ${variantId}`);
+
+      res.json({
+        success: true,
+        data: {
+          id: img.id,
+          variantId: img.variant_id,
+          productId: img.product_id,
+          url: img.url,
+          alt: img.alt || '',
+          storageKey: img.storage_key || null,
+          sortOrder: img.sort_order ?? 0,
+        },
+      });
+    } catch (err) {
+      console.error("[product-options] add variant image error:", err);
+      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: "Failed to add variant image" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId/variant-images/:imageId ──────
+  app.delete("/api/seller/products/:productId/variant-images/:imageId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const imageId = param(req, "imageId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Verify image belongs to product's variant
+      const imgCheck = await query(
+        `SELECT pvi.id FROM product_variant_images pvi
+         WHERE pvi.id = $1 AND pvi.product_id = $2`,
+        [imageId, productId]
+      );
+      if (imgCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant image not found" } }); return;
+      }
+
+      await query("DELETE FROM product_variant_images WHERE id = $1", [imageId]);
+
+      console.log(`[product-options] deleted variant image: ${imageId}`);
+      res.json({ success: true, data: { id: imageId } });
+    } catch (err) {
+      console.error("[product-options] delete variant image error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete variant image" } });
+    }
+  });
 }

@@ -261,6 +261,26 @@ async function loadProductExtras(productIds: string[]): Promise<{
     inventoryByProduct.set(inv.product_id, inv);
   }
 
+  // Load variant images
+  let variantImagesResult: { rows: any[] } = { rows: [] as any[] };
+  try {
+    const variantIds = variantsResult.rows.map((v: any) => v.id);
+    if (variantIds.length > 0) {
+      variantImagesResult = await query(
+        `SELECT * FROM product_variant_images WHERE variant_id = ANY($1) ORDER BY sort_order ASC`,
+        [variantIds]
+      );
+    }
+  } catch (viErr: any) {
+    if (viErr?.code !== "42P01") console.warn("[products] variant images query warning:", viErr?.message);
+  }
+  const imagesByVariant = new Map<string, any[]>();
+  for (const img of variantImagesResult.rows) {
+    const list = imagesByVariant.get(img.variant_id) ?? [];
+    list.push({ id: img.id, url: img.url, alt: img.alt || '', sortOrder: img.sort_order ?? 0 });
+    imagesByVariant.set(img.variant_id, list);
+  }
+
   const variantsByProduct = new Map<string, any[]>();
   for (const v of variantsResult.rows) {
     const list = variantsByProduct.get(v.product_id) ?? [];
@@ -274,6 +294,7 @@ async function loadProductExtras(productIds: string[]): Promise<{
       status: v.status || "active",
       options: v.options || {},
       sortOrder: v.sort_order ?? 0,
+      images: imagesByVariant.get(v.id) ?? [],
     });
     variantsByProduct.set(v.product_id, list);
   }
