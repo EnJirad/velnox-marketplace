@@ -113,7 +113,28 @@ async function deleteR2Object(key: string): Promise<void> {
 
 function publicUrl(key: string): string {
   const pd = getR2Config().publicDomain;
-  return pd ? `${pd}/${key}` : key;
+  if (!pd) return key;
+  // Normalize: if domain already has protocol, use as-is; otherwise add https://
+  const base = pd.startsWith("http://") || pd.startsWith("https://") ? pd : `https://${pd}`;
+  return `${base}/${key}`;
+}
+
+/**
+ * Normalize an image URL that may have been stored with a broken format.
+ * Fixes: missing protocol, double protocol, bare domain.
+ */
+function normalizeImageUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  // Fix double protocol: https://https://... → https://...
+  if (trimmed.startsWith("https://https://")) return trimmed.replace("https://https://", "https://");
+  if (trimmed.startsWith("http://http://")) return trimmed.replace("http://http://", "http://");
+  // Fix bare domain: pub-xxx.r2.dev/key → https://pub-xxx.r2.dev/key
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && trimmed.includes("/")) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
 }
 
 /**
@@ -123,8 +144,12 @@ function publicUrl(key: string): string {
  */
 function urlToKey(url: string): string {
   const pd = getR2Config().publicDomain;
-  if (pd && url.startsWith(pd + "/")) {
-    return url.substring(pd.length + 1);
+  if (!pd) return url;
+  // Normalize to compare properly (strip protocol from both sides)
+  const normalizedPd = pd.startsWith("http://") ? pd.slice(7) : pd.startsWith("https://") ? pd.slice(8) : pd;
+  const normalizedUrl = url.startsWith("http://") ? url.slice(7) : url.startsWith("https://") ? url.slice(8) : url;
+  if (normalizedUrl.startsWith(normalizedPd + "/")) {
+    return normalizedUrl.substring(normalizedPd.length + 1);
   }
   return url;
 }
@@ -277,7 +302,7 @@ async function loadProductExtras(productIds: string[]): Promise<{
   const imagesByVariant = new Map<string, any[]>();
   for (const img of variantImagesResult.rows) {
     const list = imagesByVariant.get(img.variant_id) ?? [];
-    list.push({ id: img.id, url: img.url, alt: img.alt || '', sortOrder: img.sort_order ?? 0 });
+    list.push({ id: img.id, url: normalizeImageUrl(img.url) ?? img.url, alt: img.alt || '', sortOrder: img.sort_order ?? 0 });
     imagesByVariant.set(img.variant_id, list);
   }
 
@@ -1243,7 +1268,7 @@ export function setupProductRoutes(app: Express): void {
               id: v.id,
               value: v.value,
               label: v.label || v.value,
-              imageUrl: v.image_url,
+              imageUrl: normalizeImageUrl(v.image_url),
               sortOrder: v.sort_order,
             })),
           });

@@ -72,10 +72,27 @@ function getR2(): S3Client {
 function publicUrl(key: string): string {
   const domain = getR2Config().publicDomain;
   if (!domain) return "";
-  return `https://${domain}/${key}`;
+  // Normalize: if domain already has protocol, use as-is; otherwise add https://
+  const base = domain.startsWith("http://") || domain.startsWith("https://") ? domain : `https://${domain}`;
+  return `${base}/${key}`;
 }
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+
+/**
+ * Normalize an image URL that may have been stored with a broken format.
+ */
+function normalizeImageUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("https://https://")) return trimmed.replace("https://https://", "https://");
+  if (trimmed.startsWith("http://http://")) return trimmed.replace("http://http://", "http://");
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && trimmed.includes("/")) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
 
 // ─── Route Registration ───────────────────────────────────────────────────
 
@@ -124,7 +141,7 @@ export function setupProductOptionRoutes(app: Express): void {
             optionGroupId: v.option_group_id,
             value: v.value,
             label: v.label || v.value,
-            imageUrl: v.image_url,
+            imageUrl: normalizeImageUrl(v.image_url),
             sortOrder: v.sort_order,
           })),
         });
@@ -214,7 +231,7 @@ export function setupProductOptionRoutes(app: Express): void {
             optionGroupId: v.option_group_id,
             value: v.value,
             label: v.label || v.value,
-            imageUrl: v.image_url,
+            imageUrl: normalizeImageUrl(v.image_url),
             sortOrder: v.sort_order,
           })),
         });
@@ -1072,10 +1089,12 @@ export function setupProductOptionRoutes(app: Express): void {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "imageUrl required" } }); return;
       }
 
-      await query(`UPDATE product_option_values SET image_url = $1 WHERE id = $2`, [imageUrl, valueId]);
+      // Normalize the incoming URL before saving
+      const normalizedUrl = normalizeImageUrl(imageUrl);
+      await query(`UPDATE product_option_values SET image_url = $1 WHERE id = $2`, [normalizedUrl, valueId]);
 
-      console.log(`[product-options] saved option value image: ${valueId} → ${imageUrl}`);
-      res.json({ success: true, data: { id: valueId, imageUrl } });
+      console.log(`[product-options] saved option value image: ${valueId} → ${normalizedUrl}`);
+      res.json({ success: true, data: { id: valueId, imageUrl: normalizedUrl } });
     } catch (err) {
       console.error("[product-options] save option value image error:", err);
       res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to save option value image" } });
