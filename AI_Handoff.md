@@ -1746,3 +1746,28 @@ Added `handleSheetConfirmWithAction` handler for individual button actions. Show
 
 **Typecheck:** ✅ Backend, VelShop pass
 **Commit:** b84dd0e — pushed to main
+
+### 2026-08-30 — CRITICAL FIX: Variant Selector — isSelected UUID mismatch + availability logic
+
+**Problem:** All options in the variant selector appeared disabled/faded. Users could not select any option.
+
+**Root cause:** `isSelected` at line 977 compared `selectedOptions[group.id]` (text value like "ดำ") with `val.id` (UUID). Since text never equals UUID, `isSelected` was ALWAYS false — no option was ever visually selected.
+
+Additionally, the `valueInStock` logic had edge cases:
+- When `pVariants` or `vOptsMap` was undefined/empty, it defaulted to `true` but didn't handle gracefully
+- Line-through styling was applied to ALL disabled options, even those that were simply unavailable (not out of stock)
+- The action bar had no disabled state when required options weren't selected
+
+**Fixes:**
+1. **isSelected:** Changed from `val.id` (UUID) to `val.value` (text) to match what `selectedOptions` stores
+2. **valueInStock:** Added proper fallback when variant data is empty — assumes in-stock if no variant data available
+3. **Disabled button:** Only disabled when variant data exists AND no matching variant found with stock
+4. **Line-through removed:** Replaced with `(หมด)` label next to option text for out-of-stock items
+5. **Action bar:** Disabled with "กรุณาเลือกตัวเลือกสินค้า" message when required options not selected
+6. **Debug logging:** Added `[VARIANT DEBUG]` and `[VARIANT UI]` logs for data flow diagnosis
+
+**Files Changed:**
+- `apps/velshop/src/pages/ShopProductDetail.tsx` — isSelected fix + availability logic + action bar + debug logging
+
+**Typecheck:** ✅ Backend, VelShop pass
+**Commit:** af0321b — pushed to main
