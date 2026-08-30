@@ -1790,3 +1790,20 @@ ProductSelectionSheet had the same UUID-vs-text mismatch as ShopProductDetail:
 - Variant selector now correctly shows options as available/disabled based on real stock
 - Price, stock, and images update when variant is selected
 - Gallery thumbnails work seamlessly across product and variant images
+
+### 2026-08-30 — Action-Aware Variant Sheet + Detail Images + Cleanup
+
+**Changes:**
+
+1. **`apps/velshop/src/pages/ShopProductDetail.tsx`:**
+   - **Action-aware variant sheet:** When user clicks "ซื้อเลย" → variant sheet shows only Buy Now button. When "ใส่ตะกร้า" → only Cart button. When "เลือกตัวเลือก" → all 3 buttons (Buy Now + Cart + VelRepeat). This matches the Lazada-style UX requirement.
+   - **Cleaned debug logging:** Removed verbose `[VARIANT DEBUG]` and `[VARIANT UI]` console.log statements that were added for diagnosis.
+   - **Detail images section:** Added product detail images display in the Details tab below product description. Shows `detailImages` from the API response.
+
+**Data Flow Verification:**
+- `pendingAction` state tracks which action opened the sheet
+- Sheet renders buttons conditionally based on `pendingAction`
+- All variant resolution, availability logic, gallery, and price display remain unchanged
+
+**Typecheck:** ✅ Backend, VelShop, VelSeller, VelCenter all pass
+**Commit:** 4bcbeab — pushed to main
