@@ -566,6 +566,8 @@ CREATE TABLE IF NOT EXISTS product_variants (
   name TEXT NOT NULL,
   sku TEXT,
   price NUMERIC(12, 2) NOT NULL,
+  compare_at_price NUMERIC(12, 2),
+  discount_percent NUMERIC(5, 2),
   stock INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'archived')),
   options JSONB DEFAULT '{}',

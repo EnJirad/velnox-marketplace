@@ -78,6 +78,25 @@ export function setupProductOptionRoutes(app: Express): void {
           "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
           [group.id]
         );
+        // Load option value images (V0029)
+        let imagesByValue: Record<string, any[]> = {};
+        try {
+          const valueIds = valuesResult.rows.map((v: any) => v.id);
+          if (valueIds.length > 0) {
+            const imgResult = await query(
+              `SELECT * FROM option_value_images WHERE option_value_id = ANY($1) ORDER BY sort_order ASC`,
+              [valueIds]
+            );
+            for (const img of imgResult.rows) {
+              const vId = String(img.option_value_id ?? '');
+              if (vId) {
+                if (!imagesByValue[vId]) imagesByValue[vId] = [];
+                imagesByValue[vId].push({ id: img.id, url: img.url, alt: img.alt || '', sortOrder: img.sort_order });
+              }
+            }
+          }
+        } catch { /* option_value_images table may not exist yet */ }
+
         groups.push({
           id: group.id,
           productId: group.product_id,
@@ -91,6 +110,7 @@ export function setupProductOptionRoutes(app: Express): void {
             value: v.value,
             label: v.label || v.value,
             imageUrl: v.image_url,
+            images: imagesByValue[v.id] ?? [],
             sortOrder: v.sort_order,
           })),
         });
@@ -168,6 +188,25 @@ export function setupProductOptionRoutes(app: Express): void {
           "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
           [group.id]
         );
+        // Load option value images (V0029)
+        let imagesByValue: Record<string, any[]> = {};
+        try {
+          const valueIds = valuesResult.rows.map((v: any) => v.id);
+          if (valueIds.length > 0) {
+            const imgResult = await query(
+              `SELECT * FROM option_value_images WHERE option_value_id = ANY($1) ORDER BY sort_order ASC`,
+              [valueIds]
+            );
+            for (const img of imgResult.rows) {
+              const vId = String(img.option_value_id ?? '');
+              if (vId) {
+                if (!imagesByValue[vId]) imagesByValue[vId] = [];
+                imagesByValue[vId].push({ id: img.id, url: img.url, alt: img.alt || '', sortOrder: img.sort_order });
+              }
+            }
+          }
+        } catch { /* option_value_images table may not exist yet */ }
+
         groups.push({
           id: group.id,
           productId: group.product_id,
@@ -181,6 +220,7 @@ export function setupProductOptionRoutes(app: Express): void {
             value: v.value,
             label: v.label || v.value,
             imageUrl: v.image_url,
+            images: imagesByValue[v.id] ?? [],
             sortOrder: v.sort_order,
           })),
         });
@@ -729,6 +769,105 @@ export function setupProductOptionRoutes(app: Express): void {
     } catch (err) {
       console.error("[product-options] delete attribute error:", err);
       res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete attribute" } });
+    }
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // OPTION VALUE IMAGES
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // ── POST /api/seller/products/:productId/option-values/:valueId/images ──
+  app.post("/api/seller/products/:productId/option-values/:valueId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const valueId = param(req, "valueId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+
+      // Verify option value belongs to this product
+      const valueCheck = await query(
+        `SELECT pov.id FROM product_option_values pov
+         JOIN product_option_groups pog ON pov.option_group_id = pog.id
+         WHERE pov.id = $1 AND pog.product_id = $2`,
+        [valueId, productId]
+      );
+      if (valueCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Option value not found" } });
+        return;
+      }
+
+      const { url, alt, sortOrder } = req.body;
+      if (!url || typeof url !== "string") {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Image URL is required" } });
+        return;
+      }
+
+      // Check if option_value_images table exists
+      const tableCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'option_value_images') AS exists`);
+      if (!tableCheck.rows[0]?.exists) {
+        res.status(501).json({ success: false, error: { code: "TABLE_MISSING", message: "Option value images not available. Run V0029 migration." } });
+        return;
+      }
+
+      const result = await query(
+        `INSERT INTO option_value_images (option_value_id, url, alt, sort_order)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [valueId, url, alt || '', sortOrder ?? 0]
+      );
+
+      console.log(`[product-options] option value image added: ${result.rows[0].id} for value ${valueId}`);
+
+      res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+      console.error("[product-options] add option value image error:", err);
+      res.status(500).json({ success: false, error: { code: "ADD_FAILED", message: "Failed to add image" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId/option-values/:valueId/images/:imageId ──
+  app.delete("/api/seller/products/:productId/option-values/:valueId/images/:imageId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const valueId = param(req, "valueId");
+      const imageId = param(req, "imageId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+
+      // Check if table exists
+      const tableCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'option_value_images') AS exists`);
+      if (!tableCheck.rows[0]?.exists) {
+        res.status(501).json({ success: false, error: { code: "TABLE_MISSING", message: "Option value images not available" } });
+        return;
+      }
+
+      // Delete the image
+      const delResult = await query(
+        `DELETE FROM option_value_images WHERE id = $1 AND option_value_id = $2 RETURNING id`,
+        [imageId, valueId]
+      );
+      if (delResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Image not found" } });
+        return;
+      }
+
+      console.log(`[product-options] option value image deleted: ${imageId}`);
+
+      res.json({ success: true, data: { id: imageId } });
+    } catch (err) {
+      console.error("[product-options] delete option value image error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete image" } });
     }
   });
 }

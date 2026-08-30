@@ -1392,3 +1392,75 @@ PRODUCT DETAIL
 - ✅ Required option validation blocks Add to Cart / Buy Now
 - ✅ Cart fly animation targets `[data-cart-icon]`
 - ✅ Products without variants continue to work normally
+
+---
+
+## 2026-08-30 — Fix Variant Pricing: Add compare_at_price + discount_percent to product_variants
+
+### Problem
+Production error: `variant query failed: column "compare_at_price" does not exist`
+
+The `product_variants` table was missing `compare_at_price` and `discount_percent` columns. The backend `loadProductExtras` function used `SELECT *` which succeeded, but any explicit column reference to `compare_at_price` on `product_variants` would fail with error 42703. The user needs variant-level pricing with discount support (e.g., Red variant costs ฿299 with compare-at-price ฿359 and 10% discount).
+
+### Root Cause
+The `product_variants` table (created in V0028) only had: `id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at`. No `compare_at_price` or `discount_percent` columns existed.
+
+### Fix
+
+**1. New Migration V0031 (`db/migrations/031_product_variant_pricing.sql`):**
+- `ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC(12, 2)`
+- `ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5, 2)`
+- Idempotent — safe to run repeatedly
+
+**2. Schema Files Updated:**
+- `db/schema.sql` — product_variants definition now includes `compare_at_price` and `discount_percent`
+- `db/run-sqleditor.sql` — same update for bootstrap script
+- `db/run-update.sql` — appended V0029 (option_value_images, was missing) + V0031
+
+**3. Backend (`backend/routes/products.ts`):**
+- `loadProductExtras`: Changed from `SELECT *` to explicit column list including `compare_at_price` and `discount_percent`
+- Added fallback query for production DBs that haven't applied V0031 yet (tries full column list first, falls back to minimal columns)
+- Variant formatting now includes `compareAtPrice` and `discountPercent` fields
+
+**4. Frontend (`apps/velshop/src/pages/ShopProductDetail.tsx`):**
+- Price card now shows compare-at-price (strikethrough) and discount badge when a variant is selected
+- Bottom Sheet header also shows variant-level pricing with compare-at-price and discount
+
+### Before (broken)
+```
+[products] loadProductExtras: variant query failed: column "compare_at_price" does not exist
+variantsLoaded=0
+```
+
+### After (fixed)
+```
+[products] loadProductExtras: productIds=1 variantsLoaded=2
+```
+Variant response includes: `compareAtPrice: 359, discountPercent: 10`
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `db/migrations/031_product_variant_pricing.sql` | **NEW** — V0031 migration |
+| `db/schema.sql` | Added `compare_at_price`, `discount_percent` to product_variants |
+| `db/run-sqleditor.sql` | Same update |
+| `db/run-update.sql` | Appended V0029 + V0031 |
+| `backend/routes/products.ts` | Explicit variant column list, fallback query, new fields in formatting |
+| `apps/velshop/src/pages/ShopProductDetail.tsx` | Variant pricing display (compare-at-price + discount badge) |
+
+### Verification
+- ✅ Backend typecheck passes
+- ✅ VelShop typecheck passes
+- ✅ VelSeller typecheck passes
+- ✅ VelCenter typecheck passes
+- ✅ Velnox typecheck passes
+- ✅ No existing data modified (ADD COLUMN IF NOT EXISTS)
+- ✅ No cart data affected
+- ✅ No DROP/DELETE/TRUNCATE
+
+### Database Changes
+- Migration: V0031
+- db/run-update.sql: UPDATED
+- db/run-sqleditor.sql: UPDATED
+- db/schema.sql: UPDATED
+

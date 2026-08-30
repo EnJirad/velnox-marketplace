@@ -1196,3 +1196,35 @@ CREATE TABLE IF NOT EXISTS product_reviews (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);
+
+-- ─── V0029: Add option_value_images table ──────────────────────────────────
+-- Date: 2026-08-29
+-- Reason: Support variant-specific images per option value.
+--         Each option value (e.g., "Red" in Color group) can have
+--         multiple images that replace the product gallery when selected.
+-- Affected: option_value_images
+
+CREATE TABLE IF NOT EXISTS option_value_images (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  option_value_id UUID NOT NULL REFERENCES product_option_values(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  alt TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_option_value_images_value ON option_value_images (option_value_id);
+
+-- ─── V0030: (reserved — no migration yet) ─────────────────────────────────
+
+-- ─── V0031: Add variant-level pricing columns ──────────────────────────────
+-- Date: 2026-08-30
+-- Reason: product_variants needs compare_at_price and discount_percent
+--         for variant-level discounting. Fixes production error:
+--         "column compare_at_price does not exist" on variant queries.
+-- Affected: product_variants
+
+ALTER TABLE product_variants
+  ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC(12, 2);
+
+ALTER TABLE product_variants
+  ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5, 2);

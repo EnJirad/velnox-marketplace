@@ -207,6 +207,8 @@ export default function ShopProductDetail() {
   const [optionError, setOptionError] = useState<string | null>(null);
   const [recommended, setRecommended] = useState<StoreProduct[]>([]);
   const [similar, setSimilar] = useState<StoreProduct[]>([]);
+  const [bottomSheetOpen, setBottomSheetOpen] = useState(false);
+  const pendingActionRef = useRef<"cart" | "buyNow" | null>(null);
 
   /* ── Load product + dependent data ─────────────────────────────────── */
 
@@ -267,6 +269,9 @@ export default function ShopProductDetail() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Reset active image index when variant images change
+  useEffect(() => { setActiveIndex(0); }, [selectedOptions]);
+
   /* ── Product view tracking ────────────────────────────────────────── */
 
   const viewedRef = useRef<string | null>(null);
@@ -286,6 +291,50 @@ export default function ShopProductDetail() {
   const displayedReviews = reviewsExpanded ? reviews : reviews.slice(0, 5);
   const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
 
+  // Variant-aware display values
+  const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
+  const displayAvailable = selectedVariant?.stock ?? available;
+  const displayOutOfStock = displayAvailable <= 0;
+  const displayLowStock = !displayOutOfStock && displayAvailable <= 5;
+
+  // Variant image switching: when an option value with images is selected,
+  // collect those images and use them for the gallery
+  const variantImages = (() => {
+    if (!optionGroups.length) return null;
+    const collected: typeof images = [];
+    for (const groupId of Object.keys(selectedOptions)) {
+      const group = optionGroups.find((g: any) => g.id === groupId);
+      if (!group) continue;
+      const val = (group.values ?? []).find((v: any) => v.id === selectedOptions[groupId]);
+      if (val && Array.isArray(val.images) && val.images.length > 0) {
+        collected.push(...val.images.map((img: any) => ({
+          id: img.id, productId: '', url: img.url, displayUrl: img.url, thumbUrl: img.url,
+          storageProvider: 'r2', storageKey: null, alt: img.alt || '',
+          sortOrder: img.sortOrder ?? 0, isPrimary: false,
+          width: null, height: null, createdAt: Date.now(),
+        } as any)));
+      }
+    }
+    return collected.length > 0 ? collected : null;
+  })();
+
+  // Use variant images when available, fall back to product images
+  const displayImages = variantImages ?? images;
+  const displayActive = displayImages[activeIndex] ?? displayImages[0];
+
+  // Option summary text
+  const optionSummary = (() => {
+    const parts: string[] = [];
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (valId) {
+        const val = (group.values ?? []).find((v: any) => v.id === valId);
+        if (val) parts.push(val.label || val.value);
+      }
+    }
+    return parts;
+  })();
+
   /* ── SEO ────────────────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -294,14 +343,14 @@ export default function ShopProductDetail() {
     setSeo({
       title: `${product.name} — VelShop`,
       description: product.description ?? t("productDetail.seoDesc", { name: product.name, price: formatBaht(product.price), unit: product.unit, shop: product.shopName ?? t("productDetail.defaultShop") }),
-      ogType: "product", ogImage: images[0]?.displayUrl ?? undefined,
+      ogType: "product", ogImage: displayImages[0]?.displayUrl ?? undefined,
       jsonLd: {
-        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: images[0]?.displayUrl ?? undefined,
+        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: displayImages[0]?.displayUrl ?? undefined,
         ...(rating ? { aggregateRating: { "@type": "AggregateRating", ...rating } } : {}),
         offers: { "@type": "Offer", priceCurrency: "THB", price: product.price, availability: outOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock" },
       },
     });
-  }, [product, reviews, images, outOfStock, t]);
+  }, [product, reviews, displayImages, displayOutOfStock, t]);
 
   /* ── Handlers ───────────────────────────────────────────────────── */
 
@@ -332,11 +381,8 @@ export default function ShopProductDetail() {
     }) ?? null;
   }, [product, variantOptions, selectedOptions]);
 
-  const handleAddToCart = useCallback(() => {
+  const doAddToCart = useCallback(() => {
     if (!product) return;
-    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    // Validate required options
-    if (!validateRequiredOptions()) return;
     const displayPrice = selectedVariant?.price ?? product.price;
     const displayStock = selectedVariant?.stock ?? available;
     if (displayStock <= 0) return;
@@ -346,12 +392,27 @@ export default function ShopProductDetail() {
       variantId: selectedVariant?.id ?? null,
     }, qty);
     fly(addBtnRef.current);
-  }, [product, isAuthenticated, navigate, add, qty, selectedVariant, available, fly, validateRequiredOptions]);
+  }, [product, add, qty, selectedVariant, available, fly]);
 
-  const handleBuyNow = useCallback(() => {
+  const handleAddToCart = useCallback(() => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    if (!validateRequiredOptions()) return;
+    // If required options are missing, open bottom sheet and remember action
+    const hasRequiredOptions = optionGroups.some((g: any) => g.required);
+    if (hasRequiredOptions) {
+      const allSelected = optionGroups.filter((g: any) => g.required).every((g: any) => selectedOptions[g.id]);
+      if (!allSelected) {
+        pendingActionRef.current = "cart";
+        setOptionError(null);
+        setBottomSheetOpen(true);
+        return;
+      }
+    }
+    doAddToCart();
+  }, [product, isAuthenticated, navigate, optionGroups, selectedOptions, doAddToCart]);
+
+  const doBuyNow = useCallback(() => {
+    if (!product) return;
     const displayPrice = selectedVariant?.price ?? product.price;
     const displayStock = selectedVariant?.stock ?? available;
     if (displayStock <= 0) return;
@@ -363,7 +424,6 @@ export default function ShopProductDetail() {
       variantId: selectedVariant?.id ?? null,
     }, qty);
     // Short delay to let the add-to-cart API call fire, then navigate.
-    // The checkout page will read the cart and identify the buyNow item.
     setTimeout(() => {
       navigate("/checkout", {
         state: {
@@ -374,7 +434,24 @@ export default function ShopProductDetail() {
         },
       });
     }, 300);
-  }, [product, isAuthenticated, navigate, add, qty, selectedVariant, available, validateRequiredOptions]);
+  }, [product, navigate, add, qty, selectedVariant, available]);
+
+  const handleBuyNow = useCallback(() => {
+    if (!product) return;
+    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+    // If required options are missing, open bottom sheet and remember action
+    const hasRequiredOptions = optionGroups.some((g: any) => g.required);
+    if (hasRequiredOptions) {
+      const allSelected = optionGroups.filter((g: any) => g.required).every((g: any) => selectedOptions[g.id]);
+      if (!allSelected) {
+        pendingActionRef.current = "buyNow";
+        setOptionError(null);
+        setBottomSheetOpen(true);
+        return;
+      }
+    }
+    doBuyNow();
+  }, [product, isAuthenticated, navigate, optionGroups, selectedOptions, doBuyNow]);
 
   const handleWishlist = async () => {
     if (!product) return;
@@ -448,8 +525,8 @@ export default function ShopProductDetail() {
           {/* Gallery */}
           <div className="min-w-0">
             <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ maxWidth: "100%" }}>
-              {active ? (
-                <img src={active.displayUrl || active.url} alt={active.alt || product.name} className="size-full object-cover" />
+              {displayActive ? (
+                <img src={displayActive.displayUrl || displayActive.url} alt={displayActive.alt || product.name} className="size-full object-cover" />
               ) : (
                 <span className="flex size-full items-center justify-center"><ImageOff className="size-12 text-slate-300" /></span>
               )}
@@ -460,9 +537,9 @@ export default function ShopProductDetail() {
                 <Share2 className="size-4" />
               </button>
             </div>
-            {images.length > 1 && (
+            {displayImages.length > 1 && (
               <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
-                {images.map((img, i) => (
+                {displayImages.map((img: any, i: number) => (
                   <button key={img.id} type="button" onClick={() => setActiveIndex(i)} className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`} aria-label={t("productDetail.imageAlt", { n: i + 1 })}>
                     <img src={img.thumbUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
                   </button>
@@ -486,9 +563,17 @@ export default function ShopProductDetail() {
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(product.price)}<span className="ml-1 text-sm font-normal text-slate-400">/{product.unit}</span></p>
-                  <p className={`mt-1.5 text-xs ${outOfStock ? "font-medium text-red-500" : lowStock ? "font-medium text-amber-600" : "text-slate-400"}`}>
-                    {outOfStock ? t("productDetail.outOfStockDesc") : lowStock ? t("productDetail.lowStock", { count: available, unit: product.unit }) : t("productDetail.inStock", { count: available, unit: product.unit })}
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(displayPrice)}<span className="ml-1 text-sm font-normal text-slate-400">/{product.unit}</span></p>
+                    {selectedVariant?.compareAtPrice != null && selectedVariant.compareAtPrice > displayPrice && (
+                      <p className="text-sm text-slate-400 line-through">{formatBaht(selectedVariant.compareAtPrice)}</p>
+                    )}
+                    {selectedVariant?.discountPercent != null && selectedVariant.discountPercent > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">-{selectedVariant.discountPercent}%</span>
+                    )}
+                  </div>
+                  <p className={`mt-1.5 text-xs ${displayOutOfStock ? "font-medium text-red-500" : displayLowStock ? "font-medium text-amber-600" : "text-slate-400"}`}>
+                    {displayOutOfStock ? t("productDetail.outOfStockDesc") : displayLowStock ? t("productDetail.lowStock", { count: displayAvailable, unit: product.unit }) : t("productDetail.inStock", { count: displayAvailable, unit: product.unit })}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -504,55 +589,49 @@ export default function ShopProductDetail() {
               </div>
             </div>
 
-            {/* Dynamic option groups */}
-            {(() => {
-              if (optionGroups.length > 0 || ((product as any)?.variants?.length ?? 0) > 0) {
-                console.log(`[ProductDetail] render: optionGroups=${optionGroups.length} selectedOptions=${JSON.stringify(selectedOptions)} selectedVariant=${selectedVariant?.id ?? 'null'} variantOptionsKeys=${Object.keys(variantOptions).length}`);
+            {/* ═══ Compact Option Summary Bar (Lazada/TikTok Shop style) ═══ */}
+            {optionGroups.length > 0 && (() => {
+              // Collect thumbnails: first image from each option value that has images
+              const thumbs: { id: string; url: string; alt: string }[] = [];
+              for (const group of optionGroups) {
+                for (const val of (group.values ?? []).slice(0, 4)) {
+                  const img = (val.images?.[0])?.url ?? val.imageUrl;
+                  if (img) thumbs.push({ id: val.id, url: img, alt: val.label || val.value });
+                }
+                if (thumbs.length >= 4) break;
               }
-              return optionGroups.length > 0 && (
-              <div className="mt-3 space-y-3">
-                {optionGroups.map((group: any) => (
-                  <div key={group.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <p className="mb-2 text-sm font-medium text-slate-900">
-                      {group.name}
-                      {group.required && <span className="ml-1 text-xs text-red-400">*</span>}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
-                        const isSelected = selectedOptions[group.id] === val.id;
-                        return (
-                          <button
-                            key={val.id}
-                            type="button"
-                            onClick={() => {
-                              setOptionError(null);
-                              const next = { ...selectedOptions, [group.id]: val.id };
-                              setSelectedOptions(next);
-                              // Find matching variant
-                              const pVariants = (product as any)?.variants;
-                              if (Array.isArray(pVariants) && pVariants.length > 0 && Object.keys(variantOptions).length > 0) {
-                                const match = pVariants.find((v: any) => {
-                                  const vOpts = variantOptions[v.id];
-                                  if (!vOpts || typeof vOpts !== "object" || Array.isArray(vOpts)) return false;
-                                  return Object.entries(next).every(([gId, vId]) => vOpts[gId] === vId);
-                                });
-                                setSelectedVariant(match ?? null);
-                              }
-                            }}
-                            className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                              isSelected
-                                ? "border-[#10B981] bg-[#ECFDF5] text-[#047857] font-medium"
-                                : "border-slate-200 text-slate-700 hover:border-slate-300"
-                            }`}
-                          >
-                            {val.label || val.value}
-                          </button>
-                        );
-                      })}
-                    </div>
+              // If no option images, use product images as fallback thumbnails
+              if (thumbs.length === 0 && product.images && product.images.length > 0) {
+                for (const img of product.images.slice(0, 4)) {
+                  thumbs.push({ id: img.id, url: img.thumbUrl || img.url, alt: img.alt || '' });
+                }
+              }
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => { setOptionError(null); setBottomSheetOpen(true); }}
+                  className="mt-3 flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300"
+                >
+                  {/* Thumbnails */}
+                  <div className="flex shrink-0 -space-x-1">
+                    {thumbs.slice(0, 3).map((thumb) => (
+                      <img
+                        key={thumb.id}
+                        src={thumb.url}
+                        alt={thumb.alt}
+                        className="size-8 rounded-md border-2 border-white object-cover shadow-sm"
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-slate-400">ตัวเลือก</p>
+                    <p className="mt-0.5 truncate text-sm font-medium text-slate-900">
+                      {optionSummary.length > 0 ? optionSummary.join(', ') : 'เลือกตัวเลือก'}
+                    </p>
+                  </div>
+                  <ChevronDown className="size-4 shrink-0 text-slate-400" />
+                </button>
               );
             })()}
 
@@ -571,11 +650,7 @@ export default function ShopProductDetail() {
             {/* Purchase controls */}
             <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-4 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
               {(() => {
-                const hasRequiredOptions = optionGroups.some((g: any) => g.required);
-                const allRequiredSelected = !hasRequiredOptions || optionGroups.filter((g: any) => g.required).every((g: any) => selectedOptions[g.id]);
-                const displayStock = selectedVariant?.stock ?? available;
-                const isOutOfStock = displayStock <= 0 || outOfStock;
-                const shouldDisable = isOutOfStock || (hasRequiredOptions && !allRequiredSelected);
+                const isOutOfStock = displayOutOfStock;
 
                 return (
                 <>
@@ -583,23 +658,20 @@ export default function ShopProductDetail() {
                   {isOutOfStock && (
                     <p className="mb-2 text-center text-sm font-medium text-red-500">{t("product.outOfStock")}</p>
                   )}
-                  {!isOutOfStock && hasRequiredOptions && !allRequiredSelected && (
-                    <p className="mb-2 text-center text-sm text-slate-400">{t("productDetail.selectOptions")}</p>
-                  )}
                   {/* Quantity selector */}
                   <div className="mb-3 flex items-center justify-center gap-1 rounded-[10px] border border-slate-200 bg-white px-2 py-1.5">
                     <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label={t("cartDrawer.ariaDecrease")}><Minus className="size-3.5" /></Button>
                     <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">{qty}</span>
-                    <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.min(available, q + 1))} disabled={qty >= available} aria-label={t("cartDrawer.ariaIncrease")}><Plus className="size-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.min(displayAvailable, q + 1))} disabled={qty >= displayAvailable} aria-label={t("cartDrawer.ariaIncrease")}><Plus className="size-3.5" /></Button>
                   </div>
 
-                  {/* 3 primary purchase actions — equal visual weight */}
-                  <div className="grid grid-cols-3 gap-2">
+                  {/* 2 primary purchase actions */}
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
                       ref={addBtnRef}
                       className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
                       onClick={handleAddToCart}
-                      disabled={shouldDisable}
+                      disabled={isOutOfStock}
                     >
                       <ShoppingCart className="size-4" />
                       <span className="hidden sm:inline">ใส่ตะกร้า</span>
@@ -609,7 +681,7 @@ export default function ShopProductDetail() {
                       variant="outline"
                       className="gap-1.5 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white"
                       onClick={handleBuyNow}
-                      disabled={shouldDisable}
+                      disabled={isOutOfStock}
                     >
                       <Zap className="size-4" />
                       {t("productDetail.buyNow")}
@@ -721,6 +793,121 @@ export default function ShopProductDetail() {
 
       <ShopFooter />
       <SubscriptionDialog product={product} open={subOpen} onOpenChange={setSubOpen} />
+
+      {/* ═══ Bottom Sheet for Option Selection ═══ */}
+      {bottomSheetOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setBottomSheetOpen(false)} />
+          {/* Sheet */}
+          <div className="relative z-10 flex w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl max-h-[85vh]">
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="h-1 w-10 rounded-full bg-slate-300" /></div>
+            {/* Header */}              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+              <div className="flex items-center gap-3">
+                {/* Mini product image */}
+                {displayActive && (
+                  <img src={displayActive.displayUrl || displayActive.url} alt="" className="size-14 rounded-lg border border-slate-100 object-cover" />
+                )}
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-lg font-bold tabular-nums text-slate-900">{formatBaht(displayPrice)}</p>
+                    {selectedVariant?.compareAtPrice != null && selectedVariant.compareAtPrice > displayPrice && (
+                      <p className="text-sm text-slate-400 line-through">{formatBaht(selectedVariant.compareAtPrice)}</p>
+                    )}
+                    {selectedVariant?.discountPercent != null && selectedVariant.discountPercent > 0 && (
+                      <span className="text-xs font-semibold text-red-500">-{selectedVariant.discountPercent}%</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    {displayOutOfStock ? t('product.outOfStock') : t('productDetail.inStock', { count: displayAvailable, unit: product.unit })}
+                  </p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setBottomSheetOpen(false)} className="flex size-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                <span className="text-lg">✕</span>
+              </button>
+            </div>
+            {/* Option groups scrollable */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {optionGroups.map((group: any) => (
+                <div key={group.id}>
+                  <p className="mb-2 text-sm font-semibold text-slate-900">
+                    {group.name}
+                    {group.required && <span className="ml-1 text-xs text-red-400">*</span>}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
+                      const isSelected = selectedOptions[group.id] === val.id;
+                      return (
+                        <button
+                          key={val.id}
+                          type="button"
+                          onClick={() => {
+                            setOptionError(null);
+                            const next = { ...selectedOptions, [group.id]: val.id };
+                            setSelectedOptions(next);
+                            const pVariants = (product as any)?.variants;
+                            if (Array.isArray(pVariants) && pVariants.length > 0 && Object.keys(variantOptions).length > 0) {
+                              const match = pVariants.find((v: any) => {
+                                const vOpts = variantOptions[v.id];
+                                if (!vOpts || typeof vOpts !== 'object' || Array.isArray(vOpts)) return false;
+                                return Object.entries(next).every(([gId, vId]) => vOpts[gId] === vId);
+                              });
+                              setSelectedVariant(match ?? null);
+                            }
+                          }}
+                          className={`rounded-lg border px-4 py-2 text-sm transition-colors ${
+                            isSelected
+                              ? 'border-[#10B981] bg-[#ECFDF5] text-[#047857] font-medium'
+                              : 'border-slate-200 text-slate-700 hover:border-slate-300'
+                          }`}
+                        >
+                          {val.label || val.value}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              {/* Quantity in sheet */}
+              <div>
+                <p className="mb-2 text-sm font-semibold text-slate-900">จำนวน</p>
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="icon" className="size-9 border-slate-200" onClick={() => setQty(q => Math.max(1, q - 1))}>
+                    <Minus className="size-3.5" />
+                  </Button>
+                  <span className="w-10 text-center text-sm font-semibold tabular-nums">{qty}</span>
+                  <Button variant="outline" size="icon" className="size-9 border-slate-200" onClick={() => setQty(q => Math.min(displayAvailable, q + 1))} disabled={qty >= displayAvailable}>
+                    <Plus className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+            {/* Footer: single Confirm button */}
+            <div className="border-t border-slate-100 px-5 py-3">
+              {optionError && <p className="mb-2 text-xs font-medium text-red-500">{optionError}</p>}
+              <Button
+                className="w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                onClick={() => {
+                  setBottomSheetOpen(false);
+                  setOptionError(null);
+                  // If there's a pending action, execute it after a short delay
+                  const action = pendingActionRef.current;
+                  pendingActionRef.current = null;
+                  if (action === "cart") {
+                    setTimeout(() => doAddToCart(), 100);
+                  } else if (action === "buyNow") {
+                    setTimeout(() => doBuyNow(), 100);
+                  }
+                }}
+              >
+                ยืนยัน
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

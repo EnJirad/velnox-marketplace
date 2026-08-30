@@ -436,7 +436,7 @@ export function setupCartRoutes(app: Express): void {
   app.post("/api/customer/checkout", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const { shippingAddressId, shippingAddress, notes } = req.body;
+      const { shippingAddressId, shippingAddress, notes, cartItemIds } = req.body;
 
       // Get cart
       const cartResult = await query("SELECT id FROM carts WHERE user_id = $1", [userId]);
@@ -447,16 +447,31 @@ export function setupCartRoutes(app: Express): void {
       const cartId = cartResult.rows[0].id;
 
       // Get cart items with product details (include image for snapshot)
-      const itemsResult = await query(
-        `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
-                i.quantity AS stock_qty, i.reserved,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-         FROM cart_items ci
-         JOIN products p ON ci.product_id = p.id
-         LEFT JOIN inventory i ON i.product_id = p.id
-         WHERE ci.cart_id = $1`,
-        [cartId],
-      );
+      // When cartItemIds is provided (Buy Now / selected items), only fetch those items
+      let itemsResult;
+      if (Array.isArray(cartItemIds) && cartItemIds.length > 0) {
+        itemsResult = await query(
+          `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
+                  i.quantity AS stock_qty, i.reserved,
+                  (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
+           FROM cart_items ci
+           JOIN products p ON ci.product_id = p.id
+           LEFT JOIN inventory i ON i.product_id = p.id
+           WHERE ci.cart_id = $1 AND ci.id = ANY($2)`,
+          [cartId, cartItemIds],
+        );
+      } else {
+        itemsResult = await query(
+          `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
+                  i.quantity AS stock_qty, i.reserved,
+                  (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
+           FROM cart_items ci
+           JOIN products p ON ci.product_id = p.id
+           LEFT JOIN inventory i ON i.product_id = p.id
+           WHERE ci.cart_id = $1`,
+          [cartId],
+        );
+      }
 
       if (itemsResult.rows.length === 0) {
         res.status(400).json({ success: false, error: { code: "EMPTY_CART", message: "Cart is empty" } });
@@ -531,12 +546,16 @@ export function setupCartRoutes(app: Express): void {
           createdOrders.push({ orderId, orderNumber: orderId, shopId, shopName: shopItems[0]?.shop_name ?? '', subtotal: totalAmount, shippingFee: 0, total: totalAmount });
         }
 
-        // Clear purchased items from cart
-        await client.query("DELETE FROM cart_items WHERE cart_id = $1", [cartId]);
-        await client.query(
-          "UPDATE carts SET total_items = 0, total_amount = 0, updated_at = NOW() WHERE id = $1",
-          [cartId],
-        );
+        // Clear only the purchased items from cart (preserves unselected items)
+        const processedItemIds = items.map((i: any) => i.id);
+        if (processedItemIds.length > 0) {
+          await client.query(
+            "DELETE FROM cart_items WHERE id = ANY($1)",
+            [processedItemIds],
+          );
+        }
+        // Recalculate remaining cart totals
+        await recalcCart(cartId);
       });
 
       const parentOrderId = createdOrders[0]?.orderId ?? '';

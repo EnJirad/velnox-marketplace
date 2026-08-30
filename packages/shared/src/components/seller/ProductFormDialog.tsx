@@ -28,14 +28,16 @@ import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { ImageUploader } from "@velnox/shared/components/seller/ImageUploader";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
+  Camera,
   Loader2,
   Store,
   Plus,
+  Trash2,
   X,
   ListOrdered,
   Tag,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 interface ProductFormDialogProps {
@@ -55,10 +57,17 @@ interface InnerProps {
 }
 
 // ─── Option Group / Value types ────────────────────────────────────────
+interface OptionValueImage {
+  id?: string;
+  url: string;
+  alt?: string;
+}
+
 interface OptionValueForm {
   id?: string; // existing server value
   value: string;
   label: string;
+  images: OptionValueImage[];
 }
 
 interface OptionGroupForm {
@@ -136,6 +145,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               id: v.id,
               value: v.value,
               label: v.label ?? v.value,
+              images: (v.images ?? []).map((img: any) => ({ id: img.id, url: img.url, alt: img.alt || '' })),
             })),
           }));
           setOptionGroups(groups);
@@ -156,7 +166,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // ─── Option group helpers ─────────────────────────────────────────────
   const addOptionGroup = () => {
-    setOptionGroups((prev) => [...prev, { name: "", displayType: "text", values: [{ value: "", label: "" }] }]);
+    setOptionGroups((prev) => [...prev, { name: "", displayType: "text", values: [{ value: "", label: "", images: [] }] }]);
   };
 
   const removeOptionGroup = (index: number) => {
@@ -169,7 +179,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   const addOptionValue = (groupIndex: number) => {
     setOptionGroups((prev) => prev.map((g, i) =>
-      i === groupIndex ? { ...g, values: [...g.values, { value: "", label: "" }] } : g
+      i === groupIndex ? { ...g, values: [...g.values, { value: "", label: "", images: [] }] } : g
     ));
   };
 
@@ -186,6 +196,74 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         : g
     ));
   };
+
+  // ─── Option value image helpers ──────────────────────────────────────
+  const uploadValueImage = useCallback(async (groupIndex: number, valueIndex: number, file: File) => {
+    const value = optionGroups[groupIndex]?.values[valueIndex];
+    if (!value?.id) {
+      toast.error("กรุณาบันทึกตัวเลือกก่อนอัปโหลดรูป");
+      return;
+    }
+    const baseUrl = import.meta.env.VITE_API_URL || "";
+    try {
+      // 1. Get presigned R2 upload URL
+      const intentRes = await fetch(`${baseUrl}/api/seller/products/${current?.id}/upload-intent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ filename: `options/${value.id}/${file.name}`, mimeType: file.type }),
+      });
+      if (!intentRes.ok) throw new Error("Failed to get upload URL");
+      const intentData = await intentRes.json();
+      const intent = intentData.data ?? intentData;
+      // 2. Upload directly to R2
+      const uploadRes = await fetch(intent.uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      if (!uploadRes.ok) throw new Error("R2 upload failed");
+      // 3. Save image URL to option value
+      const saveRes = await fetch(`${baseUrl}/api/seller/products/${current?.id}/option-values/${value.id}/images`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ url: intent.cdnUrl, alt: value.label || value.value }),
+      });
+      if (!saveRes.ok) throw new Error("Failed to save image record");
+      const saveData = await saveRes.json();
+      const newImage = saveData.data;
+      setOptionGroups((prev) => prev.map((g, gi) =>
+        gi === groupIndex ? { ...g, values: g.values.map((v, vi) =>
+          vi === valueIndex ? { ...v, images: [...v.images, newImage] } : v
+        ) } : g
+      ));
+      toast.success(`อัปโหลดรูป "${file.name}" แล้ว`);
+    } catch (err) {
+      console.error("Option value image upload error:", err);
+      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
+    }
+  }, [optionGroups, current?.id]);
+
+  const removeValueImage = useCallback(async (groupIndex: number, valueIndex: number, imageId: string) => {
+    const baseUrl = import.meta.env.VITE_API_URL || "";
+    const value = optionGroups[groupIndex]?.values[valueIndex];
+    if (!value?.id) return;
+    try {
+      await fetch(`${baseUrl}/api/seller/products/${current?.id}/option-values/${value.id}/images/${imageId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      setOptionGroups((prev) => prev.map((g, gi) =>
+        gi === groupIndex ? { ...g, values: g.values.map((v, vi) =>
+          vi === valueIndex ? { ...v, images: v.images.filter((img) => img.id !== imageId) } : v
+        ) } : g
+      ));
+      toast.success("ลบรูปแล้ว");
+    } catch (err) {
+      toast.error("ลบรูปไม่สำเร็จ");
+    }
+  }, [optionGroups, current?.id]);
 
   // ─── Attribute helpers ────────────────────────────────────────────────
   const addAttribute = () => {
@@ -478,25 +556,60 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                   </Button>
                 </div>
 
-                <div className="mt-2 flex flex-wrap gap-1.5">
+                <div className="mt-2 space-y-2">
                   {group.values.map((val, vi) => (
-                    <div key={vi} className="flex items-center gap-1">
-                      <Input
-                        value={val.value}
-                        onChange={(e) => updateOptionValue(gi, vi, e.target.value)}
-                        placeholder="ค่า"
-                        className="h-7 w-24 text-xs"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-6 text-slate-400 hover:text-red-500"
-                        onClick={() => removeOptionValue(gi, vi)}
-                        aria-label="ลบค่า"
-                      >
-                        <X className="size-3" />
-                      </Button>
+                    <div key={vi} className="rounded-lg border border-slate-100 p-2">
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={val.value}
+                          onChange={(e) => updateOptionValue(gi, vi, e.target.value)}
+                          placeholder="ค่า"
+                          className="h-7 flex-1 text-xs"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-6 text-slate-400 hover:text-red-500"
+                          onClick={() => removeOptionValue(gi, vi)}
+                          aria-label="ลบค่า"
+                        >
+                          <X className="size-3" />
+                        </Button>
+                      </div>
+                      {/* Option value images */}
+                      {current && (
+                        <div className="mt-1.5">
+                          <div className="flex flex-wrap gap-1.5">
+                            {val.images.map((img) => (
+                              <div key={img.id ?? img.url} className="group relative size-12 overflow-hidden rounded-md border border-slate-200">
+                                <img src={img.url} alt={img.alt || ''} className="size-full object-cover" />
+                                <button
+                                  type="button"
+                                  onClick={() => img.id && removeValueImage(gi, vi, img.id)}
+                                  className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100"
+                                  aria-label="ลบรูป"
+                                >
+                                  <Trash2 className="size-3 text-white" />
+                                </button>
+                              </div>
+                            ))}
+                            <label className="flex size-12 cursor-pointer items-center justify-center rounded-md border-2 border-dashed border-slate-300 transition-colors hover:border-[#10B981] hover:bg-[#ECFDF5]/50">
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,image/avif"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) void uploadValueImage(gi, vi, file);
+                                  e.target.value = '';
+                                }}
+                              />
+                              <Camera className="size-3.5 text-slate-400" />
+                            </label>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                   <Button

@@ -207,7 +207,14 @@ export default function ShopCheckout() {
       }
       const res = (await checkoutAction(checkoutPayload)) as unknown as CheckoutResult;
       setResult(res);
-      clear();
+      // Only clear cart entirely if checking out ALL items (no cartItemIds filter).
+      // For Buy Now or selected-items checkout, the backend deletes only processed items.
+      const isSelectiveCheckout = (navState.selectedCartItems && navState.selectedCartItems.length > 0) || navState.buyNow;
+      if (isSelectiveCheckout) {
+        reload(); // re-sync cart from server — preserves unselected items
+      } else {
+        clear();
+      }
       toast.success(t("checkout.success"));
     } catch (err) {
       console.error("Checkout error:", err);

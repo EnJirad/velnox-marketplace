@@ -232,19 +232,26 @@ async function loadProductExtras(productIds: string[]): Promise<{
     [productIds]
   );
 
-  // Load variants
+  // Load variants — use explicit column list to avoid errors if table schema is behind
   let variantsResult = { rows: [] as any[] };
   try {
     variantsResult = await query(
-      `SELECT * FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+      `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent,
+              stock, status, options, sort_order, created_at, updated_at
+       FROM product_variants
+       WHERE product_id = ANY($1) AND status = 'active'
+       ORDER BY sort_order ASC`,
       [productIds]
     );
   } catch (variantErr) {
-    console.warn("[products] loadProductExtras: SELECT * from product_variants failed, trying fallback:", (variantErr as any)?.message ?? variantErr);
-    // product_variants table may not have all expected columns
+    console.warn("[products] loadProductExtras: variant query with new columns failed, trying minimal fallback:", (variantErr as any)?.message ?? variantErr);
+    // Fallback for production DB that may not have compare_at_price/discount_percent yet (pre-V0031)
     try {
       variantsResult = await query(
-        `SELECT id, product_id, name, sku, price, stock, status, sort_order FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+        `SELECT id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at
+         FROM product_variants
+         WHERE product_id = ANY($1) AND status = 'active'
+         ORDER BY sort_order ASC`,
         [productIds]
       );
     } catch (variantErr2) {
@@ -274,6 +281,8 @@ async function loadProductExtras(productIds: string[]): Promise<{
       name: v.name,
       sku: v.sku,
       price: parseFloat(v.price) || 0,
+      compareAtPrice: v.compare_at_price != null ? parseFloat(v.compare_at_price) : null,
+      discountPercent: v.discount_percent != null ? parseFloat(v.discount_percent) : null,
       stock: v.stock ?? 0,
       status: v.status || "active",
       options: v.options || {},
@@ -1216,6 +1225,25 @@ export function setupProductRoutes(app: Express): void {
             "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
             [group.id]
           );
+          // Load option value images (V0029 table, graceful fallback)
+          let imagesByValue: Record<string, any[]> = {};
+          try {
+            const valueIds = valuesResult.rows.map((v: any) => v.id);
+            if (valueIds.length > 0) {
+              const imgResult = await query(
+                `SELECT * FROM option_value_images WHERE option_value_id = ANY($1) ORDER BY sort_order ASC`,
+                [valueIds]
+              );
+              for (const img of imgResult.rows) {
+                const vId = String(img.option_value_id ?? '');
+                if (vId) {
+                  if (!imagesByValue[vId]) imagesByValue[vId] = [];
+                  imagesByValue[vId].push({ id: img.id, url: img.url, alt: img.alt || '', sortOrder: img.sort_order });
+                }
+              }
+            }
+          } catch { /* option_value_images table may not exist yet */ }
+
           optionGroups.push({
             id: group.id,
             name: group.name,
@@ -1227,6 +1255,7 @@ export function setupProductRoutes(app: Express): void {
               value: v.value,
               label: v.label || v.value,
               imageUrl: v.image_url,
+              images: imagesByValue[v.id] ?? [],
               sortOrder: v.sort_order,
             })),
           });
