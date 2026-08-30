@@ -19,6 +19,8 @@ export interface StoreImage {
   storageKey: string | null;
   alt: string | null;
   sortOrder: number;
+  imageType?: string;
+  variantId?: string | null;
   isPrimary: boolean;
   width: number | null;
   height: number | null;

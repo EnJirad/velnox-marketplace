@@ -549,6 +549,271 @@ export function setupProductRoutes(app: Express): void {
     }
   });
 
+  // ── POST /api/seller/products/create-full ──────────────────────────────
+  // Atomic product creation: product + images + options + variants + inventory in one transaction.
+  app.post("/api/seller/products/create-full", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller || seller.status !== "approved") {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only approved sellers can create products" } });
+        return;
+      }
+
+      const shop = await getShopForSeller(seller.id);
+      if (!shop) {
+        res.status(404).json({ success: false, error: { code: "NO_SHOP", message: "No shop found for this seller" } });
+        return;
+      }
+
+      const {
+        product: productData,
+        previewImages,
+        detailImages,
+        optionGroups: optionGroupsData,
+        variants: variantsData,
+        attributes: attributesData,
+        velRepeat: velRepeatData,
+      } = req.body;
+
+      if (!productData?.name?.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Product name is required" } });
+        return;
+      }
+
+      const priceNum = Number(productData.price);
+      if (!Number.isFinite(priceNum) || priceNum < 0) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Valid price is required" } });
+        return;
+      }
+
+      // Validate category
+      const VALID_CATEGORIES = ["general", "food", "daily", "beauty", "packaging", "other"];
+      const cat = productData.category?.trim() || null;
+      if (cat && !VALID_CATEGORIES.includes(cat)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` } });
+        return;
+      }
+
+      // Generate unique slug
+      const baseSlug = slugify(productData.name.trim());
+      let slug = baseSlug;
+      let suffix = 1;
+      while (true) {
+        const slugCheck = await query("SELECT id FROM products WHERE slug = $1", [slug]);
+        if (slugCheck.rows.length === 0) break;
+        slug = `${baseSlug}-${suffix}`;
+        suffix++;
+      }
+
+      const productStatus = productData.status === "published" ? "pending_review" : (productData.status || "draft");
+      const stockQty = productData.stock != null ? Math.max(0, Number(productData.stock)) : 0;
+      const reorder = productData.reorderLevel != null ? Math.max(0, Number(productData.reorderLevel)) : 5;
+
+      // Atomic transaction
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
+
+        // 1. Create product
+        const insertResult = await client.query(
+          `INSERT INTO products (shop_id, name, slug, description, short_description, price, compare_at_price, currency, unit, supplier, status, category_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'THB', $8, $9, $10, $11)
+           RETURNING *`,
+          [
+            shop.id,
+            productData.name.trim(),
+            slug,
+            productData.description || "",
+            productData.shortDescription || null,
+            priceNum,
+            productData.compareAtPrice ? Number(productData.compareAtPrice) : null,
+            productData.unit || "ชิ้น",
+            productData.supplier || null,
+            productStatus,
+            cat,
+          ]
+        );
+        const product = insertResult.rows[0];
+
+        // 2. Create inventory
+        await client.query(
+          `INSERT INTO inventory (product_id, quantity, reserved, low_stock_threshold)
+           VALUES ($1, $2, 0, $3)`,
+          [product.id, stockQty, reorder]
+        );
+
+        // 3. Create preview images (gallery type)
+        if (Array.isArray(previewImages)) {
+          for (let i = 0; i < previewImages.length; i++) {
+            const img = previewImages[i];
+            if (!img.url) continue;
+            await client.query(
+              `INSERT INTO product_images (product_id, url, alt, sort_order, image_type)
+               VALUES ($1, $2, $3, $4, 'gallery')`,
+              [product.id, img.url, img.alt || "", i]
+            );
+          }
+        }
+
+        // 4. Create detail images
+        if (Array.isArray(detailImages)) {
+          for (let i = 0; i < detailImages.length; i++) {
+            const img = detailImages[i];
+            if (!img.url) continue;
+            await client.query(
+              `INSERT INTO product_images (product_id, url, alt, sort_order, image_type)
+               VALUES ($1, $2, $3, $4, 'detail')`,
+              [product.id, img.url, img.alt || "", i]
+            );
+          }
+        }
+
+        // 5. Create option groups + values
+        const groupIdMap = new Map<string, string>(); // localIndex -> server UUID
+        if (Array.isArray(optionGroupsData)) {
+          for (let gi = 0; gi < optionGroupsData.length; gi++) {
+            const group = optionGroupsData[gi];
+            if (!group.name?.trim()) continue;
+
+            const groupResult = await client.query(
+              `INSERT INTO product_option_groups (product_id, name, display_type, required, sort_order)
+               VALUES ($1, $2, $3, $4, $5)
+               RETURNING id`,
+              [product.id, group.name.trim(), group.displayType || "text", group.required !== false, gi]
+            );
+            const groupId = groupResult.rows[0].id;
+            groupIdMap.set(`group-${gi}`, groupId);
+
+            // Create option values
+            if (Array.isArray(group.values)) {
+              for (let vi = 0; vi < group.values.length; vi++) {
+                const val = group.values[vi];
+                if (!val.value?.trim()) continue;
+
+                const valResult = await client.query(
+                  `INSERT INTO product_option_values (option_group_id, value, label, image_url, sort_order)
+                   VALUES ($1, $2, $3, $4, $5)
+                   RETURNING id`,
+                  [groupId, val.value.trim(), val.label || val.value.trim(), val.imageUrl || null, vi]
+                );
+                groupIdMap.set(`value-${gi}-${vi}`, valResult.rows[0].id);
+              }
+            }
+          }
+        }
+
+        // 6. Create variants + variant-option mappings
+        if (Array.isArray(variantsData)) {
+          for (let vi = 0; vi < variantsData.length; vi++) {
+            const variant = variantsData[vi];
+            const variantName = variant.name || variant.optionLabels || `Variant ${vi + 1}`;
+
+            const variantResult = await client.query(
+              `INSERT INTO product_variants (product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               RETURNING id`,
+              [
+                product.id,
+                variantName,
+                variant.sku || null,
+                variant.price != null ? Number(variant.price) : priceNum,
+                variant.compareAtPrice != null ? Number(variant.compareAtPrice) : null,
+                variant.discountPercent != null ? Number(variant.discountPercent) : null,
+                variant.stock != null ? Math.max(0, Number(variant.stock)) : 0,
+                variant.status || "active",
+                JSON.stringify(variant.options || {}),
+                vi,
+              ]
+            );
+            const variantId = variantResult.rows[0].id;
+
+            // Create variant-option value mappings
+            if (Array.isArray(variant.optionValueIds)) {
+              for (const ovId of variant.optionValueIds) {
+                const resolvedId = groupIdMap.get(ovId) ?? ovId;
+                await client.query(
+                  `INSERT INTO product_variant_values (variant_id, option_value_id)
+                   VALUES ($1, $2)
+                   ON CONFLICT DO NOTHING`,
+                  [variantId, resolvedId]
+                );
+              }
+            }
+
+            // Create variant image if provided
+            if (variant.imageUrl) {
+              await client.query(
+                `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id)
+                 VALUES ($1, $2, $3, 0, 'variant', $4)`,
+                [product.id, variant.imageUrl, variant.name || "", variantId]
+              );
+            }
+          }
+        }
+
+        // 7. Create attributes
+        if (Array.isArray(attributesData)) {
+          for (let ai = 0; ai < attributesData.length; ai++) {
+            const attr = attributesData[ai];
+            if (!attr.name?.trim() || !attr.value?.trim()) continue;
+            await client.query(
+              `INSERT INTO product_attributes (product_id, name, value, sort_order)
+               VALUES ($1, $2, $3, $4)`,
+              [product.id, attr.name.trim(), attr.value.trim(), ai]
+            );
+          }
+        }
+
+        // 8. VelRepeat configuration
+        if (velRepeatData && typeof velRepeatData === "object") {
+          const vrepeatFields: string[] = [];
+          const vrepeatValues: any[] = [];
+          let vIdx = 1;
+
+          if (velRepeatData.enabled != null) { vrepeatFields.push(`vrepeat_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.enabled)); }
+          if (velRepeatData.weeklyEnabled != null) { vrepeatFields.push(`vrepeat_weekly_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.weeklyEnabled)); }
+          if (velRepeatData.monthlyEnabled != null) { vrepeatFields.push(`vrepeat_monthly_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.monthlyEnabled)); }
+          if (velRepeatData.weeklyPrice != null) { vrepeatFields.push(`vrepeat_weekly_price = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.weeklyPrice)); }
+          if (velRepeatData.monthlyPrice != null) { vrepeatFields.push(`vrepeat_monthly_price = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.monthlyPrice)); }
+          if (velRepeatData.weeklyQty != null) { vrepeatFields.push(`vrepeat_weekly_qty = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.weeklyQty)); }
+          if (velRepeatData.monthlyQty != null) { vrepeatFields.push(`vrepeat_monthly_qty = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.monthlyQty)); }
+
+          if (vrepeatFields.length > 0) {
+            vrepeatValues.push(product.id);
+            await client.query(
+              `UPDATE products SET ${vrepeatFields.join(", ")}, updated_at = NOW() WHERE id = $${vIdx}`,
+              vrepeatValues
+            );
+          }
+        }
+
+        await client.query("COMMIT");
+
+        console.log(`[products] create-full: product ${product.id} (shop ${shop.id}) by seller ${seller.id} — ${variantsData?.length ?? 0} variants, ${previewImages?.length ?? 0} gallery images`);
+
+        // Return formatted product
+        const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([product.id]);
+        const formatted = formatProduct(
+          { ...product, seller_id: seller.id },
+          imagesByProduct.get(product.id) ?? [],
+          inventoryByProduct.get(product.id) ?? null
+        );
+        formatted.variants = variantsByProduct.get(product.id) ?? [];
+
+        res.json({ success: true, data: formatted });
+      } catch (txErr) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      console.error("[products] create-full error:", err);
+      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: err instanceof Error ? err.message : "Failed to create product" } });
+    }
+  });
+
   // ── PATCH /api/seller/products/:productId ───────────────────────────────
   app.patch("/api/seller/products/:productId", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -888,6 +1153,56 @@ export function setupProductRoutes(app: Express): void {
     } catch (err) {
       console.error("[products] reorder-level error:", err);
       res.status(500).json({ success: false, error: { code: "REORDER_FAILED", message: "Failed to update reorder level" } });
+    }
+  });
+
+  // ── POST /api/seller/products/draft-upload-intent ───────────────────────
+  // Generates a presigned R2 URL WITHOUT requiring a productId.
+  // Images are stored under a temporary draft path: draft-uploads/{sellerId}/{draftId}/...
+  app.post("/api/seller/products/draft-upload-intent", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const { draftId, filename, mimeType, subfolder } = req.body;
+      if (!draftId || !filename || !mimeType) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "draftId, filename, mimeType required" } });
+        return;
+      }
+
+      if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed" } });
+        return;
+      }
+
+      const uniqueId = crypto.randomUUID().replace(/-/g, "").substring(0, 12);
+      const safeSubfolder = subfolder || "preview";
+      const objectKey = `draft-uploads/${seller.id}/${draftId}/${safeSubfolder}/${uniqueId}.webp`;
+
+      const command = new PutObjectCommand({
+        Bucket: getR2Config().bucket,
+        Key: objectKey,
+        ContentType: mimeType,
+      });
+
+      const uploadUrl = await getSignedUrl(getR2(), command, { expiresIn: 300 });
+      const cdnUrl = publicUrl(objectKey);
+
+      console.log(`[products] draft upload intent: ${objectKey} for draft ${draftId}`);
+
+      res.json({
+        success: true,
+        data: {
+          uploadUrl,
+          objectKey,
+          cdnUrl,
+          expiresAt: Date.now() + 300_000,
+        },
+      });
+    } catch (err) {
+      console.error("[products] draft upload intent error:", err);
+      res.status(500).json({ success: false, error: { code: "R2_PRESIGN_FAILED", message: "Failed to generate upload URL" } });
     }
   });
 

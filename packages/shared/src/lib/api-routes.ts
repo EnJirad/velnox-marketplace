@@ -188,6 +188,8 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.setProductStatusAction": (a) => apiPatch(`/api/seller/products/${a.productId}/status`, a),
   "api.commerce.deleteProductAction": (a) => apiDelete(`/api/seller/products/${a.productId}`),
   "api.commerce.createProductAction": (a) => apiPost("/api/seller/products", a),
+  "api.commerce.createFullProductAction": (a) => apiPost("/api/seller/products/create-full", a),
+  "api.commerce.draftUploadIntent": (a) => apiPost("/api/seller/products/draft-upload-intent", a),
   "api.commerce.updateProductAction": (a) => apiPatch(`/api/seller/products/${a.productId}`, a),
   "api.commerce.getProductImageUploadIntent": (a) => apiPost("/api/seller/products/image-upload-intent", a),
   "api.commerce.saveProductImage": (a) => apiPost("/api/seller/products/save-image", a),

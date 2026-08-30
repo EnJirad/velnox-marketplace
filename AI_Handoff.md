@@ -1507,3 +1507,51 @@ Product images were all stored in a flat `product_images` table with no classifi
 **Note:** Startup DDL in `server.ts` was left intact as a safety net (ensures tables exist even if migrations haven't been applied by GitHub Action yet). Proper migration files now also exist for the GitHub Action workflow.
 
 **All 5 typechecks pass. Vite build passes.**
+
+### 2026-08-30 — Atomic Product Creation (create-full) + Image Tab + StoreImage Type Fix
+
+**Problem:** The product creation flow required sellers to create a product first, then separately upload images, create options, and generate variants — a multi-step process prone to incomplete products. The `StoreImage` type was missing `imageType` and `variantId` fields, preventing proper image classification in the frontend. The ImageUploader had no way to switch between gallery and detail images.
+
+**Changes:**
+
+1. **Backend (`backend/routes/products.ts`):**
+   - Added `POST /api/seller/products/create-full` — atomic product creation endpoint
+   - Creates product, inventory, preview images, detail images, option groups, option values, variants, variant-option mappings, variant images, attributes, and VelRepeat config — all in a single PostgreSQL transaction
+   - Supports `compare_at_price`, `discount_percent` per variant
+   - Draft upload intent endpoint for images without existing productId
+   - Route already registered in `server.ts` via `setupProductRoutes(app)`
+
+2. **Frontend ImageUploader (`packages/shared/src/components/seller/ImageUploader.tsx`):**
+   - Added Gallery/Detail tab switcher (previously only gallery existed)
+   - Images now filtered by `imageType` property
+   - Upload intent correctly sends `imageType: activeTab` ('gallery' | 'detail')
+   - Added `FileImage` icon for detail tab
+
+3. **Frontend API Routes (`packages/shared/src/lib/api-routes.ts`):**
+   - Added `createFullProductAction` mapping: `POST /api/seller/products/create-full`
+   - Added `draftUploadIntent` mapping: `POST /api/seller/products/draft-upload-intent`
+
+4. **Type System (`packages/shared/src/lib/commerce.ts`):**
+   - Added `imageType?: string` and `variantId?: string | null` to `StoreImage` interface
+   - Fixes TS2339 errors in ImageUploader for products using image classification
+
+**Files Changed:**
+| File | Change |
+|------|--------|
+| `backend/routes/products.ts` | Added `POST /api/seller/products/create-full` atomic endpoint |
+| `packages/shared/src/components/seller/ImageUploader.tsx` | Gallery/Detail tab switcher, imageType filtering |
+| `packages/shared/src/lib/api-routes.ts` | createFullProductAction + draftUploadIntent mappings |
+| `packages/shared/src/lib/commerce.ts` | Added imageType/variantId to StoreImage |
+
+**Verification:**
+- ✅ Backend typecheck passes
+- ✅ Velshop typecheck passes
+- ✅ Velseller typecheck passes
+- ✅ Velcenter typecheck passes
+- ✅ Velnox typecheck passes
+
+**Remaining:**
+- ProductFormDialog should be updated to use `createFullProductAction` for new products (currently uses multi-step create → add options → add images)
+- Seller option value image upload during draft (before product exists)
+- Full integration testing with real merchant data
+- Customer UI: Display detail images section below product description

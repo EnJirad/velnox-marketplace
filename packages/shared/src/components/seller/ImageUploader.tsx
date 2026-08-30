@@ -6,12 +6,13 @@ import {
   ArrowDown,
   ArrowUp,
   Crown,
+  FileImage,
   ImagePlus,
   Loader2,
   Star,
   Trash2,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { toast } from "sonner";
 import type { StoreProduct, StoreImage } from "@velnox/shared/lib/commerce";
 
@@ -23,6 +24,8 @@ interface ImageUploaderProps {
   onChange: (product: StoreProduct) => void;
 }
 
+type ImageTab = "gallery" | "detail";
+
 export function ImageUploader({ product, onChange }: ImageUploaderProps) {
   const getUploadIntent = useAction(api.commerce.getProductImageUploadIntent);
   const saveImage = useAction(api.commerce.saveProductImage);
@@ -33,9 +36,21 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ImageTab>("gallery");
 
-  const images = product.images ?? [];
-  const primaryId = images.find((i) => i.isPrimary)?.id ?? images[0]?.id ?? null;
+  const allImages = product.images ?? [];
+  // Also check product.detailImages for detail type
+  const detailImagesRaw = (product as any).detailImages as StoreImage[] | undefined;
+  const galleryImages = useMemo(() => allImages.filter((img) => img.imageType === "gallery" || !img.imageType), [allImages]);
+  const detailImages = useMemo(() => {
+    // Prefer explicitly typed images, fall back to product.detailImages
+    const typed = allImages.filter((img) => img.imageType === "detail");
+    if (typed.length > 0) return typed;
+    return detailImagesRaw ?? [];
+  }, [allImages, detailImagesRaw]);
+
+  const images = activeTab === "gallery" ? galleryImages : detailImages;
+  const primaryId = galleryImages.find((i) => i.isPrimary)?.id ?? galleryImages[0]?.id ?? null;
 
   const handleFiles = async (files: FileList | File[]) => {
     const list = Array.from(files).slice(0, MAX_IMAGES - images.length);
@@ -78,7 +93,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
           height: undefined,
           format: file.type.split("/")[1] || "jpg",
           bytes: file.size,
-          imageType: "gallery",
+          imageType: activeTab,
         });
         if (updated) onChange(updated);
         toast.success(`อัปโหลด "${file.name}" แล้ว`);
@@ -139,12 +154,35 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
 
   return (
     <div className="grid gap-3">
+      {/* ═══ Tab Switcher ════════════════════════════════════════════ */}
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-slate-900">รูปสินค้า</p>
-          <p className="text-xs text-slate-400">
-            {images.length}/{MAX_IMAGES} รูป · รูปหลักแสดงที่หน้าร้าน · สูงสุด 5 MB/รูป
-          </p>
+        <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab("gallery")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === "gallery"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            <ImagePlus className="size-3.5" />
+            รูปสินค้า
+            <span className="ml-0.5 text-[10px] text-slate-400">{galleryImages.length}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("detail")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === "detail"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            <FileImage className="size-3.5" />
+            รูปรายละเอียด
+            <span className="ml-0.5 text-[10px] text-slate-400">{detailImages.length}</span>
+          </button>
         </div>
         <Badge className="gap-1 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
           <Crown className="size-3" />
@@ -152,11 +190,19 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
         </Badge>
       </div>
 
+      {/* Tab description */}
+      <p className="text-xs text-slate-400">
+        {activeTab === "gallery"
+          ? `${images.length}/${MAX_IMAGES} รูป · รูปหลักแสดงที่หน้าร้าน · สูงสุด 10 รูป`
+          : `${images.length}/${MAX_IMAGES} รูป · แสดงในแท็บรายละเอียดสินค้า · ไม่บังคับ`
+        }
+      </p>
+
       {/* uploaded images */}
       {images.length > 0 && (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
           {images.map((image, idx) => {
-            const isPrimary = image.id === primaryId;
+            const isPrimary = activeTab === "gallery" && image.id === primaryId;
             return (
               <div
                 key={image.id}
