@@ -1888,7 +1888,8 @@ export function setupProductRoutes(app: Express): void {
       try {
         const variantValuesResult = await query(
           `SELECT pvv.variant_id, pvv.option_value_id,
-                  pov.option_group_id, pov.value
+                  pov.option_group_id,
+                  pov.label AS value
            FROM product_variant_values pvv
            JOIN product_option_values pov ON pvv.option_value_id = pov.id
            JOIN product_variants pv ON pvv.variant_id = pv.id
@@ -2093,6 +2094,76 @@ export function setupProductRoutes(app: Express): void {
 
   // ═════════════════════════════════════════════════════════════════════════
   // ADMIN PRODUCT MODERATION (VelCenter)
+
+  // ── POST /api/seller/products/:productId/backfill-variant-mappings ────
+  // Backfill product_variant_values for products created before the mapping system.
+  // Uses the variant's options JSON to recreate missing mappings.
+  app.post("/api/seller/products/:productId/backfill-variant-mappings", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Load all option groups and their values for this product
+      const groupsResult = await query(
+        "SELECT id, name FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC", [productId]
+      );
+      const valueMap: Record<string, Record<string, string>> = {}; // groupName -> valueText -> valueId
+      for (const group of groupsResult.rows) {
+        const vals = await query(
+          "SELECT id, value FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC", [group.id]
+        );
+        const gName = group.name || "unknown";
+        valueMap[gName] = {};
+        for (const v of vals.rows) {
+          valueMap[gName][v.value] = v.id;
+        }
+      }
+
+      // Load all variants
+      const variantsResult = await query(
+        "SELECT id, name, options FROM product_variants WHERE product_id = $1", [productId]
+      );
+
+      let backfilled = 0;
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
+        for (const variant of variantsResult.rows) {
+          const opts = typeof variant.options === "string" ? JSON.parse(variant.options) : (variant.options || {});
+          for (const [groupName, valueText] of Object.entries(opts)) {
+            if (typeof valueText !== "string") continue;
+            const valueId = valueMap[groupName]?.[valueText];
+            if (!valueId) continue;
+            // Insert mapping if it doesn't exist
+            await client.query(
+              `INSERT INTO product_variant_values (variant_id, option_value_id)
+               VALUES ($1, $2) ON CONFLICT (variant_id, option_value_id) DO NOTHING`,
+              [variant.id, valueId]
+            );
+            backfilled++;
+          }
+        }
+        await client.query("COMMIT");
+      } catch (txErr) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
+      }
+
+      console.log(`[products] backfill-variant-mappings: product=${productId} mappings created=${backfilled}`);
+      res.json({ success: true, data: { backfilled } });
+    } catch (err) {
+      console.error("[products] backfill-variant-mappings error:", err);
+      res.status(500).json({ success: false, error: { code: "BACKFILL_FAILED", message: "Failed to backfill variant mappings" } });
+    }
+  });
+
   // ═════════════════════════════════════════════════════════════════════════
 
   // Helper: verify user is an authorized admin (owner or admin)
