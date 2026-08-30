@@ -114,6 +114,16 @@ async function ensureVariantTables(): Promise<void> {
     } catch (v29Err: any) {
       console.warn("[startup] V0029 discount columns warning:", v29Err?.message);
     }
+    // V0030: Add image_type and variant_id to product_images if missing
+    try {
+      await query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_type TEXT NOT NULL DEFAULT 'gallery'`);
+      await query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL`);
+      await query(`CREATE INDEX IF NOT EXISTS idx_product_images_type ON product_images (product_id, image_type)`);
+      await query(`CREATE INDEX IF NOT EXISTS idx_product_images_variant ON product_images (variant_id) WHERE variant_id IS NOT NULL`);
+      console.log("[startup] V0030 product image types ensured");
+    } catch (v30Err: any) {
+      console.warn("[startup] V0030 image type columns warning:", v30Err?.message);
+    }
   } catch (err: any) {
     console.error("[startup] ensureVariantTables failed:", err?.message ?? err);
   }

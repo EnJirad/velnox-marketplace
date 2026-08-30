@@ -186,7 +186,9 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
       storageKey: urlToKey(img.url),
       alt: img.alt || "",
       sortOrder: img.sort_order ?? 0,
-      isPrimary: (img.sort_order ?? 0) === 0,
+      imageType: img.image_type || "gallery",
+      variantId: img.variant_id || null,
+      isPrimary: (img.sort_order ?? 0) === 0 && (img.image_type || "gallery") === "gallery",
       width: null,
       height: null,
       createdAt: img.created_at ? new Date(img.created_at).getTime() : Date.now(),
@@ -249,7 +251,7 @@ async function loadProductExtras(productIds: string[]): Promise<{
   }
 
   const imagesResult = await query(
-    `SELECT * FROM product_images WHERE product_id = ANY($1) ORDER BY sort_order ASC`,
+    `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) ORDER BY sort_order ASC`,
     [productIds]
   );
   const inventoryResult = await query(
@@ -925,11 +927,15 @@ export function setupProductRoutes(app: Express): void {
       const seller = await getSellerForUser(userId);
       if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
 
-      const { productId, objectKey, cdnUrl, alt } = req.body;
+      const { productId, objectKey, cdnUrl, alt, imageType, variantId } = req.body;
       if (!productId || !objectKey) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "productId and objectKey required" } });
         return;
       }
+
+      // Validate imageType
+      const validImageTypes = ["gallery", "variant", "detail"];
+      const safeImageType = validImageTypes.includes(imageType) ? imageType : "gallery";
 
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
@@ -946,18 +952,30 @@ export function setupProductRoutes(app: Express): void {
 
       const url = cdnUrl || publicUrl(objectKey);
 
-      // Get current max sort_order
+      // Get current max sort_order for this image type
       const maxSort = await query(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 as next_sort FROM product_images WHERE product_id = $1",
-        [productId]
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 as next_sort FROM product_images WHERE product_id = $1 AND image_type = $2",
+        [productId, safeImageType]
       );
       const sortOrder = maxSort.rows[0]?.next_sort ?? 0;
 
+      // Validate variantId if provided and image type is variant
+      let safeVariantId = null;
+      if (safeImageType === "variant" && variantId) {
+        const variantCheck = await query(
+          "SELECT id FROM product_variants WHERE id = $1 AND product_id = $2",
+          [variantId, productId]
+        );
+        if (variantCheck.rows.length > 0) {
+          safeVariantId = variantId;
+        }
+      }
+
       const result = await query(
-        `INSERT INTO product_images (product_id, url, alt, sort_order)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [productId, url, alt || "", sortOrder]
+        [productId, url, alt || "", sortOrder, safeImageType, safeVariantId]
       );
 
       console.log(`[products] image saved: ${result.rows[0].id} for product ${productId}`);
