@@ -65,8 +65,8 @@ app.use(cors({
 
 // ─── Auto-create variant tables if missing (V0028) ─────────────────────
 async function ensureVariantTables(): Promise<void> {
+  const { query } = await import("./db/index.js");
   try {
-    const { query } = await import("./db/index.js");
     const checks = ["product_variants", "product_option_groups", "product_option_values", "product_variant_values", "product_variant_images"];
     const missing: string[] = [];
     for (const t of checks) {
@@ -102,30 +102,56 @@ async function ensureVariantTables(): Promise<void> {
       `);
       console.log("[startup] product_variant_images table ensured");
     } catch (imgErr: any) {
-      // 42P01 = table already exists with different schema — safe to ignore
       if (imgErr?.code !== "42P01") console.warn("[startup] product_variant_images creation warning:", imgErr?.message);
     }
     console.log("[startup] variant/option tables created successfully");
-    // V0029: Add discount columns to product_variants if missing
-    try {
-      await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC(12,2)`);
-      await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2)`);
-      console.log("[startup] V0029 discount columns ensured");
-    } catch (v29Err: any) {
-      console.warn("[startup] V0029 discount columns warning:", v29Err?.message);
-    }
-    // V0030: Add image_type and variant_id to product_images if missing
-    try {
-      await query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_type TEXT NOT NULL DEFAULT 'gallery'`);
-      await query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL`);
-      await query(`CREATE INDEX IF NOT EXISTS idx_product_images_type ON product_images (product_id, image_type)`);
-      await query(`CREATE INDEX IF NOT EXISTS idx_product_images_variant ON product_images (variant_id) WHERE variant_id IS NOT NULL`);
-      console.log("[startup] V0030 product image types ensured");
-    } catch (v30Err: any) {
-      console.warn("[startup] V0030 image type columns warning:", v30Err?.message);
-    }
   } catch (err: any) {
     console.error("[startup] ensureVariantTables failed:", err?.message ?? err);
+  }
+  // ── ALWAYS run column/table additions (separate from table creation) ──
+  // These run regardless of whether tables already exist, ensuring
+  // columns from V0029/V0030/V0031 are always present even if the
+  // GitHub Action migration runner missed them.
+  // V0029: Add discount columns to product_variants if missing
+  try {
+    await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC(12,2)`);
+    await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2)`);
+    console.log("[startup] V0029 discount columns ensured");
+  } catch (v29Err: any) {
+    console.warn("[startup] V0029 discount columns warning:", v29Err?.message);
+  }
+  // V0030: Add image_type and variant_id to product_images if missing
+  try {
+    await query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_type TEXT NOT NULL DEFAULT 'gallery'`);
+    await query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_product_images_type ON product_images (product_id, image_type)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_product_images_variant ON product_images (variant_id) WHERE variant_id IS NOT NULL`);
+    console.log("[startup] V0030 product image types ensured");
+  } catch (v30Err: any) {
+    console.warn("[startup] V0030 image type columns warning:", v30Err?.message);
+  }
+  // V0031: Add variant pricing columns + product_variant_images table + inventory.reorder_level
+  try {
+    await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC(12,2)`);
+    await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2)`);
+    await query(`
+      CREATE TABLE IF NOT EXISTS product_variant_images (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+        product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        alt TEXT DEFAULT '',
+        storage_key TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await query(`CREATE INDEX IF NOT EXISTS idx_variant_images_variant ON product_variant_images (variant_id)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_variant_images_product ON product_variant_images (product_id)`);
+    await query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS reorder_level INTEGER NOT NULL DEFAULT 0`);
+    console.log("[startup] V0031 variant pricing + images ensured");
+  } catch (v31Err: any) {
+    console.warn("[startup] V0031 variant pricing warning:", v31Err?.message);
   }
 }
 ensureVariantTables();

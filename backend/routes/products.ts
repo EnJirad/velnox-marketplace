@@ -261,7 +261,7 @@ async function loadProductExtras(productIds: string[]): Promise<{
     [productIds]
   );
 
-  // Load variants
+  // Load variants — resilient to missing columns (compare_at_price, discount_percent)
   let variantsResult = { rows: [] as any[] };
   try {
     variantsResult = await query(
@@ -269,9 +269,19 @@ async function loadProductExtras(productIds: string[]): Promise<{
       [productIds]
     );
   } catch (variantErr: any) {
-    // 42P01 = relation does not exist — tables not yet created
     if (variantErr?.code === "42P01") {
       console.warn("[products] product_variants table does not exist — run V0028 migration");
+    } else if (variantErr?.code === "42703") {
+      // column does not exist — try without the extra columns (V0031 not applied yet)
+      console.warn("[products] product_variants missing columns, retrying without pricing columns:", variantErr?.message);
+      try {
+        variantsResult = await query(
+          `SELECT id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+          [productIds]
+        );
+      } catch (retryErr: any) {
+        console.warn("[products] variant fallback query also failed:", retryErr?.message ?? retryErr);
+      }
     } else {
       console.warn("[products] loadProductExtras: variant query failed:", variantErr?.message ?? variantErr);
     }
