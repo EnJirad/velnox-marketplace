@@ -103,7 +103,6 @@ export default function ShopProducts() {
   const myWishlist = useAction(api.customer.myWishlist);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
-
   // Load wishlist on mount if authenticated
   useEffect(() => {
     if (!isAuthenticated) return;

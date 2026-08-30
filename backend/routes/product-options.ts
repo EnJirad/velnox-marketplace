@@ -17,6 +17,8 @@
  *   GET /api/products/:productId/options                         — Get option groups + values (published only)
  */
 import type { Express, Request, Response } from "express";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 
@@ -41,6 +43,55 @@ async function verifyProductOwnership(productId: string, sellerId: string): Prom
     [productId, sellerId]
   );
   return r.rows.length > 0;
+}
+
+// ─── R2 Client ──────────────────────────────────────────────────────────────
+function getR2Config() {
+  return {
+    accountId: process.env.R2_ACCOUNT_ID || "",
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+    bucket: process.env.R2_BUCKET || "",
+    publicDomain: process.env.R2_PUBLIC_DOMAIN || "",
+  };
+}
+
+let _r2: S3Client | null = null;
+function getR2(): S3Client {
+  if (!_r2) {
+    const cfg = getR2Config();
+    _r2 = new S3Client({
+      region: "auto",
+      endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+    });
+  }
+  return _r2;
+}
+
+function publicUrl(key: string): string {
+  const domain = getR2Config().publicDomain;
+  if (!domain) return "";
+  // Normalize: if domain already has protocol, use as-is; otherwise add https://
+  const base = domain.startsWith("http://") || domain.startsWith("https://") ? domain : `https://${domain}`;
+  return `${base}/${key}`;
+}
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+
+/**
+ * Normalize an image URL that may have been stored with a broken format.
+ */
+function normalizeImageUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("https://https://")) return trimmed.replace("https://https://", "https://");
+  if (trimmed.startsWith("http://http://")) return trimmed.replace("http://http://", "http://");
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && trimmed.includes("/")) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
 }
 
 // ─── Route Registration ───────────────────────────────────────────────────
@@ -78,25 +129,6 @@ export function setupProductOptionRoutes(app: Express): void {
           "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
           [group.id]
         );
-        // Load option value images (V0029)
-        let imagesByValue: Record<string, any[]> = {};
-        try {
-          const valueIds = valuesResult.rows.map((v: any) => v.id);
-          if (valueIds.length > 0) {
-            const imgResult = await query(
-              `SELECT * FROM option_value_images WHERE option_value_id = ANY($1) ORDER BY sort_order ASC`,
-              [valueIds]
-            );
-            for (const img of imgResult.rows) {
-              const vId = String(img.option_value_id ?? '');
-              if (vId) {
-                if (!imagesByValue[vId]) imagesByValue[vId] = [];
-                imagesByValue[vId].push({ id: img.id, url: img.url, alt: img.alt || '', sortOrder: img.sort_order });
-              }
-            }
-          }
-        } catch { /* option_value_images table may not exist yet */ }
-
         groups.push({
           id: group.id,
           productId: group.product_id,
@@ -109,8 +141,7 @@ export function setupProductOptionRoutes(app: Express): void {
             optionGroupId: v.option_group_id,
             value: v.value,
             label: v.label || v.value,
-            imageUrl: v.image_url,
-            images: imagesByValue[v.id] ?? [],
+            imageUrl: normalizeImageUrl(v.image_url),
             sortOrder: v.sort_order,
           })),
         });
@@ -188,25 +219,6 @@ export function setupProductOptionRoutes(app: Express): void {
           "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
           [group.id]
         );
-        // Load option value images (V0029)
-        let imagesByValue: Record<string, any[]> = {};
-        try {
-          const valueIds = valuesResult.rows.map((v: any) => v.id);
-          if (valueIds.length > 0) {
-            const imgResult = await query(
-              `SELECT * FROM option_value_images WHERE option_value_id = ANY($1) ORDER BY sort_order ASC`,
-              [valueIds]
-            );
-            for (const img of imgResult.rows) {
-              const vId = String(img.option_value_id ?? '');
-              if (vId) {
-                if (!imagesByValue[vId]) imagesByValue[vId] = [];
-                imagesByValue[vId].push({ id: img.id, url: img.url, alt: img.alt || '', sortOrder: img.sort_order });
-              }
-            }
-          }
-        } catch { /* option_value_images table may not exist yet */ }
-
         groups.push({
           id: group.id,
           productId: group.product_id,
@@ -219,8 +231,7 @@ export function setupProductOptionRoutes(app: Express): void {
             optionGroupId: v.option_group_id,
             value: v.value,
             label: v.label || v.value,
-            imageUrl: v.image_url,
-            images: imagesByValue[v.id] ?? [],
+            imageUrl: normalizeImageUrl(v.image_url),
             sortOrder: v.sort_order,
           })),
         });
@@ -595,10 +606,10 @@ export function setupProductOptionRoutes(app: Express): void {
 
           // Create the variant
           const variantResult = await client.query(
-            `INSERT INTO product_variants (product_id, name, sku, price, stock, status, sort_order)
-             VALUES ($1, $2, $3, $4, $5, 'active', $6)
+            `INSERT INTO product_variants (product_id, name, sku, price, compare_at_price, discount_percent, stock, status, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8)
              RETURNING *`,
-            [productId, variantName, null, defaultPrice, 0, i]
+            [productId, variantName, null, defaultPrice, null, null, 0, i]
           );
           const variant = variantResult.rows[0];
 
@@ -617,6 +628,8 @@ export function setupProductOptionRoutes(app: Express): void {
             name: variant.name,
             sku: variant.sku,
             price: parseFloat(variant.price),
+            compareAtPrice: variant.compare_at_price != null ? parseFloat(variant.compare_at_price) : null,
+            discountPercent: variant.discount_percent != null ? parseFloat(variant.discount_percent) : null,
             stock: variant.stock,
             status: variant.status,
             sortOrder: variant.sort_order,
@@ -772,12 +785,188 @@ export function setupProductOptionRoutes(app: Express): void {
     }
   });
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // OPTION VALUE IMAGES
-  // ═════════════════════════════════════════════════════════════════════════
+  // ── GET /api/seller/products/:productId/variants ─────────────────────────
+  // List all variants with their option labels
+  app.get("/api/seller/products/:productId/variants", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
 
-  // ── POST /api/seller/products/:productId/option-values/:valueId/images ──
-  app.post("/api/seller/products/:productId/option-values/:valueId/images", requireAuth, async (req: Request, res: Response) => {
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+
+      const result = await query(
+        `SELECT pv.*,
+                COALESCE(
+                  (SELECT string_agg(pov.label || ' / ' || pog.name, ', ' ORDER BY pog.sort_order)
+                   FROM product_variant_values pvv
+                   JOIN product_option_values pov ON pvv.option_value_id = pov.id
+                   JOIN product_option_groups pog ON pov.option_group_id = pog.id
+                   WHERE pvv.variant_id = pv.id),
+                  ''
+                ) AS option_labels
+         FROM product_variants pv
+         WHERE pv.product_id = $1
+         ORDER BY pv.sort_order ASC, pv.name ASC`,
+        [productId]
+      );
+
+      const variants = result.rows.map((v: any) => ({
+        id: v.id,
+        productId: v.product_id,
+        name: v.name,
+        sku: v.sku,
+        price: parseFloat(v.price) || 0,
+        stock: v.stock ?? 0,
+        status: v.status || "active",
+        sortOrder: v.sort_order ?? 0,
+        optionLabels: v.option_labels || "",
+        createdAt: v.created_at ? new Date(v.created_at).getTime() : Date.now(),
+      }));
+
+      console.log(`[product-options] seller variants: product=${productId} count=${variants.length}`);
+      res.json({ success: true, data: variants });
+    } catch (err) {
+      console.error("[product-options] list variants error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch variants" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/variants/:variantId ────────────
+  // Update variant price, stock, sku, status
+  app.patch("/api/seller/products/:productId/variants/:variantId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+
+      const variantCheck = await query(
+        "SELECT id FROM product_variants WHERE id = $1 AND product_id = $2",
+        [variantId, productId]
+      );
+      if (variantCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant not found" } });
+        return;
+      }
+
+      const { price, stock, sku, status, sortOrder, compareAtPrice, discountPercent } = req.body;
+      const updates: string[] = [];
+      const values: any[] = [];
+      let idx = 1;
+
+      if (price !== undefined) {
+        const priceNum = Number(price);
+        if (!Number.isFinite(priceNum) || priceNum < 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid price" } });
+          return;
+        }
+        updates.push(`price = $${idx++}`);
+        values.push(priceNum);
+      }
+      if (compareAtPrice !== undefined) {
+        const capNum = compareAtPrice != null ? Number(compareAtPrice) : null;
+        if (capNum !== null && (!Number.isFinite(capNum) || capNum < 0)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid compareAtPrice" } });
+          return;
+        }
+        updates.push(`compare_at_price = $${idx++}`);
+        values.push(capNum);
+      }
+      if (discountPercent !== undefined) {
+        const dpNum = discountPercent != null ? Number(discountPercent) : null;
+        if (dpNum !== null && (!Number.isFinite(dpNum) || dpNum < 0 || dpNum > 100)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid discountPercent (0-100)" } });
+          return;
+        }
+        updates.push(`discount_percent = $${idx++}`);
+        values.push(dpNum);
+      }
+      if (stock !== undefined) {
+        const stockNum = Number(stock);
+        if (!Number.isFinite(stockNum) || stockNum < 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid stock" } });
+          return;
+        }
+        updates.push(`stock = $${idx++}`);
+        values.push(Math.floor(stockNum));
+      }
+      if (sku !== undefined) {
+        updates.push(`sku = $${idx++}`);
+        values.push(sku || null);
+      }
+      if (status !== undefined) {
+        const validStatuses = ["active", "inactive", "archived"];
+        if (!validStatuses.includes(status)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid status. Must be one of: ${validStatuses.join(", ")}` } });
+          return;
+        }
+        updates.push(`status = $${idx++}`);
+        values.push(status);
+      }
+      if (sortOrder !== undefined) {
+        updates.push(`sort_order = $${idx++}`);
+        values.push(Number(sortOrder));
+      }
+
+      if (updates.length === 0) {
+        res.json({ success: true, data: { id: variantId } });
+        return;
+      }
+
+      updates.push("updated_at = NOW()");
+      values.push(variantId);
+
+      await query(
+        `UPDATE product_variants SET ${updates.join(", ")} WHERE id = $${idx}`,
+        values
+      );
+
+      console.log(`[product-options] updated variant: ${variantId} fields: ${updates.slice(0, -1).join(", ")}`);
+      res.json({ success: true, data: { id: variantId } });
+    } catch (err) {
+      console.error("[product-options] update variant error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update variant" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId/variants/:variantId ───────────
+  app.delete("/api/seller/products/:productId/variants/:variantId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+
+      await query("DELETE FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+
+      console.log(`[product-options] deleted variant: ${variantId} (product ${productId})`);
+      res.json({ success: true, data: { id: variantId } });
+    } catch (err) {
+      console.error("[product-options] delete variant error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete variant" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/option-values/:valueId ─────────
+  // Update option value (label, image_url)
+  app.patch("/api/seller/products/:productId/option-values/:valueId", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
       const seller = await getSellerForUser(userId);
@@ -790,7 +979,6 @@ export function setupProductOptionRoutes(app: Express): void {
         return;
       }
 
-      // Verify option value belongs to this product
       const valueCheck = await query(
         `SELECT pov.id FROM product_option_values pov
          JOIN product_option_groups pog ON pov.option_group_id = pog.id
@@ -802,36 +990,42 @@ export function setupProductOptionRoutes(app: Express): void {
         return;
       }
 
-      const { url, alt, sortOrder } = req.body;
-      if (!url || typeof url !== "string") {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Image URL is required" } });
+      const { label, imageUrl } = req.body;
+      const updates: string[] = [];
+      const values: any[] = [];
+      let idx = 1;
+
+      if (label !== undefined) {
+        updates.push(`label = $${idx++}`);
+        values.push(label || "");
+      }
+      if (imageUrl !== undefined) {
+        updates.push(`image_url = $${idx++}`);
+        values.push(imageUrl || null);
+      }
+
+      if (updates.length === 0) {
+        res.json({ success: true, data: { id: valueId } });
         return;
       }
 
-      // Check if option_value_images table exists
-      const tableCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'option_value_images') AS exists`);
-      if (!tableCheck.rows[0]?.exists) {
-        res.status(501).json({ success: false, error: { code: "TABLE_MISSING", message: "Option value images not available. Run V0029 migration." } });
-        return;
-      }
-
-      const result = await query(
-        `INSERT INTO option_value_images (option_value_id, url, alt, sort_order)
-         VALUES ($1, $2, $3, $4) RETURNING *`,
-        [valueId, url, alt || '', sortOrder ?? 0]
+      values.push(valueId);
+      await query(
+        `UPDATE product_option_values SET ${updates.join(", ")} WHERE id = $${idx}`,
+        values
       );
 
-      console.log(`[product-options] option value image added: ${result.rows[0].id} for value ${valueId}`);
-
-      res.json({ success: true, data: result.rows[0] });
+      console.log(`[product-options] updated option value: ${valueId}`);
+      res.json({ success: true, data: { id: valueId } });
     } catch (err) {
-      console.error("[product-options] add option value image error:", err);
-      res.status(500).json({ success: false, error: { code: "ADD_FAILED", message: "Failed to add image" } });
+      console.error("[product-options] update option value error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update option value" } });
     }
   });
 
-  // ── DELETE /api/seller/products/:productId/option-values/:valueId/images/:imageId ──
-  app.delete("/api/seller/products/:productId/option-values/:valueId/images/:imageId", requireAuth, async (req: Request, res: Response) => {
+  // ── POST /api/seller/products/:productId/option-values/:valueId/image ──
+  // Get a signed R2 upload URL for an option value image
+  app.post("/api/seller/products/:productId/option-values/:valueId/image", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
       const seller = await getSellerForUser(userId);
@@ -839,35 +1033,250 @@ export function setupProductOptionRoutes(app: Express): void {
 
       const productId = param(req, "productId");
       const valueId = param(req, "valueId");
-      const imageId = param(req, "imageId");
       if (!(await verifyProductOwnership(productId, seller.id))) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
-        return;
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
       }
 
-      // Check if table exists
-      const tableCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'option_value_images') AS exists`);
-      if (!tableCheck.rows[0]?.exists) {
-        res.status(501).json({ success: false, error: { code: "TABLE_MISSING", message: "Option value images not available" } });
-        return;
-      }
-
-      // Delete the image
-      const delResult = await query(
-        `DELETE FROM option_value_images WHERE id = $1 AND option_value_id = $2 RETURNING id`,
-        [imageId, valueId]
+      // Verify option value belongs to this product
+      const valueCheck = await query(
+        `SELECT pov.id FROM product_option_values pov
+         JOIN product_option_groups pog ON pov.option_group_id = pog.id
+         WHERE pov.id = $1 AND pog.product_id = $2`,
+        [valueId, productId]
       );
-      if (delResult.rows.length === 0) {
-        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Image not found" } });
-        return;
+      if (valueCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Option value not found" } }); return;
       }
 
-      console.log(`[product-options] option value image deleted: ${imageId}`);
+      const { filename, mimeType } = req.body;
+      if (!filename || !mimeType) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "filename and mimeType required" } }); return;
+      }
+      if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed" } }); return;
+      }
 
-      res.json({ success: true, data: { id: imageId } });
+      const uniqueId = crypto.randomUUID().replace(/-/g, "").substring(0, 12);
+      const objectKey = `option-values/${productId}/${valueId}/${uniqueId}.webp`;
+
+      const command = new PutObjectCommand({
+        Bucket: getR2Config().bucket,
+        Key: objectKey,
+        ContentType: mimeType,
+      });
+
+      const uploadUrl = await getSignedUrl(getR2(), command, { expiresIn: 300 });
+      const cdnUrl = publicUrl(objectKey);
+
+      console.log(`[product-options] option value image intent: ${objectKey} for value ${valueId}`);
+
+      res.json({
+        success: true,
+        data: { uploadUrl, objectKey, cdnUrl, expiresAt: Date.now() + 300_000 },
+      });
+    } catch (err) {
+      console.error("[product-options] option value image intent error:", err);
+      res.status(500).json({ success: false, error: { code: "R2_PRESIGN_FAILED", message: "Failed to generate upload URL" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/option-values/:valueId/save-image ──
+  // After R2 upload, save the image URL to the option value
+  app.patch("/api/seller/products/:productId/option-values/:valueId/save-image", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const valueId = param(req, "valueId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      const valueCheck = await query(
+        `SELECT pov.id FROM product_option_values pov
+         JOIN product_option_groups pog ON pov.option_group_id = pog.id
+         WHERE pov.id = $1 AND pog.product_id = $2`,
+        [valueId, productId]
+      );
+      if (valueCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Option value not found" } }); return;
+      }
+
+      const { imageUrl } = req.body;
+      if (!imageUrl || typeof imageUrl !== "string") {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "imageUrl required" } }); return;
+      }
+
+      // Normalize the incoming URL before saving
+      const normalizedUrl = normalizeImageUrl(imageUrl);
+      await query(`UPDATE product_option_values SET image_url = $1 WHERE id = $2`, [normalizedUrl, valueId]);
+
+      console.log(`[product-options] saved option value image: ${valueId} → ${normalizedUrl}`);
+      res.json({ success: true, data: { id: valueId, imageUrl: normalizedUrl } });
+    } catch (err) {
+      console.error("[product-options] save option value image error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to save option value image" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId/option-values/:valueId/image ──
+  // Remove option value image
+  app.delete("/api/seller/products/:productId/option-values/:valueId/image", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const valueId = param(req, "valueId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      await query(`UPDATE product_option_values SET image_url = NULL WHERE id = $1`, [valueId]);
+
+      console.log(`[product-options] removed option value image: ${valueId}`);
+      res.json({ success: true, data: { id: valueId, imageUrl: null } });
     } catch (err) {
       console.error("[product-options] delete option value image error:", err);
-      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete image" } });
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete option value image" } });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VARIANT IMAGE ROUTES
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/seller/products/:productId/variants/:variantId/images ────
+  app.get("/api/seller/products/:productId/variants/:variantId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Verify variant exists and belongs to product
+      const variantCheck = await query("SELECT id FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+      if (variantCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant not found" } }); return;
+      }
+
+      const result = await query(
+        "SELECT * FROM product_variant_images WHERE variant_id = $1 ORDER BY sort_order ASC",
+        [variantId]
+      );
+
+      const images = result.rows.map((r: any) => ({
+        id: r.id,
+        variantId: r.variant_id,
+        productId: r.product_id,
+        url: r.url,
+        alt: r.alt || '',
+        storageKey: r.storage_key || null,
+        sortOrder: r.sort_order ?? 0,
+      }));
+
+      res.json({ success: true, data: images });
+    } catch (err) {
+      console.error("[product-options] list variant images error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch variant images" } });
+    }
+  });
+
+  // ── POST /api/seller/products/:productId/variants/:variantId/images ────
+  app.post("/api/seller/products/:productId/variants/:variantId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Verify variant belongs to product
+      const variantCheck = await query("SELECT id FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+      if (variantCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant not found" } }); return;
+      }
+
+      const { url, alt, storageKey, sortOrder } = req.body;
+      if (!url || typeof url !== "string" || !url.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Image URL is required" } }); return;
+      }
+
+      const maxSort = await query(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 as next_sort FROM product_variant_images WHERE variant_id = $1",
+        [variantId]
+      );
+      const resolvedSortOrder = sortOrder ?? maxSort.rows[0]?.next_sort ?? 0;
+
+      const result = await query(
+        `INSERT INTO product_variant_images (variant_id, product_id, url, alt, storage_key, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [variantId, productId, url.trim(), alt || '', storageKey || null, resolvedSortOrder]
+      );
+
+      const img = result.rows[0];
+      console.log(`[product-options] added variant image: ${img.id} for variant ${variantId}`);
+
+      res.json({
+        success: true,
+        data: {
+          id: img.id,
+          variantId: img.variant_id,
+          productId: img.product_id,
+          url: img.url,
+          alt: img.alt || '',
+          storageKey: img.storage_key || null,
+          sortOrder: img.sort_order ?? 0,
+        },
+      });
+    } catch (err) {
+      console.error("[product-options] add variant image error:", err);
+      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: "Failed to add variant image" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId/variant-images/:imageId ──────
+  app.delete("/api/seller/products/:productId/variant-images/:imageId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const imageId = param(req, "imageId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Verify image belongs to product's variant
+      const imgCheck = await query(
+        `SELECT pvi.id FROM product_variant_images pvi
+         WHERE pvi.id = $1 AND pvi.product_id = $2`,
+        [imageId, productId]
+      );
+      if (imgCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant image not found" } }); return;
+      }
+
+      await query("DELETE FROM product_variant_images WHERE id = $1", [imageId]);
+
+      console.log(`[product-options] deleted variant image: ${imageId}`);
+      res.json({ success: true, data: { id: imageId } });
+    } catch (err) {
+      console.error("[product-options] delete variant image error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete variant image" } });
     }
   });
 }

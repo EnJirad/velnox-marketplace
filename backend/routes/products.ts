@@ -113,7 +113,28 @@ async function deleteR2Object(key: string): Promise<void> {
 
 function publicUrl(key: string): string {
   const pd = getR2Config().publicDomain;
-  return pd ? `${pd}/${key}` : key;
+  if (!pd) return key;
+  // Normalize: if domain already has protocol, use as-is; otherwise add https://
+  const base = pd.startsWith("http://") || pd.startsWith("https://") ? pd : `https://${pd}`;
+  return `${base}/${key}`;
+}
+
+/**
+ * Normalize an image URL that may have been stored with a broken format.
+ * Fixes: missing protocol, double protocol, bare domain.
+ */
+function normalizeImageUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  // Fix double protocol: https://https://... → https://...
+  if (trimmed.startsWith("https://https://")) return trimmed.replace("https://https://", "https://");
+  if (trimmed.startsWith("http://http://")) return trimmed.replace("http://http://", "http://");
+  // Fix bare domain: pub-xxx.r2.dev/key → https://pub-xxx.r2.dev/key
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && trimmed.includes("/")) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
 }
 
 /**
@@ -123,8 +144,12 @@ function publicUrl(key: string): string {
  */
 function urlToKey(url: string): string {
   const pd = getR2Config().publicDomain;
-  if (pd && url.startsWith(pd + "/")) {
-    return url.substring(pd.length + 1);
+  if (!pd) return url;
+  // Normalize to compare properly (strip protocol from both sides)
+  const normalizedPd = pd.startsWith("http://") ? pd.slice(7) : pd.startsWith("https://") ? pd.slice(8) : pd;
+  const normalizedUrl = url.startsWith("http://") ? url.slice(7) : url.startsWith("https://") ? url.slice(8) : url;
+  if (normalizedUrl.startsWith(normalizedPd + "/")) {
+    return normalizedUrl.substring(normalizedPd.length + 1);
   }
   return url;
 }
@@ -161,7 +186,9 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
       storageKey: urlToKey(img.url),
       alt: img.alt || "",
       sortOrder: img.sort_order ?? 0,
-      isPrimary: (img.sort_order ?? 0) === 0,
+      imageType: img.image_type || "gallery",
+      variantId: img.variant_id || null,
+      isPrimary: (img.sort_order ?? 0) === 0 && (img.image_type || "gallery") === "gallery",
       width: null,
       height: null,
       createdAt: img.created_at ? new Date(img.created_at).getTime() : Date.now(),
@@ -218,13 +245,15 @@ async function loadProductExtras(productIds: string[]): Promise<{
   imagesByProduct: Map<string, any[]>;
   inventoryByProduct: Map<string, any>;
   variantsByProduct: Map<string, any[]>;
+  detailImagesByProduct: Map<string, any[]>;
 }> {
   if (productIds.length === 0) {
-    return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map() };
+    return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map(), detailImagesByProduct: new Map() };
   }
 
+  // Only load gallery images from product_images — variant/detail images are loaded separately
   const imagesResult = await query(
-    `SELECT * FROM product_images WHERE product_id = ANY($1) ORDER BY sort_order ASC`,
+    `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) AND image_type = 'gallery' ORDER BY sort_order ASC`,
     [productIds]
   );
   const inventoryResult = await query(
@@ -232,33 +261,39 @@ async function loadProductExtras(productIds: string[]): Promise<{
     [productIds]
   );
 
-  // Load variants — use explicit column list to avoid errors if table schema is behind
+  // Load variants
   let variantsResult = { rows: [] as any[] };
   try {
     variantsResult = await query(
-      `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent,
-              stock, status, options, sort_order, created_at, updated_at
-       FROM product_variants
-       WHERE product_id = ANY($1) AND status = 'active'
-       ORDER BY sort_order ASC`,
+      `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
       [productIds]
     );
-  } catch (variantErr) {
-    console.warn("[products] loadProductExtras: variant query with new columns failed, trying minimal fallback:", (variantErr as any)?.message ?? variantErr);
-    // Fallback for production DB that may not have compare_at_price/discount_percent yet (pre-V0031)
-    try {
-      variantsResult = await query(
-        `SELECT id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at
-         FROM product_variants
-         WHERE product_id = ANY($1) AND status = 'active'
-         ORDER BY sort_order ASC`,
-        [productIds]
-      );
-    } catch (variantErr2) {
-      console.warn("[products] loadProductExtras: fallback variant query also failed:", (variantErr2 as any)?.message ?? variantErr2);
+  } catch (variantErr: any) {
+    // 42P01 = relation does not exist — tables not yet created
+    if (variantErr?.code === "42P01") {
+      console.warn("[products] product_variants table does not exist — run V0028 migration");
+    } else {
+      console.warn("[products] loadProductExtras: variant query failed:", variantErr?.message ?? variantErr);
     }
   }
   console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length}`);
+
+  // Load detail images
+  let detailImagesResult: { rows: any[] } = { rows: [] as any[] };
+  try {
+    detailImagesResult = await query(
+      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'detail' ORDER BY sort_order ASC`,
+      [productIds]
+    );
+  } catch (dErr: any) {
+    if (dErr?.code !== "42P01") console.warn("[products] detail images query warning:", dErr?.message);
+  }
+  const detailImagesByProduct = new Map<string, any[]>();
+  for (const img of detailImagesResult.rows) {
+    const list = detailImagesByProduct.get(img.product_id) ?? [];
+    list.push(img);
+    detailImagesByProduct.set(img.product_id, list);
+  }
 
   const imagesByProduct = new Map<string, any[]>();
   for (const img of imagesResult.rows) {
@@ -270,6 +305,26 @@ async function loadProductExtras(productIds: string[]): Promise<{
   const inventoryByProduct = new Map<string, any>();
   for (const inv of inventoryResult.rows) {
     inventoryByProduct.set(inv.product_id, inv);
+  }
+
+  // Load variant images
+  let variantImagesResult: { rows: any[] } = { rows: [] as any[] };
+  try {
+    const variantIds = variantsResult.rows.map((v: any) => v.id);
+    if (variantIds.length > 0) {
+      variantImagesResult = await query(
+        `SELECT * FROM product_variant_images WHERE variant_id = ANY($1) ORDER BY sort_order ASC`,
+        [variantIds]
+      );
+    }
+  } catch (viErr: any) {
+    if (viErr?.code !== "42P01") console.warn("[products] variant images query warning:", viErr?.message);
+  }
+  const imagesByVariant = new Map<string, any[]>();
+  for (const img of variantImagesResult.rows) {
+    const list = imagesByVariant.get(img.variant_id) ?? [];
+    list.push({ id: img.id, url: normalizeImageUrl(img.url) ?? img.url, alt: img.alt || '', sortOrder: img.sort_order ?? 0 });
+    imagesByVariant.set(img.variant_id, list);
   }
 
   const variantsByProduct = new Map<string, any[]>();
@@ -287,11 +342,12 @@ async function loadProductExtras(productIds: string[]): Promise<{
       status: v.status || "active",
       options: v.options || {},
       sortOrder: v.sort_order ?? 0,
+      images: imagesByVariant.get(v.id) ?? [],
     });
     variantsByProduct.set(v.product_id, list);
   }
 
-  return { imagesByProduct, inventoryByProduct, variantsByProduct };
+  return { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct };
 }
 
 /**
@@ -305,13 +361,20 @@ async function getFormattedProduct(productId: string, sellerId: string): Promise
   );
   if (result.rows.length === 0) return null;
   const row = result.rows[0];
-  const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+  const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
   const formatted = formatProduct(
     { ...row, seller_id: sellerId },
     imagesByProduct.get(productId) ?? [],
     inventoryByProduct.get(productId) ?? null,
   );
   formatted.variants = variantsByProduct.get(productId) ?? [];
+  // Format detail images for frontend
+  const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
+  formatted.detailImages = rawDetailImgs.map((img: any) => ({
+    id: img.id, url: img.url, displayUrl: img.url, thumbUrl: img.url,
+    alt: img.alt || '', sortOrder: img.sort_order ?? 0,
+    storageProvider: 'r2', storageKey: urlToKey(img.url),
+  }));
   return formatted;
 }
 
@@ -349,7 +412,7 @@ export function setupProductRoutes(app: Express): void {
       );
 
       const productIds = result.rows.map((r: any) => r.id);
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras(productIds);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
 
       const products = result.rows.map((row: any) => {
         const formatted = formatProduct(
@@ -576,7 +639,7 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         { ...row, seller_id: seller.id },
@@ -737,7 +800,7 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         { ...row, seller_id: seller.id },
@@ -890,11 +953,15 @@ export function setupProductRoutes(app: Express): void {
       const seller = await getSellerForUser(userId);
       if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
 
-      const { productId, objectKey, cdnUrl, alt } = req.body;
+      const { productId, objectKey, cdnUrl, alt, imageType, variantId } = req.body;
       if (!productId || !objectKey) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "productId and objectKey required" } });
         return;
       }
+
+      // Validate imageType
+      const validImageTypes = ["gallery", "variant", "detail"];
+      const safeImageType = validImageTypes.includes(imageType) ? imageType : "gallery";
 
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
@@ -911,18 +978,30 @@ export function setupProductRoutes(app: Express): void {
 
       const url = cdnUrl || publicUrl(objectKey);
 
-      // Get current max sort_order
+      // Get current max sort_order for this image type
       const maxSort = await query(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 as next_sort FROM product_images WHERE product_id = $1",
-        [productId]
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 as next_sort FROM product_images WHERE product_id = $1 AND image_type = $2",
+        [productId, safeImageType]
       );
       const sortOrder = maxSort.rows[0]?.next_sort ?? 0;
 
+      // Validate variantId if provided and image type is variant
+      let safeVariantId = null;
+      if (safeImageType === "variant" && variantId) {
+        const variantCheck = await query(
+          "SELECT id FROM product_variants WHERE id = $1 AND product_id = $2",
+          [variantId, productId]
+        );
+        if (variantCheck.rows.length > 0) {
+          safeVariantId = variantId;
+        }
+      }
+
       const result = await query(
-        `INSERT INTO product_images (product_id, url, alt, sort_order)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [productId, url, alt || "", sortOrder]
+        [productId, url, alt || "", sortOrder, safeImageType, safeVariantId]
       );
 
       console.log(`[products] image saved: ${result.rows[0].id} for product ${productId}`);
@@ -1137,7 +1216,7 @@ export function setupProductRoutes(app: Express): void {
       );
 
       const productIds = result.rows.map((r: any) => r.id);
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras(productIds);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
 
       const products = result.rows.map((row: any) => {
         const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
@@ -1185,7 +1264,7 @@ export function setupProductRoutes(app: Express): void {
       console.log(`[products] detail: found product '${result.rows[0].name}' status='${result.rows[0].status}'`);
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         row,
@@ -1193,6 +1272,14 @@ export function setupProductRoutes(app: Express): void {
         inventoryByProduct.get(productId) ?? null
       );
       formatted.variants = variantsByProduct.get(productId) ?? [];
+
+      // Detail images for the product detail page
+      const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
+      formatted.detailImages = rawDetailImgs.map((img: any) => ({
+        id: img.id, url: img.url, displayUrl: img.url, thumbUrl: img.url,
+        alt: img.alt || '', sortOrder: img.sort_order ?? 0,
+        storageProvider: 'r2', storageKey: img.url,
+      }));
 
       // Also fetch shop info for the detail page
       const shopResult = await query(
@@ -1225,25 +1312,6 @@ export function setupProductRoutes(app: Express): void {
             "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
             [group.id]
           );
-          // Load option value images (V0029 table, graceful fallback)
-          let imagesByValue: Record<string, any[]> = {};
-          try {
-            const valueIds = valuesResult.rows.map((v: any) => v.id);
-            if (valueIds.length > 0) {
-              const imgResult = await query(
-                `SELECT * FROM option_value_images WHERE option_value_id = ANY($1) ORDER BY sort_order ASC`,
-                [valueIds]
-              );
-              for (const img of imgResult.rows) {
-                const vId = String(img.option_value_id ?? '');
-                if (vId) {
-                  if (!imagesByValue[vId]) imagesByValue[vId] = [];
-                  imagesByValue[vId].push({ id: img.id, url: img.url, alt: img.alt || '', sortOrder: img.sort_order });
-                }
-              }
-            }
-          } catch { /* option_value_images table may not exist yet */ }
-
           optionGroups.push({
             id: group.id,
             name: group.name,
@@ -1254,8 +1322,7 @@ export function setupProductRoutes(app: Express): void {
               id: v.id,
               value: v.value,
               label: v.label || v.value,
-              imageUrl: v.image_url,
-              images: imagesByValue[v.id] ?? [],
+              imageUrl: normalizeImageUrl(v.image_url),
               sortOrder: v.sort_order,
             })),
           });

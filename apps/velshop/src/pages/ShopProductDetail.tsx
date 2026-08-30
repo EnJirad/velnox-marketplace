@@ -2,15 +2,16 @@ import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
 import { ProductCard } from "@/components/shop/ProductCard";
-import { useCartFlyAnimation } from "@/components/shop/CartFlyAnimation";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@velnox/shared/components/ui/sheet";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
 import { useTracking } from "@velnox/shared/lib/track";
+import { useCartFlyAnimation } from "@/components/shop/CartFlyAnimation";
 import {
   PRODUCT_CATEGORY_META,
   formatBaht,
@@ -23,10 +24,13 @@ import {
   ArrowLeft,
   CalendarClock,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Heart,
   ImageOff,
   Loader2,
+  Maximize2,
+  Minimize2,
   Minus,
   Plus,
   Share2,
@@ -35,7 +39,7 @@ import {
   Store,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
@@ -57,6 +61,7 @@ interface ReviewRow {
 }
 
 type TabKey = "recommend" | "details" | "reviews";
+type PendingAction = "cart" | "buy" | null;
 
 /* ─── Expandable Title ─────────────────────────────────────────────────── */
 
@@ -64,17 +69,21 @@ function ProductTitle({ name, t }: { name: string; t: (k: string) => string }) {
   const [expanded, setExpanded] = useState(false);
   const needsExpand = name.length > 60;
   return (
-    <div className="flex min-w-0 items-start gap-2">
-      <h1 className={`min-w-0 flex-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${!expanded && needsExpand ? "line-clamp-1" : ""}`}>
+    <button
+      type="button"
+      onClick={() => setExpanded((v) => !v)}
+      className="flex w-full min-w-0 items-start gap-2 text-left"
+      aria-expanded={expanded}
+    >
+      <h1 className={`min-w-0 flex-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl ${!expanded && needsExpand ? "line-clamp-2" : ""}`}>
         {name}
       </h1>
       {needsExpand && (
-        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]" aria-expanded={expanded}>
-          {expanded ? t("productDetail.seeLess") : t("productDetail.seeMore")}
+        <span className="mt-1 inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] transition-colors">
           {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-        </button>
+        </span>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -103,8 +112,7 @@ function ExpandableDescription({ text, t }: { text: string; t: (k: string, v?: R
 
 function ProductCarousel({ title, viewAllLink, products, emptyText, t }: {
   title: string; viewAllLink?: string; products: StoreProduct[];
-  emptyText: string;
-  t: (k: string, v?: Record<string, string | number>) => string;
+  emptyText: string; t: (k: string, v?: Record<string, string | number>) => string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   if (products.length === 0) return null;
@@ -189,28 +197,35 @@ export default function ShopProductDetail() {
   const { track } = useTracking();
   const { fly } = useCartFlyAnimation();
 
+  /* ── Core state ─────────────────────────────────────────────────── */
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [qty, setQty] = useState(1);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [wishlisted, setWishlisted] = useState(false);
   const [wishToggling, setWishToggling] = useState(false);
   const [subOpen, setSubOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("recommend");
   const [reviewsExpanded, setReviewsExpanded] = useState(false);
-  const addBtnRef = useRef<HTMLButtonElement>(null);
-  const [selectedVariant, setSelectedVariant] = useState<any>(null);
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+
+  /* ── Variant state ──────────────────────────────────────────────── */
   const [optionGroups, setOptionGroups] = useState<any[]>([]);
   const [variantOptions, setVariantOptions] = useState<Record<string, any>>({});
-  const [optionError, setOptionError] = useState<string | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [selectedVariant, setSelectedVariant] = useState<any>(null);
+
+  /* ── Variant sheet state ────────────────────────────────────────── */
+  const [variantSheetOpen, setVariantSheetOpen] = useState(false);
+  const [sheetQty, setSheetQty] = useState(1);
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [compactSheet, setCompactSheet] = useState(false);
+  const addBtnRef = useRef<HTMLButtonElement>(null);
+
+  /* ── Recommendation state ───────────────────────────────────────── */
   const [recommended, setRecommended] = useState<StoreProduct[]>([]);
   const [similar, setSimilar] = useState<StoreProduct[]>([]);
-  const [bottomSheetOpen, setBottomSheetOpen] = useState(false);
-  const pendingActionRef = useRef<"cart" | "buyNow" | null>(null);
 
-  /* ── Load product + dependent data ─────────────────────────────────── */
+  /* ── Load product + dependent data ──────────────────────────────── */
 
   const load = useCallback(async () => {
     if (!productId) return;
@@ -219,16 +234,7 @@ export default function ShopProductDetail() {
       const p = await getProduct({ productId });
       if (!p || p.status !== "published") { setProduct(null); return; }
       setProduct(p);
-      // Debug: log what the API response contains
       const pAny = p as any;
-      console.log(`[ProductDetail] API response: productId=${productId} variants=${Array.isArray(pAny.variants) ? pAny.variants.length : 'N/A'} optionGroups=${Array.isArray(pAny.optionGroups) ? pAny.optionGroups.length : 'N/A'} variantOptions=${pAny.variantOptions ? Object.keys(pAny.variantOptions).length : 'N/A'}`);
-      if (Array.isArray(pAny.variants) && pAny.variants.length > 0) {
-        console.log(`[ProductDetail] variants data:`, JSON.stringify(pAny.variants.map((v: any) => ({ id: v.id, name: v.name, price: v.price, stock: v.stock }))));
-      }
-      if (Array.isArray(pAny.optionGroups) && pAny.optionGroups.length > 0) {
-        console.log(`[ProductDetail] optionGroups data:`, JSON.stringify(pAny.optionGroups.map((g: any) => ({ name: g.name, values: g.values?.length ?? 0 }))));
-      }
-      // Extract dynamic option groups from API response
       if (Array.isArray(pAny.optionGroups) && pAny.optionGroups.length > 0) {
         setOptionGroups(pAny.optionGroups);
       }
@@ -242,7 +248,6 @@ export default function ShopProductDetail() {
       setReviews((revs ?? []) as ReviewRow[]);
       setWishlisted((wl ?? []).some((i: { productId: string }) => i.productId === productId));
 
-      // Load recommendations (same category) + similar (same shop, different product)
       const fetches: Promise<void>[] = [];
       if (p.category) {
         fetches.push(
@@ -269,10 +274,7 @@ export default function ShopProductDetail() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Reset active image index when variant images change
-  useEffect(() => { setActiveIndex(0); }, [selectedOptions]);
-
-  /* ── Product view tracking ────────────────────────────────────────── */
+  /* ── Product view tracking ──────────────────────────────────────── */
 
   const viewedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -281,59 +283,102 @@ export default function ShopProductDetail() {
     track("PRODUCT_VIEW", { entityId: product.id, value: product.name, context: { category: product.category, price: product.price, shopId: product.shopId } });
   }, [product, track]);
 
-  /* ── Derived values ──────────────────────────────────────────────── */
+  /* ── Variant resolution ─────────────────────────────────────────── */
 
-  const images = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage] : [];
-  const active = images[activeIndex] ?? images[0];
-  const available = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
-  const outOfStock = available <= 0;
-  const lowStock = !outOfStock && available <= 5;
-  const displayedReviews = reviewsExpanded ? reviews : reviews.slice(0, 5);
-  const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
+  const resolveVariant = useCallback(() => {
+    if (optionGroups.length === 0) return null;
+    const pVariants = (product as any)?.variants;
+    if (!Array.isArray(pVariants) || pVariants.length === 0) return null;
+    const entries = Object.entries(selectedOptions);
+    if (entries.length === 0) return null;
+    return pVariants.find((v: any) => {
+      const vOpts = variantOptions[v.id];
+      if (!vOpts || typeof vOpts !== "object" || Array.isArray(vOpts)) return false;
+      return entries.every(([gId, vId]) => vOpts[gId] === vId);
+    }) ?? null;
+  }, [optionGroups, selectedOptions, product, variantOptions]);
 
-  // Variant-aware display values
-  const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
-  const displayAvailable = selectedVariant?.stock ?? available;
-  const displayOutOfStock = displayAvailable <= 0;
-  const displayLowStock = !displayOutOfStock && displayAvailable <= 5;
+  useEffect(() => {
+    const resolved = resolveVariant();
+    setSelectedVariant(resolved);
+  }, [resolveVariant]);
 
-  // Variant image switching: when an option value with images is selected,
-  // collect those images and use them for the gallery
-  const variantImages = (() => {
-    if (!optionGroups.length) return null;
-    const collected: typeof images = [];
-    for (const groupId of Object.keys(selectedOptions)) {
-      const group = optionGroups.find((g: any) => g.id === groupId);
-      if (!group) continue;
-      const val = (group.values ?? []).find((v: any) => v.id === selectedOptions[groupId]);
-      if (val && Array.isArray(val.images) && val.images.length > 0) {
-        collected.push(...val.images.map((img: any) => ({
-          id: img.id, productId: '', url: img.url, displayUrl: img.url, thumbUrl: img.url,
-          storageProvider: 'r2', storageKey: null, alt: img.alt || '',
-          sortOrder: img.sortOrder ?? 0, isPrimary: false,
-          width: null, height: null, createdAt: Date.now(),
-        } as any)));
-      }
+  /* ── Derived values ─────────────────────────────────────────────── */
+
+  // Gallery images: when a variant option is selected, try to use option/variant images
+  const images = useMemo(() => {
+    const baseImages = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage!] : [];
+    const hasGroups = optionGroups.length > 0;
+    if (!hasGroups || Object.keys(selectedOptions).length === 0) return baseImages;
+
+    // 1. Check selected variant for images
+    if (selectedVariant?.images?.length > 0) {
+      return selectedVariant.images.map((img: Record<string, unknown>, i: number) => ({
+        id: `vi-${(img.id as string) ?? i}`,
+        productId: product?.id ?? '',
+        url: img.url as string,
+        displayUrl: img.url as string,
+        thumbUrl: img.url as string,
+        storageProvider: 'r2' as const,
+        storageKey: (img.storageKey as string) ?? '',
+        alt: (img.alt as string) || '',
+        sortOrder: i,
+        isPrimary: i === 0,
+        width: null,
+        height: null,
+        createdAt: Date.now(),
+      }));
     }
-    return collected.length > 0 ? collected : null;
-  })();
 
-  // Use variant images when available, fall back to product images
-  const displayImages = variantImages ?? images;
-  const displayActive = displayImages[activeIndex] ?? displayImages[0];
-
-  // Option summary text
-  const optionSummary = (() => {
-    const parts: string[] = [];
+    // 2. Check selected option values for images (priority order)
     for (const group of optionGroups) {
       const valId = selectedOptions[group.id];
-      if (valId) {
-        const val = (group.values ?? []).find((v: any) => v.id === valId);
-        if (val) parts.push(val.label || val.value);
+      if (!valId) continue;
+      const val = (group.values ?? []).find((v: Record<string, unknown>) => (v.value as string) === valId);
+      if (val && (val.imageUrl as string | null)) {
+        const imgUrl = val.imageUrl as string;
+        return [{
+          id: `opt-${val.id as string}`,
+          productId: product?.id ?? '',
+          url: imgUrl,
+          displayUrl: imgUrl,
+          thumbUrl: imgUrl,
+          storageProvider: 'r2' as const,
+          storageKey: '',
+          alt: ((val.label as string) || (val.value as string) || ''),
+          sortOrder: 0,
+          isPrimary: true,
+          width: null,
+          height: null,
+          createdAt: Date.now(),
+        }];
       }
+      break; // Only use the first selected option with image
     }
-    return parts;
-  })();
+
+    return baseImages;
+  }, [product, selectedOptions, optionGroups, selectedVariant]);
+  // Reset active index when images change (e.g. variant option selected)
+  useEffect(() => {
+    if (activeIndex >= images.length) setActiveIndex(0);
+  }, [images.length, activeIndex]);
+
+  const active = images[activeIndex] ?? images[0];
+  const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
+  const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
+  const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
+  const displayDiscountPct = selectedVariant?.discountPercent ?? null;
+  const displayStock = selectedVariant?.stock ?? baseAvailable;
+  const outOfStock = displayStock <= 0;
+  const lowStock = !outOfStock && displayStock <= 5;
+  const displayedReviews = reviewsExpanded ? reviews : reviews.slice(0, 5);
+  const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
+  const hasOptionGroups = optionGroups.length > 0;
+  const allRequiredSelected = useMemo(() => {
+    if (!hasOptionGroups) return true;
+    return optionGroups.every((g: any) => !g.required || selectedOptions[g.id]);
+  }, [hasOptionGroups, optionGroups, selectedOptions]);
+  const needsVariant = hasOptionGroups && !allRequiredSelected;
 
   /* ── SEO ────────────────────────────────────────────────────────── */
 
@@ -343,115 +388,195 @@ export default function ShopProductDetail() {
     setSeo({
       title: `${product.name} — VelShop`,
       description: product.description ?? t("productDetail.seoDesc", { name: product.name, price: formatBaht(product.price), unit: product.unit, shop: product.shopName ?? t("productDetail.defaultShop") }),
-      ogType: "product", ogImage: displayImages[0]?.displayUrl ?? undefined,
+      ogType: "product", ogImage: images[0]?.displayUrl ?? undefined,
       jsonLd: {
-        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: displayImages[0]?.displayUrl ?? undefined,
+        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: images[0]?.displayUrl ?? undefined,
         ...(rating ? { aggregateRating: { "@type": "AggregateRating", ...rating } } : {}),
         offers: { "@type": "Offer", priceCurrency: "THB", price: product.price, availability: outOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock" },
       },
     });
-  }, [product, reviews, displayImages, displayOutOfStock, t]);
+  }, [product, reviews, images, outOfStock, t]);
+
+  /* ── Compact selector thumbnails ────────────────────────────────── */
+
+  const compactThumbnails = useMemo(() => {
+    if (optionGroups.length === 0) return [];
+    const firstGroup = optionGroups[0];
+    if (!firstGroup?.values) return [];
+    return firstGroup.values.slice(0, 5).map((val: any) => ({
+      id: val.id,
+      label: val.label,
+      imageUrl: val.imageUrl ?? null,
+      groupId: firstGroup.id,
+      selected: selectedOptions[firstGroup.id] === (val.value as string),
+    }));
+  }, [optionGroups, selectedOptions]);
+
+  const totalOptionValues = useMemo(() => {
+    return optionGroups.reduce((sum: number, g: any) => sum + (Array.isArray(g.values) ? g.values.length : 0), 0);
+  }, [optionGroups]);
+
+  /* ── Gallery thumbnails: product images + variant images ──────── */
+
+  const productThumbnails = useMemo(() => {
+    if (product?.images && product.images.length > 0) return product.images;
+    if (product?.primaryImage) return [product.primaryImage];
+    return [];
+  }, [product]);
+
+  const variantThumbnails = useMemo(() => {
+    if (!selectedVariant) return [];
+    if (selectedVariant.images && selectedVariant.images.length > 0) {
+      return selectedVariant.images.map((img: any, i: number) => ({
+        id: `vi-${img.id ?? i}`,
+        url: img.url,
+        displayUrl: img.url,
+        thumbUrl: img.url,
+        label: selectedVariant.name ?? '',
+        isVariant: true as const,
+      }));
+    }
+    // Fallback: option value images
+    const result: { id: string; url: string; displayUrl: string; thumbUrl: string; label: string; isVariant: true }[] = [];
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (!valId) continue;
+      const val = (group.values ?? []).find((v: any) => v.value === valId);
+      if (val?.imageUrl) {
+        result.push({
+          id: `opt-${val.id}`,
+          url: val.imageUrl,
+          displayUrl: val.imageUrl,
+          thumbUrl: val.imageUrl,
+          label: val.label || val.value,
+          isVariant: true,
+        });
+      }
+    }
+    return result;
+  }, [selectedVariant, optionGroups, selectedOptions]);
+
+  const handleSelectVariantFromThumbnail = useCallback((variantId: string) => {
+    const pVariants = (product as any)?.variants;
+    if (!Array.isArray(pVariants)) return;
+    const variant = pVariants.find((v: any) => v.id === variantId);
+    if (!variant) return;
+    const vOpts = variantOptions[variantId];
+    if (vOpts && typeof vOpts === 'object') {
+      setSelectedOptions((prev) => {
+        const next = { ...prev };
+        for (const [gId, vId] of Object.entries(vOpts)) {
+          next[gId] = vId as string;
+        }
+        return next;
+      });
+    }
+  }, [product, variantOptions]);
+
+  const variantThumbsWithActive = useMemo(() => {
+    if (variantThumbnails.length === 0) return [];
+    return variantThumbnails.map((vt: any) => ({
+      id: vt.id,
+      url: vt.thumbUrl || vt.url,
+      label: vt.label,
+      onClick: () => handleSelectVariantFromThumbnail(selectedVariant?.id ?? ''),
+      isActive: true,
+      isVariant: true as const,
+    }));
+  }, [variantThumbnails, selectedVariant, handleSelectVariantFromThumbnail]);
+
+  const selectedSummary = useMemo(() => {
+    if (!hasOptionGroups || Object.keys(selectedOptions).length === 0) return null;
+    const parts: string[] = [];
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (valId) {
+        const val = group.values?.find((v: any) => v.value === valId);
+        if (val) parts.push(val.label || val.value);
+      }
+    }
+    return parts.length > 0 ? parts.join(" / ") : null;
+  }, [hasOptionGroups, optionGroups, selectedOptions]);
 
   /* ── Handlers ───────────────────────────────────────────────────── */
 
-  /** Validate required option groups. Returns true if all required options are selected. */
-  const validateRequiredOptions = useCallback((): boolean => {
-    const missing = optionGroups
-      .filter((g: any) => g.required && !selectedOptions[g.id])
-      .map((g: any) => g.name);
-    if (missing.length > 0) {
-      setOptionError(t("productDetail.pleaseSelectOption", { options: missing.join(", ") }));
-      return false;
+  const openVariantSheet = useCallback((action?: PendingAction) => {
+    setPendingAction(action ?? null);
+    setSheetQty(1);
+    setVariantSheetOpen(true);
+  }, []);
+
+  // Auto-clip qty when variant stock changes while sheet is open
+  useEffect(() => {
+    if (variantSheetOpen && sheetQty > displayStock && displayStock > 0) {
+      setSheetQty(displayStock);
     }
-    setOptionError(null);
-    return true;
-  }, [optionGroups, selectedOptions, t]);
-
-  /** Resolve variant from selected options */
-  const resolveVariant = useCallback(() => {
-    const pVariants = (product as any)?.variants;
-    if (!Array.isArray(pVariants) || pVariants.length === 0) return null;
-    if (!variantOptions || Object.keys(variantOptions).length === 0) return null;
-    return pVariants.find((v: any) => {
-      const vOpts = variantOptions[v.id];
-      if (!vOpts) return false;
-      return Object.entries(selectedOptions).every(([gId, vId]) =>
-        typeof vOpts === "object" && !Array.isArray(vOpts) ? vOpts[gId] === vId : false
-      );
-    }) ?? null;
-  }, [product, variantOptions, selectedOptions]);
-
-  const doAddToCart = useCallback(() => {
-    if (!product) return;
-    const displayPrice = selectedVariant?.price ?? product.price;
-    const displayStock = selectedVariant?.stock ?? available;
-    if (displayStock <= 0) return;
-    add({
-      id: product.id, name: product.name, unit: product.unit,
-      price: displayPrice, stock: displayStock,
-      variantId: selectedVariant?.id ?? null,
-    }, qty);
-    fly(addBtnRef.current);
-  }, [product, add, qty, selectedVariant, available, fly]);
+  }, [variantSheetOpen, displayStock, sheetQty]);
 
   const handleAddToCart = useCallback(() => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    // If required options are missing, open bottom sheet and remember action
-    const hasRequiredOptions = optionGroups.some((g: any) => g.required);
-    if (hasRequiredOptions) {
-      const allSelected = optionGroups.filter((g: any) => g.required).every((g: any) => selectedOptions[g.id]);
-      if (!allSelected) {
-        pendingActionRef.current = "cart";
-        setOptionError(null);
-        setBottomSheetOpen(true);
-        return;
-      }
-    }
-    doAddToCart();
-  }, [product, isAuthenticated, navigate, optionGroups, selectedOptions, doAddToCart]);
-
-  const doBuyNow = useCallback(() => {
-    if (!product) return;
-    const displayPrice = selectedVariant?.price ?? product.price;
-    const displayStock = selectedVariant?.stock ?? available;
-    if (displayStock <= 0) return;
-    // Buy Now: add to cart, then navigate to checkout with buyNow flag
-    // so checkout only processes this single product/variant.
-    add({
-      id: product.id, name: product.name, unit: product.unit,
-      price: displayPrice, stock: displayStock,
-      variantId: selectedVariant?.id ?? null,
-    }, qty);
-    // Short delay to let the add-to-cart API call fire, then navigate.
-    setTimeout(() => {
-      navigate("/checkout", {
-        state: {
-          buyNow: true,
-          buyNowProductId: product.id,
-          buyNowVariantId: selectedVariant?.id ?? null,
-          buyNowQty: qty,
-        },
-      });
-    }, 300);
-  }, [product, navigate, add, qty, selectedVariant, available]);
+    if (outOfStock) return;
+    openVariantSheet("cart");
+  }, [product, isAuthenticated, navigate, outOfStock, openVariantSheet]);
 
   const handleBuyNow = useCallback(() => {
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    // If required options are missing, open bottom sheet and remember action
-    const hasRequiredOptions = optionGroups.some((g: any) => g.required);
-    if (hasRequiredOptions) {
-      const allSelected = optionGroups.filter((g: any) => g.required).every((g: any) => selectedOptions[g.id]);
-      if (!allSelected) {
-        pendingActionRef.current = "buyNow";
-        setOptionError(null);
-        setBottomSheetOpen(true);
-        return;
-      }
+    if (outOfStock) return;
+    openVariantSheet("buy");
+  }, [product, isAuthenticated, navigate, outOfStock, openVariantSheet]);
+
+  const handleSheetConfirm = useCallback(() => {
+    if (!product || !pendingAction) return;
+    // Validate required options
+    const missing = optionGroups
+      .filter((g: any) => g.required && !selectedOptions[g.id])
+      .map((g: any) => g.name);
+    if (missing.length > 0) {
+      toast.error(t("productDetail.pleaseSelectOption", { options: missing.join(", ") }));
+      return;
     }
-    doBuyNow();
-  }, [product, isAuthenticated, navigate, optionGroups, selectedOptions, doBuyNow]);
+    if (outOfStock && pendingAction !== null) {
+      setVariantSheetOpen(false);
+      setPendingAction(null);
+      return;
+    }
+    if (pendingAction === "cart") {
+      add({
+        id: product.id, name: product.name, unit: product.unit,
+        price: displayPrice, stock: displayStock,
+        variantId: selectedVariant?.id ?? null,
+      }, sheetQty);
+      fly(addBtnRef.current);
+      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
+    } else if (pendingAction === "buy") {
+      add({
+        id: product.id, name: product.name, unit: product.unit,
+        price: displayPrice, stock: displayStock,
+        variantId: selectedVariant?.id ?? null,
+      }, sheetQty);
+      setTimeout(() => {
+        navigate("/checkout", {
+          state: {
+            buyNow: true,
+            buyNowProductId: product.id,
+            buyNowVariantId: selectedVariant?.id ?? null,
+            buyNowQty: sheetQty,
+          },
+        });
+      }, 300);
+    }
+    setVariantSheetOpen(false);
+    setPendingAction(null);
+  }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, navigate, t]);
+
+  const handleOptionSelect = useCallback((groupId: string, valueText: string) => {
+    setSelectedOptions((prev) => ({
+      ...prev,
+      [groupId]: prev[groupId] === valueText ? "" : valueText,
+    }));
+  }, []);
 
   const handleWishlist = async () => {
     if (!product) return;
@@ -525,8 +650,8 @@ export default function ShopProductDetail() {
           {/* Gallery */}
           <div className="min-w-0">
             <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ maxWidth: "100%" }}>
-              {displayActive ? (
-                <img src={displayActive.displayUrl || displayActive.url} alt={displayActive.alt || product.name} className="size-full object-cover" />
+              {active ? (
+                <img src={active.displayUrl || active.url} alt={active.alt || product.name} className="size-full object-cover" />
               ) : (
                 <span className="flex size-full items-center justify-center"><ImageOff className="size-12 text-slate-300" /></span>
               )}
@@ -537,15 +662,43 @@ export default function ShopProductDetail() {
                 <Share2 className="size-4" />
               </button>
             </div>
-            {displayImages.length > 1 && (
-              <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
-                {displayImages.map((img: any, i: number) => (
-                  <button key={img.id} type="button" onClick={() => setActiveIndex(i)} className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`} aria-label={t("productDetail.imageAlt", { n: i + 1 })}>
-                    <img src={img.thumbUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Gallery thumbnails: product images + divider + variant images */}
+            {(() => {
+              const allThumbs: { id: string; url: string; label?: string; onClick: () => void; isActive: boolean; isVariant?: boolean }[] = [];
+              // Product gallery images
+              productThumbnails.forEach((img: any, i: number) => {
+                allThumbs.push({
+                  id: `pg-${img.id ?? i}`,
+                  url: img.thumbUrl || img.displayUrl || img.url,
+                  onClick: () => setActiveIndex(i),
+                  isActive: !selectedVariant && i === activeIndex,
+                });
+              });
+              // Variant images (from selected variant)
+              variantThumbsWithActive.forEach((vt: any) => {
+                allThumbs.push(vt);
+              });
+              if (allThumbs.length <= 1) return null;
+              return (
+                <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+                  {allThumbs.map((thumb, i) => (
+                    <span key={thumb.id} className="flex items-center gap-2">
+                      {i === productThumbnails.length && variantThumbsWithActive.length > 0 && (
+                        <span className="h-8 w-px shrink-0 bg-slate-200" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={thumb.onClick}
+                        className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${thumb.isActive ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
+                        aria-label={thumb.label || t("productDetail.imageAlt", { n: i + 1 })}
+                      >
+                        <img src={thumb.url} alt="" className="size-full object-cover" loading="lazy" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Product Info */}
@@ -555,25 +708,27 @@ export default function ShopProductDetail() {
               {product.supplier && <Badge className="rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15">{product.supplier}</Badge>}
             </div>
             <div className="mt-3"><ProductTitle name={product.name} t={t} /></div>
-            <Link to={`/shops/${product.shopId}`} className="mt-2 inline-flex items-center gap-1.5 py-1 text-sm text-slate-500 transition-colors hover:text-[#10B981]">
-              <Store className="size-4" />{product.shopName ?? t("productDetail.defaultShop")}
-            </Link>
 
             {/* Price + Rating */}
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex items-end justify-between gap-3">
                 <div>
                   <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(displayPrice)}<span className="ml-1 text-sm font-normal text-slate-400">/{product.unit}</span></p>
-                    {selectedVariant?.compareAtPrice != null && selectedVariant.compareAtPrice > displayPrice && (
-                      <p className="text-sm text-slate-400 line-through">{formatBaht(selectedVariant.compareAtPrice)}</p>
-                    )}
-                    {selectedVariant?.discountPercent != null && selectedVariant.discountPercent > 0 && (
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">-{selectedVariant.discountPercent}%</span>
-                    )}
+                    <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(displayPrice)}</p>
+                    <span className="text-sm font-normal text-slate-400">/{product.unit}</span>
                   </div>
-                  <p className={`mt-1.5 text-xs ${displayOutOfStock ? "font-medium text-red-500" : displayLowStock ? "font-medium text-amber-600" : "text-slate-400"}`}>
-                    {displayOutOfStock ? t("productDetail.outOfStockDesc") : displayLowStock ? t("productDetail.lowStock", { count: displayAvailable, unit: product.unit }) : t("productDetail.inStock", { count: displayAvailable, unit: product.unit })}
+                  {(displayCompareAt && displayCompareAt > displayPrice) || (displayDiscountPct && displayDiscountPct > 0) ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      {displayCompareAt && displayCompareAt > displayPrice && (
+                        <span className="text-sm text-slate-400 line-through">{formatBaht(displayCompareAt)}</span>
+                      )}
+                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">
+                        -{Math.round(displayDiscountPct ?? ((displayCompareAt! - displayPrice) / displayCompareAt!) * 100)}%
+                      </span>
+                    </div>
+                  ) : null}
+                  <p className={`mt-1.5 text-xs ${outOfStock ? "font-medium text-red-500" : lowStock ? "font-medium text-amber-600" : "text-slate-400"}`}>
+                    {outOfStock ? t("productDetail.outOfStockDesc") : lowStock ? t("productDetail.lowStock", { count: displayStock, unit: product.unit }) : t("productDetail.inStock", { count: displayStock, unit: product.unit })}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -589,57 +744,43 @@ export default function ShopProductDetail() {
               </div>
             </div>
 
-            {/* ═══ Compact Option Summary Bar (Lazada/TikTok Shop style) ═══ */}
-            {optionGroups.length > 0 && (() => {
-              // Collect thumbnails: first image from each option value that has images
-              const thumbs: { id: string; url: string; alt: string }[] = [];
-              for (const group of optionGroups) {
-                for (const val of (group.values ?? []).slice(0, 4)) {
-                  const img = (val.images?.[0])?.url ?? val.imageUrl;
-                  if (img) thumbs.push({ id: val.id, url: img, alt: val.label || val.value });
-                }
-                if (thumbs.length >= 4) break;
-              }
-              // If no option images, use product images as fallback thumbnails
-              if (thumbs.length === 0 && product.images && product.images.length > 0) {
-                for (const img of product.images.slice(0, 4)) {
-                  thumbs.push({ id: img.id, url: img.thumbUrl || img.url, alt: img.alt || '' });
-                }
-              }
+            {/* ═══════════ COMPACT VARIANT SELECTOR ═══════════ */}
+            {hasOptionGroups && (
+              <button
+                type="button"
+                onClick={() => openVariantSheet(null)}
+                className="mt-3 flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-slate-300"
+                aria-label={t("productDetail.selectOptions")}
+              >
+                <span className="text-xs font-semibold text-slate-700">{t("productDetail.options")}</span>
+                <div className="flex flex-1 items-center gap-1.5 overflow-hidden">
+                  {compactThumbnails.map((thumb: { id: string; label: string; imageUrl: string | null; groupId: string; selected: boolean }) => (
+                    <span
+                      key={thumb.id}
+                      className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${selectedOptions[thumb.groupId] === thumb.label ? "border-[#10B981] ring-1 ring-[#10B981]/30" : "border-slate-200"}`}
+                    >
+                      {thumb.imageUrl ? (
+                        <img src={thumb.imageUrl} alt={thumb.label} className="size-full object-cover" />
+                      ) : (
+                        <span className="flex size-full items-center justify-center text-[10px] font-medium text-slate-600">{thumb.label}</span>
+                      )}
+                    </span>
+                  ))}
+                  {totalOptionValues > 5 && (
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-500">
+                      +{totalOptionValues - 5}
+                    </span>
+                  )}
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-slate-300" />
+              </button>
+            )}
 
-              return (
-                <button
-                  type="button"
-                  onClick={() => { setOptionError(null); setBottomSheetOpen(true); }}
-                  className="mt-3 flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300"
-                >
-                  {/* Thumbnails */}
-                  <div className="flex shrink-0 -space-x-1">
-                    {thumbs.slice(0, 3).map((thumb) => (
-                      <img
-                        key={thumb.id}
-                        src={thumb.url}
-                        alt={thumb.alt}
-                        className="size-8 rounded-md border-2 border-white object-cover shadow-sm"
-                      />
-                    ))}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-slate-400">ตัวเลือก</p>
-                    <p className="mt-0.5 truncate text-sm font-medium text-slate-900">
-                      {optionSummary.length > 0 ? optionSummary.join(', ') : 'เลือกตัวเลือก'}
-                    </p>
-                  </div>
-                  <ChevronDown className="size-4 shrink-0 text-slate-400" />
-                </button>
-              );
-            })()}
-
-            {/* Option validation error */}
-            {optionError && (
-              <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
-                {optionError}
-              </p>
+            {/* ═══════════ SELECTED VARIANT SUMMARY ═══════════ */}
+            {selectedSummary && (
+              <div className="mt-2 rounded-xl bg-[#ECFDF5] px-3 py-2 text-xs font-medium text-[#047857]">
+                {selectedSummary}
+              </div>
             )}
 
             {/* Shipping */}
@@ -647,58 +788,32 @@ export default function ShopProductDetail() {
               <div className="flex items-center gap-2"><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><span className="font-medium text-slate-900">{t("productDetail.thailand")}</span></div>
             </div>
 
-            {/* Purchase controls */}
+            {/* ═══════════ STICKY BOTTOM ACTION BAR ═══════════ */}
             <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-4 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
-              {(() => {
-                const isOutOfStock = displayOutOfStock;
-
-                return (
-                <>
-                  {/* Stock / status indicator */}
-                  {isOutOfStock && (
-                    <p className="mb-2 text-center text-sm font-medium text-red-500">{t("product.outOfStock")}</p>
-                  )}
-                  {/* Quantity selector */}
-                  <div className="mb-3 flex items-center justify-center gap-1 rounded-[10px] border border-slate-200 bg-white px-2 py-1.5">
-                    <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label={t("cartDrawer.ariaDecrease")}><Minus className="size-3.5" /></Button>
-                    <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">{qty}</span>
-                    <Button variant="ghost" size="icon" className="size-8 text-slate-600" onClick={() => setQty((q) => Math.min(displayAvailable, q + 1))} disabled={qty >= displayAvailable} aria-label={t("cartDrawer.ariaIncrease")}><Plus className="size-3.5" /></Button>
-                  </div>
-
-                  {/* 2 primary purchase actions */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      ref={addBtnRef}
-                      className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                      onClick={handleAddToCart}
-                      disabled={isOutOfStock}
-                    >
-                      <ShoppingCart className="size-4" />
-                      <span className="hidden sm:inline">ใส่ตะกร้า</span>
-                      <span className="sm:hidden">ตะกร้า</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="gap-1.5 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white"
-                      onClick={handleBuyNow}
-                      disabled={isOutOfStock}
-                    >
-                      <Zap className="size-4" />
-                      {t("productDetail.buyNow")}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="gap-1.5 border-[#10B981] text-[#10B981] hover:bg-[#10B981] hover:text-white"
-                      onClick={() => setSubOpen(true)}
-                    >
-                      <CalendarClock className="size-4" />
-                      <span className="hidden sm:inline">VelRepeat</span>
-                      <span className="sm:hidden">ซ้ำ</span>
-                    </Button>
-                  </div>
-                </>
-                );
-              })()}
+              {needsVariant && (
+                <p className="mb-2 text-center text-sm text-slate-400">{t("productDetail.selectOptions")}</p>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  ref={addBtnRef}
+                  className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                  onClick={handleAddToCart}
+                  disabled={outOfStock && !needsVariant}
+                >
+                  <ShoppingCart className="size-4" />
+                  <span className="hidden sm:inline">ใส่ตะกร้า</span>
+                  <span className="sm:hidden">ตะกร้า</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-1.5 border-[#10B981] text-[#10B981] hover:bg-[#10B981] hover:text-white"
+                  onClick={handleBuyNow}
+                  disabled={outOfStock && !needsVariant}
+                >
+                  <Zap className="size-4" />
+                  {t("productDetail.buyNow")}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -789,125 +904,218 @@ export default function ShopProductDetail() {
             <ArrowLeft className="size-4 rotate-180 text-slate-300" />
           </Link>
         </section>
+
+        {/* ═══════════ VELREPEAT ═══════════ */}
+        {(product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) && (
+          <section className="mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+                setSubOpen(true);
+              }}
+              className="flex w-full items-center gap-3 rounded-2xl border border-[#10B981]/20 bg-[#ECFDF5] p-4 text-left transition-colors hover:border-[#10B981]/40"
+            >
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#10B981]/10">
+                <CalendarClock className="size-5 text-[#10B981]" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">🔄 VelRepeat — ซื้อซ้ำอัตโนมัติ</p>
+                <p className="mt-0.5 text-xs text-slate-500">ให้ระบบสั่งซื้อสินค้านี้ให้อัตโนมัติตามรอบที่เลือก</p>
+              </div>
+              <ArrowLeft className="size-4 rotate-180 shrink-0 text-[#10B981]" />
+            </button>
+          </section>
+        )}
       </main>
 
-      <ShopFooter />
-      <SubscriptionDialog product={product} open={subOpen} onOpenChange={setSubOpen} />
+      {/* ═══════════ VARIANT BOTTOM SHEET ═══════════ */}
+      <Sheet open={variantSheetOpen} onOpenChange={(o) => { setVariantSheetOpen(o); if (!o) setPendingAction(null); }}>
+        <SheetContent side="bottom" className="max-h-[85dvh] rounded-t-2xl border-t border-slate-200 p-0" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <SheetTitle className="sr-only">{t("productDetail.options")}</SheetTitle>
+          <SheetDescription className="sr-only">{product.name}</SheetDescription>
 
-      {/* ═══ Bottom Sheet for Option Selection ═══ */}
-      {bottomSheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setBottomSheetOpen(false)} />
-          {/* Sheet */}
-          <div className="relative z-10 flex w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl max-h-[85vh]">
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="h-1 w-10 rounded-full bg-slate-300" /></div>
-            {/* Header */}              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-              <div className="flex items-center gap-3">
-                {/* Mini product image */}
-                {displayActive && (
-                  <img src={displayActive.displayUrl || displayActive.url} alt="" className="size-14 rounded-lg border border-slate-100 object-cover" />
-                )}
-                <div>
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-lg font-bold tabular-nums text-slate-900">{formatBaht(displayPrice)}</p>
-                    {selectedVariant?.compareAtPrice != null && selectedVariant.compareAtPrice > displayPrice && (
-                      <p className="text-sm text-slate-400 line-through">{formatBaht(selectedVariant.compareAtPrice)}</p>
-                    )}
-                    {selectedVariant?.discountPercent != null && selectedVariant.discountPercent > 0 && (
-                      <span className="text-xs font-semibold text-red-500">-{selectedVariant.discountPercent}%</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    {displayOutOfStock ? t('product.outOfStock') : t('productDetail.inStock', { count: displayAvailable, unit: product.unit })}
-                  </p>
-                </div>
-              </div>
-              <button type="button" onClick={() => setBottomSheetOpen(false)} className="flex size-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-                <span className="text-lg">✕</span>
-              </button>
-            </div>
-            {/* Option groups scrollable */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-              {optionGroups.map((group: any) => (
-                <div key={group.id}>
-                  <p className="mb-2 text-sm font-semibold text-slate-900">
-                    {group.name}
-                    {group.required && <span className="ml-1 text-xs text-red-400">*</span>}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
-                      const isSelected = selectedOptions[group.id] === val.id;
-                      return (
-                        <button
-                          key={val.id}
-                          type="button"
-                          onClick={() => {
-                            setOptionError(null);
-                            const next = { ...selectedOptions, [group.id]: val.id };
-                            setSelectedOptions(next);
-                            const pVariants = (product as any)?.variants;
-                            if (Array.isArray(pVariants) && pVariants.length > 0 && Object.keys(variantOptions).length > 0) {
-                              const match = pVariants.find((v: any) => {
-                                const vOpts = variantOptions[v.id];
-                                if (!vOpts || typeof vOpts !== 'object' || Array.isArray(vOpts)) return false;
-                                return Object.entries(next).every(([gId, vId]) => vOpts[gId] === vId);
-                              });
-                              setSelectedVariant(match ?? null);
-                            }
-                          }}
-                          className={`rounded-lg border px-4 py-2 text-sm transition-colors ${
-                            isSelected
-                              ? 'border-[#10B981] bg-[#ECFDF5] text-[#047857] font-medium'
-                              : 'border-slate-200 text-slate-700 hover:border-slate-300'
-                          }`}
-                        >
-                          {val.label || val.value}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-              {/* Quantity in sheet */}
-              <div>
-                <p className="mb-2 text-sm font-semibold text-slate-900">จำนวน</p>
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="icon" className="size-9 border-slate-200" onClick={() => setQty(q => Math.max(1, q - 1))}>
-                    <Minus className="size-3.5" />
-                  </Button>
-                  <span className="w-10 text-center text-sm font-semibold tabular-nums">{qty}</span>
-                  <Button variant="outline" size="icon" className="size-9 border-slate-200" onClick={() => setQty(q => Math.min(displayAvailable, q + 1))} disabled={qty >= displayAvailable}>
-                    <Plus className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-            {/* Footer: single Confirm button */}
-            <div className="border-t border-slate-100 px-5 py-3">
-              {optionError && <p className="mb-2 text-xs font-medium text-red-500">{optionError}</p>}
-              <Button
-                className="w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                onClick={() => {
-                  setBottomSheetOpen(false);
-                  setOptionError(null);
-                  // If there's a pending action, execute it after a short delay
-                  const action = pendingActionRef.current;
-                  pendingActionRef.current = null;
-                  if (action === "cart") {
-                    setTimeout(() => doAddToCart(), 100);
-                  } else if (action === "buyNow") {
-                    setTimeout(() => doBuyNow(), 100);
-                  }
-                }}
-              >
-                ยืนยัน
-              </Button>
-            </div>
+          {/* Drag handle */}
+          <div className="flex justify-center pt-3 pb-1">
+            <div className="h-1 w-10 rounded-full bg-slate-300" />
           </div>
-        </div>
-      )}
+
+          <div className="flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
+            {/* Product header — larger preview */}
+            <div className="flex gap-4 pt-2">
+              <div className="h-[180px] w-[180px] shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[220px] sm:w-[220px]">
+                {active ? (
+                  <img src={active.displayUrl || active.url} alt={active.alt || product.name} className="size-full object-contain" />
+                ) : (
+                  <span className="flex size-full items-center justify-center"><ImageOff className="size-8 text-slate-300" /></span>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                {/* Selected summary */}
+                {selectedSummary && (
+                  <p className="mb-1 text-xs font-medium text-[#047857]">{selectedSummary}</p>
+                )}
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-bold tabular-nums text-slate-900">{formatBaht(displayPrice)}</p>
+                  <span className="text-xs font-normal text-slate-400">/{product.unit}</span>
+                </div>
+                {displayCompareAt && displayCompareAt > displayPrice && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-sm text-slate-400 line-through">{formatBaht(displayCompareAt)}</span>
+                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">-{Math.round(((displayCompareAt - displayPrice) / displayCompareAt) * 100)}%</span>
+                  </div>
+                )}
+                {!displayCompareAt && displayDiscountPct && displayDiscountPct > 0 && (
+                  <div className="mt-1">
+                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">-{Math.round(displayDiscountPct)}%</span>
+                  </div>
+                )}
+                <p className={`mt-2 text-xs ${outOfStock ? "font-medium text-red-500" : displayStock <= 5 ? "font-medium text-amber-600" : "text-slate-400"}`}>
+                  {outOfStock ? t("product.outOfStock") : displayStock <= 5 ? t("product.lowStock", { count: displayStock, unit: product.unit }) : t("product.inStockShort")}
+                </p>
+              </div>
+            </div>
+
+            {/* Product name (expandable) */}
+            <div className="mt-3 min-w-0 overflow-hidden">
+              <p className="text-sm font-semibold leading-5 text-slate-900" style={{ overflowWrap: "anywhere" }}>
+                {product.name}
+              </p>
+            </div>
+
+            {/* Option groups with thumbnails */}
+            {hasOptionGroups && (
+              <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+                {optionGroups.map((group: any) => (
+                  <div key={group.id}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-slate-700">
+                        {group.name}
+                        {group.required && <span className="ml-1 text-red-400">*</span>}
+                      </p>
+                      {group === optionGroups[0] && (
+                        <button
+                          type="button"
+                          onClick={() => setCompactSheet((c) => !c)}
+                          className="flex size-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                          aria-label={compactSheet ? "ขยายขนาดตัวเลือก" : "ย่อขนาดตัวเลือก"}
+                        >
+                          {compactSheet ? <Maximize2 className="size-3.5" /> : <Minimize2 className="size-3.5" />}
+                        </button>
+                      )}
+                    </div>
+                    <div className={`mt-2 flex flex-wrap ${compactSheet ? "gap-2" : "gap-3"}`}>
+                      {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
+                        const isSelected = selectedOptions[group.id] === val.id;
+                        // Check in-stock availability using real variant combinations
+                        const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
+                        const vOptsMap = (product as any)?.variantOptions as Record<string, Record<string, string>> | undefined;
+                        let valueInStock = true;
+                        if (pVariants && vOptsMap) {
+                          // Build candidate options: current selection + this candidate value
+                          const candidateOptions = { ...selectedOptions, [group.id]: val.value };
+                          valueInStock = pVariants.some((v) => {
+                            const vOpts = vOptsMap[v.id];
+                            if (!vOpts) return false;
+                            // Variant must match ALL non-empty candidate options
+                            const matches = Object.entries(candidateOptions).every(([gId, vId]) => {
+                              // Skip empty selections — not yet chosen by user
+                              if (!vId) return true;
+                              return vOpts[gId] === vId;
+                            });
+                            return matches && (v.stock ?? 0) > 0;
+                          });
+                        }
+                        return (
+                          <button
+                            key={val.id}
+                            type="button"
+                            disabled={!valueInStock}
+                            onClick={() => handleOptionSelect(group.id, val.value)}
+                            className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
+                              isSelected
+                                ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
+                                : valueInStock
+                                  ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
+                                  : "border-slate-100 bg-slate-50 opacity-40"
+                            }`}
+                            aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
+                          >
+                            {val.imageUrl ? (
+                              <img src={val.imageUrl} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
+                            ) : (
+                              <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
+                                {(val.label || val.value).slice(0, 3)}
+                              </span>
+                            )}
+                            <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                              {val.label || val.value}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Quantity selector */}
+            {!outOfStock && (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-700">{t("cartDrawer.quantity")}</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSheetQty((q) => Math.max(1, q - 1))}
+                      disabled={sheetQty <= 1}
+                      className="flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40"
+                      aria-label={t("cartDrawer.ariaDecrease")}
+                    >
+                      <Minus className="size-3.5" />
+                    </button>
+                    <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">{sheetQty}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSheetQty((q) => Math.min(displayStock, q + 1))}
+                      disabled={sheetQty >= displayStock}
+                      className="flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40"
+                      aria-label={t("cartDrawer.ariaIncrease")}
+                    >
+                      <Plus className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sticky confirm button */}
+          <div className="border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
+            {outOfStock ? (
+              <Button className="w-full bg-slate-100 text-slate-400" disabled>{t("product.outOfStock")}</Button>
+            ) : (
+              <Button
+                className="w-full gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+                onClick={handleSheetConfirm}
+              >
+                {pendingAction === "buy" ? (
+                  <>{t("productDetail.buyNow")} · {formatBaht(displayPrice * sheetQty)}</>
+                ) : (
+                  <>
+                    <ShoppingCart className="size-4" />
+                    {t("productDetail.addToCartWithTotal", { total: formatBaht(displayPrice * sheetQty) })}
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <ShopFooter />
+      <SubscriptionDialog product={product} open={subOpen} onOpenChange={setSubOpen} selectedVariant={selectedVariant ? { id: selectedVariant.id, name: selectedVariant.name, price: selectedVariant.price, sku: selectedVariant.sku } : null} />
     </div>
   );
 }

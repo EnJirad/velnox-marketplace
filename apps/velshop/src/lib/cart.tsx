@@ -38,6 +38,8 @@ export interface AddToCartProduct {
   price?: number | null;
   stock: number;
   variantId?: string | null;
+  variantOptionLabels?: Record<string, string>;
+  imageUrl?: string;
 }
 
 interface CartContextValue {

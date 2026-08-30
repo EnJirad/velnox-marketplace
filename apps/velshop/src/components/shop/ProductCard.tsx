@@ -1,10 +1,11 @@
 import { useLanguage } from "@/lib/i18n";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
-import { Heart, ImageOff, Loader2, Star, Store } from "lucide-react";
+import { Heart, ImageOff, Loader2, Star } from "lucide-react";
 import { Link } from "react-router";
 
 interface ProductCardProps {
   product: StoreProduct;
+  /** @deprecated — navigation is now via Link. Kept for backward compat. */
   onOpen?: (product: StoreProduct) => void;
   /** @deprecated — ATC moved to Product Detail only. Kept for backward compat. */
   onAdd?: (product: StoreProduct) => void;
@@ -23,22 +24,23 @@ function fmtSold(n: number): string {
 }
 
 /**
- * VelShop product card — image → name → price → rating+sold → shop.
- * Users tap card to navigate to Product Detail (no ATC on card).
+ * VelShop product card — image → name → price → rating+sold.
+ * Tap card navigates to Product Detail (no selection sheet, no ATC on card).
  */
-export function ProductCard({ product, onAdd: _onAdd, badgeLabel, wishlisted, onWishlist, wishToggling, compact = false, showShop = true }: ProductCardProps) {
+export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabel, wishlisted, onWishlist, wishToggling, compact = false }: ProductCardProps) {
   const { t } = useLanguage();
   const available = product.inventory?.available ?? product.inventory?.quantity ?? 0;
   const outOfStock = available <= 0;
   const hasReviews = (product.reviewCount ?? 0) > 0 && product.rating != null;
   const sold = product.soldCount ?? 0;
+  const detailUrl = `/products/${product.id}`;
 
   return (
     <div className={`flex flex-col overflow-hidden border border-slate-200 bg-white transition-colors hover:border-slate-300 ${compact ? "rounded-lg" : "rounded-xl"}`}>
-      {/* ── Image ── */}
+      {/* ── Image (navigates to Product Detail) ── */}
       <Link
-        to={`/products/${product.id}`}
-        className="relative block aspect-square w-full overflow-hidden bg-slate-50"
+        to={detailUrl}
+        className={`relative block aspect-square w-full overflow-hidden bg-slate-50 ${compact ? "" : ""}`}
         aria-label={t("product.ariaViewDetail", { name: product.name })}
       >
         {product.primaryImage ? (
@@ -66,7 +68,7 @@ export function ProductCard({ product, onAdd: _onAdd, badgeLabel, wishlisted, on
         {onWishlist && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onWishlist(product); }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onWishlist(product); }}
             disabled={wishToggling}
             className={`absolute right-1 top-1 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm transition-colors hover:bg-white ${compact ? "size-7" : "right-2 top-2 size-8"}`}
             aria-label={t("product.ariaWishlist")}
@@ -82,8 +84,9 @@ export function ProductCard({ product, onAdd: _onAdd, badgeLabel, wishlisted, on
 
       {/* ── Info ── */}
       <div className={`flex flex-1 flex-col ${compact ? "gap-0.5 p-1.5" : "p-3 sm:p-3.5"}`}>
+        {/* Product name (navigates to Product Detail) */}
         <Link
-          to={`/products/${product.id}`}
+          to={detailUrl}
           className={`line-clamp-2 font-medium leading-snug text-slate-900 hover:text-[#10B981] ${compact ? "text-[12px]" : "text-sm font-semibold leading-5"}`}
         >
           {product.name}
@@ -94,7 +97,7 @@ export function ProductCard({ product, onAdd: _onAdd, badgeLabel, wishlisted, on
           {formatBaht(product.price)}
         </p>
 
-        {/* Rating + Sold (one compact line) */}
+        {/* Rating + Sold */}
         {(hasReviews || sold > 0) && (
           <p className={`mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0 text-slate-400 ${compact ? "text-[10px]" : "text-[11px]"}`}>
             {hasReviews && (
@@ -111,27 +114,12 @@ export function ProductCard({ product, onAdd: _onAdd, badgeLabel, wishlisted, on
           </p>
         )}
 
-        {/* Stock warning (non-compact only) */}
+        {/* Stock warning (non-compact only, when no reviews/sold) */}
         {!compact && !hasReviews && sold === 0 && (
           <p className={`mt-0.5 text-[11px] ${outOfStock ? "font-medium text-red-500" : available <= 5 ? "font-medium text-amber-600" : "text-slate-400"}`}>
             {outOfStock ? t("product.outOfStock") : available <= 5 ? t("product.lowStock", { count: available, unit: product.unit }) : t("product.inStockShort")}
           </p>
         )}
-
-        {/* Shop name */}
-        {showShop && product.shopName && (
-          <Link
-            to={product.shopSlug ? `/shops/${product.shopSlug}` : product.shopId ? `/shops/${product.shopId}` : "#"}
-            className="mt-1 flex items-center gap-1.5 text-xs text-slate-400 hover:text-[#10B981] transition-colors"
-            onClick={(e) => e.stopPropagation()}
-            aria-label={t("product.shopVisit", { name: product.shopName })}
-          >
-            <Store className="size-3 shrink-0" />
-            <span className="truncate">{product.shopName}</span>
-          </Link>
-        )}
-
-        {/* NO Add to Cart — navigate to Product Detail */}
       </div>
     </div>
   );

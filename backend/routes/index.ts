@@ -70,7 +70,7 @@ export function setupRoutes(app: Express): void {
       if (productIds.length > 0) {
         try {
           const imagesResult = await query(
-            `SELECT product_id, id, url, alt, sort_order FROM product_images WHERE product_id = ANY($1) ORDER BY sort_order ASC`,
+            `SELECT product_id, id, url, alt, sort_order FROM product_images WHERE product_id = ANY($1::uuid[]) ORDER BY sort_order ASC`,
             [productIds]
           );
           for (const img of imagesResult.rows) {

@@ -156,7 +156,6 @@ export default function ShopHome() {
 
   const handleAdd = (product: StoreProduct, qty = 1) => {
     add({ id: product.id, name: product.name, unit: product.unit, price: product.price, stock: product.inventory?.available ?? product.inventory?.quantity ?? 0 }, qty);
-    toast.success(t("cart.added", { name: product.name }));
   };
 
   const openProduct = (product: StoreProduct, source: string) => {
@@ -288,6 +287,7 @@ export default function ShopHome() {
       </main>
       <ShopFooter />
       <SubscriptionDialog product={subProduct} open={subProduct !== null} onOpenChange={(open) => { if (!open) setSubProduct(null); }} />
+
     </div>
   );
 }
