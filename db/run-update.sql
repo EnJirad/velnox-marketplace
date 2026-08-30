@@ -1218,3 +1218,59 @@ ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_type TEXT NOT NULL DEF
 ALTER TABLE product_images ADD COLUMN IF NOT EXISTS variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_product_images_type ON product_images (product_id, image_type);
 CREATE INDEX IF NOT EXISTS idx_product_images_variant ON product_images (variant_id) WHERE variant_id IS NOT NULL;
+
+------------------------------------------------------------
+-- Migration: V0031
+-- Date: 2026-08-30
+-- Description:
+-- Add compare_at_price, discount_percent to product_variants,
+-- create product_variant_images table, add reorder_level to inventory.
+--
+-- Reason:
+-- Backend queries compare_at_price and discount_percent from
+-- product_variants but they were never added via migration.
+-- product_variant_images is queried by the backend but the
+-- table was never created. inventory.reorder_level is used
+-- in the seller UI but was never added to the schema.
+--
+-- Affected:
+-- product_variants
+-- product_variant_images (NEW)
+-- inventory
+------------------------------------------------------------
+
+ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC(12,2);
+ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2);
+
+CREATE TABLE IF NOT EXISTS product_variant_images (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  alt TEXT NOT NULL DEFAULT '',
+  storage_key TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_variant_images_variant ON product_variant_images (variant_id);
+
+ALTER TABLE inventory ADD COLUMN IF NOT EXISTS reorder_level INTEGER NOT NULL DEFAULT 0;
+
+------------------------------------------------------------
+-- Migration: V0031b
+-- Date: 2026-08-30
+-- Description:
+-- Update product_variant_images to include product_id column
+-- matching the backend's expected schema.
+--
+-- Reason:
+-- The startup DDL in server.ts creates product_variant_images
+-- with product_id. This migration ensures the migration file
+-- matches that structure. Safe to re-run (IF NOT EXISTS).
+--
+-- Affected:
+-- product_variant_images
+------------------------------------------------------------
+
+-- product_id column may already exist from V0031 or startup DDL
+ALTER TABLE product_variant_images ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_variant_images_product ON product_variant_images (product_id);

@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   product_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
   quantity INTEGER NOT NULL DEFAULT 0,
   reserved INTEGER NOT NULL DEFAULT 0,
+  reorder_level INTEGER NOT NULL DEFAULT 0,
   low_stock_threshold INTEGER NOT NULL DEFAULT 5,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -547,6 +548,8 @@ CREATE TABLE IF NOT EXISTS product_variants (
   name TEXT NOT NULL,
   sku TEXT,
   price NUMERIC(12, 2) NOT NULL,
+  compare_at_price NUMERIC(12, 2),
+  discount_percent NUMERIC(5, 2),
   stock INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'archived')),
   options JSONB DEFAULT '{}',
@@ -557,6 +560,22 @@ CREATE TABLE IF NOT EXISTS product_variants (
 
 CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_variants_status ON product_variants (product_id, status);
+
+-- ─── Product Variant Images ──────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS product_variant_images (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  alt TEXT DEFAULT '',
+  storage_key TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_variant_images_variant ON product_variant_images (variant_id);
+CREATE INDEX IF NOT EXISTS idx_variant_images_product ON product_variant_images (product_id);
 
 -- ─── Product Reviews ──────────────────────────────────────────────────────
 

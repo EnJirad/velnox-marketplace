@@ -1487,3 +1487,23 @@ Product images were all stored in a flat `product_images` table with no classifi
 - Full integration testing with real merchant data
 
 **All 5 typechecks pass.**
+
+### 2026-08-30 — CRITICAL FIX: product_variants missing columns + product_variant_images table
+
+**Problem:** Production error: `column "compare_at_price" does not exist` when loading product variants. Backend queries `compare_at_price` and `discount_percent` from `product_variants` but these columns were never added via proper migration. Additionally, `product_variant_images` table was queried by the backend but never created.
+
+**Root cause:** The V0029 migration for `compare_at_price`/`discount_percent` was only implemented as startup DDL in `server.ts` (violating AI_RULES Rule 48), never as a proper migration file. The `product_variant_images` table was similarly only created at startup. The `db/schema.sql`, `db/run-sqleditor.sql`, and `db/run-update.sql` were never updated to include these changes.
+
+**Fix:**
+1. Created `db/migrations/031_product_variant_pricing_and_images.sql` — proper idempotent migration adding:
+   - `product_variants.compare_at_price NUMERIC(12,2)`
+   - `product_variants.discount_percent NUMERIC(5,2)`
+   - `product_variant_images` table (with variant_id FK, product_id FK)
+   - `inventory.reorder_level INTEGER`
+2. Updated `db/schema.sql` — added missing columns/tables
+3. Updated `db/run-sqleditor.sql` — synchronized with schema.sql
+4. Appended V0031 + V0031b to `db/run-update.sql`
+
+**Note:** Startup DDL in `server.ts` was left intact as a safety net (ensures tables exist even if migrations haven't been applied by GitHub Action yet). Proper migration files now also exist for the GitHub Action workflow.
+
+**All 5 typechecks pass. Vite build passes.**
