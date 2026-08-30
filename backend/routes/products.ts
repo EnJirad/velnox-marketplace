@@ -741,12 +741,21 @@ export function setupProductRoutes(app: Express): void {
               }
             }
 
-            // Create variant image if provided
-            if (variant.imageUrl) {
+            // Create variant images (support single imageUrl or multiple images array)
+            const variantImages: Array<{ url: string; alt?: string }> = [];
+            if (Array.isArray(variant.images)) {
+              for (const img of variant.images) {
+                if (img.url) variantImages.push({ url: img.url, alt: img.alt || variant.name || "" });
+              }
+            } else if (variant.imageUrl) {
+              variantImages.push({ url: variant.imageUrl, alt: variant.name || "" });
+            }
+            for (let imgIdx = 0; imgIdx < variantImages.length; imgIdx++) {
+              const vi = variantImages[imgIdx]!;
               await client.query(
                 `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id)
-                 VALUES ($1, $2, $3, 0, 'variant', $4)`,
-                [product.id, variant.imageUrl, variant.name || "", variantId]
+                 VALUES ($1, $2, $3, $4, 'variant', $5)`,
+                [product.id, vi.url, vi.alt, imgIdx, variantId]
               );
             }
           }
