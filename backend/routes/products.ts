@@ -317,15 +317,25 @@ async function loadProductExtras(productIds: string[]): Promise<{
     inventoryByProduct.set(inv.product_id, inv);
   }
 
-  // Load variant images
+  // Load variant images — check BOTH product_images (image_type='variant') and product_variant_images
   let variantImagesResult: { rows: any[] } = { rows: [] as any[] };
   try {
     const variantIds = variantsResult.rows.map((v: any) => v.id);
     if (variantIds.length > 0) {
+      // Primary source: product_images with image_type='variant' (used by create-full)
       variantImagesResult = await query(
-        `SELECT * FROM product_variant_images WHERE variant_id = ANY($1) ORDER BY sort_order ASC`,
-        [variantIds]
+        `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'variant' AND variant_id IS NOT NULL ORDER BY sort_order ASC`,
+        [productIds]
       );
+      // Fallback: also check product_variant_images (used by older variant image save endpoint)
+      if (variantImagesResult.rows.length === 0) {
+        try {
+          variantImagesResult = await query(
+            `SELECT pvi.*, pvi.variant_id FROM product_variant_images pvi WHERE pvi.variant_id = ANY($1) ORDER BY pvi.sort_order ASC`,
+            [variantIds]
+          );
+        } catch { /* product_variant_images may not exist */ }
+      }
     }
   } catch (viErr: any) {
     if (viErr?.code !== "42P01") console.warn("[products] variant images query warning:", viErr?.message);

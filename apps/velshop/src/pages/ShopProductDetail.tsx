@@ -457,6 +457,49 @@ export default function ShopProductDetail() {
     openVariantSheet("buy");
   }, [product, isAuthenticated, navigate, outOfStock, openVariantSheet]);
 
+  const handleSheetConfirmWithAction = useCallback((action: PendingAction) => {
+    if (!product) return;
+    // Validate required options
+    const missing = optionGroups
+      .filter((g: any) => g.required && !selectedOptions[g.id])
+      .map((g: any) => g.name);
+    if (missing.length > 0) {
+      toast.error(t("productDetail.pleaseSelectOption", { options: missing.join(", ") }));
+      return;
+    }
+    if (outOfStock) {
+      setVariantSheetOpen(false);
+      return;
+    }
+    if (action === "cart") {
+      add({
+        id: product.id, name: product.name, unit: product.unit,
+        price: displayPrice, stock: displayStock,
+        variantId: selectedVariant?.id ?? null,
+      }, sheetQty);
+      fly(addBtnRef.current);
+      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
+    } else if (action === "buy") {
+      add({
+        id: product.id, name: product.name, unit: product.unit,
+        price: displayPrice, stock: displayStock,
+        variantId: selectedVariant?.id ?? null,
+      }, sheetQty);
+      setTimeout(() => {
+        navigate("/checkout", {
+          state: {
+            buyNow: true,
+            buyNowProductId: product.id,
+            buyNowVariantId: selectedVariant?.id ?? null,
+            buyNowQty: sheetQty,
+          },
+        });
+      }, 300);
+    }
+    setVariantSheetOpen(false);
+    setPendingAction(null);
+  }, [product, optionGroups, selectedOptions, outOfStock, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, navigate, t]);
+
   const handleSheetConfirm = useCallback(() => {
     if (!product || !pendingAction) return;
     // Validate required options
@@ -1016,25 +1059,49 @@ export default function ShopProductDetail() {
             )}
           </div>
 
-          {/* Sticky confirm button */}
+          {/* Sticky action buttons: Buy Now + Add to Cart + VelRepeat */}
           <div className="border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
             {outOfStock ? (
               <Button className="w-full bg-slate-100 text-slate-400" disabled>{t("product.outOfStock")}</Button>
             ) : (
-              <Button
-                className="w-full gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
-                onClick={handleSheetConfirm}
-              >
-                {pendingAction === "buy" ? (
-                  <>{t("productDetail.buyNow")} · {formatBaht(displayPrice * sheetQty)}</>
-                ) : (
-                  <>
-                    <ShoppingCart className="size-4" />
-                    {t("productDetail.addToCartWithTotal", { total: formatBaht(displayPrice * sheetQty) })}
-                  </>
-                )}
-              </Button>
+              <div className="grid grid-cols-3 gap-2">
+                <Button
+                  variant="outline"
+                  className="gap-1 border-[#10B981] text-[#10B981] hover:bg-[#10B981] hover:text-white text-xs"
+                  onClick={() => handleSheetConfirmWithAction("buy")}
+                >
+                  <Zap className="size-3.5" />
+                  <span className="truncate">{t("productDetail.buyNow")}</span>
+                </Button>
+                <Button
+                  className="gap-1 bg-slate-900 text-white hover:bg-slate-800 text-xs"
+                  onClick={() => handleSheetConfirmWithAction("cart")}
+                >
+                  <ShoppingCart className="size-3.5" />
+                  <span className="truncate">ใส่ตะกร้า</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-1 border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white text-xs"
+                  onClick={() => {
+                    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+                    if (product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) {
+                      setPendingAction("cart");
+                      setSubOpen(true);
+                      setVariantSheetOpen(false);
+                    } else {
+                      toast.info("สินค้านี้ไม่รองรับ VelRepeat");
+                    }
+                  }}
+                >
+                  <CalendarClock className="size-3.5" />
+                  <span className="truncate">VelRepeat</span>
+                </Button>
+              </div>
             )}
+            <p className="mt-2 text-center text-xs text-slate-400">
+              {formatBaht(displayPrice * sheetQty)} · {t("cartDrawer.quantity")}: {sheetQty}
+            </p>
           </div>
         </SheetContent>
       </Sheet>
