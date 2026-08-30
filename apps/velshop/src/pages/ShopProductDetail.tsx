@@ -349,17 +349,19 @@ export default function ShopProductDetail() {
     return [];
   }, [selectedVariant, optionGroups, selectedOptions, product]);
 
-  // Active image: prefer variant image when selected, otherwise first product image
-  const images = useMemo(() => {
-    if (selectedVariant && variantImages.length > 0) return variantImages;
+  // Combined gallery: product images first, then variant images after divider
+  const galleryImages = useMemo(() => {
+    if (selectedVariant && variantImages.length > 0) {
+      return [...productImages, ...variantImages];
+    }
     return productImages;
   }, [selectedVariant, variantImages, productImages]);
 
   useEffect(() => {
-    if (activeIndex >= images.length) setActiveIndex(0);
-  }, [images.length, activeIndex]);
+    if (activeIndex >= galleryImages.length) setActiveIndex(0);
+  }, [galleryImages.length, activeIndex]);
 
-  const active = images[activeIndex] ?? images[0] ?? productImages[0];
+  const active = galleryImages[activeIndex] ?? galleryImages[0] ?? productImages[0];
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
   const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
@@ -384,14 +386,14 @@ export default function ShopProductDetail() {
     setSeo({
       title: `${product.name} — VelShop`,
       description: product.description ?? t("productDetail.seoDesc", { name: product.name, price: formatBaht(product.price), unit: product.unit, shop: product.shopName ?? t("productDetail.defaultShop") }),
-      ogType: "product", ogImage: images[0]?.displayUrl ?? undefined,
+      ogType: "product", ogImage: galleryImages[0]?.displayUrl ?? undefined,
       jsonLd: {
-        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: images[0]?.displayUrl ?? undefined,
+        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: galleryImages[0]?.displayUrl ?? undefined,
         ...(rating ? { aggregateRating: { "@type": "AggregateRating", ...rating } } : {}),
         offers: { "@type": "Offer", priceCurrency: "THB", price: product.price, availability: outOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock" },
       },
     });
-  }, [product, reviews, images, outOfStock, t]);
+  }, [product, reviews, galleryImages, outOfStock, t]);
 
   /* ── Compact selector thumbnails ────────────────────────────────── */
 
@@ -416,7 +418,7 @@ export default function ShopProductDetail() {
 
   // Gallery thumbnail click — either select product image index or variant image
   const handleProductThumbClick = useCallback((index: number) => { setActiveIndex(index); }, []);
-  const handleVariantThumbClick = useCallback((index: number) => { setActiveIndex(index); }, []);
+  const handleVariantThumbClick = useCallback((index: number) => { setActiveIndex(productImages.length + index); }, [productImages.length]);
 
   const selectedSummary = useMemo(() => {
     if (!hasOptionGroups || Object.keys(selectedOptions).length === 0) return null;
@@ -661,7 +663,7 @@ export default function ShopProductDetail() {
                       key={`vi-${img.id ?? i}`}
                       type="button"
                       onClick={() => handleVariantThumbClick(i)}
-                      className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${selectedVariant && images === variantImages && i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
+                      className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${selectedVariant && i + productImages.length === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
                       aria-label={`Variant ${i + 1}`}
                     >
                       <img src={img.thumbUrl || img.displayUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
