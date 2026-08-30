@@ -1724,3 +1724,25 @@ variantOptions[v.id][groupId] === selectedOptions[groupId]
 - Availability logic (`valueInStock`) now works — only shows disabled when variant combination truly has 0 stock
 - Price/stock/images update correctly when variant is selected
 - Existing products can be fixed via backfill endpoint
+
+### 2026-08-30 — Fix: Variant Images Loading + 3 Action Buttons
+
+**Problem 1:** Variant images were not showing in product detail because `loadProductExtras` queried the `product_variant_images` table, but `create-full` stores variant images in `product_images` (with `image_type='variant'`). This meant products created via create-full had zero visible variant images.
+
+**Fix:** Changed `loadProductExtras` variant images query to check `product_images WHERE image_type = 'variant' AND variant_id IS NOT NULL` first, falling back to `product_variant_images` for older data.
+
+**Problem 2:** The variant bottom sheet only had a single confirm button. Per user requirement, it should have 3 action buttons: Buy Now, Add to Cart, and VelRepeat.
+
+**Fix:** Replaced single confirm button with a 3-column grid:
+- ซื้อเลย (Buy Now) — outline green
+- ใส่ตะกร้า (Add to Cart) — solid dark
+- VelRepeat — outline blue
+
+Added `handleSheetConfirmWithAction` handler for individual button actions. Shows total price + quantity summary below buttons.
+
+**Files Changed:**
+- `backend/routes/products.ts` — Fixed variant images query in loadProductExtras
+- `apps/velshop/src/pages/ShopProductDetail.tsx` — 3 action buttons + handleSheetConfirmWithAction
+
+**Typecheck:** ✅ Backend, VelShop pass
+**Commit:** b84dd0e — pushed to main
