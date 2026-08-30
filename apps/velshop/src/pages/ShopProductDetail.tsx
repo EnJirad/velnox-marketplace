@@ -237,13 +237,10 @@ export default function ShopProductDetail() {
       const pAny = p as any;
       if (Array.isArray(pAny.optionGroups) && pAny.optionGroups.length > 0) {
         setOptionGroups(pAny.optionGroups);
-        console.log("[VARIANT DEBUG] optionGroups:", pAny.optionGroups.map((g: any) => ({ id: g.id, name: g.name, values: g.values?.map((v: any) => ({ id: v.id, value: v.value, imageUrl: v.imageUrl })) })));
       }
       if (pAny.variantOptions && typeof pAny.variantOptions === "object") {
         setVariantOptions(pAny.variantOptions);
-        console.log("[VARIANT DEBUG] variantOptions:", JSON.stringify(pAny.variantOptions));
       }
-      console.log("[VARIANT DEBUG] variants:", (pAny.variants ?? []).map((v: any) => ({ id: v.id, name: v.name, price: v.price, stock: v.stock, images: v.images?.length ?? 0 })));
       const [revs, wl] = await Promise.all([
         productReviews({ productId }),
         isAuthenticated ? myWishlist() : Promise.resolve([]),
@@ -824,6 +821,21 @@ export default function ShopProductDetail() {
                   <div><span className="text-slate-400">Category</span><p className="mt-0.5 font-medium text-slate-900">{categoryMeta?.label ?? product.category}</p></div>
                   {product.supplier && <div><span className="text-slate-400">Supplier</span><p className="mt-0.5 font-medium text-slate-900">{product.supplier}</p></div>}
                 </div>
+                {/* Detail images */}
+                {(() => {
+                  const detailImgs = (product as any).detailImages;
+                  if (!Array.isArray(detailImgs) || detailImgs.length === 0) return null;
+                  return (
+                    <div className="mt-5 border-t border-slate-100 pt-5">
+                      <p className="text-sm font-bold text-slate-900 mb-3">รูปภาพรายละเอียดสินค้า</p>
+                      <div className="space-y-3">
+                        {detailImgs.map((img: any, i: number) => (
+                          <img key={img.id ?? i} src={img.url || img.displayUrl} alt={img.alt || `Detail ${i + 1}`} className="w-full rounded-lg border border-slate-100" loading="lazy" />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -990,16 +1002,13 @@ export default function ShopProductDetail() {
                           const candidateOptions = { ...selectedOptions, [group.id]: val.value as string };
                           valueInStock = pVariants.some((v) => {
                             const vOpts = vOptsMap[v.id];
-                            if (!vOpts || typeof vOpts !== "object") { console.log(`[VARIANT UI] variant ${v.id} has no vOpts mapping`); return false; }
+                            if (!vOpts || typeof vOpts !== "object") return false;
                             // Variant must match ALL non-empty candidate options
                             const matches = Object.entries(candidateOptions).every(([gId, vId]) => {
                               // Skip empty selections — not yet chosen by user
                               if (!vId) return true;
-                              const match = vOpts[gId] === vId;
-                              if (!match) console.log(`[VARIANT UI] group ${gId}: expected "${vOpts[gId]}" got "${vId}"`);
-                              return match;
+                              return vOpts[gId] === vId;
                             });
-                            if (matches) console.log(`[VARIANT UI] MATCH variant ${v.id} stock=${v.stock} price=${v.price}`);
                             return matches && (v.stock ?? 0) > 0;
                           });
                         } else {
@@ -1072,13 +1081,32 @@ export default function ShopProductDetail() {
             )}
           </div>
 
-          {/* Sticky action buttons: Buy Now + Add to Cart + VelRepeat */}
+          {/* Sticky action buttons — action-aware based on pendingAction */}
           <div className="border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
             {outOfStock ? (
               <Button className="w-full bg-slate-100 text-slate-400" disabled>{t("product.outOfStock")}</Button>
             ) : needsVariant ? (
               <Button className="w-full bg-slate-100 text-slate-400" disabled>กรุณาเลือกตัวเลือกสินค้า</Button>
+            ) : pendingAction === "buy" ? (
+              /* Intent: Buy Now — show only buy button */
+              <Button
+                className="w-full gap-1.5 border-[#10B981] bg-[#10B981] text-white hover:bg-emerald-600"
+                onClick={() => handleSheetConfirmWithAction("buy")}
+              >
+                <Zap className="size-4" />
+                {t("productDetail.buyNow")}
+              </Button>
+            ) : pendingAction === "cart" ? (
+              /* Intent: Add to Cart — show only cart button */
+              <Button
+                className="w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                onClick={() => handleSheetConfirmWithAction("cart")}
+              >
+                <ShoppingCart className="size-4" />
+                ใส่ตะกร้า
+              </Button>
             ) : (
+              /* No specific intent — show all 3 buttons */
               <div className="grid grid-cols-3 gap-2">
                 <Button
                   variant="outline"
