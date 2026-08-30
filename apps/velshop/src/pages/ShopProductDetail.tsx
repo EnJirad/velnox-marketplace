@@ -237,10 +237,13 @@ export default function ShopProductDetail() {
       const pAny = p as any;
       if (Array.isArray(pAny.optionGroups) && pAny.optionGroups.length > 0) {
         setOptionGroups(pAny.optionGroups);
+        console.log("[VARIANT DEBUG] optionGroups:", pAny.optionGroups.map((g: any) => ({ id: g.id, name: g.name, values: g.values?.map((v: any) => ({ id: v.id, value: v.value, imageUrl: v.imageUrl })) })));
       }
       if (pAny.variantOptions && typeof pAny.variantOptions === "object") {
         setVariantOptions(pAny.variantOptions);
+        console.log("[VARIANT DEBUG] variantOptions:", JSON.stringify(pAny.variantOptions));
       }
+      console.log("[VARIANT DEBUG] variants:", (pAny.variants ?? []).map((v: any) => ({ id: v.id, name: v.name, price: v.price, stock: v.stock, images: v.images?.length ?? 0 })));
       const [revs, wl] = await Promise.all([
         productReviews({ productId }),
         isAuthenticated ? myWishlist() : Promise.resolve([]),
@@ -974,31 +977,38 @@ export default function ShopProductDetail() {
                     </div>
                     <div className={`mt-2 flex flex-wrap ${compactSheet ? "gap-2" : "gap-3"}`}>
                       {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
-                        const isSelected = selectedOptions[group.id] === val.id;
+                        // BUG FIX: selectedOptions stores TEXT values (e.g. "ดำ"), not UUIDs
+                        const isSelected = selectedOptions[group.id] === (val.value as string);
                         // Check in-stock availability using real variant combinations
                         const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
                         const vOptsMap = (product as any)?.variantOptions as Record<string, Record<string, string>> | undefined;
                         let valueInStock = true;
-                        if (pVariants && vOptsMap) {
-                          // Build candidate options: current selection + this candidate value
-                          const candidateOptions = { ...selectedOptions, [group.id]: val.value };
+                        if (Array.isArray(pVariants) && pVariants.length > 0 && vOptsMap && Object.keys(vOptsMap).length > 0) {
+                          // Build candidate options: current selection + this candidate value (TEXT values)
+                          const candidateOptions = { ...selectedOptions, [group.id]: val.value as string };
                           valueInStock = pVariants.some((v) => {
                             const vOpts = vOptsMap[v.id];
-                            if (!vOpts) return false;
+                            if (!vOpts || typeof vOpts !== "object") { console.log(`[VARIANT UI] variant ${v.id} has no vOpts mapping`); return false; }
                             // Variant must match ALL non-empty candidate options
                             const matches = Object.entries(candidateOptions).every(([gId, vId]) => {
                               // Skip empty selections — not yet chosen by user
                               if (!vId) return true;
-                              return vOpts[gId] === vId;
+                              const match = vOpts[gId] === vId;
+                              if (!match) console.log(`[VARIANT UI] group ${gId}: expected "${vOpts[gId]}" got "${vId}"`);
+                              return match;
                             });
+                            if (matches) console.log(`[VARIANT UI] MATCH variant ${v.id} stock=${v.stock} price=${v.price}`);
                             return matches && (v.stock ?? 0) > 0;
                           });
+                        } else {
+                          // Fallback: if no variant data available, assume all options are in stock
+                          valueInStock = true;
                         }
                         return (
                           <button
                             key={val.id}
                             type="button"
-                            disabled={!valueInStock}
+                            disabled={!valueInStock && pVariants != null}
                             onClick={() => handleOptionSelect(group.id, val.value)}
                             className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                               isSelected
@@ -1016,8 +1026,9 @@ export default function ShopProductDetail() {
                                 {(val.label || val.value).slice(0, 3)}
                               </span>
                             )}
-                            <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                            <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
                               {val.label || val.value}
+                              {!valueInStock && <span className="ml-1 text-[9px] text-red-400">(หมด)</span>}
                             </span>
                           </button>
                         );
@@ -1063,6 +1074,8 @@ export default function ShopProductDetail() {
           <div className="border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
             {outOfStock ? (
               <Button className="w-full bg-slate-100 text-slate-400" disabled>{t("product.outOfStock")}</Button>
+            ) : needsVariant ? (
+              <Button className="w-full bg-slate-100 text-slate-400" disabled>กรุณาเลือกตัวเลือกสินค้า</Button>
             ) : (
               <div className="grid grid-cols-3 gap-2">
                 <Button
