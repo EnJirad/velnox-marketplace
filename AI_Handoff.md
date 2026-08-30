@@ -1607,3 +1607,34 @@ Product images were all stored in a flat `product_images` table with no classifi
 - Customer product detail: display detail images section
 - Cart drawer: show variant image instead of product primary
 - Full integration testing with real merchant data
+
+### 2026-08-30 — CRITICAL FIX: Startup DDL never ran column additions + variant query resilience
+
+**Problem:** Production backend logs showed `column "compare_at_price" does not exist` when loading product variants, causing `variantsLoaded=0`. The product creation button appeared functional but product detail pages showed no variant data.
+
+**Root cause:** `ensureVariantTables()` in `server.ts` returned early (line ~83) when all 5 variant tables already existed, skipping the V0029/V0030/V0031 `ALTER TABLE ADD COLUMN` statements. If the GitHub Action created the tables (V0028) but didn't apply V0031 (compare_at_price/discount_percent columns), the startup safety net never ran. The `loadProductExtras` query selected `compare_at_price, discount_percent` which didn't exist, causing error code `42703`. The catch block returned empty variants.
+
+**Fix:**
+1. **`backend/server.ts`** — Moved V0029/V0030/V0031 ALTER TABLE statements OUTSIDE the early-return block. They now ALWAYS run on every startup, regardless of whether tables exist. Added V0031 variant pricing + product_variant_images + inventory.reorder_level as startup DDL.
+2. **`backend/routes/products.ts`** — Made `loadProductExtras` variant query resilient: if error code `42703` (column does not exist), retries without `compare_at_price`/`discount_percent` columns. Prevents `variantsLoaded=0` until V0031 is applied.
+
+**Files Changed:**
+| File | Change |
+|------|--------|
+| `backend/server.ts` | Restructured ensureVariantTables() — column additions always run |
+| `backend/routes/products.ts` | Added 42703 fallback in variant query |
+
+**Verification:**
+- ✅ Backend typecheck passes
+- ✅ VelShop typecheck passes
+- ✅ VelSeller typecheck passes
+- ✅ VelCenter typecheck passes
+- ✅ Git committed and pushed
+
+**Next deploy:** When Render restarts, the startup DDL will add `compare_at_price` and `discount_percent` to `product_variants` if missing. Product detail pages will then show variant data. Product creation via `create-full` will work end-to-end.
+
+**Still remaining for future sessions:**
+- Customer product detail: display detail images section below product description
+- Cart drawer: show variant image instead of product primary
+- Full integration testing with real merchant data
+- Frontend error display when create-full API returns errors
