@@ -1670,3 +1670,31 @@ All endpoints verify seller → shop → product ownership.
 - ✅ VelSeller typecheck passes
 - ✅ VelCenter typecheck passes
 - ✅ Git committed and pushed (e0560db)
+
+### 2026-08-30 — Lazada-like Variant Selector UX
+
+**Problem:** Product detail variant selector and ProductSelectionSheet had basic option cards without thumbnails, inconsistent disabled states, and no variant-aware image switching.
+
+**Changes:**
+
+1. **`ShopProductDetail.tsx` — Gallery restructured:**
+   - Split `images` into `productImages` + `variantImages` — product images always shown, variant images shown after visual divider in thumbnails
+   - `images` memo: shows variant images when variant selected (for main image), otherwise product images
+   - `active` falls back to `productImages[0]` when no variant image available
+   - Thumbnails: product images on left, vertical divider, variant images on right
+   - Variant thumbnails highlight with green border when selected
+
+2. **`ShopProductDetail.tsx` — Variant sheet option cards:**
+   - Cards use `w-[112px] min-h-[128px]` with image thumbnails (72px)
+   - Selected: green border + ring
+   - Disabled (out of stock): `opacity-40` + `line-through` label (cleaner)
+   - In-stock: normal card with hover state
+
+3. **`ProductSelectionSheet.tsx` — Matching improvements:**
+   - Added variant-aware image: checks `selectedVariant.images`, then option value `imageUrl`, then product images
+   - Option cards now show image thumbnails (64px) with proper disabled state
+   - Inline compare-at price (crossed out) + discount badge (red)
+   - Price shows `/{unit}` instead of per-unit label
+
+**Typecheck:** ✅ VelShop pass
+**Commit:** `3276f38` — pushed to main
