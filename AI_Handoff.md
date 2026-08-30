@@ -1638,3 +1638,35 @@ Product images were all stored in a flat `product_images` table with no classifi
 - Cart drawer: show variant image instead of product primary
 - Full integration testing with real merchant data
 - Frontend error display when create-full API returns errors
+
+### 2026-08-30 — Seller Variant CRUD Routes (Edit Mode)
+
+**Problem:** The `VariantManager` component in `ProductFormDialog.tsx` calls endpoints that didn't exist:
+- `GET /api/seller/products/:id/variants`
+- `POST /api/seller/products/:id/variants/generate`
+- `PATCH /api/seller/products/:id/variants/:variantId`
+- `DELETE /api/seller/products/:id/variants/:variantId`
+- `GET /api/seller/products/:id/variants/:variantId/images`
+- `POST /api/seller/products/:id/variants/:variantId/images`
+
+This meant sellers could not view, generate, edit, delete, or upload images for variants when editing existing products.
+
+**Fix:** Added 6 new authenticated endpoints to `backend/routes/products.ts`:
+- `GET /variants` — list all variants with pricing, stock, options
+- `POST /variants/generate` — auto-generate variant combinations from option groups (with duplicate prevention)
+- `PATCH /variants/:id` — update price, compareAtPrice, discountPercent, stock, SKU, status
+- `DELETE /variants/:id` — cascade delete (option mappings, images, R2 cleanup)
+- `GET /variants/:id/images` — list variant images
+- `POST /variants/:id/images` — save variant image metadata
+
+All endpoints verify seller → shop → product ownership.
+
+**Files Changed:**
+- `backend/routes/products.ts` — Added 199 lines of variant CRUD routes
+
+**Verification:**
+- ✅ Backend typecheck passes
+- ✅ VelShop typecheck passes
+- ✅ VelSeller typecheck passes
+- ✅ VelCenter typecheck passes
+- ✅ Git committed and pushed (e0560db)
