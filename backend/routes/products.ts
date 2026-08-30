@@ -1491,6 +1491,205 @@ export function setupProductRoutes(app: Express): void {
   });
 
   // ═════════════════════════════════════════════════════════════════════════
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // SELLER VARIANT ROUTES (authenticated, ownership verified)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/seller/products/:productId/variants ────────────────────────
+  app.get("/api/seller/products/:productId/variants", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      const result = await query(
+        `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order, created_at, updated_at
+         FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC`,
+        [productId]
+      );
+      const variants = result.rows.map((v: any) => ({
+        id: v.id, name: v.name, sku: v.sku,
+        price: parseFloat(v.price) || 0,
+        compareAtPrice: v.compare_at_price != null ? parseFloat(v.compare_at_price) : null,
+        discountPercent: v.discount_percent != null ? parseFloat(v.discount_percent) : null,
+        stock: v.stock ?? 0, status: v.status || "active", options: v.options || {},
+        optionLabels: typeof v.options === "object" ? Object.values(v.options).join(" / ") : "",
+      }));
+      res.json({ success: true, data: variants });
+    } catch (err) {
+      console.error("[products] variants list error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list variants" } });
+    }
+  });
+
+  // ── POST /api/seller/products/:productId/variants/generate ───────────────
+  app.post("/api/seller/products/:productId/variants/generate", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      const groupsResult = await query("SELECT * FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC", [productId]);
+      if (groupsResult.rows.length === 0) { res.json({ success: true, data: { variants: [] } }); return; }
+
+      const valueArrays: { groupId: string; groupName: string; valueId: string; value: string }[][] = [];
+      for (const group of groupsResult.rows) {
+        const vr = await query("SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC", [group.id]);
+        if (vr.rows.length === 0) continue;
+        valueArrays.push(vr.rows.map((v: any) => ({ groupId: group.id, groupName: group.name, valueId: v.id, value: v.value })));
+      }
+      const cartesian = valueArrays.reduce<{ groupId: string; groupName: string; valueId: string; value: string }[][]>(
+        (acc, curr) => acc.flatMap((a) => curr.map((b) => [...a, b])), [[]]
+      );
+      const prodResult = await query("SELECT price FROM products WHERE id = $1", [productId]);
+      const basePrice = prodResult.rows[0] ? parseFloat(prodResult.rows[0].price) : 0;
+
+      const existingResult = await query("SELECT id FROM product_variants WHERE product_id = $1", [productId]);
+      if (existingResult.rows.length > 0) {
+        res.json({ success: true, data: { variants: existingResult.rows.map((v: any) => ({ id: v.id })), message: "Variants already exist" } }); return;
+      }
+
+      const client = await getClient();
+      const createdVariants: any[] = [];
+      try {
+        await client.query("BEGIN");
+        for (let i = 0; i < cartesian.length; i++) {
+          const combo = cartesian[i]!;
+          const comboName = combo.map((c) => c.value).join(" / ");
+          const optionsObj: Record<string, string> = {};
+          combo.forEach((c) => { optionsObj[c.groupName] = c.value; });
+          const vr = await client.query(
+            `INSERT INTO product_variants (product_id, name, sku, price, stock, status, options, sort_order)
+             VALUES ($1, $2, $3, $4, 0, 'active', $5, $6) RETURNING id`,
+            [productId, comboName, null, basePrice, JSON.stringify(optionsObj), i]
+          );
+          const vid = vr.rows[0].id;
+          for (const c of combo) {
+            await client.query(`INSERT INTO product_variant_values (variant_id, option_value_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [vid, c.valueId]);
+          }
+          createdVariants.push({ id: vid, name: comboName, price: basePrice, options: optionsObj });
+        }
+        await client.query("COMMIT");
+      } catch (txErr) { await client.query("ROLLBACK").catch(() => {}); throw txErr; } finally { client.release(); }
+
+      console.log(`[products] generated ${createdVariants.length} variants for product ${productId}`);
+      res.json({ success: true, data: { variants: createdVariants } });
+    } catch (err) {
+      console.error("[products] generate variants error:", err);
+      res.status(500).json({ success: false, error: { code: "GENERATE_FAILED", message: "Failed to generate variants" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/variants/:variantId ────────────
+  app.patch("/api/seller/products/:productId/variants/:variantId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      const { price, compareAtPrice, discountPercent, stock, sku, status } = req.body;
+      const updates: string[] = []; const values: any[] = []; let idx = 1;
+      if (price != null) { updates.push(`price = $${idx++}`); values.push(Number(price)); }
+      if (compareAtPrice !== undefined) { updates.push(`compare_at_price = $${idx++}`); values.push(compareAtPrice != null ? Number(compareAtPrice) : null); }
+      if (discountPercent !== undefined) { updates.push(`discount_percent = $${idx++}`); values.push(discountPercent != null ? Number(discountPercent) : null); }
+      if (stock != null) { updates.push(`stock = $${idx++}`); values.push(Math.max(0, Number(stock))); }
+      if (sku !== undefined) { updates.push(`sku = $${idx++}`); values.push(sku || null); }
+      if (status != null) { updates.push(`status = $${idx++}`); values.push(status); }
+      updates.push(`updated_at = NOW()`);
+      if (updates.length === 1) { res.json({ success: true, data: null }); return; }
+      values.push(variantId);
+      const q = `UPDATE product_variants SET ${updates.join(", ")} WHERE id = $${idx} AND product_id = $1 RETURNING *`;
+      const result = await query(q, [productId, ...values]);
+      console.log(`[products] variant updated: ${variantId}`);
+      res.json({ success: true, data: result.rows[0] ?? null });
+    } catch (err) {
+      console.error("[products] variant update error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update variant" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId/variants/:variantId ───────────
+  app.delete("/api/seller/products/:productId/variants/:variantId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      await query("DELETE FROM product_variant_values WHERE variant_id = $1", [variantId]);
+      try {
+        const ir = await query("SELECT url FROM product_images WHERE variant_id = $1", [variantId]);
+        for (const img of ir.rows) { if (img.url) deleteR2Object(urlToKey(img.url)); }
+        await query("DELETE FROM product_images WHERE variant_id = $1", [variantId]);
+      } catch { /* product_variant_images may not exist */ }
+      await query("DELETE FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+      console.log(`[products] variant deleted: ${variantId}`);
+      res.json({ success: true, data: { id: variantId } });
+    } catch (err) {
+      console.error("[products] variant delete error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete variant" } });
+    }
+  });
+
+  // ── GET /api/seller/products/:productId/variants/:variantId/images ───────
+  app.get("/api/seller/products/:productId/variants/:variantId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId"); const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      const result = await query("SELECT id, url, alt, sort_order FROM product_images WHERE product_id = $1 AND variant_id = $2 ORDER BY sort_order ASC", [productId, variantId]);
+      res.json({ success: true, data: result.rows });
+    } catch (err) {
+      console.error("[products] variant images error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list variant images" } });
+    }
+  });
+
+  // ── POST /api/seller/products/:productId/variants/:variantId/images ──────
+  app.post("/api/seller/products/:productId/variants/:variantId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId"); const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      const { url, alt } = req.body;
+      if (!url) { res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "url required" } }); return; }
+      const vc = await query("SELECT id FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+      if (vc.rows.length === 0) { res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant not found" } }); return; }
+      const ms = await query("SELECT COALESCE(MAX(sort_order), -1) + 1 as ns FROM product_images WHERE product_id = $1 AND variant_id = $2", [productId, variantId]);
+      const result = await query(
+        `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id) VALUES ($1, $2, $3, $4, 'variant', $5) RETURNING *`,
+        [productId, url, alt || "", ms.rows[0]?.ns ?? 0, variantId]
+      );
+      console.log(`[products] variant image saved: ${result.rows[0].id} for variant ${variantId}`);
+      res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+      console.error("[products] variant image save error:", err);
+      res.status(500).json({ success: false, error: { code: "SAVE_FAILED", message: "Failed to save variant image" } });
+    }
+  });
+
   // PUBLIC CATALOG ROUTES (no auth required)
   // ═════════════════════════════════════════════════════════════════════════
 
