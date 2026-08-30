@@ -1771,3 +1771,22 @@ Additionally, the `valueInStock` logic had edge cases:
 
 **Typecheck:** ✅ Backend, VelShop pass
 **Commit:** af0321b — pushed to main
+
+## Fix: ProductSelectionSheet UUID-vs-text mismatch + gallery image source (27a11a8)
+
+### Root Cause
+ProductSelectionSheet had the same UUID-vs-text mismatch as ShopProductDetail:
+- `val.id` (UUID) was stored in `optionSelections`
+- `variantOptions` from backend stores TEXT (pov.label)
+- Availability check compared UUID vs TEXT → always false → all options disabled
+- Variant resolution compared UUID vs TEXT → selectedVariant always null
+
+### Fixes
+1. **ProductSelectionSheet.tsx**: Changed `val.id` → `val.value` for selection, availability check, and variant resolution
+2. **ShopProductDetail.tsx**: Combined `productImages + variantImages` into single `galleryImages` array for seamless image switching
+3. Removed `line-through` from unavailable option labels
+
+### Impact
+- Variant selector now correctly shows options as available/disabled based on real stock
+- Price, stock, and images update when variant is selected
+- Gallery thumbnails work seamlessly across product and variant images
