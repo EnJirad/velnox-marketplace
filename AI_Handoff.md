@@ -1449,3 +1449,41 @@ Product images were all stored in a flat `product_images` table with no classifi
 - Cart Drawer: Show variant image instead of product primary
 - Full integration testing with real merchant data
 
+
+### 2026-08-30 — Backend Image Type Filtering + Detail Images
+
+**Problem:** `loadProductExtras` loaded ALL images from `product_images` regardless of `image_type`. Variant/detail images stored in `product_images` would appear in the main product gallery on both catalog and product detail pages.
+
+**Changes:**
+1. **Backend `loadProductExtras`** — Changed query to filter `WHERE image_type = 'gallery'` so only gallery images are loaded as main product images. Added separate query for `image_type = 'detail'` images.
+2. **Backend `getFormattedProduct`** — Now includes `detailImages` array in the response for product detail pages.
+3. **Backend product detail endpoint** — Public `GET /api/products/:productId` now returns `detailImages` array alongside the main images.
+4. **Frontend `ImageUploader`** — Now explicitly sends `imageType: 'gallery'` when saving product images, making the intent clear.
+5. **All `loadProductExtras` callers** updated to handle the new `detailImagesByProduct` return value.
+
+**Current System Status (verified):**
+- ✅ VelRepeat is present and passes `selectedVariant` to SubscriptionDialog
+- ✅ Cart sends `variantId` to backend
+- ✅ Variant selection uses `val.value` matching backend `variantOptions[variantId][groupId]` format
+- ✅ Smart availability logic: variant combinations with stock > 0 are selectable
+- ✅ Gallery split: Product Images | divider | Variant Images with thumbnail click
+- ✅ Bottom sheet: large preview (180px mobile/220px desktop), variant options, quantity, confirm
+- ✅ Discount display: `displayCompareAt` + `displayDiscountPct` per variant
+- ✅ Merchant can upload variant images per variant via VariantManager
+- ✅ Backend V0030 migration for `image_type` + `variant_id` columns
+- ✅ Backend save-image accepts `imageType` (`gallery`/`variant`/`detail`) and `variantId`
+- ✅ Merchant can set discount per variant (compare_at_price + discount_percent)
+- ✅ Product images filtered to `image_type = 'gallery'` only
+- ✅ Detail images returned separately in product detail response
+
+**Files Changed:**
+- `backend/routes/products.ts` — Image type filtering, detail images loading, all callers updated
+- `packages/shared/src/components/seller/ImageUploader.tsx` — Sends `imageType: 'gallery'`
+
+**Remaining for future sessions:**
+- Merchant UI: Add labeled sections for gallery/variant/detail images
+- Customer UI: Display detail images section below product description
+- Image count limits backend validation (max 10 per type)
+- Full integration testing with real merchant data
+
+**All 5 typechecks pass.**

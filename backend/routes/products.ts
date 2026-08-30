@@ -245,13 +245,15 @@ async function loadProductExtras(productIds: string[]): Promise<{
   imagesByProduct: Map<string, any[]>;
   inventoryByProduct: Map<string, any>;
   variantsByProduct: Map<string, any[]>;
+  detailImagesByProduct: Map<string, any[]>;
 }> {
   if (productIds.length === 0) {
-    return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map() };
+    return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map(), detailImagesByProduct: new Map() };
   }
 
+  // Only load gallery images from product_images — variant/detail images are loaded separately
   const imagesResult = await query(
-    `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) ORDER BY sort_order ASC`,
+    `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) AND image_type = 'gallery' ORDER BY sort_order ASC`,
     [productIds]
   );
   const inventoryResult = await query(
@@ -275,6 +277,23 @@ async function loadProductExtras(productIds: string[]): Promise<{
     }
   }
   console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length}`);
+
+  // Load detail images
+  let detailImagesResult: { rows: any[] } = { rows: [] as any[] };
+  try {
+    detailImagesResult = await query(
+      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'detail' ORDER BY sort_order ASC`,
+      [productIds]
+    );
+  } catch (dErr: any) {
+    if (dErr?.code !== "42P01") console.warn("[products] detail images query warning:", dErr?.message);
+  }
+  const detailImagesByProduct = new Map<string, any[]>();
+  for (const img of detailImagesResult.rows) {
+    const list = detailImagesByProduct.get(img.product_id) ?? [];
+    list.push(img);
+    detailImagesByProduct.set(img.product_id, list);
+  }
 
   const imagesByProduct = new Map<string, any[]>();
   for (const img of imagesResult.rows) {
@@ -328,7 +347,7 @@ async function loadProductExtras(productIds: string[]): Promise<{
     variantsByProduct.set(v.product_id, list);
   }
 
-  return { imagesByProduct, inventoryByProduct, variantsByProduct };
+  return { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct };
 }
 
 /**
@@ -342,13 +361,20 @@ async function getFormattedProduct(productId: string, sellerId: string): Promise
   );
   if (result.rows.length === 0) return null;
   const row = result.rows[0];
-  const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+  const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
   const formatted = formatProduct(
     { ...row, seller_id: sellerId },
     imagesByProduct.get(productId) ?? [],
     inventoryByProduct.get(productId) ?? null,
   );
   formatted.variants = variantsByProduct.get(productId) ?? [];
+  // Format detail images for frontend
+  const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
+  formatted.detailImages = rawDetailImgs.map((img: any) => ({
+    id: img.id, url: img.url, displayUrl: img.url, thumbUrl: img.url,
+    alt: img.alt || '', sortOrder: img.sort_order ?? 0,
+    storageProvider: 'r2', storageKey: urlToKey(img.url),
+  }));
   return formatted;
 }
 
@@ -386,7 +412,7 @@ export function setupProductRoutes(app: Express): void {
       );
 
       const productIds = result.rows.map((r: any) => r.id);
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras(productIds);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
 
       const products = result.rows.map((row: any) => {
         const formatted = formatProduct(
@@ -613,7 +639,7 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         { ...row, seller_id: seller.id },
@@ -774,7 +800,7 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         { ...row, seller_id: seller.id },
@@ -1190,7 +1216,7 @@ export function setupProductRoutes(app: Express): void {
       );
 
       const productIds = result.rows.map((r: any) => r.id);
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras(productIds);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
 
       const products = result.rows.map((row: any) => {
         const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
@@ -1238,7 +1264,7 @@ export function setupProductRoutes(app: Express): void {
       console.log(`[products] detail: found product '${result.rows[0].name}' status='${result.rows[0].status}'`);
 
       const row = result.rows[0];
-      const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([productId]);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
 
       const formatted = formatProduct(
         row,
@@ -1246,6 +1272,14 @@ export function setupProductRoutes(app: Express): void {
         inventoryByProduct.get(productId) ?? null
       );
       formatted.variants = variantsByProduct.get(productId) ?? [];
+
+      // Detail images for the product detail page
+      const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
+      formatted.detailImages = rawDetailImgs.map((img: any) => ({
+        id: img.id, url: img.url, displayUrl: img.url, thumbUrl: img.url,
+        alt: img.alt || '', sortOrder: img.sort_order ?? 0,
+        storageProvider: 'r2', storageKey: img.url,
+      }));
 
       // Also fetch shop info for the detail page
       const shopResult = await query(

@@ -78,6 +78,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
           height: undefined,
           format: file.type.split("/")[1] || "jpg",
           bytes: file.size,
+          imageType: "gallery",
         });
         if (updated) onChange(updated);
         toast.success(`อัปโหลด "${file.name}" แล้ว`);
