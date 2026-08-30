@@ -1698,3 +1698,29 @@ All endpoints verify seller → shop → product ownership.
 
 **Typecheck:** ✅ VelShop pass
 **Commit:** `3276f38` — pushed to main
+
+### 2026-08-30 — CRITICAL FIX: variantOptions returns UUIDs instead of text values
+
+**Problem:** Product detail pages loaded `variantOptions` from the backend but variant resolution always failed — customers could never select a variant. The backend query returned `pov.value` (UUID from `product_option_values.id`) but the frontend stores text values like `"ดำ"`, `"Standard"` in `selectedOptions`.
+
+**Root cause:** The `resolveVariant()` function in `ShopProductDetail.tsx` compares:
+```js
+variantOptions[v.id][groupId] === selectedOptions[groupId]
+//          UUID ↑                       text ↑  → always false
+```
+
+**Fix:**
+1. Changed product detail `variantOptions` query to return `pov.label AS value` instead of `pov.value` (which is the UUID)
+2. Added `POST /api/seller/products/:productId/backfill-variant-mappings` endpoint for backfilling existing products that have variants but no `product_variant_values` rows
+
+**Files Changed:**
+- `backend/routes/products.ts` — variantOptions query fix + backfill endpoint
+
+**Verification:** ✅ All 4 typechecks pass (backend, velshop, velseller, velcenter)
+
+**Impact:**
+- `variantOptions` now returns `{variantId: {groupId: "ดำ"}}` instead of `{variantId: {groupId: "550e8400-..."}}`
+- `resolveVariant()` now matches correctly
+- Availability logic (`valueInStock`) now works — only shows disabled when variant combination truly has 0 stock
+- Price/stock/images update correctly when variant is selected
+- Existing products can be fixed via backfill endpoint
