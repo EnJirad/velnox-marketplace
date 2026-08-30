@@ -1555,3 +1555,55 @@ Product images were all stored in a flat `product_images` table with no classifi
 - Seller option value image upload during draft (before product exists)
 - Full integration testing with real merchant data
 - Customer UI: Display detail images section below product description
+
+### 2026-08-30 — Single-Page Product Builder (create-full rewrite)
+
+**Problem:** The seller product creation flow required multi-step process: create product → add options → upload images → generate variants → edit variants. This was slow, error-prone, and could leave incomplete products.
+
+**Solution:** Complete rewrite of `ProductFormDialog` as a single-page product builder using the `POST /api/seller/products/create-full` atomic endpoint.
+
+**What changed:**
+
+1. **Backend (`backend/routes/products.ts`):**
+   - `create-full` endpoint now supports `variant.images` array per variant (in addition to `variant.imageUrl`)
+   - All product data, images, options, variants, attributes, and VelRepeat created in a single PostgreSQL transaction
+   - Rollback on any failure — no partial products
+
+2. **Frontend (`packages/shared/src/components/seller/ProductFormDialog.tsx`):**
+   - **New products:** Uses `createFullProductAction` — everything submitted in one API call
+   - **Existing products:** Preserves existing multi-step edit flow
+   - **Product info section:** Name, category, unit, description
+   - **Pricing section:** Price, compare-at-price, discount%, stock, reorder level, supplier
+   - **Option groups section:** Add/remove groups with values
+   - **Auto-generated variants:** Cartesian product of option values, with inline price/stock/SKU per variant
+   - **Variant images:** Upload via draft upload intent before product exists
+   - **Gallery images:** Up to 10, via draft upload
+   - **Detail images:** Up to 10, optional
+   - **Attributes:** Key-value pairs
+   - **VelRepeat:** Enable/disable with weekly/monthly config
+   - **Validation:** Name, price, at least 1 gallery image, option groups with ≥2 values, at least 1 variant with stock>0
+
+3. **Draft upload flow:**
+   - Frontend generates a draft UUID
+   - Images uploaded to R2 via `draft-upload-intent` before product exists
+   - Object keys/URLs stored in frontend state
+   - All passed to `create-full` which creates product and inserts images in one transaction
+
+**Files changed:**
+| File | Change |
+|------|--------|
+| `backend/routes/products.ts` | create-full accepts `variant.images[]` array |
+| `packages/shared/src/components/seller/ProductFormDialog.tsx` | Complete rewrite as single-page builder |
+
+**Verification:**
+- ✅ Backend typecheck passes
+- ✅ Velshop typecheck passes
+- ✅ Velseller typecheck passes
+- ✅ Velcenter typecheck passes
+- ✅ Velnox typecheck passes
+
+**Remaining work:**
+- Option value image upload during draft (currently only gallery/detail/variant images uploadable in draft mode)
+- Customer product detail: display detail images section
+- Cart drawer: show variant image instead of product primary
+- Full integration testing with real merchant data
