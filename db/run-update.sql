@@ -1196,3 +1196,25 @@ CREATE TABLE IF NOT EXISTS product_reviews (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);
+
+------------------------------------------------------------
+-- Migration: V0030
+-- Date: 2026-08-30
+-- Description:
+-- Add image_type and variant_id columns to product_images
+-- for typed image system (gallery/variant/detail).
+--
+-- Reason:
+-- Product images need to be classified into three types:
+-- gallery (product showcase), variant (option-specific),
+-- and detail (infographic/spec). This migration adds
+-- the columns needed for this classification.
+--
+-- Affected:
+-- product_images
+------------------------------------------------------------
+
+ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_type TEXT NOT NULL DEFAULT 'gallery';
+ALTER TABLE product_images ADD COLUMN IF NOT EXISTS variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_product_images_type ON product_images (product_id, image_type);
+CREATE INDEX IF NOT EXISTS idx_product_images_variant ON product_images (variant_id) WHERE variant_id IS NOT NULL;

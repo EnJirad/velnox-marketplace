@@ -196,10 +196,14 @@ CREATE TABLE IF NOT EXISTS product_images (
   url TEXT NOT NULL,
   alt TEXT NOT NULL DEFAULT '',
   sort_order INTEGER NOT NULL DEFAULT 0,
+  image_type TEXT NOT NULL DEFAULT 'gallery',
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images (product_id);
+CREATE INDEX IF NOT EXISTS idx_product_images_type ON product_images (product_id, image_type);
+CREATE INDEX IF NOT EXISTS idx_product_images_variant ON product_images (variant_id) WHERE variant_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS inventory (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

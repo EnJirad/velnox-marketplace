@@ -1392,3 +1392,60 @@ PRODUCT DETAIL
 - ✅ Required option validation blocks Add to Cart / Buy Now
 - ✅ Cart fly animation targets `[data-cart-icon]`
 - ✅ Products without variants continue to work normally
+
+---
+
+## 2026-08-30 — Product Image System: Typed Images (Gallery/Variant/Detail)
+
+### Problem
+Product images were all stored in a flat `product_images` table with no classification. The system needed three image types: gallery (product showcase), variant (option-specific), and detail (infographic/spec). The `save-image` endpoint had no way to accept an `imageType` parameter, and the product detail response did not include image type information.
+
+### Changes
+
+**Database Migration V0030** (`db/migrations/030_product_image_types.sql`):
+- Added `image_type TEXT NOT NULL DEFAULT 'gallery'` to `product_images`
+- Added `variant_id UUID` (nullable, FK → product_variants) to `product_images`
+- Indexes: `idx_product_images_type` and `idx_product_images_variant`
+
+**Backend Startup** (`backend/server.ts`):
+- V0030 auto-applied on startup (idempotent `ADD COLUMN IF NOT EXISTS`)
+- Creates columns + indexes if they don't exist in production
+
+**Backend Image Upload** (`backend/routes/products.ts`):
+- `save-image` now accepts `imageType` (`'gallery'` | `'variant'` | `'detail'`) and optional `variantId`
+- Validates `variantId` belongs to the product before saving
+- Sort order scoped per image type (variant images don't collide with gallery sort)
+- `loadProductExtras` queries new `image_type` column
+- `formatProduct` returns `imageType` and `variantId` in image objects
+
+**SQL Schema Synchronization**:
+- `db/run-update.sql` — V0030 appended
+- `db/run-sqleditor.sql` — product_images updated with new columns
+- `db/schema.sql` — product_images updated with new columns
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `db/migrations/030_product_image_types.sql` | NEW — migration SQL |
+| `backend/server.ts` | V0030 auto-migration on startup |
+| `backend/routes/products.ts` | save-image accepts imageType/variantId, loadProductExtras includes image_type, formatProduct includes imageType/variantId |
+| `db/run-update.sql` | V0030 appended |
+| `db/run-sqleditor.sql` | product_images schema updated |
+| `db/schema.sql` | product_images schema updated |
+| `AI_Handoff.md` | Updated with this entry |
+
+### Verification
+- ✅ Backend typecheck passes
+- ✅ Velshop typecheck passes
+- ✅ Velseller typecheck passes
+- ✅ Vite build passes (9.80s)
+
+### Remaining Work
+- Merchant ProductFormDialog: Add 3 image section tabs (Gallery / Variant / Detail)
+- Merchant: Remove publish-gating on image upload (allow from draft)
+- Detail images API support in image management endpoints
+- Customer: Detail images section below product description
+- Image count limits backend validation (max 10 per type)
+- Cart Drawer: Show variant image instead of product primary
+- Full integration testing with real merchant data
+
