@@ -134,11 +134,37 @@ export function ProductSelectionSheet({
   const outOfStock = resolvedStock <= 0;
   const needsVariant = hasOptionGroups && !allRequiredSelected;
 
-  const images = product.images?.length
+  // Compute variant-aware image: prefer selected variant's images, then option value images, then product images
+  const productImages = product.images?.length
     ? product.images
     : product.primaryImage
       ? [product.primaryImage]
       : [];
+
+  const variantImages = useMemo(() => {
+    if (!selectedVariant) return [];
+    if ((selectedVariant as any).images?.length > 0) {
+      return (selectedVariant as any).images.map((img: any, i: number) => ({
+        id: `vi-${img.id ?? i}`,
+        url: img.url,
+        displayUrl: img.url,
+        thumbUrl: img.url,
+        alt: img.alt || '',
+      }));
+    }
+    // Fallback: check option value images
+    for (const group of optionGroups ?? []) {
+      const valId = optionSelections[group.id];
+      if (!valId) continue;
+      const val = group.values.find((v) => v.id === valId);
+      if (val?.imageUrl) {
+        return [{ id: `opt-${val.id}`, url: val.imageUrl, displayUrl: val.imageUrl, thumbUrl: val.imageUrl, alt: val.label }];
+      }
+    }
+    return [];
+  }, [selectedVariant, optionGroups, optionSelections]);
+
+  const images = variantImages.length > 0 ? variantImages : productImages;
   const activeImage = images[0];
 
   // ── Helpers ───────────────────────────────────────────────────
@@ -288,12 +314,31 @@ export function ProductSelectionSheet({
 
           {/* Price + info */}
           <div className="min-w-0 flex-1">
-            <p className="text-lg font-bold tabular-nums text-slate-900">
-              {formatBaht(resolvedPrice)}
-              <span className="ml-1 text-xs font-normal text-slate-400">
-                {t("cart.perUnit", { unit: product.unit })}
+            <div className="flex items-baseline gap-2">
+              <p className="text-xl font-bold tabular-nums text-slate-900">
+                {formatBaht(resolvedPrice)}
+              </p>
+              <span className="text-xs font-normal text-slate-400">
+                /{product.unit}
               </span>
-            </p>
+            </div>
+            {(() => {
+              const compareAt = selectedVariant?.compareAtPrice ?? null;
+              const discountPct = selectedVariant?.discountPercent ?? null;
+              if ((compareAt && compareAt > resolvedPrice) || (discountPct && discountPct > 0)) {
+                return (
+                  <div className="mt-1 flex items-center gap-2">
+                    {compareAt && compareAt > resolvedPrice && (
+                      <span className="text-xs text-slate-400 line-through">{formatBaht(compareAt)}</span>
+                    )}
+                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+                      -{Math.round(discountPct ?? ((compareAt! - resolvedPrice) / compareAt!) * 100)}%
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             <p
               className={`mt-1 text-xs ${
                 outOfStock
@@ -394,12 +439,12 @@ export function ProductSelectionSheet({
                         type="button"
                         disabled={!valueInStock}
                         onClick={() => handleOptionSelect(group.id, val.id)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        className={`flex flex-col items-center justify-center gap-1.5 w-[80px] min-h-[88px] p-2 rounded-xl border transition-colors ${
                           selected
-                            ? "border-[#10B981] bg-[#ECFDF5] text-[#10B981]"
+                            ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
                             : valueInStock
-                              ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                              : "border-slate-100 bg-slate-50 text-slate-300 line-through"
+                              ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
+                              : "border-slate-100 bg-slate-50 opacity-40"
                         }`}
                         aria-label={`${group.name}: ${val.label}${
                           !valueInStock
@@ -407,7 +452,16 @@ export function ProductSelectionSheet({
                             : ""
                         }`}
                       >
-                        {val.label}
+                        {val.imageUrl ? (
+                          <img src={val.imageUrl} alt="" className="size-14 rounded-lg object-contain bg-slate-50" loading="lazy" />
+                        ) : (
+                          <span className="size-14 flex items-center justify-center rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-500">
+                            {val.label.slice(0, 3)}
+                          </span>
+                        )}
+                        <span className={`max-w-full truncate text-[11px] font-medium ${selected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                          {val.label}
+                        </span>
                       </button>
                     );
                   })}

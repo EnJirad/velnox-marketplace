@@ -305,14 +305,15 @@ export default function ShopProductDetail() {
 
   /* ── Derived values ─────────────────────────────────────────────── */
 
-  // Gallery images: when a variant option is selected, try to use option/variant images
-  const images = useMemo(() => {
-    const baseImages = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage!] : [];
-    const hasGroups = optionGroups.length > 0;
-    if (!hasGroups || Object.keys(selectedOptions).length === 0) return baseImages;
+  // Product gallery images — always the base images from the product
+  const productImages = useMemo(() => {
+    return product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage!] : [];
+  }, [product]);
 
-    // 1. Check selected variant for images
-    if (selectedVariant?.images?.length > 0) {
+  // Variant-specific images — shown after divider when variant is selected
+  const variantImages = useMemo(() => {
+    if (!selectedVariant) return [];
+    if (selectedVariant.images && selectedVariant.images.length > 0) {
       return selectedVariant.images.map((img: Record<string, unknown>, i: number) => ({
         id: `vi-${(img.id as string) ?? i}`,
         productId: product?.id ?? '',
@@ -329,41 +330,33 @@ export default function ShopProductDetail() {
         createdAt: Date.now(),
       }));
     }
-
-    // 2. Check selected option values for images (priority order)
+    // Fallback: option value images
     for (const group of optionGroups) {
       const valId = selectedOptions[group.id];
       if (!valId) continue;
-      const val = (group.values ?? []).find((v: Record<string, unknown>) => (v.value as string) === valId);
-      if (val && (val.imageUrl as string | null)) {
-        const imgUrl = val.imageUrl as string;
+      const val = (group.values ?? []).find((v: any) => v.value === valId);
+      if (val?.imageUrl) {
         return [{
-          id: `opt-${val.id as string}`,
-          productId: product?.id ?? '',
-          url: imgUrl,
-          displayUrl: imgUrl,
-          thumbUrl: imgUrl,
-          storageProvider: 'r2' as const,
-          storageKey: '',
-          alt: ((val.label as string) || (val.value as string) || ''),
-          sortOrder: 0,
-          isPrimary: true,
-          width: null,
-          height: null,
-          createdAt: Date.now(),
+          id: `opt-${val.id}`, productId: product?.id ?? '', url: val.imageUrl, displayUrl: val.imageUrl, thumbUrl: val.imageUrl,
+          storageProvider: 'r2' as const, storageKey: '', alt: val.label || val.value || '', sortOrder: 0, isPrimary: true,
+          width: null, height: null, createdAt: Date.now(),
         }];
       }
-      break; // Only use the first selected option with image
     }
+    return [];
+  }, [selectedVariant, optionGroups, selectedOptions, product]);
 
-    return baseImages;
-  }, [product, selectedOptions, optionGroups, selectedVariant]);
-  // Reset active index when images change (e.g. variant option selected)
+  // Active image: prefer variant image when selected, otherwise first product image
+  const images = useMemo(() => {
+    if (selectedVariant && variantImages.length > 0) return variantImages;
+    return productImages;
+  }, [selectedVariant, variantImages, productImages]);
+
   useEffect(() => {
     if (activeIndex >= images.length) setActiveIndex(0);
   }, [images.length, activeIndex]);
 
-  const active = images[activeIndex] ?? images[0];
+  const active = images[activeIndex] ?? images[0] ?? productImages[0];
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
   const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
@@ -418,72 +411,9 @@ export default function ShopProductDetail() {
 
   /* ── Gallery thumbnails: product images + variant images ──────── */
 
-  const productThumbnails = useMemo(() => {
-    if (product?.images && product.images.length > 0) return product.images;
-    if (product?.primaryImage) return [product.primaryImage];
-    return [];
-  }, [product]);
-
-  const variantThumbnails = useMemo(() => {
-    if (!selectedVariant) return [];
-    if (selectedVariant.images && selectedVariant.images.length > 0) {
-      return selectedVariant.images.map((img: any, i: number) => ({
-        id: `vi-${img.id ?? i}`,
-        url: img.url,
-        displayUrl: img.url,
-        thumbUrl: img.url,
-        label: selectedVariant.name ?? '',
-        isVariant: true as const,
-      }));
-    }
-    // Fallback: option value images
-    const result: { id: string; url: string; displayUrl: string; thumbUrl: string; label: string; isVariant: true }[] = [];
-    for (const group of optionGroups) {
-      const valId = selectedOptions[group.id];
-      if (!valId) continue;
-      const val = (group.values ?? []).find((v: any) => v.value === valId);
-      if (val?.imageUrl) {
-        result.push({
-          id: `opt-${val.id}`,
-          url: val.imageUrl,
-          displayUrl: val.imageUrl,
-          thumbUrl: val.imageUrl,
-          label: val.label || val.value,
-          isVariant: true,
-        });
-      }
-    }
-    return result;
-  }, [selectedVariant, optionGroups, selectedOptions]);
-
-  const handleSelectVariantFromThumbnail = useCallback((variantId: string) => {
-    const pVariants = (product as any)?.variants;
-    if (!Array.isArray(pVariants)) return;
-    const variant = pVariants.find((v: any) => v.id === variantId);
-    if (!variant) return;
-    const vOpts = variantOptions[variantId];
-    if (vOpts && typeof vOpts === 'object') {
-      setSelectedOptions((prev) => {
-        const next = { ...prev };
-        for (const [gId, vId] of Object.entries(vOpts)) {
-          next[gId] = vId as string;
-        }
-        return next;
-      });
-    }
-  }, [product, variantOptions]);
-
-  const variantThumbsWithActive = useMemo(() => {
-    if (variantThumbnails.length === 0) return [];
-    return variantThumbnails.map((vt: any) => ({
-      id: vt.id,
-      url: vt.thumbUrl || vt.url,
-      label: vt.label,
-      onClick: () => handleSelectVariantFromThumbnail(selectedVariant?.id ?? ''),
-      isActive: true,
-      isVariant: true as const,
-    }));
-  }, [variantThumbnails, selectedVariant, handleSelectVariantFromThumbnail]);
+  // Gallery thumbnail click — either select product image index or variant image
+  const handleProductThumbClick = useCallback((index: number) => { setActiveIndex(index); }, []);
+  const handleVariantThumbClick = useCallback((index: number) => { setActiveIndex(index); }, []);
 
   const selectedSummary = useMemo(() => {
     if (!hasOptionGroups || Object.keys(selectedOptions).length === 0) return null;
@@ -664,37 +594,32 @@ export default function ShopProductDetail() {
             </div>
             {/* Gallery thumbnails: product images + divider + variant images */}
             {(() => {
-              const allThumbs: { id: string; url: string; label?: string; onClick: () => void; isActive: boolean; isVariant?: boolean }[] = [];
-              // Product gallery images
-              productThumbnails.forEach((img: any, i: number) => {
-                allThumbs.push({
-                  id: `pg-${img.id ?? i}`,
-                  url: img.thumbUrl || img.displayUrl || img.url,
-                  onClick: () => setActiveIndex(i),
-                  isActive: !selectedVariant && i === activeIndex,
-                });
-              });
-              // Variant images (from selected variant)
-              variantThumbsWithActive.forEach((vt: any) => {
-                allThumbs.push(vt);
-              });
-              if (allThumbs.length <= 1) return null;
+              const totalThumbs = productImages.length + variantImages.length;
+              if (totalThumbs <= 1) return null;
               return (
                 <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
-                  {allThumbs.map((thumb, i) => (
-                    <span key={thumb.id} className="flex items-center gap-2">
-                      {i === productThumbnails.length && variantThumbsWithActive.length > 0 && (
-                        <span className="h-8 w-px shrink-0 bg-slate-200" />
-                      )}
-                      <button
-                        type="button"
-                        onClick={thumb.onClick}
-                        className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${thumb.isActive ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
-                        aria-label={thumb.label || t("productDetail.imageAlt", { n: i + 1 })}
-                      >
-                        <img src={thumb.url} alt="" className="size-full object-cover" loading="lazy" />
-                      </button>
-                    </span>
+                  {productImages.map((img: any, i: number) => (
+                    <button
+                      key={`pg-${img.id ?? i}`}
+                      type="button"
+                      onClick={() => handleProductThumbClick(i)}
+                      className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${!selectedVariant && i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
+                      aria-label={t("productDetail.imageAlt", { n: i + 1 })}
+                    >
+                      <img src={img.thumbUrl || img.displayUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
+                    </button>
+                  ))}
+                  {variantImages.length > 0 && <span className="h-16 w-px shrink-0 bg-slate-200 self-center" />}
+                  {variantImages.map((img: any, i: number) => (
+                    <button
+                      key={`vi-${img.id ?? i}`}
+                      type="button"
+                      onClick={() => handleVariantThumbClick(i)}
+                      className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${selectedVariant && images === variantImages && i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
+                      aria-label={`Variant ${i + 1}`}
+                    >
+                      <img src={img.thumbUrl || img.displayUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
+                    </button>
                   ))}
                 </div>
               );
