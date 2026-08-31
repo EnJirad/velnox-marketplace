@@ -360,9 +360,14 @@ export default function ShopProductDetail() {
 
   const active = galleryImages[activeIndex] ?? galleryImages[0] ?? productImages[0];
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
-  const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
   const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
-  const displayDiscountPct = selectedVariant?.discountPercent ?? null;
+  const displayDiscountAmt = selectedVariant?.discountPercent != null ? Number(selectedVariant.discountPercent) : null;
+  const displayPrice = displayCompareAt != null && displayDiscountAmt != null && displayDiscountAmt > 0
+    ? Math.max(0, displayCompareAt - displayDiscountAmt)
+    : (selectedVariant?.price ?? product?.price ?? 0);
+  const displayDiscountPct = displayCompareAt && displayCompareAt > 0 && displayDiscountAmt && displayDiscountAmt > 0
+    ? Math.round((displayDiscountAmt / displayCompareAt) * 100)
+    : null;
   const displayStock = selectedVariant?.stock ?? baseAvailable;
   const outOfStock = displayStock <= 0;
   const lowStock = !outOfStock && displayStock <= 5;

@@ -280,9 +280,8 @@ function VariantManager({ productId, price }: { productId: string; price: number
             {editingId === v.id ? (
               <>
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
-                <Input value={editFields.price} onChange={(e) => setEditFields((f) => ({ ...f, price: e.target.value }))} type="number" className="h-7 w-16 text-xs" placeholder="ราคา" />
-                <Input value={editFields.compareAtPrice} onChange={(e) => setEditFields((f) => ({ ...f, compareAtPrice: e.target.value }))} type="number" className="h-7 w-16 text-xs" placeholder="ราคาเดิม" />
-                <Input value={editFields.discountPercent} onChange={(e) => setEditFields((f) => ({ ...f, discountPercent: e.target.value }))} type="number" min="0" max="100" className="h-7 w-12 text-xs" placeholder="%" />
+                <Input value={editFields.compareAtPrice} onChange={(e) => setEditFields((f) => ({ ...f, compareAtPrice: e.target.value }))} type="number" className="h-7 w-16 text-xs" placeholder="ราคาเต็ม" />
+                <Input value={editFields.discountPercent} onChange={(e) => setEditFields((f) => ({ ...f, discountPercent: e.target.value }))} type="number" min="0" className="h-7 w-12 text-xs" placeholder="ส่วนลด" />
                 <Input value={editFields.stock} onChange={(e) => setEditFields((f) => ({ ...f, stock: e.target.value }))} type="number" className="h-7 w-14 text-xs" placeholder="stock" />
                 <Input value={editFields.sku} onChange={(e) => setEditFields((f) => ({ ...f, sku: e.target.value }))} className="h-7 w-20 text-xs" placeholder="SKU" />
                 <Button type="button" size="sm" className="h-7 text-xs" onClick={() => saveEdit(v.id)}>บันทึก</Button>
@@ -301,9 +300,9 @@ function VariantManager({ productId, price }: { productId: string; price: number
                   <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.id, f); e.target.value = ""; }} />
                 </label>
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
-                <span className="shrink-0 tabular-nums font-semibold text-slate-900">฿{v.price}</span>
+                <span className="shrink-0 tabular-nums font-semibold text-slate-900">฿{Math.max(0, (v.compareAtPrice || v.price) - (v.discountPercent || 0))}</span>
                 {v.compareAtPrice && v.compareAtPrice > v.price && <span className="shrink-0 text-[10px] text-slate-400 line-through">฿{v.compareAtPrice}</span>}
-                {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(v.discountPercent)}%</span>}
+                {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(v.discountPercent)}</span>}
                 <span className={`shrink-0 tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} ชิ้น</span>
                 {v.sku && <span className="shrink-0 font-mono text-[10px] text-slate-400">{v.sku}</span>}
                 <Badge className={`shrink-0 text-[10px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
@@ -821,20 +820,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                 <div className="mt-2 space-y-2">
                   {group.values.map((val, vi) => (
                     <div key={vi} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white p-2">
-                      <div className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                        {val.imageUrl ? (
-                          <>
-                            <img src={val.imageUrl} alt={val.value} className="size-full object-cover" />
-                            <button type="button" className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600" onClick={() => {
-                              // Remove option value image (set to null)
-                              setOptionGroups((prev) => prev.map((g, gi2) => gi2 === gi ? { ...g, values: g.values.map((v, vi2) => vi2 === vi ? { ...v, imageUrl: null } : v) } : g));
-                            }} aria-label="ลบรูป"><X className="size-2.5" /></button>
-                          </>
-                        ) : (
-                          <span className="flex size-full items-center justify-center text-slate-300"><ImagePlus className="size-4" /></span>
-                        )}
-                      </div>
-                      <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="ค่า" className="h-7 flex-1 text-xs" />
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[10px] font-semibold text-slate-500">{vi + 1}</span>
+                      <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-7 flex-1 text-xs" />
                       <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
                     </div>
                   ))}
@@ -857,7 +844,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               <RefreshCw className="size-4 text-[#10B981]" />
               <h3 className="text-sm font-semibold text-slate-900">Variants ({draftVariants.length})</h3>
             </div>
-            <p className="mt-1 text-xs text-slate-500">กำหนดราคา, สต็อก, และรูปสำหรับแต่ละ variant</p>
+            <p className="mt-1 text-xs text-slate-500">กำหนดราคาเต็ม, ส่วนลด, สต็อก, และรูปสำหรับแต่ละ variant</p>
 
             <div className="mt-3 space-y-3 max-h-96 overflow-y-auto">
               {draftVariants.map((v) => (
@@ -866,24 +853,31 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                     <p className="text-xs font-semibold text-slate-900">{v.name}</p>
                     {Number(v.stock) <= 0 && <Badge className="text-[10px] bg-red-50 text-red-600">หมด</Badge>}
                   </div>
-                  <div className="mt-2 grid grid-cols-4 gap-2">
+                  <div className="mt-2 grid grid-cols-3 gap-2">
                     <div className="grid gap-1">
-                      <Label className="text-[10px]">ราคา</Label>
-                      <Input type="number" min="0" step="0.5" value={v.price} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, price: e.target.value } : pv))} className="h-7 text-xs" />
+                      <Label className="text-[10px]">ราคาเต็ม</Label>
+                      <Input type="number" min="0" step="0.5" value={v.compareAtPrice || v.price} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, compareAtPrice: e.target.value } : pv))} className="h-7 text-xs" />
                     </div>
                     <div className="grid gap-1">
-                      <Label className="text-[10px]">ราคาเดิม</Label>
-                      <Input type="number" min="0" step="0.5" value={v.compareAtPrice} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, compareAtPrice: e.target.value } : pv))} className="h-7 text-xs" />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label className="text-[10px]">ส่วนลด %</Label>
-                      <Input type="number" min="0" max="100" value={v.discountPercent} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, discountPercent: e.target.value } : pv))} className="h-7 text-xs" />
+                      <Label className="text-[10px]">ส่วนลด</Label>
+                      <Input type="number" min="0" step="0.5" value={v.discountPercent} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, discountPercent: e.target.value } : pv))} className="h-7 text-xs" />
                     </div>
                     <div className="grid gap-1">
                       <Label className="text-[10px]">สต็อก</Label>
                       <Input type="number" min="0" value={v.stock} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, stock: e.target.value } : pv))} className="h-7 text-xs" />
                     </div>
                   </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500">ราคาหลังลด:</span>
+                    <span className="text-xs font-bold text-[#10B981]">฿{Math.max(0, (Number(v.compareAtPrice) || Number(v.price) || 0) - (Number(v.discountPercent) || 0)).toLocaleString()}</span>
+                    {Number(v.discountPercent) > 0 && <span className="rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round((Number(v.discountPercent) / (Number(v.compareAtPrice) || Number(v.price) || 1)) * 100)}%</span>}
+                  </div>
+                  {draftVariants.length > 1 && (
+                    <button type="button" className="mt-1.5 text-[10px] text-blue-500 hover:text-blue-700" onClick={() => {
+                      const first = draftVariants[0];
+                      if (first) setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? pv : { ...pv, compareAtPrice: first.compareAtPrice, discountPercent: first.discountPercent }));
+                    }}>ใช้ราคาเดียวกับรายการแรก</button>
+                  )}
                   <div className="mt-2 grid grid-cols-4 gap-2">
                     <div className="grid gap-1">
                       <Label className="text-[10px]">SKU</Label>

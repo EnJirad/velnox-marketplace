@@ -1913,6 +1913,42 @@ export function setupProductRoutes(app: Express): void {
           if (!variantOptions[vid]) variantOptions[vid] = {};
           variantOptions[vid][gid] = row.value as string;
         }
+
+        // AUTO-BACKFILL: If variants exist but no mappings, create them from variant.options JSON
+        const variants = formatted.variants as Array<Record<string, any>> | undefined;
+        const optGroups = formatted.optionGroups as Array<Record<string, any>> | undefined;
+        if (Object.keys(variantOptions).length === 0 && Array.isArray(variants) && variants.length > 0 && Array.isArray(optGroups) && optGroups.length > 0) {
+          console.log(`[products] detail auto-backfill: ${variants.length} variants have no option mappings — creating from options JSON`);
+          // Build groupName -> valueText -> { groupId, valueId } lookup
+          const nameValueLookup: Record<string, Record<string, any>> = {};
+          for (const g of optGroups as Array<Record<string, any>>) {
+            (nameValueLookup as any)[g.name] = {};
+            for (const v of (g.values ?? [])) {
+              (nameValueLookup as any)[g.name][(v.value as string).toLowerCase()] = { groupId: g.id, valueId: v.id };
+            }
+          }
+          for (const v of variants as Array<Record<string, any>>) {
+            const opts = typeof v.options === "string" ? JSON.parse(v.options) : (v.options || {});
+            if (typeof opts !== "object" || Object.keys(opts).length === 0) continue;
+            for (const [groupName, valueText] of Object.entries(opts) as [string, string][]) {
+              const match = nameValueLookup[groupName]?.[valueText.toLowerCase()];
+              if (match) {
+                try {
+                  await query(
+                    `INSERT INTO product_variant_values (variant_id, option_value_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+                    [v.id, match.valueId]
+                  );
+                  if (!variantOptions[v.id]) (variantOptions as any)[v.id] = {};
+                  (variantOptions as any)[v.id][match.groupId] = valueText;
+                  console.log(`[products] detail auto-backfill: created mapping variant=${v.id} group=${groupName} value=${valueText}`);
+                } catch (bfErr: any) {
+                  console.warn(`[products] detail auto-backfill failed for variant=${v.id}:`, bfErr?.message);
+                }
+              }
+            }
+          }
+        }
+
         formatted.variantOptions = variantOptions;
         console.log(`[products] detail variantOptions: productId=${productId} variantIds=${Object.keys(variantOptions).length} rows=${variantValuesResult.rows.length}`);
       } catch (vvErr) {

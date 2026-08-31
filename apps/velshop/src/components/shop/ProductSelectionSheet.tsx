@@ -106,7 +106,11 @@ export function ProductSelectionSheet({
     );
   }, [hasOptionGroups, optionGroups, optionSelections]);
 
-  const resolvedPrice = selectedVariant?.price || product.price || 0;
+  const resolvedCompareAt = selectedVariant?.compareAtPrice ?? null;
+  const resolvedDiscountAmt = selectedVariant?.discountPercent != null ? Number(selectedVariant.discountPercent) : null;
+  const resolvedPrice = resolvedCompareAt != null && resolvedDiscountAmt != null && resolvedDiscountAmt > 0
+    ? Math.max(0, resolvedCompareAt - resolvedDiscountAmt)
+    : (selectedVariant?.price || product.price || 0);
   const baseAvailable =
     product.inventory?.available ?? product.inventory?.quantity ?? 0;
   const resolvedStock = selectedVariant?.stock ?? baseAvailable;
