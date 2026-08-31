@@ -160,7 +160,7 @@ export function ProductSelectionSheet({
     for (const group of optionGroups ?? []) {
       const valId = optionSelections[group.id];
       if (!valId) continue;
-      const val = group.values.find((v) => v.value === valId);
+      const val = group.values.find((v) => v.id === valId);
       if (val?.imageUrl) {
         return [{ id: `opt-${val.id}`, url: val.imageUrl, displayUrl: val.imageUrl, thumbUrl: val.imageUrl, alt: val.label }];
       }
@@ -411,7 +411,7 @@ export function ProductSelectionSheet({
                 </p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {group.values.map((val) => {
-                    const selected = optionSelections[group.id] === (val.value as string);
+                    const selected = optionSelections[group.id] === val.id;
                     // Check if this value has any in-stock variant
                     const variants = (product as any).variants as
                       | Array<Record<string, any>>
@@ -424,7 +424,7 @@ export function ProductSelectionSheet({
                     if (variants && variantOpts) {
                       valueInStock = variants.some((v) => {
                         const vOpts = variantOpts[v.id];
-                        if (!vOpts || vOpts[group.id] !== (val.value as string)) return false;
+                        if (!vOpts || vOpts[group.id] !== val.id) return false;
                         // Check if all other selections match
                         return Object.entries(optionSelections).every(
                           ([gId, vId]) => {
@@ -442,7 +442,7 @@ export function ProductSelectionSheet({
                         key={val.id}
                         type="button"
                         disabled={!valueInStock}
-                        onClick={() => handleOptionSelect(group.id, val.value as string)}
+                        onClick={() => handleOptionSelect(group.id, val.id)}
                         className={`flex flex-col items-center justify-center gap-1.5 w-[80px] min-h-[88px] p-2 rounded-xl border transition-colors ${
                           selected
                             ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"

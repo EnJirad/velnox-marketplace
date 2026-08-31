@@ -408,7 +408,7 @@ export default function ShopProductDetail() {
       label: val.label,
       imageUrl: val.imageUrl ?? null,
       groupId: firstGroup.id,
-      selected: selectedOptions[firstGroup.id] === (val.value as string),
+      selected: selectedOptions[firstGroup.id] === val.id,
     }));
   }, [optionGroups, selectedOptions]);
 
@@ -441,7 +441,7 @@ export default function ShopProductDetail() {
     for (const group of optionGroups) {
       const valId = selectedOptions[group.id];
       if (!valId) continue;
-      const val = (group.values ?? []).find((v: any) => v.value === valId);
+      const val = (group.values ?? []).find((v: any) => v.id === valId);
       if (val?.imageUrl) {
         result.push({
           id: `opt-${val.id}`,
@@ -491,7 +491,7 @@ export default function ShopProductDetail() {
     for (const group of optionGroups) {
       const valId = selectedOptions[group.id];
       if (valId) {
-        const val = group.values?.find((v: any) => v.value === valId);
+        const val = group.values?.find((v: any) => v.id === valId);
         if (val) parts.push(val.label || val.value);
       }
     }
@@ -768,7 +768,7 @@ export default function ShopProductDetail() {
                   {compactThumbnails.map((thumb: { id: string; label: string; imageUrl: string | null; groupId: string; selected: boolean }) => (
                     <span
                       key={thumb.id}
-                      className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${selectedOptions[thumb.groupId] === thumb.label ? "border-[#10B981] ring-1 ring-[#10B981]/30" : "border-slate-200"}`}
+                      className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${selectedOptions[thumb.groupId] === thumb.id ? "border-[#10B981] ring-1 ring-[#10B981]/30" : "border-slate-200"}`}
                     >
                       {thumb.imageUrl ? (
                         <img src={thumb.imageUrl} alt={thumb.label} className="size-full object-cover" />
@@ -1010,7 +1010,7 @@ export default function ShopProductDetail() {
                         let valueInStock = true;
                         if (pVariants && vOptsMap) {
                           // Build candidate options: current selection + this candidate value
-                          const candidateOptions = { ...selectedOptions, [group.id]: val.value };
+                          const candidateOptions = { ...selectedOptions, [group.id]: val.id };
                           valueInStock = pVariants.some((v) => {
                             const vOpts = vOptsMap[v.id];
                             if (!vOpts) return false;
@@ -1028,7 +1028,7 @@ export default function ShopProductDetail() {
                             key={val.id}
                             type="button"
                             disabled={!valueInStock}
-                            onClick={() => handleOptionSelect(group.id, val.value)}
+                            onClick={() => handleOptionSelect(group.id, val.id)}
                             className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                               isSelected
                                 ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"

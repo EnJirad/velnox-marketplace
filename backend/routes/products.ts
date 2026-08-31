@@ -1910,8 +1910,10 @@ export function setupProductRoutes(app: Express): void {
         for (const row of variantValuesResult.rows) {
           const vid = row.variant_id as string;
           const gid = row.option_group_id as string;
+          const valueId = row.option_value_id as string;
           if (!variantOptions[vid]) variantOptions[vid] = {};
-          variantOptions[vid][gid] = row.value as string;
+          // Use option_value_id (UUID) for matching — frontend stores val.id
+          variantOptions[vid][gid] = valueId;
         }
 
         // AUTO-BACKFILL: If variants exist but no mappings, create them from variant.options JSON
@@ -1939,7 +1941,7 @@ export function setupProductRoutes(app: Express): void {
                     [v.id, match.valueId]
                   );
                   if (!variantOptions[v.id]) (variantOptions as any)[v.id] = {};
-                  (variantOptions as any)[v.id][match.groupId] = valueText;
+                  (variantOptions as any)[v.id][match.groupId] = match.valueId;
                   console.log(`[products] detail auto-backfill: created mapping variant=${v.id} group=${groupName} value=${valueText}`);
                 } catch (bfErr: any) {
                   console.warn(`[products] detail auto-backfill failed for variant=${v.id}:`, bfErr?.message);
