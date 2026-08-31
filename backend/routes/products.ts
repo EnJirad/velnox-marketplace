@@ -691,6 +691,8 @@ export function setupProductRoutes(app: Express): void {
 
         // 5. Create option groups + values
         const groupIdMap = new Map<string, string>(); // localIndex -> server UUID
+        // Map: valueKey -> { groupName, valueText } for building variant options JSON
+        const valueInfoMap = new Map<string, { groupName: string; valueText: string }>();
         if (Array.isArray(optionGroupsData)) {
           for (let gi = 0; gi < optionGroupsData.length; gi++) {
             const group = optionGroupsData[gi];
@@ -717,7 +719,9 @@ export function setupProductRoutes(app: Express): void {
                    RETURNING id`,
                   [groupId, val.value.trim(), val.label || val.value.trim(), val.imageUrl || null, vi]
                 );
-                groupIdMap.set(`value-${gi}-${vi}`, valResult.rows[0].id);
+                const valKey = `value-${gi}-${vi}`;
+                groupIdMap.set(valKey, valResult.rows[0].id);
+                valueInfoMap.set(valKey, { groupName: group.name.trim(), valueText: val.value.trim() });
               }
             }
           }
@@ -728,6 +732,21 @@ export function setupProductRoutes(app: Express): void {
           for (let vi = 0; vi < variantsData.length; vi++) {
             const variant = variantsData[vi];
             const variantName = variant.name || variant.optionLabels || `Variant ${vi + 1}`;
+
+            // Build options JSON from optionValueIds so backfill can recover if needed
+            const optionsObj: Record<string, string> = {};
+            if (Array.isArray(variant.optionValueIds)) {
+              for (const ovKey of variant.optionValueIds) {
+                const info = valueInfoMap.get(ovKey);
+                if (info) optionsObj[info.groupName] = info.valueText;
+              }
+            }
+            // Merge with any options sent by frontend (fallback)
+            if (variant.options && typeof variant.options === "object") {
+              for (const [k, v] of Object.entries(variant.options)) {
+                if (!optionsObj[k] && typeof v === "string") optionsObj[k] = v;
+              }
+            }
 
             const variantResult = await client.query(
               `INSERT INTO product_variants (product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order)
@@ -742,7 +761,7 @@ export function setupProductRoutes(app: Express): void {
                 variant.discountPercent != null ? Number(variant.discountPercent) : null,
                 variant.stock != null ? Math.max(0, Number(variant.stock)) : 0,
                 variant.status || "active",
-                JSON.stringify(variant.options || {}),
+                JSON.stringify(optionsObj),
                 vi,
               ]
             );
@@ -1916,39 +1935,86 @@ export function setupProductRoutes(app: Express): void {
           variantOptions[vid][gid] = valueId;
         }
 
-        // AUTO-BACKFILL: If variants exist but no mappings, create them from variant.options JSON
+        // AUTO-BACKFILL: If variants exist but no mappings, create them from variant data
         const variants = formatted.variants as Array<Record<string, any>> | undefined;
         const optGroups = formatted.optionGroups as Array<Record<string, any>> | undefined;
         if (Object.keys(variantOptions).length === 0 && Array.isArray(variants) && variants.length > 0 && Array.isArray(optGroups) && optGroups.length > 0) {
-          console.log(`[products] detail auto-backfill: ${variants.length} variants have no option mappings — creating from options JSON`);
-          // Build groupName -> valueText -> { groupId, valueId } lookup
+          console.log(`[products] detail auto-backfill: ${variants.length} variants have no option mappings — attempting repair`);
+
+          // Build two lookups:
+          // 1. groupName -> valueText -> { groupId, valueId } (for JSON key matching)
+          // 2. flat valueText -> [{ groupId, valueId, groupName }] (for name-based fallback)
           const nameValueLookup: Record<string, Record<string, any>> = {};
+          const flatValueLookup: Record<string, Array<{ groupId: string; valueId: string; groupName: string }>> = {};
           for (const g of optGroups as Array<Record<string, any>>) {
             (nameValueLookup as any)[g.name] = {};
             for (const v of (g.values ?? [])) {
-              (nameValueLookup as any)[g.name][(v.value as string).toLowerCase()] = { groupId: g.id, valueId: v.id };
+              const valLower = (v.value as string).toLowerCase();
+              (nameValueLookup as any)[g.name][valLower] = { groupId: g.id, valueId: v.id };
+              if (!flatValueLookup[valLower]) flatValueLookup[valLower] = [];
+              flatValueLookup[valLower].push({ groupId: g.id, valueId: v.id, groupName: g.name });
             }
           }
+
+          let backfillCount = 0;
           for (const v of variants as Array<Record<string, any>>) {
-            const opts = typeof v.options === "string" ? JSON.parse(v.options) : (v.options || {});
-            if (typeof opts !== "object" || Object.keys(opts).length === 0) continue;
-            for (const [groupName, valueText] of Object.entries(opts) as [string, string][]) {
-              const match = nameValueLookup[groupName]?.[valueText.toLowerCase()];
-              if (match) {
-                try {
-                  await query(
-                    `INSERT INTO product_variant_values (variant_id, option_value_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-                    [v.id, match.valueId]
-                  );
-                  if (!variantOptions[v.id]) (variantOptions as any)[v.id] = {};
-                  (variantOptions as any)[v.id][match.groupId] = match.valueId;
-                  console.log(`[products] detail auto-backfill: created mapping variant=${v.id} group=${groupName} value=${valueText}`);
-                } catch (bfErr: any) {
-                  console.warn(`[products] detail auto-backfill failed for variant=${v.id}:`, bfErr?.message);
+            // Strategy 1: Parse options JSON (groupName -> valueText)
+            let opts: Record<string, string> = {};
+            try {
+              opts = typeof v.options === "string" ? JSON.parse(v.options) : (v.options || {});
+            } catch { opts = {}; }
+
+            const matchedPairs: Array<{ groupId: string; valueId: string }> = [];
+
+            if (typeof opts === "object" && Object.keys(opts).length > 0) {
+              // JSON has data — match by groupName key
+              for (const [groupName, valueText] of Object.entries(opts)) {
+                if (typeof valueText !== "string") continue;
+                const match = nameValueLookup[groupName]?.[valueText.toLowerCase()];
+                if (match) matchedPairs.push({ groupId: match.groupId, valueId: match.valueId });
+              }
+            }
+
+            // Strategy 2: If JSON was empty or partial, try matching variant name parts
+            if (matchedPairs.length === 0 || matchedPairs.length < optGroups.length) {
+              const variantName = (v.name || "") as string;
+              // Split variant name by " / ", " + ", ", " separators
+              const nameParts = variantName.split(/\s*[\/+,]\s*/).map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+              for (const part of nameParts) {
+                const candidates = flatValueLookup[part];
+                if (candidates) {
+                  // Pick the candidate whose groupId is not already matched
+                  const existingGroupIds = new Set(matchedPairs.map((p) => p.groupId));
+                  const candidate = candidates.find((c) => !existingGroupIds.has(c.groupId));
+                  if (candidate) {
+                    matchedPairs.push({ groupId: candidate.groupId, valueId: candidate.valueId });
+                  }
                 }
               }
             }
+
+            // Insert all matched pairs
+            if (matchedPairs.length > 0) {
+              for (const pair of matchedPairs) {
+                try {
+                  await query(
+                    `INSERT INTO product_variant_values (variant_id, option_value_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+                    [v.id, pair.valueId]
+                  );
+                  if (!variantOptions[v.id]) (variantOptions as any)[v.id] = {};
+                  (variantOptions as any)[v.id][pair.groupId] = pair.valueId;
+                  backfillCount++;
+                } catch (bfErr: any) {
+                  console.warn(`[products] detail auto-backfill failed for variant=${v.id} group=${pair.groupId}:`, bfErr?.message);
+                }
+              }
+              console.log(`[products] detail auto-backfill: variant=${v.id} name="${v.name}" matched ${matchedPairs.length}/${optGroups.length} groups`);
+            } else {
+              console.warn(`[products] detail auto-backfill: variant=${v.id} name="${v.name}" — no match found (options=${JSON.stringify(opts)})`);
+            }
           }
+
+          console.log(`[products] detail auto-backfill result: ${backfillCount} mappings created for ${variants.length} variants`);
         }
 
         formatted.variantOptions = variantOptions;
