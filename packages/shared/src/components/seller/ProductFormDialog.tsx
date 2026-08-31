@@ -690,6 +690,24 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             const fullPrice = Number(v.compareAtPrice) || 0;
             const discPct = Number(v.discountPercent) || 0;
             const finalPrice = Math.max(0, Math.round(fullPrice * (1 - discPct / 100) * 100) / 100);
+            // Map optionValueIndices to groupIdMap keys so backend can resolve server UUIDs
+            const optionValueIds: string[] = [];
+            const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((val) => val.value.trim()));
+            if (v.key !== "default" && validGroups.length > 0) {
+              // Parse key like "0-1:1-0" → [{groupIdx:0, valueIdx:1}, {groupIdx:1, valueIdx:0}]
+              const parts = v.key.split(":");
+              for (const part of parts) {
+                const [gIdx, vIdx] = part.split("-").map(Number);
+                if (Number.isFinite(gIdx) && Number.isFinite(vIdx)) {
+                  // Find the actual index in the full optionGroups array
+                  const group = validGroups[gIdx];
+                  if (group) {
+                    const actualGroupIdx = optionGroups.indexOf(group);
+                    optionValueIds.push(`value-${actualGroupIdx}-${vIdx}`);
+                  }
+                }
+              }
+            }
             return {
               name: v.name,
               sku: v.sku || null,
@@ -699,6 +717,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               stock: Math.max(0, Number(v.stock) || 0),
               status: "active",
               options: {},
+              optionValueIds,
               images: v.images.map((img) => ({ url: img.url, alt: img.alt || v.name })),
             };
           }),
