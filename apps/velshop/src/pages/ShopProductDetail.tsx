@@ -241,6 +241,18 @@ export default function ShopProductDetail() {
       if (pAny.variantOptions && typeof pAny.variantOptions === "object") {
         setVariantOptions(pAny.variantOptions);
       }
+      // Auto-select options for featured variant so Product Detail opens with it
+      if (pAny.featuredVariant && pAny.variantOptions && Array.isArray(pAny.optionGroups)) {
+        const fvId = pAny.featuredVariant.id;
+        const fvOpts = pAny.variantOptions[fvId];
+        if (fvOpts && typeof fvOpts === "object") {
+          const initialSelections: Record<string, string> = {};
+          for (const group of pAny.optionGroups) {
+            if (fvOpts[group.id]) initialSelections[group.id] = fvOpts[group.id];
+          }
+          if (Object.keys(initialSelections).length > 0) setSelectedOptions(initialSelections);
+        }
+      }
       const [revs, wl] = await Promise.all([
         productReviews({ productId }),
         isAuthenticated ? myWishlist() : Promise.resolve([]),

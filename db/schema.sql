@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS products (
   vrepeat_monthly_price NUMERIC(12, 2),
   vrepeat_weekly_qty INTEGER,
   vrepeat_monthly_qty INTEGER,
+  featured_variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -189,6 +190,7 @@ CREATE INDEX IF NOT EXISTS idx_products_featured ON products (featured) WHERE fe
 CREATE INDEX IF NOT EXISTS idx_products_slug ON products (slug);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products (price);
 CREATE INDEX IF NOT EXISTS idx_products_vrepeat ON products (vrepeat_enabled) WHERE vrepeat_enabled = TRUE;
+CREATE INDEX IF NOT EXISTS idx_products_featured_variant ON products (featured_variant_id) WHERE featured_variant_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS product_images (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

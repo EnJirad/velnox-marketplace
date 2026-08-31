@@ -33,6 +33,12 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
   const outOfStock = available <= 0;
   const hasReviews = (product.reviewCount ?? 0) > 0 && product.rating != null;
   const sold = product.soldCount ?? 0;
+
+  // Use featured variant pricing if available
+  const fv = (product as any).featuredVariant;
+  const displayPrice = fv?.price ?? product.price;
+  const displayCompareAtPrice = fv?.compareAtPrice ?? null;
+  const displayDiscountPercent = fv?.discountPercent ?? null;
   const detailUrl = `/products/${product.id}`;
 
   return (
@@ -93,9 +99,17 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
         </Link>
 
         {/* Price */}
-        <p className={`font-bold tabular-nums tracking-tight text-slate-900 ${compact ? "mt-0.5 text-[13px]" : "mt-1.5 text-base"}`}>
-          {formatBaht(product.price)}
-        </p>
+        <div className={`flex items-baseline gap-1.5 ${compact ? "mt-0.5" : "mt-1.5"}`}>
+          <p className={`font-bold tabular-nums tracking-tight text-slate-900 ${compact ? "text-[13px]" : "text-base"}`}>
+            {formatBaht(displayPrice)}
+          </p>
+          {displayCompareAtPrice && displayCompareAtPrice > displayPrice && (
+            <span className={`tabular-nums text-slate-400 line-through ${compact ? "text-[10px]" : "text-xs"}`}>{formatBaht(displayCompareAtPrice)}</span>
+          )}
+          {displayDiscountPercent != null && displayDiscountPercent > 0 && (
+            <span className={`rounded bg-red-50 px-1 py-0.5 font-semibold text-red-600 ${compact ? "text-[9px]" : "text-[10px]"}`}>-{Math.round(displayDiscountPercent)}%</span>
+          )}
+        </div>
 
         {/* Rating + Sold */}
         {(hasReviews || sold > 0) && (

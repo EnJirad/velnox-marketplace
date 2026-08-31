@@ -162,6 +162,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<{ price: string; compareAtPrice: string; discountPercent: string; stock: string; sku: string; status: string }>({ price: "", compareAtPrice: "", discountPercent: "", stock: "", sku: "", status: "active" });
   const [loaded, setLoaded] = useState(false);
+  const [featuredVariantId, setFeaturedVariantId] = useState<string | null>(null);
   const baseUrl = API_BASE();
 
   const fetchVariants = useCallback(async () => {
@@ -396,6 +397,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     } : defaultVelRepeat,
   );
   const [velRepeatExpanded, setVelRepeatExpanded] = useState(false);
+
+  // ─── Featured variant (for create mode, track by draftVariant key) ────
+  const [featuredVariantKey, setFeaturedVariantKey] = useState<string | null>(null);
 
   // ─── Validation errors ────────────────────────────────────────────────
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -740,6 +744,12 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           };
         }
 
+        // Featured variant: convert key to array index
+        if (featuredVariantKey) {
+          const fvIdx = draftVariants.findIndex((v) => v.key === featuredVariantKey);
+          if (fvIdx >= 0) payload.product.featuredVariantIndex = fvIdx;
+        }
+
         const created = await createFullProduct(payload);
         if (created) {
           toast.success("เพิ่มสินค้าสำเร็จ! สินค้าอยู่ในสถานะรอดำเนินการตรวจสอบ");
@@ -909,6 +919,16 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       if (first) setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? pv : { ...pv, compareAtPrice: first.compareAtPrice, discountPercent: first.discountPercent }));
                     }}>คัดลอกราคาจาก Variant แรก</button>
                   )}
+                  <label className="mt-1.5 flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="featuredVariant"
+                      className="accent-[#10B981] size-3.5"
+                      checked={featuredVariantKey === v.key}
+                      onChange={() => setFeaturedVariantKey(v.key)}
+                    />
+                    <span className="text-[10px] text-slate-600">★ ใช้เป็นราคาหลัก</span>
+                  </label>
                   <div className="mt-2 grid grid-cols-4 gap-2">
                     <div className="grid gap-1">
                       <Label className="text-[10px]">SKU</Label>

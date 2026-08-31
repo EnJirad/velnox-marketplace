@@ -235,6 +235,7 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     vrepeatMonthlyPrice: row.vrepeat_monthly_price != null ? parseFloat(row.vrepeat_monthly_price) : null,
     vrepeatWeeklyQty: row.vrepeat_weekly_qty ?? null,
     vrepeatMonthlyQty: row.vrepeat_monthly_qty ?? null,
+    featuredVariantId: row.featured_variant_id ?? null,
   };
 }
 
@@ -440,7 +441,13 @@ export function setupProductRoutes(app: Express): void {
           imagesByProduct.get(row.id) ?? [],
           inventoryByProduct.get(row.id) ?? null
         );
-        formatted.variants = variantsByProduct.get(row.id) ?? [];
+        const productVariants = variantsByProduct.get(row.id) ?? [];
+        formatted.variants = productVariants;
+        // Attach featured variant for product card pricing
+        if (row.featured_variant_id && productVariants.length > 0) {
+          const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
+          if (fv) formatted.featuredVariant = fv;
+        }
         return formatted;
       });
 
@@ -836,6 +843,24 @@ export function setupProductRoutes(app: Express): void {
           }
         }
 
+        // 9. Set featured variant if requested
+        if (productData.featuredVariantIndex != null && Array.isArray(variantsData)) {
+          const fvIdx = Number(productData.featuredVariantIndex);
+          if (fvIdx >= 0 && fvIdx < variantsData.length) {
+            // Get all created variant IDs in order (sort_order = index)
+            const fvResult = await client.query(
+              `SELECT id FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC`,
+              [product.id]
+            );
+            if (fvResult.rows[fvIdx]) {
+              await client.query(
+                `UPDATE products SET featured_variant_id = $1, updated_at = NOW() WHERE id = $2`,
+                [fvResult.rows[fvIdx].id, product.id]
+              );
+            }
+          }
+        }
+
         await client.query("COMMIT");
 
         console.log(`[products] create-full: product ${product.id} (shop ${shop.id}) by seller ${seller.id} — ${variantsData?.length ?? 0} variants, ${previewImages?.length ?? 0} gallery images`);
@@ -1137,6 +1162,46 @@ export function setupProductRoutes(app: Express): void {
     } catch (err) {
       console.error("[products] status error:", err);
       res.status(500).json({ success: false, error: { code: "STATUS_FAILED", message: "Failed to update product status" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/featured-variant ──────────────
+  app.patch("/api/seller/products/:productId/featured-variant", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+
+      const { variantId } = req.body;
+
+      // Validate: variantId must be null (clear) or a valid UUID
+      if (variantId !== null && variantId !== undefined) {
+        // Verify variant belongs to this product
+        const vResult = await query(
+          "SELECT id FROM product_variants WHERE id = $1 AND product_id = $2",
+          [variantId, productId]
+        );
+        if (vResult.rows.length === 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant does not belong to this product" } });
+          return;
+        }
+      }
+
+      await query(
+        "UPDATE products SET featured_variant_id = $1, updated_at = NOW() WHERE id = $2",
+        [variantId || null, productId]
+      );
+
+      console.log(`[products] featured variant: productId=${productId} variantId=${variantId || 'null'} by seller=${seller.id}`);
+      res.json({ success: true, data: { featuredVariantId: variantId || null } });
+    } catch (err) {
+      console.error("[products] featured-variant error:", err);
+      res.status(500).json({ success: false, error: { code: "FEATURED_FAILED", message: "Failed to update featured variant" } });
     }
   });
 
@@ -2024,8 +2089,22 @@ export function setupProductRoutes(app: Express): void {
         formatted.variantOptions = {};
       }
 
+      // Load featured variant
+      try {
+        formatted.featuredVariantId = row.featured_variant_id || null;
+        if (row.featured_variant_id && Array.isArray(formatted.variants)) {
+          const fv = formatted.variants.find((v: any) => v.id === row.featured_variant_id);
+          if (fv) {
+            formatted.featuredVariant = fv;
+            console.log(`[products] featured variant: productId=${productId} variantId=${fv.id}`);
+          }
+        }
+      } catch (fvErr) {
+        console.warn(`[products] featured variant load warning for ${productId}:`, (fvErr as any)?.message);
+      }
+
       // Final diagnostic summary
-      console.log(`[products] detail response: productId=${productId} variants=${(formatted.variants ?? []).length} optionGroups=${(formatted.optionGroups ?? []).length} variantOptions=${Object.keys(formatted.variantOptions ?? {}).length} response.includesVariants=${Array.isArray(formatted.variants) && formatted.variants.length > 0} response.includesOptionGroups=${Array.isArray(formatted.optionGroups) && formatted.optionGroups.length > 0}`);
+      console.log(`[products] detail response: productId=${productId} variants=${(formatted.variants ?? []).length} optionGroups=${(formatted.optionGroups ?? []).length} variantOptions=${Object.keys(formatted.variantOptions ?? {}).length} featuredVariant=${formatted.featuredVariant?.id ?? 'null'}`);
 
       res.json({ success: true, data: formatted });
     } catch (err) {
