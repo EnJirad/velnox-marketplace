@@ -1807,3 +1807,32 @@ ProductSelectionSheet had the same UUID-vs-text mismatch as ShopProductDetail:
 
 **Typecheck:** ✅ Backend, VelShop, VelSeller, VelCenter all pass
 **Commit:** 4bcbeab — pushed to main
+
+### 2026-08-30 — Variant System Overhaul: Auto-Backfill + Price Model + Seller UI
+
+**Root Cause of variants=4/optionGroups=2/variantOptions=0:**
+Products created before the `product_variant_values` table was populated had no mapping rows. The table exists (V0027 migration), but products created via earlier flows or the `create-full` endpoint's initial insert may have failed silently. The auto-backfill in the product detail API now detects this condition and creates the missing mappings from the variant's `options` JSON field.
+
+**Changes:**
+
+1. **Backend (`backend/routes/products.ts`):**
+   - Added auto-backfill in product detail API: when `variantOptions` is empty but variants and option groups exist, creates `product_variant_values` rows from each variant's `options` JSON field
+   - Logs every mapping created for debugging
+   - No migration needed — works with existing data
+
+2. **Price Model (all layers):**
+   - Changed from: `price` (selling) + `compareAtPrice` (original) + `discountPercent` (percentage)
+   - Changed to: `compareAtPrice` (full price) - `discountPercent` (discount amount) = final price
+   - Example: fullPrice=997, discount=268 → finalPrice=729
+   - Seller UI: ราคาเต็ม + ส่วนลด → ราคาหลังลด (auto-calculated)
+   - Customer UI: ฿729 (crossed-out ฿997) ลด ฿268 (-27%)
+   - Applied to: ShopProductDetail, ProductSelectionSheet, ProductFormDialog
+
+3. **Seller ProductFormDialog:**
+   - Option groups: removed image upload — only text values per spec
+   - Variant editor: ราคาเต็ม + ส่วนลด + ราคาหลังลด (auto-calculated)
+   - Added "ใช้ราคาเดียวกับรายการแรก" copy price button
+   - VariantManager edit mode: same price model
+
+**Typecheck:** ✅ Backend, VelShop, VelSeller, VelCenter all pass
+**Commit:** 9372828 — pushed to main
