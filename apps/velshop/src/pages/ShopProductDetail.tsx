@@ -61,7 +61,7 @@ interface ReviewRow {
 }
 
 type TabKey = "recommend" | "details" | "reviews";
-type PendingAction = "cart" | "buy" | null;
+type PendingAction = "cart" | "buy" | "velrepeat" | null;
 
 /* ─── Expandable Title ─────────────────────────────────────────────────── */
 
@@ -305,15 +305,14 @@ export default function ShopProductDetail() {
 
   /* ── Derived values ─────────────────────────────────────────────── */
 
-  // Product gallery images — always the base images from the product
-  const productImages = useMemo(() => {
-    return product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage!] : [];
-  }, [product]);
+  // Gallery images: when a variant option is selected, try to use option/variant images
+  const images = useMemo(() => {
+    const baseImages = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage!] : [];
+    const hasGroups = optionGroups.length > 0;
+    if (!hasGroups || Object.keys(selectedOptions).length === 0) return baseImages;
 
-  // Variant-specific images — shown after divider when variant is selected
-  const variantImages = useMemo(() => {
-    if (!selectedVariant) return [];
-    if (selectedVariant.images && selectedVariant.images.length > 0) {
+    // 1. Check selected variant for images
+    if (selectedVariant?.images?.length > 0) {
       return selectedVariant.images.map((img: Record<string, unknown>, i: number) => ({
         id: `vi-${(img.id as string) ?? i}`,
         productId: product?.id ?? '',
@@ -330,44 +329,45 @@ export default function ShopProductDetail() {
         createdAt: Date.now(),
       }));
     }
-    // Fallback: option value images
+
+    // 2. Check selected option values for images (priority order)
     for (const group of optionGroups) {
       const valId = selectedOptions[group.id];
       if (!valId) continue;
-      const val = (group.values ?? []).find((v: any) => v.value === valId);
-      if (val?.imageUrl) {
+      const val = (group.values ?? []).find((v: Record<string, unknown>) => (v.value as string) === valId);
+      if (val && (val.imageUrl as string | null)) {
+        const imgUrl = val.imageUrl as string;
         return [{
-          id: `opt-${val.id}`, productId: product?.id ?? '', url: val.imageUrl, displayUrl: val.imageUrl, thumbUrl: val.imageUrl,
-          storageProvider: 'r2' as const, storageKey: '', alt: val.label || val.value || '', sortOrder: 0, isPrimary: true,
-          width: null, height: null, createdAt: Date.now(),
+          id: `opt-${val.id as string}`,
+          productId: product?.id ?? '',
+          url: imgUrl,
+          displayUrl: imgUrl,
+          thumbUrl: imgUrl,
+          storageProvider: 'r2' as const,
+          storageKey: '',
+          alt: ((val.label as string) || (val.value as string) || ''),
+          sortOrder: 0,
+          isPrimary: true,
+          width: null,
+          height: null,
+          createdAt: Date.now(),
         }];
       }
+      break; // Only use the first selected option with image
     }
-    return [];
-  }, [selectedVariant, optionGroups, selectedOptions, product]);
 
-  // Combined gallery: product images first, then variant images after divider
-  const galleryImages = useMemo(() => {
-    if (selectedVariant && variantImages.length > 0) {
-      return [...productImages, ...variantImages];
-    }
-    return productImages;
-  }, [selectedVariant, variantImages, productImages]);
-
+    return baseImages;
+  }, [product, selectedOptions, optionGroups, selectedVariant]);
+  // Reset active index when images change (e.g. variant option selected)
   useEffect(() => {
-    if (activeIndex >= galleryImages.length) setActiveIndex(0);
-  }, [galleryImages.length, activeIndex]);
+    if (activeIndex >= images.length) setActiveIndex(0);
+  }, [images.length, activeIndex]);
 
-  const active = galleryImages[activeIndex] ?? galleryImages[0] ?? productImages[0];
+  const active = images[activeIndex] ?? images[0];
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
+  const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
   const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
-  const displayDiscountAmt = selectedVariant?.discountPercent != null ? Number(selectedVariant.discountPercent) : null;
-  const displayPrice = displayCompareAt != null && displayDiscountAmt != null && displayDiscountAmt > 0
-    ? Math.max(0, displayCompareAt - displayDiscountAmt)
-    : (selectedVariant?.price ?? product?.price ?? 0);
-  const displayDiscountPct = displayCompareAt && displayCompareAt > 0 && displayDiscountAmt && displayDiscountAmt > 0
-    ? Math.round((displayDiscountAmt / displayCompareAt) * 100)
-    : null;
+  const displayDiscountPct = selectedVariant?.discountPercent ?? null;
   const displayStock = selectedVariant?.stock ?? baseAvailable;
   const outOfStock = displayStock <= 0;
   const lowStock = !outOfStock && displayStock <= 5;
@@ -388,14 +388,14 @@ export default function ShopProductDetail() {
     setSeo({
       title: `${product.name} — VelShop`,
       description: product.description ?? t("productDetail.seoDesc", { name: product.name, price: formatBaht(product.price), unit: product.unit, shop: product.shopName ?? t("productDetail.defaultShop") }),
-      ogType: "product", ogImage: galleryImages[0]?.displayUrl ?? undefined,
+      ogType: "product", ogImage: images[0]?.displayUrl ?? undefined,
       jsonLd: {
-        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: galleryImages[0]?.displayUrl ?? undefined,
+        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: images[0]?.displayUrl ?? undefined,
         ...(rating ? { aggregateRating: { "@type": "AggregateRating", ...rating } } : {}),
         offers: { "@type": "Offer", priceCurrency: "THB", price: product.price, availability: outOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock" },
       },
     });
-  }, [product, reviews, galleryImages, outOfStock, t]);
+  }, [product, reviews, images, outOfStock, t]);
 
   /* ── Compact selector thumbnails ────────────────────────────────── */
 
@@ -418,9 +418,72 @@ export default function ShopProductDetail() {
 
   /* ── Gallery thumbnails: product images + variant images ──────── */
 
-  // Gallery thumbnail click — either select product image index or variant image
-  const handleProductThumbClick = useCallback((index: number) => { setActiveIndex(index); }, []);
-  const handleVariantThumbClick = useCallback((index: number) => { setActiveIndex(productImages.length + index); }, [productImages.length]);
+  const productThumbnails = useMemo(() => {
+    if (product?.images && product.images.length > 0) return product.images;
+    if (product?.primaryImage) return [product.primaryImage];
+    return [];
+  }, [product]);
+
+  const variantThumbnails = useMemo(() => {
+    if (!selectedVariant) return [];
+    if (selectedVariant.images && selectedVariant.images.length > 0) {
+      return selectedVariant.images.map((img: any, i: number) => ({
+        id: `vi-${img.id ?? i}`,
+        url: img.url,
+        displayUrl: img.url,
+        thumbUrl: img.url,
+        label: selectedVariant.name ?? '',
+        isVariant: true as const,
+      }));
+    }
+    // Fallback: option value images
+    const result: { id: string; url: string; displayUrl: string; thumbUrl: string; label: string; isVariant: true }[] = [];
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (!valId) continue;
+      const val = (group.values ?? []).find((v: any) => v.value === valId);
+      if (val?.imageUrl) {
+        result.push({
+          id: `opt-${val.id}`,
+          url: val.imageUrl,
+          displayUrl: val.imageUrl,
+          thumbUrl: val.imageUrl,
+          label: val.label || val.value,
+          isVariant: true,
+        });
+      }
+    }
+    return result;
+  }, [selectedVariant, optionGroups, selectedOptions]);
+
+  const handleSelectVariantFromThumbnail = useCallback((variantId: string) => {
+    const pVariants = (product as any)?.variants;
+    if (!Array.isArray(pVariants)) return;
+    const variant = pVariants.find((v: any) => v.id === variantId);
+    if (!variant) return;
+    const vOpts = variantOptions[variantId];
+    if (vOpts && typeof vOpts === 'object') {
+      setSelectedOptions((prev) => {
+        const next = { ...prev };
+        for (const [gId, vId] of Object.entries(vOpts)) {
+          next[gId] = vId as string;
+        }
+        return next;
+      });
+    }
+  }, [product, variantOptions]);
+
+  const variantThumbsWithActive = useMemo(() => {
+    if (variantThumbnails.length === 0) return [];
+    return variantThumbnails.map((vt: any) => ({
+      id: vt.id,
+      url: vt.thumbUrl || vt.url,
+      label: vt.label,
+      onClick: () => handleSelectVariantFromThumbnail(selectedVariant?.id ?? ''),
+      isActive: true,
+      isVariant: true as const,
+    }));
+  }, [variantThumbnails, selectedVariant, handleSelectVariantFromThumbnail]);
 
   const selectedSummary = useMemo(() => {
     if (!hasOptionGroups || Object.keys(selectedOptions).length === 0) return null;
@@ -464,48 +527,11 @@ export default function ShopProductDetail() {
     openVariantSheet("buy");
   }, [product, isAuthenticated, navigate, outOfStock, openVariantSheet]);
 
-  const handleSheetConfirmWithAction = useCallback((action: PendingAction) => {
+  const handleVelRepeat = useCallback(() => {
     if (!product) return;
-    // Validate required options
-    const missing = optionGroups
-      .filter((g: any) => g.required && !selectedOptions[g.id])
-      .map((g: any) => g.name);
-    if (missing.length > 0) {
-      toast.error(t("productDetail.pleaseSelectOption", { options: missing.join(", ") }));
-      return;
-    }
-    if (outOfStock) {
-      setVariantSheetOpen(false);
-      return;
-    }
-    if (action === "cart") {
-      add({
-        id: product.id, name: product.name, unit: product.unit,
-        price: displayPrice, stock: displayStock,
-        variantId: selectedVariant?.id ?? null,
-      }, sheetQty);
-      fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
-    } else if (action === "buy") {
-      add({
-        id: product.id, name: product.name, unit: product.unit,
-        price: displayPrice, stock: displayStock,
-        variantId: selectedVariant?.id ?? null,
-      }, sheetQty);
-      setTimeout(() => {
-        navigate("/checkout", {
-          state: {
-            buyNow: true,
-            buyNowProductId: product.id,
-            buyNowVariantId: selectedVariant?.id ?? null,
-            buyNowQty: sheetQty,
-          },
-        });
-      }, 300);
-    }
-    setVariantSheetOpen(false);
-    setPendingAction(null);
-  }, [product, optionGroups, selectedOptions, outOfStock, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, navigate, t]);
+    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+    openVariantSheet("velrepeat");
+  }, [product, isAuthenticated, navigate, openVariantSheet]);
 
   const handleSheetConfirm = useCallback(() => {
     if (!product || !pendingAction) return;
@@ -546,9 +572,14 @@ export default function ShopProductDetail() {
           },
         });
       }, 300);
+      setVariantSheetOpen(false);
+      setPendingAction(null);
+    } else if (pendingAction === "velrepeat") {
+      // Close sheet, open SubscriptionDialog with variant info
+      setVariantSheetOpen(false);
+      setPendingAction(null);
+      setSubOpen(true);
     }
-    setVariantSheetOpen(false);
-    setPendingAction(null);
   }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, navigate, t]);
 
   const handleOptionSelect = useCallback((groupId: string, valueText: string) => {
@@ -644,32 +675,37 @@ export default function ShopProductDetail() {
             </div>
             {/* Gallery thumbnails: product images + divider + variant images */}
             {(() => {
-              const totalThumbs = productImages.length + variantImages.length;
-              if (totalThumbs <= 1) return null;
+              const allThumbs: { id: string; url: string; label?: string; onClick: () => void; isActive: boolean; isVariant?: boolean }[] = [];
+              // Product gallery images
+              productThumbnails.forEach((img: any, i: number) => {
+                allThumbs.push({
+                  id: `pg-${img.id ?? i}`,
+                  url: img.thumbUrl || img.displayUrl || img.url,
+                  onClick: () => setActiveIndex(i),
+                  isActive: !selectedVariant && i === activeIndex,
+                });
+              });
+              // Variant images (from selected variant)
+              variantThumbsWithActive.forEach((vt: any) => {
+                allThumbs.push(vt);
+              });
+              if (allThumbs.length <= 1) return null;
               return (
                 <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
-                  {productImages.map((img: any, i: number) => (
-                    <button
-                      key={`pg-${img.id ?? i}`}
-                      type="button"
-                      onClick={() => handleProductThumbClick(i)}
-                      className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${!selectedVariant && i === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
-                      aria-label={t("productDetail.imageAlt", { n: i + 1 })}
-                    >
-                      <img src={img.thumbUrl || img.displayUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
-                    </button>
-                  ))}
-                  {variantImages.length > 0 && <span className="h-16 w-px shrink-0 bg-slate-200 self-center" />}
-                  {variantImages.map((img: any, i: number) => (
-                    <button
-                      key={`vi-${img.id ?? i}`}
-                      type="button"
-                      onClick={() => handleVariantThumbClick(i)}
-                      className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${selectedVariant && i + productImages.length === activeIndex ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
-                      aria-label={`Variant ${i + 1}`}
-                    >
-                      <img src={img.thumbUrl || img.displayUrl || img.url} alt="" className="size-full object-cover" loading="lazy" />
-                    </button>
+                  {allThumbs.map((thumb, i) => (
+                    <span key={thumb.id} className="flex items-center gap-2">
+                      {i === productThumbnails.length && variantThumbsWithActive.length > 0 && (
+                        <span className="h-8 w-px shrink-0 bg-slate-200" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={thumb.onClick}
+                        className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${thumb.isActive ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
+                        aria-label={thumb.label || t("productDetail.imageAlt", { n: i + 1 })}
+                      >
+                        <img src={thumb.url} alt="" className="size-full object-cover" loading="lazy" />
+                      </button>
+                    </span>
                   ))}
                 </div>
               );
@@ -768,27 +804,36 @@ export default function ShopProductDetail() {
               {needsVariant && (
                 <p className="mb-2 text-center text-sm text-slate-400">{t("productDetail.selectOptions")}</p>
               )}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex gap-2">
                 <Button
                   ref={addBtnRef}
-                  className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                  onClick={handleAddToCart}
-                  disabled={outOfStock && !needsVariant}
-                >
-                  <ShoppingCart className="size-4" />
-                  <span className="hidden sm:inline">ใส่ตะกร้า</span>
-                  <span className="sm:hidden">ตะกร้า</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="gap-1.5 border-[#10B981] text-[#10B981] hover:bg-[#10B981] hover:text-white"
+                  className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
                   onClick={handleBuyNow}
                   disabled={outOfStock && !needsVariant}
                 >
                   <Zap className="size-4" />
                   {t("productDetail.buyNow")}
                 </Button>
+                <Button
+                  className="flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+                  onClick={handleAddToCart}
+                  disabled={outOfStock && !needsVariant}
+                >
+                  <ShoppingCart className="size-4" />
+                  <span className="hidden sm:inline">เพิ่มลงตะกร้า</span>
+                  <span className="sm:hidden">ตะกร้า</span>
+                </Button>
               </div>
+              {(product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) && (
+                <Button
+                  variant="outline"
+                  className="mt-2 w-full gap-1.5 border-[#10B981]/30 text-[#10B981] hover:bg-[#ECFDF5] hover:text-emerald-700"
+                  onClick={handleVelRepeat}
+                >
+                  <CalendarClock className="size-4" />
+                  VelRepeat
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -826,21 +871,6 @@ export default function ShopProductDetail() {
                   <div><span className="text-slate-400">Category</span><p className="mt-0.5 font-medium text-slate-900">{categoryMeta?.label ?? product.category}</p></div>
                   {product.supplier && <div><span className="text-slate-400">Supplier</span><p className="mt-0.5 font-medium text-slate-900">{product.supplier}</p></div>}
                 </div>
-                {/* Detail images */}
-                {(() => {
-                  const detailImgs = (product as any).detailImages;
-                  if (!Array.isArray(detailImgs) || detailImgs.length === 0) return null;
-                  return (
-                    <div className="mt-5 border-t border-slate-100 pt-5">
-                      <p className="text-sm font-bold text-slate-900 mb-3">รูปภาพรายละเอียดสินค้า</p>
-                      <div className="space-y-3">
-                        {detailImgs.map((img: any, i: number) => (
-                          <img key={img.id ?? i} src={img.url || img.displayUrl} alt={img.alt || `Detail ${i + 1}`} className="w-full rounded-lg border border-slate-100" loading="lazy" />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
               </div>
             )}
 
@@ -894,29 +924,6 @@ export default function ShopProductDetail() {
             <ArrowLeft className="size-4 rotate-180 text-slate-300" />
           </Link>
         </section>
-
-        {/* ═══════════ VELREPEAT ═══════════ */}
-        {(product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) && (
-          <section className="mt-4">
-            <button
-              type="button"
-              onClick={() => {
-                if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-                setSubOpen(true);
-              }}
-              className="flex w-full items-center gap-3 rounded-2xl border border-[#10B981]/20 bg-[#ECFDF5] p-4 text-left transition-colors hover:border-[#10B981]/40"
-            >
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#10B981]/10">
-                <CalendarClock className="size-5 text-[#10B981]" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-900">🔄 VelRepeat — ซื้อซ้ำอัตโนมัติ</p>
-                <p className="mt-0.5 text-xs text-slate-500">ให้ระบบสั่งซื้อสินค้านี้ให้อัตโนมัติตามรอบที่เลือก</p>
-              </div>
-              <ArrowLeft className="size-4 rotate-180 shrink-0 text-[#10B981]" />
-            </button>
-          </section>
-        )}
       </main>
 
       {/* ═══════════ VARIANT BOTTOM SHEET ═══════════ */}
@@ -996,18 +1003,17 @@ export default function ShopProductDetail() {
                     </div>
                     <div className={`mt-2 flex flex-wrap ${compactSheet ? "gap-2" : "gap-3"}`}>
                       {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
-                        // BUG FIX: selectedOptions stores TEXT values (e.g. "ดำ"), not UUIDs
-                        const isSelected = selectedOptions[group.id] === (val.value as string);
+                        const isSelected = selectedOptions[group.id] === val.id;
                         // Check in-stock availability using real variant combinations
                         const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
                         const vOptsMap = (product as any)?.variantOptions as Record<string, Record<string, string>> | undefined;
                         let valueInStock = true;
-                        if (Array.isArray(pVariants) && pVariants.length > 0 && vOptsMap && Object.keys(vOptsMap).length > 0) {
-                          // Build candidate options: current selection + this candidate value (TEXT values)
-                          const candidateOptions = { ...selectedOptions, [group.id]: val.value as string };
+                        if (pVariants && vOptsMap) {
+                          // Build candidate options: current selection + this candidate value
+                          const candidateOptions = { ...selectedOptions, [group.id]: val.value };
                           valueInStock = pVariants.some((v) => {
                             const vOpts = vOptsMap[v.id];
-                            if (!vOpts || typeof vOpts !== "object") return false;
+                            if (!vOpts) return false;
                             // Variant must match ALL non-empty candidate options
                             const matches = Object.entries(candidateOptions).every(([gId, vId]) => {
                               // Skip empty selections — not yet chosen by user
@@ -1016,15 +1022,12 @@ export default function ShopProductDetail() {
                             });
                             return matches && (v.stock ?? 0) > 0;
                           });
-                        } else {
-                          // Fallback: if no variant data available, assume all options are in stock
-                          valueInStock = true;
                         }
                         return (
                           <button
                             key={val.id}
                             type="button"
-                            disabled={!valueInStock && pVariants != null}
+                            disabled={!valueInStock}
                             onClick={() => handleOptionSelect(group.id, val.value)}
                             className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                               isSelected
@@ -1042,9 +1045,8 @@ export default function ShopProductDetail() {
                                 {(val.label || val.value).slice(0, 3)}
                               </span>
                             )}
-                            <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
+                            <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
                               {val.label || val.value}
-                              {!valueInStock && <span className="ml-1 text-[9px] text-red-400">(หมด)</span>}
                             </span>
                           </button>
                         );
@@ -1086,70 +1088,30 @@ export default function ShopProductDetail() {
             )}
           </div>
 
-          {/* Sticky action buttons — action-aware based on pendingAction */}
+          {/* Sticky confirm button */}
           <div className="border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
             {outOfStock ? (
               <Button className="w-full bg-slate-100 text-slate-400" disabled>{t("product.outOfStock")}</Button>
-            ) : needsVariant ? (
-              <Button className="w-full bg-slate-100 text-slate-400" disabled>กรุณาเลือกตัวเลือกสินค้า</Button>
-            ) : pendingAction === "buy" ? (
-              /* Intent: Buy Now — show only buy button */
-              <Button
-                className="w-full gap-1.5 border-[#10B981] bg-[#10B981] text-white hover:bg-emerald-600"
-                onClick={() => handleSheetConfirmWithAction("buy")}
-              >
-                <Zap className="size-4" />
-                {t("productDetail.buyNow")}
-              </Button>
-            ) : pendingAction === "cart" ? (
-              /* Intent: Add to Cart — show only cart button */
-              <Button
-                className="w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                onClick={() => handleSheetConfirmWithAction("cart")}
-              >
-                <ShoppingCart className="size-4" />
-                ใส่ตะกร้า
-              </Button>
             ) : (
-              /* No specific intent — show all 3 buttons */
-              <div className="grid grid-cols-3 gap-2">
-                <Button
-                  variant="outline"
-                  className="gap-1 border-[#10B981] text-[#10B981] hover:bg-[#10B981] hover:text-white text-xs"
-                  onClick={() => handleSheetConfirmWithAction("buy")}
-                >
-                  <Zap className="size-3.5" />
-                  <span className="truncate">{t("productDetail.buyNow")}</span>
-                </Button>
-                <Button
-                  className="gap-1 bg-slate-900 text-white hover:bg-slate-800 text-xs"
-                  onClick={() => handleSheetConfirmWithAction("cart")}
-                >
-                  <ShoppingCart className="size-3.5" />
-                  <span className="truncate">ใส่ตะกร้า</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="gap-1 border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white text-xs"
-                  onClick={() => {
-                    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-                    if (product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) {
-                      setPendingAction("cart");
-                      setSubOpen(true);
-                      setVariantSheetOpen(false);
-                    } else {
-                      toast.info("สินค้านี้ไม่รองรับ VelRepeat");
-                    }
-                  }}
-                >
-                  <CalendarClock className="size-3.5" />
-                  <span className="truncate">VelRepeat</span>
-                </Button>
-              </div>
+              <Button
+                className={`w-full gap-1.5 ${pendingAction === "velrepeat" ? "border border-[#10B981]/30 bg-[#ECFDF5] text-[#10B981] hover:bg-[#10B981]/10" : "bg-[#10B981] text-white hover:bg-emerald-600"}`}
+                onClick={handleSheetConfirm}
+              >
+                {pendingAction === "buy" ? (
+                  <>{t("productDetail.buyNow")} · {formatBaht(displayPrice * sheetQty)}</>
+                ) : pendingAction === "velrepeat" ? (
+                  <>
+                    <CalendarClock className="size-4" />
+                    VelRepeat · {formatBaht(displayPrice * sheetQty)}
+                  </>
+                ) : (
+                  <>
+                    <ShoppingCart className="size-4" />
+                    {t("productDetail.addToCartWithTotal", { total: formatBaht(displayPrice * sheetQty) })}
+                  </>
+                )}
+              </Button>
             )}
-            <p className="mt-2 text-center text-xs text-slate-400">
-              {formatBaht(displayPrice * sheetQty)} · {t("cartDrawer.quantity")}: {sheetQty}
-            </p>
           </div>
         </SheetContent>
       </Sheet>
