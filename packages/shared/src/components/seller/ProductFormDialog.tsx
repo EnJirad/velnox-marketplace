@@ -207,9 +207,12 @@ function VariantManager({ productId, price }: { productId: string; price: number
 
   const saveEdit = async (variantId: string) => {
     try {
+      const fullPrice = Number(editFields.compareAtPrice) || 0;
+      const discPct = Number(editFields.discountPercent) || 0;
+      const finalPrice = Math.max(0, Math.round(fullPrice * (1 - discPct / 100) * 100) / 100);
       const res = await fetch(`${baseUrl}/api/seller/products/${productId}/variants/${variantId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ price: Number(editFields.price), compareAtPrice: editFields.compareAtPrice ? Number(editFields.compareAtPrice) : null, discountPercent: editFields.discountPercent ? Number(editFields.discountPercent) : null, stock: Number(editFields.stock), sku: editFields.sku || null, status: editFields.status }),
+        body: JSON.stringify({ price: finalPrice, compareAtPrice: fullPrice || null, discountPercent: discPct || null, stock: Number(editFields.stock), sku: editFields.sku || null, status: editFields.status }),
       });
       const data = await res.json();
       if (data.success) { setEditingId(null); await fetchVariants(); toast.success("บันทึก variant แล้ว"); }
@@ -300,9 +303,9 @@ function VariantManager({ productId, price }: { productId: string; price: number
                   <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.id, f); e.target.value = ""; }} />
                 </label>
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
-                <span className="shrink-0 tabular-nums font-semibold text-slate-900">฿{Math.max(0, (v.compareAtPrice || v.price) - (v.discountPercent || 0))}</span>
+                <span className="shrink-0 tabular-nums font-semibold text-slate-900">฿{(() => { const full = v.compareAtPrice || v.price || 0; const disc = v.discountPercent || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
                 {v.compareAtPrice && v.compareAtPrice > v.price && <span className="shrink-0 text-[10px] text-slate-400 line-through">฿{v.compareAtPrice}</span>}
-                {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(v.discountPercent)}</span>}
+                {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(v.discountPercent)}%</span>}
                 <span className={`shrink-0 tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} ชิ้น</span>
                 {v.sku && <span className="shrink-0 font-mono text-[10px] text-slate-400">{v.sku}</span>}
                 <Badge className={`shrink-0 text-[10px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
@@ -322,9 +325,6 @@ const defaultForm = {
   name: "",
   category: "general" as StoreProductCategory,
   unit: "ชิ้น",
-  price: "",
-  compareAtPrice: "",
-  discountPercent: "",
   description: "",
   supplier: "",
   stock: "",
@@ -355,9 +355,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           name: product.name,
           category: product.category,
           unit: product.unit,
-          price: product.price > 0 ? String(product.price) : "",
-          compareAtPrice: product.rejectionReason != null ? "" : "",
-          discountPercent: "",
           description: product.description ?? "",
           supplier: product.supplier ?? "",
           stock: String(product.inventory?.quantity ?? 0),
@@ -441,7 +438,24 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   // ─── Auto-generate variants from option groups ────────────────────────
   const generateVariants = useCallback(() => {
     const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim()));
-    if (validGroups.length === 0) { setDraftVariants([]); return; }
+    if (validGroups.length === 0) {
+      // No options → auto-create single variant for the product
+      setDraftVariants((prev) => {
+        const existing = prev.find((p) => p.key === "default");
+        return [{
+          key: "default",
+          name: form.name.trim() || "Default",
+          optionValueIndices: [],
+          sku: existing?.sku ?? "",
+          price: existing?.price ?? "",
+          compareAtPrice: existing?.compareAtPrice ?? "",
+          discountPercent: existing?.discountPercent ?? "",
+          stock: existing?.stock ?? "0",
+          images: existing?.images ?? [],
+        }];
+      });
+      return;
+    }
 
     // Build cartesian product of option values
     const valueArrays: { groupIdx: number; valueIdx: number; value: string; groupName: string; imageUrl?: string | null }[][] =
@@ -456,35 +470,31 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       [[]],
     );
 
-    const basePrice = Number(form.price) || 0;
-    const baseCompareAt = form.compareAtPrice ? Number(form.compareAtPrice) : null;
-    const baseDiscount = form.discountPercent ? Number(form.discountPercent) : null;
-
     const newVariants: DraftVariant[] = cartesian.map((combo, i) => ({
       key: combo.map((c) => `${c.groupIdx}-${c.valueIdx}`).join(":"),
       name: combo.map((c) => c.value).join(" / "),
       optionValueIndices: combo.map((c) => c.valueIdx),
       sku: "",
-      price: String(basePrice),
-      compareAtPrice: baseCompareAt != null ? String(baseCompareAt) : "",
-      discountPercent: baseDiscount != null ? String(baseDiscount) : "",
+      price: "",
+      compareAtPrice: "",
+      discountPercent: "",
       stock: "0",
       images: [],
     }));
 
-    // Preserve existing images for matching variants
+    // Preserve existing data (images, prices, stock) for matching variants
     setDraftVariants((prev) =>
       newVariants.map((nv) => {
         const existing = prev.find((p) => p.key === nv.key);
-        return existing ? { ...nv, images: existing.images, sku: existing.sku, stock: existing.stock } : nv;
+        return existing ? { ...nv, images: existing.images, compareAtPrice: existing.compareAtPrice, discountPercent: existing.discountPercent, stock: existing.stock, sku: existing.sku } : nv;
       })
     );
-  }, [optionGroups, form.price, form.compareAtPrice, form.discountPercent]);
+  }, [optionGroups]);
 
   // Auto-regenerate variants when option groups change (for new products only)
   useEffect(() => {
     if (!isEdit) generateVariants();
-  }, [optionGroups, form.price, form.compareAtPrice, form.discountPercent, isEdit, generateVariants]);
+  }, [optionGroups, isEdit, generateVariants]);
 
   // ─── Variant image upload (draft) ─────────────────────────────────────
   const handleVariantImageUpload = async (variantKey: string, file: File) => {
@@ -576,8 +586,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const validate = useCallback((): string[] => {
     const errors: string[] = [];
     if (!form.name.trim()) errors.push("กรุณากรอกชื่อสินค้า");
-    const price = Number(form.price);
-    if (!form.price || !Number.isFinite(price) || price <= 0) errors.push("กรุณากรอกราคาให้ถูกต้อง (มากกว่า 0)");
     if (galleryImages.length === 0 && (!current?.images || current.images.length === 0)) errors.push("ต้องมีรูปตัวอย่างสินค้าอย่างน้อย 1 รูป");
     // Validate option values
     for (const group of optionGroups) {
@@ -585,7 +593,18 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         errors.push(`กลุ่มตัวเลือก "${group.name}" ต้องมีอย่างน้อย 2 ค่า`);
       }
     }
+    // Validate variants: each must have fullPrice > 0
     if (!isEdit && draftVariants.length > 0) {
+      for (const v of draftVariants) {
+        const fullPrice = Number(v.compareAtPrice);
+        if (!v.compareAtPrice || !Number.isFinite(fullPrice) || fullPrice < 0) {
+          errors.push(`Variant "${v.name}" ต้องกรอกราคาเต็มที่ถูกต้อง`);
+        }
+        const disc = Number(v.discountPercent);
+        if (v.discountPercent && (!Number.isFinite(disc) || disc < 0 || disc > 100)) {
+          errors.push(`Variant "${v.name}" ส่วนลดต้องอยู่ระหว่าง 0-100%`);
+        }
+      }
       const hasStock = draftVariants.some((v) => Number(v.stock) > 0);
       if (!hasStock) errors.push("ต้องมี variant อย่างน้อย 1 ตัวที่มี stock > 0");
     }
@@ -607,12 +626,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     try {
       if (isEdit && current) {
         // Edit mode: update product then save options separately
+        // Price comes from variants — use 0 for product-level price (variant pricing is source of truth)
         const updated = await updateProduct({
           productId: current.id,
           name: form.name,
           category: form.category,
           unit: form.unit.trim() || "ชิ้น",
-          price: Number(form.price),
+          price: 0,
           description: form.description || undefined,
           supplier: form.supplier || undefined,
           status: form.published ? "published" : "draft",
@@ -640,14 +660,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         }
       } else {
         // NEW product: use create-full for atomic creation
-        const basePrice = Number(form.price);
+        // Price is at variant level — use first variant's fullPrice for product.price (DB required)
+        const firstFullPrice = draftVariants.length > 0 ? (Number(draftVariants[0].compareAtPrice) || 0) : 0;
         const payload: Record<string, any> = {
           product: {
             name: form.name.trim(),
             category: form.category,
             unit: form.unit.trim() || "ชิ้น",
-            price: basePrice,
-            compareAtPrice: form.compareAtPrice ? Number(form.compareAtPrice) : null,
+            price: firstFullPrice,
             description: form.description || "",
             supplier: form.supplier || null,
             status: "pending_review",
@@ -666,17 +686,22 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               imageUrl: v.imageUrl || null,
             })),
           })),
-          variants: draftVariants.map((v) => ({
-            name: v.name,
-            sku: v.sku || null,
-            price: Number(v.price) || basePrice,
-            compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
-            discountPercent: v.discountPercent ? Number(v.discountPercent) : null,
-            stock: Math.max(0, Number(v.stock) || 0),
-            status: "active",
-            options: {},
-            images: v.images.map((img) => ({ url: img.url, alt: img.alt || v.name })),
-          })),
+          variants: draftVariants.map((v) => {
+            const fullPrice = Number(v.compareAtPrice) || 0;
+            const discPct = Number(v.discountPercent) || 0;
+            const finalPrice = Math.max(0, Math.round(fullPrice * (1 - discPct / 100) * 100) / 100);
+            return {
+              name: v.name,
+              sku: v.sku || null,
+              price: finalPrice,
+              compareAtPrice: fullPrice || null,
+              discountPercent: discPct || null,
+              stock: Math.max(0, Number(v.stock) || 0),
+              status: "active",
+              options: {},
+              images: v.images.map((img) => ({ url: img.url, alt: img.alt || v.name })),
+            };
+          }),
           attributes: attributes.filter((a) => a.name.trim() && a.value.trim()).map((a) => ({
             name: a.name.trim(),
             value: a.value.trim(),
@@ -769,24 +794,11 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
         </div>
 
-        {/* ═══ Section 2: Pricing ════════════════════════════════════ */}
+        {/* ═══ Section 2: Inventory ════════════════════════════════════ */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">ราคา</h3>
+          <h3 className="mb-3 text-sm font-semibold text-slate-900">คลังสินค้า</h3>
+          <p className="mb-2 text-xs text-slate-500">ราคาจะกำหนดที่ระดับ Variant เท่านั้น</p>
           <div className="grid grid-cols-3 gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="p-price">ราคาขาย (บาท) *</Label>
-              <Input id="p-price" type="number" min="0" step="0.5" value={form.price} onChange={(e) => set("price", e.target.value)} placeholder="เช่น 45" required />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-compare">ราคาเดิม (ไม่บังคับ)</Label>
-              <Input id="p-compare" type="number" min="0" step="0.5" value={form.compareAtPrice} onChange={(e) => set("compareAtPrice", e.target.value)} placeholder="เช่น 59" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-discount">ส่วนลด %</Label>
-              <Input id="p-discount" type="number" min="0" max="100" value={form.discountPercent} onChange={(e) => set("discountPercent", e.target.value)} placeholder="เช่น 20" />
-            </div>
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-3">
             <div className="grid gap-2">
               <Label htmlFor="p-stock">สต็อก</Label>
               <Input id="p-stock" type="number" min="0" value={form.stock} onChange={(e) => set("stock", e.target.value)} placeholder="เช่น 100" />
@@ -844,7 +856,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               <RefreshCw className="size-4 text-[#10B981]" />
               <h3 className="text-sm font-semibold text-slate-900">Variants ({draftVariants.length})</h3>
             </div>
-            <p className="mt-1 text-xs text-slate-500">กำหนดราคาเต็ม, ส่วนลด, สต็อก, และรูปสำหรับแต่ละ variant</p>
+            <p className="mt-1 text-xs text-slate-500">ราคาเต็ม + ส่วนลด % → ราคาหลังลด (ระบบคำนวณอัตโนมัติ) พร้อมสต็อก, SKU, และรูป</p>
 
             <div className="mt-3 space-y-3 max-h-96 overflow-y-auto">
               {draftVariants.map((v) => (
@@ -859,8 +871,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       <Input type="number" min="0" step="0.5" value={v.compareAtPrice || v.price} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, compareAtPrice: e.target.value } : pv))} className="h-7 text-xs" />
                     </div>
                     <div className="grid gap-1">
-                      <Label className="text-[10px]">ส่วนลด</Label>
-                      <Input type="number" min="0" step="0.5" value={v.discountPercent} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, discountPercent: e.target.value } : pv))} className="h-7 text-xs" />
+                      <Label className="text-[10px]">ส่วนลด %</Label>
+                      <Input type="number" min="0" max="100" value={v.discountPercent} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, discountPercent: e.target.value } : pv))} className="h-7 text-xs" placeholder="0" />
                     </div>
                     <div className="grid gap-1">
                       <Label className="text-[10px]">สต็อก</Label>
@@ -869,14 +881,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                   </div>
                   <div className="mt-1 flex items-center gap-2">
                     <span className="text-[10px] text-slate-500">ราคาหลังลด:</span>
-                    <span className="text-xs font-bold text-[#10B981]">฿{Math.max(0, (Number(v.compareAtPrice) || Number(v.price) || 0) - (Number(v.discountPercent) || 0)).toLocaleString()}</span>
-                    {Number(v.discountPercent) > 0 && <span className="rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round((Number(v.discountPercent) / (Number(v.compareAtPrice) || Number(v.price) || 1)) * 100)}%</span>}
+                    <span className="text-xs font-bold text-[#10B981]">฿{(() => { const full = Number(v.compareAtPrice) || 0; const disc = Number(v.discountPercent) || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
+                    {Number(v.discountPercent) > 0 && <span className="rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(Number(v.discountPercent))}%</span>}
                   </div>
                   {draftVariants.length > 1 && (
                     <button type="button" className="mt-1.5 text-[10px] text-blue-500 hover:text-blue-700" onClick={() => {
                       const first = draftVariants[0];
                       if (first) setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? pv : { ...pv, compareAtPrice: first.compareAtPrice, discountPercent: first.discountPercent }));
-                    }}>ใช้ราคาเดียวกับรายการแรก</button>
+                    }}>คัดลอกราคาจาก Variant แรก</button>
                   )}
                   <div className="mt-2 grid grid-cols-4 gap-2">
                     <div className="grid gap-1">
