@@ -317,15 +317,15 @@ export default function ShopProductDetail() {
 
   /* ── Derived values ─────────────────────────────────────────────── */
 
-  // Gallery images: when a variant option is selected, try to use option/variant images
+  // Gallery images: combine preview + variant + detail images
   const images = useMemo(() => {
-    const baseImages = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage!] : [];
-    const hasGroups = optionGroups.length > 0;
-    if (!hasGroups || Object.keys(selectedOptions).length === 0) return baseImages;
+    const previewImages = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage!] : [];
+    const detailImages = (product as any)?.detailImages as Array<Record<string, unknown>> | undefined;
 
-    // 1. Check selected variant for images
+    // Build variant images from selected variant
+    let variantImgs: Array<{ id: string; productId: string; url: string; displayUrl: string; thumbUrl: string; storageProvider: 'r2'; storageKey: string; alt: string; sortOrder: number; isPrimary: boolean; width: null; height: null; createdAt: number }> = [];
     if (selectedVariant?.images?.length > 0) {
-      return selectedVariant.images.map((img: Record<string, unknown>, i: number) => ({
+      variantImgs = selectedVariant.images.map((img: Record<string, unknown>, i: number) => ({
         id: `vi-${(img.id as string) ?? i}`,
         productId: product?.id ?? '',
         url: img.url as string,
@@ -335,41 +335,35 @@ export default function ShopProductDetail() {
         storageKey: (img.storageKey as string) ?? '',
         alt: (img.alt as string) || '',
         sortOrder: i,
-        isPrimary: i === 0,
+        isPrimary: false,
         width: null,
         height: null,
         createdAt: Date.now(),
       }));
     }
 
-    // 2. Check selected option values for images (priority order)
-    for (const group of optionGroups) {
-      const valId = selectedOptions[group.id];
-      if (!valId) continue;
-      const val = (group.values ?? []).find((v: Record<string, unknown>) => (v.value as string) === valId);
-      if (val && (val.imageUrl as string | null)) {
-        const imgUrl = val.imageUrl as string;
-        return [{
-          id: `opt-${val.id as string}`,
+    // Build detail images
+    const detailImgs = Array.isArray(detailImages)
+      ? detailImages.map((img: Record<string, unknown>, i: number) => ({
+          id: `di-${(img.id as string) ?? i}`,
           productId: product?.id ?? '',
-          url: imgUrl,
-          displayUrl: imgUrl,
-          thumbUrl: imgUrl,
+          url: img.url as string,
+          displayUrl: (img.displayUrl as string) ?? img.url as string,
+          thumbUrl: (img.thumbUrl as string) ?? img.url as string,
           storageProvider: 'r2' as const,
-          storageKey: '',
-          alt: ((val.label as string) || (val.value as string) || ''),
-          sortOrder: 0,
-          isPrimary: true,
+          storageKey: (img.storageKey as string) ?? '',
+          alt: (img.alt as string) || '',
+          sortOrder: (img.sortOrder as number) ?? i,
+          isPrimary: false,
           width: null,
           height: null,
           createdAt: Date.now(),
-        }];
-      }
-      break; // Only use the first selected option with image
-    }
+        }))
+      : [];
 
-    return baseImages;
-  }, [product, selectedOptions, optionGroups, selectedVariant]);
+    // Combine: [preview] + [variant images] + [detail images]
+    return [...previewImages, ...variantImgs, ...detailImgs];
+  }, [product, selectedVariant]);
   // Reset active index when images change (e.g. variant option selected)
   useEffect(() => {
     if (activeIndex >= images.length) setActiveIndex(0);
@@ -448,25 +442,8 @@ export default function ShopProductDetail() {
         isVariant: true as const,
       }));
     }
-    // Fallback: option value images
-    const result: { id: string; url: string; displayUrl: string; thumbUrl: string; label: string; isVariant: true }[] = [];
-    for (const group of optionGroups) {
-      const valId = selectedOptions[group.id];
-      if (!valId) continue;
-      const val = (group.values ?? []).find((v: any) => v.id === valId);
-      if (val?.imageUrl) {
-        result.push({
-          id: `opt-${val.id}`,
-          url: val.imageUrl,
-          displayUrl: val.imageUrl,
-          thumbUrl: val.imageUrl,
-          label: val.label || val.value,
-          isVariant: true,
-        });
-      }
-    }
-    return result;
-  }, [selectedVariant, optionGroups, selectedOptions]);
+    return [];
+  }, [selectedVariant]);
 
   const handleSelectVariantFromThumbnail = useCallback((variantId: string) => {
     const pVariants = (product as any)?.variants;

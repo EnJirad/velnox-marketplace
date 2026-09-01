@@ -49,18 +49,23 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
         className={`relative block aspect-square w-full overflow-hidden bg-slate-50 ${compact ? "" : ""}`}
         aria-label={t("product.ariaViewDetail", { name: product.name })}
       >
-        {product.primaryImage ? (
-          <img
-            src={product.primaryImage.displayUrl}
-            alt={product.primaryImage.alt || product.name}
-            className="size-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <span className="flex size-full items-center justify-center">
-            <ImageOff className="size-8 text-slate-300" />
-          </span>
-        )}
+        {(() => {
+          // Use featured variant image if available, otherwise product primary
+          const fvImg = fv?.images?.length > 0 ? fv.images[0] : null;
+          const img = fvImg ?? product.primaryImage;
+          return img ? (
+            <img
+              src={img.displayUrl ?? img.url}
+              alt={img.alt || product.name}
+              className="size-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <span className="flex size-full items-center justify-center">
+              <ImageOff className="size-8 text-slate-300" />
+            </span>
+          );
+        })()}
         {outOfStock && (
           <span className="absolute left-1 top-1 rounded bg-slate-900/70 px-1.5 py-0.5 text-[9px] font-semibold text-white">
             {t("product.outOfStock")}
