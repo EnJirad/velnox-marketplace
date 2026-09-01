@@ -287,7 +287,7 @@ async function loadProductExtras(productIds: string[]): Promise<{
       console.warn("[products] loadProductExtras: variant query failed:", variantErr?.message ?? variantErr);
     }
   }
-  console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length}`);
+  console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length} variantIds=${variantsResult.rows.map((v: any) => v.id).join(',')}`);
 
   // Load detail images
   let detailImagesResult: { rows: any[] } = { rows: [] as any[] };
@@ -344,9 +344,10 @@ async function loadProductExtras(productIds: string[]): Promise<{
   const imagesByVariant = new Map<string, any[]>();
   for (const img of variantImagesResult.rows) {
     const list = imagesByVariant.get(img.variant_id) ?? [];
-    list.push({ id: img.id, url: normalizeImageUrl(img.url) ?? img.url, alt: img.alt || '', sortOrder: img.sort_order ?? 0 });
+    list.push({ id: img.id, url: normalizeImageUrl(img.url) ?? img.url, alt: img.alt || '', sortOrder: img.sort_order ?? 0, storageKey: img.storage_key ?? null });
     imagesByVariant.set(img.variant_id, list);
   }
+  console.log(`[products] loadProductExtras variantImages: queryReturned=${variantImagesResult.rows.length} mappedToVariants=${imagesByVariant.size} variantImageCounts=${Array.from(imagesByVariant.entries()).map(([vid, imgs]) => `${vid.substring(0,8)}:${imgs.length}`).join(',')}`);
 
   const variantsByProduct = new Map<string, any[]>();
   for (const v of variantsResult.rows) {
@@ -797,12 +798,13 @@ export function setupProductRoutes(app: Express): void {
               variantImages.push({ url: variant.imageUrl, alt: variant.name || "" });
             }
             for (let imgIdx = 0; imgIdx < variantImages.length; imgIdx++) {
-              const vi = variantImages[imgIdx]!;
-              await client.query(
+              const img = variantImages[imgIdx]!;
+              const insertResult = await client.query(
                 `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id)
-                 VALUES ($1, $2, $3, $4, 'variant', $5)`,
-                [product.id, vi.url, vi.alt, imgIdx, variantId]
+                 VALUES ($1, $2, $3, $4, 'variant', $5) RETURNING id`,
+                [product.id, img.url, img.alt, imgIdx, variantId]
               );
+              console.log(`[products] create-full variant image: variantId=${variantId} imageId=${insertResult.rows[0]?.id} imgIdx=${imgIdx} url=${(img.url || '').substring(0, 80)}`);
             }
           }
         }
@@ -863,7 +865,7 @@ export function setupProductRoutes(app: Express): void {
 
         await client.query("COMMIT");
 
-        console.log(`[products] create-full: product ${product.id} (shop ${shop.id}) by seller ${seller.id} — ${variantsData?.length ?? 0} variants, ${previewImages?.length ?? 0} gallery images`);
+        console.log(`[products] create-full: product ${product.id} (shop ${shop.id}) by seller ${seller.id} — ${variantsData?.length ?? 0} variants, ${previewImages?.length ?? 0} gallery images, variantImages=${variantsData?.reduce((sum: number, v: any) => sum + (Array.isArray(v.images) ? v.images.length : 0), 0) ?? 0}`);
 
         // Return formatted product
         const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([product.id]);
@@ -2111,7 +2113,8 @@ export function setupProductRoutes(app: Express): void {
 
       // Final diagnostic summary
       const variantImageCount = (formatted.variants ?? []).reduce((sum: number, v: any) => sum + ((v.images ?? []).length), 0);
-      console.log(`[products] detail response: productId=${productId} variants=${(formatted.variants ?? []).length} variantImages=${variantImageCount} optionGroups=${(formatted.optionGroups ?? []).length} variantOptions=${Object.keys(formatted.variantOptions ?? {}).length} featuredVariant=${formatted.featuredVariant?.id ?? 'null'}`);
+      const variantDetails = (formatted.variants ?? []).map((v: any) => `${v.name}(${(v.id ?? '').substring(0,8)}):imgs=${(v.images ?? []).length}`).join(' | ');
+      console.log(`[products] detail response: productId=${productId} variants=${(formatted.variants ?? []).length} variantImages=${variantImageCount} optionGroups=${(formatted.optionGroups ?? []).length} variantOptions=${Object.keys(formatted.variantOptions ?? {}).length} featuredVariant=${formatted.featuredVariant?.id ?? 'null'} [${variantDetails}]`);
 
       res.json({ success: true, data: formatted });
     } catch (err) {
