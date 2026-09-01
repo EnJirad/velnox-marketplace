@@ -1847,7 +1847,13 @@ export function setupProductRoutes(app: Express): void {
 
       const products = result.rows.map((row: any) => {
         const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
-        formatted.variants = variantsByProduct.get(row.id) ?? [];
+        const productVariants = variantsByProduct.get(row.id) ?? [];
+        formatted.variants = productVariants;
+        // Attach featured variant for product card pricing + image
+        if (row.featured_variant_id && productVariants.length > 0) {
+          const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
+          if (fv) formatted.featuredVariant = fv;
+        }
         return formatted;
       });
 
@@ -2104,7 +2110,8 @@ export function setupProductRoutes(app: Express): void {
       }
 
       // Final diagnostic summary
-      console.log(`[products] detail response: productId=${productId} variants=${(formatted.variants ?? []).length} optionGroups=${(formatted.optionGroups ?? []).length} variantOptions=${Object.keys(formatted.variantOptions ?? {}).length} featuredVariant=${formatted.featuredVariant?.id ?? 'null'}`);
+      const variantImageCount = (formatted.variants ?? []).reduce((sum: number, v: any) => sum + ((v.images ?? []).length), 0);
+      console.log(`[products] detail response: productId=${productId} variants=${(formatted.variants ?? []).length} variantImages=${variantImageCount} optionGroups=${(formatted.optionGroups ?? []).length} variantOptions=${Object.keys(formatted.variantOptions ?? {}).length} featuredVariant=${formatted.featuredVariant?.id ?? 'null'}`);
 
       res.json({ success: true, data: formatted });
     } catch (err) {

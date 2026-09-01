@@ -242,7 +242,7 @@ export default function ShopProductDetail() {
         setVariantOptions(pAny.variantOptions);
       }
       // Auto-select options for featured variant so Product Detail opens with it
-      if (pAny.featuredVariant && pAny.variantOptions && Array.isArray(pAny.optionGroups)) {
+      if (pAny.featuredVariant && pAny.variantOptions && Array.isArray(pAny.optionGroups) && pAny.optionGroups.length > 0) {
         const fvId = pAny.featuredVariant.id;
         const fvOpts = pAny.variantOptions[fvId];
         if (fvOpts && typeof fvOpts === "object") {
@@ -252,6 +252,11 @@ export default function ShopProductDetail() {
           }
           if (Object.keys(initialSelections).length > 0) setSelectedOptions(initialSelections);
         }
+      }
+      // For products without option groups, auto-select the first variant (or featured)
+      if (Array.isArray(pAny.variants) && pAny.variants.length > 0 && (!Array.isArray(pAny.optionGroups) || pAny.optionGroups.length === 0)) {
+        const autoVariant = pAny.featuredVariant ?? pAny.variants[0];
+        setSelectedVariant(autoVariant);
       }
       const [revs, wl] = await Promise.all([
         productReviews({ productId }),
@@ -298,7 +303,8 @@ export default function ShopProductDetail() {
   /* ── Variant resolution ─────────────────────────────────────────── */
 
   const resolveVariant = useCallback(() => {
-    if (optionGroups.length === 0) return null;
+    // For products without option groups, keep existing auto-selected variant (single variant or no variants)
+    if (optionGroups.length === 0) return undefined;
     const pVariants = (product as any)?.variants;
     if (!Array.isArray(pVariants) || pVariants.length === 0) return null;
     const entries = Object.entries(selectedOptions);
@@ -312,7 +318,8 @@ export default function ShopProductDetail() {
 
   useEffect(() => {
     const resolved = resolveVariant();
-    setSelectedVariant(resolved);
+    // undefined = no option groups, keep existing selectedVariant (auto-set in load)
+    if (resolved !== undefined) setSelectedVariant(resolved);
   }, [resolveVariant]);
 
   /* ── Derived values ─────────────────────────────────────────────── */
