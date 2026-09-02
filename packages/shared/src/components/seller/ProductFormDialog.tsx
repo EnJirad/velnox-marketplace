@@ -123,6 +123,7 @@ interface VariantRow {
   status: string;
   optionLabels: string;
   imageUrl?: string | null;
+  images?: Array<{ id: string; url: string; alt?: string }>;
 }
 
 // ─── Helper: get R2 base URL ─────────────────────────────────────────
@@ -177,7 +178,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
             const imgRes = await fetch(`${baseUrl}/api/seller/products/${productId}/variants/${v.id}/images`, { credentials: "include" });
             const imgData = await imgRes.json();
             const imgs = imgData.data ?? [];
-            return { ...v, imageUrl: imgs[0]?.url ?? null };
+            return { ...v, imageUrl: imgs[0]?.url ?? null, images: imgs.map((img: any) => ({ id: img.id, url: img.url, alt: img.alt || '' })) };
           } catch { return v; }
         }));
         setVariants(withImages);
@@ -185,6 +186,12 @@ function VariantManager({ productId, price }: { productId: string; price: number
     } catch { /* ignore */ }
     setLoading(false);
   }, [productId, baseUrl]);
+
+  // Load featured variant from product data
+  useEffect(() => {
+    const fvId = (window as any).__productFeaturedVariantId;
+    if (fvId) setFeaturedVariantId(fvId);
+  }, []);
 
   useEffect(() => { if (!loaded) { fetchVariants(); setLoaded(true); } }, [loaded, fetchVariants]);
 
@@ -219,6 +226,25 @@ function VariantManager({ productId, price }: { productId: string; price: number
       if (data.success) { setEditingId(null); await fetchVariants(); toast.success("บันทึก variant แล้ว"); }
       else toast.error(data.error?.message || "บันทึกไม่สำเร็จ");
     } catch { toast.error("บันทึกไม่สำเร็จ"); }
+  };
+
+  const handleSetFeatured = async (variantId: string) => {
+    try {
+      const res = await fetch(`${baseUrl}/api/seller/products/${productId}/featured-variant`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ variantId }),
+      });
+      const data = await res.json();
+      if (data.success) { setFeaturedVariantId(variantId); toast.success("ตั้งเป็นราคาหลักแล้ว"); }
+      else toast.error(data.error?.message || "ไม่สำเร็จ");
+    } catch { toast.error("ไม่สำเร็จ"); }
+  };
+
+  const handleVariantImageDelete = async (variantId: string, imageId: string) => {
+    try {
+      await fetch(`${baseUrl}/api/seller/products/${productId}/images/${imageId}`, { method: "DELETE", credentials: "include" });
+      await fetchVariants();
+    } catch { /* best effort */ }
   };
 
   const handleDelete = async (variantId: string) => {
@@ -293,16 +319,21 @@ function VariantManager({ productId, price }: { productId: string; price: number
               </>
             ) : (
               <>
-                <label className="relative size-8 shrink-0 cursor-pointer overflow-hidden rounded border border-slate-200 bg-slate-50">
-                  {v.imageUrl ? (
-                    <img src={v.imageUrl} alt="" className="size-full object-cover" />
-                  ) : (
-                    <span className="flex size-full items-center justify-center">
-                      {uploadingVariantImage === v.id ? <Loader2 className="size-3 animate-spin text-slate-300" /> : <ImagePlus className="size-3 text-slate-300" />}
-                    </span>
+                <div className="relative shrink-0">
+                  <label className="flex size-8 cursor-pointer items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50">
+                    {v.imageUrl ? (
+                      <img src={v.imageUrl} alt="" className="size-full object-cover" />
+                    ) : (
+                      <span className="flex size-full items-center justify-center">
+                        {uploadingVariantImage === v.id ? <Loader2 className="size-3 animate-spin text-slate-300" /> : <ImagePlus className="size-3 text-slate-300" />}
+                      </span>
+                    )}
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.id, f); e.target.value = ""; }} />
+                  </label>
+                  {v.images && v.images.length > 0 && (
+                    <span className="absolute -bottom-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-slate-700 text-[8px] font-semibold text-white">{v.images.length}</span>
                   )}
-                  <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.id, f); e.target.value = ""; }} />
-                </label>
+                </div>
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
                 <span className="shrink-0 tabular-nums font-semibold text-slate-900">฿{(() => { const full = v.compareAtPrice || v.price || 0; const disc = v.discountPercent || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
                 {v.compareAtPrice && v.compareAtPrice > v.price && <span className="shrink-0 text-[10px] text-slate-400 line-through">฿{v.compareAtPrice}</span>}
@@ -310,6 +341,9 @@ function VariantManager({ productId, price }: { productId: string; price: number
                 <span className={`shrink-0 tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} ชิ้น</span>
                 {v.sku && <span className="shrink-0 font-mono text-[10px] text-slate-400">{v.sku}</span>}
                 <Badge className={`shrink-0 text-[10px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
+                <button type="button" className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${featuredVariantId === v.id ? "bg-amber-100 text-amber-700 font-semibold" : "text-slate-400 hover:text-amber-600"}`} onClick={() => handleSetFeatured(v.id)} title="ใช้เป็นราคาหลัก">
+                  {featuredVariantId === v.id ? "★" : "☆"}
+                </button>
                 <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-slate-700" onClick={() => startEdit(v)} aria-label="แก้ไข"><Pencil className="size-3" /></Button>
                 <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => handleDelete(v.id)} aria-label="ลบ"><Trash2 className="size-3" /></Button>
               </>
@@ -935,7 +969,10 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       <Input value={v.sku} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, sku: e.target.value } : pv))} className="h-7 text-xs" placeholder="ไม่บังคับ" />
                     </div>
                     <div className="col-span-3 grid gap-1">
-                      <Label className="text-[10px]">รูป Variant</Label>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px]">รูป Variant</Label>
+                        <span className="text-[10px] tabular-nums text-slate-400">{v.images.length} / 10</span>
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         {v.images.map((img, imgIdx) => (
                           <div key={imgIdx} className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-slate-200">
@@ -943,10 +980,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                             <button type="button" className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-red-500 text-white" onClick={() => removeVariantImage(v.key, imgIdx)}><X className="size-2" /></button>
                           </div>
                         ))}
-                        <label className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
-                          <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.key, f); e.target.value = ""; }} />
-                          {uploadingVariantImage === v.key ? <Loader2 className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
-                        </label>
+                        {v.images.length < 10 ? (
+                          <label className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
+                            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.key, f); e.target.value = ""; }} />
+                            {uploadingVariantImage === v.key ? <Loader2 className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
+                          </label>
+                        ) : (
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[10px] text-slate-400">ครบ</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -958,8 +999,15 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
         {/* ═══ Section 5: Gallery Images ═════════════════════════════ */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-1 text-sm font-semibold text-slate-900">รูปตัวอย่างสินค้า *</h3>
-          <p className="mb-3 text-xs text-slate-500">สูงสุด 10 รูป — รูปหลักแสดงที่หน้าร้าน</p>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">รูปตัวอย่างสินค้า *</h3>
+              <p className="text-xs text-slate-500">รูปหลักแสดงที่หน้าร้าน</p>
+            </div>
+            <span className="text-xs tabular-nums text-slate-400">
+              {isEdit ? (current?.images?.filter((i) => i.imageType === "gallery" || !i.imageType).length ?? 0) : galleryImages.length} / 10
+            </span>
+          </div>
           <div className="flex flex-wrap gap-2">
             {(isEdit && current?.images ? current.images.filter((i) => i.imageType === "gallery" || !i.imageType) : galleryImages).map((img, i) => (
               <div key={i} className="relative size-20 shrink-0 overflow-hidden rounded-lg border border-slate-200">
@@ -980,8 +1028,15 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
         {/* ═══ Section 6: Detail Images ══════════════════════════════ */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-1 text-sm font-semibold text-slate-900">รูปรายละเอียดสินค้า</h3>
-          <p className="mb-3 text-xs text-slate-500">สูงสุด 10 รูป — แสดงในแท็บรายละเอียด (ไม่บังคับ)</p>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">รูปรายละเอียดสินค้า</h3>
+              <p className="text-xs text-slate-500">แสดงในแท็บรายละเอียด (ไม่บังคับ)</p>
+            </div>
+            <span className="text-xs tabular-nums text-slate-400">
+              {isEdit ? ((current as any)?.detailImages?.length ?? 0) : detailImages.length} / 10
+            </span>
+          </div>
           <div className="flex flex-wrap gap-2">
             {(isEdit && (current as any)?.detailImages ? (current as any).detailImages : detailImages).map((img: any, i: number) => (
               <div key={i} className="relative size-20 shrink-0 overflow-hidden rounded-lg border border-slate-200">
@@ -1064,10 +1119,12 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           )}
         </div>
 
-        {/* ═══ Section 9: Edit Mode Images (existing products) ══════ */}
+        {/* ═══ Section 9: Edit Mode — Variant Manager (existing products) ═══ */}
         {isEdit && current && (
-          <div className="rounded-xl border border-slate-200 p-4">
-            <ImageUploader product={current} onChange={(updated) => { setCurrent(updated); onSaved?.(updated); }} />
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="mb-1 text-sm font-semibold text-slate-900">จัดการ Variants</h3>
+            <p className="mb-2 text-xs text-slate-500">แก้ไขราคา, สต็อก, รูปภาพ และ SKU ของแต่ละ Variant</p>
+            <VariantManager productId={current.id} price={current.price} />
           </div>
         )}
 

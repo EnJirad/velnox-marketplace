@@ -623,6 +623,25 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
+      // Validate image counts (max 10 per type)
+      const MAX_IMAGES = 10;
+      if (Array.isArray(previewImages) && previewImages.length > MAX_IMAGES) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Preview images: maximum ${MAX_IMAGES} images allowed` } });
+        return;
+      }
+      if (Array.isArray(detailImages) && detailImages.length > MAX_IMAGES) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Detail images: maximum ${MAX_IMAGES} images allowed` } });
+        return;
+      }
+      if (Array.isArray(variantsData)) {
+        for (const v of variantsData) {
+          if (Array.isArray(v.images) && v.images.length > MAX_IMAGES) {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Variant "${v.name}": maximum ${MAX_IMAGES} images allowed` } });
+            return;
+          }
+        }
+      }
+
       // Generate unique slug
       const baseSlug = slugify(productData.name.trim());
       let slug = baseSlug;
