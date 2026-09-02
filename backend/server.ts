@@ -108,10 +108,10 @@ async function ensureVariantTables(): Promise<void> {
   } catch (err: any) {
     console.error("[startup] ensureVariantTables failed:", err?.message ?? err);
   }
-  // ── ALWAYS run column/table additions (separate from table creation) ──
-  // These run regardless of whether tables already exist, ensuring
-  // columns from V0029/V0030/V0031 are always present even if the
-  // GitHub Action migration runner missed them.
+  // ── Column/table additions (separate from table creation) ──
+  // These run on startup to ensure columns from V0029/V0030/V0031
+  // are present even if the GitHub Action migration runner missed them.
+  // Using ALTER TABLE IF NOT EXISTS is safe — these are idempotent DDL.
   // V0029: Add discount columns to product_variants if missing
   try {
     await query(`ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC(12,2)`);

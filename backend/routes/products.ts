@@ -252,53 +252,60 @@ async function loadProductExtras(productIds: string[]): Promise<{
     return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map(), detailImagesByProduct: new Map() };
   }
 
-  // Only load gallery images from product_images — variant/detail images are loaded separately
-  const imagesResult = await query(
-    `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) AND image_type = 'gallery' ORDER BY sort_order ASC`,
-    [productIds]
-  );
-  const inventoryResult = await query(
-    `SELECT * FROM inventory WHERE product_id = ANY($1)`,
-    [productIds]
-  );
-
-  // Load variants — resilient to missing columns (compare_at_price, discount_percent)
-  let variantsResult = { rows: [] as any[] };
-  try {
-    variantsResult = await query(
+  // Run gallery images, inventory, variants, and detail images queries in parallel
+  // (they are independent — none depends on the result of another)
+  const [imagesSettled, inventorySettled, variantsSettled, detailImagesSettled] = await Promise.allSettled([
+    // Gallery images
+    query(
+      `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) AND image_type = 'gallery' ORDER BY sort_order ASC`,
+      [productIds]
+    ),
+    // Inventory
+    query(
+      `SELECT * FROM inventory WHERE product_id = ANY($1)`,
+      [productIds]
+    ),
+    // Variants — try with pricing columns first, fall back without
+    query(
       `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
       [productIds]
-    );
-  } catch (variantErr: any) {
-    if (variantErr?.code === "42P01") {
-      console.warn("[products] product_variants table does not exist — run V0028 migration");
-    } else if (variantErr?.code === "42703") {
-      // column does not exist — try without the extra columns (V0031 not applied yet)
-      console.warn("[products] product_variants missing columns, retrying without pricing columns:", variantErr?.message);
-      try {
-        variantsResult = await query(
+    ).catch((variantErr: any) => {
+      if (variantErr?.code === "42703") {
+        console.warn("[products] product_variants missing columns, retrying without pricing columns:", variantErr?.message);
+        return query(
           `SELECT id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
           [productIds]
         );
-      } catch (retryErr: any) {
-        console.warn("[products] variant fallback query also failed:", retryErr?.message ?? retryErr);
       }
+      throw variantErr;
+    }),
+    // Detail images
+    query(
+      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'detail' ORDER BY sort_order ASC`,
+      [productIds]
+    ).catch((dErr: any) => {
+      if (dErr?.code === "42P01") return { rows: [] as any[] };
+      throw dErr;
+    }),
+  ]);
+
+  // Extract results from Promise.allSettled, falling back to empty on failure
+  const imagesResult = imagesSettled.status === 'fulfilled' ? imagesSettled.value : { rows: [] as any[] };
+  const inventoryResult = inventorySettled.status === 'fulfilled' ? inventorySettled.value : { rows: [] as any[] };
+  let variantsResult = { rows: [] as any[] };
+  if (variantsSettled.status === 'fulfilled') {
+    variantsResult = variantsSettled.value;
+  } else {
+    const variantErr = variantsSettled.reason;
+    if (variantErr?.code === "42P01") {
+      console.warn("[products] product_variants table does not exist — run V0028 migration");
     } else {
       console.warn("[products] loadProductExtras: variant query failed:", variantErr?.message ?? variantErr);
     }
   }
-  console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length} variantIds=${variantsResult.rows.map((v: any) => v.id).join(',')}`);
+  const detailImagesResult = detailImagesSettled.status === 'fulfilled' ? detailImagesSettled.value : { rows: [] as any[] };
 
-  // Load detail images
-  let detailImagesResult: { rows: any[] } = { rows: [] as any[] };
-  try {
-    detailImagesResult = await query(
-      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'detail' ORDER BY sort_order ASC`,
-      [productIds]
-    );
-  } catch (dErr: any) {
-    if (dErr?.code !== "42P01") console.warn("[products] detail images query warning:", dErr?.message);
-  }
+  console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length} variantIds=${variantsResult.rows.map((v: any) => v.id).join(',')}`);
   const detailImagesByProduct = new Map<string, any[]>();
   for (const img of detailImagesResult.rows) {
     const list = detailImagesByProduct.get(img.product_id) ?? [];

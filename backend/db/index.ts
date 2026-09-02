@@ -29,10 +29,10 @@ export async function query(text: string, params?: unknown[]): Promise<pg.QueryR
   const result = await pool.query(text, params);
   const duration = Date.now() - start;
 
-  if (duration > 500) {
-    // Log slow queries (>500ms) with timing breakdown hint
-    const queryPreview = text.substring(0, 120);
-    console.warn(`[DB] Slow query (${duration}ms) — possibly Neon cold start or missing index:`, queryPreview);
+  if (duration > 200) {
+    // Log queries >200ms for performance monitoring
+    const queryPreview = text.replace(/\s+/g, ' ').substring(0, 120);
+    console.warn(`[DB] query (${duration}ms):`, queryPreview);
   }
 
   return result;

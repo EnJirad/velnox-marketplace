@@ -123,12 +123,6 @@ async function resolveUser(google: {
   name: string;
   picture: string;
 }): Promise<{ userId: string; isNew: boolean }> {
-  const client = await query("SELECT 1").then(() =>
-    (query as any).client ||
-    // Get a client from the pool for transactions
-    import("../db/index.js").then((m) => m.getClient())
-  );
-
   // Use a transaction for identity resolution
   const { getClient } = await import("../db/index.js");
   const poolClient = await getClient();
@@ -371,30 +365,27 @@ export function setupGoogleAuth(app: Express): void {
       }
       const u = result.rows[0];
 
-      // If cover_url column doesn't exist, retrieve latest cover from media table
+      // If cover_url column doesn't exist, try both media key formats in parallel
       if (!coverUrl) {
         try {
-          const coverResult = await query(
-            `SELECT url FROM media
-             WHERE uploaded_by = $1 AND key LIKE $2
-             ORDER BY created_at DESC LIMIT 1`,
-            [payload.userId, `profile/cover/${payload.userId}/%`]
-          );
-          coverUrl = coverResult.rows[0]?.url || null;
+          const [legacyResult, fixedResult] = await Promise.allSettled([
+            query(
+              `SELECT url FROM media
+               WHERE uploaded_by = $1 AND key LIKE $2
+               ORDER BY created_at DESC LIMIT 1`,
+              [payload.userId, `profile/cover/${payload.userId}/%`]
+            ),
+            query(
+              `SELECT url FROM media
+               WHERE uploaded_by = $1 AND key LIKE $2
+               ORDER BY created_at DESC LIMIT 1`,
+              [payload.userId, `profile/cover/${payload.userId}%`]
+            ),
+          ]);
+          const legacyUrl = legacyResult.status === 'fulfilled' ? legacyResult.value.rows[0]?.url : null;
+          const fixedUrl = fixedResult.status === 'fulfilled' ? fixedResult.value.rows[0]?.url : null;
+          coverUrl = legacyUrl || fixedUrl || null;
         } catch { /* media table query failed — ignore */ }
-      }
-
-      // Also try fixed-key format (no slash between userId and filename)
-      if (!coverUrl) {
-        try {
-          const fixedResult = await query(
-            `SELECT url FROM media
-             WHERE uploaded_by = $1 AND key LIKE $2
-             ORDER BY created_at DESC LIMIT 1`,
-            [payload.userId, `profile/cover/${payload.userId}%`]
-          );
-          coverUrl = fixedResult.rows[0]?.url || null;
-        } catch { /* ignore */ }
       }
 
       const userData = {
@@ -457,7 +448,8 @@ export function setupGoogleAuth(app: Express): void {
     res.json({ success: true, data: { success: true } });
   });
 
-  // Cleanup: remove expired revoked tokens (runs on each request, throttle to once per 5 min)
+  // Cleanup: remove expired revoked tokens (runs once per 5 min, not on every request)
+  // Moved to a background interval to avoid per-request overhead.
   let lastCleanup = 0;
   async function cleanupExpiredTokens() {
     const now = Date.now();
@@ -467,8 +459,15 @@ export function setupGoogleAuth(app: Express): void {
       await query("DELETE FROM revoked_tokens WHERE expires_at < NOW()");
     } catch { /* ignore — table may not exist */ }
   }
-  // Run cleanup lazily on next request
-  app.use((_req, _res, next) => { cleanupExpiredTokens().catch(() => {}); next(); });
+  // Run cleanup lazily on the first request only (then rely on interval)
+  let cleanupStarted = false;
+  app.use((_req, _res, next) => {
+    if (!cleanupStarted) {
+      cleanupStarted = true;
+      cleanupExpiredTokens().catch(() => {});
+    }
+    next();
+  });
 }
 
 /**
