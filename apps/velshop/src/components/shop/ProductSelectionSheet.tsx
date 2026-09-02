@@ -478,8 +478,8 @@ export function ProductSelectionSheet({
                             : ""
                         }`}
                       >
-                        {val.imageUrl || optionValueImageMap[val.value] ? (
-                          <img src={val.imageUrl || optionValueImageMap[val.value]} alt="" className="size-14 rounded-lg object-contain bg-slate-50" loading="lazy" />
+                        {val.imageUrl || optionValueImageMap[val.id] ? (
+                          <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className="size-14 rounded-lg object-contain bg-slate-50" loading="lazy" />
                         ) : (
                           <span className="size-14 flex items-center justify-center rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-500">
                             {val.label.slice(0, 3)}

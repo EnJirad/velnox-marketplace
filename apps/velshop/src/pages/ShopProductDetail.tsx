@@ -372,8 +372,8 @@ export default function ShopProductDetail() {
       for (const group of optionGroups) {
         const valId = selectedOptions[group.id];
         if (!valId) continue;
-        const val = (group.values ?? []).find((v: any) => v.value === valId);
-        const imgSrc = val?.imageUrl || optionValueImageMap[val?.value || ''];
+        const val = (group.values ?? []).find((v: any) => v.id === valId);
+        const imgSrc = val?.imageUrl || optionValueImageMap[val?.id || ''];
         if (imgSrc) {
           variantImgs = [{
             id: `opt-${val.id}`, productId: product?.id ?? '', url: imgSrc, displayUrl: imgSrc, thumbUrl: imgSrc,
@@ -455,7 +455,7 @@ export default function ShopProductDetail() {
     return firstGroup.values.slice(0, 5).map((val: any) => ({
       id: val.id,
       label: val.label,
-      imageUrl: val.imageUrl || optionValueImageMap[val.value] || null,
+      imageUrl: val.imageUrl || optionValueImageMap[val.id] || null,
       groupId: firstGroup.id,
       selected: selectedOptions[firstGroup.id] === val.id,
     }));
@@ -1070,8 +1070,8 @@ export default function ShopProductDetail() {
                             }`}
                             aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
                           >
-                            {val.imageUrl || optionValueImageMap[val.value] ? (
-                              <img src={val.imageUrl || optionValueImageMap[val.value]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
+                            {val.imageUrl || optionValueImageMap[val.id] ? (
+                              <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
                             ) : (
                               <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
                                 {(val.label || val.value).slice(0, 3)}
