@@ -138,6 +138,28 @@ export function ProductSelectionSheet({
   const outOfStock = resolvedStock <= 0;
   const needsVariant = hasOptionGroups && !allRequiredSelected;
 
+  // Build a map: optionValueText → first variant image URL
+  // This lets option cards show the variant image even though option values don't store images
+  const optionValueImageMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    const variants = (product as any).variants as Array<Record<string, any>> | undefined;
+    const vOpts = (product as any).variantOptions as Record<string, Record<string, string>> | undefined;
+    if (!Array.isArray(variants) || !vOpts) return map;
+    for (const v of variants) {
+      const imgs = (v as any).images as Array<{ url: string }> | undefined;
+      if (!imgs || imgs.length === 0) continue;
+      const imgUrl = imgs[0].url;
+      if (!imgUrl) continue;
+      const vMapping = vOpts[v.id];
+      if (!vMapping) continue;
+      // For each option value this variant maps to, store the image if not already set
+      for (const textValue of Object.values(vMapping)) {
+        if (!map[textValue]) map[textValue] = imgUrl;
+      }
+    }
+    return map;
+  }, [product]);
+
   // Compute variant-aware image: prefer selected variant's images, then option value images, then product images
   const productImages = product.images?.length
     ? product.images
@@ -456,8 +478,8 @@ export function ProductSelectionSheet({
                             : ""
                         }`}
                       >
-                        {val.imageUrl ? (
-                          <img src={val.imageUrl} alt="" className="size-14 rounded-lg object-contain bg-slate-50" loading="lazy" />
+                        {val.imageUrl || optionValueImageMap[val.value] ? (
+                          <img src={val.imageUrl || optionValueImageMap[val.value]} alt="" className="size-14 rounded-lg object-contain bg-slate-50" loading="lazy" />
                         ) : (
                           <span className="size-14 flex items-center justify-center rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-500">
                             {val.label.slice(0, 3)}

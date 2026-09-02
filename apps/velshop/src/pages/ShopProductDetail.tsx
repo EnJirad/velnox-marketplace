@@ -324,6 +324,25 @@ export default function ShopProductDetail() {
 
   /* ── Derived values ─────────────────────────────────────────────── */
 
+  /* ── Build optionValue → variant image map ──────────────────────── */
+  const optionValueImageMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
+    if (!Array.isArray(pVariants)) return map;
+    for (const v of pVariants) {
+      const imgs = (v as any).images as Array<{ url: string }> | undefined;
+      if (!imgs || imgs.length === 0) continue;
+      const imgUrl = imgs[0].url;
+      if (!imgUrl) continue;
+      const vMapping = variantOptions[v.id] as Record<string, string> | undefined;
+      if (!vMapping) continue;
+      for (const textValue of Object.values(vMapping)) {
+        if (!map[textValue]) map[textValue] = imgUrl;
+      }
+    }
+    return map;
+  }, [product, variantOptions]);
+
   // Gallery images: combine preview + variant + detail images
   const images = useMemo(() => {
     const previewImages = product?.images && product.images.length > 0 ? product.images : product?.primaryImage ? [product.primaryImage!] : [];
@@ -348,6 +367,23 @@ export default function ShopProductDetail() {
         createdAt: Date.now(),
       }));
     }
+    // Fallback: option value images (if no variant images found)
+    if (variantImgs.length === 0) {
+      for (const group of optionGroups) {
+        const valId = selectedOptions[group.id];
+        if (!valId) continue;
+        const val = (group.values ?? []).find((v: any) => v.value === valId);
+        const imgSrc = val?.imageUrl || optionValueImageMap[val?.value || ''];
+        if (imgSrc) {
+          variantImgs = [{
+            id: `opt-${val.id}`, productId: product?.id ?? '', url: imgSrc, displayUrl: imgSrc, thumbUrl: imgSrc,
+            storageProvider: 'r2' as const, storageKey: '', alt: val.label || val.value || '', sortOrder: 0, isPrimary: true,
+            width: null, height: null, createdAt: Date.now(),
+          }];
+          break;
+        }
+      }
+    }
 
     // Build detail images
     const detailImgs = Array.isArray(detailImages)
@@ -370,7 +406,7 @@ export default function ShopProductDetail() {
 
     // Combine: [preview] + [variant images] + [detail images]
     return [...previewImages, ...variantImgs, ...detailImgs];
-  }, [product, selectedVariant]);
+  }, [product, selectedVariant, optionGroups, selectedOptions, optionValueImageMap]);
   // Reset active index when images change (e.g. variant option selected)
   useEffect(() => {
     if (activeIndex >= images.length) setActiveIndex(0);
@@ -419,7 +455,7 @@ export default function ShopProductDetail() {
     return firstGroup.values.slice(0, 5).map((val: any) => ({
       id: val.id,
       label: val.label,
-      imageUrl: val.imageUrl ?? null,
+      imageUrl: val.imageUrl || optionValueImageMap[val.value] || null,
       groupId: firstGroup.id,
       selected: selectedOptions[firstGroup.id] === val.id,
     }));
@@ -1034,8 +1070,8 @@ export default function ShopProductDetail() {
                             }`}
                             aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
                           >
-                            {val.imageUrl ? (
-                              <img src={val.imageUrl} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
+                            {val.imageUrl || optionValueImageMap[val.value] ? (
+                              <img src={val.imageUrl || optionValueImageMap[val.value]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
                             ) : (
                               <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
                                 {(val.label || val.value).slice(0, 3)}
