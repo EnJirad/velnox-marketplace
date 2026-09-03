@@ -382,10 +382,9 @@ export default function ShopProductDetail() {
     // Fallback: option value images (if no variant images found)
     if (variantImgs.length === 0) {
       for (const group of optionGroups) {
-        const selectedText = selectedOptions[group.id];
-        if (!selectedText) continue;
-        // selectedOptions now stores TEXT values — find matching option value
-        const val = (group.values ?? []).find((v: any) => v.value === selectedText || v.id === selectedText);
+        const valId = selectedOptions[group.id];
+        if (!valId) continue;
+        const val = (group.values ?? []).find((v: any) => v.id === valId);
         const imgSrc = val?.imageUrl || optionValueImageMap[val?.id || ''];
         if (imgSrc) {
           variantImgs = [{
@@ -470,7 +469,7 @@ export default function ShopProductDetail() {
       label: val.label,
       imageUrl: val.imageUrl || optionValueImageMap[val.id] || null,
       groupId: firstGroup.id,
-      selected: selectedOptions[firstGroup.id] === val.value,
+      selected: selectedOptions[firstGroup.id] === val.id,
     }));
   }, [optionGroups, selectedOptions, optionValueImageMap]);
 
@@ -534,10 +533,9 @@ export default function ShopProductDetail() {
     if (!hasOptionGroups || Object.keys(selectedOptions).length === 0) return null;
     const parts: string[] = [];
     for (const group of optionGroups) {
-      const selectedText = selectedOptions[group.id];
-      if (selectedText) {
-        // selectedOptions now stores TEXT values — find matching option value
-        const val = group.values?.find((v: any) => v.value === selectedText || v.id === selectedText);
+      const valId = selectedOptions[group.id];
+      if (valId) {
+        const val = group.values?.find((v: any) => v.id === valId);
         if (val) parts.push(val.label || val.value);
       }
     }
@@ -1048,14 +1046,14 @@ export default function ShopProductDetail() {
                     </div>
                     <div className={`mt-2 flex flex-wrap ${compactSheet ? "gap-2" : "gap-3"}`}>
                       {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
-                        const isSelected = selectedOptions[group.id] === val.value;
+                        const isSelected = selectedOptions[group.id] === val.id;
                         // Check in-stock availability using real variant combinations
                         const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
                         const vOptsMap = (product as any)?.variantOptions as Record<string, Record<string, string>> | undefined;
                         let valueInStock = true;
                         if (pVariants && vOptsMap) {
                           // Build candidate options: current selection + this candidate value
-                          const candidateOptions = { ...selectedOptions, [group.id]: val.value };
+                          const candidateOptions = { ...selectedOptions, [group.id]: val.id };
                           valueInStock = pVariants.some((v) => {
                             const vOpts = vOptsMap[v.id];
                             if (!vOpts) return false;
@@ -1073,7 +1071,7 @@ export default function ShopProductDetail() {
                             key={val.id}
                             type="button"
                             disabled={!valueInStock}
-                            onClick={() => handleOptionSelect(group.id, val.value)}
+                            onClick={() => handleOptionSelect(group.id, val.id)}
                             className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                               isSelected
                                 ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
