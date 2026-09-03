@@ -1057,41 +1057,65 @@ export default function ShopProductDetail() {
                             }
                           }
                         }
+                        const isImageGroup = group.displayType === "image";
+                        const valStockLabel = !valueInStock ? (
+                          <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} text-red-400`}>หมด</span>
+                        ) : valueStock > 0 ? (
+                          <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                            {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                          </span>
+                        ) : null;
+
+                        if (isImageGroup) {
+                          // IMAGE option: image + text card layout
+                          return (
+                            <button
+                              key={val.id}
+                              type="button"
+                              disabled={!valueInStock}
+                              onClick={() => handleOptionSelect(group.id, val.id)}
+                              className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
+                                isSelected
+                                  ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
+                                  : valueInStock
+                                    ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
+                                    : "border-slate-100 bg-slate-50 opacity-40"
+                              }`}
+                              aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
+                            >
+                              {val.imageUrl || optionValueImageMap[val.id] ? (
+                                <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
+                              ) : (
+                                <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
+                                  {(val.label || val.value).slice(0, 3)}
+                                </span>
+                              )}
+                              <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                                {val.label || val.value}
+                              </span>
+                              {valStockLabel}
+                            </button>
+                          );
+                        }
+
+                        // TEXT option: compact pill/chip — no image, no placeholder
                         return (
                           <button
                             key={val.id}
                             type="button"
                             disabled={!valueInStock}
                             onClick={() => handleOptionSelect(group.id, val.id)}
-                            className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
+                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 ${compactSheet ? "text-[10px]" : "text-xs"} font-medium transition-colors ${
                               isSelected
-                                ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
+                                ? "border-[#10B981] bg-[#ECFDF5] text-[#10B981] ring-1 ring-[#10B981]/30"
                                 : valueInStock
-                                  ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
-                                  : "border-slate-100 bg-slate-50 opacity-40"
+                                  ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 active:bg-slate-50"
+                                  : "border-slate-100 bg-slate-50 text-slate-400 opacity-50"
                             }`}
                             aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
                           >
-                            {val.imageUrl || optionValueImageMap[val.id] ? (
-                              <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
-                            ) : (
-                              <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
-                                {(val.label || val.value).slice(0, 3)}
-                              </span>
-                            )}
-                            <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
-                              {val.label || val.value}
-                            </span>
-                            {valueInStock && valueStock > 0 && (
-                              <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                                {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
-                              </span>
-                            )}
-                            {!valueInStock && (
-                              <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} text-red-400`}>
-                                หมด
-                              </span>
-                            )}
+                            <span className="truncate">{val.label || val.value}</span>
+                            {valStockLabel}
                           </button>
                         );
                       })}
