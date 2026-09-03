@@ -1274,3 +1274,12 @@ ALTER TABLE inventory ADD COLUMN IF NOT EXISTS reorder_level INTEGER NOT NULL DE
 -- product_id column may already exist from V0031 or startup DDL
 ALTER TABLE product_variant_images ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS idx_variant_images_product ON product_variant_images (product_id);
+
+------------------------------------------------------------
+-- V0033: Add is_enabled flag to product_option_values
+------------------------------------------------------------
+
+ALTER TABLE product_option_values
+  ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT true;
+
+CREATE INDEX IF NOT EXISTS idx_option_values_enabled ON product_option_values (option_group_id, is_enabled);

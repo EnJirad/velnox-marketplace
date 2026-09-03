@@ -68,6 +68,7 @@ interface OptionValueForm {
   value: string;
   label: string;
   imageUrl?: string | null;
+  isEnabled?: boolean;
 }
 
 interface OptionGroupForm {
@@ -469,10 +470,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const removeOptionGroup = (index: number) => setOptionGroups((prev) => prev.filter((_, i) => i !== index));
   const updateGroupName = (index: number, name: string) => setOptionGroups((prev) => prev.map((g, i) => i === index ? { ...g, name } : g));
   const updateGroupDisplayType = (index: number, displayType: string) => setOptionGroups((prev) => prev.map((g, i) => i === index ? { ...g, displayType } : g));
-  const addOptionValue = (groupIndex: number) => setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: [...g.values, { value: "", label: "" }] } : g));
+  const addOptionValue = (groupIndex: number) => setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: [...g.values, { value: "", label: "", isEnabled: true }] } : g));
   const removeOptionValue = (groupIndex: number, valueIndex: number) => setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.filter((_, vi) => vi !== valueIndex) } : g));
   const updateOptionValue = (groupIndex: number, valueIndex: number, value: string) =>
     setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, value, label: value } : v) } : g));
+  const updateOptionValueEnabled = (groupIndex: number, valueIndex: number, isEnabled: boolean) =>
+    setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, isEnabled } : v) } : g));
+
   const updateOptionValueImage = (groupIndex: number, valueIndex: number, imageUrl: string | null) =>
     setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, imageUrl } : v) } : g));
 

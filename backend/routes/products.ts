@@ -1667,7 +1667,7 @@ export function setupProductRoutes(app: Express): void {
 
       const valueArrays: { groupId: string; groupName: string; valueId: string; value: string }[][] = [];
       for (const group of groupsResult.rows) {
-        const vr = await query("SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC", [group.id]);
+        const vr = await query("SELECT * FROM product_option_values WHERE option_group_id = $1 AND (is_enabled IS TRUE) ORDER BY sort_order ASC", [group.id]);
         if (vr.rows.length === 0) continue;
         valueArrays.push(vr.rows.map((v: any) => ({ groupId: group.id, groupName: group.name, valueId: v.id, value: v.value })));
       }
