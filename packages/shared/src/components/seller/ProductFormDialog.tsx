@@ -468,10 +468,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const addOptionGroup = () => setOptionGroups((prev) => [...prev, { name: "", displayType: "text", values: [{ value: "", label: "" }] }]);
   const removeOptionGroup = (index: number) => setOptionGroups((prev) => prev.filter((_, i) => i !== index));
   const updateGroupName = (index: number, name: string) => setOptionGroups((prev) => prev.map((g, i) => i === index ? { ...g, name } : g));
+  const updateGroupDisplayType = (index: number, displayType: string) => setOptionGroups((prev) => prev.map((g, i) => i === index ? { ...g, displayType } : g));
   const addOptionValue = (groupIndex: number) => setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: [...g.values, { value: "", label: "" }] } : g));
   const removeOptionValue = (groupIndex: number, valueIndex: number) => setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.filter((_, vi) => vi !== valueIndex) } : g));
   const updateOptionValue = (groupIndex: number, valueIndex: number, value: string) =>
     setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, value, label: value } : v) } : g));
+  const updateOptionValueImage = (groupIndex: number, valueIndex: number, imageUrl: string | null) =>
+    setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, imageUrl } : v) } : g));
 
   // ─── Auto-generate variants from option groups ────────────────────────
   const generateVariants = useCallback(() => {
@@ -586,6 +589,21 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   };
 
   const removeDetailImage = (index: number) => setDetailImages((prev) => prev.filter((_, i) => i !== index));
+
+  // ─── Option value image upload (draft) ──────────────────────────────
+  const handleOptionImageUpload = async (groupIndex: number, valueIndex: number, file: File) => {
+    const ACCEPT = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+    if (!ACCEPT.includes(file.type)) { toast.error("ไฟล์ไม่ใช่รูปภาพที่รองรับ"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("ไฟล์ใหญ่เกิน 5 MB"); return; }
+    try {
+      const img = await draftUpload(draftId, file, `options/${groupIndex}/${valueIndex}`);
+      updateOptionValueImage(groupIndex, valueIndex, img.url);
+      toast.success("อัปโหลดรูปตัวเลือกสำเร็จ");
+    } catch (err) {
+      console.error("Option image upload error:", err);
+      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
+    }
+  };
 
   // ─── Attribute helpers ────────────────────────────────────────────────
   const addAttribute = () => setAttributes((prev) => [...prev, { name: "", value: "" }]);
@@ -799,6 +817,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   const hasOptions = optionGroups.some((g) => g.name.trim() && g.values.some((v) => v.value.trim()));
 
+  // ─── Variant count for warning ──────────────────────────────────────
+  const variantCount = useMemo(() => {
+    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.filter((v) => v.value.trim()).length >= 1);
+    if (validGroups.length === 0) return 1;
+    return validGroups.reduce((acc, g) => acc * g.values.filter((v) => v.value.trim()).length, 1);
+  }, [optionGroups]);
+
   // ─── Variant summary ──────────────────────────────────────────────────
   const variantSummary = useMemo(() => {
     if (!hasOptions) return null;
@@ -885,11 +910,21 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
           <p className="mt-1 text-xs text-slate-500">สร้างตัวเลือกสินค้า เช่น สี, ขนาด — ระบบจะสร้าง Variant อัตโนมัติ</p>
 
+          {variantCount > 100 && (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-xs font-medium text-amber-700">⚠ ตัวเลือกที่เลือกจะสร้าง {variantCount.toLocaleString()} Variants — อาจใช้งานได้ช้า กรุณาลดจำนวนตัวเลือก</p>
+            </div>
+          )}
+
           <div className="mt-3 space-y-3">
             {optionGroups.map((group, gi) => (
               <div key={gi} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-center gap-2">
                   <Input value={group.name} onChange={(e) => updateGroupName(gi, e.target.value)} placeholder="เช่น สี, ขนาด, รสชาติ" className="h-8 text-sm" />
+                  <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    <button type="button" className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${group.displayType === "text" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "text")}>ข้อความ</button>
+                    <button type="button" className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${group.displayType === "image" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "image")}>รูปภาพ</button>
+                  </div>
                   <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 text-red-400 hover:text-red-600" onClick={() => removeOptionGroup(gi)} aria-label="ลบกลุ่มตัวเลือก"><X className="size-4" /></Button>
                 </div>
                 <div className="mt-2 space-y-2">
@@ -897,6 +932,18 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                     <div key={vi} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white p-2">
                       <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[10px] font-semibold text-slate-500">{vi + 1}</span>
                       <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-7 flex-1 text-xs" />
+                      {group.displayType === "image" && (
+                        <div className="shrink-0">
+                          <label className="flex size-7 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
+                            {val.imageUrl ? (
+                              <img src={val.imageUrl} alt="" className="size-full object-cover" />
+                            ) : (
+                              <ImagePlus className="size-3.5" />
+                            )}
+                            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOptionImageUpload(gi, vi, f); e.target.value = ""; }} />
+                          </label>
+                        </div>
+                      )}
                       <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
                     </div>
                   ))}
@@ -908,7 +955,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
 
           {variantSummary && (
-            <p className="mt-3 text-xs text-slate-500">Variant ที่จะสร้าง: {variantSummary}</p>
+            <p className="mt-3 text-xs text-slate-500">Variant ที่จะสร้าง: {variantSummary} ({variantCount} รายการ)</p>
           )}
         </div>
 
