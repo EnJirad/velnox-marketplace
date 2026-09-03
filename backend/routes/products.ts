@@ -240,6 +240,88 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
 }
 
 /**
+ * Apply variant-based stock to a formatted product.
+ * For products WITH active variants: inventory.available = sum of active variant stock.
+ * For products WITHOUT variants: keep existing inventory (legacy fallback).
+ * Also computes totalAvailableStock and hasVariants flags.
+ */
+function applyVariantStock(formatted: any, variants: any[]): void {
+  if (!Array.isArray(variants) || variants.length === 0) {
+    // No variants — keep existing inventory (legacy single-product mode)
+    formatted.totalAvailableStock = formatted.inventory?.available ?? formatted.inventory?.quantity ?? 0;
+    formatted.hasVariants = false;
+    return;
+  }
+
+  formatted.hasVariants = true;
+
+  // Sum stock from active variants with stock > 0
+  let totalStock = 0;
+  for (const v of variants) {
+    if (v.status === 'active' && (v.stock ?? 0) > 0) {
+      totalStock += Number(v.stock);
+    }
+  }
+
+  formatted.totalAvailableStock = totalStock;
+
+  // Override inventory.available so frontend fallbacks get correct value
+  if (formatted.inventory) {
+    formatted.inventory.available = totalStock;
+    formatted.inventory.quantity = totalStock;
+  } else {
+    // Product has no inventory row — create synthetic one for frontend
+    formatted.inventory = {
+      id: null,
+      productId: formatted.id,
+      shopId: formatted.shopId,
+      quantity: totalStock,
+      reservedQuantity: 0,
+      reorderLevel: 5,
+      warehouse: '',
+      available: totalStock,
+    };
+  }
+}
+
+/**
+ * Compute per-option-value stock for product detail.
+ * For each option value, sums stock of matching active variants
+ * (optionally filtered by other selected options).
+ */
+function computeOptionValueStock(
+  variants: any[],
+  variantOptions: Record<string, Record<string, string>>,
+  groupId?: string,
+  otherSelections?: Record<string, string>,
+): Record<string, number> {
+  const stockMap: Record<string, number> = {};
+  if (!Array.isArray(variants) || !variantOptions) return stockMap;
+
+  for (const v of variants) {
+    if (v.status !== 'active' || (v.stock ?? 0) <= 0) continue;
+    const vOpts = variantOptions[v.id];
+    if (!vOpts) continue;
+
+    // If other selections provided, variant must match them
+    if (otherSelections && Object.keys(otherSelections).length > 0) {
+      const matches = Object.entries(otherSelections).every(([gId, vId]) => {
+        if (!vId) return true; // skip empty selections
+        return vOpts[gId] === vId;
+      });
+      if (!matches) continue;
+    }
+
+    // Accumulate stock for each option value in this variant
+    for (const [gId, valId] of Object.entries(vOpts)) {
+      if (groupId && gId !== groupId) continue; // only target group
+      stockMap[valId] = (stockMap[valId] ?? 0) + Number(v.stock);
+    }
+  }
+  return stockMap;
+}
+
+/**
  * Load all images and inventory for a list of product IDs in bulk.
  */
 async function loadProductExtras(productIds: string[]): Promise<{
@@ -401,6 +483,7 @@ async function getFormattedProduct(productId: string, sellerId: string): Promise
     inventoryByProduct.get(productId) ?? null,
   );
   formatted.variants = variantsByProduct.get(productId) ?? [];
+  applyVariantStock(formatted, formatted.variants);
   // Format detail images for frontend
   const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
   formatted.detailImages = rawDetailImgs.map((img: any) => ({
@@ -455,6 +538,7 @@ export function setupProductRoutes(app: Express): void {
         );
         const productVariants = variantsByProduct.get(row.id) ?? [];
         formatted.variants = productVariants;
+        applyVariantStock(formatted, productVariants);
         // Attach featured variant for product card pricing
         if (row.featured_variant_id && productVariants.length > 0) {
           const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
@@ -905,6 +989,7 @@ export function setupProductRoutes(app: Express): void {
           inventoryByProduct.get(product.id) ?? null
         );
         formatted.variants = variantsByProduct.get(product.id) ?? [];
+        applyVariantStock(formatted, formatted.variants);
 
         res.json({ success: true, data: formatted });
       } catch (txErr) {
@@ -1872,7 +1957,11 @@ export function setupProductRoutes(app: Express): void {
         idx++;
       }
       if (inStock === "true") {
-        where += ` AND EXISTS (SELECT 1 FROM inventory inv WHERE inv.product_id = p.id AND inv.quantity > inv.reserved)`;
+        // Check inventory OR active variants with stock > 0
+        where += ` AND (
+          EXISTS (SELECT 1 FROM inventory inv WHERE inv.product_id = p.id AND inv.quantity > inv.reserved)
+          OR EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active' AND pv.stock > 0)
+        )`;
       }
 
       let orderBy = "ORDER BY p.created_at DESC";
@@ -1897,6 +1986,7 @@ export function setupProductRoutes(app: Express): void {
         const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
         const productVariants = variantsByProduct.get(row.id) ?? [];
         formatted.variants = productVariants;
+        applyVariantStock(formatted, productVariants);
         // Attach featured variant for product card pricing + image
         if (row.featured_variant_id && productVariants.length > 0) {
           const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
@@ -1953,6 +2043,7 @@ export function setupProductRoutes(app: Express): void {
         inventoryByProduct.get(productId) ?? null
       );
       formatted.variants = variantsByProduct.get(productId) ?? [];
+      applyVariantStock(formatted, formatted.variants);
 
       // Detail images for the product detail page
       const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
@@ -2144,6 +2235,23 @@ export function setupProductRoutes(app: Express): void {
         }
 
         formatted.variantOptions = variantOptions;
+
+        // ── Per-option-value stock computation ──────────────────────────
+        // For each option group, compute stock per value from matching active variants.
+        // This enables the frontend to show "เหลือ X ชิ้น" per option value.
+        if (Array.isArray(formatted.variants) && formatted.variants.length > 0) {
+          for (const group of formatted.optionGroups ?? []) {
+            const stockMap = computeOptionValueStock(
+              formatted.variants as any[],
+              variantOptions,
+              group.id,
+            );
+            for (const val of group.values ?? []) {
+              val.stock = stockMap[val.id] ?? 0;
+            }
+          }
+        }
+
         console.log(`[products] detail variantOptions: productId=${productId} variantIds=${Object.keys(variantOptions).length} rows=${variantValuesResult.rows.length}`);
       } catch (vvErr) {
         console.error(`[products] detail variantOptions FAILED for productId=${productId}:`, (vvErr as any)?.message ?? vvErr);
@@ -2282,6 +2390,7 @@ export function setupProductRoutes(app: Express): void {
           r.stock_qty != null ? { quantity: r.stock_qty, reserved: r.stock_reserved ?? 0 } : null,
         );
         formatted.variants = shopExtras.variantsByProduct.get(r.id) ?? [];
+        applyVariantStock(formatted, formatted.variants);
         return formatted;
       });
 

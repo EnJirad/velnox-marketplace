@@ -1877,3 +1877,49 @@ Products created before the `product_variant_values` table was populated had no 
 
 **Typecheck:** ✅ Backend, VelShop, VelSeller, VelCenter all pass
 **Commit:** 9372828 — pushed to main
+
+## Stock Architecture (Variant-based)
+
+### Rule
+For products **with variants**, `variant.stock` is the source of truth for availability.
+Product-level `inventory.quantity` is **not used** for availability decisions.
+
+### Data Flow
+```
+DB: product_variants.stock (per variant)
+        ↓
+Backend: applyVariantStock() → computes totalAvailableStock
+        ↓
+API response: inventory.available = sum of active variant stocks
+        ↓
+Frontend: ProductCard / ShopProductDetail / ProductSelectionSheet
+```
+
+### Backend Helpers
+- **`applyVariantStock(formatted, variants)`** — Sets `inventory.available` and `totalAvailableStock` from active variants. For products without variants, keeps legacy inventory.
+- **`computeOptionValueStock(variants, variantOptions, groupId?)`** — Computes per-option-value stock by summing matching variant stocks. Used in product detail API to populate `val.stock` on each option value.
+
+### Frontend Behavior
+- **ProductCard**: `available = product.inventory?.available` (now variant-based from backend)
+- **ShopProductDetail**: `baseAvailable = product.inventory?.available` (fallback when no variant selected)
+- **ProductSelectionSheet**: Context-aware per-option-value stock display:
+  - No selections → sum all matching variants
+  - Other options selected → filter by those selections
+  - Shows "เหลือ X" for low stock (≤5), "X ชิ้น" for normal, "หมด" for zero
+- **Cart**: Uses `product.stock` from `AddToCartProduct` interface, which is set by the calling component with correct variant stock
+
+### Option Value Image Resolution
+```
+Selected option value (UUID)
+        ↓
+optionValueImageMap[val.id] → image URL
+        ↓
+Fallback: product gallery
+```
+**Never use text matching for option value resolution. Always use UUIDs.**
+
+### Files
+- `backend/routes/products.ts` — `applyVariantStock()`, `computeOptionValueStock()`, catalog/detail/listing APIs
+- `apps/velshop/src/pages/ShopProductDetail.tsx` — Per-option-value stock display
+- `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` — Per-option-value stock display
+- `apps/velshop/src/components/shop/ProductCard.tsx` — Uses `inventory.available` (backend-computed)

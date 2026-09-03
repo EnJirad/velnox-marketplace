@@ -1040,20 +1040,22 @@ export default function ShopProductDetail() {
                         const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
                         const vOptsMap = (product as any)?.variantOptions as Record<string, Record<string, string>> | undefined;
                         let valueInStock = true;
+                        let valueStock = 0;
                         if (pVariants && vOptsMap) {
                           // Build candidate options: current selection + this candidate value
                           const candidateOptions = { ...selectedOptions, [group.id]: val.id };
-                          valueInStock = pVariants.some((v) => {
+                          for (const v of pVariants) {
                             const vOpts = vOptsMap[v.id];
-                            if (!vOpts) return false;
-                            // Variant must match ALL non-empty candidate options
+                            if (!vOpts) continue;
                             const matches = Object.entries(candidateOptions).every(([gId, vId]) => {
-                              // Skip empty selections — not yet chosen by user
                               if (!vId) return true;
                               return vOpts[gId] === vId;
                             });
-                            return matches && (v.stock ?? 0) > 0;
-                          });
+                            if (matches && (v.stock ?? 0) > 0) {
+                              valueStock += Number(v.stock);
+                              valueInStock = true;
+                            }
+                          }
                         }
                         return (
                           <button
@@ -1080,6 +1082,16 @@ export default function ShopProductDetail() {
                             <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
                               {val.label || val.value}
                             </span>
+                            {valueInStock && valueStock > 0 && (
+                              <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                                {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                              </span>
+                            )}
+                            {!valueInStock && (
+                              <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} text-red-400`}>
+                                หมด
+                              </span>
+                            )}
                           </button>
                         );
                       })}

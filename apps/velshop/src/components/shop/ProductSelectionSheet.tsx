@@ -442,18 +442,22 @@ export function ProductSelectionSheet({
                       | Record<string, Record<string, string>>
                       | undefined;
                     let valueInStock = false;
+                    let valueStock = 0;
                     if (variants && variantOpts) {
-                      valueInStock = variants.some((v) => {
+                      for (const v of variants) {
                         const vOpts = variantOpts[v.id];
-                        if (!vOpts || vOpts[group.id] !== val.id) return false;
-                        // Check if all other selections match
-                        return Object.entries(optionSelections).every(
+                        if (!vOpts || vOpts[group.id] !== val.id) continue;
+                        const matchesOtherSelections = Object.entries(optionSelections).every(
                           ([gId, vId]) => {
                             if (gId === group.id) return true;
                             return vOpts[gId] === vId;
                           },
-                        ) && (v.stock ?? 0) > 0;
-                      });
+                        );
+                        if (matchesOtherSelections && (v.stock ?? 0) > 0) {
+                          valueStock += Number(v.stock);
+                          valueInStock = true;
+                        }
+                      }
                     } else {
                       valueInStock = true; // No variant data, assume in stock
                     }
@@ -487,6 +491,14 @@ export function ProductSelectionSheet({
                         <span className={`max-w-full truncate text-[11px] font-medium ${selected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
                           {val.label}
                         </span>
+                        {valueInStock && valueStock > 0 && (
+                          <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                            {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                          </span>
+                        )}
+                        {!valueInStock && (
+                          <span className="text-[9px] text-red-400">หมด</span>
+                        )}
                       </button>
                     );
                   })}
