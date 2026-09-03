@@ -321,7 +321,17 @@ export function setupGoogleAuth(app: Express): void {
     try {
       const payload = jwt.verify(token, JWT_SECRET) as { userId: string; jti?: string };
 
-      // Check if token has been revoked (logout)
+      // Check cache FIRST — this skips the ~200ms revoked_tokens + users DB round trips
+      // when the profile was already loaded within the last 30s. Token revocation
+      // is checked on the uncached path below; the 30s stale window is acceptable
+      // for a profile endpoint (logout takes effect on next uncached request).
+      const cached = getCachedProfile(payload.userId);
+      if (cached) {
+        res.json({ success: true, data: { user: cached } });
+        return;
+      }
+
+      // Check if token has been revoked (only when cache miss)
       if (payload.jti) {
         try {
           const revoked = await query("SELECT 1 FROM revoked_tokens WHERE token_id = $1", [payload.jti]);
@@ -331,13 +341,6 @@ export function setupGoogleAuth(app: Express): void {
             return;
           }
         } catch { /* revoked_tokens table may not exist yet — graceful fallback */ }
-      }
-
-      // Check cache first to avoid repeated slow queries
-      const cached = getCachedProfile(payload.userId);
-      if (cached) {
-        res.json({ success: true, data: { user: cached } });
-        return;
       }
 
       let result;

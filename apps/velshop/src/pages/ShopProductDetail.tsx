@@ -324,11 +324,20 @@ export default function ShopProductDetail() {
 
   /* ── Derived values ─────────────────────────────────────────────── */
 
-  /* ── Build optionValue → variant image map ──────────────────────── */
+  /* ── Build optionValueId → variant image map ────────────────────── */
+  // Keyed by val.id (UUID) so option cards can look up images directly.
   const optionValueImageMap = useMemo(() => {
     const map: Record<string, string> = {};
     const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
-    if (!Array.isArray(pVariants)) return map;
+    if (!Array.isArray(pVariants) || !optionGroups.length) return map;
+    // Build reverse lookup: (groupId, textValue) → optionValueId (UUID)
+    const textToId: Record<string, Record<string, string>> = {};
+    for (const g of optionGroups) {
+      textToId[g.id] = {};
+      for (const v of g.values ?? []) {
+        textToId[g.id][v.value] = v.id;
+      }
+    }
     for (const v of pVariants) {
       const imgs = (v as any).images as Array<{ url: string }> | undefined;
       if (!imgs || imgs.length === 0) continue;
@@ -336,12 +345,13 @@ export default function ShopProductDetail() {
       if (!imgUrl) continue;
       const vMapping = variantOptions[v.id] as Record<string, string> | undefined;
       if (!vMapping) continue;
-      for (const textValue of Object.values(vMapping)) {
-        if (!map[textValue]) map[textValue] = imgUrl;
+      for (const [groupId, textValue] of Object.entries(vMapping)) {
+        const valueId = textToId[groupId]?.[textValue];
+        if (valueId && !map[valueId]) map[valueId] = imgUrl;
       }
     }
     return map;
-  }, [product, variantOptions]);
+  }, [product, variantOptions, optionGroups]);
 
   // Gallery images: combine preview + variant + detail images
   const images = useMemo(() => {

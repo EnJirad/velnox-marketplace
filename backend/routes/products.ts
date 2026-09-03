@@ -252,9 +252,11 @@ async function loadProductExtras(productIds: string[]): Promise<{
     return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map(), detailImagesByProduct: new Map() };
   }
 
-  // Run gallery images, inventory, variants, and detail images queries in parallel
-  // (they are independent — none depends on the result of another)
-  const [imagesSettled, inventorySettled, variantsSettled, detailImagesSettled] = await Promise.allSettled([
+  // Run gallery images, inventory, variants, detail images, and variant images
+  // queries ALL in parallel — none depends on the result of another.
+  // Variant images use product_id (not variant_id) in the primary query,
+  // so they can run in parallel with variants.
+  const [imagesSettled, inventorySettled, variantsSettled, detailImagesSettled, variantImagesSettled] = await Promise.allSettled([
     // Gallery images
     query(
       `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) AND image_type = 'gallery' ORDER BY sort_order ASC`,
@@ -286,6 +288,15 @@ async function loadProductExtras(productIds: string[]): Promise<{
     ).catch((dErr: any) => {
       if (dErr?.code === "42P01") return { rows: [] as any[] };
       throw dErr;
+    }),
+    // Variant images — uses product_id in primary query (image_type='variant'),
+    // can run in parallel with the variants query above.
+    query(
+      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'variant' AND variant_id IS NOT NULL ORDER BY sort_order ASC`,
+      [productIds]
+    ).catch((viErr: any) => {
+      if (viErr?.code === "42P01") return { rows: [] as any[] };
+      throw viErr;
     }),
   ]);
 
@@ -325,28 +336,21 @@ async function loadProductExtras(productIds: string[]): Promise<{
     inventoryByProduct.set(inv.product_id, inv);
   }
 
-  // Load variant images — check BOTH product_images (image_type='variant') and product_variant_images
-  let variantImagesResult: { rows: any[] } = { rows: [] as any[] };
-  try {
-    const variantIds = variantsResult.rows.map((v: any) => v.id);
-    if (variantIds.length > 0) {
-      // Primary source: product_images with image_type='variant' (used by create-full)
-      variantImagesResult = await query(
-        `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'variant' AND variant_id IS NOT NULL ORDER BY sort_order ASC`,
-        [productIds]
+  // Extract variant images from the parallel batch result
+  const variantImagesResult = variantImagesSettled.status === 'fulfilled'
+    ? variantImagesSettled.value
+    : { rows: [] as any[] };
+  // Fallback: if primary query returned 0, try product_variant_images table
+  // (used by older variant image save endpoint)
+  if (variantImagesResult.rows.length === 0 && variantsResult.rows.length > 0) {
+    try {
+      const variantIds = variantsResult.rows.map((v: any) => v.id);
+      const fallbackResult = await query(
+        `SELECT pvi.*, pvi.variant_id FROM product_variant_images pvi WHERE pvi.variant_id = ANY($1) ORDER BY pvi.sort_order ASC`,
+        [variantIds]
       );
-      // Fallback: also check product_variant_images (used by older variant image save endpoint)
-      if (variantImagesResult.rows.length === 0) {
-        try {
-          variantImagesResult = await query(
-            `SELECT pvi.*, pvi.variant_id FROM product_variant_images pvi WHERE pvi.variant_id = ANY($1) ORDER BY pvi.sort_order ASC`,
-            [variantIds]
-          );
-        } catch { /* product_variant_images may not exist */ }
-      }
-    }
-  } catch (viErr: any) {
-    if (viErr?.code !== "42P01") console.warn("[products] variant images query warning:", viErr?.message);
+      variantImagesResult.rows = fallbackResult.rows;
+    } catch { /* product_variant_images may not exist */ }
   }
   const imagesByVariant = new Map<string, any[]>();
   for (const img of variantImagesResult.rows) {
@@ -1942,79 +1946,25 @@ export function setupProductRoutes(app: Express): void {
         storageProvider: 'r2', storageKey: img.url,
       }));
 
-      // Also fetch shop info for the detail page
-      const shopResult = await query(
-        "SELECT id, name, slug, description, logo, cover, rating, product_count FROM shops WHERE id = $1",
-        [row.shop_id],
-      );
-      if (shopResult.rows.length > 0) {
-        const s = shopResult.rows[0];
-        formatted.shop = {
-          id: s.id,
-          name: s.name,
-          slug: s.slug,
-          description: s.description,
-          logo: s.logo,
-          cover: s.cover,
-          rating: s.rating,
-          productCount: s.product_count,
-        };
-      }
-
-      // Load dynamic option groups + values (V0027 tables)
-      try {
-        const groupsResult = await query(
+      // Run shop info + option groups + attributes + variant mappings in parallel
+      const [shopSettled, groupsSettled, attrsSettled, variantValuesSettled] = await Promise.allSettled([
+        // Shop info
+        query(
+          "SELECT id, name, slug, description, logo, cover, rating, product_count FROM shops WHERE id = $1",
+          [row.shop_id],
+        ),
+        // Option groups
+        query(
           "SELECT * FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC",
           [productId]
-        );
-        const optionGroups = [];
-        for (const group of groupsResult.rows) {
-          const valuesResult = await query(
-            "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
-            [group.id]
-          );
-          optionGroups.push({
-            id: group.id,
-            name: group.name,
-            displayType: group.display_type,
-            required: group.required,
-            sortOrder: group.sort_order,
-            values: valuesResult.rows.map((v: any) => ({
-              id: v.id,
-              value: v.value,
-              label: v.label || v.value,
-              imageUrl: normalizeImageUrl(v.image_url),
-              sortOrder: v.sort_order,
-            })),
-          });
-        }
-        formatted.optionGroups = optionGroups;
-        console.log(`[products] detail option groups: productId=${productId} groupsCount=${optionGroups.length} groups=${JSON.stringify(optionGroups.map((g: any) => g.name))}`);
-      } catch (optErr) {
-        console.error(`[products] detail option groups FAILED for productId=${productId}:`, (optErr as any)?.message ?? optErr);
-        formatted.optionGroups = [];
-      }
-
-      // Load product attributes (V0027 tables)
-      try {
-        const attrsResult = await query(
+        ),
+        // Attributes
+        query(
           "SELECT * FROM product_attributes WHERE product_id = $1 ORDER BY sort_order ASC",
           [productId]
-        );
-        formatted.attributes = attrsResult.rows.map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          value: a.value,
-          sortOrder: a.sort_order,
-        }));
-      } catch (attrErr) {
-        console.warn(`[products] detail attributes FAILED for productId=${productId}:`, (attrErr as any)?.message ?? attrErr);
-        formatted.attributes = [];
-      }
-
-      // Load variant-to-option mappings (V0027 tables)
-      try {
-        const variantValuesResult = await query(
+        ),
+        // Variant-to-option mappings
+        query(
           `SELECT pvv.variant_id, pvv.option_value_id,
                   pov.option_group_id,
                   pov.label AS value
@@ -2023,7 +1973,67 @@ export function setupProductRoutes(app: Express): void {
            JOIN product_variants pv ON pvv.variant_id = pv.id
            WHERE pv.product_id = $1`,
           [productId]
-        );
+        ),
+      ]);
+
+      // Shop info
+      if (shopSettled.status === 'fulfilled' && shopSettled.value.rows.length > 0) {
+        const s = shopSettled.value.rows[0];
+        formatted.shop = {
+          id: s.id, name: s.name, slug: s.slug, description: s.description,
+          logo: s.logo, cover: s.cover, rating: s.rating, productCount: s.product_count,
+        };
+      }
+
+      // Option groups — BATCH all option values in a single query (eliminates N+1 per-group queries)
+      const optionGroups: any[] = [];
+      if (groupsSettled.status === 'fulfilled' && groupsSettled.value.rows.length > 0) {
+        const groupRows = groupsSettled.value.rows;
+        const groupIds = groupRows.map((g: any) => g.id);
+        // Single batch query for ALL option values across ALL groups
+        let allValues: any[] = [];
+        try {
+          const valuesResult = await query(
+            "SELECT * FROM product_option_values WHERE option_group_id = ANY($1) ORDER BY sort_order ASC",
+            [groupIds]
+          );
+          allValues = valuesResult.rows;
+        } catch (valErr) {
+          console.error(`[products] detail batch option values FAILED for productId=${productId}:`, (valErr as any)?.message ?? valErr);
+        }
+        // Group values by option_group_id in-memory
+        const valuesByGroup = new Map<string, any[]>();
+        for (const v of allValues) {
+          const list = valuesByGroup.get(v.option_group_id) ?? [];
+          list.push(v);
+          valuesByGroup.set(v.option_group_id, list);
+        }
+        for (const group of groupRows) {
+          optionGroups.push({
+            id: group.id, name: group.name, displayType: group.display_type,
+            required: group.required, sortOrder: group.sort_order,
+            values: (valuesByGroup.get(group.id) ?? []).map((v: any) => ({
+              id: v.id, value: v.value, label: v.label || v.value,
+              imageUrl: normalizeImageUrl(v.image_url), sortOrder: v.sort_order,
+            })),
+          });
+        }
+        console.log(`[products] detail option groups: productId=${productId} groupsCount=${optionGroups.length} groups=${JSON.stringify(optionGroups.map((g: any) => g.name))}`);
+      }
+      formatted.optionGroups = optionGroups;
+
+      // Attributes
+      formatted.attributes = attrsSettled.status === 'fulfilled'
+        ? attrsSettled.value.rows.map((a: any) => ({
+            id: a.id, name: a.name, value: a.value, sortOrder: a.sort_order,
+          }))
+        : [];
+
+      // Variant-to-option mappings
+      try {
+        const variantValuesResult = variantValuesSettled.status === 'fulfilled'
+          ? variantValuesSettled.value
+          : { rows: [] as any[] };
         const variantOptions: Record<string, Record<string, string>> = {};
         for (const row of variantValuesResult.rows) {
           const vid = row.variant_id as string;

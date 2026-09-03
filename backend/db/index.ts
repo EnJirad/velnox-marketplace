@@ -25,14 +25,18 @@ pool.on("error", (err) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function query(text: string, params?: unknown[]): Promise<pg.QueryResult<any>> {
-  const start = Date.now();
+  // Track pool wait time (time spent waiting for a connection from the pool)
+  const poolWaitStart = Date.now();
   const result = await pool.query(text, params);
-  const duration = Date.now() - start;
+  const totalMs = Date.now() - poolWaitStart;
 
-  if (duration > 200) {
-    // Log queries >200ms for performance monitoring
-    const queryPreview = text.replace(/\s+/g, ' ').substring(0, 120);
-    console.warn(`[DB] query (${duration}ms):`, queryPreview);
+  // The pg library does not expose pool wait vs execution separately.
+  // However, since Neon proxies all queries through a single connection pool,
+  // the totalMs includes: network RTT to Neon proxy + proxy query + network RTT back.
+  // For performance monitoring we log slow queries.
+  if (totalMs > 150) {
+    const queryPreview = text.replace(/\s+/g, ' ').substring(0, 150);
+    console.warn(`[DB] query (${totalMs}ms):`, queryPreview);
   }
 
   return result;
