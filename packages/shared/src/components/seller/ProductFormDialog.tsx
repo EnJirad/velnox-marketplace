@@ -25,6 +25,7 @@ import {
 } from "@velnox/shared/components/ui/select";
 import { Switch } from "@velnox/shared/components/ui/switch";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
+import { Checkbox } from "@velnox/shared/components/ui/checkbox";
 import { ImageUploader } from "@velnox/shared/components/seller/ImageUploader";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -451,7 +452,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         if (data.success && data.data) {
           const groups = (data.data.optionGroups ?? []).map((g: any) => ({
             id: g.id, name: g.name, displayType: g.displayType ?? "text",
-            values: (g.values ?? []).map((v: any) => ({ id: v.id, value: v.value, label: v.label ?? v.value, imageUrl: v.imageUrl ?? null })),
+            values: (g.values ?? []).map((v: any) => ({ id: v.id, value: v.value, label: v.label ?? v.value, imageUrl: v.imageUrl ?? null, isEnabled: v.is_enabled !== false })),
           }));
           setOptionGroups(groups);
           setAttributes((data.data.attributes ?? []).map((a: any) => ({ id: a.id, name: a.name, value: a.value })));
@@ -482,7 +483,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // ─── Auto-generate variants from option groups ────────────────────────
   const generateVariants = useCallback(() => {
-    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim()));
+    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim() && (v.isEnabled !== false)));
     if (validGroups.length === 0) {
       // No options → auto-create single variant for the product
       setDraftVariants((prev) => {
@@ -505,7 +506,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     // Build cartesian product of option values
     const valueArrays: { groupIdx: number; valueIdx: number; value: string; groupName: string; imageUrl?: string | null }[][] =
       validGroups.map((g, gi) =>
-        g.values.filter((v) => v.value.trim()).map((v, vi) => ({
+        g.values.filter((v) => v.value.trim() && (v.isEnabled !== false)).map((v, vi) => ({
           groupIdx: optionGroups.indexOf(g), valueIdx: vi, value: v.value, groupName: g.name, imageUrl: v.imageUrl,
         }))
       );
@@ -646,6 +647,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const validate = useCallback((): string[] => {
     const errors: string[] = [];
     if (!form.name.trim()) errors.push("กรุณากรอกชื่อสินค้า");
+    if (variantCount > 100) errors.push("จำนวน Variant เกินขีดจำกัด 100 — กรุณาลดจำนวนตัวเลือก");
     if (galleryImages.length === 0 && (!current?.images || current.images.length === 0)) errors.push("ต้องมีรูปตัวอย่างสินค้าอย่างน้อย 1 รูป");
     // Validate option values
     for (const group of optionGroups) {
@@ -744,6 +746,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               value: v.value.trim(),
               label: v.label || v.value.trim(),
               imageUrl: v.imageUrl || null,
+              isEnabled: v.isEnabled !== false,
             })),
           })),
           variants: draftVariants.map((v) => {
@@ -823,15 +826,15 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // ─── Variant count for warning ──────────────────────────────────────
   const variantCount = useMemo(() => {
-    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.filter((v) => v.value.trim()).length >= 1);
+    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.filter((v) => v.value.trim() && (v.isEnabled !== false)).length >= 1);
     if (validGroups.length === 0) return 1;
-    return validGroups.reduce((acc, g) => acc * g.values.filter((v) => v.value.trim()).length, 1);
+    return validGroups.reduce((acc, g) => acc * g.values.filter((v) => v.value.trim() && (v.isEnabled !== false)).length, 1);
   }, [optionGroups]);
 
   // ─── Variant summary ──────────────────────────────────────────────────
   const variantSummary = useMemo(() => {
     if (!hasOptions) return null;
-    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim()));
+    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim() && (v.isEnabled !== false)));
     if (validGroups.length === 0) return null;
     return validGroups.map((g) => `${g.name}: ${g.values.filter((v) => v.value.trim()).map((v) => v.value).join(", ")}`).join(" | ");
   }, [optionGroups, hasOptions]);
@@ -915,8 +918,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           <p className="mt-1 text-xs text-slate-500">สร้างตัวเลือกสินค้า เช่น สี, ขนาด — ระบบจะสร้าง Variant อัตโนมัติ</p>
 
           {variantCount > 100 && (
-            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-xs font-medium text-amber-700">⚠ ตัวเลือกที่เลือกจะสร้าง {variantCount.toLocaleString()} Variants — อาจใช้งานได้ช้า กรุณาลดจำนวนตัวเลือก</p>
+            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-3">
+              <p className="text-xs font-semibold text-red-700">⚠ ตัวเลือกที่เลือกจะสร้าง {variantCount.toLocaleString()} Variants — เกินขีดจำกัดสูงสุด 100</p>
+              <p className="mt-1 text-[11px] text-red-500">กรุณาลดจำนวนตัวเลือกหรือยกเลิกบางค่าก่อนดำเนินการต่อ</p>
             </div>
           )}
 
@@ -933,8 +937,12 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                 </div>
                 <div className="mt-2 space-y-2">
                   {group.values.map((val, vi) => (
-                    <div key={vi} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white p-2">
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[10px] font-semibold text-slate-500">{vi + 1}</span>
+                    <div key={vi} className={`flex items-center gap-2 rounded-lg border p-2 transition-colors ${val.isEnabled !== false ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50/60 opacity-55"}`}>
+                      <Checkbox
+                        checked={val.isEnabled !== false}
+                        onCheckedChange={(checked) => updateOptionValueEnabled(gi, vi, checked === true)}
+                        className="shrink-0"
+                      />
                       <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-7 flex-1 text-xs" />
                       {group.displayType === "image" && (
                         <div className="shrink-0">
@@ -951,7 +959,16 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
                     </div>
                   ))}
-                  <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 text-xs text-[#10B981]" onClick={() => addOptionValue(gi)}><Plus className="size-3" />เพิ่มค่า</Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => {
+                      setOptionGroups((prev) => prev.map((g, i) => i === gi ? { ...g, values: g.values.map((v) => ({ ...v, isEnabled: true })) } : g));
+                    }}>เลือกทั้งหมด</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => {
+                      setOptionGroups((prev) => prev.map((g, i) => i === gi ? { ...g, values: g.values.map((v) => ({ ...v, isEnabled: false })) } : g));
+                    }}>ยกเลิกทั้งหมด</Button>
+                    <div className="flex-1" />
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-xs text-[#10B981]" onClick={() => addOptionValue(gi)}><Plus className="size-3" />เพิ่มค่า</Button>
+                  </div>
                 </div>
               </div>
             ))}

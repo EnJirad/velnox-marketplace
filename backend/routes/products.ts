@@ -752,10 +752,10 @@ export function setupProductRoutes(app: Express): void {
                 if (!val.value?.trim()) continue;
 
                 const valResult = await client.query(
-                  `INSERT INTO product_option_values (option_group_id, value, label, image_url, sort_order)
-                   VALUES ($1, $2, $3, $4, $5)
+                  `INSERT INTO product_option_values (option_group_id, value, label, image_url, is_enabled, sort_order)
+                   VALUES ($1, $2, $3, $4, $5, $6)
                    RETURNING id`,
-                  [groupId, val.value.trim(), val.label || val.value.trim(), val.imageUrl || null, vi]
+                  [groupId, val.value.trim(), val.label || val.value.trim(), val.imageUrl || null, val.isEnabled !== false, vi]
                 );
                 const valKey = `value-${gi}-${vi}`;
                 groupIdMap.set(valKey, valResult.rows[0].id);
@@ -2015,6 +2015,7 @@ export function setupProductRoutes(app: Express): void {
             values: (valuesByGroup.get(group.id) ?? []).map((v: any) => ({
               id: v.id, value: v.value, label: v.label || v.value,
               imageUrl: normalizeImageUrl(v.image_url), sortOrder: v.sort_order,
+              isEnabled: v.is_enabled !== false,
             })),
           });
         }
