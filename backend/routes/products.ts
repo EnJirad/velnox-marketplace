@@ -1677,24 +1677,39 @@ export function setupProductRoutes(app: Express): void {
       const prodResult = await query("SELECT price FROM products WHERE id = $1", [productId]);
       const basePrice = prodResult.rows[0] ? parseFloat(prodResult.rows[0].price) : 0;
 
-      const existingResult = await query("SELECT id FROM product_variants WHERE product_id = $1", [productId]);
-      if (existingResult.rows.length > 0) {
-        res.json({ success: true, data: { variants: existingResult.rows.map((v: any) => ({ id: v.id })), message: "Variants already exist" } }); return;
+      // Check existing variants for re-generation support
+      const existingResult = await query("SELECT id, name, options FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC", [productId]);
+      const existingVariants = existingResult.rows;
+
+      // Build set of existing combination keys for dedup
+      const existingComboKeys = new Set<string>();
+      for (const ev of existingVariants) {
+        const opts = ev.options || {};
+        const key = Object.entries(opts).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("|");
+        existingComboKeys.add(key);
       }
+
+      // Filter cartesian to only NEW combinations
+      const newCombos = cartesian.filter((combo) => {
+        const optionsObj: Record<string, string> = {};
+        combo.forEach((c) => { optionsObj[c.groupName] = c.value; });
+        const key = Object.entries(optionsObj).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("|");
+        return !existingComboKeys.has(key);
+      });
 
       const client = await getClient();
       const createdVariants: any[] = [];
       try {
         await client.query("BEGIN");
-        for (let i = 0; i < cartesian.length; i++) {
-          const combo = cartesian[i]!;
+        for (let i = 0; i < newCombos.length; i++) {
+          const combo = newCombos[i]!;
           const comboName = combo.map((c) => c.value).join(" / ");
           const optionsObj: Record<string, string> = {};
           combo.forEach((c) => { optionsObj[c.groupName] = c.value; });
           const vr = await client.query(
             `INSERT INTO product_variants (product_id, name, sku, price, stock, status, options, sort_order)
              VALUES ($1, $2, $3, $4, 0, 'active', $5, $6) RETURNING id`,
-            [productId, comboName, null, basePrice, JSON.stringify(optionsObj), i]
+            [productId, comboName, null, basePrice, JSON.stringify(optionsObj), existingVariants.length + i]
           );
           const vid = vr.rows[0].id;
           for (const c of combo) {
@@ -1705,8 +1720,9 @@ export function setupProductRoutes(app: Express): void {
         await client.query("COMMIT");
       } catch (txErr) { await client.query("ROLLBACK").catch(() => {}); throw txErr; } finally { client.release(); }
 
-      console.log(`[products] generated ${createdVariants.length} variants for product ${productId}`);
-      res.json({ success: true, data: { variants: createdVariants } });
+      const totalVariants = existingVariants.length + createdVariants.length;
+      console.log(`[products] variant generation: ${existingVariants.length} existing + ${createdVariants.length} new = ${totalVariants} total for product ${productId}`);
+      res.json({ success: true, data: { variants: [...existingVariants.map((v: any) => ({ id: v.id, name: v.name })), ...createdVariants], message: createdVariants.length === 0 ? "All variants already exist" : `Added ${createdVariants.length} new variant(s)` } });
     } catch (err) {
       console.error("[products] generate variants error:", err);
       res.status(500).json({ success: false, error: { code: "GENERATE_FAILED", message: "Failed to generate variants" } });

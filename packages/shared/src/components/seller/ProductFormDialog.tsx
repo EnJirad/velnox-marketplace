@@ -623,7 +623,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       if (!group.name.trim()) continue;
       let groupId = group.id;
       if (groupId) {
-        try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name: group.name.trim() }) }); } catch { /* best effort */ }
+        // Update existing group (name + displayType)
+        try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name: group.name.trim(), displayType: group.displayType }) }); } catch { /* best effort */ }
       } else {
         try {
           const res = await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name: group.name.trim(), displayType: group.displayType }) });
@@ -633,8 +634,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       }
       if (!groupId) continue;
       for (const val of group.values) {
-        if (!val.value.trim() || val.id) continue;
-        try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}/values`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ value: val.value.trim(), label: val.label || val.value.trim() }) }); } catch { /* best effort */ }
+        if (!val.value.trim()) continue;
+        if (val.id) {
+          // Update existing value (isEnabled, imageUrl)
+          try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-values/${val.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ value: val.value.trim(), label: val.label || val.value.trim(), imageUrl: val.imageUrl || null, isEnabled: val.isEnabled !== false }) }); } catch { /* best effort */ }
+        } else {
+          // Create new value
+          try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}/values`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ value: val.value.trim(), label: val.label || val.value.trim(), imageUrl: val.imageUrl || null, isEnabled: val.isEnabled !== false }) }); } catch { /* best effort */ }
+        }
       }
     }
     for (const attr of attributes) {
