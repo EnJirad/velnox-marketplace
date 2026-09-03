@@ -364,8 +364,6 @@ const defaultForm = {
   unit: "ชิ้น",
   description: "",
   supplier: "",
-  stock: "",
-  reorderLevel: "",
   published: false,
 };
 
@@ -383,8 +381,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const createProduct = useAction(api.commerce.createProductAction);
   const createFullProduct = useAction(api.commerce.createFullProductAction);
   const updateProduct = useAction(api.commerce.updateProductAction);
-  const setStock = useAction(api.commerce.setStockAction);
-  const setReorderLevel = useAction(api.commerce.setReorderLevelAction);
+  // Product-level stock management removed — variant stock is source of truth
 
   const [form, setForm] = useState<typeof defaultForm>(() =>
     product
@@ -394,8 +391,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           unit: product.unit,
           description: product.description ?? "",
           supplier: product.supplier ?? "",
-          stock: String(product.inventory?.quantity ?? 0),
-          reorderLevel: String(product.inventory?.reorderLevel ?? 0),
           published: product.status === "published",
         }
       : defaultForm,
@@ -418,7 +413,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // ─── Variant state (auto-generated from options) ──────────────────────
   const [draftVariants, setDraftVariants] = useState<DraftVariant[]>([]);
-  const [uploadingVariantImage, setUploadingVariantImage] = useState<string | null>(null);
 
   // ─── VelRepeat state ──────────────────────────────────────────────────
   const [velRepeat, setVelRepeat] = useState<VelRepeatForm>(() =>
@@ -541,27 +535,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   useEffect(() => {
     if (!isEdit) generateVariants();
   }, [optionGroups, isEdit, generateVariants]);
-
-  // ─── Variant image upload (draft) ─────────────────────────────────────
-  const handleVariantImageUpload = async (variantKey: string, file: File) => {
-    const ACCEPT = ["image/jpeg", "image/png", "image/webp", "image/avif"];
-    if (!ACCEPT.includes(file.type)) { toast.error("ไฟล์ไม่ใช่รูปภาพที่รองรับ"); return; }
-    if (file.size > 10 * 1024 * 1024) { toast.error("ไฟล์ใหญ่เกิน 10 MB"); return; }
-
-    setUploadingVariantImage(variantKey);
-    try {
-      const img = await draftUpload(draftId, file, `variants/${variantKey}`);
-      setDraftVariants((prev) => prev.map((v) => v.key === variantKey ? { ...v, images: [...v.images, img] } : v));
-      toast.success("อัปโหลดรูปสำเร็จ");
-    } catch (err) {
-      console.error("Variant image upload error:", err);
-      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
-    } finally { setUploadingVariantImage(null); }
-  };
-
-  const removeVariantImage = (variantKey: string, imgIndex: number) => {
-    setDraftVariants((prev) => prev.map((v) => v.key === variantKey ? { ...v, images: v.images.filter((_, i) => i !== imgIndex) } : v));
-  };
 
   // ─── Gallery image upload (draft) ─────────────────────────────────────
   const handleGalleryUpload = async (files: FileList | File[]) => {
@@ -707,8 +680,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           status: form.published ? "published" : "draft",
         });
         if (updated) {
-          if (form.stock !== "") await setStock({ productId: current.id, quantity: Math.max(0, Number(form.stock)) });
-          if (form.reorderLevel !== "") await setReorderLevel({ productId: current.id, reorderLevel: Math.max(0, Number(form.reorderLevel)) });
+          // Product-level stock removed — variant stock is source of truth
           await saveOptions(current.id);
           // Upload detail images (edit mode)
           if (detailImages.length > 0) {
@@ -740,8 +712,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             description: form.description || "",
             supplier: form.supplier || null,
             status: "pending_review",
-            stock: form.stock ? Math.max(0, Number(form.stock)) : 0,
-            reorderLevel: form.reorderLevel ? Math.max(0, Number(form.reorderLevel)) : undefined,
           },
           previewImages: galleryImages.map((img, i) => ({ url: img.url, alt: img.alt || "" })),
           detailImages: detailImages.map((img, i) => ({ url: img.url, alt: img.alt || "" })),
@@ -896,25 +866,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
         </div>
 
-        {/* ═══ Section 2: Inventory ════════════════════════════════════ */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">คลังสินค้า</h3>
-          <p className="mb-2 text-xs text-slate-500">ราคาจะกำหนดที่ระดับ Variant เท่านั้น</p>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="p-stock">สต็อก</Label>
-              <Input id="p-stock" type="number" min="0" value={form.stock} onChange={(e) => set("stock", e.target.value)} placeholder="เช่น 100" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-reorder">จุดสั่งซื้อซ้ำ</Label>
-              <Input id="p-reorder" type="number" min="0" value={form.reorderLevel} onChange={(e) => set("reorderLevel", e.target.value)} placeholder="เช่น 20" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-supplier">ซัพพลายเออร์</Label>
-              <Input id="p-supplier" value={form.supplier} onChange={(e) => set("supplier", e.target.value)} placeholder="ไม่บังคับ" />
-            </div>
-          </div>
-        </div>
+
 
         {/* ═══ Section 3: Option Groups ══════════════════════════════ */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -1044,26 +996,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       <Input value={v.sku} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, sku: e.target.value } : pv))} className="h-7 text-xs" placeholder="ไม่บังคับ" />
                     </div>
                     <div className="col-span-3 grid gap-1">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-[10px]">รูป Variant</Label>
-                        <span className="text-[10px] tabular-nums text-slate-400">{v.images.length} / 10</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {v.images.map((img, imgIdx) => (
-                          <div key={imgIdx} className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-slate-200">
-                            <img src={img.url} alt="" className="size-full object-cover" />
-                            <button type="button" className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-red-500 text-white" onClick={() => removeVariantImage(v.key, imgIdx)}><X className="size-2" /></button>
-                          </div>
-                        ))}
-                        {v.images.length < 10 ? (
-                          <label className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
-                            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.key, f); e.target.value = ""; }} />
-                            {uploadingVariantImage === v.key ? <Loader2 className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
-                          </label>
-                        ) : (
-                          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[10px] text-slate-400">ครบ</span>
-                        )}
-                      </div>
+                      <Label className="text-[10px]">รูป (Option Value)</Label>
+                      <p className="text-[10px] text-slate-400">รูปมาจากตัวเลือกสินค้า เช่น สีดำ → รูปดำ</p>
                     </div>
                   </div>
                 </div>
