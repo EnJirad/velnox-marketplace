@@ -139,22 +139,12 @@ export function ProductSelectionSheet({
   const needsVariant = hasOptionGroups && !allRequiredSelected;
 
   // Build a map: optionValueId (UUID) → first variant image URL
-  // This lets option cards show the variant image even though option values don't store images.
-  // Keyed by val.id (UUID) so option cards can look up directly.
+  // variantOptions stores UUIDs (option_value_id) so we can key directly by value.
   const optionValueImageMap = useMemo(() => {
     const map: Record<string, string> = {};
     const variants = (product as any).variants as Array<Record<string, any>> | undefined;
     const vOpts = (product as any).variantOptions as Record<string, Record<string, string>> | undefined;
-    const groups = optionGroups;
-    if (!Array.isArray(variants) || !vOpts || !Array.isArray(groups)) return map;
-    // Build reverse lookup: (groupId, textValue) → optionValueId (UUID)
-    const textToId: Record<string, Record<string, string>> = {};
-    for (const g of groups) {
-      textToId[g.id] = {};
-      for (const v of g.values) {
-        textToId[g.id][v.value] = v.id;
-      }
-    }
+    if (!Array.isArray(variants) || !vOpts) return map;
     for (const v of variants) {
       const imgs = (v as any).images as Array<{ url: string }> | undefined;
       if (!imgs || imgs.length === 0) continue;
@@ -162,10 +152,8 @@ export function ProductSelectionSheet({
       if (!imgUrl) continue;
       const vMapping = vOpts[v.id];
       if (!vMapping) continue;
-      // For each option value this variant maps to, store the image if not already set
-      for (const [groupId, textValue] of Object.entries(vMapping)) {
-        const valueId = textToId[groupId]?.[textValue];
-        if (valueId && !map[valueId]) map[valueId] = imgUrl;
+      for (const optionValueId of Object.values(vMapping)) {
+        if (!map[optionValueId]) map[optionValueId] = imgUrl;
       }
     }
     return map;

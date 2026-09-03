@@ -325,20 +325,11 @@ export default function ShopProductDetail() {
   /* ── Derived values ─────────────────────────────────────────────── */
 
   /* ── Build optionValueId → variant image map ────────────────────── */
-  // Keyed by val.id (UUID) so option cards can look up images directly.
+  // variantOptions stores UUIDs (option_value_id) so we can key directly by value.
   const optionValueImageMap = useMemo(() => {
     const map: Record<string, string> = {};
     const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
-    if (!Array.isArray(pVariants) || !optionGroups.length) return map;
-    // variantOptions[v.id][groupId] = text value (e.g. "ดำ", "AI Version")
-    // Build reverse lookup: textValue → optionValueId (UUID) for image map keyed by UUID
-    const textToId: Record<string, Record<string, string>> = {};
-    for (const g of optionGroups) {
-      textToId[g.id] = {};
-      for (const v of g.values ?? []) {
-        textToId[g.id][v.value] = v.id;
-      }
-    }
+    if (!Array.isArray(pVariants)) return map;
     for (const v of pVariants) {
       const imgs = (v as any).images as Array<{ url: string }> | undefined;
       if (!imgs || imgs.length === 0) continue;
@@ -346,14 +337,12 @@ export default function ShopProductDetail() {
       if (!imgUrl) continue;
       const vMapping = variantOptions[v.id] as Record<string, string> | undefined;
       if (!vMapping) continue;
-      for (const [groupId, textValue] of Object.entries(vMapping)) {
-        // textToId[groupId] maps text→UUID; we want to key by UUID
-        const valueId = textToId[groupId]?.[textValue];
-        if (valueId && !map[valueId]) map[valueId] = imgUrl;
+      for (const optionValueId of Object.values(vMapping)) {
+        if (!map[optionValueId]) map[optionValueId] = imgUrl;
       }
     }
     return map;
-  }, [product, variantOptions, optionGroups]);
+  }, [product, variantOptions]);
 
   // Gallery images: combine preview + variant + detail images
   const images = useMemo(() => {
