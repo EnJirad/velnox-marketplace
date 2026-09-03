@@ -330,7 +330,8 @@ export default function ShopProductDetail() {
     const map: Record<string, string> = {};
     const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
     if (!Array.isArray(pVariants) || !optionGroups.length) return map;
-    // Build reverse lookup: (groupId, textValue) → optionValueId (UUID)
+    // variantOptions[v.id][groupId] = text value (e.g. "ดำ", "AI Version")
+    // Build reverse lookup: textValue → optionValueId (UUID) for image map keyed by UUID
     const textToId: Record<string, Record<string, string>> = {};
     for (const g of optionGroups) {
       textToId[g.id] = {};
@@ -346,6 +347,7 @@ export default function ShopProductDetail() {
       const vMapping = variantOptions[v.id] as Record<string, string> | undefined;
       if (!vMapping) continue;
       for (const [groupId, textValue] of Object.entries(vMapping)) {
+        // textToId[groupId] maps text→UUID; we want to key by UUID
         const valueId = textToId[groupId]?.[textValue];
         if (valueId && !map[valueId]) map[valueId] = imgUrl;
       }
@@ -380,9 +382,10 @@ export default function ShopProductDetail() {
     // Fallback: option value images (if no variant images found)
     if (variantImgs.length === 0) {
       for (const group of optionGroups) {
-        const valId = selectedOptions[group.id];
-        if (!valId) continue;
-        const val = (group.values ?? []).find((v: any) => v.id === valId);
+        const selectedText = selectedOptions[group.id];
+        if (!selectedText) continue;
+        // selectedOptions now stores TEXT values — find matching option value
+        const val = (group.values ?? []).find((v: any) => v.value === selectedText || v.id === selectedText);
         const imgSrc = val?.imageUrl || optionValueImageMap[val?.id || ''];
         if (imgSrc) {
           variantImgs = [{
@@ -467,9 +470,9 @@ export default function ShopProductDetail() {
       label: val.label,
       imageUrl: val.imageUrl || optionValueImageMap[val.id] || null,
       groupId: firstGroup.id,
-      selected: selectedOptions[firstGroup.id] === val.id,
+      selected: selectedOptions[firstGroup.id] === val.value,
     }));
-  }, [optionGroups, selectedOptions]);
+  }, [optionGroups, selectedOptions, optionValueImageMap]);
 
   const totalOptionValues = useMemo(() => {
     return optionGroups.reduce((sum: number, g: any) => sum + (Array.isArray(g.values) ? g.values.length : 0), 0);
@@ -531,9 +534,10 @@ export default function ShopProductDetail() {
     if (!hasOptionGroups || Object.keys(selectedOptions).length === 0) return null;
     const parts: string[] = [];
     for (const group of optionGroups) {
-      const valId = selectedOptions[group.id];
-      if (valId) {
-        const val = group.values?.find((v: any) => v.id === valId);
+      const selectedText = selectedOptions[group.id];
+      if (selectedText) {
+        // selectedOptions now stores TEXT values — find matching option value
+        const val = group.values?.find((v: any) => v.value === selectedText || v.id === selectedText);
         if (val) parts.push(val.label || val.value);
       }
     }
@@ -809,8 +813,7 @@ export default function ShopProductDetail() {
                 <div className="flex flex-1 items-center gap-1.5 overflow-hidden">
                   {compactThumbnails.map((thumb: { id: string; label: string; imageUrl: string | null; groupId: string; selected: boolean }) => (
                     <span
-                      key={thumb.id}
-                      className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${selectedOptions[thumb.groupId] === thumb.id ? "border-[#10B981] ring-1 ring-[#10B981]/30" : "border-slate-200"}`}
+                      key={thumb.id}                        className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${thumb.selected ? "border-[#10B981] ring-1 ring-[#10B981]/30" : "border-slate-200"}`}
                     >
                       {thumb.imageUrl ? (
                         <img src={thumb.imageUrl} alt={thumb.label} className="size-full object-cover" />
@@ -1045,14 +1048,14 @@ export default function ShopProductDetail() {
                     </div>
                     <div className={`mt-2 flex flex-wrap ${compactSheet ? "gap-2" : "gap-3"}`}>
                       {(Array.isArray(group.values) ? group.values : []).map((val: any) => {
-                        const isSelected = selectedOptions[group.id] === val.id;
+                        const isSelected = selectedOptions[group.id] === val.value;
                         // Check in-stock availability using real variant combinations
                         const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
                         const vOptsMap = (product as any)?.variantOptions as Record<string, Record<string, string>> | undefined;
                         let valueInStock = true;
                         if (pVariants && vOptsMap) {
                           // Build candidate options: current selection + this candidate value
-                          const candidateOptions = { ...selectedOptions, [group.id]: val.id };
+                          const candidateOptions = { ...selectedOptions, [group.id]: val.value };
                           valueInStock = pVariants.some((v) => {
                             const vOpts = vOptsMap[v.id];
                             if (!vOpts) return false;
@@ -1070,7 +1073,7 @@ export default function ShopProductDetail() {
                             key={val.id}
                             type="button"
                             disabled={!valueInStock}
-                            onClick={() => handleOptionSelect(group.id, val.id)}
+                            onClick={() => handleOptionSelect(group.id, val.value)}
                             className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                               isSelected
                                 ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
