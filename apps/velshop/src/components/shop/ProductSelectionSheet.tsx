@@ -13,10 +13,13 @@ import {
 } from "@velnox/shared/components/ui/sheet";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
+import { ACTION_BUTTON_CLASSES, type SelectionEntryMode } from "@/lib/productActions";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
+import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useTracking } from "@velnox/shared/lib/track";
 import { useIsMobile } from "@velnox/shared/hooks/use-mobile";
 import {
+  CalendarClock,
   ChevronDown,
   ChevronUp,
   ImageOff,
@@ -24,8 +27,10 @@ import {
   Plus,
   ShoppingCart,
   Store,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 interface ProductSelectionSheetProps {
@@ -34,6 +39,13 @@ interface ProductSelectionSheetProps {
   onOpenChange: (open: boolean) => void;
   /** Optional ref to the cart icon element for fly animation. */
   cartIconRef?: React.RefObject<HTMLElement | null>;
+  /**
+   * How the sheet was opened. "options" (default) shows all three actions
+   * (Buy / Add to Cart / VelRepeat); a specific action shows only that one.
+   */
+  entryMode?: SelectionEntryMode;
+  /** Called when the user confirms VelRepeat from the sheet. */
+  onVelRepeat?: (product: StoreProduct) => void;
 }
 
 /**
@@ -49,11 +61,15 @@ export function ProductSelectionSheet({
   open,
   onOpenChange,
   cartIconRef,
+  entryMode = "options",
+  onVelRepeat,
 }: ProductSelectionSheetProps) {
   const { add } = useCart();
   const { t } = useLanguage();
   const { track } = useTracking();
   const isMobile = useIsMobile();
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   // ── State ─────────────────────────────────────────────────────
   const [nameExpanded, setNameExpanded] = useState(false);
@@ -137,6 +153,11 @@ export function ProductSelectionSheet({
   }, [resolvedStock, qty]);
   const outOfStock = resolvedStock <= 0;
   const needsVariant = hasOptionGroups && !allRequiredSelected;
+  const velrepeatAvailable = !!(
+    product?.vrepeatEnabled ||
+    product?.vrepeatWeeklyEnabled ||
+    product?.vrepeatMonthlyEnabled
+  );
 
   // Build a map: optionValueId (UUID) → first variant image URL
   // variantOptions stores UUIDs (option_value_id) so we can key directly by value.
@@ -195,30 +216,35 @@ export function ProductSelectionSheet({
   // ── Helpers ───────────────────────────────────────────────────
   const needsExpand = product.name.length > 60;
 
-  const handleAddToCart = useCallback(() => {
+  // Resolve variant option labels for cart display (shared by cart + buy)
+  const variantLabels = useMemo(() => {
+    if (!selectedVariant) return undefined;
+    const variantOptsMap = (product as any).variantOptions as
+      | Record<string, Record<string, string>>
+      | undefined;
+    if (!variantOptsMap?.[selectedVariant.id]) return undefined;
+    const labels: Record<string, string> = {};
+    for (const [groupId, valueId] of Object.entries(
+      variantOptsMap[selectedVariant.id],
+    )) {
+      const group = optionGroups?.find((g) => g.id === groupId);
+      const val = group?.values.find((v) => v.id === valueId);
+      if (group && val) labels[group.name] = val.label;
+    }
+    return labels;
+  }, [selectedVariant, product, optionGroups]);
+
+  const validateSelection = useCallback(() => {
     if (needsVariant) {
       toast.error(t("productDetail.selectOptions"));
-      return;
+      return false;
     }
-    if (outOfStock) return;
+    if (outOfStock) return false;
+    return true;
+  }, [needsVariant, outOfStock, t]);
 
-    // Resolve variant option labels for cart display
-    let variantLabels: Record<string, string> | undefined;
-    if (selectedVariant) {
-      const variantOptsMap = (product as any).variantOptions as
-        | Record<string, Record<string, string>>
-        | undefined;
-      if (variantOptsMap?.[selectedVariant.id]) {
-        variantLabels = {};
-        for (const [groupId, valueId] of Object.entries(
-          variantOptsMap[selectedVariant.id],
-        )) {
-          const group = optionGroups?.find((g) => g.id === groupId);
-          const val = group?.values.find((v) => v.id === valueId);
-          if (group && val) variantLabels[group.name] = val.label;
-        }
-      }
-    }
+  const handleAddToCart = useCallback((mode: "cart" | "buy" = "cart") => {
+    if (!validateSelection()) return;
 
     track("CART_ADD", {
       entityId: product.id,
@@ -239,6 +265,22 @@ export function ProductSelectionSheet({
       },
       qty,
     );
+
+    // Buy now: add to cart then jump straight to checkout
+    if (mode === "buy") {
+      onOpenChange(false);
+      setTimeout(() => {
+        navigate("/checkout", {
+          state: {
+            buyNow: true,
+            buyNowProductId: product.id,
+            buyNowVariantId: selectedVariant?.id ?? null,
+            buyNowQty: qty,
+          },
+        });
+      }, 300);
+      return;
+    }
 
     // Capture source position BEFORE closing sheet (DOM may unmount)
     const addToCartBtn = (document.querySelector('[data-add-to-cart]') as HTMLElement)?.getBoundingClientRect();
@@ -291,16 +333,36 @@ export function ProductSelectionSheet({
     selectedVariant,
     resolvedPrice,
     resolvedStock,
-    outOfStock,
-    needsVariant,
     activeImage,
     optionGroups,
+    variantLabels,
+    validateSelection,
     add,
     onOpenChange,
     cartIconRef,
     track,
     t,
+    navigate,
   ]);
+
+  const handleBuyNow = useCallback(() => {
+    if (!validateSelection()) return;
+    if (!isAuthenticated) {
+      navigate("/auth?returnTo=" + encodeURIComponent(window.location.pathname));
+      return;
+    }
+    handleAddToCart("buy");
+  }, [validateSelection, isAuthenticated, navigate, handleAddToCart]);
+
+  const handleVelRepeat = useCallback(() => {
+    if (!validateSelection()) return;
+    if (!isAuthenticated) {
+      navigate("/auth?returnTo=" + encodeURIComponent(window.location.pathname));
+      return;
+    }
+    onOpenChange(false);
+    onVelRepeat?.(product);
+  }, [validateSelection, isAuthenticated, navigate, onOpenChange, onVelRepeat, product]);
 
   const handleOptionSelect = (groupId: string, valueId: string) => {
     setOptionSelections((prev) => ({
@@ -584,7 +646,7 @@ export function ProductSelectionSheet({
         )}
       </div>
 
-      {/* Sticky add-to-cart bar */}
+      {/* Sticky action bar — one action per entry mode; all three in “options” mode */}
       <div className="border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
         {needsVariant ? (
           <Button
@@ -601,17 +663,62 @@ export function ProductSelectionSheet({
           >
             {t("product.outOfStock")}
           </Button>
-        ) : (
+        ) : entryMode === "buy" ? (
+          <Button
+            className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.buy}`}
+            onClick={handleBuyNow}
+          >
+            <Zap className="size-4" />
+            {t("productDetail.buyNow")} · {formatBaht(resolvedPrice * qty)}
+          </Button>
+        ) : entryMode === "velrepeat" ? (
+          <Button
+            className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
+            onClick={handleVelRepeat}
+          >
+            <CalendarClock className="size-4" />
+            VelRepeat · {formatBaht(resolvedPrice * qty)}
+          </Button>
+        ) : entryMode === "cart" ? (
           <Button
             data-add-to-cart
-            className="w-full gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
-            onClick={handleAddToCart}
+            className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.cart}`}
+            onClick={() => handleAddToCart("cart")}
           >
             <ShoppingCart className="size-4" />
             {t("productDetail.addToCartWithTotal", {
               total: formatBaht(resolvedPrice * qty),
             })}
           </Button>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <Button
+              className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.buy}`}
+              onClick={handleBuyNow}
+            >
+              <Zap className="size-4" />
+              {t("productDetail.buyNow")} · {formatBaht(resolvedPrice * qty)}
+            </Button>
+            <Button
+              data-add-to-cart
+              className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.cart}`}
+              onClick={() => handleAddToCart("cart")}
+            >
+              <ShoppingCart className="size-4" />
+              {t("productDetail.addToCartWithTotal", {
+                total: formatBaht(resolvedPrice * qty),
+              })}
+            </Button>
+            {velrepeatAvailable && (
+              <Button
+                className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
+                onClick={handleVelRepeat}
+              >
+                <CalendarClock className="size-4" />
+                VelRepeat · {formatBaht(resolvedPrice * qty)}
+              </Button>
+            )}
+          </div>
         )}
       </div>
     </div>

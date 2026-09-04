@@ -373,6 +373,41 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-04 — VelShop Product Actions: i18n + Selection Sheet Entry Modes
+
+**Problem:**
+1. `productDetail.addToCart` was reported rendering as a raw translation key on the Add to Cart button (missing-key fallback in `t()` returns the key itself).
+2. The Selection Sheet confirm button did not match the action that opened the sheet — Buy Now rendered green instead of the dark Buy color, and opening the sheet from the option selector showed only Add to Cart instead of all three actions.
+3. Hardcoded Thai/English user-facing strings in Product Detail (`เพิ่มลงตะกร้า`, `ตะกร้า`, aria labels) and VelRepeat page (`"Weekly"`, `"Monthly"` fallbacks).
+
+**Root cause of the raw key:** the `productDetail` dictionary had only `addToCartWithTotal`; any `t("productDetail.addToCart")` call (or stale bundle) resolved to the key itself. The key now exists in TH/EN/MY and the hardcoded button text was replaced with `t()` calls.
+
+**What changed:**
+- **i18n dictionaries** (`packages/shared/src/lib/i18n/locales/`): added missing keys in TH/EN (+ Burmese via `myShopPatch` in `index.tsx`):
+  - `productDetail.addToCart`, `productDetail.addToCartSm`, `expandOptions`, `collapseOptions`, `name`, `category`, `supplier`
+  - `product.ariaWishlist`, `shopDetail.title`
+  - `velrepeat.weekly`, `velrepeat.monthly`, `velrepeat.completedHint`, `velrepeat.viewSchedule`
+  - `cartPage.selectAll`, `cartPage.deselectAll`, `cartPage.checkoutAll` (MY only)
+- **`apps/velshop/src/lib/productActions.ts` (NEW):** single source of truth for action → semantic button classes:
+  - `buy` → `bg-slate-900 text-white hover:bg-slate-800` (dark/primary)
+  - `cart` → `bg-[#10B981] text-white hover:bg-emerald-600` (Velnox green)
+  - `velrepeat` → `border border-[#10B981]/30 bg-[#ECFDF5] text-[#10B981] hover:bg-[#10B981]/10` (brand tint)
+  - Trigger buttons on Product Detail and the sheet confirm buttons both use these constants, so colors can never drift apart.
+- **`ShopProductDetail.tsx`:** sheet footer now renders per entry mode (`pendingAction`): `buy` → black Buy · total, `cart` → green Add to Cart · total, `velrepeat` → brand VelRepeat · total, `options` (opened from the option selector) → all three actions stacked. `handleSheetConfirm(actionOverride?)` reuses the same business logic — no new handlers.
+- **`ProductSelectionSheet.tsx`:** new `entryMode` prop (`"options" | "buy" | "cart" | "velrepeat"`, default `"options"`) + optional `onVelRepeat` callback. Buy mode reuses the existing add-to-cart logic then navigates to `/checkout` with `buyNow` state; VelRepeat closes the sheet and calls `onVelRepeat`.
+- **`ShopDetail.tsx`:** passes `entryMode="options"` and wires `onVelRepeat` to a `SubscriptionDialog` (same pattern as ShopHome).
+- **`VelRepeatPage.tsx`:** removed hardcoded English fallbacks (`|| "Weekly"` etc.) — keys now exist.
+
+**i18n reactivity:** `t()` is rebuilt via `useMemo` when the locale changes, so TH/EN/MY switch instantly without refresh; no component caches translations in state.
+
+**Entry mode behaviors (regression-protected):**
+- `options` → Buy (black) + Add to Cart (green) + VelRepeat (brand)
+- `buy` → Buy only
+- `cart` → Add to Cart only
+- `velrepeat` → VelRepeat only
+
+**Verification:** all 4 apps typecheck; VelShop `vite build` passes; `git diff --check` clean; i18n parity check clean (only regex false-positives remain, e.g. `openVariantSheet("buy")`).
+
 ### 2026-09-02 — Backend Performance Optimization + AI_RULES.md Rewrite
 
 **Problem:** API/DB query latency of 1-2 seconds on key endpoints, especially revoked_tokens, addresses, wishlist, seller/shop, products, /api/auth/me, and auth/user resolution.

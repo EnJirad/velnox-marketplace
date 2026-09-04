@@ -2,6 +2,7 @@ import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { ProductSelectionSheet } from "@/components/shop/ProductSelectionSheet";
+import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
 import { useLanguage } from "@/lib/i18n";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -57,6 +58,7 @@ export default function ShopDetail() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<string>("newest");
   const [selectedProduct, setSelectedProduct] = useState<StoreProduct | null>(null);
+  const [subProduct, setSubProduct] = useState<StoreProduct | null>(null);
 
   // Load wishlist if authenticated
   useEffect(() => {
@@ -365,6 +367,13 @@ export default function ShopDetail() {
         product={selectedProduct}
         open={selectedProduct !== null}
         onOpenChange={(open) => { if (!open) setSelectedProduct(null); }}
+        entryMode="options"
+        onVelRepeat={(p) => setSubProduct(p)}
+      />
+      <SubscriptionDialog
+        product={subProduct}
+        open={subProduct !== null}
+        onOpenChange={(open) => { if (!open) setSubProduct(null); }}
       />
       <ShopFooter />
     </div>

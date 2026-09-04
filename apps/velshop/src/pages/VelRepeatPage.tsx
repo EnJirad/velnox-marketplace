@@ -129,8 +129,8 @@ export default function VelRepeatPage() {
 
   const packageTypeLabel = (type: string) => {
     switch (type) {
-      case "weekly": return t("velrepeat.weekly") || "Weekly";
-      case "monthly": return t("velrepeat.monthly") || "Monthly";
+      case "weekly": return t("velrepeat.weekly");
+      case "monthly": return t("velrepeat.monthly");
       default: return type;
     }
   };
@@ -232,7 +232,7 @@ export default function VelRepeatPage() {
                       </div>
                       <p className="mt-1 text-[11px] text-slate-400">
                         {pkg.status === "completed"
-                          ? t("velrepeat.completedHint") || "All deliveries completed"
+                          ? t("velrepeat.completedHint")
                           : pkg.status === "active"
                             ? `${pkg.quantityDelivered}/${pkg.quantityTotal} delivered`
                             : t("velrepeat.pausedHint")}
@@ -272,7 +272,7 @@ export default function VelRepeatPage() {
                             className="gap-1.5 border-slate-200 text-slate-600"
                             onClick={() => setExpandedId(isExpanded ? null : pkg.id)}
                           >
-                            {t("velrepeat.viewSchedule") || "View Schedule"}
+                            {t("velrepeat.viewSchedule")}
                           </Button>
                           <Button
                             variant="ghost"

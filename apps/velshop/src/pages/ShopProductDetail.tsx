@@ -19,6 +19,7 @@ import {
   type StoreProduct,
 } from "@velnox/shared/lib/commerce";
 import { setSeo } from "@/lib/seo";
+import { ACTION_BUTTON_CLASSES } from "@/lib/productActions";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   ArrowLeft,
@@ -508,6 +509,11 @@ export default function ShopProductDetail() {
     return optionGroups.every((g: any) => !g.required || selectedOptions[g.id]);
   }, [hasOptionGroups, optionGroups, selectedOptions]);
   const needsVariant = hasOptionGroups && !allRequiredSelected;
+  const velrepeatAvailable = !!(
+    product?.vrepeatEnabled ||
+    product?.vrepeatWeeklyEnabled ||
+    product?.vrepeatMonthlyEnabled
+  );
 
   /* ── SEO ────────────────────────────────────────────────────────── */
 
@@ -681,7 +687,7 @@ export default function ShopProductDetail() {
         variantId: selectedVariant?.id ?? null,
       }, sheetQty);
       fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { qty: sheetQty }));
+      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
       setVariantSheetOpen(false);
       setPendingAction(null);
     } else if (action === "buy") {
@@ -726,7 +732,7 @@ export default function ShopProductDetail() {
         variantId: selectedVariant?.id ?? null,
       }, sheetQty);
       fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { qty: sheetQty }));
+      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
     } else if (pendingAction === "buy") {
       add({
         id: product.id, name: product.name, unit: product.unit,
@@ -976,7 +982,7 @@ export default function ShopProductDetail() {
               <div className="flex gap-2">
                 <Button
                   ref={addBtnRef}
-                  className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                  className={`flex-1 gap-1.5 ${ACTION_BUTTON_CLASSES.buy}`}
                   onClick={handleBuyNow}
                   disabled={outOfStock && !needsVariant}
                 >
@@ -984,19 +990,18 @@ export default function ShopProductDetail() {
                   {t("productDetail.buyNow")}
                 </Button>
                 <Button
-                  className="flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+                  className={`flex-1 gap-1.5 ${ACTION_BUTTON_CLASSES.cart}`}
                   onClick={handleAddToCart}
                   disabled={outOfStock && !needsVariant}
                 >
                   <ShoppingCart className="size-4" />
-                  <span className="hidden sm:inline">{t("product.addToCart")}</span>
-                  <span className="sm:hidden">{t("product.addToCartSm")}</span>
+                  <span className="hidden sm:inline">{t("productDetail.addToCart")}</span>
+                  <span className="sm:hidden">{t("productDetail.addToCartSm")}</span>
                 </Button>
               </div>
-              {(product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) && (
+              {velrepeatAvailable && (
                 <Button
-                  variant="outline"
-                  className="mt-2 w-full gap-1.5 border-[#10B981]/30 text-[#10B981] hover:bg-[#ECFDF5] hover:text-emerald-700"
+                  className={`mt-2 w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
                   onClick={handleVelRepeat}
                 >
                   <CalendarClock className="size-4" />
@@ -1035,10 +1040,10 @@ export default function ShopProductDetail() {
                 <h3 className="mb-3 text-base font-bold text-slate-900">{t("productDetail.detailsTabTitle")}</h3>
                 <ExpandableDescription text={product.description ?? ""} t={t} />
                 <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-100 pt-5 text-sm">
-                  <div><span className="text-slate-400">Name</span><p className="mt-0.5 font-medium text-slate-900">{product.name}</p></div>
+                  <div><span className="text-slate-400">{t("productDetail.name")}</span><p className="mt-0.5 font-medium text-slate-900">{product.name}</p></div>
                   <div><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><p className="mt-0.5 font-medium text-slate-900">{t("productDetail.thailand")}</p></div>
-                  <div><span className="text-slate-400">Category</span><p className="mt-0.5 font-medium text-slate-900">{categoryMeta?.label ?? product.category}</p></div>
-                  {product.supplier && <div><span className="text-slate-400">Supplier</span><p className="mt-0.5 font-medium text-slate-900">{product.supplier}</p></div>}
+                  <div><span className="text-slate-400">{t("productDetail.category")}</span><p className="mt-0.5 font-medium text-slate-900">{categoryMeta?.label ?? product.category}</p></div>
+                  {product.supplier && <div><span className="text-slate-400">{t("productDetail.supplier")}</span><p className="mt-0.5 font-medium text-slate-900">{product.supplier}</p></div>}
                 </div>
               </div>
             )}
@@ -1164,7 +1169,7 @@ export default function ShopProductDetail() {
                           type="button"
                           onClick={() => setCompactSheet((c) => !c)}
                           className="flex size-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                          aria-label={compactSheet ? "ขยายขนาดตัวเลือก" : "ย่อขนาดตัวเลือก"}
+                          aria-label={compactSheet ? t("productDetail.expandOptions") : t("productDetail.collapseOptions")}
                         >
                           {compactSheet ? <Maximize2 className="size-3.5" /> : <Minimize2 className="size-3.5" />}
                         </button>
@@ -1293,7 +1298,7 @@ export default function ShopProductDetail() {
             )}
           </div>
 
-          {/* Sticky confirm button */}
+          {/* Sticky confirm area — one action per entry mode; all three in “options” mode */}
           <div className="border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
             {outOfStock ? (
               <Button className="w-full bg-slate-100 text-slate-400" disabled>{t("product.outOfStock")}</Button>
@@ -1302,24 +1307,23 @@ export default function ShopProductDetail() {
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
                   <Button
-                    className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                    className={`flex-1 gap-1.5 ${ACTION_BUTTON_CLASSES.buy}`}
                     onClick={() => handleSheetAction("buy")}
                   >
                     <Zap className="size-4" />
                     {t("productDetail.buyNow")}
                   </Button>
                   <Button
-                    className="flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+                    className={`flex-1 gap-1.5 ${ACTION_BUTTON_CLASSES.cart}`}
                     onClick={() => handleSheetAction("cart")}
                   >
                     <ShoppingCart className="size-4" />
                     {t("productDetail.addToCart")}
                   </Button>
                 </div>
-                {(product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) && (
+                {velrepeatAvailable && (
                   <Button
-                    variant="outline"
-                    className="w-full gap-1.5 border-[#10B981]/30 text-[#10B981] hover:bg-[#ECFDF5] hover:text-emerald-700"
+                    className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
                     onClick={() => handleSheetAction("velrepeat")}
                   >
                     <CalendarClock className="size-4" />
@@ -1329,12 +1333,13 @@ export default function ShopProductDetail() {
               </div>
             ) : (
               /* ── Direct mode: show single action button ── */
+
               <Button
-                className={`w-full gap-1.5 ${pendingAction === "velrepeat" ? "border border-[#10B981]/30 bg-[#ECFDF5] text-[#10B981] hover:bg-[#10B981]/10" : "bg-[#10B981] text-white hover:bg-emerald-600"}`}
-                onClick={handleSheetConfirm}
+                className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES[pendingAction]}`}
+                onClick={() => handleSheetConfirm()}
               >
                 {pendingAction === "buy" ? (
-                  <>{t("productDetail.buyNow")} · {formatBaht(displayPrice * sheetQty)}</>
+                  <><Zap className="size-4" />{t("productDetail.buyNow")} · {formatBaht(displayPrice * sheetQty)}</>
                 ) : pendingAction === "velrepeat" ? (
                   <>
                     <CalendarClock className="size-4" />
