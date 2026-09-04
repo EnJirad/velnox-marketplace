@@ -1923,3 +1923,42 @@ Fallback: product gallery
 - `apps/velshop/src/pages/ShopProductDetail.tsx` — Per-option-value stock display
 - `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` — Per-option-value stock display
 - `apps/velshop/src/components/shop/ProductCard.tsx` — Uses `inventory.available` (backend-computed)
+
+### 2026-09-04 — Product Detail: Option Image → Main Image + Unified Gallery + Scroll Reset
+
+**Problem:** Three issues in the VelShop Product Detail page:
+1. When user selected an IMAGE option (e.g. Color), the main product image did NOT change — it stayed on the default/featured image
+2. Gallery thumbnails were split into separate product/variant sections instead of a unified carousel
+3. On browser refresh, the page scrolled to the previous position instead of starting at the top
+
+**Root Cause:**
+
+1. **Main image**: No connection between option value `imageUrl` and the main display image. The `active` image was derived from `images[activeIndex]` which only tracked gallery thumbnails — not option selections.
+
+2. **Gallery ordering**: The old code built two separate arrays (`productThumbnails` + `variantThumbsWithActive`) with a hardcoded divider at `productThumbnails.length`, rather than using a unified ordered list.
+
+3. **Scroll**: Browser default scroll restoration kicks in on refresh, but lazy-loaded content shifts positions.
+
+**Fixes:**
+
+1. **`optionValueImageMap`** — Combined map from two sources:
+   - Variant images → option value IDs (variant data mapping)
+   - Option group values → imageUrl (option value data mapping)
+   
+2. **`selectedOptionImages`** — Deterministic list of images for currently selected option values
+
+3. **`mainDisplayImage`** — Independent of gallery `activeIndex`. Priority chain:
+   - Selected IMAGE option value → variant images → option value images → product preview
+   
+4. **Gallery `images` memo** — Now tags each entry with a `group` number (0=gallery, 1=variant, 2=detail) and sorts by `sortOrder` within each group
+
+5. **Thumbnail dividers** — Render at group boundaries (where `group` number changes), not hardcoded indices
+
+6. **Scroll reset** — `window.scrollTo(0, 0)` when product loads after `loading` transitions to false
+
+**Files Changed:**
+- `apps/velshop/src/pages/ShopProductDetail.tsx` — optionValueImageMap, selectedOptionImages, mainDisplayImage, unified gallery, scroll reset
+
+**Typecheck:** ✅ VelShop pass, VelSeller pass
+**Build:** ✅ VelShop pass
+**Commit:** `872cb12` — pushed to main
