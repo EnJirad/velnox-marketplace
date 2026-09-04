@@ -2006,3 +2006,44 @@ Fallback: product gallery
 **Typecheck:** ✅ VelShop pass, VelSeller pass
 **Build:** ✅ VelShop pass
 **Commit:** `a2441ef` — pushed to main
+
+### 2026-09-04 — Selection Sheet: 4 Entry Modes with Explicit Actions
+
+**Problem:** When user opened the selection sheet from "ตัวเลือกสินค้า" (options), the sheet only showed a single confirm button defaulting to Cart. User expected all 3 actions (Buy, Cart, VelRepeat) to be available after selecting options.
+
+**Root Cause:** The confirm button rendering used `pendingAction` to determine which single button to show. When `pendingAction` was null (options mode), it defaulted to Cart button.
+
+**Fix:**
+1. **Added `handleSheetAction(action)`** — new handler for options mode. Validates required options, resolves variant UUID, checks stock, then executes the selected action directly. Reuses existing `add()`, `navigate()`, `fly()`, `setSubOpen()` handlers.
+
+2. **Updated confirm button UI** — Three-way conditional:
+   - `pendingAction === null` → 3-button grid (Buy + Cart on row 1, VelRepeat on row 2)
+   - `pendingAction === "buy"` → single Buy button
+   - `pendingAction === "cart"` → single Cart button  
+   - `pendingAction === "velrepeat"` → single VelRepeat button
+
+3. **Removed `outOfStock` early return** from `handleSheetConfirm` — now each action handles stock validation individually.
+
+**Entry Modes:**
+| Entry | pendingAction | Sheet Shows |
+|-------|---------------|-------------|
+| ตัวเลือกสินค้า | null | Buy + Cart + VelRepeat |
+| ซื้อสินค้า | "buy" | Buy only |
+| เพิ่มลงตะกร้า | "cart" | Cart only |
+| ซื้อซ้ำ | "velrepeat" | VelRepeat only |
+
+**Preserved:**
+- UUID-based variant resolution (`variantOptions[v.id][gId] === selectedOptions[gId]`)
+- Variant stock system (`selectedVariant.stock` as source of truth)
+- Existing Buy/Cart/VelRepeat handlers (reused, not duplicated)
+- Gallery state architecture (`optionOverrideIndex` + `activeIndex` → `mainImage`)
+- Scroll restoration (`history.scrollRestoration = 'manual'`)
+- IMAGE/TEXT option display types
+- SubscriptionDialog for VelRepeat
+
+**Files Changed:**
+- `apps/velshop/src/pages/ShopProductDetail.tsx` — +82/-3 lines
+
+**Typecheck:** ✅ VelShop pass, VelSeller pass
+**Build:** ✅ VelShop pass
+**Commit:** `2e4ac6f` — pushed to main
