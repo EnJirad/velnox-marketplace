@@ -1962,3 +1962,47 @@ Fallback: product gallery
 **Typecheck:** ✅ VelShop pass, VelSeller pass
 **Build:** ✅ VelShop pass
 **Commit:** `872cb12` — pushed to main
+
+### 2026-09-04 — Unified Product Gallery State + Scroll Restoration
+
+**Problem:** Main image and gallery had two independent state sources (`mainDisplayImage` + `activeIndex`), causing desync. When user selected an option, the main image changed but gallery index didn't sync. When user clicked a thumbnail, main image didn't change because `mainDisplayImage` took priority. On refresh, page scrolled to previous position.
+
+**Root Cause:**
+1. `mainDisplayImage` was a separate useMemo that always took priority over `activeIndex`, so gallery navigation was invisible when an option was selected
+2. No sync between option selection and gallery index
+3. `window.scrollTo(0, 0)` with `[loading, product]` deps doesn't handle back/forward navigation properly
+
+**Fixes:**
+1. **Replaced dual-state with unified `mainImage`:**
+   - Removed `mainDisplayImage` (4-level priority chain)
+   - Added `optionOverrideIndex` state — `null` = gallery drives, number = option image shows
+   - `mainImage` memo: `optionOverrideIndex !== null` → option image, else → `images[activeIndex]?.img`
+
+2. **Option selection sync:**
+   - `handleOptionSelect` now sets `optionOverrideIndex = 0` (activates option image)
+   - Sync effect finds matching image URL in gallery and updates `activeIndex`
+
+3. **Thumbnail click override:**
+   - Clicking thumbnail sets `setOptionOverrideIndex(null)` — gallery drives main image
+   - Swiping (mobile) will similarly clear override via the same mechanism
+
+4. **Scroll restoration:**
+   - Sets `history.scrollRestoration = 'manual'` on mount
+   - `window.scrollTo({ top: 0, behavior: 'instant' })` on fresh navigation
+   - Added `productId` to deps so it only fires on new product loads
+
+**Preserved:**
+- UUID-based variant selection (`optionValueImageMap[val.id]`)
+- Variant stock system (variant.stock as source of truth)
+- Option availability logic (candidate options + variant matching)
+- Action-aware sheet (buy/cart/velrepeat entry modes)
+- IMAGE/TEXT option display types
+- Unified gallery carousel (preview → variant → detail)
+- Thumbnail dividers at group boundaries
+
+**Files Changed:**
+- `apps/velshop/src/pages/ShopProductDetail.tsx` — Removed 63 lines, added 50 lines (net -13)
+
+**Typecheck:** ✅ VelShop pass, VelSeller pass
+**Build:** ✅ VelShop pass
+**Commit:** `a2441ef` — pushed to main
