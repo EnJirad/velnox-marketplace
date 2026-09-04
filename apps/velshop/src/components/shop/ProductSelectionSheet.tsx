@@ -284,7 +284,7 @@ export function ProductSelectionSheet({
       }, 650);
     }
 
-    toast.success(t("productDetail.addedToast", { name: product.name, qty }));
+    toast.success(t("productDetail.addedToast", { qty }));
   }, [
     product,
     qty,

@@ -2047,3 +2047,42 @@ Fallback: product gallery
 **Typecheck:** ✅ VelShop pass, VelSeller pass
 **Build:** ✅ VelShop pass
 **Commit:** `2e4ac6f` — pushed to main
+
+### 2026-09-04 — i18n Audit: MY cartPage Parity + i18n:check Script + Compact Cart Toasts
+
+**Audit result (runtime check via Bun import of merged dictionaries):**
+- TH=835, EN=835, MY=835 keys — full parity (the earlier "181 missing" was a false alarm:
+  `locales/index.ts` merges `myAuthPatch`/`myShopPatch` into MY at runtime; raw-file regex
+  audits miss those keys).
+- Real gap found and fixed: MY `cartPage` was missing 5 keys actively used by ShopCart's
+  multi-select checkout (`selectAll`, `deselectAll`, `selectedItems`, `checkoutSelected`,
+  `checkoutAll`) — Burmese users saw raw keys like `cartPage.checkoutAll`.
+
+**Changes:**
+1. `packages/shared/src/lib/i18n/locales/my.ts`
+   - Added 5 missing `cartPage` keys (real Burmese translations, not TH copies).
+2. `packages/shared/scripts/i18n-check.ts` (NEW) + `bun run i18n:check` (root package.json)
+   - Automated parity check: imports the *merged* runtime dictionaries, validates that
+     th/en/my have identical key sets AND identical interpolation variables per key.
+     Exit 1 on failure — safe for CI. Run before any locale PR.
+3. Notification UX (Phase 3 of audit): routine add-to-cart success toasts no longer embed
+   the full product name (long names ballooned the toast). Compacted in all 3 locales:
+   - `productDetail.addedToast` → "เพิ่มลงตะกร้าแล้ว (×{qty})" (keeps qty)
+   - `cart.added`, `shopDetail.added`, `wishlist.added` → plain "เพิ่มลงตะกร้าแล้ว"
+   - Updated 7 call sites to drop the now-unused `{name}` interpolation:
+     ProductDetailModal, ProductSelectionSheet, ShopDetail, ShopProductDetail (×2),
+     ShopProducts, ShopWishlist.
+   - Error/validation toasts unchanged (they are actionable user feedback).
+
+**Backend performance (verified, no change needed):**
+- Product detail hot path already runs shop info + option groups + attributes + variant
+  mappings via `Promise.allSettled`; `loadProductExtras` batches images/inventory/variants/
+  detail images/variant images in one `Promise.allSettled`; option values batched per
+  product (no N+1). Variant auto-backfill remains a repair path, not the primary flow.
+
+**Regression protection:** UUID-based variant resolution, variant-stock source of truth,
+option image → main image, unified gallery, scroll restoration, 4 selection-sheet entry
+modes — all untouched.
+
+**Verification:** ✅ bun run i18n:check (835×3 parity) · ✅ typecheck velshop/velseller/
+velcenter/velnox/backend · ✅ velshop build

@@ -576,7 +576,7 @@ export default function ShopProducts() {
                             { id: p.id, name: p.name, unit: p.unit, price: p.price, stock: available },
                             1,
                           );
-                          toast.success(t("cart.added", { name: p.name }));
+                          toast.success(t("cart.added"));
                         }}
                         wishlisted={wishlistIds.has(product.id)}
                         onWishlist={handleWishlist}

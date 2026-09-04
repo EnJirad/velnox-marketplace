@@ -129,7 +129,7 @@ export default function ShopDetail() {
       { id: product.id, name: product.name, unit: product.unit, price: product.price, stock: product.inventory?.available ?? product.inventory?.quantity ?? 0 },
       1,
     );
-    toast.success(t("shopDetail.added", { name: product.name }));
+    toast.success(t("shopDetail.added"));
   };
 
   // Filter + sort products

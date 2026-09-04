@@ -74,7 +74,7 @@ export function ProductDetailModal({ product, open, onOpenChange, onSubscribe }:
       },
       qty,
     );
-    toast.success(t("productDetail.addedToast", { name: product.name, qty }));
+    toast.success(t("productDetail.addedToast", { qty }));
   };
 
   return (

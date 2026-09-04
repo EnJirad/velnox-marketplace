@@ -681,7 +681,7 @@ export default function ShopProductDetail() {
         variantId: selectedVariant?.id ?? null,
       }, sheetQty);
       fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
+      toast.success(t("productDetail.addedToast", { qty: sheetQty }));
       setVariantSheetOpen(false);
       setPendingAction(null);
     } else if (action === "buy") {
@@ -726,7 +726,7 @@ export default function ShopProductDetail() {
         variantId: selectedVariant?.id ?? null,
       }, sheetQty);
       fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
+      toast.success(t("productDetail.addedToast", { qty: sheetQty }));
     } else if (pendingAction === "buy") {
       add({
         id: product.id, name: product.name, unit: product.unit,

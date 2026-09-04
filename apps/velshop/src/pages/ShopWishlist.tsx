@@ -74,7 +74,7 @@ export default function ShopWishlist() {
       { id: product.id, name: product.name, unit: product.unit, price: product.price, stock: product.inventory?.available ?? product.inventory?.quantity ?? 0 },
       1,
     );
-    toast.success(t("wishlist.added", { name: product.name }));
+    toast.success(t("wishlist.added"));
   };
 
   return (

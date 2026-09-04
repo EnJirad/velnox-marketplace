@@ -24,6 +24,7 @@
     "db:smoke": "echo 'DB smoke test placeholder'",
     "db:consistency": "echo 'DB consistency check placeholder'",
     "typecheck": "bun --filter '@velnox/velshop' typecheck && bun --filter '@velnox/velseller' typecheck && bun --filter '@velnox/velcenter' typecheck && bun --filter '@velnox/velnox' typecheck",
+    "i18n:check": "bun packages/shared/scripts/i18n-check.ts",
     "test": "echo 'Tests not yet configured'",
     "lint": "echo 'Lint not yet configured'",
     "format": "echo 'Format not yet configured'"
