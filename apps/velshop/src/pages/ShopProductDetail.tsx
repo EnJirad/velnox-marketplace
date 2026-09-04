@@ -494,6 +494,17 @@ export default function ShopProductDetail() {
       setActiveIndex(idx);
     }
   }, [selectedOptions, optionValueImageMap, images, optionGroups, product]);
+
+  /* ── Cart image: first IMAGE option value image, fallback to product image ── */
+  const cartImageUrl = useMemo(() => {
+    for (const group of optionGroups) {
+      if (group.displayType !== "image") continue;
+      const valId = selectedOptions[group.id];
+      if (valId && optionValueImageMap[valId]) return optionValueImageMap[valId];
+    }
+    return product?.images?.[0]?.url ?? product?.primaryImage?.url ?? undefined;
+  }, [optionGroups, selectedOptions, optionValueImageMap, product]);
+
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
   const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
@@ -685,6 +696,7 @@ export default function ShopProductDetail() {
         id: product.id, name: product.name, unit: product.unit,
         price: displayPrice, stock: displayStock,
         variantId: selectedVariant?.id ?? null,
+        imageUrl: cartImageUrl,
       }, sheetQty);
       fly(addBtnRef.current);
       toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
@@ -695,6 +707,7 @@ export default function ShopProductDetail() {
         id: product.id, name: product.name, unit: product.unit,
         price: displayPrice, stock: displayStock,
         variantId: selectedVariant?.id ?? null,
+        imageUrl: cartImageUrl,
       }, sheetQty);
       setTimeout(() => {
         navigate("/checkout", {
@@ -730,6 +743,7 @@ export default function ShopProductDetail() {
         id: product.id, name: product.name, unit: product.unit,
         price: displayPrice, stock: displayStock,
         variantId: selectedVariant?.id ?? null,
+        imageUrl: cartImageUrl,
       }, sheetQty);
       fly(addBtnRef.current);
       toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
@@ -738,6 +752,7 @@ export default function ShopProductDetail() {
         id: product.id, name: product.name, unit: product.unit,
         price: displayPrice, stock: displayStock,
         variantId: selectedVariant?.id ?? null,
+        imageUrl: cartImageUrl,
       }, sheetQty);
       setTimeout(() => {
         navigate("/checkout", {

@@ -70,7 +70,15 @@ const CART_ITEMS_QUERY_FULL = `
        JOIN product_option_groups pog ON pov.option_group_id = pog.id
        WHERE pvv.variant_id = ci.variant_id),
       ''
-    ) AS variant_option_labels
+    ) AS variant_option_labels,
+    (SELECT pov.image_url
+     FROM product_variant_values pvv
+     JOIN product_option_values pov ON pvv.option_value_id = pov.id
+     JOIN product_option_groups pog ON pov.option_group_id = pog.id
+     WHERE pvv.variant_id = ci.variant_id
+       AND pog.display_type = 'image'
+       AND pov.image_url IS NOT NULL AND pov.image_url != ''
+     ORDER BY pog.sort_order LIMIT 1) AS variant_option_image_url
   FROM cart_items ci
   JOIN products p ON ci.product_id = p.id
   LEFT JOIN inventory i ON i.product_id = p.id
@@ -86,7 +94,15 @@ const CART_ITEMS_QUERY_BASIC = `
     p.unit AS unit,
     i.quantity AS available_stock,
     sh.name AS shop_name,
-    (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
+    (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
+    (SELECT pov.image_url
+     FROM product_variant_values pvv
+     JOIN product_option_values pov ON pvv.option_value_id = pov.id
+     JOIN product_option_groups pog ON pov.option_group_id = pog.id
+     WHERE pvv.variant_id = ci.variant_id
+       AND pog.display_type = 'image'
+       AND pov.image_url IS NOT NULL AND pov.image_url != ''
+     ORDER BY pog.sort_order LIMIT 1) AS variant_option_image_url
   FROM cart_items ci
   JOIN products p ON ci.product_id = p.id
   LEFT JOIN inventory i ON i.product_id = p.id
@@ -120,7 +136,7 @@ function formatCartRow(r: any) {
     priceSnapshot: parseFloat(r.price),
     availableStock: r.available_stock ?? 0,
     shopName: r.shop_name,
-    productImageUrl: r.product_image_url,
+    productImageUrl: r.variant_option_image_url || r.product_image_url,
     addedAt: r.added_at,
   };
 }

@@ -2166,3 +2166,22 @@ selection sheet 4 entry modes, compact add-to-cart toasts (no product name).
 tools are Thai-first today; VelSeller pages call `t()` for gate/moderation keys but have
 no LanguageProvider mount — language switching there would need a provider mount plus a
 full key pass). Logged as future work, deliberately not mixed into this cart/i18n fix.
+
+### 2026-09-04 — Cart Item Image: Variant-Specific Image on Add to Cart
+
+**Problem:** When user selected a variant with an IMAGE option (e.g. Color = Black) and added to cart, the cart item showed no image (guest cart) or briefly showed no image before the server response replaced it (authenticated cart).
+
+**Root Cause:** The `add()` function in `cart.tsx` created optimistic local cart lines WITHOUT `imageUrl`, even though `AddToCartProduct.imageUrl` was passed by callers. For guest users: no server call, so image was NEVER populated. For authenticated users: brief flash of missing image until server response replaced it.
+
+The backend already correctly resolved variant option images via SQL joins. The CartDrawer and ShopCart already rendered `line.imageUrl`. The only missing piece was the optimistic state not including it.
+
+**Fixes:**
+1. `apps/velshop/src/lib/cart.tsx` — `add()` function: Added `imageUrl: product.imageUrl` to both optimistic cart line objects (guest + authenticated paths)
+2. `apps/velshop/src/components/shop/ProductDetailModal.tsx` — Added `imageUrl: product.primaryImage?.url` to quick-view modal's `handleAdd()`
+
+**Files Changed:**
+- `apps/velshop/src/lib/cart.tsx` — +2 lines
+- `apps/velshop/src/components/shop/ProductDetailModal.tsx` — +1 line
+
+**Typecheck:** ✅ VelShop pass
+**Database changed:** NO

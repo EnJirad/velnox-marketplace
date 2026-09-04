@@ -71,6 +71,7 @@ export function ProductDetailModal({ product, open, onOpenChange, onSubscribe }:
         unit: product.unit,
         price: product.price,
         stock: available,
+        imageUrl: product.primaryImage?.url,
       },
       qty,
     );

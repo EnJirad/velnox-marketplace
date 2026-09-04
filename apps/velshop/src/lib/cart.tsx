@@ -198,6 +198,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             id: `guest-${++guestSeq}`, productId: product.id, variantId: vid,
             name: product.name, unit: product.unit, price,
             qty: Math.min(product.stock, qty), stock: product.stock,
+            imageUrl: product.imageUrl,
           }];
         });
         return;
@@ -217,6 +218,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           id: `guest-${++guestSeq}`, productId: product.id, variantId: vid,
           name: product.name, unit: product.unit, price,
           qty: Math.min(product.stock, qty), stock: product.stock,
+          imageUrl: product.imageUrl,
         }];
       });
 
