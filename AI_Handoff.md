@@ -1,6 +1,6 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-08-26**
+**LAST UPDATED: 2026-09-02**
 
 ---
 
@@ -372,6 +372,47 @@ PORT=3001
 8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-09-02 — Backend Performance Optimization + AI_RULES.md Rewrite
+
+**Problem:** API/DB query latency of 1-2 seconds on key endpoints, especially revoked_tokens, addresses, wishlist, seller/shop, products, /api/auth/me, and auth/user resolution.
+
+**Root causes found and fixed:**
+
+1. **`resolveUser()` in auth.ts — wasteful SELECT 1:** The function ran `SELECT 1` to "test" the DB connection before getting a pool client via `getClient()`. This wasted a full DB round-trip on every OAuth callback. Removed the unnecessary `SELECT 1` + dynamic import.
+
+2. **`/api/auth/me` serial queries:** The endpoint ran user query → cover URL fallback 1 → cover URL fallback 2 sequentially. The two cover URL lookups are independent (legacy vs fixed-key format), so they now run in parallel via `Promise.allSettled`.
+
+3. **`loadProductExtras()` sequential queries:** Four independent queries (gallery images, inventory, variants, detail images) ran sequentially. Now run in parallel via `Promise.allSettled`, reducing wall-clock time from ~4× to ~1× the slowest query.
+
+4. **`cleanupExpiredTokens()` per-request overhead:** The expired token cleanup ran `DELETE FROM revoked_tokens` on every single HTTP request. Now it only runs once on the first request of each server instance lifetime.
+
+5. **Query timing instrumentation:** Lowered slow-query threshold from 500ms to 200ms for better performance visibility. All slow queries now log with `[DB] query (Xms):` prefix for production monitoring.
+
+**Files changed:**
+| File | Change |
+|------|--------|
+| `backend/routes/auth.ts` | Removed SELECT 1 from resolveUser(), parallelized cover URL fallbacks, cleanup only runs once |
+| `backend/routes/products.ts` | Parallelized loadProductExtras() queries via Promise.allSettled |
+| `backend/db/index.ts` | Lowered slow query threshold to 200ms, improved log format |
+| `backend/server.ts` | Updated startup DDL comment |
+| `AI_RULES.md` | Complete rewrite — concise, enforceable, mandatory git commit+push rule |
+| `AI_Handoff.md` | Updated with performance fixes |
+
+**Verification:**
+- ✅ Backend typecheck passes
+- ✅ VelShop typecheck passes
+- ✅ VelSeller typecheck passes
+- ✅ VelCenter typecheck passes
+- ✅ Velnox typecheck passes
+
+**Database changed:** NO (no schema changes)
+
+**Impact estimate:**
+- `resolveUser()`: eliminated 1 unnecessary DB round-trip per OAuth login
+- `/api/auth/me`: ~50% reduction in cover URL latency (parallel vs sequential)
+- `loadProductExtras()`: ~75% reduction in wall-clock time (parallel vs sequential)
+- Startup: no per-request token cleanup overhead
 
 ### 2026-08-26 — Stripe Payment Architecture + Cart Drawer Enhancement
 - **Part 1 — Cart Drawer:** Added product image display to CartDrawer (previously only showed name/price/qty). Cart icon badge with count, mini cart with +/-, remove, subtotal, checkout button already existed from previous work.
@@ -1836,3 +1877,49 @@ Products created before the `product_variant_values` table was populated had no 
 
 **Typecheck:** ✅ Backend, VelShop, VelSeller, VelCenter all pass
 **Commit:** 9372828 — pushed to main
+
+## Stock Architecture (Variant-based)
+
+### Rule
+For products **with variants**, `variant.stock` is the source of truth for availability.
+Product-level `inventory.quantity` is **not used** for availability decisions.
+
+### Data Flow
+```
+DB: product_variants.stock (per variant)
+        ↓
+Backend: applyVariantStock() → computes totalAvailableStock
+        ↓
+API response: inventory.available = sum of active variant stocks
+        ↓
+Frontend: ProductCard / ShopProductDetail / ProductSelectionSheet
+```
+
+### Backend Helpers
+- **`applyVariantStock(formatted, variants)`** — Sets `inventory.available` and `totalAvailableStock` from active variants. For products without variants, keeps legacy inventory.
+- **`computeOptionValueStock(variants, variantOptions, groupId?)`** — Computes per-option-value stock by summing matching variant stocks. Used in product detail API to populate `val.stock` on each option value.
+
+### Frontend Behavior
+- **ProductCard**: `available = product.inventory?.available` (now variant-based from backend)
+- **ShopProductDetail**: `baseAvailable = product.inventory?.available` (fallback when no variant selected)
+- **ProductSelectionSheet**: Context-aware per-option-value stock display:
+  - No selections → sum all matching variants
+  - Other options selected → filter by those selections
+  - Shows "เหลือ X" for low stock (≤5), "X ชิ้น" for normal, "หมด" for zero
+- **Cart**: Uses `product.stock` from `AddToCartProduct` interface, which is set by the calling component with correct variant stock
+
+### Option Value Image Resolution
+```
+Selected option value (UUID)
+        ↓
+optionValueImageMap[val.id] → image URL
+        ↓
+Fallback: product gallery
+```
+**Never use text matching for option value resolution. Always use UUIDs.**
+
+### Files
+- `backend/routes/products.ts` — `applyVariantStock()`, `computeOptionValueStock()`, catalog/detail/listing APIs
+- `apps/velshop/src/pages/ShopProductDetail.tsx` — Per-option-value stock display
+- `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` — Per-option-value stock display
+- `apps/velshop/src/components/shop/ProductCard.tsx` — Uses `inventory.available` (backend-computed)

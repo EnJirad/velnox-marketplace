@@ -394,18 +394,35 @@ export default function ShopProductDetail() {
     if (activeIndex >= images.length && images.length > 0) setActiveIndex(0);
   }, [images.length, activeIndex]);
 
-  /* ── Option value image map (for IMAGE-type option groups) ────────── */
+  /* ── Option value image map (variant-based + option-value-based) ── */
   const optionValueImageMap = useMemo(() => {
     const map: Record<string, string> = {};
-    if (!Array.isArray(optionGroups)) return map;
-    for (const group of optionGroups) {
-      if (!Array.isArray(group.values)) continue;
-      for (const val of group.values) {
-        if (val.imageUrl) map[val.id] = val.imageUrl;
+    // Source 1: Map from variant images (variant → option value IDs)
+    const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
+    if (Array.isArray(pVariants)) {
+      for (const v of pVariants) {
+        const imgs = (v as any).images as Array<{ url: string }> | undefined;
+        if (!imgs || imgs.length === 0) continue;
+        const imgUrl = imgs[0].url;
+        if (!imgUrl) continue;
+        const vMapping = variantOptions[v.id] as Record<string, string> | undefined;
+        if (!vMapping) continue;
+        for (const optionValueId of Object.values(vMapping)) {
+          if (!map[optionValueId]) map[optionValueId] = imgUrl;
+        }
+      }
+    }
+    // Source 2: Map from option value imageUrl (option group values)
+    if (Array.isArray(optionGroups)) {
+      for (const group of optionGroups) {
+        if (!Array.isArray(group.values)) continue;
+        for (const val of group.values) {
+          if (val.imageUrl && !map[val.id]) map[val.id] = val.imageUrl;
+        }
       }
     }
     return map;
-  }, [optionGroups]);
+  }, [product, variantOptions, optionGroups]);
 
   /* ── Currently selected option value images (deterministic) ───────── */
   const selectedOptionImages = useMemo(() => {
@@ -464,11 +481,34 @@ export default function ShopProductDetail() {
         createdAt: Date.now(),
       };
     }
-    // Priority 3: Product preview/gallery images
+    // Priority 3: Option value images from optionValueImageMap
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (!valId) continue;
+      const imgSrc = optionValueImageMap[valId];
+      if (imgSrc) {
+        return {
+          id: `ov-${valId}`,
+          productId: product?.id ?? '',
+          url: imgSrc,
+          displayUrl: imgSrc,
+          thumbUrl: imgSrc,
+          storageProvider: 'r2' as const,
+          storageKey: '',
+          alt: '',
+          sortOrder: 0,
+          isPrimary: false,
+          width: null,
+          height: null,
+          createdAt: Date.now(),
+        };
+      }
+    }
+    // Priority 4: Product preview/gallery images
     if (product?.images && product.images.length > 0) return product.images[0];
     if (product?.primaryImage) return product.primaryImage;
     return null;
-  }, [selectedOptionImages, selectedVariant, product]);
+  }, [selectedOptionImages, selectedVariant, product, optionGroups, selectedOptions, optionValueImageMap]);
 
   const active = mainDisplayImage ?? images[activeIndex]?.img ?? images[0]?.img;
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
@@ -520,11 +560,11 @@ export default function ShopProductDetail() {
     return firstGroup.values.slice(0, 5).map((val: any) => ({
       id: val.id,
       label: val.label,
-      imageUrl: val.imageUrl ?? null,
+      imageUrl: val.imageUrl || optionValueImageMap[val.id] || null,
       groupId: firstGroup.id,
       selected: selectedOptions[firstGroup.id] === val.id,
     }));
-  }, [optionGroups, selectedOptions]);
+  }, [optionGroups, selectedOptions, optionValueImageMap]);
 
   const totalOptionValues = useMemo(() => {
     return optionGroups.reduce((sum: number, g: any) => sum + (Array.isArray(g.values) ? g.values.length : 0), 0);
@@ -862,8 +902,7 @@ export default function ShopProductDetail() {
                 <div className="flex flex-1 items-center gap-1.5 overflow-hidden">
                   {compactThumbnails.map((thumb: { id: string; label: string; imageUrl: string | null; groupId: string; selected: boolean }) => (
                     <span
-                      key={thumb.id}
-                      className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${selectedOptions[thumb.groupId] === thumb.id ? "border-[#10B981] ring-1 ring-[#10B981]/30" : "border-slate-200"}`}
+                      key={thumb.id}                        className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${thumb.selected ? "border-[#10B981] ring-1 ring-[#10B981]/30" : "border-slate-200"}`}
                     >
                       {thumb.imageUrl ? (
                         <img src={thumb.imageUrl} alt={thumb.label} className="size-full object-cover" />
@@ -1103,46 +1142,82 @@ export default function ShopProductDetail() {
                         const pVariants = (product as any)?.variants as Array<Record<string, any>> | undefined;
                         const vOptsMap = (product as any)?.variantOptions as Record<string, Record<string, string>> | undefined;
                         let valueInStock = true;
+                        let valueStock = 0;
                         if (pVariants && vOptsMap) {
                           // Build candidate options: current selection + this candidate value
                           const candidateOptions = { ...selectedOptions, [group.id]: val.id };
-                          valueInStock = pVariants.some((v) => {
+                          for (const v of pVariants) {
                             const vOpts = vOptsMap[v.id];
-                            if (!vOpts) return false;
-                            // Variant must match ALL non-empty candidate options
+                            if (!vOpts) continue;
                             const matches = Object.entries(candidateOptions).every(([gId, vId]) => {
-                              // Skip empty selections — not yet chosen by user
                               if (!vId) return true;
                               return vOpts[gId] === vId;
                             });
-                            return matches && (v.stock ?? 0) > 0;
-                          });
+                            if (matches && (v.stock ?? 0) > 0) {
+                              valueStock += Number(v.stock);
+                              valueInStock = true;
+                            }
+                          }
                         }
+                        const isImageGroup = group.displayType === "image";
+                        const valStockLabel = !valueInStock ? (
+                          <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} text-red-400`}>หมด</span>
+                        ) : valueStock > 0 ? (
+                          <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                            {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                          </span>
+                        ) : null;
+
+                        if (isImageGroup) {
+                          // IMAGE option: image + text card layout
+                          return (
+                            <button
+                              key={val.id}
+                              type="button"
+                              disabled={!valueInStock}
+                              onClick={() => handleOptionSelect(group.id, val.id)}
+                              className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
+                                isSelected
+                                  ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
+                                  : valueInStock
+                                    ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
+                                    : "border-slate-100 bg-slate-50 opacity-40"
+                              }`}
+                              aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
+                            >
+                              {val.imageUrl || optionValueImageMap[val.id] ? (
+                                <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
+                              ) : (
+                                <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
+                                  {(val.label || val.value).slice(0, 3)}
+                                </span>
+                              )}
+                              <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                                {val.label || val.value}
+                              </span>
+                              {valStockLabel}
+                            </button>
+                          );
+                        }
+
+                        // TEXT option: compact pill/chip — no image, no placeholder
                         return (
                           <button
                             key={val.id}
                             type="button"
                             disabled={!valueInStock}
                             onClick={() => handleOptionSelect(group.id, val.id)}
-                            className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
+                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 ${compactSheet ? "text-[10px]" : "text-xs"} font-medium transition-colors ${
                               isSelected
-                                ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
+                                ? "border-[#10B981] bg-[#ECFDF5] text-[#10B981] ring-1 ring-[#10B981]/30"
                                 : valueInStock
-                                  ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
-                                  : "border-slate-100 bg-slate-50 opacity-40"
+                                  ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 active:bg-slate-50"
+                                  : "border-slate-100 bg-slate-50 text-slate-400 opacity-50"
                             }`}
                             aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
                           >
-                            {val.imageUrl ? (
-                              <img src={val.imageUrl} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
-                            ) : (
-                              <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
-                                {(val.label || val.value).slice(0, 3)}
-                              </span>
-                            )}
-                            <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
-                              {val.label || val.value}
-                            </span>
+                            <span className="truncate">{val.label || val.value}</span>
+                            {valStockLabel}
                           </button>
                         );
                       })}

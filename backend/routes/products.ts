@@ -240,6 +240,88 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
 }
 
 /**
+ * Apply variant-based stock to a formatted product.
+ * For products WITH active variants: inventory.available = sum of active variant stock.
+ * For products WITHOUT variants: keep existing inventory (legacy fallback).
+ * Also computes totalAvailableStock and hasVariants flags.
+ */
+function applyVariantStock(formatted: any, variants: any[]): void {
+  if (!Array.isArray(variants) || variants.length === 0) {
+    // No variants — keep existing inventory (legacy single-product mode)
+    formatted.totalAvailableStock = formatted.inventory?.available ?? formatted.inventory?.quantity ?? 0;
+    formatted.hasVariants = false;
+    return;
+  }
+
+  formatted.hasVariants = true;
+
+  // Sum stock from active variants with stock > 0
+  let totalStock = 0;
+  for (const v of variants) {
+    if (v.status === 'active' && (v.stock ?? 0) > 0) {
+      totalStock += Number(v.stock);
+    }
+  }
+
+  formatted.totalAvailableStock = totalStock;
+
+  // Override inventory.available so frontend fallbacks get correct value
+  if (formatted.inventory) {
+    formatted.inventory.available = totalStock;
+    formatted.inventory.quantity = totalStock;
+  } else {
+    // Product has no inventory row — create synthetic one for frontend
+    formatted.inventory = {
+      id: null,
+      productId: formatted.id,
+      shopId: formatted.shopId,
+      quantity: totalStock,
+      reservedQuantity: 0,
+      reorderLevel: 5,
+      warehouse: '',
+      available: totalStock,
+    };
+  }
+}
+
+/**
+ * Compute per-option-value stock for product detail.
+ * For each option value, sums stock of matching active variants
+ * (optionally filtered by other selected options).
+ */
+function computeOptionValueStock(
+  variants: any[],
+  variantOptions: Record<string, Record<string, string>>,
+  groupId?: string,
+  otherSelections?: Record<string, string>,
+): Record<string, number> {
+  const stockMap: Record<string, number> = {};
+  if (!Array.isArray(variants) || !variantOptions) return stockMap;
+
+  for (const v of variants) {
+    if (v.status !== 'active' || (v.stock ?? 0) <= 0) continue;
+    const vOpts = variantOptions[v.id];
+    if (!vOpts) continue;
+
+    // If other selections provided, variant must match them
+    if (otherSelections && Object.keys(otherSelections).length > 0) {
+      const matches = Object.entries(otherSelections).every(([gId, vId]) => {
+        if (!vId) return true; // skip empty selections
+        return vOpts[gId] === vId;
+      });
+      if (!matches) continue;
+    }
+
+    // Accumulate stock for each option value in this variant
+    for (const [gId, valId] of Object.entries(vOpts)) {
+      if (groupId && gId !== groupId) continue; // only target group
+      stockMap[valId] = (stockMap[valId] ?? 0) + Number(v.stock);
+    }
+  }
+  return stockMap;
+}
+
+/**
  * Load all images and inventory for a list of product IDs in bulk.
  */
 async function loadProductExtras(productIds: string[]): Promise<{
@@ -252,53 +334,71 @@ async function loadProductExtras(productIds: string[]): Promise<{
     return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map(), detailImagesByProduct: new Map() };
   }
 
-  // Only load gallery images from product_images — variant/detail images are loaded separately
-  const imagesResult = await query(
-    `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) AND image_type = 'gallery' ORDER BY sort_order ASC`,
-    [productIds]
-  );
-  const inventoryResult = await query(
-    `SELECT * FROM inventory WHERE product_id = ANY($1)`,
-    [productIds]
-  );
-
-  // Load variants — resilient to missing columns (compare_at_price, discount_percent)
-  let variantsResult = { rows: [] as any[] };
-  try {
-    variantsResult = await query(
+  // Run gallery images, inventory, variants, detail images, and variant images
+  // queries ALL in parallel — none depends on the result of another.
+  // Variant images use product_id (not variant_id) in the primary query,
+  // so they can run in parallel with variants.
+  const [imagesSettled, inventorySettled, variantsSettled, detailImagesSettled, variantImagesSettled] = await Promise.allSettled([
+    // Gallery images
+    query(
+      `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) AND image_type = 'gallery' ORDER BY sort_order ASC`,
+      [productIds]
+    ),
+    // Inventory
+    query(
+      `SELECT * FROM inventory WHERE product_id = ANY($1)`,
+      [productIds]
+    ),
+    // Variants — try with pricing columns first, fall back without
+    query(
       `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
       [productIds]
-    );
-  } catch (variantErr: any) {
-    if (variantErr?.code === "42P01") {
-      console.warn("[products] product_variants table does not exist — run V0028 migration");
-    } else if (variantErr?.code === "42703") {
-      // column does not exist — try without the extra columns (V0031 not applied yet)
-      console.warn("[products] product_variants missing columns, retrying without pricing columns:", variantErr?.message);
-      try {
-        variantsResult = await query(
+    ).catch((variantErr: any) => {
+      if (variantErr?.code === "42703") {
+        console.warn("[products] product_variants missing columns, retrying without pricing columns:", variantErr?.message);
+        return query(
           `SELECT id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
           [productIds]
         );
-      } catch (retryErr: any) {
-        console.warn("[products] variant fallback query also failed:", retryErr?.message ?? retryErr);
       }
+      throw variantErr;
+    }),
+    // Detail images
+    query(
+      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'detail' ORDER BY sort_order ASC`,
+      [productIds]
+    ).catch((dErr: any) => {
+      if (dErr?.code === "42P01") return { rows: [] as any[] };
+      throw dErr;
+    }),
+    // Variant images — uses product_id in primary query (image_type='variant'),
+    // can run in parallel with the variants query above.
+    query(
+      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'variant' AND variant_id IS NOT NULL ORDER BY sort_order ASC`,
+      [productIds]
+    ).catch((viErr: any) => {
+      if (viErr?.code === "42P01") return { rows: [] as any[] };
+      throw viErr;
+    }),
+  ]);
+
+  // Extract results from Promise.allSettled, falling back to empty on failure
+  const imagesResult = imagesSettled.status === 'fulfilled' ? imagesSettled.value : { rows: [] as any[] };
+  const inventoryResult = inventorySettled.status === 'fulfilled' ? inventorySettled.value : { rows: [] as any[] };
+  let variantsResult = { rows: [] as any[] };
+  if (variantsSettled.status === 'fulfilled') {
+    variantsResult = variantsSettled.value;
+  } else {
+    const variantErr = variantsSettled.reason;
+    if (variantErr?.code === "42P01") {
+      console.warn("[products] product_variants table does not exist — run V0028 migration");
     } else {
       console.warn("[products] loadProductExtras: variant query failed:", variantErr?.message ?? variantErr);
     }
   }
-  console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length} variantIds=${variantsResult.rows.map((v: any) => v.id).join(',')}`);
+  const detailImagesResult = detailImagesSettled.status === 'fulfilled' ? detailImagesSettled.value : { rows: [] as any[] };
 
-  // Load detail images
-  let detailImagesResult: { rows: any[] } = { rows: [] as any[] };
-  try {
-    detailImagesResult = await query(
-      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'detail' ORDER BY sort_order ASC`,
-      [productIds]
-    );
-  } catch (dErr: any) {
-    if (dErr?.code !== "42P01") console.warn("[products] detail images query warning:", dErr?.message);
-  }
+  console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length} variantIds=${variantsResult.rows.map((v: any) => v.id).join(',')}`);
   const detailImagesByProduct = new Map<string, any[]>();
   for (const img of detailImagesResult.rows) {
     const list = detailImagesByProduct.get(img.product_id) ?? [];
@@ -318,28 +418,21 @@ async function loadProductExtras(productIds: string[]): Promise<{
     inventoryByProduct.set(inv.product_id, inv);
   }
 
-  // Load variant images — check BOTH product_images (image_type='variant') and product_variant_images
-  let variantImagesResult: { rows: any[] } = { rows: [] as any[] };
-  try {
-    const variantIds = variantsResult.rows.map((v: any) => v.id);
-    if (variantIds.length > 0) {
-      // Primary source: product_images with image_type='variant' (used by create-full)
-      variantImagesResult = await query(
-        `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'variant' AND variant_id IS NOT NULL ORDER BY sort_order ASC`,
-        [productIds]
+  // Extract variant images from the parallel batch result
+  const variantImagesResult = variantImagesSettled.status === 'fulfilled'
+    ? variantImagesSettled.value
+    : { rows: [] as any[] };
+  // Fallback: if primary query returned 0, try product_variant_images table
+  // (used by older variant image save endpoint)
+  if (variantImagesResult.rows.length === 0 && variantsResult.rows.length > 0) {
+    try {
+      const variantIds = variantsResult.rows.map((v: any) => v.id);
+      const fallbackResult = await query(
+        `SELECT pvi.*, pvi.variant_id FROM product_variant_images pvi WHERE pvi.variant_id = ANY($1) ORDER BY pvi.sort_order ASC`,
+        [variantIds]
       );
-      // Fallback: also check product_variant_images (used by older variant image save endpoint)
-      if (variantImagesResult.rows.length === 0) {
-        try {
-          variantImagesResult = await query(
-            `SELECT pvi.*, pvi.variant_id FROM product_variant_images pvi WHERE pvi.variant_id = ANY($1) ORDER BY pvi.sort_order ASC`,
-            [variantIds]
-          );
-        } catch { /* product_variant_images may not exist */ }
-      }
-    }
-  } catch (viErr: any) {
-    if (viErr?.code !== "42P01") console.warn("[products] variant images query warning:", viErr?.message);
+      variantImagesResult.rows = fallbackResult.rows;
+    } catch { /* product_variant_images may not exist */ }
   }
   const imagesByVariant = new Map<string, any[]>();
   for (const img of variantImagesResult.rows) {
@@ -390,6 +483,7 @@ async function getFormattedProduct(productId: string, sellerId: string): Promise
     inventoryByProduct.get(productId) ?? null,
   );
   formatted.variants = variantsByProduct.get(productId) ?? [];
+  applyVariantStock(formatted, formatted.variants);
   // Format detail images for frontend
   const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
   formatted.detailImages = rawDetailImgs.map((img: any) => ({
@@ -444,6 +538,7 @@ export function setupProductRoutes(app: Express): void {
         );
         const productVariants = variantsByProduct.get(row.id) ?? [];
         formatted.variants = productVariants;
+        applyVariantStock(formatted, productVariants);
         // Attach featured variant for product card pricing
         if (row.featured_variant_id && productVariants.length > 0) {
           const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
@@ -741,10 +836,10 @@ export function setupProductRoutes(app: Express): void {
                 if (!val.value?.trim()) continue;
 
                 const valResult = await client.query(
-                  `INSERT INTO product_option_values (option_group_id, value, label, image_url, sort_order)
-                   VALUES ($1, $2, $3, $4, $5)
+                  `INSERT INTO product_option_values (option_group_id, value, label, image_url, is_enabled, sort_order)
+                   VALUES ($1, $2, $3, $4, $5, $6)
                    RETURNING id`,
-                  [groupId, val.value.trim(), val.label || val.value.trim(), val.imageUrl || null, vi]
+                  [groupId, val.value.trim(), val.label || val.value.trim(), val.imageUrl || null, val.isEnabled !== false, vi]
                 );
                 const valKey = `value-${gi}-${vi}`;
                 groupIdMap.set(valKey, valResult.rows[0].id);
@@ -894,6 +989,7 @@ export function setupProductRoutes(app: Express): void {
           inventoryByProduct.get(product.id) ?? null
         );
         formatted.variants = variantsByProduct.get(product.id) ?? [];
+        applyVariantStock(formatted, formatted.variants);
 
         res.json({ success: true, data: formatted });
       } catch (txErr) {
@@ -1656,7 +1752,7 @@ export function setupProductRoutes(app: Express): void {
 
       const valueArrays: { groupId: string; groupName: string; valueId: string; value: string }[][] = [];
       for (const group of groupsResult.rows) {
-        const vr = await query("SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC", [group.id]);
+        const vr = await query("SELECT * FROM product_option_values WHERE option_group_id = $1 AND (is_enabled IS TRUE) ORDER BY sort_order ASC", [group.id]);
         if (vr.rows.length === 0) continue;
         valueArrays.push(vr.rows.map((v: any) => ({ groupId: group.id, groupName: group.name, valueId: v.id, value: v.value })));
       }
@@ -1666,24 +1762,39 @@ export function setupProductRoutes(app: Express): void {
       const prodResult = await query("SELECT price FROM products WHERE id = $1", [productId]);
       const basePrice = prodResult.rows[0] ? parseFloat(prodResult.rows[0].price) : 0;
 
-      const existingResult = await query("SELECT id FROM product_variants WHERE product_id = $1", [productId]);
-      if (existingResult.rows.length > 0) {
-        res.json({ success: true, data: { variants: existingResult.rows.map((v: any) => ({ id: v.id })), message: "Variants already exist" } }); return;
+      // Check existing variants for re-generation support
+      const existingResult = await query("SELECT id, name, options FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC", [productId]);
+      const existingVariants = existingResult.rows;
+
+      // Build set of existing combination keys for dedup
+      const existingComboKeys = new Set<string>();
+      for (const ev of existingVariants) {
+        const opts = ev.options || {};
+        const key = Object.entries(opts).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("|");
+        existingComboKeys.add(key);
       }
+
+      // Filter cartesian to only NEW combinations
+      const newCombos = cartesian.filter((combo) => {
+        const optionsObj: Record<string, string> = {};
+        combo.forEach((c) => { optionsObj[c.groupName] = c.value; });
+        const key = Object.entries(optionsObj).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("|");
+        return !existingComboKeys.has(key);
+      });
 
       const client = await getClient();
       const createdVariants: any[] = [];
       try {
         await client.query("BEGIN");
-        for (let i = 0; i < cartesian.length; i++) {
-          const combo = cartesian[i]!;
+        for (let i = 0; i < newCombos.length; i++) {
+          const combo = newCombos[i]!;
           const comboName = combo.map((c) => c.value).join(" / ");
           const optionsObj: Record<string, string> = {};
           combo.forEach((c) => { optionsObj[c.groupName] = c.value; });
           const vr = await client.query(
             `INSERT INTO product_variants (product_id, name, sku, price, stock, status, options, sort_order)
              VALUES ($1, $2, $3, $4, 0, 'active', $5, $6) RETURNING id`,
-            [productId, comboName, null, basePrice, JSON.stringify(optionsObj), i]
+            [productId, comboName, null, basePrice, JSON.stringify(optionsObj), existingVariants.length + i]
           );
           const vid = vr.rows[0].id;
           for (const c of combo) {
@@ -1694,8 +1805,9 @@ export function setupProductRoutes(app: Express): void {
         await client.query("COMMIT");
       } catch (txErr) { await client.query("ROLLBACK").catch(() => {}); throw txErr; } finally { client.release(); }
 
-      console.log(`[products] generated ${createdVariants.length} variants for product ${productId}`);
-      res.json({ success: true, data: { variants: createdVariants } });
+      const totalVariants = existingVariants.length + createdVariants.length;
+      console.log(`[products] variant generation: ${existingVariants.length} existing + ${createdVariants.length} new = ${totalVariants} total for product ${productId}`);
+      res.json({ success: true, data: { variants: [...existingVariants.map((v: any) => ({ id: v.id, name: v.name })), ...createdVariants], message: createdVariants.length === 0 ? "All variants already exist" : `Added ${createdVariants.length} new variant(s)` } });
     } catch (err) {
       console.error("[products] generate variants error:", err);
       res.status(500).json({ success: false, error: { code: "GENERATE_FAILED", message: "Failed to generate variants" } });
@@ -1845,7 +1957,11 @@ export function setupProductRoutes(app: Express): void {
         idx++;
       }
       if (inStock === "true") {
-        where += ` AND EXISTS (SELECT 1 FROM inventory inv WHERE inv.product_id = p.id AND inv.quantity > inv.reserved)`;
+        // Check inventory OR active variants with stock > 0
+        where += ` AND (
+          EXISTS (SELECT 1 FROM inventory inv WHERE inv.product_id = p.id AND inv.quantity > inv.reserved)
+          OR EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active' AND pv.stock > 0)
+        )`;
       }
 
       let orderBy = "ORDER BY p.created_at DESC";
@@ -1870,6 +1986,7 @@ export function setupProductRoutes(app: Express): void {
         const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
         const productVariants = variantsByProduct.get(row.id) ?? [];
         formatted.variants = productVariants;
+        applyVariantStock(formatted, productVariants);
         // Attach featured variant for product card pricing + image
         if (row.featured_variant_id && productVariants.length > 0) {
           const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
@@ -1926,6 +2043,7 @@ export function setupProductRoutes(app: Express): void {
         inventoryByProduct.get(productId) ?? null
       );
       formatted.variants = variantsByProduct.get(productId) ?? [];
+      applyVariantStock(formatted, formatted.variants);
 
       // Detail images for the product detail page
       const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
@@ -1935,79 +2053,25 @@ export function setupProductRoutes(app: Express): void {
         storageProvider: 'r2', storageKey: img.url,
       }));
 
-      // Also fetch shop info for the detail page
-      const shopResult = await query(
-        "SELECT id, name, slug, description, logo, cover, rating, product_count FROM shops WHERE id = $1",
-        [row.shop_id],
-      );
-      if (shopResult.rows.length > 0) {
-        const s = shopResult.rows[0];
-        formatted.shop = {
-          id: s.id,
-          name: s.name,
-          slug: s.slug,
-          description: s.description,
-          logo: s.logo,
-          cover: s.cover,
-          rating: s.rating,
-          productCount: s.product_count,
-        };
-      }
-
-      // Load dynamic option groups + values (V0027 tables)
-      try {
-        const groupsResult = await query(
+      // Run shop info + option groups + attributes + variant mappings in parallel
+      const [shopSettled, groupsSettled, attrsSettled, variantValuesSettled] = await Promise.allSettled([
+        // Shop info
+        query(
+          "SELECT id, name, slug, description, logo, cover, rating, product_count FROM shops WHERE id = $1",
+          [row.shop_id],
+        ),
+        // Option groups
+        query(
           "SELECT * FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC",
           [productId]
-        );
-        const optionGroups = [];
-        for (const group of groupsResult.rows) {
-          const valuesResult = await query(
-            "SELECT * FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC",
-            [group.id]
-          );
-          optionGroups.push({
-            id: group.id,
-            name: group.name,
-            displayType: group.display_type,
-            required: group.required,
-            sortOrder: group.sort_order,
-            values: valuesResult.rows.map((v: any) => ({
-              id: v.id,
-              value: v.value,
-              label: v.label || v.value,
-              imageUrl: normalizeImageUrl(v.image_url),
-              sortOrder: v.sort_order,
-            })),
-          });
-        }
-        formatted.optionGroups = optionGroups;
-        console.log(`[products] detail option groups: productId=${productId} groupsCount=${optionGroups.length} groups=${JSON.stringify(optionGroups.map((g: any) => g.name))}`);
-      } catch (optErr) {
-        console.error(`[products] detail option groups FAILED for productId=${productId}:`, (optErr as any)?.message ?? optErr);
-        formatted.optionGroups = [];
-      }
-
-      // Load product attributes (V0027 tables)
-      try {
-        const attrsResult = await query(
+        ),
+        // Attributes
+        query(
           "SELECT * FROM product_attributes WHERE product_id = $1 ORDER BY sort_order ASC",
           [productId]
-        );
-        formatted.attributes = attrsResult.rows.map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          value: a.value,
-          sortOrder: a.sort_order,
-        }));
-      } catch (attrErr) {
-        console.warn(`[products] detail attributes FAILED for productId=${productId}:`, (attrErr as any)?.message ?? attrErr);
-        formatted.attributes = [];
-      }
-
-      // Load variant-to-option mappings (V0027 tables)
-      try {
-        const variantValuesResult = await query(
+        ),
+        // Variant-to-option mappings
+        query(
           `SELECT pvv.variant_id, pvv.option_value_id,
                   pov.option_group_id,
                   pov.label AS value
@@ -2016,7 +2080,68 @@ export function setupProductRoutes(app: Express): void {
            JOIN product_variants pv ON pvv.variant_id = pv.id
            WHERE pv.product_id = $1`,
           [productId]
-        );
+        ),
+      ]);
+
+      // Shop info
+      if (shopSettled.status === 'fulfilled' && shopSettled.value.rows.length > 0) {
+        const s = shopSettled.value.rows[0];
+        formatted.shop = {
+          id: s.id, name: s.name, slug: s.slug, description: s.description,
+          logo: s.logo, cover: s.cover, rating: s.rating, productCount: s.product_count,
+        };
+      }
+
+      // Option groups — BATCH all option values in a single query (eliminates N+1 per-group queries)
+      const optionGroups: any[] = [];
+      if (groupsSettled.status === 'fulfilled' && groupsSettled.value.rows.length > 0) {
+        const groupRows = groupsSettled.value.rows;
+        const groupIds = groupRows.map((g: any) => g.id);
+        // Single batch query for ALL option values across ALL groups
+        let allValues: any[] = [];
+        try {
+          const valuesResult = await query(
+            "SELECT * FROM product_option_values WHERE option_group_id = ANY($1) ORDER BY sort_order ASC",
+            [groupIds]
+          );
+          allValues = valuesResult.rows;
+        } catch (valErr) {
+          console.error(`[products] detail batch option values FAILED for productId=${productId}:`, (valErr as any)?.message ?? valErr);
+        }
+        // Group values by option_group_id in-memory
+        const valuesByGroup = new Map<string, any[]>();
+        for (const v of allValues) {
+          const list = valuesByGroup.get(v.option_group_id) ?? [];
+          list.push(v);
+          valuesByGroup.set(v.option_group_id, list);
+        }
+        for (const group of groupRows) {
+          optionGroups.push({
+            id: group.id, name: group.name, displayType: group.display_type,
+            required: group.required, sortOrder: group.sort_order,
+            values: (valuesByGroup.get(group.id) ?? []).map((v: any) => ({
+              id: v.id, value: v.value, label: v.label || v.value,
+              imageUrl: normalizeImageUrl(v.image_url), sortOrder: v.sort_order,
+              isEnabled: v.is_enabled !== false,
+            })),
+          });
+        }
+        console.log(`[products] detail option groups: productId=${productId} groupsCount=${optionGroups.length} groups=${JSON.stringify(optionGroups.map((g: any) => g.name))}`);
+      }
+      formatted.optionGroups = optionGroups;
+
+      // Attributes
+      formatted.attributes = attrsSettled.status === 'fulfilled'
+        ? attrsSettled.value.rows.map((a: any) => ({
+            id: a.id, name: a.name, value: a.value, sortOrder: a.sort_order,
+          }))
+        : [];
+
+      // Variant-to-option mappings
+      try {
+        const variantValuesResult = variantValuesSettled.status === 'fulfilled'
+          ? variantValuesSettled.value
+          : { rows: [] as any[] };
         const variantOptions: Record<string, Record<string, string>> = {};
         for (const row of variantValuesResult.rows) {
           const vid = row.variant_id as string;
@@ -2110,6 +2235,23 @@ export function setupProductRoutes(app: Express): void {
         }
 
         formatted.variantOptions = variantOptions;
+
+        // ── Per-option-value stock computation ──────────────────────────
+        // For each option group, compute stock per value from matching active variants.
+        // This enables the frontend to show "เหลือ X ชิ้น" per option value.
+        if (Array.isArray(formatted.variants) && formatted.variants.length > 0) {
+          for (const group of formatted.optionGroups ?? []) {
+            const stockMap = computeOptionValueStock(
+              formatted.variants as any[],
+              variantOptions,
+              group.id,
+            );
+            for (const val of group.values ?? []) {
+              val.stock = stockMap[val.id] ?? 0;
+            }
+          }
+        }
+
         console.log(`[products] detail variantOptions: productId=${productId} variantIds=${Object.keys(variantOptions).length} rows=${variantValuesResult.rows.length}`);
       } catch (vvErr) {
         console.error(`[products] detail variantOptions FAILED for productId=${productId}:`, (vvErr as any)?.message ?? vvErr);
@@ -2248,6 +2390,7 @@ export function setupProductRoutes(app: Express): void {
           r.stock_qty != null ? { quantity: r.stock_qty, reserved: r.stock_reserved ?? 0 } : null,
         );
         formatted.variants = shopExtras.variantsByProduct.get(r.id) ?? [];
+        applyVariantStock(formatted, formatted.variants);
         return formatted;
       });
 

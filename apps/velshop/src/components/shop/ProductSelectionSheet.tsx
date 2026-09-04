@@ -138,6 +138,27 @@ export function ProductSelectionSheet({
   const outOfStock = resolvedStock <= 0;
   const needsVariant = hasOptionGroups && !allRequiredSelected;
 
+  // Build a map: optionValueId (UUID) → first variant image URL
+  // variantOptions stores UUIDs (option_value_id) so we can key directly by value.
+  const optionValueImageMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    const variants = (product as any).variants as Array<Record<string, any>> | undefined;
+    const vOpts = (product as any).variantOptions as Record<string, Record<string, string>> | undefined;
+    if (!Array.isArray(variants) || !vOpts) return map;
+    for (const v of variants) {
+      const imgs = (v as any).images as Array<{ url: string }> | undefined;
+      if (!imgs || imgs.length === 0) continue;
+      const imgUrl = imgs[0].url;
+      if (!imgUrl) continue;
+      const vMapping = vOpts[v.id];
+      if (!vMapping) continue;
+      for (const optionValueId of Object.values(vMapping)) {
+        if (!map[optionValueId]) map[optionValueId] = imgUrl;
+      }
+    }
+    return map;
+  }, [product]);
+
   // Compute variant-aware image: prefer selected variant's images, then option value images, then product images
   const productImages = product.images?.length
     ? product.images
@@ -421,18 +442,22 @@ export function ProductSelectionSheet({
                       | Record<string, Record<string, string>>
                       | undefined;
                     let valueInStock = false;
+                    let valueStock = 0;
                     if (variants && variantOpts) {
-                      valueInStock = variants.some((v) => {
+                      for (const v of variants) {
                         const vOpts = variantOpts[v.id];
-                        if (!vOpts || vOpts[group.id] !== val.id) return false;
-                        // Check if all other selections match
-                        return Object.entries(optionSelections).every(
+                        if (!vOpts || vOpts[group.id] !== val.id) continue;
+                        const matchesOtherSelections = Object.entries(optionSelections).every(
                           ([gId, vId]) => {
                             if (gId === group.id) return true;
                             return vOpts[gId] === vId;
                           },
-                        ) && (v.stock ?? 0) > 0;
-                      });
+                        );
+                        if (matchesOtherSelections && (v.stock ?? 0) > 0) {
+                          valueStock += Number(v.stock);
+                          valueInStock = true;
+                        }
+                      }
                     } else {
                       valueInStock = true; // No variant data, assume in stock
                     }
@@ -443,7 +468,7 @@ export function ProductSelectionSheet({
                         type="button"
                         disabled={!valueInStock}
                         onClick={() => handleOptionSelect(group.id, val.id)}
-                        className={`flex flex-col items-center justify-center gap-1.5 w-[80px] min-h-[88px] p-2 rounded-xl border transition-colors ${
+                        className={`${group.displayType === "image" ? "flex flex-col items-center justify-center gap-1.5 w-[80px] min-h-[88px] p-2" : "flex items-center gap-1.5 px-3 py-1.5"} rounded-xl border transition-colors ${
                           selected
                             ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
                             : valueInStock
@@ -456,16 +481,48 @@ export function ProductSelectionSheet({
                             : ""
                         }`}
                       >
-                        {val.imageUrl ? (
-                          <img src={val.imageUrl} alt="" className="size-14 rounded-lg object-contain bg-slate-50" loading="lazy" />
-                        ) : (
-                          <span className="size-14 flex items-center justify-center rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-500">
-                            {val.label.slice(0, 3)}
-                          </span>
-                        )}
-                        <span className={`max-w-full truncate text-[11px] font-medium ${selected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
-                          {val.label}
-                        </span>
+                        {(() => {
+                          const isImageGroup = group.displayType === "image";
+                          if (isImageGroup) {
+                            // IMAGE option: image + text card layout
+                            return (
+                              <>
+                                {val.imageUrl || optionValueImageMap[val.id] ? (
+                                  <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className="size-14 rounded-lg object-contain bg-slate-50" loading="lazy" />
+                                ) : (
+                                  <span className="size-14 flex items-center justify-center rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-500">
+                                    {val.label.slice(0, 3)}
+                                  </span>
+                                )}
+                                <span className={`max-w-full truncate text-[11px] font-medium ${selected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
+                                  {val.label}
+                                </span>
+                                {valueInStock && valueStock > 0 && (
+                                  <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                                    {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                                  </span>
+                                )}
+                                {!valueInStock && (
+                                  <span className="text-[9px] text-red-400">หมด</span>
+                                )}
+                              </>
+                            );
+                          }
+                          // TEXT option: compact pill — no image, no placeholder
+                          return (
+                            <>
+                              <span className="truncate text-[11px] font-medium">{val.label}</span>
+                              {valueInStock && valueStock > 0 && (
+                                <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                                  {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                                </span>
+                              )}
+                              {!valueInStock && (
+                                <span className="text-[9px] text-red-400">หมด</span>
+                              )}
+                            </>
+                          );
+                        })()}
                       </button>
                     );
                   })}

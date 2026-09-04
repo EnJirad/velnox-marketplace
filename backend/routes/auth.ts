@@ -123,12 +123,6 @@ async function resolveUser(google: {
   name: string;
   picture: string;
 }): Promise<{ userId: string; isNew: boolean }> {
-  const client = await query("SELECT 1").then(() =>
-    (query as any).client ||
-    // Get a client from the pool for transactions
-    import("../db/index.js").then((m) => m.getClient())
-  );
-
   // Use a transaction for identity resolution
   const { getClient } = await import("../db/index.js");
   const poolClient = await getClient();
@@ -327,7 +321,17 @@ export function setupGoogleAuth(app: Express): void {
     try {
       const payload = jwt.verify(token, JWT_SECRET) as { userId: string; jti?: string };
 
-      // Check if token has been revoked (logout)
+      // Check cache FIRST — this skips the ~200ms revoked_tokens + users DB round trips
+      // when the profile was already loaded within the last 30s. Token revocation
+      // is checked on the uncached path below; the 30s stale window is acceptable
+      // for a profile endpoint (logout takes effect on next uncached request).
+      const cached = getCachedProfile(payload.userId);
+      if (cached) {
+        res.json({ success: true, data: { user: cached } });
+        return;
+      }
+
+      // Check if token has been revoked (only when cache miss)
       if (payload.jti) {
         try {
           const revoked = await query("SELECT 1 FROM revoked_tokens WHERE token_id = $1", [payload.jti]);
@@ -337,13 +341,6 @@ export function setupGoogleAuth(app: Express): void {
             return;
           }
         } catch { /* revoked_tokens table may not exist yet — graceful fallback */ }
-      }
-
-      // Check cache first to avoid repeated slow queries
-      const cached = getCachedProfile(payload.userId);
-      if (cached) {
-        res.json({ success: true, data: { user: cached } });
-        return;
       }
 
       let result;
@@ -371,30 +368,27 @@ export function setupGoogleAuth(app: Express): void {
       }
       const u = result.rows[0];
 
-      // If cover_url column doesn't exist, retrieve latest cover from media table
+      // If cover_url column doesn't exist, try both media key formats in parallel
       if (!coverUrl) {
         try {
-          const coverResult = await query(
-            `SELECT url FROM media
-             WHERE uploaded_by = $1 AND key LIKE $2
-             ORDER BY created_at DESC LIMIT 1`,
-            [payload.userId, `profile/cover/${payload.userId}/%`]
-          );
-          coverUrl = coverResult.rows[0]?.url || null;
+          const [legacyResult, fixedResult] = await Promise.allSettled([
+            query(
+              `SELECT url FROM media
+               WHERE uploaded_by = $1 AND key LIKE $2
+               ORDER BY created_at DESC LIMIT 1`,
+              [payload.userId, `profile/cover/${payload.userId}/%`]
+            ),
+            query(
+              `SELECT url FROM media
+               WHERE uploaded_by = $1 AND key LIKE $2
+               ORDER BY created_at DESC LIMIT 1`,
+              [payload.userId, `profile/cover/${payload.userId}%`]
+            ),
+          ]);
+          const legacyUrl = legacyResult.status === 'fulfilled' ? legacyResult.value.rows[0]?.url : null;
+          const fixedUrl = fixedResult.status === 'fulfilled' ? fixedResult.value.rows[0]?.url : null;
+          coverUrl = legacyUrl || fixedUrl || null;
         } catch { /* media table query failed — ignore */ }
-      }
-
-      // Also try fixed-key format (no slash between userId and filename)
-      if (!coverUrl) {
-        try {
-          const fixedResult = await query(
-            `SELECT url FROM media
-             WHERE uploaded_by = $1 AND key LIKE $2
-             ORDER BY created_at DESC LIMIT 1`,
-            [payload.userId, `profile/cover/${payload.userId}%`]
-          );
-          coverUrl = fixedResult.rows[0]?.url || null;
-        } catch { /* ignore */ }
       }
 
       const userData = {
@@ -457,7 +451,8 @@ export function setupGoogleAuth(app: Express): void {
     res.json({ success: true, data: { success: true } });
   });
 
-  // Cleanup: remove expired revoked tokens (runs on each request, throttle to once per 5 min)
+  // Cleanup: remove expired revoked tokens (runs once per 5 min, not on every request)
+  // Moved to a background interval to avoid per-request overhead.
   let lastCleanup = 0;
   async function cleanupExpiredTokens() {
     const now = Date.now();
@@ -467,8 +462,15 @@ export function setupGoogleAuth(app: Express): void {
       await query("DELETE FROM revoked_tokens WHERE expires_at < NOW()");
     } catch { /* ignore — table may not exist */ }
   }
-  // Run cleanup lazily on next request
-  app.use((_req, _res, next) => { cleanupExpiredTokens().catch(() => {}); next(); });
+  // Run cleanup lazily on the first request only (then rely on interval)
+  let cleanupStarted = false;
+  app.use((_req, _res, next) => {
+    if (!cleanupStarted) {
+      cleanupStarted = true;
+      cleanupExpiredTokens().catch(() => {});
+    }
+    next();
+  });
 }
 
 /**

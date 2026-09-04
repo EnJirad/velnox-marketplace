@@ -448,7 +448,7 @@ export function setupProductOptionRoutes(app: Express): void {
         return;
       }
 
-      const { value, label, imageUrl, sortOrder } = req.body;
+      const { value, label, imageUrl, isEnabled, sortOrder } = req.body;
       if (!value || typeof value !== "string" || !value.trim()) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Option value is required" } });
         return;
@@ -462,10 +462,10 @@ export function setupProductOptionRoutes(app: Express): void {
       const resolvedSortOrder = sortOrder ?? maxSort.rows[0]?.next_sort ?? 0;
 
       const result = await query(
-        `INSERT INTO product_option_values (option_group_id, value, label, image_url, sort_order)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO product_option_values (option_group_id, value, label, image_url, is_enabled, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [groupId, value.trim(), label || value.trim(), imageUrl || null, resolvedSortOrder]
+        [groupId, value.trim(), label || value.trim(), imageUrl || null, isEnabled !== false, resolvedSortOrder]
       );
 
       const val = result.rows[0];
@@ -523,6 +523,71 @@ export function setupProductOptionRoutes(app: Express): void {
     } catch (err) {
       console.error("[product-options] delete value error:", err);
       res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete option value" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/option-values/:valueId ──────────
+  app.patch("/api/seller/products/:productId/option-values/:valueId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      const valueId = param(req, "valueId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to the seller" } }); return;
+      }
+
+      // Verify value belongs to a group that belongs to the product
+      const valueCheck = await query(
+        `SELECT pov.id FROM product_option_values pov
+         JOIN product_option_groups pog ON pov.option_group_id = pog.id
+         WHERE pov.id = $1 AND pog.product_id = $2`,
+        [valueId, productId]
+      );
+      if (valueCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Option value not found" } }); return;
+      }
+
+      const { value, label, imageUrl, isEnabled, sortOrder } = req.body;
+      const updates: string[] = [];
+      const values: any[] = [];
+      let idx = 1;
+
+      if (value !== undefined && typeof value === "string" && value.trim()) {
+        updates.push(`value = $${idx++}`);
+        values.push(value.trim());
+      }
+      if (label !== undefined && typeof label === "string") {
+        updates.push(`label = $${idx++}`);
+        values.push(label.trim() || value || "");
+      }
+      if (imageUrl !== undefined) {
+        updates.push(`image_url = $${idx++}`);
+        values.push(imageUrl || null);
+      }
+      if (isEnabled !== undefined) {
+        updates.push(`is_enabled = $${idx++}`);
+        values.push(!!isEnabled);
+      }
+      if (sortOrder !== undefined) {
+        updates.push(`sort_order = $${idx++}`);
+        values.push(Number(sortOrder));
+      }
+
+      if (updates.length === 0) {
+        res.json({ success: true, data: null }); return;
+      }
+
+      values.push(valueId);
+      await query(`UPDATE product_option_values SET ${updates.join(", ")} WHERE id = $${idx}`, values);
+
+      console.log(`[product-options] updated option value: ${valueId}`);
+      res.json({ success: true, data: { id: valueId } });
+    } catch (err) {
+      console.error("[product-options] update value error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update option value" } });
     }
   });
 

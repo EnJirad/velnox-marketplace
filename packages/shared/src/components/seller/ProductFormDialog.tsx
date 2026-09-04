@@ -25,6 +25,7 @@ import {
 } from "@velnox/shared/components/ui/select";
 import { Switch } from "@velnox/shared/components/ui/switch";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
+import { Checkbox } from "@velnox/shared/components/ui/checkbox";
 import { ImageUploader } from "@velnox/shared/components/seller/ImageUploader";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -68,6 +69,7 @@ interface OptionValueForm {
   value: string;
   label: string;
   imageUrl?: string | null;
+  isEnabled?: boolean;
 }
 
 interface OptionGroupForm {
@@ -362,8 +364,6 @@ const defaultForm = {
   unit: "ชิ้น",
   description: "",
   supplier: "",
-  stock: "",
-  reorderLevel: "",
   published: false,
 };
 
@@ -381,8 +381,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const createProduct = useAction(api.commerce.createProductAction);
   const createFullProduct = useAction(api.commerce.createFullProductAction);
   const updateProduct = useAction(api.commerce.updateProductAction);
-  const setStock = useAction(api.commerce.setStockAction);
-  const setReorderLevel = useAction(api.commerce.setReorderLevelAction);
+  // Product-level stock management removed — variant stock is source of truth
 
   const [form, setForm] = useState<typeof defaultForm>(() =>
     product
@@ -392,8 +391,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           unit: product.unit,
           description: product.description ?? "",
           supplier: product.supplier ?? "",
-          stock: String(product.inventory?.quantity ?? 0),
-          reorderLevel: String(product.inventory?.reorderLevel ?? 0),
           published: product.status === "published",
         }
       : defaultForm,
@@ -416,7 +413,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // ─── Variant state (auto-generated from options) ──────────────────────
   const [draftVariants, setDraftVariants] = useState<DraftVariant[]>([]);
-  const [uploadingVariantImage, setUploadingVariantImage] = useState<string | null>(null);
 
   // ─── VelRepeat state ──────────────────────────────────────────────────
   const [velRepeat, setVelRepeat] = useState<VelRepeatForm>(() =>
@@ -450,7 +446,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         if (data.success && data.data) {
           const groups = (data.data.optionGroups ?? []).map((g: any) => ({
             id: g.id, name: g.name, displayType: g.displayType ?? "text",
-            values: (g.values ?? []).map((v: any) => ({ id: v.id, value: v.value, label: v.label ?? v.value, imageUrl: v.imageUrl ?? null })),
+            values: (g.values ?? []).map((v: any) => ({ id: v.id, value: v.value, label: v.label ?? v.value, imageUrl: v.imageUrl ?? null, isEnabled: v.is_enabled !== false })),
           }));
           setOptionGroups(groups);
           setAttributes((data.data.attributes ?? []).map((a: any) => ({ id: a.id, name: a.name, value: a.value })));
@@ -468,14 +464,20 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const addOptionGroup = () => setOptionGroups((prev) => [...prev, { name: "", displayType: "text", values: [{ value: "", label: "" }] }]);
   const removeOptionGroup = (index: number) => setOptionGroups((prev) => prev.filter((_, i) => i !== index));
   const updateGroupName = (index: number, name: string) => setOptionGroups((prev) => prev.map((g, i) => i === index ? { ...g, name } : g));
-  const addOptionValue = (groupIndex: number) => setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: [...g.values, { value: "", label: "" }] } : g));
+  const updateGroupDisplayType = (index: number, displayType: string) => setOptionGroups((prev) => prev.map((g, i) => i === index ? { ...g, displayType } : g));
+  const addOptionValue = (groupIndex: number) => setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: [...g.values, { value: "", label: "", isEnabled: true }] } : g));
   const removeOptionValue = (groupIndex: number, valueIndex: number) => setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.filter((_, vi) => vi !== valueIndex) } : g));
   const updateOptionValue = (groupIndex: number, valueIndex: number, value: string) =>
     setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, value, label: value } : v) } : g));
+  const updateOptionValueEnabled = (groupIndex: number, valueIndex: number, isEnabled: boolean) =>
+    setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, isEnabled } : v) } : g));
+
+  const updateOptionValueImage = (groupIndex: number, valueIndex: number, imageUrl: string | null) =>
+    setOptionGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, values: g.values.map((v, vi) => vi === valueIndex ? { ...v, imageUrl } : v) } : g));
 
   // ─── Auto-generate variants from option groups ────────────────────────
   const generateVariants = useCallback(() => {
-    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim()));
+    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim() && (v.isEnabled !== false)));
     if (validGroups.length === 0) {
       // No options → auto-create single variant for the product
       setDraftVariants((prev) => {
@@ -498,7 +500,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     // Build cartesian product of option values
     const valueArrays: { groupIdx: number; valueIdx: number; value: string; groupName: string; imageUrl?: string | null }[][] =
       validGroups.map((g, gi) =>
-        g.values.filter((v) => v.value.trim()).map((v, vi) => ({
+        g.values.filter((v) => v.value.trim() && (v.isEnabled !== false)).map((v, vi) => ({
           groupIdx: optionGroups.indexOf(g), valueIdx: vi, value: v.value, groupName: g.name, imageUrl: v.imageUrl,
         }))
       );
@@ -534,27 +536,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     if (!isEdit) generateVariants();
   }, [optionGroups, isEdit, generateVariants]);
 
-  // ─── Variant image upload (draft) ─────────────────────────────────────
-  const handleVariantImageUpload = async (variantKey: string, file: File) => {
-    const ACCEPT = ["image/jpeg", "image/png", "image/webp", "image/avif"];
-    if (!ACCEPT.includes(file.type)) { toast.error("ไฟล์ไม่ใช่รูปภาพที่รองรับ"); return; }
-    if (file.size > 10 * 1024 * 1024) { toast.error("ไฟล์ใหญ่เกิน 10 MB"); return; }
-
-    setUploadingVariantImage(variantKey);
-    try {
-      const img = await draftUpload(draftId, file, `variants/${variantKey}`);
-      setDraftVariants((prev) => prev.map((v) => v.key === variantKey ? { ...v, images: [...v.images, img] } : v));
-      toast.success("อัปโหลดรูปสำเร็จ");
-    } catch (err) {
-      console.error("Variant image upload error:", err);
-      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
-    } finally { setUploadingVariantImage(null); }
-  };
-
-  const removeVariantImage = (variantKey: string, imgIndex: number) => {
-    setDraftVariants((prev) => prev.map((v) => v.key === variantKey ? { ...v, images: v.images.filter((_, i) => i !== imgIndex) } : v));
-  };
-
   // ─── Gallery image upload (draft) ─────────────────────────────────────
   const handleGalleryUpload = async (files: FileList | File[]) => {
     const list = Array.from(files).slice(0, 10 - galleryImages.length);
@@ -587,6 +568,21 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   const removeDetailImage = (index: number) => setDetailImages((prev) => prev.filter((_, i) => i !== index));
 
+  // ─── Option value image upload (draft) ──────────────────────────────
+  const handleOptionImageUpload = async (groupIndex: number, valueIndex: number, file: File) => {
+    const ACCEPT = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+    if (!ACCEPT.includes(file.type)) { toast.error("ไฟล์ไม่ใช่รูปภาพที่รองรับ"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("ไฟล์ใหญ่เกิน 5 MB"); return; }
+    try {
+      const img = await draftUpload(draftId, file, `options/${groupIndex}/${valueIndex}`);
+      updateOptionValueImage(groupIndex, valueIndex, img.url);
+      toast.success("อัปโหลดรูปตัวเลือกสำเร็จ");
+    } catch (err) {
+      console.error("Option image upload error:", err);
+      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
+    }
+  };
+
   // ─── Attribute helpers ────────────────────────────────────────────────
   const addAttribute = () => setAttributes((prev) => [...prev, { name: "", value: "" }]);
   const removeAttribute = (index: number) => setAttributes((prev) => prev.filter((_, i) => i !== index));
@@ -600,7 +596,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       if (!group.name.trim()) continue;
       let groupId = group.id;
       if (groupId) {
-        try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name: group.name.trim() }) }); } catch { /* best effort */ }
+        // Update existing group (name + displayType)
+        try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name: group.name.trim(), displayType: group.displayType }) }); } catch { /* best effort */ }
       } else {
         try {
           const res = await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name: group.name.trim(), displayType: group.displayType }) });
@@ -610,8 +607,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       }
       if (!groupId) continue;
       for (const val of group.values) {
-        if (!val.value.trim() || val.id) continue;
-        try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}/values`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ value: val.value.trim(), label: val.label || val.value.trim() }) }); } catch { /* best effort */ }
+        if (!val.value.trim()) continue;
+        if (val.id) {
+          // Update existing value (isEnabled, imageUrl)
+          try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-values/${val.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ value: val.value.trim(), label: val.label || val.value.trim(), imageUrl: val.imageUrl || null, isEnabled: val.isEnabled !== false }) }); } catch { /* best effort */ }
+        } else {
+          // Create new value
+          try { await fetch(`${baseUrl}/api/seller/products/${productId}/option-groups/${groupId}/values`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ value: val.value.trim(), label: val.label || val.value.trim(), imageUrl: val.imageUrl || null, isEnabled: val.isEnabled !== false }) }); } catch { /* best effort */ }
+        }
       }
     }
     for (const attr of attributes) {
@@ -624,6 +627,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const validate = useCallback((): string[] => {
     const errors: string[] = [];
     if (!form.name.trim()) errors.push("กรุณากรอกชื่อสินค้า");
+    if (variantCount > 100) errors.push("จำนวน Variant เกินขีดจำกัด 100 — กรุณาลดจำนวนตัวเลือก");
     if (galleryImages.length === 0 && (!current?.images || current.images.length === 0)) errors.push("ต้องมีรูปตัวอย่างสินค้าอย่างน้อย 1 รูป");
     // Validate option values
     for (const group of optionGroups) {
@@ -676,8 +680,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           status: form.published ? "published" : "draft",
         });
         if (updated) {
-          if (form.stock !== "") await setStock({ productId: current.id, quantity: Math.max(0, Number(form.stock)) });
-          if (form.reorderLevel !== "") await setReorderLevel({ productId: current.id, reorderLevel: Math.max(0, Number(form.reorderLevel)) });
+          // Product-level stock removed — variant stock is source of truth
           await saveOptions(current.id);
           // Upload detail images (edit mode)
           if (detailImages.length > 0) {
@@ -709,8 +712,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             description: form.description || "",
             supplier: form.supplier || null,
             status: "pending_review",
-            stock: form.stock ? Math.max(0, Number(form.stock)) : 0,
-            reorderLevel: form.reorderLevel ? Math.max(0, Number(form.reorderLevel)) : undefined,
           },
           previewImages: galleryImages.map((img, i) => ({ url: img.url, alt: img.alt || "" })),
           detailImages: detailImages.map((img, i) => ({ url: img.url, alt: img.alt || "" })),
@@ -722,6 +723,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               value: v.value.trim(),
               label: v.label || v.value.trim(),
               imageUrl: v.imageUrl || null,
+              isEnabled: v.isEnabled !== false,
             })),
           })),
           variants: draftVariants.map((v) => {
@@ -799,10 +801,17 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   const hasOptions = optionGroups.some((g) => g.name.trim() && g.values.some((v) => v.value.trim()));
 
+  // ─── Variant count for warning ──────────────────────────────────────
+  const variantCount = useMemo(() => {
+    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.filter((v) => v.value.trim() && (v.isEnabled !== false)).length >= 1);
+    if (validGroups.length === 0) return 1;
+    return validGroups.reduce((acc, g) => acc * g.values.filter((v) => v.value.trim() && (v.isEnabled !== false)).length, 1);
+  }, [optionGroups]);
+
   // ─── Variant summary ──────────────────────────────────────────────────
   const variantSummary = useMemo(() => {
     if (!hasOptions) return null;
-    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim()));
+    const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((v) => v.value.trim() && (v.isEnabled !== false)));
     if (validGroups.length === 0) return null;
     return validGroups.map((g) => `${g.name}: ${g.values.filter((v) => v.value.trim()).map((v) => v.value).join(", ")}`).join(" | ");
   }, [optionGroups, hasOptions]);
@@ -857,25 +866,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
         </div>
 
-        {/* ═══ Section 2: Inventory ════════════════════════════════════ */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">คลังสินค้า</h3>
-          <p className="mb-2 text-xs text-slate-500">ราคาจะกำหนดที่ระดับ Variant เท่านั้น</p>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="p-stock">สต็อก</Label>
-              <Input id="p-stock" type="number" min="0" value={form.stock} onChange={(e) => set("stock", e.target.value)} placeholder="เช่น 100" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-reorder">จุดสั่งซื้อซ้ำ</Label>
-              <Input id="p-reorder" type="number" min="0" value={form.reorderLevel} onChange={(e) => set("reorderLevel", e.target.value)} placeholder="เช่น 20" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-supplier">ซัพพลายเออร์</Label>
-              <Input id="p-supplier" value={form.supplier} onChange={(e) => set("supplier", e.target.value)} placeholder="ไม่บังคับ" />
-            </div>
-          </div>
-        </div>
+
 
         {/* ═══ Section 3: Option Groups ══════════════════════════════ */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -885,22 +876,58 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
           <p className="mt-1 text-xs text-slate-500">สร้างตัวเลือกสินค้า เช่น สี, ขนาด — ระบบจะสร้าง Variant อัตโนมัติ</p>
 
+          {variantCount > 100 && (
+            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-3">
+              <p className="text-xs font-semibold text-red-700">⚠ ตัวเลือกที่เลือกจะสร้าง {variantCount.toLocaleString()} Variants — เกินขีดจำกัดสูงสุด 100</p>
+              <p className="mt-1 text-[11px] text-red-500">กรุณาลดจำนวนตัวเลือกหรือยกเลิกบางค่าก่อนดำเนินการต่อ</p>
+            </div>
+          )}
+
           <div className="mt-3 space-y-3">
             {optionGroups.map((group, gi) => (
               <div key={gi} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-center gap-2">
                   <Input value={group.name} onChange={(e) => updateGroupName(gi, e.target.value)} placeholder="เช่น สี, ขนาด, รสชาติ" className="h-8 text-sm" />
+                  <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    <button type="button" className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${group.displayType === "text" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "text")}>ข้อความ</button>
+                    <button type="button" className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${group.displayType === "image" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "image")}>รูปภาพ</button>
+                  </div>
                   <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 text-red-400 hover:text-red-600" onClick={() => removeOptionGroup(gi)} aria-label="ลบกลุ่มตัวเลือก"><X className="size-4" /></Button>
                 </div>
                 <div className="mt-2 space-y-2">
                   {group.values.map((val, vi) => (
-                    <div key={vi} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white p-2">
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[10px] font-semibold text-slate-500">{vi + 1}</span>
+                    <div key={vi} className={`flex items-center gap-2 rounded-lg border p-2 transition-colors ${val.isEnabled !== false ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50/60 opacity-55"}`}>
+                      <Checkbox
+                        checked={val.isEnabled !== false}
+                        onCheckedChange={(checked) => updateOptionValueEnabled(gi, vi, checked === true)}
+                        className="shrink-0"
+                      />
                       <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-7 flex-1 text-xs" />
+                      {group.displayType === "image" && (
+                        <div className="shrink-0">
+                          <label className="flex size-7 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
+                            {val.imageUrl ? (
+                              <img src={val.imageUrl} alt="" className="size-full object-cover" />
+                            ) : (
+                              <ImagePlus className="size-3.5" />
+                            )}
+                            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOptionImageUpload(gi, vi, f); e.target.value = ""; }} />
+                          </label>
+                        </div>
+                      )}
                       <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
                     </div>
                   ))}
-                  <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 text-xs text-[#10B981]" onClick={() => addOptionValue(gi)}><Plus className="size-3" />เพิ่มค่า</Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => {
+                      setOptionGroups((prev) => prev.map((g, i) => i === gi ? { ...g, values: g.values.map((v) => ({ ...v, isEnabled: true })) } : g));
+                    }}>เลือกทั้งหมด</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => {
+                      setOptionGroups((prev) => prev.map((g, i) => i === gi ? { ...g, values: g.values.map((v) => ({ ...v, isEnabled: false })) } : g));
+                    }}>ยกเลิกทั้งหมด</Button>
+                    <div className="flex-1" />
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-xs text-[#10B981]" onClick={() => addOptionValue(gi)}><Plus className="size-3" />เพิ่มค่า</Button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -908,7 +935,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
 
           {variantSummary && (
-            <p className="mt-3 text-xs text-slate-500">Variant ที่จะสร้าง: {variantSummary}</p>
+            <p className="mt-3 text-xs text-slate-500">Variant ที่จะสร้าง: {variantSummary} ({variantCount} รายการ)</p>
           )}
         </div>
 
@@ -969,26 +996,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       <Input value={v.sku} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, sku: e.target.value } : pv))} className="h-7 text-xs" placeholder="ไม่บังคับ" />
                     </div>
                     <div className="col-span-3 grid gap-1">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-[10px]">รูป Variant</Label>
-                        <span className="text-[10px] tabular-nums text-slate-400">{v.images.length} / 10</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {v.images.map((img, imgIdx) => (
-                          <div key={imgIdx} className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-slate-200">
-                            <img src={img.url} alt="" className="size-full object-cover" />
-                            <button type="button" className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-red-500 text-white" onClick={() => removeVariantImage(v.key, imgIdx)}><X className="size-2" /></button>
-                          </div>
-                        ))}
-                        {v.images.length < 10 ? (
-                          <label className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
-                            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.key, f); e.target.value = ""; }} />
-                            {uploadingVariantImage === v.key ? <Loader2 className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
-                          </label>
-                        ) : (
-                          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[10px] text-slate-400">ครบ</span>
-                        )}
-                      </div>
+                      <Label className="text-[10px]">รูป (Option Value)</Label>
+                      <p className="text-[10px] text-slate-400">รูปมาจากตัวเลือกสินค้า เช่น สีดำ → รูปดำ</p>
                     </div>
                   </div>
                 </div>
