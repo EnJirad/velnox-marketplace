@@ -57,8 +57,8 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
               <ShoppingCart className="size-6 text-slate-400" />
             </span>
             <div>
-              <p className="text-sm font-semibold text-slate-900">กรุณาสมัครสมาชิกหรือเข้าสู่ระบบก่อนใช้งานตะกร้า</p>
-              <p className="mt-1 text-xs leading-5 text-slate-400">เข้าสู่ระบบเพื่อบันทึกสินค้าในตะกร้าและดำเนินการชำระเงิน</p>
+              <p className="text-sm font-semibold text-slate-900">{t("cartDrawer.authRequired")}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">{t("cartDrawer.authDesc")}</p>
             </div>
             <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
               <Button
@@ -66,7 +66,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                 onClick={goLogin}
               >
                 <LogIn className="size-4" />
-                เข้าสู่ระบบ
+                {t("cartDrawer.loginCta")}
               </Button>
               <Button
                 variant="outline"
@@ -77,7 +77,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                 }}
               >
                 <UserPlus className="size-4" />
-                สมัครสมาชิก
+                {t("cartDrawer.registerCta")}
               </Button>
             </div>
           </div>

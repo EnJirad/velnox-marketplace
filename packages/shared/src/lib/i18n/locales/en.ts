@@ -296,6 +296,10 @@ export const en: Dict = {
     summary: "Items in your cart",
     quantity: "Qty",
     tagline: "Commerce that remembers you",
+    authRequired: "Please sign in or create an account to use your cart",
+    authDesc: "Sign in to keep items in your cart and continue to checkout",
+    loginCta: "Sign in",
+    registerCta: "Create account",
   },
 
   productDetail: {
@@ -357,6 +361,9 @@ export const en: Dict = {
     selectOptions: "Please select required options",
     pleaseSelectOption: "Please select {options}",
     variantUnavailable: "This option is not available",
+    stockLeft: "{count} left",
+    stockPieces: "{count} pcs",
+    stockOut: "Sold out",
   },
 
   cartPage: {

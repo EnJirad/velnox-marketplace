@@ -499,11 +499,11 @@ export function ProductSelectionSheet({
                                 </span>
                                 {valueInStock && valueStock > 0 && (
                                   <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                                    {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                                    {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                                   </span>
                                 )}
                                 {!valueInStock && (
-                                  <span className="text-[9px] text-red-400">หมด</span>
+                                  <span className="text-[9px] text-red-400">{t("productDetail.stockOut")}</span>
                                 )}
                               </>
                             );
@@ -514,11 +514,11 @@ export function ProductSelectionSheet({
                               <span className="truncate text-[11px] font-medium">{val.label}</span>
                               {valueInStock && valueStock > 0 && (
                                 <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                                  {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                                  {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                                 </span>
                               )}
                               {!valueInStock && (
-                                <span className="text-[9px] text-red-400">หมด</span>
+                                <span className="text-[9px] text-red-400">{t("productDetail.stockOut")}</span>
                               )}
                             </>
                           );

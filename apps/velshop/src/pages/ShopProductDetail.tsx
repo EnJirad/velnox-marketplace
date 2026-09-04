@@ -989,8 +989,8 @@ export default function ShopProductDetail() {
                   disabled={outOfStock && !needsVariant}
                 >
                   <ShoppingCart className="size-4" />
-                  <span className="hidden sm:inline">เพิ่มลงตะกร้า</span>
-                  <span className="sm:hidden">ตะกร้า</span>
+                  <span className="hidden sm:inline">{t("product.addToCart")}</span>
+                  <span className="sm:hidden">{t("product.addToCartSm")}</span>
                 </Button>
               </div>
               {(product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) && (
@@ -1196,10 +1196,10 @@ export default function ShopProductDetail() {
                         }
                         const isImageGroup = group.displayType === "image";
                         const valStockLabel = !valueInStock ? (
-                          <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} text-red-400`}>หมด</span>
+                          <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} text-red-400`}>{t("productDetail.stockOut")}</span>
                         ) : valueStock > 0 ? (
                           <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                            {valueStock <= 5 ? `เหลือ ${valueStock}` : `${valueStock} ชิ้น`}
+                            {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                           </span>
                         ) : null;
 

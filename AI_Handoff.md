@@ -2086,3 +2086,48 @@ modes — all untouched.
 
 **Verification:** ✅ bun run i18n:check (835×3 parity) · ✅ typecheck velshop/velseller/
 velcenter/velnox/backend · ✅ velshop build
+
+### 2026-09-04 — Cart UI i18n Completion + Top-Left Notifications
+
+**Problem:** After switching TH → EN → MY, some cart-related buttons/labels stayed in Thai
+(product detail "เพิ่มลงตะกร้า"/"ตะกร้า" action buttons, sheet option stock labels "หมด"/
+"เหลือ N"/"N ชิ้น", CartDrawer sign-in block). Toasts also appeared bottom-right by default.
+
+**Root cause:** Not the language system — the LanguageProvider is fully reactive (context
+value changes → all consumers re-render; no `t()` results cached in state/memos; no reloads).
+The root cause was **hardcoded UI strings** that bypassed `t()`:
+- `ShopProductDetail.tsx` sticky action bar: Add-to-Cart button labels (desktop + mobile spans)
+- `ShopProductDetail.tsx` + `ProductSelectionSheet.tsx`: per-option stock labels built with
+  template literals (`เหลือ ${n}`, `${n} ชิ้น`, `หมด`)
+- `CartDrawer.tsx`: unauthenticated-cart block (title, description, login/register buttons)
+
+**Fixes:**
+1. New dictionary keys (TH/EN/MY at parity — verified by `bun run i18n:check`, 842×3):
+   - `productDetail.stockLeft` ("เหลือ {count}"), `productDetail.stockPieces`
+     ("{count} ชิ้น"), `productDetail.stockOut` ("หมด")
+   - `cartDrawer.authRequired`, `cartDrawer.authDesc`, `cartDrawer.loginCta`,
+     `cartDrawer.registerCta`
+2. Existing keys reused for the cart buttons: `product.addToCart` (desktop) /
+   `product.addToCartSm` (mobile) — no duplicate keys created.
+3. Notification position: `packages/shared/src/components/ui/sonner.tsx` (the single toast
+   host for all apps) now sets `position="top-left"` with safe-area-aware offsets —
+   desktop `calc(16px + env(safe-area-inset-top/left))`, mobile `calc(12px + …)`.
+   Sonner defaults keep 24px/16px base spacing consistent with the spec range.
+   All three apps (velshop/velseller/velcenter) mount this same component without props,
+   so there is exactly one notification surface and no per-page overrides.
+   Accessibility preserved: sonner container has `aria-live="polite"` (status semantics),
+   toasts are keyboard-focusable/dismissible, auto-dismiss unchanged.
+
+**Preserved (regression-checked):** `optionValueImageMap[val.id]` UUID mapping,
+`optionOverrideIndex`/`activeIndex` gallery state, `history.scrollRestoration = 'manual'`,
+variant-stock source of truth (`applyVariantStock`/`computeOptionValueStock`),
+selection sheet 4 entry modes, compact add-to-cart toasts (no product name).
+
+**Verification:** ✅ `bun run i18n:check` (th=842 en=842 my=842, interpolation parity)
+· ✅ typecheck velshop/velseller/velcenter/velnox/backend · ✅ builds ×4
+· ✅ no remaining hardcoded user-facing Thai strings in velshop scan
+
+**Note:** VelSeller/VelCenter/Velnox still contain hardcoded Thai UI text (seller/center
+tools are Thai-first today; VelSeller pages call `t()` for gate/moderation keys but have
+no LanguageProvider mount — language switching there would need a provider mount plus a
+full key pass). Logged as future work, deliberately not mixed into this cart/i18n fix.

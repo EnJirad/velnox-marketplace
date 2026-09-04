@@ -297,6 +297,10 @@ export const th = {
     summary: "สินค้าในตะกร้าของคุณ",
     quantity: "จำนวน",
     tagline: "Commerce that remembers you · จำแทนคุณ",
+    authRequired: "กรุณาสมัครสมาชิกหรือเข้าสู่ระบบก่อนใช้งานตะกร้า",
+    authDesc: "เข้าสู่ระบบเพื่อบันทึกสินค้าในตะกร้าและดำเนินการชำระเงิน",
+    loginCta: "เข้าสู่ระบบ",
+    registerCta: "สมัครสมาชิก",
   },
 
   productDetail: {
@@ -358,6 +362,9 @@ export const th = {
     selectOptions: "กรุณาเลือกตัวเลือกที่จำเป็น",
     pleaseSelectOption: "กรุณาเลือก {options}",
     variantUnavailable: "ตัวเลือกนี้ไม่มีสินค้า",
+    stockLeft: "เหลือ {count}",
+    stockPieces: "{count} ชิ้น",
+    stockOut: "หมด",
   },
 
   cartPage: {

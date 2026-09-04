@@ -195,6 +195,10 @@ export const my = {
     summary: "သင့်ခြင်းတောင်းထဲရှိ ပစ္စည်းများ",
     quantity: "အရေအတွက်",
     tagline: "Commerce that remembers you · မှတ်မိနေသော ဈေးဝယ်မှု",
+    authRequired: "ခြင်းတောင်းအသုံးပြုရန် အကောင့်ဝင်ရန် သို့မဟုတ် အကောင့်ဖွင့်ပါ",
+    authDesc: "အကောင့်ဝင်ပါက ခြင်းတောင်းထဲရှိ ပစ္စည်းများ သိမ်းဆည်းပြီး ငွေပေးချေမှု ဆက်လက်လုပ်ဆောင်နိုင်ပါသည်",
+    loginCta: "အကောင့်ဝင်ရန်",
+    registerCta: "အကောင့်ဖွင့်ရန်",
   },
 
   productDetail: {
@@ -256,6 +260,9 @@ export const my = {
     selectOptions: "မဖြစ်မနေရွေးချယ်ရန် ရွေးချယ်ပါ",
     pleaseSelectOption: "{options} ကို ရွေးချယ်ပါ",
     variantUnavailable: "ဤရွေးချယ်မှု မရှိပါ",
+    stockLeft: "လက်ကျန် {count}",
+    stockPieces: "{count} ခု",
+    stockOut: "ကုန်သွားပါပြီ",
   },
 
   cartPage: {
