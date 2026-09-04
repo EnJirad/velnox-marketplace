@@ -201,6 +201,7 @@ export default function ShopProductDetail() {
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [optionOverrideIndex, setOptionOverrideIndex] = useState<number | null>(null);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [wishlisted, setWishlisted] = useState(false);
   const [wishToggling, setWishToggling] = useState(false);
@@ -394,6 +395,8 @@ export default function ShopProductDetail() {
     if (activeIndex >= images.length && images.length > 0) setActiveIndex(0);
   }, [images.length, activeIndex]);
 
+
+
   /* ── Option value image map (variant-based + option-value-based) ── */
   const optionValueImageMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -441,58 +444,18 @@ export default function ShopProductDetail() {
     return imgs;
   }, [optionGroups, selectedOptions, optionValueImageMap]);
 
-  /* ── Main display image (independent of gallery activeIndex) ────── */
-  const mainDisplayImage = useMemo(() => {
-    // Priority 1: Selected IMAGE option value
-    if (selectedOptionImages.length > 0) {
-      const img = selectedOptionImages[0];
-      return {
-        id: `ov-${img.valueId}`,
-        productId: product?.id ?? '',
-        url: img.url,
-        displayUrl: img.url,
-        thumbUrl: img.url,
-        storageProvider: 'r2' as const,
-        storageKey: '',
-        alt: img.url,
-        sortOrder: 0,
-        isPrimary: false,
-        width: null,
-        height: null,
-        createdAt: Date.now(),
-      };
-    }
-    // Priority 2: Selected variant images
-    if (selectedVariant?.images?.length > 0) {
-      const img = selectedVariant.images[0];
-      return {
-        id: `vi-${img.id ?? 0}`,
-        productId: product?.id ?? '',
-        url: img.url,
-        displayUrl: img.url,
-        thumbUrl: img.url,
-        storageProvider: 'r2' as const,
-        storageKey: (img.storageKey as string) ?? '',
-        alt: (img.alt as string) || '',
-        sortOrder: 0,
-        isPrimary: false,
-        width: null,
-        height: null,
-        createdAt: Date.now(),
-      };
-    }
-    // Priority 3: Option value images from optionValueImageMap
-    for (const group of optionGroups) {
-      const valId = selectedOptions[group.id];
-      if (!valId) continue;
-      const imgSrc = optionValueImageMap[valId];
+  /* ── Unified main image: option override > gallery activeIndex ────── */
+  const mainImage = useMemo(() => {
+    // Option override: user selected an option with an image
+    if (optionOverrideIndex !== null) {
+      const imgSrc = selectedOptionImages[0];
       if (imgSrc) {
         return {
-          id: `ov-${valId}`,
+          id: `ov-${imgSrc.valueId}`,
           productId: product?.id ?? '',
-          url: imgSrc,
-          displayUrl: imgSrc,
-          thumbUrl: imgSrc,
+          url: imgSrc.url,
+          displayUrl: imgSrc.url,
+          thumbUrl: imgSrc.url,
           storageProvider: 'r2' as const,
           storageKey: '',
           alt: '',
@@ -504,13 +467,32 @@ export default function ShopProductDetail() {
         };
       }
     }
-    // Priority 4: Product preview/gallery images
-    if (product?.images && product.images.length > 0) return product.images[0];
-    if (product?.primaryImage) return product.primaryImage;
-    return null;
-  }, [selectedOptionImages, selectedVariant, product, optionGroups, selectedOptions, optionValueImageMap]);
+    // Gallery activeIndex (thumbnail click, swipe, or initial)
+    return images[activeIndex]?.img ?? images[0]?.img ?? null;
+  }, [optionOverrideIndex, selectedOptionImages, images, activeIndex, product]);
 
-  const active = mainDisplayImage ?? images[activeIndex]?.img ?? images[0]?.img;
+  // Sync gallery index when option selection changes
+  useEffect(() => {
+    if (!product || optionGroups.length === 0) return;
+    // Find selected option image URL
+    let selectedImgUrl: string | null = null;
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (valId && optionValueImageMap[valId]) {
+        selectedImgUrl = optionValueImageMap[valId];
+        break;
+      }
+    }
+    if (!selectedImgUrl) {
+      // No option image — keep gallery at current position
+      return;
+    }
+    // Find matching image in gallery by URL
+    const idx = images.findIndex((entry) => entry.img.url === selectedImgUrl);
+    if (idx >= 0) {
+      setActiveIndex(idx);
+    }
+  }, [selectedOptions, optionValueImageMap, images, optionGroups, product]);
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
   const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
@@ -544,12 +526,16 @@ export default function ShopProductDetail() {
     });
   }, [product, reviews, images, outOfStock, t]);
 
-  /* ── Scroll to top on product load (fixes refresh scroll issue) ──── */
+  /* ── Scroll restoration for refresh + back/forward ───────────────── */
   useEffect(() => {
-    if (!loading && product) {
-      window.scrollTo(0, 0);
+    if ('scrollRestoration' in history) {
+      history.scrollRestoration = 'manual';
     }
-  }, [loading, product]);
+    // Scroll to top on fresh navigation (new product ID)
+    if (!loading && product) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [loading, product, productId]);
 
   /* ── Compact selector thumbnails ────────────────────────────────── */
 
@@ -724,6 +710,7 @@ export default function ShopProductDetail() {
       ...prev,
       [groupId]: prev[groupId] === valueText ? "" : valueText,
     }));
+    setOptionOverrideIndex(0); // Show option image (sync effect will set activeIndex)
   }, []);
 
   const handleWishlist = async () => {
@@ -798,8 +785,8 @@ export default function ShopProductDetail() {
           {/* Gallery */}
           <div className="min-w-0">
             <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ maxWidth: "100%" }}>
-              {active ? (
-                <img src={active.displayUrl || active.url} alt={active.alt || product.name} className="size-full object-cover" />
+              {mainImage ? (
+                <img src={mainImage?.displayUrl || mainImage?.url} alt={mainImage?.alt || product.name} className="size-full object-cover" />
               ) : (
                 <span className="flex size-full items-center justify-center"><ImageOff className="size-12 text-slate-300" /></span>
               )}
@@ -818,7 +805,7 @@ export default function ShopProductDetail() {
                 allThumbs.push({
                   id: `gi-${entry.img.id ?? i}`,
                   url: entry.img.thumbUrl || entry.img.displayUrl || entry.img.url,
-                  onClick: () => setActiveIndex(i),
+                  onClick: () => { setActiveIndex(i); setOptionOverrideIndex(null); },
                   isActive: i === activeIndex,
                   isVariant: entry.group === 1,
                   group: entry.group,
@@ -1075,8 +1062,8 @@ export default function ShopProductDetail() {
             {/* Product header — larger preview */}
             <div className="flex gap-4 pt-2">
               <div className="h-[180px] w-[180px] shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[220px] sm:w-[220px]">
-                {active ? (
-                  <img src={active.displayUrl || active.url} alt={active.alt || product.name} className="size-full object-contain" />
+                {mainImage ? (
+                  <img src={mainImage?.displayUrl || mainImage?.url} alt={mainImage?.alt || product.name} className="size-full object-contain" />
                 ) : (
                   <span className="flex size-full items-center justify-center"><ImageOff className="size-8 text-slate-300" /></span>
                 )}
