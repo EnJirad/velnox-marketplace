@@ -656,8 +656,15 @@ export default function ShopProductDetail() {
     openVariantSheet("velrepeat");
   }, [product, isAuthenticated, navigate, openVariantSheet]);
 
-  const handleSheetConfirm = useCallback(() => {
-    if (!product || !pendingAction) return;
+  const handleSheetAction = useCallback((action: PendingAction) => {
+    setPendingAction(action);
+    // Trigger the same validation + execution as direct buttons
+    if (!product) return;
+    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
+    if (outOfStock && action !== "velrepeat") {
+      toast.error(t("productDetail.outOfStockDesc"));
+      return;
+    }
     // Validate required options
     const missing = optionGroups
       .filter((g: any) => g.required && !selectedOptions[g.id])
@@ -666,9 +673,50 @@ export default function ShopProductDetail() {
       toast.error(t("productDetail.pleaseSelectOption", { options: missing.join(", ") }));
       return;
     }
-    if (outOfStock && pendingAction !== null) {
+    // Execute action
+    if (action === "cart") {
+      add({
+        id: product.id, name: product.name, unit: product.unit,
+        price: displayPrice, stock: displayStock,
+        variantId: selectedVariant?.id ?? null,
+      }, sheetQty);
+      fly(addBtnRef.current);
+      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
       setVariantSheetOpen(false);
       setPendingAction(null);
+    } else if (action === "buy") {
+      add({
+        id: product.id, name: product.name, unit: product.unit,
+        price: displayPrice, stock: displayStock,
+        variantId: selectedVariant?.id ?? null,
+      }, sheetQty);
+      setTimeout(() => {
+        navigate("/checkout", {
+          state: {
+            buyNow: true,
+            buyNowProductId: product.id,
+            buyNowVariantId: selectedVariant?.id ?? null,
+            buyNowQty: sheetQty,
+          },
+        });
+      }, 300);
+      setVariantSheetOpen(false);
+      setPendingAction(null);
+    } else if (action === "velrepeat") {
+      setVariantSheetOpen(false);
+      setPendingAction(null);
+      setSubOpen(true);
+    }
+  }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, t]);
+
+  const handleSheetConfirm = useCallback(() => {
+    if (!product || !pendingAction) return;
+    // Validate required options
+    const missing = optionGroups
+      .filter((g: any) => g.required && !selectedOptions[g.id])
+      .map((g: any) => g.name);
+    if (missing.length > 0) {
+      toast.error(t("productDetail.pleaseSelectOption", { options: missing.join(", ") }));
       return;
     }
     if (pendingAction === "cart") {
@@ -1249,7 +1297,38 @@ export default function ShopProductDetail() {
           <div className="border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
             {outOfStock ? (
               <Button className="w-full bg-slate-100 text-slate-400" disabled>{t("product.outOfStock")}</Button>
+            ) : pendingAction === null ? (
+              /* ── Options mode: show all 3 action buttons ── */
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                    onClick={() => handleSheetAction("buy")}
+                  >
+                    <Zap className="size-4" />
+                    {t("productDetail.buyNow")}
+                  </Button>
+                  <Button
+                    className="flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+                    onClick={() => handleSheetAction("cart")}
+                  >
+                    <ShoppingCart className="size-4" />
+                    {t("productDetail.addToCart")}
+                  </Button>
+                </div>
+                {(product.vrepeatEnabled || product.vrepeatWeeklyEnabled || product.vrepeatMonthlyEnabled) && (
+                  <Button
+                    variant="outline"
+                    className="w-full gap-1.5 border-[#10B981]/30 text-[#10B981] hover:bg-[#ECFDF5] hover:text-emerald-700"
+                    onClick={() => handleSheetAction("velrepeat")}
+                  >
+                    <CalendarClock className="size-4" />
+                    VelRepeat
+                  </Button>
+                )}
+              </div>
             ) : (
+              /* ── Direct mode: show single action button ── */
               <Button
                 className={`w-full gap-1.5 ${pendingAction === "velrepeat" ? "border border-[#10B981]/30 bg-[#ECFDF5] text-[#10B981] hover:bg-[#10B981]/10" : "bg-[#10B981] text-white hover:bg-emerald-600"}`}
                 onClick={handleSheetConfirm}
