@@ -83,7 +83,9 @@ function toLine(item: {
     unit: item.unit ?? "piece",
     price: item.priceSnapshot,
     qty: item.quantity,
-    stock: item.availableStock ?? item.quantity,
+    // Use availableStock from backend. Only fall back to quantity if backend didn't provide stock info at all.
+    // When availableStock is explicitly 0 or null, treat as out-of-stock (don't use qty as stock).
+    stock: item.availableStock != null ? item.availableStock : 9999,
     shopName: item.shopName,
     imageUrl: item.productImageUrl,
   };

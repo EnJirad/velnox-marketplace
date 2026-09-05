@@ -58,7 +58,7 @@ const CART_ITEMS_QUERY_FULL = `
   SELECT ci.*,
     p.name AS product_name,
     p.unit AS unit,
-    i.quantity AS available_stock,
+    COALESCE(pv.stock, i.quantity, 0) AS available_stock,
     sh.name AS shop_name,
     (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
     pv.name AS variant_name,
@@ -92,7 +92,7 @@ const CART_ITEMS_QUERY_BASIC = `
   SELECT ci.*,
     p.name AS product_name,
     p.unit AS unit,
-    i.quantity AS available_stock,
+    COALESCE(pv.stock, i.quantity, 0) AS available_stock,
     sh.name AS shop_name,
     (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
     (SELECT pov.image_url
@@ -319,7 +319,22 @@ export function setupCartRoutes(app: Express): void {
       }
 
       const item = itemResult.rows[0];
-      const availableStock = (item.stock_qty ?? 0) - (item.reserved ?? 0);
+
+      // Check variant-level stock if cart item has a variant
+      let availableStock: number;
+      if (item.variant_id) {
+        try {
+          const varResult = await query(
+            "SELECT stock FROM product_variants WHERE id = $1",
+            [item.variant_id],
+          );
+          availableStock = varResult.rows[0]?.stock ?? 999;
+        } catch {
+          availableStock = 999; // variant table may not exist yet
+        }
+      } else {
+        availableStock = (item.stock_qty ?? 0) - (item.reserved ?? 0);
+      }
       const finalQty = Math.min(qty, availableStock || 999);
 
       await query("UPDATE cart_items SET quantity = $1 WHERE id = $2", [finalQty, cartItemId]);
