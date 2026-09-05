@@ -373,6 +373,37 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-05 — Cart Stock Fix: Allow Quantities Up to Variant Stock
+
+**Problem:** Cart quantities were limited to maximum 1 — the "+" button was permanently disabled after adding 1 item.
+
+**Root Cause:**
+1. `toLine()` in `apps/velshop/src/lib/cart.tsx` used `stock: item.availableStock ?? item.quantity` — when `availableStock` was null/undefined (no inventory record), it fell back to the cart item quantity (1), capping max qty to 1.
+2. Backend `PUT /api/customer/cart/item/:id` only checked product-level inventory (`LEFT JOIN inventory`), not variant-level stock (`product_variants.stock`).
+3. Backend `CART_ITEMS_QUERY` used `i.quantity AS available_stock` which only returned product-level inventory, not variant stock.
+
+**Fixes:**
+- `apps/velshop/src/lib/cart.tsx`: `toLine()` now uses `availableStock != null ? availableStock : 9999` — defaults to high number when backend doesn't provide stock (backend is the real validator)
+- `backend/routes/cart.ts`: `CART_ITEMS_QUERY_FULL` and `CART_ITEMS_QUERY_BASIC` now use `COALESCE(pv.stock, i.quantity, 0)` for variant-level stock
+- `backend/routes/cart.ts`: PUT endpoint now checks `product_variants.stock` when cart item has a `variantId`
+
+**Behavior After Fix:**
+- Stock=10 → qty can go 1→2→…→10, "+" disabled at 10
+- Stock=3 → qty can go 1→2→3, "+" disabled at 3
+- Same (product + variant) merges quantities, different variants are separate lines
+- Server-side validation on add/update prevents exceeding stock
+- Guest cart uses product.stock from caller; authenticated cart uses backend-computed stock
+
+**Files Changed:**
+- `apps/velshop/src/lib/cart.tsx` — toLine() stock fallback
+- `backend/routes/cart.ts` — variant stock in cart queries + PUT validation
+- `backend/package.json` — added missing `stripe` dependency
+
+**Database changed:** NO (variant_id column already existed from V0021 migration)
+**Typecheck:** ✅ Backend + all 4 apps pass
+**Build:** ✅ All 4 apps pass
+**Commit:** `4790fce` — pushed to main
+
 ### 2026-09-04 — VelShop Product Actions: i18n + Selection Sheet Entry Modes
 
 **Problem:**
