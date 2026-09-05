@@ -566,6 +566,7 @@ export const my = {
   },
 
   orderDetail: {
+    shopTitle: "Shop",
     title: "မှာယူမှု အသေးစိတ်",
     orderedAt: "{date} တွင် မှာယူခဲ့သည်",
     progress: "မှာယူမှု အဆင့်များ",

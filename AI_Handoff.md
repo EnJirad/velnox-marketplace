@@ -373,6 +373,48 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-05 — Order / Order Detail / Tracking Fix
+
+**Problem:** Customers could not view order details or tracking properly — "กดดูสินค้า / กดติดตามพัสดุแล้วดูไม่ได้". The checkout success page also could not confirm the order/payment.
+
+**Root Causes:**
+1. `GET /api/customer/orders` and `GET /api/customer/orders/:orderId` used `INNER JOIN products` — deleted products made order items vanish entirely, and names came from the live `product_name` column instead of the purchase-time snapshot.
+2. Order responses hardcoded `orderNumber: order.id` (raw UUID instead of `VNX-…`), `paymentStatus: 'unpaid'`, `shippingStatus: 'pending'`, `subtotal = total_amount`, `discount/shippingFee = 0`.
+3. No `shipments`/`tracking_events` data in the API responses — the Tracking page and order-detail shipment section always showed "ยังไม่มีข้อมูล" even when shipments existed.
+4. Item images were resolved from `product_images[0]` only and the frontend never received `imageUrl`/`variantName` — Order Detail always rendered the `ImageOff` placeholder.
+5. The placeholder `GET /api/orders/:id` in `routes/index.ts` (registered BEFORE `stripe.ts`) **shadowed** the real Stripe order endpoint — `ShopCheckoutSuccess` polling `/api/orders/:orderId` received `{ order: [] }`.
+6. `PATCH /api/seller/orders/:orderId/status` (used by the Cancel button) had no route at all → 404.
+7. Stripe payments were recorded with `method = 'cod'` (column default) so the frontend's `method === "online"` check never matched → the "ชำระเงินออนไลน์" button never appeared.
+
+**Fixes (backend/routes/cart.ts):**
+- Added `fetchOrderItemsForOrders()`: single batched items query per order set (kills N+1), `LEFT JOIN products` (deleted products never break the order), snapshot-first name/image (`product_name_snapshot`/`image_url_snapshot`), variant resolution (snapshot → current option labels → variant name; snapshot → variant image → product gallery), `unitPrice` + `price` both returned.
+- Added `fetchShipmentsForOrder()`: shipments + tracking events, events read defensively so legacy DBs without `tracking_events` still return shipments.
+- **Order list**: real `order_number`, real `paymentStatus`/`shippingStatus` via correlated subqueries, real `subtotal`/`discount`/`shipping_fee`, `shopId/shopName/shopSlug`, itemCount.
+- **Order detail**: same + `parentOrderId`, `shipments[]` with `events[]`, `payments[]` (`method`/`status`/`amount`), ownership enforced via `WHERE o.id = $1 AND o.user_id = $2`.
+- **New `PATCH /api/customer/orders/:orderId/cancel`**: ownership check, only `pending`/`confirmed`, restores variant stock / releases inventory reservation in a transaction.
+- **New `POST /api/customer/reorder`**: re-adds order items to cart, merges with existing cart lines (product+variant identity), strict stock validation (no fallbacks), skips unavailable products with reasons.
+
+**Other fixes:**
+- `backend/routes/index.ts` — removed the shadowing `/api/orders/:id` placeholder (real route is in stripe.ts).
+- `backend/routes/stripe.ts` — Stripe payment records now set `method = 'online'`.
+- `packages/shared/src/lib/api-routes.ts` — `cancelOrderAction` now points at `PATCH /api/customer/orders/:orderId/cancel`.
+- `packages/shared/src/lib/commerce.ts` — `StoreOrderItem` gains `variantName/variantId/imageUrl/productStatus`; `StoreOrder` gains `parentOrderId/shopId/shopName/shopSlug/shipments/payments` (all optional, backward compatible).
+- `apps/velshop/src/pages/ShopOrderDetail.tsx` — real item image (clickable to `/products/:id`), variant line, clickable product name, Shop section (link to `/shops/:shopId`).
+- `apps/velshop/src/pages/MyOrders.tsx` — item thumbnails + variant names in order cards.
+- i18n: added `orderDetail.shopTitle` to th/en/my.
+
+**Database changed:** YES — new `shipments` + `tracking_events` tables (migration `db/migrations/034_order_shipments.sql`, synced into `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`). **Action needed:** run the updated SQL in the Neon SQL editor so tracking data has tables to live in.
+
+**Verification:**
+- Backend typecheck: ✅ PASS
+- Backend build: ✅ PASS
+- VelShop build: ✅ PASS (all 4 apps build clean)
+- i18n check: ✅ PASS (th=en=my=856 keys at parity)
+- Tests: NOT CONFIGURED
+- Lint: NOT CONFIGURED
+
+---
+
 ### 2026-09-05 — Cart Stock Safety: Remove All Arbitrary Stock Fallbacks
 
 **Problem:** Backend cart and checkout endpoints used `999` as a fallback stock value when variant stock could not be read. This allowed adding items to cart and completing checkout even when stock was unknown — a security and business logic vulnerability.

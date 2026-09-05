@@ -166,7 +166,7 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),
   "api.commerce.sellerOrders": () => apiGet("/api/seller/orders"),
   "api.commerce.setOrderStatus": (a) => apiPatch(`/api/seller/orders/${a.orderId}/status`, a),
-  "api.commerce.cancelOrderAction": (a) => apiPatch(`/api/seller/orders/${a.orderId}/status`, { status: "cancelled" }),
+  "api.commerce.cancelOrderAction": (a) => apiPatch(`/api/customer/orders/${a.orderId}/cancel`, {}),
   // VelRepeat packages (new system)
   "api.commerce.myVelRepeatPackages": () => apiGet("/api/velrepeat/packages"),
   "api.commerce.velRepeatPackageDetail": (a) => apiGet(`/api/velrepeat/packages/${a.packageId}`),

@@ -192,11 +192,18 @@ export interface StoreOrderItem {
   quantity: number;
   subtotal: number;
   commissionRate: number;
+  /** Purchased variant snapshot / resolved label (e.g. "Black / AI") */
+  variantName?: string | null;
+  variantId?: string | null;
+  /** Purchased snapshot image or current variant/product image */
+  imageUrl?: string | null;
+  productStatus?: string | null;
 }
 
 export interface StoreOrder {
   id: string;
   orderNumber: string;
+  parentOrderId?: string;
   customerUserId: string;
   status: StoreOrderStatus;
   paymentStatus: StorePaymentStatus;
@@ -214,6 +221,24 @@ export interface StoreOrder {
   createdAt: number;
   updatedAt: number;
   items?: StoreOrderItem[];
+  shipments?: Array<{
+    id: string;
+    carrier: string;
+    trackingNumber: string | null;
+    status: string;
+    estimatedDeliveryDate: string | null;
+    events?: Array<{
+      id: string;
+      status: string;
+      description: string | null;
+      location: string | null;
+      occurredAt: string;
+    }>;
+  }>;
+  payments?: Array<{ id: string; method: string; status: string; amount: number }>;
+  shopId?: string | null;
+  shopName?: string | null;
+  shopSlug?: string | null;
   customerName?: string;
   customerPhone?: string;
   itemCount?: number;

@@ -518,9 +518,9 @@ export function setupRoutes(app: Express): void {
   app.patch("/api/cart/items/:id", requireAuth, placeholder("cart"));
   app.delete("/api/cart/items/:id", requireAuth, placeholder("cart"));
 
-  app.get("/api/orders", requireAuth, placeholder("orders"));
-  app.post("/api/orders", requireAuth, placeholder("order"));
-  app.get("/api/orders/:id", requireAuth, placeholder("order"));
+  // NOTE: /api/orders/:orderId is intentionally NOT registered here — the
+  // real implementation lives in routes/stripe.ts (registered after this
+  // module). A placeholder here would shadow it and break order lookups.
 
   // Legacy address placeholders (kept for backward compatibility)
   app.get("/api/addresses", requireAuth, placeholder("addresses"));

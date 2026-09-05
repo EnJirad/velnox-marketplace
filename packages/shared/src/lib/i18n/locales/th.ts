@@ -632,6 +632,7 @@ export const th = {
     noTrackingNo: "ยังไม่มีเลขพัสดุ",
     status: "สถานะ: {status}",
     eta: "คาดว่าถึง {date}",
+    shopTitle: "ร้านค้า",
     itemsTitle: "สินค้าในออเดอร์",
     subtotal: "สินค้า",
     shipping: "ค่าจัดส่ง",

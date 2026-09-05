@@ -27,6 +27,135 @@ function param(req: Request, key: string): string {
 }
 
 /**
+ * Resolve order item display data (snapshot-first) for one or more orders.
+ *
+ * Image priority: purchased snapshot → current variant image → product gallery.
+ * Variant name priority: purchased snapshot → current option labels → variant name.
+ * Products are LEFT JOINed so deleted/unpublished products never break the order view.
+ */
+async function fetchOrderItemsForOrders(orderIds: string[]): Promise<Record<string, any[]>> {
+  if (orderIds.length === 0) return {};
+
+  const itemsRes = await query(
+    `SELECT oi.id, oi.order_id, oi.product_id, oi.shop_id, oi.variant_id,
+            oi.quantity, oi.price, oi.subtotal,
+            COALESCE(NULLIF(oi.product_name_snapshot, ''), NULLIF(oi.product_name, ''), p.name, '') AS product_name,
+            oi.variant_name_snapshot AS variant_name_snapshot,
+            COALESCE(oi.image_url_snapshot,
+                     (SELECT url FROM product_images WHERE product_id = oi.product_id ORDER BY sort_order ASC LIMIT 1)) AS image_url,
+            p.unit AS unit, p.status AS product_status
+     FROM order_items oi
+     LEFT JOIN products p ON oi.product_id = p.id
+     WHERE oi.order_id = ANY($1)
+     ORDER BY oi.created_at ASC`,
+    [orderIds],
+  );
+
+  // Resolve current variant names + images for items whose snapshot is missing
+  // (backward compatibility for orders created before snapshots were stored).
+  const variantIds = [...new Set(itemsRes.rows.map((r: any) => r.variant_id).filter(Boolean))];
+  const variantMap = new Map<string, { name: string; image: string | null; labels: string | null }>();
+  if (variantIds.length > 0) {
+    try {
+      const varRes = await query(
+        `SELECT pv.id AS variant_id, pv.name,
+                (SELECT url FROM product_variant_images WHERE variant_id = pv.id ORDER BY sort_order ASC LIMIT 1) AS variant_image,
+                (SELECT string_agg(pov.label, ' / ' ORDER BY pog.sort_order)
+                 FROM product_variant_values pvv
+                 JOIN product_option_values pov ON pvv.option_value_id = pov.id
+                 JOIN product_option_groups pog ON pov.option_group_id = pog.id
+                 WHERE pvv.variant_id = pv.id) AS option_labels
+         FROM product_variants pv
+         WHERE pv.id = ANY($1)`,
+        [variantIds],
+      );
+      for (const row of varRes.rows) {
+        variantMap.set(row.variant_id, { name: row.name, image: row.variant_image, labels: row.option_labels });
+      }
+    } catch {
+      // Variant tables may not exist on legacy databases — snapshots already cover most cases.
+    }
+  }
+
+  const byOrder = new Map<string, any[]>();
+  for (const r of itemsRes.rows) {
+    const variant = r.variant_id ? variantMap.get(r.variant_id) : null;
+    const variantName = r.variant_name_snapshot || variant?.labels || variant?.name || null;
+    const imageUrl = r.image_url || variant?.image || null;
+    const unitPrice = parseFloat(r.price) || 0;
+    const item = {
+      id: r.id,
+      orderId: r.order_id,
+      productId: r.product_id,
+      shopId: r.shop_id,
+      variantId: r.variant_id,
+      productName: r.product_name || "สินค้า",
+      unit: r.unit ?? "",
+      unitPrice,
+      price: unitPrice,
+      quantity: r.quantity,
+      subtotal: parseFloat(r.subtotal) || unitPrice * r.quantity,
+      variantName,
+      imageUrl,
+      productStatus: r.product_status,
+    };
+    const list = byOrder.get(r.order_id) ?? [];
+    list.push(item);
+    byOrder.set(r.order_id, list);
+  }
+  return Object.fromEntries(byOrder);
+}
+
+/**
+ * Load shipments for an order with their tracking events.
+ * Tracking events are read defensively so legacy DBs without the table
+ * still return shipments (events just empty).
+ */
+async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
+  const sRes = await query(
+    `SELECT s.id, s.carrier, s.tracking_number, s.status, s.estimated_delivery_date
+     FROM shipments s
+     WHERE s.order_id = $1
+     ORDER BY s.created_at DESC`,
+    [orderId],
+  );
+  const shipments = sRes.rows.map((r: any) => ({
+    id: r.id,
+    carrier: r.carrier,
+    trackingNumber: r.tracking_number,
+    status: r.status,
+    estimatedDeliveryDate: r.estimated_delivery_date,
+    events: [] as any[],
+  }));
+  if (shipments.length === 0) return shipments;
+  try {
+    const eventsRes = await query(
+      `SELECT te.id, te.shipment_id, te.status, te.description, te.location, te.occurred_at
+       FROM tracking_events te
+       WHERE te.shipment_id = ANY($1)
+       ORDER BY te.occurred_at ASC`,
+      [shipments.map((s) => s.id)],
+    );
+    const byShipment = new Map<string, any[]>();
+    for (const e of eventsRes.rows) {
+      const list = byShipment.get(e.shipment_id) ?? [];
+      list.push({
+        id: e.id,
+        status: e.status,
+        description: e.description,
+        location: e.location,
+        occurredAt: e.occurred_at,
+      });
+      byShipment.set(e.shipment_id, list);
+    }
+    for (const s of shipments) s.events = byShipment.get(s.id) ?? [];
+  } catch {
+    // tracking_events may not exist on legacy databases.
+  }
+  return shipments;
+}
+
+/**
  * Ensure the user has a cart row. Returns the cart_id.
  */
 async function ensureCart(userId: string): Promise<string> {
@@ -737,7 +866,9 @@ export function setupCartRoutes(app: Express): void {
       const limit = Math.min(Number(req.query.limit) || 50, 100);
 
       const result = await query(
-        `SELECT o.*, sh.name AS shop_name, sh.slug AS shop_slug
+        `SELECT o.*, sh.name AS shop_name, sh.slug AS shop_slug,
+                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          LEFT JOIN shops sh ON o.shop_id = sh.id
          WHERE o.user_id = $1
@@ -746,52 +877,36 @@ export function setupCartRoutes(app: Express): void {
         [userId, limit],
       );
 
-      // Fetch items for each order
-      const ordersWithItems = await Promise.all(
-        result.rows.map(async (r: any) => {
-          const itemsRes = await query(
-            `SELECT oi.*, p.unit,
-                    (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-             FROM order_items oi
-             JOIN products p ON oi.product_id = p.id
-             WHERE oi.order_id = $1`,
-            [r.id],
-          );
-          const items = itemsRes.rows.map((i: any) => ({
-            id: i.id,
-            orderId: i.order_id,
-            productId: i.product_id,
-            productName: i.product_name,
-            unit: i.unit,
-            unitPrice: parseFloat(i.price),
-            quantity: i.quantity,
-            subtotal: parseFloat(i.price) * i.quantity,
-            productImageUrl: i.product_image_url,
-          }));
-          return {
-            id: r.id,
-            orderNumber: r.id,
-            customerUserId: r.user_id,
-            status: r.status,
-            paymentStatus: 'unpaid',
-            shippingStatus: 'pending',
-            shippingMethod: null,
-            trackingNumber: null,
-            subtotal: parseFloat(r.total_amount),
-            discount: 0,
-            shippingFee: 0,
-            total: parseFloat(r.total_amount),
-            currency: r.currency ?? 'THB',
-            addressSnapshot: r.shipping_address ? JSON.parse(r.shipping_address) : null,
-            note: r.notes,
-            createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-            updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
-            items,
-            itemCount: items.reduce((s: number, i: any) => s + i.quantity, 0),
-          };
-        }),
-      );
-      const orders = ordersWithItems;
+      const orderIds = result.rows.map((r: any) => r.id);
+      const itemsByOrder = await fetchOrderItemsForOrders(orderIds);
+
+      const orders = result.rows.map((r: any) => {
+        const items = itemsByOrder[r.id] ?? [];
+        return {
+          id: r.id,
+          orderNumber: r.order_number || r.id,
+          customerUserId: r.user_id,
+          status: r.status,
+          paymentStatus: r.payment_status,
+          shippingStatus: r.shipping_status,
+          shippingMethod: null,
+          trackingNumber: null,
+          subtotal: parseFloat(r.subtotal) || 0,
+          discount: parseFloat(r.discount) || 0,
+          shippingFee: parseFloat(r.shipping_fee) || 0,
+          total: parseFloat(r.total_amount) || 0,
+          currency: r.currency ?? "THB",
+          addressSnapshot: r.shipping_address ? JSON.parse(r.shipping_address) : null,
+          note: r.notes,
+          shopId: r.shop_id,
+          shopName: r.shop_name,
+          shopSlug: r.shop_slug,
+          createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+          updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
+          items,
+          itemCount: items.reduce((s: number, i: any) => s + i.quantity, 0),
+        };
+      });
 
       res.json({ success: true, data: orders });
     } catch (err) {
@@ -807,7 +922,9 @@ export function setupCartRoutes(app: Express): void {
       const orderId = param(req, "orderId");
 
       const orderResult = await query(
-        `SELECT o.*, sh.name AS shop_name, sh.slug AS shop_slug
+        `SELECT o.*, sh.name AS shop_name, sh.slug AS shop_slug,
+                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          LEFT JOIN shops sh ON o.shop_id = sh.id
          WHERE o.id = $1 AND o.user_id = $2`,
@@ -821,54 +938,225 @@ export function setupCartRoutes(app: Express): void {
 
       const order = orderResult.rows[0];
 
-      // Get order items
-      const itemsResult = await query(
-        `SELECT oi.*, p.unit,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-         FROM order_items oi
-         JOIN products p ON oi.product_id = p.id
-         WHERE oi.order_id = $1`,
-        [orderId],
-      );
-
-      const items = itemsResult.rows.map((r: any) => ({
-        id: r.id,
-        productId: r.product_id,
-        productName: r.product_name,
-        unit: r.unit,
-        quantity: r.quantity,
-        price: parseFloat(r.price),
-        subtotal: parseFloat(r.price) * r.quantity,
-        productImageUrl: r.product_image_url,
-      }));
+      const [itemsByOrder, shipments, paymentsRes] = await Promise.all([
+        fetchOrderItemsForOrders([orderId]),
+        fetchShipmentsForOrder(orderId),
+        query(
+          `SELECT id, method, status, amount, provider
+           FROM payments
+           WHERE order_id = $1
+           ORDER BY created_at DESC`,
+          [orderId],
+        ),
+      ]);
+      const items = itemsByOrder[orderId] ?? [];
 
       res.json({
         success: true,
         data: {
           id: order.id,
-          orderNumber: order.id,
+          orderNumber: order.order_number || order.id,
+          parentOrderId: order.id,
           customerUserId: order.user_id,
           status: order.status,
-          paymentStatus: 'unpaid',
-          shippingStatus: 'pending',
+          paymentStatus: order.payment_status,
+          shippingStatus: order.shipping_status,
           shippingMethod: null,
-          trackingNumber: null,
-          subtotal: parseFloat(order.total_amount),
-          discount: 0,
-          shippingFee: 0,
-          total: parseFloat(order.total_amount),
-          currency: order.currency ?? 'THB',
+          trackingNumber: shipments[0]?.trackingNumber ?? null,
+          subtotal: parseFloat(order.subtotal) || 0,
+          discount: parseFloat(order.discount) || 0,
+          shippingFee: parseFloat(order.shipping_fee) || 0,
+          total: parseFloat(order.total_amount) || 0,
+          currency: order.currency ?? "THB",
           addressSnapshot: order.shipping_address ? JSON.parse(order.shipping_address) : null,
           note: order.notes,
+          shopId: order.shop_id,
+          shopName: order.shop_name,
+          shopSlug: order.shop_slug,
           createdAt: order.created_at ? new Date(order.created_at).getTime() : Date.now(),
           updatedAt: order.updated_at ? new Date(order.updated_at).getTime() : Date.now(),
           items,
           itemCount: items.reduce((s: number, i: any) => s + i.quantity, 0),
+          shipments,
+          payments: paymentsRes.rows.map((p: any) => ({
+            id: p.id,
+            method: p.method,
+            status: p.status,
+            amount: parseFloat(p.amount) || 0,
+          })),
         },
       });
     } catch (err) {
       console.error("[orders] detail error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch order" } });
+    }
+  });
+
+  // ── PATCH /api/customer/orders/:orderId/cancel ────────────────────────────
+  // Customer cancels their own order before it ships; stock is restored.
+  app.patch("/api/customer/orders/:orderId/cancel", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const orderId = param(req, "orderId");
+
+      const orderRes = await query(
+        `SELECT id, status FROM orders WHERE id = $1 AND user_id = $2`,
+        [orderId, userId],
+      );
+      if (orderRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Order not found" } });
+        return;
+      }
+      if (!["pending", "confirmed"].includes(orderRes.rows[0].status)) {
+        res.status(400).json({
+          success: false,
+          error: { code: "INVALID_STATUS", message: "Order can only be cancelled before it ships" },
+        });
+        return;
+      }
+
+      await withTransaction(async (client) => {
+        await client.query(
+          `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+          [orderId],
+        );
+        // Restore stock for each purchased item
+        const items = await client.query(
+          `SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1`,
+          [orderId],
+        );
+        for (const item of items.rows) {
+          if (item.variant_id) {
+            await client.query(
+              `UPDATE product_variants SET stock = stock + $1, updated_at = NOW() WHERE id = $2`,
+              [item.quantity, item.variant_id],
+            );
+          } else {
+            await client.query(
+              `UPDATE inventory SET reserved = GREATEST(0, reserved - $1) WHERE product_id = $2`,
+              [item.quantity, item.product_id],
+            );
+          }
+        }
+      });
+
+      res.json({ success: true, data: { id: orderId, status: "cancelled" } });
+    } catch (err) {
+      console.error("[orders] cancel error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to cancel order" } });
+    }
+  });
+
+  // ── POST /api/customer/reorder ────────────────────────────────────────────
+  // Re-adds every item from a past order into the user's cart, merging with
+  // existing cart lines (same product + variant) up to available stock.
+  app.post("/api/customer/reorder", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const { orderId } = req.body as { orderId?: string };
+      if (!orderId || typeof orderId !== "string") {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "orderId is required" } });
+        return;
+      }
+
+      const orderRes = await query(
+        `SELECT id FROM orders WHERE id = $1 AND user_id = $2`,
+        [orderId, userId],
+      );
+      if (orderRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Order not found" } });
+        return;
+      }
+
+      const itemsRes = await query(
+        `SELECT product_id, variant_id, quantity, product_name FROM order_items WHERE order_id = $1`,
+        [orderId],
+      );
+      if (itemsRes.rows.length === 0) {
+        res.status(400).json({ success: false, error: { code: "EMPTY_ORDER", message: "Order has no items" } });
+        return;
+      }
+
+      const cartId = await ensureCart(userId);
+      const added: any[] = [];
+      const skipped: { productName: string; reason: string }[] = [];
+
+      for (const item of itemsRes.rows) {
+        // Product must still exist and be published (no crash on deleted products)
+        const prodRes = await query(`SELECT name, status FROM products WHERE id = $1`, [item.product_id]);
+        if (prodRes.rows.length === 0 || prodRes.rows[0].status !== "published") {
+          skipped.push({ productName: item.product_name || "สินค้า", reason: "unavailable" });
+          continue;
+        }
+
+        // Stock check — variant stock is the source of truth for variant items;
+        // no arbitrary fallback: if we cannot read stock we do not add the item.
+        let available = 0;
+        if (item.variant_id) {
+          let varRes;
+          try {
+            varRes = await query(`SELECT stock, status FROM product_variants WHERE id = $1`, [item.variant_id]);
+          } catch {
+            skipped.push({ productName: item.product_name || "สินค้า", reason: "stock_unavailable" });
+            continue;
+          }
+          if (varRes.rows.length === 0 || varRes.rows[0].status !== "active") {
+            skipped.push({ productName: item.product_name || "สินค้า", reason: "unavailable" });
+            continue;
+          }
+          const stockNum = Number(varRes.rows[0].stock);
+          if (varRes.rows[0].stock == null || !Number.isFinite(stockNum) || stockNum <= 0) {
+            skipped.push({ productName: item.product_name || "สินค้า", reason: "out_of_stock" });
+            continue;
+          }
+          available = stockNum;
+        } else {
+          const invRes = await query(`SELECT quantity, reserved FROM inventory WHERE product_id = $1`, [item.product_id]);
+          if (invRes.rows.length === 0) {
+            skipped.push({ productName: item.product_name || "สินค้า", reason: "stock_unavailable" });
+            continue;
+          }
+          const qtyNum = Number(invRes.rows[0].quantity);
+          const resNum = Number(invRes.rows[0].reserved);
+          if (!Number.isFinite(qtyNum) || !Number.isFinite(resNum) || qtyNum - resNum <= 0) {
+            skipped.push({ productName: item.product_name || "สินค้า", reason: "out_of_stock" });
+            continue;
+          }
+          available = qtyNum - resNum;
+        }
+
+        // Merge with an existing cart line for the same product + variant
+        const existing = await query(
+          `SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND product_id = $2 AND (variant_id IS NOT DISTINCT FROM $3)`,
+          [cartId, item.product_id, item.variant_id],
+        );
+        if (existing.rows.length > 0) {
+          const curQty = Number(existing.rows[0].quantity) || 0;
+          if (curQty >= available) {
+            skipped.push({ productName: item.product_name || "สินค้า", reason: "at_stock_limit" });
+            continue;
+          }
+          const finalQty = Math.min(curQty + item.quantity, available);
+          await query(
+            `UPDATE cart_items SET quantity = $1, updated_at = NOW() WHERE id = $2`,
+            [finalQty, existing.rows[0].id],
+          );
+        } else {
+          const finalQty = Math.min(item.quantity, available);
+          const insRes = await query(
+            `INSERT INTO cart_items (cart_id, product_id, variant_id, quantity)
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [cartId, item.product_id, item.variant_id, finalQty],
+          );
+          added.push({ id: insRes.rows[0].id, productId: item.product_id });
+        }
+      }
+
+      await recalcCart(cartId);
+      res.json({ success: true, data: { added, skipped } });
+    } catch (err) {
+      console.error("[orders] reorder error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to reorder" } });
     }
   });
 

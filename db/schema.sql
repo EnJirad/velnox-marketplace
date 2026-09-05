@@ -282,6 +282,28 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_shop ON order_items (shop_id);
 
+CREATE TABLE IF NOT EXISTS shipments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  carrier TEXT NOT NULL DEFAULT '',
+  tracking_number TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  estimated_delivery_date DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments (order_id);
+
+CREATE TABLE IF NOT EXISTS tracking_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  shipment_id UUID NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'info',
+  description TEXT,
+  location TEXT,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tracking_events_shipment ON tracking_events (shipment_id, occurred_at);
+
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),

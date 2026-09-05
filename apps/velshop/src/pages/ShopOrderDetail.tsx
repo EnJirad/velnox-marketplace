@@ -55,6 +55,9 @@ interface OrderItemRow {
   unitPrice: number;
   quantity: number;
   subtotal: number;
+  variantName?: string | null;
+  imageUrl?: string | null;
+  shopId?: string | null;
 }
 
 interface TrackingEventRow {
@@ -85,6 +88,8 @@ interface OrderDetail {
   shippingFee: number;
   total: number;
   note: string | null;
+  shopId?: string | null;
+  shopName?: string | null;
   createdAt: number;
   addressSnapshot: {
     recipientName?: string;
@@ -466,6 +471,29 @@ export default function ShopOrderDetail() {
           </section>
         )}
 
+        {/* Shop */}
+        {order.shopName && (
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
+            <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
+              <Store className="size-4 text-[#10B981]" />
+              {t("orderDetail.shopTitle")}
+            </h2>
+            {order.shopId ? (
+              <Link
+                to={`/shops/${order.shopId}`}
+                className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-[#10B981]"
+              >
+                <span className="flex size-8 items-center justify-center rounded-full bg-slate-100">
+                  <Store className="size-4 text-slate-500" />
+                </span>
+                {order.shopName}
+              </Link>
+            ) : (
+              <p className="mt-2 text-sm font-medium text-slate-700">{order.shopName}</p>
+            )}
+          </section>
+        )}
+
         {/* Items */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.itemsTitle")}</h2>
@@ -473,13 +501,33 @@ export default function ShopOrderDetail() {
             {items.map((item) => (
               <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
-                    <ImageOff className="size-4 text-slate-300" />
-                  </span>
+                  {item.imageUrl ? (
+                    <Link to={`/products/${item.productId}`} className="shrink-0">
+                      <img
+                        src={item.imageUrl}
+                        alt={item.productName}
+                        className="size-14 rounded-[10px] border border-slate-100 object-cover"
+                        loading="lazy"
+                      />
+                    </Link>
+                  ) : (
+                    <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
+                      <ImageOff className="size-4 text-slate-300" />
+                    </span>
+                  )}
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">{item.productName}</p>
-                    <p className="text-xs text-slate-400">
-                      {formatBaht(item.unitPrice)} / {item.unit} × {item.quantity}
+                    <Link
+                      to={`/products/${item.productId}`}
+                      className="block truncate text-sm font-semibold text-slate-900 transition-colors hover:text-[#10B981]"
+                    >
+                      {item.productName}
+                    </Link>
+                    {item.variantName && (
+                      <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{item.variantName}</p>
+                    )}
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {formatBaht(item.unitPrice)}
+                      {item.unit ? ` / ${item.unit}` : ""} × {item.quantity}
                     </p>
                   </div>
                 </div>

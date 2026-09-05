@@ -273,18 +273,35 @@ export default function MyOrders() {
 
                     <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                       {items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between gap-3 text-sm"
-                        >
-                          <span className="min-w-0 truncate text-slate-600">
-                            {item.productName}{" "}
-                            <span className="text-slate-400">
-                              × {item.quantity} {item.unit}
+                        <div key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="flex min-w-0 items-center gap-2.5">
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt=""
+                                className="size-9 shrink-0 rounded-lg border border-slate-100 object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-50">
+                                <ImageOff className="size-3.5 text-slate-300" />
+                              </span>
+                            )}
+                            <span className="min-w-0">
+                              <span className="block truncate text-slate-600">{item.productName}</span>
+                              {item.variantName && (
+                                <span className="block truncate text-xs text-slate-400">{item.variantName}</span>
+                              )}
                             </span>
                           </span>
-                          <span className="shrink-0 font-medium tabular-nums text-slate-900">
-                            {formatBaht(item.subtotal)}
+                          <span className="flex shrink-0 items-center gap-3">
+                            <span className="text-xs text-slate-400">
+                              × {item.quantity}
+                              {item.unit ? ` ${item.unit}` : ""}
+                            </span>
+                            <span className="font-medium tabular-nums text-slate-900">
+                              {formatBaht(item.subtotal)}
+                            </span>
                           </span>
                         </div>
                       ))}

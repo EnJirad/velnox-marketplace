@@ -154,13 +154,13 @@ export function setupStripeRoutes(app: Express): void {
 
       if (existingPayment.rows.length > 0) {
         await query(
-          `UPDATE payments SET provider_checkout_session_id = $1, updated_at = NOW() WHERE id = $2`,
+          `UPDATE payments SET provider_checkout_session_id = $1, method = 'online', updated_at = NOW() WHERE id = $2`,
           [session.id, existingPayment.rows[0].id],
         );
       } else {
         await query(
-          `INSERT INTO payments (order_id, provider, provider_checkout_session_id, amount, currency, status)
-           VALUES ($1, 'stripe', $2, $3, $4, 'pending')`,
+          `INSERT INTO payments (order_id, provider, method, provider_checkout_session_id, amount, currency, status)
+           VALUES ($1, 'stripe', 'online', $2, $3, $4, 'pending')`,
           [orderId, session.id, order.total_amount, order.currency || "THB"],
         );
       }

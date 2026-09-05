@@ -630,6 +630,7 @@ export const en: Dict = {
     noTrackingNo: "No tracking number yet",
     status: "Status: {status}",
     eta: "Expected by {date}",
+    shopTitle: "Shop",
     itemsTitle: "Items in this order",
     subtotal: "Items",
     shipping: "Shipping",
