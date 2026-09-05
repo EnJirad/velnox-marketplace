@@ -373,6 +373,44 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-05 — Cart Stock Safety: Remove All Arbitrary Stock Fallbacks
+
+**Problem:** Backend cart and checkout endpoints used `999` as a fallback stock value when variant stock could not be read. This allowed adding items to cart and completing checkout even when stock was unknown — a security and business logic vulnerability.
+
+**Root Cause:**
+1. `POST /api/customer/cart/add`: `let availableStock = 999;` as initial default, and `availableStock = inv ? inv.quantity - inv.reserved : 999;` when inventory row was missing.
+2. `PUT /api/customer/cart/item/:id`: `varResult.rows[0]?.stock ?? 999` and `catch { availableStock = 999; }` when variant query failed.
+3. `PUT /api/customer/cart/item/:id`: `Math.min(qty, availableStock || 999)` — double fallback.
+4. `POST /api/customer/checkout`: `catch { // fallback to inventory check }` when variant stock query failed — silently fell back to product-level inventory.
+5. `POST /api/customer/checkout` stock decrement: `catch { // fallback to inventory }` — variant stock decrement failure silently switched to inventory.
+
+**Fixes:**
+- **POST /cart/add** — Variant path: `VARIANT_NOT_FOUND` (400) if variant missing, `STOCK_UNAVAILABLE` (503) if stock is null/NaN/finite-fails, `OUT_OF_STOCK` (400) if stock ≤ 0, actual stock value only when valid. No-variant path: `STOCK_UNAVAILABLE` (503) if inventory row missing or data corrupt, `OUT_OF_STOCK` (400) if available ≤ 0.
+- **PUT /cart/item/:id** — Variant path: same validation (not-found/unavailable/out-of-stock). No-variant path: validates `stock_qty`/`reserved` are finite numbers. `finalQty = Math.min(qty, availableStock)` with no fallback.
+- **Checkout validation** — Variant stock query failure returns 503 `STOCK_UNAVAILABLE` immediately. Does NOT fall back to product inventory. Variant not found returns 400 `VARIANT_NOT_FOUND`.
+- **Checkout stock decrement** — Variant query failure throws `STOCK_UNAVAILABLE` error. Does NOT fall back to `UPDATE inventory`.
+
+**Behavior After Fix:**
+- Variant stock = 10 → can add 1→2→…→10
+- Variant stock = 0 → `OUT_OF_STOCK`
+- Variant missing → `VARIANT_NOT_FOUND`
+- Variant stock unreadable → `STOCK_UNAVAILABLE`, cannot add/checkout
+- No-variant product missing inventory → `STOCK_UNAVAILABLE`
+- Checkout variant query failure → stops checkout, returns error
+- Zero `999` fallbacks remain in cart.ts
+
+**Files Changed:**
+- `backend/routes/cart.ts` — removed all 6 `999` fallback points, added proper error responses
+
+**Database changed:** NO
+**Typecheck:** ✅ Backend typecheck passes
+**Build:** ✅ Backend build passes
+**Tests:** NOT CONFIGURED (no backend test suite)
+**Lint:** NOT CONFIGURED
+**999 stock fallback search:** ✅ PASS — zero matches in backend/routes/cart.ts
+
+---
+
 ### 2026-09-05 — Cart Stock Fix: Allow Quantities Up to Variant Stock
 
 **Problem:** Cart quantities were limited to maximum 1 — the "+" button was permanently disabled after adding 1 item.

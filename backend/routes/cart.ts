@@ -189,7 +189,7 @@ export function setupCartRoutes(app: Express): void {
 
       // Validate variant if provided
       let cartPrice = parseFloat(product.price);
-      let availableStock = 999;
+      let availableStock = 0;
       let validatedVariantId: string | null = null;
 
       if (variantId && typeof variantId === "string") {
@@ -201,13 +201,13 @@ export function setupCartRoutes(app: Express): void {
           );
         } catch (varErr: any) {
           if (varErr?.code === "42P01") {
-            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant system not available" } });
+            res.status(503).json({ success: false, error: { code: "STOCK_UNAVAILABLE", message: "Variant system is unavailable. Please try again later." } });
             return;
           }
           throw varErr;
         }
         if (varResult.rows.length === 0) {
-          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant not found" } });
+          res.status(400).json({ success: false, error: { code: "VARIANT_NOT_FOUND", message: "Selected variant was not found." } });
           return;
         }
         const variant = varResult.rows[0];
@@ -219,19 +219,39 @@ export function setupCartRoutes(app: Express): void {
           res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant is not available" } });
           return;
         }
-        if (variant.stock <= 0) {
-          res.status(400).json({ success: false, error: { code: "OUT_OF_STOCK", message: "Variant is out of stock" } });
+        // Validate stock is a valid number
+        const variantStock = Number(variant.stock);
+        if (variant.stock == null || !Number.isFinite(variantStock)) {
+          res.status(503).json({ success: false, error: { code: "STOCK_UNAVAILABLE", message: "Variant stock is unavailable. Please try again later." } });
+          return;
+        }
+        if (variantStock <= 0) {
+          res.status(400).json({ success: false, error: { code: "OUT_OF_STOCK", message: "This variant is out of stock." } });
           return;
         }
         // Server determines authoritative price and stock from variant
         cartPrice = parseFloat(variant.price);
-        availableStock = variant.stock;
+        availableStock = variantStock;
         validatedVariantId = variant.id;
       } else {
-        // No variant — check product-level stock
+        // No variant — check product-level stock from inventory
         const invResult = await query("SELECT quantity, reserved FROM inventory WHERE product_id = $1", [productId]);
+        if (invResult.rows.length === 0) {
+          res.status(503).json({ success: false, error: { code: "STOCK_UNAVAILABLE", message: "Stock information is unavailable. Please try again later." } });
+          return;
+        }
         const inv = invResult.rows[0];
-        availableStock = inv ? inv.quantity - inv.reserved : 999;
+        const quantity = Number(inv.quantity);
+        const reserved = Number(inv.reserved);
+        if (!Number.isFinite(quantity) || !Number.isFinite(reserved)) {
+          res.status(503).json({ success: false, error: { code: "STOCK_UNAVAILABLE", message: "Stock data is corrupted. Please try again later." } });
+          return;
+        }
+        availableStock = quantity - reserved;
+        if (availableStock <= 0) {
+          res.status(400).json({ success: false, error: { code: "OUT_OF_STOCK", message: "This product is out of stock." } });
+          return;
+        }
       }
 
       const cartId = await ensureCart(userId);
@@ -320,22 +340,46 @@ export function setupCartRoutes(app: Express): void {
 
       const item = itemResult.rows[0];
 
-      // Check variant-level stock if cart item has a variant
+      // Check stock — variant stock is source of truth for variant products
       let availableStock: number;
       if (item.variant_id) {
+        let varResult;
         try {
-          const varResult = await query(
+          varResult = await query(
             "SELECT stock FROM product_variants WHERE id = $1",
             [item.variant_id],
           );
-          availableStock = varResult.rows[0]?.stock ?? 999;
-        } catch {
-          availableStock = 999; // variant table may not exist yet
+        } catch (varErr: any) {
+          if (varErr?.code === "42P01") {
+            res.status(503).json({ success: false, error: { code: "STOCK_UNAVAILABLE", message: "Variant system is unavailable. Please try again later." } });
+            return;
+          }
+          throw varErr;
         }
+        if (varResult.rows.length === 0) {
+          res.status(400).json({ success: false, error: { code: "VARIANT_NOT_FOUND", message: "Selected variant was not found." } });
+          return;
+        }
+        const variantStock = Number(varResult.rows[0].stock);
+        if (varResult.rows[0].stock == null || !Number.isFinite(variantStock)) {
+          res.status(503).json({ success: false, error: { code: "STOCK_UNAVAILABLE", message: "Variant stock is unavailable. Please try again later." } });
+          return;
+        }
+        if (variantStock <= 0) {
+          res.status(400).json({ success: false, error: { code: "OUT_OF_STOCK", message: "This variant is out of stock." } });
+          return;
+        }
+        availableStock = variantStock;
       } else {
-        availableStock = (item.stock_qty ?? 0) - (item.reserved ?? 0);
+        const quantity = Number(item.stock_qty ?? 0);
+        const reserved = Number(item.reserved ?? 0);
+        if (!Number.isFinite(quantity) || !Number.isFinite(reserved)) {
+          res.status(503).json({ success: false, error: { code: "STOCK_UNAVAILABLE", message: "Stock data is unavailable. Please try again later." } });
+          return;
+        }
+        availableStock = quantity - reserved;
       }
-      const finalQty = Math.min(qty, availableStock || 999);
+      const finalQty = Math.min(qty, availableStock);
 
       await query("UPDATE cart_items SET quantity = $1 WHERE id = $2", [finalQty, cartItemId]);
 
@@ -520,37 +564,42 @@ export function setupCartRoutes(app: Express): void {
           return;
         }
         if (item.variant_id) {
-          // Check variant-level stock
+          // Variant stock is source of truth — must succeed or stop checkout
+          let varStock;
           try {
-            const varStock = await query(
+            varStock = await query(
               `SELECT stock, status FROM product_variants WHERE id = $1`,
               [item.variant_id],
             );
-            if (varStock.rows.length === 0) {
-              res.status(400).json({
-                success: false,
-                error: { code: "VARIANT_UNAVAILABLE", message: `Variant for "${item.product_name}" is no longer available` },
-              });
-              return;
-            }
-            const v = varStock.rows[0];
-            if (v.status !== "active" || item.quantity > v.stock) {
-              res.status(400).json({
-                success: false,
-                error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}" (variant: ${v.stock} available)` },
-              });
-              return;
-            }
-          } catch {
-            // Variant table may not exist — fallback to inventory check
-            const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
-            if (item.quantity > available) {
-              res.status(400).json({
-                success: false,
-                error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}"` },
-              });
-              return;
-            }
+          } catch (varErr: any) {
+            res.status(503).json({
+              success: false,
+              error: { code: "STOCK_UNAVAILABLE", message: `Stock information is unavailable for "${item.product_name}". Please try again later.` },
+            });
+            return;
+          }
+          if (varStock.rows.length === 0) {
+            res.status(400).json({
+              success: false,
+              error: { code: "VARIANT_NOT_FOUND", message: `Variant for "${item.product_name}" was not found.` },
+            });
+            return;
+          }
+          const v = varStock.rows[0];
+          const variantStock = Number(v.stock);
+          if (v.stock == null || !Number.isFinite(variantStock)) {
+            res.status(503).json({
+              success: false,
+              error: { code: "STOCK_UNAVAILABLE", message: `Stock data is unavailable for "${item.product_name}". Please try again later.` },
+            });
+            return;
+          }
+          if (v.status !== "active" || item.quantity > variantStock) {
+            res.status(400).json({
+              success: false,
+              error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}" (variant: ${variantStock} available)` },
+            });
+            return;
           }
         } else {
           const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
@@ -632,23 +681,20 @@ export function setupCartRoutes(app: Express): void {
 
             // Decrease stock: if variant, use atomic variant stock decrement; otherwise use inventory
             if (item.variant_id) {
+              let updResult;
               try {
-                const updResult = await client.query(
+                updResult = await client.query(
                   `UPDATE product_variants SET stock = stock - $1, updated_at = NOW()
                    WHERE id = $2 AND stock >= $1
                    RETURNING id`,
                   [item.quantity, item.variant_id],
                 );
-                if (updResult.rows.length === 0) {
-                  throw new Error(`INSUFFICIENT_STOCK: variant ${item.variant_id}`);
-                }
               } catch (varErr: any) {
-                if (varErr?.message?.startsWith('INSUFFICIENT_STOCK')) throw varErr;
-                // Variant table may not exist — fallback to inventory
-                await client.query(
-                  `UPDATE inventory SET reserved = reserved + $1 WHERE product_id = $2`,
-                  [item.quantity, item.product_id],
-                );
+                // Variant table query failed — do NOT fallback to inventory
+                throw new Error(`STOCK_UNAVAILABLE: failed to update variant stock for ${item.variant_id}`);
+              }
+              if (updResult.rows.length === 0) {
+                throw new Error(`INSUFFICIENT_STOCK: variant ${item.variant_id}`);
               }
             } else {
               await client.query(
