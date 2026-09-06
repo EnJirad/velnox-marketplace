@@ -2595,3 +2595,24 @@ Verification: VelShop `tsc -b --noEmit` PASS · `vite build` PASS · `bun run i1
 **Preserved 100%:** `handleOptionImageUpload` (draft flow), `handleVariantImageUpload` (R2 intent→PUT→save), `handleVariantImageDelete`, `saveEdit`/`startEdit`, `handleSetFeatured`, `handleDelete`, `removeOptionValue`, `updateOptionValue`, `updateOptionValueImage`, saveOptions PATCH contract, generate-variants flow, variant count limit, all API contracts and schema.
 
 **Verification:** velseller typecheck ✅ · velshop/velcenter/velnox/backend typecheck ✅ · velseller `vite build` ✅ (6.78s) · `git diff --check` clean ✅
+
+---
+
+### 2026-09-06 — VelShop: Product Detail variant cards image-left + global route scroll restoration
+
+**Task:** (1) IMAGE-group variant cards in VelShop Product Detail (and ShopDetail selection sheet) must be IMAGE LEFT → DETAILS RIGHT on both mobile and desktop; (2) every new page navigation must start scroll at (0,0).
+
+**Audit findings (from real code):**
+- VelShop is react-router v7 (`BrowserRouter basename="velshop"`) — NOT Next.js. Entry: `apps/velshop/src/main.tsx`. Shared `RouteSyncer`/`SiteSuspense` live there; no global scroll-restoration existed. Only `ShopProductDetail` manually scrolled top on product load (`history.scrollRestoration='manual'` for refresh/back-forward).
+- Variant selector: inline in `apps/velshop/src/pages/ShopProductDetail.tsx` (bottom Sheet, lines ~1119-1375) AND `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` (ShopDetail variant sheet). IMAGE option groups rendered vertical flex-col cards ( image → label → stock); TEXT groups are compact pills ( unchanged).
+
+**Changes (UI only — zero business logic):**
+1. **Variant IMAGE cards → horizontal:** `flex w-full items-center gap-2 sm:w-[calc(50%-0.375rem)]` with fixed `size-14` image column on LEFT (object-contain, never stretched) + `min-w-0 flex-1` details column on RIGHT (name truncate + stock label). `w-full` ensures full-width at 320px (cannot overflow); sm+ gets 2-column grid preserving image-left. Text pills, stock calc, disabled state, selected ring, all handlers unchanged.
+
+2. **Global scroll:** added `ScrollToTop` component (keyed on `pathname` only) inside `BrowserRouter` in velshop main.tsx — scrolls exactly `top:0, left:0, behavior:'instant'` on every pathname change (incl. back/forward), sets `history.scrollRestoration='manual'`. Not triggered by sheets/drawers/modals/search-param-only updates — those don't change pathname. Same policy applied uniformly (A→B→C, Back→top) since initial `scrollRestoration` was already manualin Product Detail.
+
+**Preserved 100%:** selectedVariant resolution, price/compareAt/discount/stock derivation, main image switching, VelRepeat, Add to Cart, Buy Now, option disabled/out-of-stock logic, seller product editor, DB/API untouched.
+
+
+
+**Verification:** velshop `tsc -b --noEmit` PASS · velshop `vite build` PASS (4.19s) · `git diff --check` clean · all other apps untouched ( no full-repo typecheck rerun needed — only velshop files changed)·

@@ -16,9 +16,9 @@ import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/Mobi
 import { IdentityMerge } from "@velnox/shared/lib/track";
 import { useCart } from "@/lib/cart";
 import { Home, Package, ReceiptText, ShoppingCart, User } from "lucide-react";
-import { lazy } from "react";
+import { lazy, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import "../../../packages/shared/src/index.css";
 
 /**
@@ -41,6 +41,20 @@ function ShopTabBar() {
     { to: "/profile", label: t("nav.profile"), icon: User },
   ];
   return <MobileTabBar items={items} />;
+}
+
+/**
+ * Global route scroll restoration — every page navigation (incl. back/forward)
+ * starts at the top. Keyed on pathname only so in-page state changes
+ * (sheets, drawers, modals, query updates) never reset scroll.
+ */
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [pathname]);
+  return null;
 }
 
 const ShopHome = lazy(() => import("@/pages/ShopHome"));
@@ -70,6 +84,7 @@ createRoot(document.getElementById("root")!).render(
     <LanguageProvider>
       <IdentityMerge />
       <BrowserRouter basename={siteBasename("velshop")}>
+      <ScrollToTop />
       <RouteSyncer />
       <CartProvider>
       <CookieConsentProvider>
