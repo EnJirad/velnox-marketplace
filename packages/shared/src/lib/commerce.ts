@@ -344,6 +344,55 @@ export function formatIsoDateTime(iso: string | number): string {
   }).format(new Date(iso));
 }
 
+// ---------------------------------------------------------------------------
+// locale-aware date formatters (velshop uses the active UI language)
+// ---------------------------------------------------------------------------
+
+/** Map the app's language codes to Intl locale tags. */
+export const DATE_LOCALE_MAP: Record<string, string> = {
+  th: "th-TH",
+  en: "en-US",
+  my: "my-MM",
+};
+
+/**
+ * Format a date for the active UI language.
+ * Accepts Unix-ms numbers, ISO strings or Date objects (backend sends both
+ * epoch ms and timestamptz strings). Timestamps render in the visitor's local
+ * timezone — correct for user-facing "next order" dates. Returns "—" for
+ * null/undefined/invalid so callers never show a raw placeholder.
+ */
+export function formatLocaleDate(
+  value: string | number | Date | null | undefined,
+  lang: string,
+): string {
+  if (value == null || value === "") return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat(DATE_LOCALE_MAP[lang] ?? "en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(d);
+}
+
+/** Same as formatLocaleDate but with time (hour:minute). */
+export function formatLocaleDateTime(
+  value: string | number | Date | null | undefined,
+  lang: string,
+): string {
+  if (value == null || value === "") return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat(DATE_LOCALE_MAP[lang] ?? "en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+}
+
 export function shortOrderId(id: string): string {
   return `#${id.slice(0, 8).toUpperCase()}`;
 }

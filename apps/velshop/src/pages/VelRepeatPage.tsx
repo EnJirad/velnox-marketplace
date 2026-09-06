@@ -5,15 +5,20 @@ import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
-import { formatBaht } from "@velnox/shared/lib/commerce";
+import { formatBaht, formatLocaleDate, formatLocaleDateTime } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   CalendarClock,
+  CalendarDays,
   ImageOff,
+  MapPin,
+  Package,
   Pause,
   Play,
   RefreshCw,
+  ShoppingBag,
   Trash2,
+  Wallet,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -36,14 +41,32 @@ interface VelRepeatPlanItem {
   productImageUrl: string | null;
 }
 
+interface VelRepeatShippingAddress {
+  label?: string | null;
+  recipientName?: string | null;
+  phone?: string | null;
+  line1?: string | null;
+  line2?: string | null;
+  subdistrict?: string | null;
+  district?: string | null;
+  province?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+}
+
 interface VelRepeatPlan {
   id: string;
   status: string;
   frequencyType: "days" | "weeks" | "months";
   intervalValue: number;
   nextRunAt: number | null;
+  startedAt: number | null;
+  endedAt: number | null;
   shippingAddressId: string | null;
+  shippingAddress: VelRepeatShippingAddress | null;
   paymentMethod: string;
+  currency: string;
+  notes: string | null;
   items: VelRepeatPlanItem[];
   lastRun: { status: string; scheduledFor: string; completedAt: string; errorMessage: string } | null;
   createdAt: number;
@@ -116,10 +139,18 @@ const STATUS_LABEL_KEY: Record<string, string> = {
   paid: "velrepeat.statusPaid",
   active: "velrepeat.statusActive",
   paused: "velrepeat.statusPaused",
-  out_of_stock: "velrepeatPlan.outOfStockHint",
+  out_of_stock: "velrepeat.statusPaused",
   completed: "velrepeat.statusCompleted",
   cancelled: "velrepeat.statusCancelled",
   refunded: "velrepeat.statusRefunded",
+};
+
+const RUN_STATUS_LABEL_KEY: Record<string, string> = {
+  success: "velrepeatPlan.runSuccess",
+  failed: "velrepeatPlan.runFailed",
+  out_of_stock: "velrepeatPlan.runOutOfStock",
+  payment_failed: "velrepeatPlan.runPaymentFailed",
+  item_unavailable: "velrepeatPlan.runItemUnavailable",
 };
 
 const UNIT_KEY: Record<string, string> = {
@@ -129,7 +160,7 @@ const UNIT_KEY: Record<string, string> = {
 };
 
 export default function VelRepeatPage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const myPackages = useAction(api.commerce.myVelRepeatPackages);
   const updatePackage = useAction(api.commerce.updateVelRepeatPackage);
   const myPlans = useAction(api.commerce.myVelRepeatPlans);
@@ -140,10 +171,12 @@ export default function VelRepeatPage() {
 
   const [packages, setPackages] = useState<VelRepeatPackage[] | null>(null);
   const [plans, setPlans] = useState<VelRepeatPlan[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setLoadError(false);
     try {
       const [rows, planRows] = await Promise.all([
         myPackages(),
@@ -153,6 +186,7 @@ export default function VelRepeatPage() {
       setPlans((planRows ?? []) as unknown as VelRepeatPlan[]);
     } catch (err) {
       console.error("VelRepeat load error:", err);
+      setLoadError(true);
       setPackages((prev) => prev ?? []);
       setPlans((prev) => prev ?? []);
     }
@@ -227,41 +261,132 @@ export default function VelRepeatPage() {
     return t("velrepeatPlan.everyLabel", { count: plan.intervalValue, unit });
   };
 
-  const formatNextRun = (ts: number | null) => {
-    if (!ts) return "—";
-    return new Date(ts).toLocaleDateString("th-TH", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+  /**
+   * Calendar-day distance between today and the target date (local timezone —
+   * never shifts the day, unlike naive UTC parsing of date-only values).
+   */
+  const relativeRunLabel = (ts: number | null): string => {
+    if (!ts) return "";
+    const now = new Date();
+    const target = new Date(ts);
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+    const diffDays = Math.round((startTarget - startToday) / 86_400_000);
+    if (diffDays === 0) return t("velrepeatPlan.today");
+    if (diffDays === 1) return t("velrepeatPlan.tomorrow");
+    if (diffDays > 1) return t("velrepeatPlan.inDays", { count: diffDays });
+    return t("velrepeatPlan.overdue", { count: Math.abs(diffDays) });
   };
+
+  const planCycleTotal = (plan: VelRepeatPlan) =>
+    plan.items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+
+  const formatAddress = (addr: VelRepeatShippingAddress | null): string => {
+    if (!addr) return "";
+    const parts = [addr.line1, addr.subdistrict, addr.district, addr.province, addr.postalCode]
+      .filter((v): v is string => Boolean(v));
+    const base = parts.join(", ");
+    return addr.recipientName ? `${addr.recipientName} · ${base}` : base;
+  };
+
+  const paymentLabel = (method: string): string => {
+    if (method === "cod") return t("paymentMethods.cod");
+    if (method === "online") return t("paymentMethods.online");
+    return method;
+  };
+
+  // Dashboard stats (computed from real plan data only)
+  const activePlans = (plans ?? []).filter((p) => p.status === "active");
+  const nextOrderTs = activePlans.length
+    ? Math.min(...activePlans.map((p) => p.nextRunAt ?? Number.POSITIVE_INFINITY))
+    : null;
+  const perCycleSpend = activePlans.reduce((sum, p) => sum + planCycleTotal(p), 0);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
       <section className="border-b border-slate-100 bg-white">
-        <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
             <RefreshCw className="size-4 text-[#10B981]" />
             {t("velrepeat.eyebrow")}
           </p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
             {t("velrepeat.title")}
           </h1>
           <p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">{t("velrepeat.desc")}</p>
         </div>
       </section>
 
-      <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
+      <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         {plans === null && packages === null ? (
           <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 rounded-2xl" />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={`stat-${i}`} className="h-24 rounded-2xl" />
+              ))}
+            </div>
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Skeleton key={i} className="h-44 rounded-2xl" />
             ))}
           </div>
         ) : (
           <div className="space-y-10">
+            {/* ─── Dashboard stats (V2 plans) ───────────────────────── */}
+            {(plans ?? []).length > 0 && (
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    <Zap className="size-3.5 text-[#10B981]" />
+                    {t("velrepeatPlan.statActive")}
+                  </div>
+                  <p className="mt-1.5 text-2xl font-extrabold tabular-nums text-slate-900">
+                    {activePlans.length}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    <CalendarDays className="size-3.5 text-[#10B981]" />
+                    {t("velrepeatPlan.statNextOrder")}
+                  </div>
+                  <p className="mt-1.5 text-base font-bold tabular-nums text-slate-900 sm:text-lg">
+                    {nextOrderTs != null ? formatLocaleDate(nextOrderTs, lang) : "—"}
+                  </p>
+                  {nextOrderTs != null && (
+                    <p className="mt-0.5 text-xs font-medium text-[#047857]">
+                      {relativeRunLabel(nextOrderTs)}
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    <Wallet className="size-3.5 text-[#10B981]" />
+                    {t("velrepeatPlan.statPerCycleSpend")}
+                  </div>
+                  <p className="mt-1.5 text-2xl font-extrabold tabular-nums text-slate-900">
+                    {formatBaht(perCycleSpend)}
+                  </p>
+                </div>
+              </section>
+            )}
+
+            {/* ─── Load error + retry ───────────────────────────────── */}
+            {loadError && (plans ?? []).length === 0 && (
+              <section className="flex flex-col items-center rounded-2xl border border-red-100 bg-red-50 px-6 py-10 text-center">
+                <h3 className="text-sm font-semibold text-red-700">{t("velrepeatPlan.loadFailed")}</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 gap-1.5 border-red-200 text-red-700 hover:bg-red-100"
+                  onClick={() => void load()}
+                >
+                  <RefreshCw className="size-3.5" />
+                  {t("common.retry")}
+                </Button>
+              </section>
+            )}
+
             {/* ─── V2: Recurring plans ─────────────────────────────── */}
             <section>
               <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-slate-900">
@@ -276,6 +401,15 @@ export default function VelRepeatPage() {
                   </span>
                   <h3 className="mt-4 text-sm font-semibold text-slate-900">{t("velrepeatPlan.noPlans")}</h3>
                   <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">{t("velrepeatPlan.noPlansDesc")}</p>
+                  <Button
+                    asChild
+                    className="mt-5 gap-1.5"
+                  >
+                    <Link to="/products">
+                      <ShoppingBag className="size-4" />
+                      {t("velrepeat.pickProducts")}
+                    </Link>
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -284,65 +418,124 @@ export default function VelRepeatPage() {
                     const labelKey = STATUS_LABEL_KEY[plan.status] ?? "velrepeat.statusActive";
                     const editable = ["active", "paused", "out_of_stock"].includes(plan.status);
                     const isExpanded = expandedId === plan.id;
+                    const cycleTotal = planCycleTotal(plan);
+                    const address = formatAddress(plan.shippingAddress);
+                    const runStatusLabel = plan.lastRun
+                      ? t(RUN_STATUS_LABEL_KEY[plan.lastRun.status] ?? plan.lastRun.status)
+                      : "";
                     return (
-                      <div key={plan.id} className="rounded-2xl border border-slate-200 bg-white p-5">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge className={`gap-1 rounded-full ring-1 ring-inset ${meta.badge}`}>
-                                <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                                {plan.status === "out_of_stock"
-                                  ? t("velrepeat.statusPaused")
-                                  : t(labelKey) || plan.status}
+                      <div key={plan.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div className="p-4 sm:p-5">
+                          {/* header: status + frequency */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className={`gap-1 rounded-full ring-1 ring-inset ${meta.badge}`}>
+                              <span className={`size-1.5 rounded-full ${meta.dot}`} />
+                              {t(labelKey) || plan.status}
+                            </Badge>
+                            <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
+                              {planFrequencyLabel(plan)}
+                            </Badge>
+                            {plan.items.length > 1 && (
+                              <Badge className="rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
+                                {t("velrepeatPlan.itemsCount", { count: plan.items.length })}
                               </Badge>
-                              <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
-                                {planFrequencyLabel(plan)}
-                              </Badge>
-                            </div>
-
-                            <div className="mt-2 space-y-1.5">
-                              {plan.items.map((item) => (
-                                <div key={item.id} className="flex items-center gap-3">
-                                  {item.productImageUrl ? (
-                                    <img
-                                      src={item.productImageUrl}
-                                      alt={item.productName}
-                                      className="size-10 rounded-lg border border-slate-100 object-cover"
-                                      loading="lazy"
-                                    />
-                                  ) : (
-                                    <span className="flex size-10 items-center justify-center rounded-lg bg-slate-50">
-                                      <ImageOff className="size-5 text-slate-300" />
-                                    </span>
-                                  )}
-                                  <div className="min-w-0">
-                                    <Link
-                                      to={`/products/${item.productId}`}
-                                      className="block truncate text-sm font-semibold text-slate-900 hover:text-[#10B981]"
-                                    >
-                                      {item.productName}
-                                    </Link>
-                                    <p className="truncate text-xs text-slate-500">
-                                      {item.variantOptionLabels || item.variantName || ""}
-                                      {item.variantOptionLabels || item.variantName ? " · " : ""}
-                                      ×{item.quantity}
-                                      <span className="ml-1 font-semibold text-slate-700">{formatBaht(item.unitPrice)}</span>
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                            <p className="mt-2.5 text-xs text-slate-500">
-                              <span className="font-semibold text-slate-700">{t("velrepeatPlan.nextRun")}</span>{" "}
-                              <span className="font-semibold tabular-nums text-slate-900">{formatNextRun(plan.nextRunAt)}</span>
-                            </p>
-                            {plan.status === "out_of_stock" && (
-                              <p className="mt-1 text-[11px] text-red-600">{t("velrepeatPlan.outOfStockHint")}</p>
                             )}
                           </div>
 
-                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          {/* next run — the hero info for active plans */}
+                          {plan.status === "active" && plan.nextRunAt != null && (
+                            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-[#ECFDF5] px-4 py-3">
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-[#047857]">
+                                  {t("velrepeatPlan.nextRunLabel")}
+                                </p>
+                                <p className="mt-0.5 text-lg font-extrabold tabular-nums leading-tight text-slate-900 sm:text-xl">
+                                  {formatLocaleDate(plan.nextRunAt, lang)}
+                                </p>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#047857] ring-1 ring-inset ring-emerald-200">
+                                {relativeRunLabel(plan.nextRunAt)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* items */}
+                          <div className="mt-4 space-y-2.5">
+                            {plan.items.map((item) => (
+                              <div key={item.id} className="flex min-w-0 items-center gap-3">
+                                {item.productImageUrl ? (
+                                  <img
+                                    src={item.productImageUrl}
+                                    alt={item.productName}
+                                    className="size-12 shrink-0 rounded-xl border border-slate-100 object-cover sm:size-14"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-slate-50 sm:size-14">
+                                    <ImageOff className="size-5 text-slate-300" />
+                                  </span>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <Link
+                                    to={`/products/${item.productId}`}
+                                    className="block truncate text-sm font-semibold text-slate-900 hover:text-[#10B981]"
+                                  >
+                                    {item.productName}
+                                  </Link>
+                                  <p className="truncate text-xs text-slate-500">
+                                    {item.variantOptionLabels || item.variantName || ""}
+                                    {item.variantOptionLabels || item.variantName ? " · " : ""}
+                                    <span className="font-semibold text-slate-700">×{item.quantity}</span>
+                                  </p>
+                                  {item.shopName && (
+                                    <p className="truncate text-[11px] text-slate-400">{item.shopName}</p>
+                                  )}
+                                </div>
+                                <span className="shrink-0 text-sm font-bold tabular-nums text-slate-900">
+                                  {formatBaht(item.unitPrice * item.quantity)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* per-cycle total */}
+                          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                            <span className="text-xs font-medium text-slate-500">{t("velrepeatPlan.itemsSubtotal")}</span>
+                            <span className="text-sm font-bold tabular-nums text-slate-900">
+                              {t("velrepeatPlan.perCycle", { amount: formatBaht(cycleTotal) })}
+                            </span>
+                          </div>
+
+                          {/* delivery / payment / created */}
+                          {(address || plan.paymentMethod) && (
+                            <div className="mt-3 space-y-1.5">
+                              {address && (
+                                <p className="flex items-start gap-1.5 text-xs leading-5 text-slate-500">
+                                  <MapPin className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
+                                  <span className="min-w-0">
+                                    <span className="font-medium text-slate-600">{t("velrepeatPlan.delivery")}: </span>
+                                    <span className="break-words">{address}</span>
+                                  </span>
+                                </p>
+                              )}
+                              {plan.paymentMethod && (
+                                <p className="flex items-center gap-1.5 text-xs leading-5 text-slate-500">
+                                  <Wallet className="size-3.5 shrink-0 text-slate-400" />
+                                  <span className="min-w-0">
+                                    <span className="font-medium text-slate-600">{t("velrepeatPlan.payment")}: </span>
+                                    {paymentLabel(plan.paymentMethod)}
+                                  </span>
+                                </p>
+                              )}
+                              <p className="flex items-center gap-1.5 text-xs leading-5 text-slate-400">
+                                <CalendarClock className="size-3.5 shrink-0" />
+                                {t("velrepeatPlan.createdOn", { date: formatLocaleDate(plan.createdAt, lang) })}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* actions */}
+                          <div className="mt-4 flex flex-wrap items-center gap-2">
                             {plan.status === "active" && (
                               <>
                                 <Button
@@ -399,6 +592,7 @@ export default function VelRepeatPage() {
                                   className="gap-1.5 border-slate-200 text-slate-600"
                                   onClick={() => setExpandedId(isExpanded ? null : plan.id)}
                                 >
+                                  <CalendarDays className="size-3.5" />
                                   {t("velrepeatPlan.history")}
                                 </Button>
                                 <Button
@@ -414,15 +608,33 @@ export default function VelRepeatPage() {
                               </>
                             )}
                           </div>
+
+                          {plan.status === "out_of_stock" && (
+                            <p className="mt-3 text-[11px] leading-4 text-red-600">{t("velrepeatPlan.outOfStockHint")}</p>
+                          )}
                         </div>
 
-                        {isExpanded && plan.lastRun && (
-                          <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                        {isExpanded && (
+                          <div className="border-t border-slate-100 bg-slate-50 px-4 py-4 sm:px-5">
                             <p className="text-xs font-semibold text-slate-500">{t("velrepeatPlan.lastRun")}</p>
-                            <p className="mt-1 text-xs text-slate-600">
-                              {plan.lastRun.status} — {plan.lastRun.completedAt ? new Date(plan.lastRun.completedAt).toLocaleString("th-TH") : "—"}
-                              {plan.lastRun.errorMessage ? ` · ${plan.lastRun.errorMessage}` : ""}
-                            </p>
+                            {plan.lastRun ? (
+                              <div className="mt-1.5 space-y-1 text-xs leading-5 text-slate-600">
+                                <p className="flex flex-wrap items-center gap-2">
+                                  <Badge className="gap-1 rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
+                                    <span className="size-1.5 rounded-full bg-slate-400" />
+                                    {runStatusLabel}
+                                  </Badge>
+                                  <span className="tabular-nums">
+                                    {formatLocaleDateTime(plan.lastRun.completedAt || plan.lastRun.scheduledFor, lang)}
+                                  </span>
+                                </p>
+                                {plan.lastRun.errorMessage && (
+                                  <p className="break-words text-red-600">{plan.lastRun.errorMessage}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="mt-1.5 text-xs text-slate-400">—</p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -435,7 +647,8 @@ export default function VelRepeatPage() {
             {/* ─── V1: Buy-ahead packages (legacy) ─────────────────── */}
             {(packages ?? []).length > 0 && (
               <section>
-                <h2 className="mb-3 text-base font-bold text-slate-900">
+                <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-slate-900">
+                  <Package className="size-4 text-[#10B981]" />
                   {t("velrepeat.legacyPackages") || "VelRepeat Packages"}
                 </h2>
                 <div className="space-y-3">
