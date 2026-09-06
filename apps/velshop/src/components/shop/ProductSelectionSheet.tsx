@@ -530,7 +530,7 @@ export function ProductSelectionSheet({
                         type="button"
                         disabled={!valueInStock}
                         onClick={() => handleOptionSelect(group.id, val.id)}
-                        className={`${group.displayType === "image" ? "flex w-full min-w-0 items-center gap-2 p-2 sm:w-[calc(50%-0.375rem)]" : "flex items-center gap-1.5 px-3 py-1.5"} rounded-xl border transition-colors ${
+                        className={`${group.displayType === "image" ? "flex flex-col items-center justify-center gap-1.5 w-[80px] min-h-[88px] p-2" : "flex items-center gap-1.5 px-3 py-1.5"} rounded-xl border transition-colors ${
                           selected
                             ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
                             : valueInStock
@@ -546,31 +546,27 @@ export function ProductSelectionSheet({
                         {(() => {
                           const isImageGroup = group.displayType === "image";
                           if (isImageGroup) {
-                            // IMAGE option: image-left / details-right card
+                            // IMAGE option: image + text card layout
                             return (
                               <>
-                                <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-50">
-                                  {val.imageUrl || optionValueImageMap[val.id] ? (
-                                    <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className="size-full object-contain" loading="lazy" />
-                                  ) : (
-                                    <span className="flex size-full items-center justify-center bg-slate-100 text-[10px] font-semibold text-slate-500">
-                                      {val.label.slice(0, 3)}
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                  <span className={`w-full min-w-0 truncate text-[11px] font-medium leading-4 ${selected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
-                                    {val.label}
+                                {val.imageUrl || optionValueImageMap[val.id] ? (
+                                  <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className="size-14 rounded-lg object-contain bg-slate-50" loading="lazy" />
+                                ) : (
+                                  <span className="size-14 flex items-center justify-center rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-500">
+                                    {val.label.slice(0, 3)}
                                   </span>
-                                  {valueInStock && valueStock > 0 && (
-                                    <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                                      {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
-                                    </span>
-                                  )}
-                                  {!valueInStock && (
-                                    <span className="text-[9px] text-red-400">{t("productDetail.stockOut")}</span>
-                                  )}
+                                )}
+                                <span className={`max-w-full truncate text-[11px] font-medium ${selected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
+                                  {val.label}
                                 </span>
+                                {valueInStock && valueStock > 0 && (
+                                  <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                                    {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
+                                  </span>
+                                )}
+                                {!valueInStock && (
+                                  <span className="text-[9px] text-red-400">{t("productDetail.stockOut")}</span>
+                                )}
                               </>
                             );
                           }

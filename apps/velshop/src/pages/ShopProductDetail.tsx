@@ -1225,14 +1225,14 @@ export default function ShopProductDetail() {
                         ) : null;
 
                         if (isImageGroup) {
-                          // IMAGE option: image-left / details-right card
+                          // IMAGE option: image + text card layout
                           return (
                             <button
                               key={val.id}
                               type="button"
                               disabled={!valueInStock}
                               onClick={() => handleOptionSelect(group.id, val.id)}
-                              className={`flex w-full min-w-0 items-center gap-2.5 rounded-xl border p-2 text-left transition-colors sm:w-[calc(50%-0.375rem)] ${
+                              className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                                 isSelected
                                   ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
                                   : valueInStock
@@ -1241,21 +1241,17 @@ export default function ShopProductDetail() {
                               }`}
                               aria-label={`${val.label || val.value}${!valueInStock ? " - หมด" : ""}`}
                             >
-                              <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-50">
-                                {val.imageUrl || optionValueImageMap[val.id] ? (
-                                  <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className="size-full object-contain" loading="lazy" />
-                                ) : (
-                                  <span className="flex size-full items-center justify-center bg-slate-100 font-semibold text-slate-500">
-                                    {(val.label || val.value).slice(0, 3)}
-                                  </span>
-                                )}
-                              </span>
-                              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                <span className={`w-full min-w-0 truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium leading-4 ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
-                                  {val.label || val.value}
+                              {val.imageUrl || optionValueImageMap[val.id] ? (
+                                <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
+                              ) : (
+                                <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
+                                  {(val.label || val.value).slice(0, 3)}
                                 </span>
-                                {valStockLabel}
+                              )}
+                              <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                                {val.label || val.value}
                               </span>
+                              {valStockLabel}
                             </button>
                           );
                         }
