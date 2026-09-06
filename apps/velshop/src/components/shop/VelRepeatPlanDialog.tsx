@@ -125,7 +125,7 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="w-[calc(100%-24px)] max-w-lg sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <RefreshCw className="size-4 text-[#10B981]" />
@@ -141,8 +141,8 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
               <CalendarClock className="size-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">{product.name}</p>
-              <p className="text-xs text-slate-500">
+              <p className="line-clamp-2 min-w-0 break-words text-sm font-semibold text-slate-900">{product.name}</p>
+              <p className="min-w-0 text-xs text-slate-500">
                 {selectedVariant?.name ?? ""}
                 {selectedVariant?.name ? " · " : ""}
                 <span className="font-semibold text-slate-900">{formatBaht(unitPrice)}</span>
@@ -156,7 +156,7 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
             <label className="text-xs font-semibold text-slate-600">{t("velrepeatPlan.frequency")}</label>
             <div className="mt-1.5 flex gap-2">
               <Select value={freqUnit} onValueChange={(v) => setFreqUnit(v as FreqUnit)}>
-                <SelectTrigger className="w-36 border-slate-200 bg-white">
+                <SelectTrigger className="w-32 shrink-0 border-slate-200 bg-white">
                   <SelectValue placeholder="days" />
                 </SelectTrigger>
                 <SelectContent>
@@ -171,7 +171,7 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
                 max={365}
                 value={freqValue}
                 onChange={(e) => setFreqValue(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-                className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#10B981] focus:ring-2 focus:ring-[#10B981]/20"
+                className="w-20 shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#10B981] focus:ring-2 focus:ring-[#10B981]/20"
                 aria-label={t("velrepeatPlan.frequency")}
               />
             </div>
@@ -191,7 +191,7 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
               >
                 −
               </button>
-              <span className="w-10 text-center text-lg font-bold tabular-nums text-slate-900">{quantity}</span>
+              <span className="w-10 shrink-0 text-center text-lg font-bold tabular-nums text-slate-900">{quantity}</span>
               <button
                 type="button"
                 onClick={() => setQuantity((q) => Math.min(99, q + 1))}
@@ -216,8 +216,8 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
                 </div>
               ) : addresses.length === 0 ? (
                 <div className="flex flex-col gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3">
-                  <p className="flex items-center gap-1.5 text-sm text-slate-500">
-                    <MapPin className="size-4 text-slate-400" />
+                  <p className="flex items-center gap-1.5 text-sm text-slate-500 break-words">
+                    <MapPin className="size-4 text-slate-400 shrink-0" />
                     {t("velrepeatPlan.noAddress")}
                   </p>
                   <Button variant="outline" size="sm" className="w-fit border-slate-200 text-slate-700" asChild>
@@ -229,9 +229,9 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
                   <SelectTrigger className="w-full border-slate-200 bg-white">
                     <SelectValue placeholder={t("velrepeatPlan.selectShipping")} />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="w-[calc(100%-24px)]">
                     {addresses.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
+                      <SelectItem key={a.id} value={a.id} className="break-words">
                         {`${a.label || "Home"} — ${a.recipientName ?? ""} ${a.line1 ?? ""} ${a.province ?? ""} ${a.postalCode ?? ""}`}
                       </SelectItem>
                     ))}

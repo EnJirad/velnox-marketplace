@@ -212,6 +212,7 @@ export const my = {
     buyNow: "ချက်ချင်းဝယ်မည်",
     addToCartWithTotal: "ခြင်းတောင်းထဲထည့်မည် · {total}",
     reorderCta: "လစဉ် ပြန်မှာယူမည် (VelRepeat) — စနစ်က အလိုအလျောက် မှာပေးပါသည်",
+    velrepeat: "🔄 VelRepeat",
     reviews: "ကုန်ပစ္စည်း သုံးသပ်ချက်များ",
     reviewsCount: "{count} ခု",
     reviewCountShort: "({count} သုံးသပ်ချက်)",
