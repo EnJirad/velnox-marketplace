@@ -58,6 +58,19 @@ interface OrderItemRow {
   variantName?: string | null;
   imageUrl?: string | null;
   shopId?: string | null;
+  /** Current product status — null/absent means the product was deleted */
+  productStatus?: string | null;
+}
+
+interface OrderAddressSnapshot {
+  recipientName?: string;
+  phone?: string;
+  line1?: string;
+  line2?: string;
+  subdistrict?: string;
+  district?: string;
+  province?: string;
+  postalCode?: string;
 }
 
 interface TrackingEventRow {
@@ -91,16 +104,8 @@ interface OrderDetail {
   shopId?: string | null;
   shopName?: string | null;
   createdAt: number;
-  addressSnapshot: {
-    recipientName?: string;
-    phone?: string;
-    line1?: string;
-    line2?: string;
-    subdistrict?: string;
-    district?: string;
-    province?: string;
-    postalCode?: string;
-  };
+  /** null when the order has no stored shipping address (legacy/COD orders) */
+  addressSnapshot: OrderAddressSnapshot | null;
   items?: OrderItemRow[];
   shipments?: ShipmentRow[];
   payments?: Array<{ id: string; method: string; status: string; amount: number }>;
@@ -168,6 +173,16 @@ export default function ShopOrderDetail() {
       const key = `paymentLabels.${status.toLowerCase()}`;
       const val = t(key);
       return val === key ? status : val;
+    },
+    [t],
+  );
+
+  /** Translated label for a payment method, falling back to the raw method. */
+  const paymentMethodLabel = useCallback(
+    (method: string) => {
+      const key = `paymentMethods.${method.toLowerCase()}`;
+      const val = t(key);
+      return val === key ? method : val;
     },
     [t],
   );
@@ -295,12 +310,18 @@ export default function ShopOrderDetail() {
           </span>
           <h1 className="mt-5 text-xl font-bold text-slate-900">{t("orderDetail.notFound")}</h1>
           <p className="mt-2 text-sm text-slate-500">{error ?? t("orderDetail.notFoundDesc")}</p>
-          <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild>
-            <Link to="/orders">
-              <ArrowLeft className="size-4" />
-              {t("tracking.backToOrders")}
-            </Link>
-          </Button>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+            <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
+              <RefreshCw className="size-4" />
+              {t("orderDetail.retry")}
+            </Button>
+            <Button variant="outline" className="gap-1.5 border-slate-200 text-slate-700" asChild>
+              <Link to="/orders">
+                <ArrowLeft className="size-4" />
+                {t("tracking.backToOrders")}
+              </Link>
+            </Button>
+          </div>
         </main>
       </div>
     );
@@ -333,16 +354,19 @@ export default function ShopOrderDetail() {
     }
   };
 
-  const addressText = [
-    order.addressSnapshot.line1,
-    order.addressSnapshot.line2,
-    order.addressSnapshot.subdistrict,
-    order.addressSnapshot.district,
-    order.addressSnapshot.province,
-    order.addressSnapshot.postalCode,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const address = order.addressSnapshot;
+  const addressText = address
+    ? [
+        address.line1,
+        address.line2,
+        address.subdistrict,
+        address.district,
+        address.province,
+        address.postalCode,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -421,21 +445,29 @@ export default function ShopOrderDetail() {
         </section>
 
         {/* Shipment tracking */}
-        {shipments.length > 0 && (
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-                <Truck className="size-4 text-[#10B981]" />
-                {t("orderDetail.shipmentTitle")}
-              </h2>
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
+              <Truck className="size-4 text-[#10B981]" />
+              {t("orderDetail.shipmentTitle")}
+            </h2>
+            {shipments.length > 0 && (
               <Button variant="outline" size="sm" className="gap-1.5 border-slate-200 text-slate-600" asChild>
                 <Link to={`/orders/${order.id}/tracking`}>
                   <Truck className="size-3.5" />
                   {t("orderDetail.fullTimeline")}
                 </Link>
               </Button>
+            )}
+          </div>
+          {shipments.length === 0 ? (
+            <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
+              <Truck className="size-6 text-slate-300" />
+              <p className="mt-2 text-sm font-medium text-slate-600">{t("orderDetail.noShipment")}</p>
+              <p className="mt-1 text-xs text-slate-400">{t("orderDetail.noShipmentDesc")}</p>
             </div>
-            {shipments.map((s) => (
+          ) : (
+            shipments.map((s) => (
               <div key={s.id} className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <p className="font-semibold text-slate-900">{s.carrier}</p>
@@ -467,9 +499,9 @@ export default function ShopOrderDetail() {
                   </div>
                 )}
               </div>
-            ))}
-          </section>
-        )}
+            ))
+          )}
+        </section>
 
         {/* Shop */}
         {order.shopName && (
@@ -498,32 +530,50 @@ export default function ShopOrderDetail() {
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.itemsTitle")}</h2>
           <div className="mt-4 space-y-3">
-            {items.map((item) => (
+            {items.map((item) => {
+              const productAvailable = item.productStatus === "published";
+              return (
               <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3">
                 <div className="flex min-w-0 items-center gap-3">
                   {item.imageUrl ? (
-                    <Link to={`/products/${item.productId}`} className="shrink-0">
+                    productAvailable ? (
+                      <Link to={`/products/${item.productId}`} className="shrink-0">
+                        <img
+                          src={item.imageUrl}
+                          alt={item.productName}
+                          className="size-14 rounded-[10px] border border-slate-100 object-cover"
+                          loading="lazy"
+                        />
+                      </Link>
+                    ) : (
                       <img
                         src={item.imageUrl}
                         alt={item.productName}
-                        className="size-14 rounded-[10px] border border-slate-100 object-cover"
+                        className="size-14 rounded-[10px] border border-slate-100 object-cover opacity-60"
                         loading="lazy"
                       />
-                    </Link>
+                    )
                   ) : (
                     <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
                       <ImageOff className="size-4 text-slate-300" />
                     </span>
                   )}
                   <div className="min-w-0">
-                    <Link
-                      to={`/products/${item.productId}`}
-                      className="block truncate text-sm font-semibold text-slate-900 transition-colors hover:text-[#10B981]"
-                    >
-                      {item.productName}
-                    </Link>
+                    {productAvailable ? (
+                      <Link
+                        to={`/products/${item.productId}`}
+                        className="block truncate text-sm font-semibold text-slate-900 transition-colors hover:text-[#10B981]"
+                      >
+                        {item.productName}
+                      </Link>
+                    ) : (
+                      <p className="block truncate text-sm font-semibold text-slate-400">{item.productName}</p>
+                    )}
                     {item.variantName && (
                       <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{item.variantName}</p>
+                    )}
+                    {!productAvailable && (
+                      <p className="mt-0.5 text-xs text-amber-600">{t("orderDetail.productUnavailable")}</p>
                     )}
                     <p className="mt-0.5 text-xs text-slate-400">
                       {formatBaht(item.unitPrice)}
@@ -550,7 +600,8 @@ export default function ShopOrderDetail() {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
           <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-4 text-sm">
             <div className="flex items-center justify-between">
@@ -573,17 +624,49 @@ export default function ShopOrderDetail() {
           )}
         </section>
 
+        {/* Payment */}
+        {(order.payments ?? []).length > 0 && (
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
+            <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
+              <CreditCard className="size-4 text-[#10B981]" />
+              {t("orderDetail.paymentTitle")}
+            </h2>
+            <div className="mt-3 space-y-2">
+              {(order.payments ?? []).map((p) => (
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span className="flex items-center gap-2 text-slate-600">
+                    <CreditCard className="size-4 text-slate-300" />
+                    {paymentMethodLabel(p.method)}
+                  </span>
+                  <span className="tabular-nums font-medium text-slate-900">
+                    {formatBaht(p.amount)} · {paymentLabel(p.status)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Address */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
             <MapPin className="size-4 text-[#10B981]" />
             {t("orderDetail.addressTitle")}
           </h2>
-          <p className="mt-3 text-sm font-medium text-slate-900">
-            {order.addressSnapshot.recipientName ?? ""}
-            {order.addressSnapshot.phone ? ` · ${order.addressSnapshot.phone}` : ""}
-          </p>
-          <p className="mt-1 text-sm leading-6 text-slate-600">{addressText || "—"}</p>
+          {address ? (
+            <>
+              <p className="mt-3 text-sm font-medium text-slate-900">
+                {address.recipientName ?? ""}
+                {address.phone ? ` · ${address.phone}` : ""}
+              </p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">{addressText || "—"}</p>
+            </>
+          ) : (
+            <p className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+              <MapPin className="size-4 shrink-0 text-slate-300" />
+              {t("orderDetail.noAddress")}
+            </p>
+          )}
         </section>
 
         {/* Actions */}

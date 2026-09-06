@@ -567,6 +567,12 @@ export const my = {
 
   orderDetail: {
     shopTitle: "Shop",
+    retry: "Try again",
+    noAddress: "No shipping address on file for this order",
+    noShipment: "No shipping information yet",
+    noShipmentDesc: "Once the seller ships your order, tracking details will appear here",
+    productUnavailable: "This product is no longer available",
+    paymentTitle: "Payment",
     title: "မှာယူမှု အသေးစိတ်",
     orderedAt: "{date} တွင် မှာယူခဲ့သည်",
     progress: "မှာယူမှု အဆင့်များ",

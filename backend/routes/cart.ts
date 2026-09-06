@@ -156,6 +156,20 @@ async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
 }
 
 /**
+ * Safely parse the order's shipping_address JSON snapshot.
+ * Legacy orders may store malformed JSON or no address at all — never crash.
+ */
+function parseShippingAddress(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ensure the user has a cart row. Returns the cart_id.
  */
 async function ensureCart(userId: string): Promise<string> {
@@ -896,7 +910,7 @@ export function setupCartRoutes(app: Express): void {
           shippingFee: parseFloat(r.shipping_fee) || 0,
           total: parseFloat(r.total_amount) || 0,
           currency: r.currency ?? "THB",
-          addressSnapshot: r.shipping_address ? JSON.parse(r.shipping_address) : null,
+          addressSnapshot: parseShippingAddress(r.shipping_address),
           note: r.notes,
           shopId: r.shop_id,
           shopName: r.shop_name,
@@ -968,7 +982,7 @@ export function setupCartRoutes(app: Express): void {
           shippingFee: parseFloat(order.shipping_fee) || 0,
           total: parseFloat(order.total_amount) || 0,
           currency: order.currency ?? "THB",
-          addressSnapshot: order.shipping_address ? JSON.parse(order.shipping_address) : null,
+          addressSnapshot: parseShippingAddress(order.shipping_address),
           note: order.notes,
           shopId: order.shop_id,
           shopName: order.shop_name,

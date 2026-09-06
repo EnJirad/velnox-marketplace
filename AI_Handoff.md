@@ -373,6 +373,38 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-05 — Fix Order Detail Crash: shippingAddress null (production)
+
+**Problem:** Production crash on Order Detail — `TypeError: Cannot read properties of null (reading 'line1')` at ShopOrderDetail. Orders created without a shipping address (legacy / COD orders) stored `shipping_address = NULL`; the backend correctly returned `addressSnapshot: null`, but the frontend read `order.addressSnapshot.line1` / `.recipientName` unconditionally → crash.
+
+**Root causes:**
+1. `ShopOrderDetail.tsx` `addressText` array read `order.addressSnapshot.line1/line2/...` with no null guard (the crash).
+2. Address section read `order.addressSnapshot.recipientName` / `.phone` with no null guard (second crash site).
+3. `OrderDetail.addressSnapshot` was typed as a non-null object even though the backend can send `null` — TypeScript could not flag the unsafe access.
+4. Backend `JSON.parse(r.shipping_address)` could throw on malformed legacy JSON → 500 → whole order detail failed.
+5. Related latent issues hardened: deleted products (LEFT JOIN already in place → `productStatus` null) still rendered as clickable links; shipment section was hidden entirely instead of showing an empty state; error state had no retry button; no payment section.
+
+**Fixes:**
+- `apps/velshop/src/pages/ShopOrderDetail.tsx`:
+  - `addressSnapshot` typed `OrderAddressSnapshot | null`; `addressText` built only when address exists.
+  - Address section: renders recipient/address when present, otherwise an empty-state box "ไม่มีข้อมูลที่อยู่จัดส่งสำหรับคำสั่งซื้อนี้" — never crashes.
+  - Shipment section now ALWAYS renders: real shipments + events when present (with the "ดูไทม์ไลน์เต็ม" tracking button), or an empty state "ยังไม่มีข้อมูลการจัดส่ง" when none — the tracking button is hidden when there is nothing to track.
+  - Items: product image/name links render only when `productStatus === 'published'`; deleted products show the snapshot name muted + "สินค้านี้ไม่พร้อมใช้งานแล้ว" (order still viewable).
+  - New Payment section (method + status + amount) when `payments[]` exists; no non-null assertions anywhere.
+  - Error state now offers both "ลองอีกครั้ง" (retry) and "กลับไปออเดอร์ทั้งหมด".
+- `backend/routes/cart.ts`: new `parseShippingAddress()` helper — returns `null` instead of throwing on missing/malformed `shipping_address` (used by order list + order detail).
+- i18n: new keys `orderDetail.noAddress`, `orderDetail.noShipment`, `orderDetail.noShipmentDesc`, `orderDetail.productUnavailable`, `orderDetail.paymentTitle`, `orderDetail.retry`, `paymentMethods.online`, `paymentMethods.cod` — TH/EN/MY at parity (MY uses English fallback values for new keys, merged via `myOrderPatch` in locales/index.ts).
+
+**Verification:**
+- `grep shippingAddress.*line1` apps/velshop backend → NONE
+- `grep shippingAddress\.` / `addressSnapshot\.` apps/velshop → NONE (all guarded)
+- Backend typecheck: ✅ PASS · Backend build: ✅ PASS
+- VelShop build: ✅ PASS · All 4 apps build clean
+- i18n check: ✅ PASS (th=en=my=864 keys at parity)
+- Tests: NOT CONFIGURED · Lint: NOT CONFIGURED
+
+---
+
 ### 2026-09-05 — Order / Order Detail / Tracking Fix
 
 **Problem:** Customers could not view order details or tracking properly — "กดดูสินค้า / กดติดตามพัสดุแล้วดูไม่ได้". The checkout success page also could not confirm the order/payment.

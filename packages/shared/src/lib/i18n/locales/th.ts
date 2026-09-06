@@ -633,6 +633,12 @@ export const th = {
     status: "สถานะ: {status}",
     eta: "คาดว่าถึง {date}",
     shopTitle: "ร้านค้า",
+    retry: "ลองอีกครั้ง",
+    noAddress: "ไม่มีข้อมูลที่อยู่จัดส่งสำหรับคำสั่งซื้อนี้",
+    noShipment: "ยังไม่มีข้อมูลการจัดส่ง",
+    noShipmentDesc: "เมื่อร้านค้าจัดส่งสินค้าแล้ว ระบบจะแสดงข้อมูลการติดตามที่นี่",
+    productUnavailable: "สินค้านี้ไม่พร้อมใช้งานแล้ว",
+    paymentTitle: "การชำระเงิน",
     itemsTitle: "สินค้าในออเดอร์",
     subtotal: "สินค้า",
     shipping: "ค่าจัดส่ง",
@@ -697,6 +703,11 @@ export const th = {
     failed: "จัดส่งไม่สำเร็จ",
     returned: "ส่งคืนผู้ขาย",
     cancelled: "ยกเลิกการจัดส่ง",
+  },
+
+  paymentMethods: {
+    online: "ชำระเงินออนไลน์",
+    cod: "เก็บเงินปลายทาง",
   },
 
   paymentLabels: {

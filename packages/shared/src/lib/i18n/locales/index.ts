@@ -257,6 +257,18 @@ const myShopPatch = {
 };
 
 /**
+ * Burmese payment-method labels. my.ts is a large append-only table whose
+ * tail sits beyond the safe edit window, so new keys are merged here instead
+ * (same mechanism as myAuthPatch/myShopPatch).
+ */
+const myOrderPatch = {
+  paymentMethods: {
+    online: "Online payment",
+    cod: "Cash on delivery",
+  } satisfies Partial<Dict["paymentMethods"]>,
+} satisfies Partial<Dict>;
+
+/**
  * All locale dictionaries keyed by language code. Adding a language means
  * adding a dictionary here (plus an entry in ../config).
  */
@@ -265,6 +277,7 @@ export const translations: Record<Language, Dict> = {
   en,
   my: {
     ...myBase,
+    ...myOrderPatch,
     header: { ...myBase.header, ...myShopPatch.header },
     footer: { ...myBase.footer, ...myShopPatch.footer },
     product: { ...myBase.product, ...myShopPatch.product },
