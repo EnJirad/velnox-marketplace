@@ -654,7 +654,7 @@ export function setupCartRoutes(app: Express): void {
   app.post("/api/customer/checkout", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const { shippingAddressId, shippingAddress, notes, cartItemIds } = req.body;
+      const { shippingAddressId, shippingAddress, notes, cartItemIds, requestId } = req.body;
 
       // Get cart
       const cartResult = await query("SELECT id FROM carts WHERE user_id = $1", [userId]);
@@ -670,22 +670,28 @@ export function setupCartRoutes(app: Express): void {
       if (Array.isArray(cartItemIds) && cartItemIds.length > 0) {
         itemsResult = await query(
           `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
+                  p.price AS product_price, p.vrepeat_enabled, p.unit,
                   i.quantity AS stock_qty, i.reserved,
+                  sh.name AS shop_name,
                   (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
            FROM cart_items ci
            JOIN products p ON ci.product_id = p.id
            LEFT JOIN inventory i ON i.product_id = p.id
+           LEFT JOIN shops sh ON p.shop_id = sh.id
            WHERE ci.cart_id = $1 AND ci.id = ANY($2)`,
           [cartId, cartItemIds],
         );
       } else {
         itemsResult = await query(
           `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
+                  p.price AS product_price, p.vrepeat_enabled, p.unit,
                   i.quantity AS stock_qty, i.reserved,
+                  sh.name AS shop_name,
                   (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
            FROM cart_items ci
            JOIN products p ON ci.product_id = p.id
            LEFT JOIN inventory i ON i.product_id = p.id
+           LEFT JOIN shops sh ON p.shop_id = sh.id
            WHERE ci.cart_id = $1`,
           [cartId],
         );
@@ -696,8 +702,12 @@ export function setupCartRoutes(app: Express): void {
         return;
       }
 
-      // Validate all items — variant-aware stock check
+      // Validate all items — variant-aware stock check. Also re-read the CURRENT
+      // server price for every item: the final price must never come from a stale
+      // cart snapshot. If a price changed, we charge the current price and flag it
+      // so the client can tell the customer (never silently charge either side).
       const items = itemsResult.rows;
+      let priceChanged = false;
       for (const item of items) {
         if (item.product_status !== "published") {
           res.status(400).json({
@@ -711,7 +721,7 @@ export function setupCartRoutes(app: Express): void {
           let varStock;
           try {
             varStock = await query(
-              `SELECT stock, status FROM product_variants WHERE id = $1`,
+              `SELECT stock, status, price FROM product_variants WHERE id = $1`,
               [item.variant_id],
             );
           } catch (varErr: any) {
@@ -744,6 +754,12 @@ export function setupCartRoutes(app: Express): void {
             });
             return;
           }
+          // Price revalidation — charge the CURRENT variant price, never a stale snapshot.
+          const variantPrice = Number(v.price);
+          if (Number.isFinite(variantPrice) && variantPrice >= 0 && Math.abs(variantPrice - parseFloat(item.price)) > 0.005) {
+            item.price = variantPrice;
+            priceChanged = true;
+          }
         } else {
           const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
           if (item.quantity > available) {
@@ -752,6 +768,12 @@ export function setupCartRoutes(app: Express): void {
               error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}"` },
             });
             return;
+          }
+          // Price revalidation for non-variant products.
+          const productPrice = Number(item.product_price);
+          if (Number.isFinite(productPrice) && productPrice >= 0 && Math.abs(productPrice - parseFloat(item.price)) > 0.005) {
+            item.price = productPrice;
+            priceChanged = true;
           }
         }
       }
@@ -767,8 +789,33 @@ export function setupCartRoutes(app: Express): void {
 
       // Create orders (one per shop)
       const createdOrders: any[] = [];
+      let responseData: any = null;
 
+      /** Internal marker: this request key was already claimed — respond with the stored result. */
+      class DuplicateCheckoutError extends Error {}
+
+      try {
       await withTransaction(async (client) => {
+        // Idempotency guard — claim this request key BEFORE doing any work.
+        // ON CONFLICT DO NOTHING: a second submit with the same key inserts
+        // nothing, so we abort the transaction (rolling back any work) and
+        // return the response snapshot of the first successful request.
+        if (requestId && typeof requestId === "string") {
+          const claim = await client.query(
+            `INSERT INTO checkout_requests (user_id, request_key) VALUES ($1, $2)
+             ON CONFLICT (user_id, request_key) DO NOTHING RETURNING id`,
+            [userId, requestId],
+          );
+          if (claim.rows.length === 0) {
+            const prev = await client.query(
+              `SELECT response FROM checkout_requests WHERE user_id = $1 AND request_key = $2`,
+              [userId, requestId],
+            );
+            responseData = prev.rows[0]?.response ?? null;
+            throw new DuplicateCheckoutError("duplicate checkout request");
+          }
+        }
+
         for (const [shopId, shopItems] of shopMap) {
           // Calculate total from DB prices (not client-provided)
           let totalAmount = 0;
@@ -860,13 +907,60 @@ export function setupCartRoutes(app: Express): void {
         }
         // Recalculate remaining cart totals
         await recalcCart(cartId);
-      });
 
-      const parentOrderId = createdOrders[0]?.orderId ?? '';
-      const parentOrderNumber = createdOrders[0]?.orderNumber ?? '';
-      const totalAll = createdOrders.reduce((s, o) => s + o.total, 0);
-      const itemCount = items.reduce((s, i) => s + i.quantity, 0);
-      res.json({ success: true, data: { parentOrderId, parentOrderNumber, orders: createdOrders, total: totalAll, itemCount } });
+        // Build the idempotent response once, inside the transaction.
+        const parentOrderId = createdOrders[0]?.orderId ?? '';
+        const parentOrderNumber = createdOrders[0]?.orderNumber ?? '';
+        const totalAll = createdOrders.reduce((s, o) => s + o.total, 0);
+        const itemCount = items.reduce((s: number, i: any) => s + i.quantity, 0);
+        const summaryItems = items.map((i: any) => ({
+          productId: i.product_id,
+          variantId: i.variant_id ?? null,
+          name: i.product_name,
+          qty: i.quantity,
+          unit: i.unit ?? "",
+          price: parseFloat(i.price),
+          imageUrl: i.product_image_url ?? null,
+          vrepeatEnabled: Boolean(i.vrepeat_enabled),
+        }));
+        responseData = {
+          parentOrderId,
+          parentOrderNumber,
+          orders: createdOrders,
+          total: totalAll,
+          itemCount,
+          priceChanged,
+          items: summaryItems,
+        };
+
+        // Snapshot the response + link the parent order to this request key,
+        // so a duplicate submit returns exactly the same result.
+        if (requestId && typeof requestId === "string") {
+          await client.query(
+            `UPDATE checkout_requests SET order_id = $1, response = $2::jsonb
+             WHERE user_id = $3 AND request_key = $4`,
+            [responseData.parentOrderId, JSON.stringify(responseData), userId, requestId],
+          );
+        }
+      });
+      } catch (err) {
+        if (err instanceof DuplicateCheckoutError) {
+          if (responseData) {
+            res.json({ success: true, data: responseData });
+            return;
+          }
+          // Key claimed but no response recorded yet — the first request is
+          // still in flight. Never create a second order; ask the client to wait.
+          res.status(409).json({
+            success: false,
+            error: { code: "DUPLICATE_CHECKOUT_IN_PROGRESS", message: "Your order is being processed. Please wait a moment." },
+          });
+          return;
+        }
+        throw err;
+      }
+
+      res.json({ success: true, data: responseData });
     } catch (err) {
       console.error("[checkout] error:", err);
       res.status(500).json({ success: false, error: { code: "CHECKOUT_FAILED", message: "Failed to create order" } });

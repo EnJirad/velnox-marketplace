@@ -2443,3 +2443,81 @@ that `next_run_at` advanced.
 
 ✅ `bun run i18n:check` (884×3) · ✅ typecheck backend + all 4 apps · ✅ builds
 velshop/velseller/velcenter · ✅ `bun test backend/tests` (16 pass, 1 env-skip)
+
+### 2026-09-06 — Mobile Checkout UX Audit + Checkout Improvements
+
+**Problem:** Checkout was a desktop page squeezed onto mobile: the order-summary
+sidebar was `sticky top-20` at ALL breakpoints (and, because `<main>` had
+`overflow-hidden`, the sticky never worked anywhere), there was no fixed mobile
+CTA (the submit button sat at the very bottom of the page, below a long address
+list + product review), product review rows had no image/variant/unit price, and
+a fast double-tap on "ยืนยันสั่งซื้อ" could create two identical orders (no
+backend idempotency). Payment options PromptPay/Bank transfer/Card were shown
+even though the backend checkout handler ignores `paymentMethod` entirely
+(only COD and Stripe-"online" are real flows).
+
+**Fixes:**
+
+1. **Order safety (backend idempotency — root cause fix, not frontend-only):**
+   - `db/migrations/035_checkout_idempotency.sql` — new `checkout_requests`
+     table with `UNIQUE (user_id, request_key)`, applied at startup via
+     `ensureCheckoutIdempotencyTable()` in `server.ts` (same convention as
+     variant tables / VelRepeat V2).
+   - `backend/routes/cart.ts` checkout now accepts an optional `requestId`.
+     Inside the order transaction it claims the key with
+     `INSERT ... ON CONFLICT DO NOTHING`; a second submit with the same key
+     aborts the transaction (rolling back) and returns the **snapshotted
+     response** of the first successful request (`response JSONB`), so a
+     double-tap or a retry after a lost response never creates a second order.
+   - Frontend sends a stable per-page-session `crypto.randomUUID()` reused
+     across retries; CTA disabled + `aria-busy` while submitting.
+
+2. **Price correctness (PHASE 11):** checkout validation now re-reads the
+   CURRENT server price per item (variant price or product price) and charges
+   that, never a stale cart snapshot. If anything changed it flags
+   `priceChanged` in the response and the client shows
+   `checkout.priceChanged` ("ราคาสินค้ามีการเปลี่ยนแปลง…") — new i18n key ×3.
+
+3. **Mobile checkout layout (PHASE 2/3/12):**
+   - Removed `overflow-hidden` from `<main>` (it was killing `position: sticky`
+     and masking layout); summary is now `lg:sticky lg:top-20` only (never
+     sticky on mobile).
+   - New fixed bottom CTA on mobile: total + "ยืนยันสั่งซื้อ" button, floats
+     above the app tab bar (`bottom-[calc(5rem+env(safe-area-inset-bottom))]`),
+     disabled/loading while submitting; `<main>` gets mobile `pb-44` so content
+     never hides behind it.
+   - Product review rows now show image thumbnail, variant labels, unit price
+     (`฿x / unit × qty`) — image/name wrap with `min-w-0`/`truncate`.
+
+4. **Address UX (PHASE 6/16):** mobile shows one compact selected-address card
+   + "เปลี่ยนที่อยู่" opening a bottom sheet (shared `Sheet`) with the address
+   list; desktop keeps the full list. Address load failure now shows a proper
+   error card with `common.retry` instead of silently looking empty.
+
+5. **Payment methods (PHASE 8):** reduced to what the backend actually
+   supports — COD + Online (Stripe, hidden unless configured). PromptPay /
+   transfer / card were misleading no-ops.
+
+6. **Multi-vendor + success screen (PHASE 5/14/15):** checkout items query now
+   selects `sh.name` so per-shop orders on the success screen show real shop
+   names; each shop row shows a per-shop status badge; added "ดูคำสั่งซื้อ"
+   action; when any purchased item has `vrepeat_enabled`, a VelRepeat offer
+   card appears and opens the existing `VelRepeatPlanDialog` (real plan
+   creation, not a mock).
+
+7. **ShopCart:** summary sticky made `lg:`-only, `<main>` overflow-hidden
+   removed, mobile bottom padding bumped so the checkout bar never overlaps
+   content.
+
+**i18n:** +8 keys in th/en/my (`priceChanged`, `changeAddress`,
+`addressSheetTitle`, `addressLoadFailed`, `viewOrders`, `repeatOfferTitle`,
+`repeatOfferDesc`, `shopPending`) — real Burmese translations, `bun run
+i18n:check` passes (912×3).
+
+**Preserved (regression-checked):** Buy Now, selected-cart-items checkout,
+cart reload semantics, Stripe online redirect flow, variant stock source of
+truth, GPS requirement, multi-vendor parent/child order creation.
+
+**Verification:** ✅ backend tsc · ✅ typecheck velshop/velseller/velcenter/
+velnox · ✅ velshop build · ✅ `bun test backend/tests` (16 pass, 1 env-skip) ·
+✅ `bun run i18n:check` (912×3)

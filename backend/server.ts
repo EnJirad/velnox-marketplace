@@ -164,6 +164,30 @@ async function ensureVelRepeatV2Tables(): Promise<void> {
 }
 ensureVelRepeatV2Tables();
 
+// ─── Auto-create checkout idempotency table if missing (V0035) ──────────
+async function ensureCheckoutIdempotencyTable(): Promise<void> {
+  const { query } = await import("./db/index.js");
+  const startMs = Date.now();
+  try {
+    const tableCheck = await query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'checkout_requests') AS exists`,
+    );
+    if (tableCheck.rows[0]?.exists) {
+      return;
+    }
+    console.log("[startup] checkout_requests missing — applying V0035 (checkout idempotency)...");
+    const fs = await import("fs");
+    const pathMod = await import("path");
+    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "035_checkout_idempotency.sql");
+    const sql = fs.readFileSync(sqlPath, "utf-8");
+    await query(sql);
+    console.log(`[startup] checkout_requests ensured in ${Date.now() - startMs}ms`);
+  } catch (err: any) {
+    console.error("[startup] ensureCheckoutIdempotencyTable failed:", err?.message ?? err);
+  }
+}
+ensureCheckoutIdempotencyTable();
+
 // ─── Health Check ───────────────────────────────────────
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

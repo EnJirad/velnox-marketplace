@@ -582,6 +582,14 @@ export const en: Dict = {
     backToShop: "Back to shopping",
     success: "Order placed! 🎉",
     failed: "Order failed — prices or stock may have changed, please review and try again",
+    priceChanged: "Product prices changed — we applied the latest prices. Please review your order.",
+    changeAddress: "Change address",
+    addressSheetTitle: "Select shipping address",
+    addressLoadFailed: "Couldn't load your addresses",
+    viewOrders: "View orders",
+    repeatOfferTitle: "Want this delivered automatically?",
+    repeatOfferDesc: "The item you just bought supports VelRepeat — pick a schedule and Velnox delivers it for you.",
+    shopPending: "Shop",
   },
 
   checkoutSuccess: {

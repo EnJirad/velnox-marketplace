@@ -1,24 +1,28 @@
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
+import { VelRepeatPlanDialog } from "@/components/shop/VelRepeatPlanDialog";
 import { useLanguage } from "@/lib/i18n";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@velnox/shared/components/ui/sheet";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCart } from "@/lib/cart";
 import { useTracking } from "@velnox/shared/lib/track";
-import { formatBaht } from "@velnox/shared/lib/commerce";
+import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
+  AlertCircle,
   ArrowLeft,
   Banknote,
   CheckCircle2,
+  ChevronDown,
   CreditCard,
   Globe,
   Loader2,
   MapPin,
-  QrCode,
+  RefreshCw,
   ShieldCheck,
   ShoppingBag,
   Store,
@@ -46,19 +50,30 @@ interface AddressRow {
   createdAt: number;
 }
 
+interface CheckoutItemSummary {
+  productId: string;
+  variantId: string | null;
+  name: string;
+  qty: number;
+  unit: string;
+  price: number;
+  imageUrl: string | null;
+  vrepeatEnabled: boolean;
+}
+
 interface CheckoutResult {
   parentOrderId: string;
   parentOrderNumber: string;
   orders: Array<{ orderId: string; orderNumber: string; shopId: string; shopName: string; subtotal: number; shippingFee: number; total: number }>;
   total: number;
   itemCount: number;
+  /** True when the server had to re-price any item (current price != cart snapshot). */
+  priceChanged?: boolean;
+  items?: CheckoutItemSummary[];
 }
 
 const PAYMENT_METHODS: Array<{ id: string; icon: LucideIcon }> = [
   { id: "cod", icon: Banknote },
-  { id: "promptpay", icon: QrCode },
-  { id: "transfer", icon: CreditCard },
-  { id: "card", icon: CreditCard },
   { id: "online", icon: Globe },
 ];
 
@@ -71,6 +86,57 @@ function formatAddress(a: AddressRow): string {
 function payKey(id: string): string {
   const map: Record<string, string> = { cod: "Cod", promptpay: "Promptpay", transfer: "Transfer", card: "Card", online: "Online" };
   return `checkout.pay${map[id] ?? "Cod"}`;
+}
+
+function AddressPickerCard({
+  a,
+  active,
+  onClick,
+  t,
+}: {
+  a: AddressRow;
+  active: boolean;
+  onClick: () => void;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+}) {
+  const gps = a.latitude != null && a.longitude != null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full overflow-hidden rounded-xl border-2 p-4 text-left transition-colors ${
+        active ? "border-[#10B981] bg-[#F0FDF9]" : "border-slate-200 bg-white hover:border-slate-300"
+      }`}
+      aria-pressed={active}
+    >
+      <div className="flex items-center justify-between gap-2 overflow-hidden">
+        <p className="flex min-w-0 items-center gap-2 overflow-hidden text-sm font-semibold text-slate-900">
+          {a.label}
+          {a.isDefault && (
+            <Badge className="rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
+              {t("checkout.defaultBadge")}
+            </Badge>
+          )}
+          {!gps && (
+            <Badge className="rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15 hover:bg-amber-50">
+              {t("checkout.noGpsBadge")}
+            </Badge>
+          )}
+        </p>
+        <span
+          className={`size-4 shrink-0 rounded-full border-2 ${
+            active ? "border-[#10B981] bg-[#10B981]" : "border-slate-300 bg-white"
+          }`}
+        />
+      </div>
+      <p className="mt-1 min-w-0 truncate text-sm leading-5 text-slate-600" title={formatAddress(a)} style={{ overflowWrap: "anywhere" }}>
+        {formatAddress(a)}
+      </p>
+      <p className="mt-0.5 min-w-0 truncate text-xs text-slate-400" title={`${a.recipientName} · ${a.phone}`} style={{ overflowWrap: "anywhere" }}>
+        {a.recipientName} · {a.phone}
+      </p>
+    </button>
+  );
 }
 
 export default function ShopCheckout() {
@@ -92,12 +158,25 @@ export default function ShopCheckout() {
   const { track } = useTracking();
 
   const [addresses, setAddresses] = useState<AddressRow[] | null>(null);
+  const [addressError, setAddressError] = useState(false);
+  const [addressSheetOpen, setAddressSheetOpen] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("cod");
   const [submitting, setSubmitting] = useState(false);
   const [paying, setPaying] = useState(false);
   const [stripeReady, setStripeReady] = useState<boolean | null>(null);
   const [result, setResult] = useState<CheckoutResult | null>(null);
+  const [vrOpen, setVrOpen] = useState(false);
+
+  /**
+   * Stable per-page-session idempotency key. Reused across retries so a
+   * double-submit — or a retry after a lost response — can never create a
+   * second set of orders (the backend de-duplicates on (user, requestKey)).
+   */
+  const requestIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
+  }, []);
 
   // The "online" (Stripe) method only appears when the gateway is configured.
   useEffect(() => {
@@ -114,11 +193,13 @@ export default function ShopCheckout() {
     try {
       const rows = (await myAddresses()) as unknown as AddressRow[];
       setAddresses(rows);
+      setAddressError(false);
       const def = rows.find((a) => a.isDefault) ?? rows[0];
       setSelectedAddressId((prev) => prev ?? def?.id ?? null);
     } catch (err) {
       console.error("Load addresses error:", err);
       setAddresses([]);
+      setAddressError(true);
     }
   }, [myAddresses]);
 
@@ -197,6 +278,7 @@ export default function ShopCheckout() {
         addressId: selectedAddressId,
         paymentMethod,
         shippingMethod: "standard",
+        requestId: requestIdRef.current ?? crypto.randomUUID(),
       };
       // Send specific cart item IDs when in selected-items or buy-now mode.
       // Backend can use this to only process the selected items.
@@ -215,7 +297,11 @@ export default function ShopCheckout() {
       } else {
         clear();
       }
-      toast.success(t("checkout.success"));
+      if (res.priceChanged) {
+        toast.warning(t("checkout.priceChanged"));
+      } else {
+        toast.success(t("checkout.success"));
+      }
     } catch (err) {
       console.error("Checkout error:", err);
       toast.error(err instanceof Error ? err.message : t("checkout.failed"));
@@ -243,6 +329,22 @@ export default function ShopCheckout() {
     }
   };
 
+  // VelRepeat offer — first purchased item whose seller enables recurring orders.
+  const eligibleItem = useMemo(
+    () => result?.items?.find((i) => i.vrepeatEnabled) ?? null,
+    [result],
+  );
+  const offerProduct = useMemo<StoreProduct | null>(() => {
+    if (!eligibleItem) return null;
+    // The plan dialog only needs the identity/price of the purchased item.
+    return {
+      id: eligibleItem.productId,
+      name: eligibleItem.name,
+      price: eligibleItem.price,
+      unit: eligibleItem.unit || "",
+    } as unknown as StoreProduct;
+  }, [eligibleItem]);
+
   // ---- success screen -----------------------------------------------------
   if (result) {
     return (
@@ -267,20 +369,59 @@ export default function ShopCheckout() {
               <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(result.total)}</p>
             </div>
 
+            {/* Per-shop orders — marketplace: one row per seller shop */}
             <div className="mt-5 space-y-2 border-t border-slate-100 pt-5">
               {result.orders.map((o) => (
-                <div key={o.orderId} className="flex items-center justify-between gap-3 text-sm">
+                <div key={o.orderId} className="flex min-w-0 items-center justify-between gap-3 text-sm">
                   <span className="flex min-w-0 items-center gap-1.5 text-slate-600">
                     <Store className="size-3.5 shrink-0 text-[#10B981]" />
-                    <span className="truncate">{o.shopName}</span>
+                    <span className="min-w-0 truncate">{o.shopName || t("checkout.shopPending")}</span>
                   </span>
-                  <span className="shrink-0 font-medium tabular-nums text-slate-900">{formatBaht(o.total)}</span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <Badge className="rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15 hover:bg-amber-50">
+                      {t("checkoutSuccess.pending")}
+                    </Badge>
+                    <span className="font-medium tabular-nums text-slate-900">{formatBaht(o.total)}</span>
+                  </span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+          {/* VelRepeat offer — reuse the existing plan dialog, never a mock */}
+          {eligibleItem && offerProduct && (
+            <div className="mt-6 rounded-2xl border border-[#10B981]/25 bg-[#F0FDF9] p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#10B981] ring-1 ring-[#10B981]/15">
+                  <RefreshCw className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900">{t("checkout.repeatOfferTitle")}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-500">{t("checkout.repeatOfferDesc")}</p>
+                  <Button
+                    className="mt-3 gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+                    size="sm"
+                    onClick={() => setVrOpen(true)}
+                  >
+                    <RefreshCw className="size-3.5" />
+                    {t("velrepeatPlan.start")}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+          <VelRepeatPlanDialog
+            product={offerProduct}
+            open={vrOpen}
+            onOpenChange={setVrOpen}
+            selectedVariant={
+              eligibleItem?.variantId
+                ? { id: eligibleItem.variantId, name: "", price: eligibleItem.price }
+                : null
+            }
+          />
+
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {paymentMethod === "online" ? (
               <Button
                 className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
@@ -295,6 +436,9 @@ export default function ShopCheckout() {
                 <Link to="/orders">{t("checkout.trackOrder")}</Link>
               </Button>
             )}
+            <Button variant="outline" className="flex-1 border-slate-200 text-slate-700" asChild>
+              <Link to="/orders">{t("checkout.viewOrders")}</Link>
+            </Button>
             <Button variant="outline" className="flex-1 border-slate-200 text-slate-700" asChild>
               <Link to="/">{t("checkout.continueShopping")}</Link>
             </Button>
@@ -335,7 +479,7 @@ export default function ShopCheckout() {
     <div className="min-h-screen max-w-full overflow-clip bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
-      <main className="mx-auto w-full max-w-6xl overflow-hidden px-4 py-8 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full max-w-6xl px-4 pb-44 pt-8 sm:px-6 sm:pt-10 lg:pb-10">
         <div className="flex min-w-0 items-center gap-3">
           <Button variant="ghost" size="icon" className="size-9 shrink-0 text-slate-500" asChild>
             <Link to="/cart" aria-label={t("checkout.backToCart")}>
@@ -362,12 +506,29 @@ export default function ShopCheckout() {
                 </Button>
               </div>
 
-              {addresses === null ? (
+              {addresses === null && !addressError ? (
                 <div className="mt-4 space-y-3">
                   <Skeleton className="h-20 rounded-xl" />
                   <Skeleton className="h-20 rounded-xl" />
                 </div>
-              ) : addresses.length === 0 ? (
+              ) : addressError ? (
+                <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-rose-200 bg-rose-50 px-6 py-10 text-center">
+                  <AlertCircle className="size-6 text-rose-400" />
+                  <p className="mt-3 text-sm font-medium text-slate-700">{t("checkout.addressLoadFailed")}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4 border-slate-200 text-slate-700"
+                    onClick={() => {
+                      setAddressError(false);
+                      setAddresses(null);
+                      void loadAddresses();
+                    }}
+                  >
+                    {t("common.retry")}
+                  </Button>
+                </div>
+              ) : (addresses ?? []).length === 0 ? (
                 <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-slate-300 px-6 py-10 text-center">
                   <MapPin className="size-6 text-slate-300" />
                   <p className="mt-3 text-sm font-medium text-slate-600">{t("checkout.noAddress")}</p>
@@ -377,56 +538,94 @@ export default function ShopCheckout() {
                   </Button>
                 </div>
               ) : (
-                <div className="mt-4 space-y-2.5">
-                  {addresses.map((a) => {
-                    const gps = a.latitude != null && a.longitude != null;
-                    const active = a.id === selectedAddressId;
-                    return (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => setSelectedAddressId(a.id)}
-                        className={`w-full overflow-hidden rounded-xl border-2 p-4 text-left transition-colors ${
-                          active
-                            ? "border-[#10B981] bg-[#F0FDF9]"
-                            : "border-slate-200 bg-white hover:border-slate-300"
-                        }`}
-                        aria-pressed={active}
-                      >
-                        <div className="flex items-center justify-between gap-2 overflow-hidden">
-                          <p className="flex min-w-0 items-center gap-2 overflow-hidden text-sm font-semibold text-slate-900">
-                            {a.label}
-                            {a.isDefault && (
-                              <Badge className="rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
-                                {t("checkout.defaultBadge")}
-                              </Badge>
-                            )}
-                            {!gps && (
-                              <Badge className="rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15 hover:bg-amber-50">
-                                {t("checkout.noGpsBadge")}
-                              </Badge>
-                            )}
-                          </p>
-                          <span
-                            className={`size-4 shrink-0 rounded-full border-2 ${
-                              active ? "border-[#10B981] bg-[#10B981]" : "border-slate-300 bg-white"
-                            }`}
-                          />
-                        </div>
-                        <p className="mt-1 min-w-0 truncate text-sm leading-5 text-slate-600" title={formatAddress(a)} style={{ overflowWrap: "anywhere" }}>{formatAddress(a)}</p>
-                        <p className="mt-0.5 min-w-0 truncate text-xs text-slate-400" title={`${a.recipientName} · ${a.phone}`} style={{ overflowWrap: "anywhere" }}>
-                          {a.recipientName} · {a.phone}
+                <>
+                  {/* Mobile: compact selected-address card + bottom-sheet picker */}
+                  <div className="mt-4 lg:hidden">
+                    <button
+                      type="button"
+                      onClick={() => setAddressSheetOpen(true)}
+                      aria-haspopup="dialog"
+                      className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-slate-300"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900">
+                          {selectedAddress?.label ?? t("checkout.addressSheetTitle")}
+                          {selectedAddress?.isDefault && (
+                            <Badge className="rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
+                              {t("checkout.defaultBadge")}
+                            </Badge>
+                          )}
+                          {!hasGps && (
+                            <Badge className="rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15 hover:bg-amber-50">
+                              {t("checkout.noGpsBadge")}
+                            </Badge>
+                          )}
                         </p>
-                      </button>
-                    );
-                  })}
+                        <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-[#10B981]">
+                          {t("checkout.changeAddress")}
+                          <ChevronDown className="size-3.5" />
+                        </span>
+                      </div>
+                      {selectedAddress && (
+                        <>
+                          <p className="mt-1 min-w-0 truncate text-sm leading-5 text-slate-600" title={formatAddress(selectedAddress)} style={{ overflowWrap: "anywhere" }}>
+                            {formatAddress(selectedAddress)}
+                          </p>
+                          <p className="mt-0.5 min-w-0 truncate text-xs text-slate-400" title={`${selectedAddress.recipientName} · ${selectedAddress.phone}`} style={{ overflowWrap: "anywhere" }}>
+                            {selectedAddress.recipientName} · {selectedAddress.phone}
+                          </p>
+                        </>
+                      )}
+                    </button>
+
+                    <Sheet open={addressSheetOpen} onOpenChange={setAddressSheetOpen}>
+                      <SheetContent
+                        side="bottom"
+                        className="max-h-[75vh] rounded-t-2xl border-slate-200 p-0 pb-[env(safe-area-inset-bottom)]"
+                      >
+                        <SheetHeader className="border-b border-slate-100 px-5 py-4 text-left">
+                          <SheetTitle className="text-base font-bold tracking-tight text-slate-900">
+                            {t("checkout.addressSheetTitle")}
+                          </SheetTitle>
+                        </SheetHeader>
+                        <div className="grid gap-2.5 overflow-y-auto px-5 py-4">
+                          {(addresses ?? []).map((a) => (
+                            <AddressPickerCard
+                              key={a.id}
+                              a={a}
+                              active={a.id === selectedAddressId}
+                              t={t}
+                              onClick={() => {
+                                setSelectedAddressId(a.id);
+                                setAddressSheetOpen(false);
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </SheetContent>
+                    </Sheet>
+                  </div>
+
+                  {/* Desktop: full address list */}
+                  <div className="mt-4 hidden space-y-2.5 lg:block">
+                    {(addresses ?? []).map((a) => (
+                      <AddressPickerCard
+                        key={a.id}
+                        a={a}
+                        active={a.id === selectedAddressId}
+                        t={t}
+                        onClick={() => setSelectedAddressId(a.id)}
+                      />
+                    ))}
+                  </div>
+
                   {!hasGps && selectedAddress && (
-                    <p className="flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                      <MapPin className="size-3.5" />
+                    <p className="mt-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                      <MapPin className="size-3.5 shrink-0" />
                       {t("checkout.gpsWarning")}
                     </p>
                   )}
-                </div>
+                </>
               )}
             </section>
 
@@ -475,25 +674,40 @@ export default function ShopCheckout() {
 
           {/* Review */}
           <div className="min-w-0 lg:col-span-2">
-            <div className="sticky top-20 overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 lg:sticky lg:top-20">
               <h2 className="text-base font-bold tracking-tight text-slate-900">{t("checkout.summaryTitle")}</h2>
 
               <div className="mt-4 space-y-4">
                 {grouped.map(([shopName, shopLines]) => (
                   <div key={shopName}>
                     <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-semibold text-slate-500">
-                      <Store className="size-3.5 text-[#10B981]" />
-                      {shopName}
+                      <Store className="size-3.5 shrink-0 text-[#10B981]" />
+                      <span className="min-w-0 truncate">{shopName}</span>
                     </p>
-                    <div className="mt-2 space-y-2">
+                    <div className="mt-2 space-y-3">
                       {shopLines.map((line) => (
-                        <div key={line.id} className="flex min-w-0 items-center justify-between gap-3 overflow-hidden text-sm">
+                        <div key={line.id} className="flex min-w-0 items-center gap-3 text-sm">
+                          {line.imageUrl ? (
+                            <img
+                              src={line.imageUrl}
+                              alt={line.name}
+                              className="size-12 shrink-0 rounded-[10px] border border-slate-100 object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span className="flex size-12 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
+                              <ShoppingBag className="size-4 text-slate-300" />
+                            </span>
+                          )}
                           <div className="min-w-0 flex-1">
-                            <span className="block min-w-0 truncate text-slate-600" title={line.name} style={{ overflowWrap: "anywhere" }}>
+                            <span className="block min-w-0 truncate font-medium text-slate-700" title={line.name} style={{ overflowWrap: "anywhere" }}>
                               {line.name}
                             </span>
-                            <span className="text-xs text-slate-400">
-                              × {line.qty} {line.unit}
+                            {line.variantOptionLabels && (
+                              <span className="block min-w-0 truncate text-xs text-[#10B981]">{line.variantOptionLabels}</span>
+                            )}
+                            <span className="block min-w-0 truncate text-xs text-slate-400">
+                              {formatBaht(line.price)} / {line.unit} × {line.qty}
                             </span>
                           </div>
                           <span className="shrink-0 font-medium tabular-nums text-slate-900">
@@ -524,9 +738,10 @@ export default function ShopCheckout() {
               </div>
 
               <Button
-                className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                className="mt-5 hidden w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800 lg:flex"
                 onClick={handleSubmit}
                 disabled={submitting || checkoutCount === 0 || addresses === null}
+                aria-busy={submitting}
               >
                 {submitting ? (
                   <>
@@ -536,15 +751,45 @@ export default function ShopCheckout() {
                 ) : (
                   <>
                     <ShieldCheck className="size-4" />
-                {t("checkout.submit", { total: formatBaht(checkoutTotal) })}
-              </>
-            )}
-          </Button>
-          <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
+                    {t("checkout.submit", { total: formatBaht(checkoutTotal) })}
+                  </>
+                )}
+              </Button>
+              <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
             </div>
           </div>
         </div>
       </main>
+
+      {/* Mobile fixed bottom CTA — above the app tab bar, safe-area aware */}
+      {checkoutCount > 0 && !syncing && !authLoading && (
+        <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 px-3 lg:hidden">
+          <div className="mx-auto flex w-full max-w-md items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-[0_10px_34px_rgba(15,23,42,0.16)] backdrop-blur">
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-400">{t("checkout.total")}</p>
+              <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(checkoutTotal)}</p>
+            </div>
+            <Button
+              className="h-12 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+              onClick={handleSubmit}
+              disabled={submitting || checkoutCount === 0 || addresses === null}
+              aria-busy={submitting}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  {t("checkout.submitting")}
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="size-4" />
+                  {t("checkout.submit", { total: formatBaht(checkoutTotal) })}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <ShopFooter />
     </div>
