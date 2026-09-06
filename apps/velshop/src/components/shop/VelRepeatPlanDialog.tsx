@@ -125,16 +125,16 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100%-24px)] max-w-lg sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <RefreshCw className="size-4 text-[#10B981]" />
-            {t("velrepeatPlan.title")}
+      <DialogContent className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 gap-1 border-b border-slate-100 px-4 py-4 text-left sm:px-6">
+          <DialogTitle className="flex items-center gap-2 pr-8 text-left">
+            <RefreshCw className="size-4 shrink-0 text-[#10B981]" />
+            <span className="min-w-0 break-words">{t("velrepeatPlan.title")}</span>
           </DialogTitle>
-          <DialogDescription>{t("velrepeatPlan.desc")}</DialogDescription>
+          <DialogDescription className="break-words">{t("velrepeatPlan.desc")}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4">
+        <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-4 sm:px-6">
           {/* Product summary */}
           <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-white text-[#10B981] ring-1 ring-slate-100">
@@ -154,7 +154,7 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
           {/* Frequency */}
           <div>
             <label className="text-xs font-semibold text-slate-600">{t("velrepeatPlan.frequency")}</label>
-            <div className="mt-1.5 flex gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               <Select value={freqUnit} onValueChange={(v) => setFreqUnit(v as FreqUnit)}>
                 <SelectTrigger className="w-32 shrink-0 border-slate-200 bg-white">
                   <SelectValue placeholder="days" />
@@ -181,7 +181,7 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
           {/* Quantity */}
           <div>
             <label className="text-xs font-semibold text-slate-600">{t("velrepeatPlan.quantity")}</label>
-            <div className="mt-1.5 flex items-center gap-3">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <button
                 type="button"
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
@@ -229,10 +229,12 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
                   <SelectTrigger className="w-full border-slate-200 bg-white">
                     <SelectValue placeholder={t("velrepeatPlan.selectShipping")} />
                   </SelectTrigger>
-                  <SelectContent className="w-[calc(100%-24px)]">
+                  <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)]">
                     {addresses.map((a) => (
-                      <SelectItem key={a.id} value={a.id} className="break-words">
-                        {`${a.label || "Home"} — ${a.recipientName ?? ""} ${a.line1 ?? ""} ${a.province ?? ""} ${a.postalCode ?? ""}`}
+                      <SelectItem key={a.id} value={a.id} className="[&>span:last-child]:min-w-0">
+                        <span className="block min-w-0 max-w-full whitespace-normal break-words leading-snug [overflow-wrap:anywhere]">
+                          {`${a.label || "Home"} — ${a.recipientName ?? ""} ${a.line1 ?? ""} ${a.province ?? ""} ${a.postalCode ?? ""}`}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -242,7 +244,7 @@ export function VelRepeatPlanDialog({ product, open, onOpenChange, selectedVaria
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:justify-end">
+        <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 px-4 py-3 sm:justify-end sm:px-6">
           <Button variant="outline" onClick={() => onOpenChange(false)} className="border-slate-200 text-slate-700">
             {t("common.cancel")}
           </Button>

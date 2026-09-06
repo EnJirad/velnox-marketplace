@@ -321,7 +321,7 @@ export const en: Dict = {
     category: "Category",
     supplier: "Supplier",
     reorderCta: "Reorder monthly (VelRepeat) — we order it for you automatically",
-    velrepeat: "🔄 VelRepeat",
+    velrepeat: "VelRepeat",
     reviews: "Product reviews",
     reviewsCount: "{count} reviews",
     reviewCountShort: "({count} reviews)",

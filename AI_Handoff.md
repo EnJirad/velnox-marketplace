@@ -2521,3 +2521,18 @@ truth, GPS requirement, multi-vendor parent/child order creation.
 **Verification:** ✅ backend tsc · ✅ typecheck velshop/velseller/velcenter/
 velnox · ✅ velshop build · ✅ `bun test backend/tests` (16 pass, 1 env-skip) ·
 ✅ `bun run i18n:check` (912×3)
+
+### 2026-09-06 — VelRepeat UI restore + plan dialog overflow fixes (VelShop)
+
+Two UI-only commits (no business logic / API / DB changes):
+
+**`dc154ae` — VelRepeat premium button sync + SubscriptionDialog redesign** (previously pushed):
+- `lib/productActions.ts`: `ACTION_BUTTON_CLASSES.velrepeat` rebuilt into a premium shared class (rounded-xl, thin #10B981/40 border, white→#F0FDF9 gradient, #047857 text, shadow-sm, hover deepen, green focus ring). Product Detail's inline 0101c8f restyle superseded the trigger; the shared class now keeps Selection Sheet / bottom-sheet VelRepeat buttons consistent.
+- `components/shop/SubscriptionDialog.tsx` (still used by ShopDetail/ShopHome): full UI redesign — header icon chip, compact product summary (line-clamp-2, min-w-0), radio-style package cards, price-estimate strip, footer separated; `w-[min(calc(100vw-24px),520px)]` + internal scroll. Business logic untouched.
+- i18n: `subscription.frequencyLabel/estimateLabel/createPlan` at parity (th/en/my).
+
+**This commit — restore VelRepeat Product Detail trigger + VelRepeatPlanDialog root-cause fixes:**
+- Regression source: `0101c8f` (heavy inline border-2/shadow styling, RefreshCw icon, emoji label "🔄 VelRepeat"). Restored the V2-original trigger: shared `ACTION_BUTTON_CLASSES.velrepeat` + CalendarClock icon + plain "VelRepeat" label (emoji removed from `productDetail.velrepeat` in th/en/my). Layout verified from history: VelRepeat has always been a full-width row under the Buy|Cart row (never 3-in-a-row) — unchanged.
+- `VelRepeatPlanDialog.tsx`: DialogContent now flex-col with `max-h-[85dvh]`, fixed header/footer and a `min-h-0 flex-1 overflow-y-auto` body (scrolls on short screens/keyboard); header title/description wrap and clear the close button; frequency/quantity rows `flex-wrap`; shipping SelectContent switched to Radix popper `w-[var(--radix-select-trigger-width)]` with wrapping `[overflow-wrap:anywhere]` items so long addresses never widen the dropdown past the trigger or viewport. Widths come from the shared dialog base (no fixed widths). No shared button/dialog/select component changes.
+
+Verification: VelShop `tsc -b --noEmit` PASS · `vite build` PASS · `bun run i18n:check` th=en=my=918 PASS · `git diff --check` clean.

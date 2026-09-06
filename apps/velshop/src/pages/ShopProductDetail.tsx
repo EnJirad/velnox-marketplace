@@ -28,7 +28,6 @@ import {
   ChevronRight,
   ChevronUp,
   Heart,
-  RefreshCw,
   ImageOff,
   Loader2,
   Maximize2,
@@ -1017,11 +1016,11 @@ export default function ShopProductDetail() {
               </div>
               {velrepeatAvailable && (
                 <Button
-                  className={`mt-2 flex-1 min-w-0 max-w-full gap-1.5 shrink basis-0 border-2 border-[#10B981] bg-[#ECFDF5] px-3 text-sm font-semibold text-[#047857] shadow-[0_1px_2px_rgba(16,185,129,0.15)] hover:bg-[#10B981]/10 hover:border-[#047857] hover:text-[#047857] hover:shadow-[0_2px_6px_rgba(16,185,129,0.25)] focus-visible:border-[#10B981] focus-visible:ring-[#10B981]/50 active:bg-[#10B981]/15 active:scale-[0.98]`}
+                  className={`mt-2 w-full min-w-0 max-w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
                   onClick={handleVelRepeat}
                 >
-                  <RefreshCw className="size-4 shrink-0" />
-                  <span className="min-w-0 max-w-full truncate">{t("productDetail.velrepeat")}</span>
+                  <CalendarClock className="size-4 shrink-0" />
+                  <span className="min-w-0 max-w-full">{t("productDetail.velrepeat")}</span>
                 </Button>
               )}
             </div>

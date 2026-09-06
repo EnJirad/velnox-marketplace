@@ -322,7 +322,7 @@ export const th = {
     category: "หมวดหมู่",
     supplier: "ผู้จัดจำหน่าย",
     reorderCta: "สั่งรายเดือน (VelRepeat) — ให้ระบบสั่งให้อัตโนมัติทุกช่วงเวลา",
-    velrepeat: "🔄 VelRepeat",
+    velrepeat: "VelRepeat",
     reviews: "รีวิวสินค้า",
     reviewsCount: "{count} รายการ",
     reviewCountShort: "({count} รีวิว)",
