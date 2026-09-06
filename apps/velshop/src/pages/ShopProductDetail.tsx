@@ -914,15 +914,15 @@ export default function ShopProductDetail() {
             {/* Price + Rating */}
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex items-end justify-between gap-3">
-                <div>
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(displayPrice)}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayPrice)}</p>
                     <span className="text-sm font-normal text-slate-400">/{product.unit}</span>
                   </div>
                   {(displayCompareAt && displayCompareAt > displayPrice) || (displayDiscountPct && displayDiscountPct > 0) ? (
-                    <div className="mt-1 flex items-center gap-2">
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
                       {displayCompareAt && displayCompareAt > displayPrice && (
-                        <span className="text-sm text-slate-400 line-through">{formatBaht(displayCompareAt)}</span>
+                        <span className="text-sm text-slate-400 line-through" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayCompareAt)}</span>
                       )}
                       <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">
                         -{Math.round(displayDiscountPct ?? ((displayCompareAt! - displayPrice) / displayCompareAt!) * 100)}%
@@ -933,7 +933,7 @@ export default function ShopProductDetail() {
                     {outOfStock ? t("productDetail.outOfStockDesc") : lowStock ? t("productDetail.lowStock", { count: displayStock, unit: product.unit }) : t("productDetail.inStock", { count: displayStock, unit: product.unit })}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 items-center gap-3">
                   {product.soldCount != null && product.soldCount > 0 && <span className="hidden text-xs text-slate-400 sm:inline">{t("productDetail.sold", { count: product.soldCount })}</span>}
                   {reviews.length > 0 && (
                     <div className="flex items-center gap-1 text-sm">
@@ -1127,27 +1127,28 @@ export default function ShopProductDetail() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
-            {/* Product header — larger preview */}
-            <div className="flex gap-4 pt-2">
-              <div className="h-[180px] w-[180px] shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[220px] sm:w-[220px]">
+            {/* Product header — larger preview (stacks on narrow screens so
+                the 180px image + price column can never exceed the viewport) */}
+            <div className="flex flex-col gap-4 pt-2 sm:flex-row">
+              <div className="h-[180px] w-[180px] shrink-0 self-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[220px] sm:w-[220px] sm:self-auto">
                 {mainImage ? (
                   <img src={mainImage?.displayUrl || mainImage?.url} alt={mainImage?.alt || product.name} className="size-full object-contain" />
                 ) : (
                   <span className="flex size-full items-center justify-center"><ImageOff className="size-8 text-slate-300" /></span>
                 )}
               </div>
-              <div className="min-w-0 flex-1">
+              <div className="w-full min-w-0 flex-1">
                 {/* Selected summary */}
                 {selectedSummary && (
-                  <p className="mb-1 text-xs font-medium text-[#047857]">{selectedSummary}</p>
+                  <p className="mb-1 text-xs font-medium text-[#047857]" style={{ overflowWrap: "anywhere" }}>{selectedSummary}</p>
                 )}
-                <div className="flex items-baseline gap-2">
-                  <p className="text-2xl font-bold tabular-nums text-slate-900">{formatBaht(displayPrice)}</p>
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <p className="text-2xl font-bold tabular-nums text-slate-900" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayPrice)}</p>
                   <span className="text-xs font-normal text-slate-400">/{product.unit}</span>
                 </div>
                 {displayCompareAt && displayCompareAt > displayPrice && (
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="text-sm text-slate-400 line-through">{formatBaht(displayCompareAt)}</span>
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="text-sm text-slate-400 line-through" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayCompareAt)}</span>
                     <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">-{Math.round(((displayCompareAt - displayPrice) / displayCompareAt) * 100)}%</span>
                   </div>
                 )}

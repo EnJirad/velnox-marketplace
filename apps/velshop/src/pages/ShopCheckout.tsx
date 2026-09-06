@@ -476,7 +476,7 @@ export default function ShopCheckout() {
   }
 
   return (
-    <div className="min-h-screen max-w-full overflow-clip bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen max-w-full bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-44 pt-8 sm:px-6 sm:pt-10 lg:pb-10">
@@ -761,29 +761,33 @@ export default function ShopCheckout() {
         </div>
       </main>
 
-      {/* Mobile fixed bottom CTA — above the app tab bar, safe-area aware */}
+      {/* Mobile fixed bottom CTA — above the app tab bar, safe-area aware.
+          The button is forced shrinkable (min-w-0/flexShrink) and its label
+          truncates so a long total or localized label can never push the bar
+          wider than the viewport. */}
       {checkoutCount > 0 && !syncing && !authLoading && (
         <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 px-3 lg:hidden">
-          <div className="mx-auto flex w-full max-w-md items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-[0_10px_34px_rgba(15,23,42,0.16)] backdrop-blur">
-            <div className="min-w-0">
+          <div className="mx-auto flex w-full max-w-md items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-[0_10px_34px_rgba(15,23,42,0.16)] backdrop-blur sm:p-3">
+            <div className="min-w-0 shrink-0">
               <p className="text-[11px] text-slate-400">{t("checkout.total")}</p>
               <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(checkoutTotal)}</p>
             </div>
             <Button
               className="h-12 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+              style={{ minWidth: 0, flexShrink: 1 }}
               onClick={handleSubmit}
               disabled={submitting || checkoutCount === 0 || addresses === null}
               aria-busy={submitting}
             >
               {submitting ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
-                  {t("checkout.submitting")}
+                  <Loader2 className="size-4 shrink-0 animate-spin" />
+                  <span className="min-w-0 truncate">{t("checkout.submitting")}</span>
                 </>
               ) : (
                 <>
-                  <ShieldCheck className="size-4" />
-                  {t("checkout.submit", { total: formatBaht(checkoutTotal) })}
+                  <ShieldCheck className="size-4 shrink-0" />
+                  <span className="min-w-0 truncate">{t("checkout.submit", { total: formatBaht(checkoutTotal) })}</span>
                 </>
               )}
             </Button>

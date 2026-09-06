@@ -50,10 +50,10 @@ export function ShopHeader() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:px-6">
-        {/* Brand */}
+      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-1.5 px-4 sm:gap-2 sm:px-6">
+        {/* Brand — mark-only on the smallest screens so the utility row never overflows */}
         <Link to="/" aria-label={t("header.ariaHome", { name: "VelShop" })} className="shrink-0">
-          <Logo />
+          <Logo wordmarkClassName="hidden sm:inline" />
         </Link>
 
         {/* Desktop navigation */}

@@ -6,6 +6,8 @@ interface LogoProps {
   dark?: boolean;
   /** Show only the brand mark (no wordmark). */
   markOnly?: boolean;
+  /** Extra classes for the wordmark span (e.g. hide it below a breakpoint). */
+  wordmarkClassName?: string;
 }
 
 /** Velnox brand mark: dark geometric base + Velnox Green check accent. */
@@ -34,7 +36,7 @@ export function LogoMark({ className }: { className?: string }) {
 }
 
 /** Velnox wordmark: "Vel" in slate-900 + "nox" in Velnox Green. */
-export function Logo({ className, dark = false, markOnly = false }: LogoProps) {
+export function Logo({ className, dark = false, markOnly = false, wordmarkClassName }: LogoProps) {
   return (
     <span className={cn("inline-flex items-center gap-2.5", className)}>
       <LogoMark />
@@ -43,6 +45,7 @@ export function Logo({ className, dark = false, markOnly = false }: LogoProps) {
           className={cn(
             "text-lg font-bold tracking-tight",
             dark ? "text-white" : "text-slate-900",
+            wordmarkClassName,
           )}
         >
           Vel<span className="text-[#10B981]">nox</span>
