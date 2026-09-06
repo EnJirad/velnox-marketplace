@@ -310,26 +310,17 @@ function VariantManager({ productId, price }: { productId: string; price: number
       </div>
       <div className="mt-2 space-y-1.5">
         {variants.map((v) => (
-          <div key={v.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs">
+          <div key={v.id} className="rounded-lg border border-slate-200 bg-white p-2 text-xs">
             {editingId === v.id ? (
-              <>
-                <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
-                <Input value={editFields.compareAtPrice} onChange={(e) => setEditFields((f) => ({ ...f, compareAtPrice: e.target.value }))} type="number" className="h-7 w-16 text-xs" placeholder="ราคาเต็ม" />
-                <Input value={editFields.discountPercent} onChange={(e) => setEditFields((f) => ({ ...f, discountPercent: e.target.value }))} type="number" min="0" className="h-7 w-12 text-xs" placeholder="ส่วนลด" />
-                <Input value={editFields.stock} onChange={(e) => setEditFields((f) => ({ ...f, stock: e.target.value }))} type="number" className="h-7 w-14 text-xs" placeholder="stock" />
-                <Input value={editFields.sku} onChange={(e) => setEditFields((f) => ({ ...f, sku: e.target.value }))} className="h-7 w-20 text-xs" placeholder="SKU" />
-                <Button type="button" size="sm" className="h-7 text-xs" onClick={() => saveEdit(v.id)}>บันทึก</Button>
-                <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}>ยกเลิก</Button>
-              </>
-            ) : (
-              <>
+              <div className="flex items-start gap-2">
+                {/* Image column (left) — stays visible while editing */}
                 <div className="relative shrink-0">
-                  <label className="flex size-8 cursor-pointer items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50">
+                  <label className="flex size-11 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                     {v.imageUrl ? (
                       <img src={v.imageUrl} alt="" className="size-full object-cover" />
                     ) : (
                       <span className="flex size-full items-center justify-center">
-                        {uploadingVariantImage === v.id ? <Loader2 className="size-3 animate-spin text-slate-300" /> : <ImagePlus className="size-3 text-slate-300" />}
+                        {uploadingVariantImage === v.id ? <Loader2 className="size-4 animate-spin text-slate-300" /> : <ImagePlus className="size-4 text-slate-300" />}
                       </span>
                     )}
                     <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.id, f); e.target.value = ""; }} />
@@ -338,19 +329,60 @@ function VariantManager({ productId, price }: { productId: string; price: number
                     <span className="absolute -bottom-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-slate-700 text-[8px] font-semibold text-white">{v.images.length}</span>
                   )}
                 </div>
-                <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
-                <span className="shrink-0 tabular-nums font-semibold text-slate-900">฿{(() => { const full = v.compareAtPrice || v.price || 0; const disc = v.discountPercent || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
-                {v.compareAtPrice && v.compareAtPrice > v.price && <span className="shrink-0 text-[10px] text-slate-400 line-through">฿{v.compareAtPrice}</span>}
-                {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(v.discountPercent)}%</span>}
-                <span className={`shrink-0 tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} ชิ้น</span>
-                {v.sku && <span className="shrink-0 font-mono text-[10px] text-slate-400">{v.sku}</span>}
-                <Badge className={`shrink-0 text-[10px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
-                <button type="button" className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${featuredVariantId === v.id ? "bg-amber-100 text-amber-700 font-semibold" : "text-slate-400 hover:text-amber-600"}`} onClick={() => handleSetFeatured(v.id)} title="ใช้เป็นราคาหลัก">
-                  {featuredVariantId === v.id ? "★" : "☆"}
-                </button>
-                <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-slate-700" onClick={() => startEdit(v)} aria-label="แก้ไข"><Pencil className="size-3" /></Button>
-                <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => handleDelete(v.id)} aria-label="ลบ"><Trash2 className="size-3" /></Button>
-              </>
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-slate-900">{v.name}</span>
+                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                    <Input value={editFields.compareAtPrice} onChange={(e) => setEditFields((f) => ({ ...f, compareAtPrice: e.target.value }))} type="number" className="h-7 min-w-0 text-xs" placeholder="ราคาเต็ม" />
+                    <Input value={editFields.discountPercent} onChange={(e) => setEditFields((f) => ({ ...f, discountPercent: e.target.value }))} type="number" min="0" className="h-7 min-w-0 text-xs" placeholder="ส่วนลด %" />
+                    <Input value={editFields.stock} onChange={(e) => setEditFields((f) => ({ ...f, stock: e.target.value }))} type="number" className="h-7 min-w-0 text-xs" placeholder="สต็อก" />
+                    <Input value={editFields.sku} onChange={(e) => setEditFields((f) => ({ ...f, sku: e.target.value }))} className="h-7 min-w-0 text-xs" placeholder="SKU" />
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <Button type="button" size="sm" className="h-7 text-xs" onClick={() => saveEdit(v.id)}>บันทึก</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}>ยกเลิก</Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                {/* Image column (left) */}
+                <div className="relative shrink-0">
+                  <label className="flex size-11 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                    {v.imageUrl ? (
+                      <img src={v.imageUrl} alt="" className="size-full object-cover" />
+                    ) : (
+                      <span className="flex size-full items-center justify-center">
+                        {uploadingVariantImage === v.id ? <Loader2 className="size-4 animate-spin text-slate-300" /> : <ImagePlus className="size-4 text-slate-300" />}
+                      </span>
+                    )}
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVariantImageUpload(v.id, f); e.target.value = ""; }} />
+                  </label>
+                  {v.images && v.images.length > 0 && (
+                    <span className="absolute -bottom-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-slate-700 text-[8px] font-semibold text-white">{v.images.length}</span>
+                  )}
+                </div>
+                {/* Details column (right) */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
+                    {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(v.discountPercent)}%</span>}
+                    <Badge className={`shrink-0 text-[10px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
+                    <button type="button" className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${featuredVariantId === v.id ? "bg-amber-100 text-amber-700 font-semibold" : "text-slate-400 hover:text-amber-600"}`} onClick={() => handleSetFeatured(v.id)} title="ใช้เป็นราคาหลัก">
+                      {featuredVariantId === v.id ? "★" : "☆"}
+                    </button>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="tabular-nums font-semibold text-slate-900">฿{(() => { const full = v.compareAtPrice || v.price || 0; const disc = v.discountPercent || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
+                    {v.compareAtPrice && v.compareAtPrice > v.price && <span className="text-[10px] text-slate-400 line-through">฿{v.compareAtPrice.toLocaleString()}</span>}
+                    <span className={`tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} ชิ้น</span>
+                    {v.sku && <span className="font-mono text-[10px] text-slate-400">{v.sku}</span>}
+                  </div>
+                  <div className="mt-1 flex items-center gap-1">
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => startEdit(v)}><Pencil className="size-3" />แก้ไข</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[10px] text-slate-500 hover:text-red-600" onClick={() => handleDelete(v.id)}><Trash2 className="size-3" />ลบ</Button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         ))}
@@ -909,20 +941,32 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                         onCheckedChange={(checked) => updateOptionValueEnabled(gi, vi, checked === true)}
                         className="shrink-0"
                       />
-                      <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-7 flex-1 text-xs" />
-                      {group.displayType === "image" && (
-                        <div className="shrink-0">
-                          <label className="flex size-7 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
-                            {val.imageUrl ? (
-                              <img src={val.imageUrl} alt="" className="size-full object-cover" />
-                            ) : (
-                              <ImagePlus className="size-3.5" />
+                      {group.displayType === "image" ? (
+                        <>
+                          {/* IMAGE group — image column on the left, details on the right */}
+                          <div className="relative size-11 shrink-0">
+                            <label className="flex size-full cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
+                              {val.imageUrl ? (
+                                <img src={val.imageUrl} alt="" className="size-full object-cover" />
+                              ) : (
+                                <ImagePlus className="size-4" />
+                              )}
+                              <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOptionImageUpload(gi, vi, f); e.target.value = ""; }} />
+                            </label>
+                            {val.imageUrl && (
+                              <button type="button" className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600" onClick={() => updateOptionValueImage(gi, vi, null)} aria-label="ลบรูปตัวเลือก"><X className="size-2.5" /></button>
                             )}
-                            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOptionImageUpload(gi, vi, f); e.target.value = ""; }} />
-                          </label>
-                        </div>
+                          </div>
+                          <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-9 min-w-0 flex-1 text-xs" />
+                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
+                        </>
+                      ) : (
+                        <>
+                          {/* TEXT group — compact row, no image, no placeholder */}
+                          <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-7 min-w-0 flex-1 text-xs" />
+                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
+                        </>
                       )}
-                      <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
                     </div>
                   ))}
                   <div className="flex items-center gap-1.5">

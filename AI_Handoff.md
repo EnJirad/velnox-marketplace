@@ -2575,3 +2575,23 @@ Verification: VelShop `tsc -b --noEmit` PASS · `vite build` PASS · `bun run i1
 - Production config: `VITE_API_URL` defaults to localhost only as a dev fallback (documented); secrets absent from frontend; no TODO/FIXME/lorem in velshop.
 
 **E2E status (static verification):** Guest→product→variant→cart→checkout→address→COD/online→place order→orders→detail→tracking chain verified in code; double-submit protected by `checkout_requests` idempotency (claim → snapshot response → duplicate returns same result); variant stock atomic decrement `WHERE stock >= $1` prevents negative stock; price revalidation charges current server price and flags `priceChanged`. Live browser E2E NOT run in this sandbox (no DATABASE_URL / no headless browser) — verified via code trace + builds.
+
+---
+
+### 2026-09-06 — VelSeller: Option Value / Variant rows — image-left layout
+
+**Task:** Restore image-left / details-right layout for Option Values and Variants in the seller product editor (was squeezed into single flex rows).
+
+**Audit findings (from real code):**
+- `packages/shared/src/components/seller/ProductFormDialog.tsx` is the ONLY options/variants editor (used by `apps/velseller` MyShop edit dialog).
+- Option Value image: draft flow for new products (`draftUpload()` → R2, persisted via create-full `optionGroups[].values[].imageUrl`) + PATCH `/api/seller/products/:id/option-values/:valueId` (`imageUrl`) for existing products. The image was a tiny inline `size-7` control *between* the value input and the delete button, and there was no way to remove an image once set.
+- Variant image (edit mode VariantManager): `POST image-upload-intent` → R2 PUT → `POST /variants/:id/images`; delete via `DELETE /images/:imageId`. The `size-8` thumbnail sat inline in a single overflowing flex row, and **disappeared entirely in edit mode**.
+
+**Layout changes (UI only — zero business logic):**
+1. **Option Value rows (IMAGE group):** image column on the LEFT (`size-11`, rounded-lg, hover green dashed border, upload via click, red X badge overlay to clear the image via `updateOptionValueImage(gi, vi, null)` — existing mechanism), value input + delete on the RIGHT with `min-w-0`. TEXT groups unchanged (compact pill, no image, no placeholder).
+2. **VariantManager rows (edit mode):** card layout — `size-11` image column on the LEFT (with multi-image count badge, upload-to-change, loading spinner), details column on the RIGHT: row 1 = name (truncate) + discount badge + status badge + featured ★; row 2 = final price + compare-at strikethrough + stock (semantic colors) + SKU (mono); row 3 = labeled แก้ไข/ลบ buttons.
+3. **Edit mode:** image column now stays visible while editing; form fields moved into a 2-column grid (`min-w-0`) with save/cancel below — no fixed widths that can overflow at 320px.
+
+**Preserved 100%:** `handleOptionImageUpload` (draft flow), `handleVariantImageUpload` (R2 intent→PUT→save), `handleVariantImageDelete`, `saveEdit`/`startEdit`, `handleSetFeatured`, `handleDelete`, `removeOptionValue`, `updateOptionValue`, `updateOptionValueImage`, saveOptions PATCH contract, generate-variants flow, variant count limit, all API contracts and schema.
+
+**Verification:** velseller typecheck ✅ · velshop/velcenter/velnox/backend typecheck ✅ · velseller `vite build` ✅ (6.78s) · `git diff --check` clean ✅
