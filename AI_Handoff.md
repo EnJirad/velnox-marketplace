@@ -2536,3 +2536,42 @@ Two UI-only commits (no business logic / API / DB changes):
 - `VelRepeatPlanDialog.tsx`: DialogContent now flex-col with `max-h-[85dvh]`, fixed header/footer and a `min-h-0 flex-1 overflow-y-auto` body (scrolls on short screens/keyboard); header title/description wrap and clear the close button; frequency/quantity rows `flex-wrap`; shipping SelectContent switched to Radix popper `w-[var(--radix-select-trigger-width)]` with wrapping `[overflow-wrap:anywhere]` items so long addresses never widen the dropdown past the trigger or viewport. Widths come from the shared dialog base (no fixed widths). No shared button/dialog/select component changes.
 
 Verification: VelShop `tsc -b --noEmit` PASS · `vite build` PASS · `bun run i18n:check` th=en=my=918 PASS · `git diff --check` clean.
+---
+
+### 2026-09-06 — VelShop MVP Final Gate: Checkout Address P0 Fix + COD Payments Row
+
+**Task:** Full VelShop customer MVP readiness audit before launch freeze. Audit-first approach; only P0/P1 fixed.
+
+**VELSHOP MVP AUDIT RESULT (pre-fix):**
+
+**P0 (launch blockers):**
+1. **Checkout never stored the shipping address.** Frontend `ShopCheckout.tsx` sends `addressId`; backend `POST /api/customer/checkout` destructured `shippingAddressId` (cart.ts). `shipping_address_id` was always NULL and `shipping_address` snapshot was never written (the frontend never sent a snapshot). Every order appeared in Order Detail with "ไม่มีข้อมูลที่อยู่จัดส่ง" — the 2026-09-05 null-guard fix treated the symptom; this was the true root cause.
+2. Backend trusted an optional client-supplied `shippingAddress` JSON blob (never actually sent, but trusted if present) — address data could have been spoofed.
+
+**P1 (important):**
+3. **COD orders had no `payments` row** — `paymentStatus` is computed via correlated subquery on `payments`; COD (the default method) orders permanently showed "ยังไม่ชำระ/unpaid" even though the customer pays on delivery.
+
+**P2 (deferred, no action):** console.log info lines in backend (93 — mostly structured `[route]` logs), 2 dev-gated logs in velshop.
+
+**POST-MVP (documented, not done):** dedicated ToS/Privacy/Refund/Shipping legal pages (footer currently deep-links to existing profile/orders pages), PromptPay/Transfer/Card payment methods, guest checkout.
+
+**Fixes (backend/routes/cart.ts only — frontend untouched):**
+1. Checkout now accepts BOTH `addressId` (VelShop) and `shippingAddressId` (legacy) — tolerant of the existing client contract.
+2. **Server-side address resolution + ownership check BEFORE the transaction:** `SELECT ... FROM addresses WHERE id = $1 AND user_id = $2`; unknown address → 403 `ADDRESS_NOT_FOUND`. The `shipping_address` JSONB snapshot is now built server-side from the owned DB row via new `orderAddressSnapshot()` helper (mirrors `addressSnapshot()` in velrepeat-plans.ts — one canonical shape). Client-supplied address objects are never trusted. This is the same security posture VelRepeat plans already had.
+3. **COD orders get a real payments row** (`provider='cod', method='cod', status='pending'`) inserted inside the same transaction as the order — order list/detail now show correct payment status; Stripe flow unchanged (it inserts its own `method='online'` row).
+4. `paymentMethod` in the checkout body is only a routing hint (cod vs online); it never affects pricing.
+
+**Security/data correctness:** order ownership unchanged (`user_id` scoping); address ownership now enforced at checkout; price/stock still fully server-validated; idempotency guard untouched.
+
+**Database changed:** NO (no schema change; `payments` insert uses existing columns).
+
+**Verification:**
+- Backend typecheck: ✅ PASS · Backend build (`tsc`): ✅ PASS
+- VelShop typecheck: ✅ PASS · VelShop `vite build`: ✅ PASS (8.08s)
+- VelSeller/VelCenter/Velnox typecheck: ✅ PASS
+- `bun run i18n:check`: ✅ PASS (th=en=my=941 parity)
+- `git diff --check`: ✅ clean
+- i18n raw-key sweep: ✅ 605 distinct `t("...")` keys in velshop — all resolve in th/en/my; dotted-literal sweep found no raw keys reachable in velshop.
+- Production config: `VITE_API_URL` defaults to localhost only as a dev fallback (documented); secrets absent from frontend; no TODO/FIXME/lorem in velshop.
+
+**E2E status (static verification):** Guest→product→variant→cart→checkout→address→COD/online→place order→orders→detail→tracking chain verified in code; double-submit protected by `checkout_requests` idempotency (claim → snapshot response → duplicate returns same result); variant stock atomic decrement `WHERE stock >= $1` prevents negative stock; price revalidation charges current server price and flags `priceChanged`. Live browser E2E NOT run in this sandbox (no DATABASE_URL / no headless browser) — verified via code trace + builds.

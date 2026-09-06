@@ -159,6 +159,26 @@ async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
  * Safely parse the order's shipping_address JSON snapshot.
  * Legacy orders may store malformed JSON or no address at all — never crash.
  */
+/**
+ * Copy a user's address row into the JSONB snapshot shape used by orders.
+ * Mirrors addressSnapshot() in velrepeat-plans.ts — one canonical snapshot shape.
+ */
+function orderAddressSnapshot(a: any): Record<string, unknown> | null {
+  if (!a) return null;
+  return {
+    label: a.label || "Home",
+    recipientName: a.recipient_name || "",
+    phone: a.phone || "",
+    line1: a.line1 || "",
+    line2: a.line2 || null,
+    subdistrict: a.subdistrict || a.city || null,
+    district: a.district || null,
+    province: a.state || null,
+    postalCode: a.postal_code || null,
+    country: a.country || "TH",
+  };
+}
+
 function parseShippingAddress(raw: unknown): Record<string, unknown> | null {
   if (!raw || typeof raw !== "string") return null;
   try {
@@ -654,7 +674,35 @@ export function setupCartRoutes(app: Express): void {
   app.post("/api/customer/checkout", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const { shippingAddressId, shippingAddress, notes, cartItemIds, requestId } = req.body;
+      // NOTE: clients send `addressId` (VelShop checkout) or `shippingAddressId`
+      // (legacy) — accept both. The snapshot is ALWAYS built server-side from the
+      // owned address row; a client-supplied `shippingAddress` object is never trusted.
+      const body = req.body ?? {};
+      const shippingAddressId = (body.shippingAddressId ?? body.addressId) as string | undefined;
+      const notes = body.notes as string | undefined;
+      const cartItemIds = body.cartItemIds as string[] | undefined;
+      const requestId = body.requestId as string | undefined;
+      // Payment method is only a routing hint (cod vs online); it never affects price.
+      const paymentMethodBody = typeof body.paymentMethod === "string" ? body.paymentMethod : "cod";
+
+      // Resolve + ownership-check the address BEFORE the transaction so the
+      // snapshot is written from the database row, not from client input.
+      let serverAddressSnapshot: Record<string, unknown> | null = null;
+      if (shippingAddressId && typeof shippingAddressId === "string") {
+        const addrResult = await query(
+          `SELECT id, label, recipient_name, phone, line1, line2, subdistrict, district, city, state, postal_code, country
+           FROM addresses WHERE id = $1 AND user_id = $2`,
+          [shippingAddressId, userId],
+        );
+        if (addrResult.rows.length === 0) {
+          res.status(403).json({
+            success: false,
+            error: { code: "ADDRESS_NOT_FOUND", message: "Shipping address was not found for this account." },
+          });
+          return;
+        }
+        serverAddressSnapshot = orderAddressSnapshot(addrResult.rows[0]);
+      }
 
       // Get cart
       const cartResult = await query("SELECT id FROM carts WHERE user_id = $1", [userId]);
@@ -828,7 +876,7 @@ export function setupCartRoutes(app: Express): void {
             `INSERT INTO orders (user_id, shop_id, status, total_amount, currency, shipping_address_id, shipping_address, notes)
              VALUES ($1, $2, 'pending', $3, 'THB', $4, $5, $6)
              RETURNING id, created_at`,
-            [userId, shopId, totalAmount, shippingAddressId || null, shippingAddress ? JSON.stringify(shippingAddress) : null, notes || null],
+            [userId, shopId, totalAmount, shippingAddressId || null, serverAddressSnapshot ? JSON.stringify(serverAddressSnapshot) : null, notes || null],
           );
           const orderId = orderResult.rows[0].id;
 
@@ -895,6 +943,17 @@ export function setupCartRoutes(app: Express): void {
           }
 
           createdOrders.push({ orderId, orderNumber: orderId, shopId, shopName: shopItems[0]?.shop_name ?? '', subtotal: totalAmount, shippingFee: 0, total: totalAmount });
+
+          // COD orders get a real payments row (method 'cod', provider 'cod', status 'pending')
+          // so order list/detail can report paymentStatus. Online payments are created
+          // by the Stripe checkout flow instead.
+          if (paymentMethodBody === "cod") {
+            await client.query(
+              `INSERT INTO payments (order_id, provider, method, amount, currency, status)
+               VALUES ($1, 'cod', 'cod', $2, 'THB', 'pending')`,
+              [orderId, totalAmount],
+            );
+          }
         }
 
         // Clear only the purchased items from cart (preserves unselected items)
