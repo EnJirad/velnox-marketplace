@@ -2598,21 +2598,21 @@ Verification: VelShop `tsc -b --noEmit` PASS · `vite build` PASS · `bun run i1
 
 ---
 
-### 2026-09-06 — VelShop: Product Detail variant cards image-left + global route scroll restoration
+### 2026-09-06 — VelShop: Product Detail UI correction — variant selector restored + global route scroll restoration
 
-**Task:** (1) IMAGE-group variant cards in VelShop Product Detail (and ShopDetail selection sheet) must be IMAGE LEFT → DETAILS RIGHT on both mobile and desktop; (2) every new page navigation must start scroll at (0,0).
+**Task (corrected scope):** (A) PRODUCT IMAGE/GALLERY must be IMAGE LEFT → DETAILS RIGHT on Desktop/Tablet(mobile stacks;(B) PRODUCT VARIANT SELECTOR("โทนสี") must use the ORIGINAL layout — **restore to the previous working commit**, NOT a new design;(C) every new page navigation must start scroll at (0,0).
 
-**Audit findings (from real code):**
-- VelShop is react-router v7 (`BrowserRouter basename="velshop"`) — NOT Next.js. Entry: `apps/velshop/src/main.tsx`. Shared `RouteSyncer`/`SiteSuspense` live there; no global scroll-restoration existed. Only `ShopProductDetail` manually scrolled top on product load (`history.scrollRestoration='manual'` for refresh/back-forward).
-- Variant selector: inline in `apps/velshop/src/pages/ShopProductDetail.tsx` (bottom Sheet, lines ~1119-1375) AND `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` (ShopDetail variant sheet). IMAGE option groups rendered vertical flex-col cards ( image → label → stock); TEXT groups are compact pills ( unchanged).
+**Audit findings(from real code + git history:**)
+- Part A never regressed:** since the first e-commerce product-detail commit(`8071155`)through `origin/main` and the current branch,the top area has always been `<div className="mt-5 grid gap-6 lg:grid-cols-2 lg:gap-8">` — Gallery left, Info right on `lg:`(desktop), stacked on mobile. NO code change needed for Part A;the only prior layout change touched the **variant selector cards**, not the image/details area..
+- Part B culprit identified:** commit **`63a6c6e`** changed the IMAGE-group variant cards in both `apps/velshop/src/pages/ShopProductDetail.tsx` and `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` from the original **vertical flex-col cards**(image → label → stock,fixed `w-[88px]/w-[112px]` `min-h`)to horizontal image-left cards.** Correct fix:** reverted exactly those 2 blocks to the pre-change form** — both files are now byte-identical to `origin/main`/`f66bab5`(verified `git diff origin/main` = 0 lines for these files). Variant selection logic, stock calc, disabled state, rings, TEXT pills, handlers — all untouched..
+- VelShop is react-router v7(`BrowserRouter basename="velshop"`),entry `apps/velshop/src/main.tsx`;no global scroll-restoration existed; only `ShopProductDetail` manually scrolled top on product load..
 
-**Changes (UI only — zero business logic):**
-1. **Variant IMAGE cards → horizontal:** `flex w-full items-center gap-2 sm:w-[calc(50%-0.375rem)]` with fixed `size-14` image column on LEFT (object-contain, never stretched) + `min-w-0 flex-1` details column on RIGHT (name truncate + stock label). `w-full` ensures full-width at 320px (cannot overflow); sm+ gets 2-column grid preserving image-left. Text pills, stock calc, disabled state, selected ring, all handlers unchanged.
-
-2. **Global scroll:** added `ScrollToTop` component (keyed on `pathname` only) inside `BrowserRouter` in velshop main.tsx — scrolls exactly `top:0, left:0, behavior:'instant'` on every pathname change (incl. back/forward), sets `history.scrollRestoration='manual'`. Not triggered by sheets/drawers/modals/search-param-only updates — those don't change pathname. Same policy applied uniformly (A→B→C, Back→top) since initial `scrollRestoration` was already manualin Product Detail.
-
-**Preserved 100%:** selectedVariant resolution, price/compareAt/discount/stock derivation, main image switching, VelRepeat, Add to Cart, Buy Now, option disabled/out-of-stock logic, seller product editor, DB/API untouched.
-
+**Changes made:**
+1. **Part B(variant selector:** restored IMAGE options to the original vertical card presentation(`flex flex-col items-center justify-center gap-1.5 w-[80px]/w-[88px] min-h-[88px]/[96px]/[128px] p-2`;`size-14`/`size-[72px]` image,`object-contain`),matching `origin/main` exactly.Both files identical to pre-change commit — zero business-logic delta..
+2. **Part A(product image/details:**verified already-correct(`lg:grid-cols-2` — image left, details right on desktop;)— **no change** needed;gallery thumbnails,variant-image switching,price/stock derivation preserved..
+3. **Global scroll(Part 4:** added `ScrollToTop` component(keyed on `pathname` only)inside `BrowserRouter` in velshop main.tsx — scrolls exactly `top:0, left:0, behavior:'instant'` on every pathname change(incl. back/forward),sets `history.scrollRestoration='manual'`.Not triggered by sheets/drawers/modals/search-param-only updates — those don't change pathname..
 
 
-**Verification:** velshop `tsc -b --noEmit` PASS · velshop `vite build` PASS (4.19s) · `git diff --check` clean · all other apps untouched ( no full-repo typecheck rerun needed — only velshop files changed)·
+**Preserved 100%:** selectedVariant resolution,price/compareAt/discount/stock derivation,main image switching,gallery thumbnails/carousel,VelRepeat,Add to Cart,Buy Now,option disabled/out-of-stock logic,seller product editor,DB/API untouched.Both layout containers use `flex flex-wrap` — no horizontal overflow reintroduced at 320px–430px..
+
+**Verification:** velshop `tsc -b --noEmit` PASS · velshop `vite build` PASS(4.24s)·`git diff --check` clean ·`git diff origin/main -- ShopProductDetail.tsx ProductSelectionSheet.tsx`=`0`(byte-identical revert)·other apps untouched..
