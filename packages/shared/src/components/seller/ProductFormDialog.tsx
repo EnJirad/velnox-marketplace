@@ -111,6 +111,8 @@ interface VelRepeatForm {
   monthlyPrice: string;
   weeklyQty: string;
   monthlyQty: string;
+  minQty: string;
+  maxQty: string;
 }
 
 // ─── Variant row for existing products (edit mode) ───────────────────
@@ -370,6 +372,7 @@ const defaultForm = {
 const defaultVelRepeat: VelRepeatForm = {
   enabled: false, weeklyEnabled: false, monthlyEnabled: false,
   weeklyPrice: "", monthlyPrice: "", weeklyQty: "", monthlyQty: "",
+  minQty: "", maxQty: "",
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -424,6 +427,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       monthlyPrice: product.vrepeatMonthlyPrice != null ? String(product.vrepeatMonthlyPrice) : "",
       weeklyQty: product.vrepeatWeeklyQty != null ? String(product.vrepeatWeeklyQty) : "",
       monthlyQty: product.vrepeatMonthlyQty != null ? String(product.vrepeatMonthlyQty) : "",
+      minQty: (product as any).vrepeatMinQty != null ? String((product as any).vrepeatMinQty) : "",
+      maxQty: (product as any).vrepeatMaxQty != null ? String((product as any).vrepeatMaxQty) : "",
     } : defaultVelRepeat,
   );
   const [velRepeatExpanded, setVelRepeatExpanded] = useState(false);
@@ -777,6 +782,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             monthlyPrice: velRepeat.monthlyPrice ? Number(velRepeat.monthlyPrice) : null,
             weeklyQty: velRepeat.weeklyQty ? Number(velRepeat.weeklyQty) : null,
             monthlyQty: velRepeat.monthlyQty ? Number(velRepeat.monthlyQty) : null,
+            minQty: velRepeat.minQty ? Number(velRepeat.minQty) : null,
+            maxQty: velRepeat.maxQty ? Number(velRepeat.maxQty) : null,
           };
         }
 
@@ -1122,6 +1129,11 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       </>
                     )}
                   </div>
+              {/* V2: min/max quantity per cycle for recurring plans */}
+              <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
+                <div className="grid gap-1"><Label className="text-[10px]">จํานวนขั้นต่ํา/รอบ</Label><Input type="number" min="1" value={velRepeat.minQty} onChange={(e) => setVelRepeat((p) => ({ ...p, minQty: e.target.value }))} className="h-7 text-xs" /></div>
+                <div className="grid gap-1"><Label className="text-[10px]">จํานวนสูงสุด/รอบ</Label><Input type="number" min="1" value={velRepeat.maxQty} onChange={(e) => setVelRepeat((p) => ({ ...p, maxQty: e.target.value }))} className="h-7 text-xs" /></div>
+              </div>
                 </div>
               )}
             </div>

@@ -14,6 +14,8 @@ import { setupSellerRoutes } from "./routes/seller.js";
 import { setupProductRoutes } from "./routes/products.js";
 import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
+import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
+import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupWebSocket } from "./realtime/index.js";
 
@@ -137,6 +139,31 @@ async function ensureVariantTables(): Promise<void> {
 }
 ensureVariantTables();
 
+// ─── Auto-create VelRepeat V2 tables if missing (V0034) ────────────────
+async function ensureVelRepeatV2Tables(): Promise<void> {
+  const { query } = await import("./db/index.js");
+  const startMs = Date.now();
+  try {
+    const tableCheck = await query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'velrepeat_plans') AS exists`,
+    );
+    if (tableCheck.rows[0]?.exists) {
+      console.log("[startup] velrepeat_plans already exists — skipping V0034 apply");
+      return;
+    }
+    console.log("[startup] velrepeat_plans missing — applying V0034 (VelRepeat V2)...");
+    const fs = await import("fs");
+    const pathMod = await import("path");
+    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "034_velrepeat_v2.sql");
+    const sql = fs.readFileSync(sqlPath, "utf-8");
+    await query(sql);
+    console.log(`[startup] VelRepeat V2 tables ensured in ${Date.now() - startMs}ms`);
+  } catch (err: any) {
+    console.error("[startup] ensureVelRepeatV2Tables failed:", err?.message ?? err);
+  }
+}
+ensureVelRepeatV2Tables();
+
 // ─── Health Check ───────────────────────────────────────
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -200,8 +227,11 @@ setupStripeRoutes(app);
 // ─── Product Options & Attributes ──────────────────────────────
 setupProductOptionRoutes(app);
 
-// ─── VelRepeat Packages ──────────────────────────────────────
+// ─── VelRepeat Packages (V1 — buy-ahead) ────────────────────────
 setupVelRepeatRoutes(app);
+
+// ─── VelRepeat Plans (V2 — recurring commerce engine) ────────────
+setupVelRepeatPlanRoutes(app);
 
 // ─── Admin (bootstrap / owner setup) ────────────────────
 setupAdminRoutes(app);
@@ -229,4 +259,7 @@ server.listen(PORT, "0.0.0.0", () => {
   // BOOTSTRAP_OWNER_SECRET is optional but must be set for owner initialization.
   // Logged as boolean only — the actual value is never exposed.
   console.log(`[bootstrap] BOOTSTRAP_OWNER_SECRET configured: ${Boolean(process.env.BOOTSTRAP_OWNER_SECRET)}`);
+
+  // ─── VelRepeat V2 Scheduler (recurring commerce worker) ────────────
+  startVelRepeatScheduler();
 });

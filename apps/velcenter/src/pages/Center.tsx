@@ -66,6 +66,7 @@ import {
   Loader2,
   Megaphone,
   Package,
+  RefreshCw,
   Save,
   Search,
   Settings,
@@ -361,6 +362,25 @@ export default function Center() {
   const [ordersData, setOrdersData] = useState<CenterOrderRow[] | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
+  // VelRepeat V2 monitoring (recurring commerce)
+  const velRepeatOverviewAction = useAction(api.centerAdmin.velRepeatOverview);
+  interface VelRepeatOverview {
+    plansByStatus: Record<string, number>;
+    successRuns: number;
+    failedRuns: number;
+    outOfStockRuns: number;
+    recurringRevenue: number;
+  }
+  const [velRepeatKpi, setVelRepeatKpi] = useState<VelRepeatOverview | null>(null);
+
+  const loadVelRepeat = useCallback(async () => {
+    try {
+      setVelRepeatKpi(await velRepeatOverviewAction());
+    } catch {
+      setVelRepeatKpi(null);
+    }
+  }, [velRepeatOverviewAction]);
+
   const loadMarket = useCallback(async () => {
     try {
       setMarketKpi(await marketOverviewAction());
@@ -382,7 +402,8 @@ export default function Center() {
 
   useEffect(() => {
     void loadMarket();
-  }, [loadMarket]);
+    void loadVelRepeat();
+  }, [loadMarket, loadVelRepeat]);
 
   useEffect(() => {
     if (tab === "orders") void loadOrders();
@@ -697,6 +718,45 @@ export default function Center() {
                     <p className="mt-0.5 text-xs text-sky-600/70">จัดการได้ที่แท็บ ออเดอร์</p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* VelRepeat V2 — recurring commerce monitoring */}
+            <Card className="mt-6 border-slate-200 shadow-none">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <RefreshCw className="size-4 text-[#10B981]" />
+                  VelRepeat — การสั่งซื้ออัตโนมัติ
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {velRepeatKpi === null ? (
+                  <p className="text-sm text-slate-400">กำลังโหลด...</p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl bg-emerald-50 p-4">
+                      <p className="text-xs font-medium text-emerald-600">แผนที่ใช้งานอยู่</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
+                        {velRepeatKpi.plansByStatus?.active ?? 0} แผน
+                      </p>
+                      <p className="mt-0.5 text-xs text-emerald-600/70">สำเร็จ {velRepeatKpi.successRuns ?? 0} รอบ</p>
+                    </div>
+                    <div className="rounded-xl bg-rose-50 p-4">
+                      <p className="text-xs font-medium text-rose-600">รอบที่ล้มเหลว</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-rose-700">
+                        {velRepeatKpi.failedRuns ?? 0} รอบ
+                      </p>
+                      <p className="mt-0.5 text-xs text-rose-600/70">สินค้าหมด {velRepeatKpi.outOfStockRuns ?? 0} รอบ</p>
+                    </div>
+                    <div className="rounded-xl bg-sky-50 p-4">
+                      <p className="text-xs font-medium text-sky-600">ยอด recurring</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-sky-700">
+                        {formatBaht(velRepeatKpi.recurringRevenue ?? 0)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-sky-600/70">จากออเดอร์ VelRepeat ทั้งหมด</p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

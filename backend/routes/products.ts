@@ -235,6 +235,8 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     vrepeatMonthlyPrice: row.vrepeat_monthly_price != null ? parseFloat(row.vrepeat_monthly_price) : null,
     vrepeatWeeklyQty: row.vrepeat_weekly_qty ?? null,
     vrepeatMonthlyQty: row.vrepeat_monthly_qty ?? null,
+    vrepeatMinQty: row.vrepeat_min_qty ?? null,
+    vrepeatMaxQty: row.vrepeat_max_qty ?? null,
     featuredVariantId: row.featured_variant_id ?? null,
   };
 }
@@ -949,6 +951,8 @@ export function setupProductRoutes(app: Express): void {
           if (velRepeatData.monthlyPrice != null) { vrepeatFields.push(`vrepeat_monthly_price = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.monthlyPrice)); }
           if (velRepeatData.weeklyQty != null) { vrepeatFields.push(`vrepeat_weekly_qty = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.weeklyQty)); }
           if (velRepeatData.monthlyQty != null) { vrepeatFields.push(`vrepeat_monthly_qty = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.monthlyQty)); }
+          if (velRepeatData.minQty != null) { vrepeatFields.push(`vrepeat_min_qty = $${vIdx++}`); vrepeatValues.push(Math.max(1, Math.floor(Number(velRepeatData.minQty) || 1))); }
+          if (velRepeatData.maxQty != null) { vrepeatFields.push(`vrepeat_max_qty = $${vIdx++}`); vrepeatValues.push(Math.max(1, Math.floor(Number(velRepeatData.maxQty) || 999))); }
 
           if (vrepeatFields.length > 0) {
             vrepeatValues.push(product.id);

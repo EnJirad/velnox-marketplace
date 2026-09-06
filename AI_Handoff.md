@@ -2328,3 +2328,118 @@ The backend already correctly resolved variant option images via SQL joins. The 
 
 **Typecheck:** ✅ VelShop pass
 **Database changed:** NO
+
+## VelRepeat V2 — Recurring Commerce Engine (2026-09-06)
+
+VelRepeat V2 is a **recurring auto-order engine** (unlike V1 `vrepeat_packages`,
+which is a pay-upfront "buy N, get scheduled deliveries" package). V1 stays
+untouched for backward compatibility; V2 adds its own domain tables and worker.
+
+### Database (migration `db/migrations/034_velrepeat_v2.sql`, V0034)
+
+- `velrepeat_plans` — one plan per customer; `frequency_type` (`days|weeks|months`),
+  `interval_value`, `next_run_at` (UTC), status (`draft|active|paused|processing|
+  payment_failed|out_of_stock|cancelled|completed`), shipping address id + JSONB
+  snapshot, `payment_method` (`cod` today), timezone.
+- `velrepeat_items` — N items per plan: product + **variant** + shop + seller +
+  quantity + `unit_price` snapshot. `UNIQUE (plan_id, product_id, variant_id)`.
+- `velrepeat_runs` — one run per scheduled time. **Idempotency guard:
+  `UNIQUE (plan_id, scheduled_for)`** + `ON CONFLICT DO NOTHING`.
+- `velrepeat_events` — lifecycle/analytics events (PLAN_CREATED, RUN_SUCCESS,
+  OUT_OF_STOCK, …) for future Smart Repeat.
+- `orders.velrepeat_run_id` — links recurring orders to their run (seller/center
+  can identify them). `products.vrepeat_min_qty / vrepeat_max_qty` (seller bounds).
+
+Applied automatically at backend startup by `ensureVelRepeatV2Tables()` in
+`backend/server.ts` (mirrors the existing `ensureVariantTables` pattern): if
+`velrepeat_plans` is missing it executes the migration file once.
+
+### Scheduler worker — `backend/jobs/velrepeat-scheduler.ts`
+
+DB is the source of truth; the polling loop (interval `VELREPEAT_SCHEDULER_INTERVAL_MS`,
+default 60s, started in `server.ts`) only triggers scans. Concurrency safety:
+
+1. Per-plan transaction re-claims the row with `FOR UPDATE` while re-checking
+   `status='active' AND next_run_at <= NOW()` → concurrent workers serialize on the
+   row lock; the loser sees the advanced `next_run_at` and skips.
+2. Run insert uses `ON CONFLICT (plan_id, scheduled_for) DO NOTHING` → a given
+   scheduled time produces at most one run (second guard).
+3. Overdue runs are picked up after restart automatically.
+
+Run pipeline (all inside the transaction): claim → idempotent run insert →
+validate every item (product published + `vrepeat_enabled`, variant active &
+belongs to product, stock ≥ qty via variant or inventory, seller approved) →
+**price policy** (always use current server price; if it differs from the snapshot,
+record `price_changed` in run metadata + event + notification, update snapshot —
+never silently charge a stale price) → create one order per shop (same shape as
+checkout: order + order_items snapshots + atomic variant stock decrement /
+inventory reserve + sold_count + `payments` row provider `cod`) → mark run
+`success` → compute next run via `calculateNextRunAt` (UTC; months clamp Jan 31 →
+Feb 28/29) → emit RUN_SUCCESS event + notification.
+
+Out-of-stock / unavailable → run marked `out_of_stock`/`item_unavailable`,
+plan status set accordingly (resumable), event + notification, **no order created**.
+
+### API — `backend/routes/velrepeat-plans.ts` (registered in server.ts)
+
+Customer (all ownership-scoped on `user_id`):
+- `POST /api/velrepeat/plans` — create plan (items[] w/ productId+variantId+qty,
+  frequencyType, intervalValue, shippingAddressId, paymentMethod=cod). Prices
+  resolved server-side; min/max qty enforced.
+- `GET /api/velrepeat/plans` · `GET /api/velrepeat/plans/:planId`
+- `PATCH /api/velrepeat/plans/:planId` — frequency (reschedules from now) /
+  items (replace) / shipping address / notes
+- `POST /api/velrepeat/plans/:planId/pause | resume | cancel` (state machine:
+  pause: active|out_of_stock→paused; resume: paused→active (never into the past);
+  cancel: →cancelled)
+- `POST /api/velrepeat/plans/:planId/run-now` — trigger next run immediately
+- `GET /api/velrepeat/plans/:planId/runs` — run history
+- `POST /api/velrepeat/repeat-now` — create a plan from a past order (Repeat Order)
+
+Seller: `GET /api/seller/velrepeat/overview` (recurring order count, active plans
+for their shop, recent runs). Center: `GET /api/admin/velrepeat/overview`
+(plans by status, success/failed/out-of-stock runs, recurring revenue; owner/admin/
+staff only). Missing tables return empty data instead of 500.
+
+### Frontend
+
+- `apps/velshop/src/components/shop/VelRepeatPlanDialog.tsx` — Product Detail
+  "VelRepeat" flow: frequency (days/weeks/months + value), quantity stepper,
+  shipping-address select → `POST /api/velrepeat/plans` → navigate `/velrepeat`.
+  Variant-aware (selected variant id + price).
+- `ShopProductDetail.tsx` — the `velrepeat` entry (options mode + direct) now opens
+  the V2 plan dialog; V1 `SubscriptionDialog` remains used by ShopHome (buy-ahead).
+- `VelRepeatPage.tsx` — new V2 plans dashboard (status badges, items, next-run date,
+  run-now/pause/resume/cancel, run history) above the legacy V1 packages list.
+- `MyOrders.tsx` — "Repeat Order" button on every order → frequency dialog →
+  `POST /api/velrepeat/repeat-now` (repeat-now rejects orders with unavailable
+  products/variants with a clear message).
+- `ProductFormDialog.tsx` — seller VelRepeat section now has min/max quantity per
+  cycle (persisted via products.vrepeat_min_qty/max_qty, exposed in product API).
+- `Center.tsx` overview — VelRepeat monitoring card (active plans, failed/
+  out-of-stock runs, recurring revenue).
+
+### i18n
+
+New `velrepeatPlan.*` section in th/en/my (884 keys each, parity enforced by
+`bun run i18n:check`), plus `velrepeat.weekly/monthly/legacyPackages` keys.
+
+### Payment
+
+Plans use `payment_method='cod'` (platform default). Each successful run creates
+an order + `payments` row (provider `cod`, status `pending`). A real recurring
+payment provider (Stripe saved payment method / Payment Intents) can be added
+later behind `plan.payment_method` without touching the run/order machinery.
+
+### Tests — `backend/tests/velrepeat-core.test.ts` (`bun test`)
+
+Unit: next-run calculation (incl. month clamping, leap year), item validation
+(published/variant ownership/variant+inventory stock/seller status), price policy.
+Integration (skipped when no `DATABASE_URL`): seeds a real plan and fires two
+concurrent `processPlan` calls — asserts exactly one run row and one order, and
+that `next_run_at` advanced.
+
+### Verification (this pass)
+
+✅ `bun run i18n:check` (884×3) · ✅ typecheck backend + all 4 apps · ✅ builds
+velshop/velseller/velcenter · ✅ `bun test backend/tests` (16 pass, 1 env-skip)

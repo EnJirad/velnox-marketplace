@@ -1,6 +1,6 @@
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
-import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
+import { VelRepeatPlanDialog } from "@/components/shop/VelRepeatPlanDialog";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -206,7 +206,7 @@ export default function ShopProductDetail() {
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [wishlisted, setWishlisted] = useState(false);
   const [wishToggling, setWishToggling] = useState(false);
-  const [subOpen, setSubOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("recommend");
   const [reviewsExpanded, setReviewsExpanded] = useState(false);
 
@@ -724,7 +724,7 @@ export default function ShopProductDetail() {
     } else if (action === "velrepeat") {
       setVariantSheetOpen(false);
       setPendingAction(null);
-      setSubOpen(true);
+      setPlanOpen(true);
     }
   }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, t]);
 
@@ -767,10 +767,10 @@ export default function ShopProductDetail() {
       setVariantSheetOpen(false);
       setPendingAction(null);
     } else if (pendingAction === "velrepeat") {
-      // Close sheet, open SubscriptionDialog with variant info
+      // Close sheet, open the VelRepeat V2 plan dialog with variant info
       setVariantSheetOpen(false);
       setPendingAction(null);
-      setSubOpen(true);
+      setPlanOpen(true);
     }
   }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, navigate, t]);
 
@@ -1373,7 +1373,7 @@ export default function ShopProductDetail() {
       </Sheet>
 
       <ShopFooter />
-      <SubscriptionDialog product={product} open={subOpen} onOpenChange={setSubOpen} selectedVariant={selectedVariant ? { id: selectedVariant.id, name: selectedVariant.name, price: selectedVariant.price, sku: selectedVariant.sku } : null} />
+      <VelRepeatPlanDialog product={product} open={planOpen} onOpenChange={setPlanOpen} selectedVariant={selectedVariant ? { id: selectedVariant.id, name: selectedVariant.name, price: selectedVariant.price, sku: selectedVariant.sku } : null} />
     </div>
   );
 }

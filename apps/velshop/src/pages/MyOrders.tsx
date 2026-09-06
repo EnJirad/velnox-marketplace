@@ -3,6 +3,21 @@ import { ShopHeader } from "@/components/shop/ShopHeader";
 import { useLanguage } from "@/lib/i18n";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@velnox/shared/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@velnox/shared/components/ui/select";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -19,6 +34,7 @@ import {
   ImageOff,
   Loader2,
   PackageSearch,
+  RefreshCw,
   ShoppingBag,
   XCircle,
 } from "lucide-react";
@@ -42,6 +58,11 @@ export default function MyOrders() {
   const [data, setData] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [repeatOrder, setRepeatOrder] = useState<StoreOrder | null>(null);
+  const [repeatUnit, setRepeatUnit] = useState<"days" | "weeks" | "months">("days");
+  const [repeatValue, setRepeatValue] = useState(30);
+  const [repeating, setRepeating] = useState(false);
+  const repeatOrderNow = useAction(api.commerce.repeatOrderNow);
 
   // Stripe hosted-checkout return (Phase 14): `?payment=success|cancelled`
   // is appended by the session's success/cancel URLs. Verify against the
@@ -89,6 +110,25 @@ export default function MyOrders() {
 
   const orders = data?.orders ?? [];
   const subscriptions = data?.subscriptions ?? [];
+
+  const handleRepeat = async () => {
+    if (!repeatOrder || repeating) return;
+    setRepeating(true);
+    try {
+      await repeatOrderNow({
+        orderId: repeatOrder.id,
+        frequencyType: repeatUnit,
+        intervalValue: repeatValue,
+      });
+      toast.success(t("velrepeatPlan.repeatSuccess"));
+      setRepeatOrder(null);
+    } catch (error) {
+      console.error("Repeat order error:", error);
+      toast.error(error instanceof Error ? error.message : t("velrepeatPlan.repeatFailed"));
+    } finally {
+      setRepeating(false);
+    }
+  };
 
   const handleCancel = async (subscriptionId: string) => {
     setCancellingId(subscriptionId);
@@ -248,79 +288,156 @@ export default function MyOrders() {
                 const meta = ORDER_STATUS_META[order.status];
                 const items = order.items ?? [];
                 return (
-                  <Link
+                  <div
                     key={order.id}
-                    to={`/orders/${order.id}`}
-                    className="block rounded-xl border border-slate-200 bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#10B981]/40 hover:shadow-[0_12px_30px_rgba(15,23,42,0.06)]"
+                    className="rounded-xl border border-slate-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-[#10B981]/40 hover:shadow-[0_12px_30px_rgba(15,23,42,0.06)]"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {t("orders.orderNo", { no: shortOrderNumber(order.orderNumber) })}
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          {formatIsoDateTime(order.createdAt)} ·{" "}
-                          {t("orders.pieces", {
-                            count: order.itemCount ?? items.reduce((s, i) => s + i.quantity, 0),
-                          })}
-                        </p>
-                      </div>
-                      <Badge className={`gap-1.5 rounded-full ring-1 ring-inset ${meta.badge}`}>
-                        <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                        {meta.label}
-                      </Badge>
-                    </div>
-
-                    <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
-                      {items.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-3 text-sm">
-                          <span className="flex min-w-0 items-center gap-2.5">
-                            {item.imageUrl ? (
-                              <img
-                                src={item.imageUrl}
-                                alt=""
-                                className="size-9 shrink-0 rounded-lg border border-slate-100 object-cover"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-50">
-                                <ImageOff className="size-3.5 text-slate-300" />
-                              </span>
-                            )}
-                            <span className="min-w-0">
-                              <span className="block truncate text-slate-600">{item.productName}</span>
-                              {item.variantName && (
-                                <span className="block truncate text-xs text-slate-400">{item.variantName}</span>
-                              )}
-                            </span>
-                          </span>
-                          <span className="flex shrink-0 items-center gap-3">
-                            <span className="text-xs text-slate-400">
-                              × {item.quantity}
-                              {item.unit ? ` ${item.unit}` : ""}
-                            </span>
-                            <span className="font-medium tabular-nums text-slate-900">
-                              {formatBaht(item.subtotal)}
-                            </span>
-                          </span>
+                    <Link to={`/orders/${order.id}`} className="block p-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {t("orders.orderNo", { no: shortOrderNumber(order.orderNumber) })}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {formatIsoDateTime(order.createdAt)} ·{" "}
+                            {t("orders.pieces", {
+                              count: order.itemCount ?? items.reduce((s, i) => s + i.quantity, 0),
+                            })}
+                          </p>
                         </div>
-                      ))}
-                    </div>
+                        <Badge className={`gap-1.5 rounded-full ring-1 ring-inset ${meta.badge}`}>
+                          <span className={`size-1.5 rounded-full ${meta.dot}`} />
+                          {meta.label}
+                        </Badge>
+                      </div>
 
-                    <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
-                      <span className="text-sm text-slate-500">{t("orders.total")}</span>
-                      <span className="text-lg font-bold tabular-nums tracking-tight text-slate-900">
-                        {formatBaht(order.total)}
-                      </span>
-                      <span className="text-xs font-medium text-[#10B981]">{t("orders.viewDetail")}</span>
+                      <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                        {items.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                            <span className="flex min-w-0 items-center gap-2.5">
+                              {item.imageUrl ? (
+                                <img
+                                  src={item.imageUrl}
+                                  alt=""
+                                  className="size-9 shrink-0 rounded-lg border border-slate-100 object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-50">
+                                  <ImageOff className="size-3.5 text-slate-300" />
+                                </span>
+                              )}
+                              <span className="min-w-0">
+                                <span className="block truncate text-slate-600">{item.productName}</span>
+                                {item.variantName && (
+                                  <span className="block truncate text-xs text-slate-400">{item.variantName}</span>
+                                )}
+                              </span>
+                            </span>
+                            <span className="flex shrink-0 items-center gap-3">
+                              <span className="text-xs text-slate-400">
+                                × {item.quantity}
+                                {item.unit ? ` ${item.unit}` : ""}
+                              </span>
+                              <span className="font-medium tabular-nums text-slate-900">
+                                {formatBaht(item.subtotal)}
+                              </span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
+                        <span className="text-sm text-slate-500">{t("orders.total")}</span>
+                        <span className="text-lg font-bold tabular-nums tracking-tight text-slate-900">
+                          {formatBaht(order.total)}
+                        </span>
+                        <span className="text-xs font-medium text-[#10B981]">{t("orders.viewDetail")}</span>
+                      </div>
+                    </Link>
+                    <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 border-[#10B981]/30 bg-[#F0FDF9] text-[#10B981] hover:bg-[#D1FAE5]"
+                        onClick={() => {
+                          setRepeatUnit("days");
+                          setRepeatValue(30);
+                          setRepeatOrder(order);
+                        }}
+                      >
+                        <RefreshCw className="size-3.5" />
+                        {t("velrepeatPlan.repeatOrder")}
+                      </Button>
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>
           )}
         </section>
       </main>
+
+      {/* VelRepeat repeat-now dialog */}
+      <Dialog open={repeatOrder !== null} onOpenChange={(open) => { if (!open) setRepeatOrder(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="size-4 text-[#10B981]" />
+              {t("velrepeatPlan.repeatOrderTitle")}
+            </DialogTitle>
+            <DialogDescription>{t("velrepeatPlan.repeatOrderDesc")}</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <div>
+              <label className="text-xs font-semibold text-slate-600">{t("velrepeatPlan.frequency")}</label>
+              <div className="mt-1.5 flex gap-2">
+                <Select value={repeatUnit} onValueChange={(v) => setRepeatUnit(v as "days" | "weeks" | "months")}>
+                  <SelectTrigger className="w-36 border-slate-200 bg-white">
+                    <SelectValue placeholder="days" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="days">{t("velrepeatPlan.unitDay")}</SelectItem>
+                    <SelectItem value="weeks">{t("velrepeatPlan.unitWeek")}</SelectItem>
+                    <SelectItem value="months">{t("velrepeatPlan.unitMonth")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={repeatValue}
+                  onChange={(e) => setRepeatValue(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                  className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#10B981] focus:ring-2 focus:ring-[#10B981]/20"
+                  aria-label={t("velrepeatPlan.frequency")}
+                />
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">
+                {repeatUnit === "days"
+                  ? t("velrepeatPlan.everyDays", { count: repeatValue })
+                  : repeatUnit === "weeks"
+                    ? t("velrepeatPlan.everyWeeks", { count: repeatValue })
+                    : t("velrepeatPlan.everyMonths", { count: repeatValue })}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setRepeatOrder(null)} className="border-slate-200 text-slate-700">
+              {t("common.cancel")}
+            </Button>
+            <Button
+              className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+              onClick={handleRepeat}
+              disabled={repeating || repeatValue <= 0}
+            >
+              {repeating && <Loader2 className="size-4 animate-spin" />}
+              {repeating ? t("velrepeatPlan.creating") : t("velrepeatPlan.start")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ShopFooter />
     </div>
