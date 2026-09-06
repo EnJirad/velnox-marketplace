@@ -17,7 +17,7 @@ export const ACTION_BUTTON_CLASSES: Record<ProductAction, string> = {
   buy: "bg-slate-900 text-white hover:bg-slate-800",
   /** Add to Cart — Velnox green */
   cart: "bg-[#10B981] text-white hover:bg-emerald-600",
-  /** VelRepeat — Velnox green tint (brand style) */
+  /** VelRepeat — premium recurring-purchase button (brand green accent, distinct from solid Buy/Cart) */
   velrepeat:
-    "border border-[#10B981]/30 bg-[#ECFDF5] text-[#10B981] hover:bg-[#10B981]/10",
+    "rounded-xl border border-[#10B981]/40 bg-gradient-to-b from-white to-[#F0FDF9] text-[#047857] shadow-sm hover:border-[#10B981]/60 hover:to-[#ECFDF5] focus-visible:ring-[#10B981]/30",
 };

@@ -419,6 +419,9 @@ export const en: Dict = {
     paidOnce: "One-time payment {total} · automatic scheduled delivery",
     confirmPackage: "Confirm package · {total}",
     selectPackage: "Choose VelRepeat package",
+    frequencyLabel: "Delivery frequency",
+    estimateLabel: "Estimated total",
+    createPlan: "Create VelRepeat plan",
   },
 
   orders: {

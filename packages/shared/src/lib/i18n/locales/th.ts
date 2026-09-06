@@ -420,6 +420,9 @@ export const th = {
     paidOnce: "จ่ายครั้งเดียว {total} · จัดส่งตามรอบอัตโนมัติ",
     confirmPackage: "ยืนยันแพ็ก · {total}",
     selectPackage: "เลือกแพ็ก VelRepeat",
+    frequencyLabel: "ความถี่ในการสั่งซื้อ",
+    estimateLabel: "ราคาประมาณต่อรอบ",
+    createPlan: "สร้างแผน VelRepeat",
   },
 
   orders: {

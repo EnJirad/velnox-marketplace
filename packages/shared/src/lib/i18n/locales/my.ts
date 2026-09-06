@@ -310,6 +310,9 @@ export const my = {
     paidOnce: "တစ်ကြိမ်တည်း ပေးချေမှု {total} · အလိုအလျောက် ပို့ဆောင်မှု",
     confirmPackage: "အထုပ် အတည်ပြုမည် · {total}",
     selectPackage: "VelRepeat အထုပ် ရွေးချယ်ပါ",
+    frequencyLabel: "မှာယူမှု ကြိမ်နှုန်း",
+    estimateLabel: "ခန့်မှန်း စုစုပေါင်း",
+    createPlan: "VelRepeat အစီအစဉ် ဖန်တီးမည်",
   },
 
   orders: {
