@@ -997,30 +997,30 @@ export default function ShopProductDetail() {
               <div className="flex gap-2">
                 <Button
                   ref={addBtnRef}
-                  className={`flex-1 gap-1.5 ${ACTION_BUTTON_CLASSES.buy}`}
+                  className={`flex-1 min-w-0 max-w-full gap-1.5 shrink basis-0 ${ACTION_BUTTON_CLASSES.buy}`}
                   onClick={handleBuyNow}
                   disabled={outOfStock && !needsVariant}
                 >
-                  <Zap className="size-4" />
-                  {t("productDetail.buyNow")}
+                  <Zap className="size-4 shrink-0" />
+                  <span className="min-w-0 max-w-full truncate">{t("productDetail.buyNow")}</span>
                 </Button>
                 <Button
-                  className={`flex-1 gap-1.5 ${ACTION_BUTTON_CLASSES.cart}`}
+                  className={`flex-1 min-w-0 max-w-full gap-1.5 shrink basis-0 ${ACTION_BUTTON_CLASSES.cart}`}
                   onClick={handleAddToCart}
                   disabled={outOfStock && !needsVariant}
                 >
-                  <ShoppingCart className="size-4" />
-                  <span className="hidden sm:inline">{t("productDetail.addToCart")}</span>
-                  <span className="sm:hidden">{t("productDetail.addToCartSm")}</span>
+                  <ShoppingCart className="size-4 shrink-0" />
+                  <span className="min-w-0 max-w-full truncate hidden sm:inline">{t("productDetail.addToCart")}</span>
+                  <span className="min-w-0 max-w-full truncate sm:hidden">{t("productDetail.addToCartSm")}</span>
                 </Button>
               </div>
               {velrepeatAvailable && (
                 <Button
-                  className={`mt-2 w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
+                  className={`mt-2 flex-1 min-w-0 max-w-full gap-1.5 shrink basis-0 ${ACTION_BUTTON_CLASSES.velrepeat}`}
                   onClick={handleVelRepeat}
                 >
-                  <CalendarClock className="size-4" />
-                  VelRepeat
+                  <CalendarClock className="size-4 shrink-0" />
+                  <span className="min-w-0 max-w-full truncate">{t("productDetail.velrepeat")}</span>
                 </Button>
               )}
             </div>
