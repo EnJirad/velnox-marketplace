@@ -382,10 +382,10 @@ export function ProductSelectionSheet({
       )}
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
-        {/* Product header: image + info */}
-        <div className="flex gap-3 pt-2">
-          {/* Thumbnail */}
-          <div className="size-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:size-24">
+        {/* Product Preview header: image left, details right */}
+        <div className="flex items-start gap-3 pt-2 sm:gap-4">
+          {/* Thumbnail — visual anchor on the left */}
+          <div className="size-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:size-28 lg:size-32">
             {activeImage ? (
               <img
                 src={activeImage.displayUrl || activeImage.url}
@@ -399,8 +399,8 @@ export function ProductSelectionSheet({
             )}
           </div>
 
-          {/* Price + info */}
-          <div className="min-w-0 flex-1">
+          {/* Product details — right-hand column */}
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-baseline gap-2">
               <p className="text-xl font-bold tabular-nums text-slate-900">
                 {formatBaht(resolvedPrice)}
@@ -445,34 +445,33 @@ export function ProductSelectionSheet({
                   : t("product.inStockShort")}
             </p>
 
+            {/* Expandable product name */}
+            <button
+              type="button"
+              className="flex w-full items-start gap-2 text-left"
+              onClick={() => setNameExpanded((v) => !v)}
+              aria-expanded={nameExpanded}
+            >
+              <p
+                className={`min-w-0 flex-1 text-sm font-semibold leading-5 text-slate-900 ${
+                  !nameExpanded && needsExpand ? "line-clamp-2" : ""
+                }`}
+                style={{ overflowWrap: "anywhere" }}
+              >
+                {product.name}
+              </p>
+              {needsExpand && (
+                <span className="mt-0.5 shrink-0 text-slate-400">
+                  {nameExpanded ? (
+                    <ChevronUp className="size-4" />
+                  ) : (
+                    <ChevronDown className="size-4" />
+                  )}
+                </span>
+              )}
+            </button>
           </div>
         </div>
-
-        {/* Expandable product name */}
-        <button
-          type="button"
-          className="mt-3 flex w-full items-start gap-2 text-left"
-          onClick={() => setNameExpanded((v) => !v)}
-          aria-expanded={nameExpanded}
-        >
-          <p
-            className={`min-w-0 flex-1 text-sm font-semibold leading-5 text-slate-900 ${
-              !nameExpanded && needsExpand ? "line-clamp-2" : ""
-            }`}
-            style={{ overflowWrap: "anywhere" }}
-          >
-            {product.name}
-          </p>
-          {needsExpand && (
-            <span className="mt-0.5 shrink-0 text-slate-400">
-              {nameExpanded ? (
-                <ChevronUp className="size-4" />
-              ) : (
-                <ChevronDown className="size-4" />
-              )}
-            </span>
-          )}
-        </button>
 
         {/* Short description */}
         {product.description && (
