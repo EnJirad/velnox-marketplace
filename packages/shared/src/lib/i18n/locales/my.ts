@@ -535,6 +535,8 @@ export const my = {
     repeatOfferTitle: "ဤပစ္စည်းကို အလိုအလျောက် မှာယူလိုပါသလား?",
     repeatOfferDesc: "သင်ဝယ်လိုက်သော ပစ္စည်းသည် VelRepeat ကို ထောက်ခံပါသည် — အချိန်ဇယားရွေးပြီး Velnox က အလိုအလျောက် ပို့ပေးပါမည်။",
     shopPending: "ဆိုင်",
+    showMoreItems: "+ နောက်ထပ် {count} ခု",
+    compactAddress: "ပို့ဆောင်ရန်လိပ်စာ",
   },
 
   checkoutSuccess: {

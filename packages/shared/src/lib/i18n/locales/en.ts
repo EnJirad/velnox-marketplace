@@ -590,6 +590,8 @@ export const en: Dict = {
     repeatOfferTitle: "Want this delivered automatically?",
     repeatOfferDesc: "The item you just bought supports VelRepeat — pick a schedule and Velnox delivers it for you.",
     shopPending: "Shop",
+    showMoreItems: "+ {count} more",
+    compactAddress: "Delivery address",
   },
 
   checkoutSuccess: {

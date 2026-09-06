@@ -592,6 +592,8 @@ export const th = {
     repeatOfferTitle: "ต้องการให้สั่งสินค้านี้แบบอัตโนมัติไหม?",
     repeatOfferDesc: "สินค้าที่คุณเพิ่งซื้อรองรับ VelRepeat — เลือกรอบ แล้ว Velnox จะจัดส่งให้อัตโนมัติ",
     shopPending: "ร้านค้า",
+    showMoreItems: "+ อีก {count} ชิ้น",
+    compactAddress: "ที่อยู่จัดส่ง",
   },
 
   checkoutSuccess: {
