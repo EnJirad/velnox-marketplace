@@ -75,6 +75,7 @@ const ShopAddresses = lazy(() => import("@/pages/ShopAddresses"));
 const ShopProfile = lazy(() => import("@/pages/ShopProfile"));
 const ShopAccount = lazy(() => import("@/pages/ShopAccount"));
 const ShopNotifications = lazy(() => import("@/pages/ShopNotifications"));
+const ShopChat = lazy(() => import("@/pages/ShopChat"));
 const CookiePolicy = lazy(() => import("@/pages/CookiePolicy"));
 const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
 const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
@@ -168,6 +169,14 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireAuth>
                 <ShopAccount />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <RequireAuth>
+                <ShopChat />
               </RequireAuth>
             }
           />

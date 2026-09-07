@@ -30,6 +30,7 @@ const SellerGoals = lazy(() => import("@/pages/SellerGoals"));
 const MyShop = lazy(() => import("@/pages/MyShop"));
 const Reorder = lazy(() => import("@/pages/Reorder"));
 const SellerOrders = lazy(() => import("@/pages/SellerOrders"));
+const SellerChat = lazy(() => import("@/pages/SellerChat"));
 const Income = lazy(() => import("@/pages/Income"));
 const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
 const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
@@ -80,6 +81,14 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireRole role="seller">
                 <Income />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/seller/chat"
+            element={
+              <RequireRole role="seller">
+                <SellerChat />
               </RequireRole>
             }
           />

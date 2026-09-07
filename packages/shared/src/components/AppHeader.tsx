@@ -1,6 +1,6 @@
 import { Logo } from "@velnox/shared/components/Logo";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
-import { RefreshCw, ShoppingBag, Store, Target, Wallet } from "lucide-react";
+import { MessageCircle, RefreshCw, ShoppingBag, Store, Target, Wallet } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 const NAV_ITEMS = [
@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: "/seller/shop", label: "ร้านของฉัน", icon: Store },
   { to: "/seller/reorder", label: "Smart Reorder", icon: RefreshCw },
   { to: "/seller/orders", label: "ออเดอร์", icon: ShoppingBag },
+  { to: "/seller/chat", label: "แชท", icon: MessageCircle },
   { to: "/seller/income", label: "รายได้", icon: Wallet },
 ];
 

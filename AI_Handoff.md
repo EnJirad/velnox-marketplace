@@ -2647,3 +2647,33 @@ Verification: VelShop `tsc -b --noEmit` PASS · `vite build` PASS · `bun run i1
 **Preserved 100%:** selectedVariant resolution,price/compareAt/discount/stock derivation,main image switching,gallery thumbnails/carousel,VelRepeat,Add to Cart,Buy Now,option disabled/out-of-stock logic,seller product editor,DB/API untouched.Both layout containers use `flex flex-wrap` — no horizontal overflow reintroduced at 320px–430px..
 
 **Verification:** velshop `tsc -b --noEmit` PASS · velshop `vite build` PASS(4.24s)·`git diff --check` clean ·`git diff origin/main -- ProductSelectionSheet.tsx`=`0`(selection-window stays horizontal,as user wants·`ShopProductDetail.tsx` differs only inthe Part B vertical restore·other apps untouched..
+---
+
+### 2026-09-07 — Comments & Chat system (Product Reviews + Customer↔Seller Chat)
+
+**Task:** Build production-ready product comments/reviews on Product Detail + realtime chat between customers and shops (Thai/English/Burmese), without breaking existing auth/cart/orders/seller/R2/realtime systems.
+
+**Audit findings (from real code):**
+- `product_reviews` table + read-only GET reviews endpoint already existed; no write endpoints, no rating summary, no verified-purchase flag. `notifications` table existed with NO API. No chat/messaging tables or code existed anywhere.
+- Auth: httpOnly JWT cookie (`requireAuth`/`optionalAuth` middleware); seller identity via `sellers.user_id` + `status='approved'`. Realtime: channel-based WebSocket in `backend/realtime/index.ts` — clients subscribed by hardcoded channel, `userId` field unused.
+- Frontend is NOT Convex — `useAction`/`api` in `packages/shared/src/lib/api-routes.ts` map route keys to REST calls (this pattern was misread in an earlier attempt; it is a Proxy-based REST mapper).
+
+**DB (migration `036_comments_chat.sql`, synced to schema.sql/run-update.sql/run-sqleditor.sql):**
+- `conversations` (customer_id, seller_id, shop_id, product_id, last_message, last_message_at, updated_at; UNIQUE(customer_id, shop_id)) + indexes on (seller_id, updated_at), (customer_id, updated_at), (product_id).
+- `chat_messages` (conversation_id, sender_id, sender_role, body, status, read_at, created_at) + index (conversation_id, created_at).
+- Backend startup `ensureChatTables()` uses `CREATE TABLE IF NOT EXISTS` (same convention as existing ensure helpers) — no ALTER, no destructive DDL.
+
+**Backend API (all auth + ownership enforced server-side):**
+- Reviews: `GET /api/products/:productId/reviews` (optionalAuth — returns { items, total, avgRating, distribution{1..5}, hasMore, nextCursor, myReview }, keyset pagination, `verifiedPurchase` computed from real orders server-side, `mine` flag for the viewer), `POST` (create/update own — one review per user per product), `PATCH /api/reviews/:reviewId`, `DELETE` — rating 1–5 + comment 1–2000 chars validated; recompute `products.rating/review_count`.
+- Chat: `GET/POST /api/customer/conversations[/:id/messages|/read]` + `GET/POST /api/seller/conversations/...` — customers only see their own threads; sellers only their shop's threads (403/404 otherwise); body 1–4000 chars; `clientId` echo for dedupe.
+- Notifications: `GET /api/customer/notifications`, `PATCH .../:id/read`, `PUT /api/customer/notifications/read-all`.
+- Realtime: `backend/realtime/index.ts` now authenticates the WS handshake from the session cookie and binds each socket to `user:{userId}` — private channel per user; `sendToUser()` pushes `chat:message` / `chat:read` / `notification:created`. DB remains the source of truth.
+
+**Frontend:**
+- `packages/shared/src/lib/chat-socket.ts` — singleton WS client with reconnect/backoff, `connectChatSocket(userId)` / `onChatEvent()` / dedupe guidance.
+- VelShop `ShopProductDetail.tsx` reviews tab upgraded: star composer (sign-in prompt when logged out), edit/delete own review, rating summary with % distribution, avatar + name + date + Verified Purchase badge, load-more pagination, loading/empty/error+retry. Header rating + tab badge + SEO aggregateRating now use server summary (not page data).
+- VelShop `ShopChat.tsx` (/chat): conversation list sorted by updatedAt, unread badges, two-pane desktop / full-screen mobile thread, product context card, optimistic send with clientId dedupe, older-message pagination, realtime append + mark-read, safe-area composer. "แชทกับร้านค้า" button on Product Detail (creates conversation w/ product context → /chat?conv=). Profile menu now has Chat entry.
+- VelSeller `SellerChat.tsx` (/seller/chat) + nav entry in shared `AppHeader` — seller-only conversations, reply flow, realtime, unread badges.
+- i18n: chat + review keys added to th/en and merged for my (Burmese) via `myChatPatch` in `locales/index.ts`; `i18n:check` parity ✅ (989 keys × 3).
+
+**Verification:** backend `tsc -p backend/tsconfig.json` ✅ · velshop/velseller/velcenter/velnox `tsc -p` ✅ · `i18n:check` ✅ · `git diff --check` clean ✅ · existing test suite 16/17 pass (1 pre-existing unrelated FK failure in velrepeat-core scheduler integration test). Build not run (platform check runs on push).

@@ -17,6 +17,7 @@ import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
 import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
+import { setupChatRoutes } from "./routes/chat.js";
 import { setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -188,6 +189,30 @@ async function ensureCheckoutIdempotencyTable(): Promise<void> {
 }
 ensureCheckoutIdempotencyTable();
 
+// ─── Auto-create chat tables if missing (V0036) ──────────────────────────
+async function ensureChatTables(): Promise<void> {
+  const { query } = await import("./db/index.js");
+  const startMs = Date.now();
+  try {
+    const tableCheck = await query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'conversations') AS exists`,
+    );
+    if (tableCheck.rows[0]?.exists) {
+      return;
+    }
+    console.log("[startup] conversations missing — applying V0036 (comments & chat)...");
+    const fs = await import("fs");
+    const pathMod = await import("path");
+    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "036_comments_chat.sql");
+    const sql = fs.readFileSync(sqlPath, "utf-8");
+    await query(sql);
+    console.log(`[startup] chat tables ensured in ${Date.now() - startMs}ms`);
+  } catch (err: any) {
+    console.error("[startup] ensureChatTables failed:", err?.message ?? err);
+  }
+}
+ensureChatTables();
+
 // ─── Health Check ───────────────────────────────────────
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -256,6 +281,9 @@ setupVelRepeatRoutes(app);
 
 // ─── VelRepeat Plans (V2 — recurring commerce engine) ────────────
 setupVelRepeatPlanRoutes(app);
+
+// ─── Chat, Messaging & Notifications ────────────────────
+setupChatRoutes(app);
 
 // ─── Admin (bootstrap / owner setup) ────────────────────
 setupAdminRoutes(app);

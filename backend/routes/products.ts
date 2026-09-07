@@ -25,7 +25,7 @@
 import type { Express, Request, Response } from "express";
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { requireAuth } from "../middleware/auth.js";
+import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 
 // ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
@@ -2418,29 +2418,78 @@ export function setupProductRoutes(app: Express): void {
     }
   });
 
+  // ── PRODUCT REVIEWS / COMMENTS ────────────────────────────────────────
+
+  // Recompute a product's rating + review_count from approved reviews.
+  async function recomputeProductRating(productId: string): Promise<void> {
+    await query(
+      `UPDATE products SET
+         rating = (SELECT AVG(rating)::numeric(3,2) FROM product_reviews WHERE product_id = $1 AND status = 'approved'),
+         review_count = (SELECT COUNT(*) FROM product_reviews WHERE product_id = $1 AND status = 'approved')
+       WHERE id = $1`,
+      [productId],
+    );
+  }
+
   // ── GET /api/products/:productId/reviews ───────────────────────────────
-  // Returns product reviews (empty array if no reviews table yet)
-  app.get("/api/products/:productId/reviews", async (req: Request, res: Response) => {
+  // Paginated reviews + rating summary. `verifiedPurchase` is computed from
+  // real order data server-side — never trusted from the client.
+  app.get("/api/products/:productId/reviews", optionalAuth, async (req: Request, res: Response) => {
     try {
       const productId = param(req, "productId");
-      // Check if reviews table exists
-      const tableCheck = await query(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'product_reviews') AS exists`
-      );
-      if (!tableCheck.rows[0]?.exists) {
-        res.json({ success: true, data: [] });
-        return;
-      }
-      const result = await query(
-        `SELECT pr.*, u.name AS customer_name
-         FROM product_reviews pr
-         LEFT JOIN users u ON pr.user_id = u.id
-         WHERE pr.product_id = $1 AND pr.status = 'approved'
-         ORDER BY pr.created_at DESC
-         LIMIT 50`,
+      const viewerId = req.user?.userId ?? null;
+      const before = typeof req.query.before === "string" ? req.query.before : undefined;
+
+      // Rating summary across ALL approved reviews
+      const summaryRes = await query(
+        `SELECT COUNT(*)::int AS total,
+                COALESCE(AVG(rating)::numeric(3,2), 0) AS avg_rating,
+                COUNT(*) FILTER (WHERE rating = 5) AS r5,
+                COUNT(*) FILTER (WHERE rating = 4) AS r4,
+                COUNT(*) FILTER (WHERE rating = 3) AS r3,
+                COUNT(*) FILTER (WHERE rating = 2) AS r2,
+                COUNT(*) FILTER (WHERE rating = 1) AS r1
+         FROM product_reviews WHERE product_id = $1 AND status = 'approved'`,
         [productId],
       );
-      const reviews = result.rows.map((r: any) => ({
+      const s = summaryRes.rows[0] ?? {};
+      const total = Number(s.total ?? 0);
+      const distribution = {
+        5: Number(s.r5 ?? 0),
+        4: Number(s.r4 ?? 0),
+        3: Number(s.r3 ?? 0),
+        2: Number(s.r2 ?? 0),
+        1: Number(s.r1 ?? 0),
+      };
+
+      // One page of reviews (keyset cursor on created_at, newest first)
+      const params: unknown[] = [productId];
+      let where = "pr.product_id = $1 AND pr.status = 'approved'";
+      if (before) {
+        const beforeMs = parseInt(String(before), 10);
+        if (!Number.isNaN(beforeMs)) {
+          params.push(new Date(beforeMs).toISOString());
+          where += ` AND pr.created_at < $${params.length}`;
+        }
+      }
+      params.push(11);
+      const result = await query(
+        `SELECT pr.*, u.name AS customer_name, u.avatar AS customer_avatar,
+                EXISTS (
+                  SELECT 1 FROM order_items oi
+                  JOIN orders o ON o.id = oi.order_id
+                  WHERE oi.product_id = pr.product_id AND o.user_id = pr.user_id
+                    AND o.status NOT IN ('cancelled', 'refunded')
+                ) AS verified_purchase
+         FROM product_reviews pr
+         LEFT JOIN users u ON u.id = pr.user_id
+         WHERE ${where}
+         ORDER BY pr.created_at DESC, pr.id DESC
+         LIMIT $${params.length}`,
+        params,
+      );
+      const hasMore = result.rows.length > 10;
+      const page = (hasMore ? result.rows.slice(0, 10) : result.rows).map((r: any) => ({
         id: r.id,
         productId: r.product_id,
         shopId: r.shop_id ?? '',
@@ -2453,15 +2502,165 @@ export function setupProductRoutes(app: Express): void {
         status: r.status,
         createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
         customerName: r.customer_name ?? null,
+        customerAvatar: r.customer_avatar ?? null,
+        verifiedPurchase: !!r.verified_purchase,
+        mine: viewerId ? r.user_id === viewerId : false,
       }));
-      res.json({ success: true, data: reviews });
+
+      // The viewer's own review (drives edit/delete affordances)
+      let myReview: Record<string, unknown> | null = null;
+      if (viewerId) {
+        const myRes = await query(
+          `SELECT id, rating, title, comment, created_at FROM product_reviews
+           WHERE product_id = $1 AND user_id = $2 LIMIT 1`,
+          [productId, viewerId],
+        );
+        const r = myRes.rows[0];
+        if (r) {
+          myReview = {
+            id: r.id,
+            rating: r.rating,
+            title: r.title ?? null,
+            comment: r.comment ?? null,
+            createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+          };
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          items: page,
+          total,
+          avgRating: Number(s.avg_rating ?? 0),
+          distribution,
+          hasMore,
+          nextCursor: hasMore && page.length > 0 ? (page[page.length - 1]?.createdAt ?? null) : null,
+          myReview,
+        },
+      });
     } catch (err) {
       console.error("[products] reviews error:", err);
-      res.json({ success: true, data: [] });
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to load reviews" } });
     }
   });
 
-  // ═════════════════════════════════════════════════════════════════════════
+  // ── POST /api/products/:productId/reviews ──────────────────────────────
+  // Create or update the viewer's own review (one review per user per product).
+  app.post("/api/products/:productId/reviews", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const productId = param(req, "productId");
+      const userId = req.user!.userId;
+      const rating = Number(req.body?.rating);
+      const title = typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 120) : null;
+      const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
+
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Rating must be 1-5" } });
+        return;
+      }
+      if (comment.length === 0 || comment.length > 2000) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Comment must be 1-2000 characters" } });
+        return;
+      }
+
+      const prodRes = await query("SELECT id, shop_id FROM products WHERE id = $1", [productId]);
+      if (prodRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+      const shopId = prodRes.rows[0].shop_id;
+
+      const existing = await query("SELECT id FROM product_reviews WHERE product_id = $1 AND user_id = $2", [
+        productId,
+        userId,
+      ]);
+      let reviewId: string;
+      if (existing.rows[0]) {
+        reviewId = existing.rows[0].id;
+        await query(
+          `UPDATE product_reviews SET rating = $1, title = $2, comment = $3, status = 'approved', updated_at = NOW()
+           WHERE id = $4`,
+          [rating, title, comment, reviewId],
+        );
+      } else {
+        const ins = await query(
+          `INSERT INTO product_reviews (product_id, user_id, shop_id, rating, title, comment, status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'approved') RETURNING id`,
+          [productId, userId, shopId, rating, title, comment],
+        );
+        reviewId = ins.rows[0].id;
+      }
+      await recomputeProductRating(productId);
+      res.json({ success: true, data: { id: reviewId } });
+    } catch (err) {
+      console.error("[products] review create error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to save review" } });
+    }
+  });
+
+  // ── PATCH /api/reviews/:reviewId — edit own review ─────────────────────
+  app.patch("/api/reviews/:reviewId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const reviewId = param(req, "reviewId");
+      const userId = req.user!.userId;
+      const rating = Number(req.body?.rating);
+      const title = typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 120) : null;
+      const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
+
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Rating must be 1-5" } });
+        return;
+      }
+      if (comment.length === 0 || comment.length > 2000) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Comment must be 1-2000 characters" } });
+        return;
+      }
+
+      // Ownership: only the review author can edit (NOT_FOUND avoids leaking existence)
+      const revRes = await query(
+        "SELECT id, product_id FROM product_reviews WHERE id = $1 AND user_id = $2",
+        [reviewId, userId],
+      );
+      if (revRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Review not found" } });
+        return;
+      }
+      const productId = revRes.rows[0].product_id;
+      await query(
+        `UPDATE product_reviews SET rating = $1, title = $2, comment = $3, updated_at = NOW() WHERE id = $4`,
+        [rating, title, comment, reviewId],
+      );
+      await recomputeProductRating(productId);
+      res.json({ success: true, data: { id: reviewId } });
+    } catch (err) {
+      console.error("[products] review update error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update review" } });
+    }
+  });
+
+  // ── DELETE /api/reviews/:reviewId — delete own review ──────────────────
+  app.delete("/api/reviews/:reviewId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const reviewId = param(req, "reviewId");
+      const userId = req.user!.userId;
+      const revRes = await query(
+        "SELECT id, product_id FROM product_reviews WHERE id = $1 AND user_id = $2",
+        [reviewId, userId],
+      );
+      if (revRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Review not found" } });
+        return;
+      }
+      const productId = revRes.rows[0].product_id;
+      await query("DELETE FROM product_reviews WHERE id = $1", [reviewId]);
+      await recomputeProductRating(productId);
+      res.json({ success: true, data: { deleted: true } });
+    } catch (err) {
+      console.error("[products] review delete error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to delete review" } });
+    }
+  });
   // ADMIN PRODUCT MODERATION (VelCenter)
 
   // ── POST /api/seller/products/:productId/backfill-variant-mappings ────

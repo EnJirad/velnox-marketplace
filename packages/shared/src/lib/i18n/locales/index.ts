@@ -269,6 +269,67 @@ const myOrderPatch = {
 } satisfies Partial<Dict>;
 
 /**
+ * Burmese comments/chat + reviews labels (Comments & Chat feature).
+ */
+const myChatPatch = {
+  profile: {
+    chat: "ချတ်",
+    chatDesc: "ဆိုင်များနှင့် စကားပြောရန်",
+  } satisfies Partial<Dict["profile"]>,
+  productDetail: {
+    verifiedPurchase: "အမှန်တကယ်ဝယ်ယူပြီးပါပြီ ✓",
+    yourReview: "သင့်သုံးသပ်ချက်",
+    writeReview: "သုံးသပ်ချက်ရေးရန်",
+    ratingLabel: "အဆင့်သတ်မှတ်ချက်",
+    reviewTitlePlaceholder: "ခေါင်းစဉ် (ချန်လှပ်နိုင်သည်)",
+    reviewCommentPlaceholder: "ဤပစ္စည်းနှင့်ပတ်သက်သော သင့်အတွေ့အကြုံကို မျှဝေပါ...",
+    submitReview: "သုံးသပ်ချက်တင်ရန်",
+    updateReview: "ပြောင်းလဲမှုများသိမ်းရန်",
+    editReview: "ပြင်ရန်",
+    cancelEdit: "မလုပ်တော့ပါ",
+    deleteReview: "သုံးသပ်ချက်ဖျက်ရန်",
+    confirmDeleteReview: "ဤသုံးသပ်ချက်ကို ဖျက်မှာလား?",
+    reviewRequired: "အဆင့်သတ်မှတ်ချက်နှင့် မှတ်ချက် ထည့်ပေးပါ",
+    reviewSubmitted: "သုံးသပ်ချက်တင်ပြီးပါပြီ — ကျေးဇူးတင်ပါသည်",
+    reviewUpdated: "သုံးသပ်ချက် ပြင်ဆင်ပြီးပါပြီ",
+    reviewDeleted: "သုံးသပ်ချက် ဖျက်ပြီးပါပြီ",
+    reviewLoginTitle: "သုံးသပ်ချက်ရေးရန် ဝင်ရောက်ပါ",
+    reviewLoginDesc: "သင့်ထင်မြင်ချက်မျှဝေရန် ဝင်ရောက်ထားရန် လိုအပ်ပါသည်",
+    loadingReviews: "သုံးသပ်ချက်များ ဖွင့်နေသည်...",
+    loadMoreReviews: "နောက်ထပ်သုံးသပ်ချက်များ",
+    reviewsFailed: "သုံးသပ်ချက်များ ဖွင့်၍မရပါ",
+    reviewsRetry: "ထပ်ကြိုးစားပါ",
+  } satisfies Partial<Dict["productDetail"]>,
+  chat: {
+    title: "ချတ်",
+    eyebrow: "velshop · စာတိုများ",
+    conversations: "စကားပြောဆိုမှုများ",
+    emptyTitle: "စာတိုမရှိသေးပါ",
+    emptyDesc: "ပစ္စည်း သို့မဟုတ် ဆိုင်စာမျက်နှာမှ ဆိုင်နှင့် စတင်စကားပြောနိုင်သည်",
+    inputPlaceholder: "စာတိုရိုက်ပါ...",
+    send: "ပို့ရန်",
+    read: "ဖတ်ပြီး",
+    sent: "ပို့ပြီး",
+    back: "နောက်သို့",
+    chatWithShop: "ဆိုင်နှင့် စကားပြောရန်",
+    productContext: "ဤပစ္စည်းအကြောင်း မေးမြန်းနေသည်",
+    loadError: "စာတိုများ ဖွင့်၍မရပါ",
+    retry: "ထပ်ကြိုးစားပါ",
+    sendError: "စာတိုပို့၍မရပါ ထပ်ကြိုးစားပါ",
+    loginToChat: "ဆိုင်နှင့်စကားပြောရန် ဝင်ရောက်ပါ",
+    loginToChatDesc: "ဆိုင်နှင့် တိုက်ရိုက်မေးမြန်းရန် ဝင်ရောက်ပါ",
+    noConversations: "စကားပြောဆိုမှု မရှိသေးပါ",
+    today: "ယနေ့",
+    yesterday: "မနေ့က",
+    loadingMessages: "စာတိုများ ဖွင့်နေသည်...",
+    loadOlder: "အဟောင်းစာတိုများ ဖွင့်ရန်",
+    justNow: "ခုနက",
+    typeMessageAria: "စာတိုရိုက်ပါ",
+    sendAria: "စာတိုပို့ရန်",
+  } satisfies Partial<Dict["chat"]>,
+};
+
+/**
  * All locale dictionaries keyed by language code. Adding a language means
  * adding a dictionary here (plus an entry in ../config).
  */
@@ -283,12 +344,13 @@ export const translations: Record<Language, Dict> = {
     product: { ...myBase.product, ...myShopPatch.product },
     home: { ...myBase.home, ...myShopPatch.home },
     products: { ...myBase.products, ...myShopPatch.products },
-    profile: { ...myBase.profile, ...myShopPatch.profile },
+    profile: { ...myBase.profile, ...myShopPatch.profile, ...myChatPatch.profile },
     account: { ...((myBase as Partial<Dict>).account as Partial<Dict["account"]> | undefined), ...myShopPatch.account },
     addresses: { ...myBase.addresses, ...myShopPatch.addresses },
     mapPicker: { ...myBase.mapPicker, ...myShopPatch.mapPicker },
     shopDetail: { ...myBase.shopDetail, ...myShopPatch.shopDetail },
-    productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail },
+    productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
+    chat: { ...myChatPatch.chat },
     cartPage: { ...myBase.cartPage, ...myShopPatch.cartPage },
     velrepeat: { ...myBase.velrepeat, ...myShopPatch.velrepeat },
     cookies: myShopPatch.cookies,

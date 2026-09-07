@@ -57,6 +57,19 @@ async function apiGet(path: string): Promise<any> {
   return unwrapped;
 }
 
+/** GET without the 60s in-memory cache — for chat/notifications where staleness is visible. */
+async function apiGetFresh(path: string): Promise<any> {
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
+    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
+    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
+  }
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
+}
+
 async function apiPut(path: string, args?: any): Promise<any> {
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, {
@@ -126,13 +139,27 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.customer.myWishlist": () => apiGet("/api/customer/wishlist"),
   "api.customer.toggleWishlistAction": (a) => apiPost("/api/customer/wishlist/toggle", a),
   "api.customer.reviewProduct": (a) => apiPost("/api/customer/reviews", a),
-  "api.customer.productReviews": (a) => apiGet(`/api/products/${a.productId}/reviews`),
+  "api.customer.productReviews": (a) => apiGetFresh(`/api/products/${a.productId}/reviews${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
+  "api.customer.createReviewAction": (a) => apiPost(`/api/products/${a.productId}/reviews`, a),
+  "api.customer.updateReviewAction": (a) => apiPatch(`/api/reviews/${a.reviewId}`, a),
+  "api.customer.deleteReviewAction": (a) => apiDelete(`/api/reviews/${a.reviewId}`),
   "api.customer.shopReviews": (a) => apiGet(`/api/shops/${a.shopId}/reviews`),
   "api.customer.requestReturnAction": (a) => apiPost("/api/customer/returns", a),
   "api.customer.myReturns": () => apiGet("/api/customer/returns"),
-  "api.customer.myNotifications": () => apiGet("/api/customer/notifications"),
+  "api.customer.myNotifications": () => apiGetFresh("/api/customer/notifications"),
   "api.customer.markNotificationReadAction": (a) => apiPatch(`/api/customer/notifications/${a.notificationId}/read`),
   "api.customer.markAllNotificationsRead": () => apiPut("/api/customer/notifications/read-all"),
+  // Chat — customer
+  "api.customer.myConversations": () => apiGetFresh("/api/customer/conversations"),
+  "api.customer.createConversationAction": (a) => apiPost("/api/customer/conversations", a),
+  "api.customer.conversationMessages": (a) => apiGetFresh(`/api/customer/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
+  "api.customer.sendMessageAction": (a) => apiPost(`/api/customer/conversations/${a.conversationId}/messages`, a),
+  "api.customer.markConversationReadAction": (a) => apiPost(`/api/customer/conversations/${a.conversationId}/read`, {}),
+  // Chat — seller
+  "api.seller.sellerConversations": () => apiGetFresh("/api/seller/conversations"),
+  "api.seller.sellerConversationMessages": (a) => apiGetFresh(`/api/seller/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
+  "api.seller.sendSellerMessageAction": (a) => apiPost(`/api/seller/conversations/${a.conversationId}/messages`, a),
+  "api.seller.markSellerConversationReadAction": (a) => apiPost(`/api/seller/conversations/${a.conversationId}/read`, {}),
   "api.customer.reorderAction": (a) => apiPost("/api/customer/reorder", a),
   "api.customer.publicShops": () => apiGet("/api/shops"),
   "api.customer.shopDetail": (a) => apiGet(`/api/shops/${a.shopId}`),

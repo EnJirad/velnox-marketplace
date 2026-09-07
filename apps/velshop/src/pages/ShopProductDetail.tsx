@@ -23,6 +23,7 @@ import { ACTION_BUTTON_CLASSES } from "@/lib/productActions";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   ArrowLeft,
+  BadgeCheck,
   CalendarClock,
   ChevronDown,
   ChevronRight,
@@ -31,13 +32,17 @@ import {
   ImageOff,
   Loader2,
   Maximize2,
+  MessageCircle,
   Minimize2,
   Minus,
+  Pencil,
   Plus,
+  RefreshCw,
   Share2,
   ShoppingCart,
   Star,
   Store,
+  Trash2,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,7 +63,24 @@ interface ReviewRow {
   images: string[];
   status: string;
   createdAt: number;
-  customerName?: string;
+  customerName?: string | null;
+  customerAvatar?: string | null;
+  verifiedPurchase?: boolean;
+  mine?: boolean;
+}
+
+interface ReviewSummary {
+  total: number;
+  avgRating: number;
+  distribution: Record<number, number>;
+}
+
+interface MyReview {
+  id: string;
+  rating: number;
+  title: string | null;
+  comment: string | null;
+  createdAt: number;
 }
 
 type TabKey = "recommend" | "details" | "reviews";
@@ -148,35 +170,36 @@ function ProductCarousel({ title, viewAllLink, products, emptyText, t }: {
 
 /* ─── Star Rating Distribution ─────────────────────────────────────────── */
 
-function RatingDistribution({ reviews, t }: { reviews: ReviewRow[]; t: (k: string, v?: Record<string, string | number>) => string }) {
-  if (reviews.length === 0) return null;
-  const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-  const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, count: reviews.filter((r) => r.rating === star).length }));
-  const maxCount = Math.max(...distribution.map((d) => d.count), 1);
+function RatingDistribution({ summary, t }: { summary: ReviewSummary; t: (k: string, v?: Record<string, string | number>) => string }) {
+  if (summary.total === 0) return null;
+  const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, count: summary.distribution[star] ?? 0 }));
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
       <div className="flex items-center gap-3">
-        <span className="text-3xl font-bold tabular-nums text-slate-900">{avg.toFixed(1)}</span>
+        <span className="text-3xl font-bold tabular-nums text-slate-900">{summary.avgRating.toFixed(1)}</span>
         <div>
           <div className="flex items-center gap-0.5">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Star key={i} className={`size-4 ${i < Math.round(avg) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
+              <Star key={i} className={`size-4 ${i < Math.round(summary.avgRating) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
             ))}
           </div>
-          <p className="mt-0.5 text-xs text-slate-400">{t("productDetail.fromReviews", { count: reviews.length })}</p>
+          <p className="mt-0.5 text-xs text-slate-400">{t("productDetail.fromReviews", { count: summary.total })}</p>
         </div>
       </div>
       <div className="flex-1 space-y-1">
-        {distribution.map(({ star, count }) => (
-          <div key={star} className="flex items-center gap-2 text-xs">
-            <span className="w-3 text-right tabular-nums text-slate-400">{star}</span>
-            <Star className="size-3 fill-amber-400 text-amber-400" />
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${(count / maxCount) * 100}%` }} />
+        {distribution.map(({ star, count }) => {
+          const pct = summary.total > 0 ? (count / summary.total) * 100 : 0;
+          return (
+            <div key={star} className="flex items-center gap-2 text-xs">
+              <span className="w-3 text-right tabular-nums text-slate-400">{star}</span>
+              <Star className="size-3 fill-amber-400 text-amber-400" />
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} />
+              </div>
+              <span className="w-9 text-right tabular-nums text-slate-400">{Math.round(pct)}%</span>
             </div>
-            <span className="w-6 text-right tabular-nums text-slate-400">{count}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -191,6 +214,10 @@ export default function ShopProductDetail() {
   const { t } = useLanguage();
   const getProduct = useAction(api.commerce.getProductDetail);
   const productReviews = useAction(api.customer.productReviews);
+  const createReview = useAction(api.customer.createReviewAction);
+  const updateReview = useAction(api.customer.updateReviewAction);
+  const deleteReview = useAction(api.customer.deleteReviewAction);
+  const createConversation = useAction(api.customer.createConversationAction);
   const catalogProducts = useAction(api.commerce.catalogProductsAction);
   const toggleWishlist = useAction(api.customer.toggleWishlistAction);
   const myWishlist = useAction(api.customer.myWishlist);
@@ -204,11 +231,20 @@ export default function ShopProductDetail() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [optionOverrideIndex, setOptionOverrideIndex] = useState<number | null>(null);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({ total: 0, avgRating: 0, distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
+  const [reviewHasMore, setReviewHasMore] = useState(false);
+  const [reviewCursor, setReviewCursor] = useState<number | null>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewsLoadingMore, setReviewsLoadingMore] = useState(false);
+  const [reviewsError, setReviewsError] = useState(false);
+  const [myReview, setMyReview] = useState<MyReview | null>(null);
+  const [reviewDraft, setReviewDraft] = useState({ rating: 5, title: "", comment: "" });
+  const [editingReview, setEditingReview] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [wishlisted, setWishlisted] = useState(false);
   const [wishToggling, setWishToggling] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("recommend");
-  const [reviewsExpanded, setReviewsExpanded] = useState(false);
 
   /* ── Variant state ──────────────────────────────────────────────── */
   const [optionGroups, setOptionGroups] = useState<any[]>([]);
@@ -264,7 +300,24 @@ export default function ShopProductDetail() {
         productReviews({ productId }),
         isAuthenticated ? myWishlist() : Promise.resolve([]),
       ]);
-      setReviews((revs ?? []) as ReviewRow[]);
+      const revData = (revs ?? {}) as any;
+      if (Array.isArray(revData)) {
+        // Legacy array shape (defensive)
+        setReviews(revData as ReviewRow[]);
+        setReviewSummary((s) => ({ ...s, total: revData.length }));
+      } else {
+        const items = Array.isArray(revData.items) ? revData.items : [];
+        setReviews(items as ReviewRow[]);
+        setReviewSummary({
+          total: Number(revData.total ?? items.length),
+          avgRating: Number(revData.avgRating ?? 0),
+          distribution: revData.distribution ?? { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+        });
+        setReviewHasMore(!!revData.hasMore);
+        setReviewCursor(revData.nextCursor ?? null);
+        setMyReview(revData.myReview ?? null);
+      }
+      setReviewsLoading(false);
       setWishlisted((wl ?? []).some((i: { productId: string }) => i.productId === productId));
 
       const fetches: Promise<void>[] = [];
@@ -292,6 +345,93 @@ export default function ShopProductDetail() {
   }, [productId, getProduct, productReviews, isAuthenticated, myWishlist, catalogProducts]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /* ── Review handlers ──────────────────────────────────────────────── */
+
+  const loadMoreReviews = useCallback(async () => {
+    if (!productId || reviewCursor == null || reviewsLoadingMore) return;
+    setReviewsLoadingMore(true);
+    try {
+      const revs = await productReviews({ productId, before: String(reviewCursor) });
+      const revData = (revs ?? {}) as any;
+      const items = Array.isArray(revData.items) ? revData.items : [];
+      if (items.length > 0) {
+        setReviews((prev) => {
+          const seen = new Set(prev.map((r) => r.id));
+          return [...prev, ...items.filter((i: ReviewRow) => !seen.has(i.id))];
+        });
+      }
+      setReviewHasMore(!!revData.hasMore);
+      setReviewCursor(revData.nextCursor ?? null);
+    } catch (err) {
+      console.error("Load more reviews error:", err);
+      toast.error(t("productDetail.reviewsFailed"));
+    } finally {
+      setReviewsLoadingMore(false);
+    }
+  }, [productId, reviewCursor, reviewsLoadingMore, productReviews, t]);
+
+  const submitReview = useCallback(async () => {
+    if (!productId || reviewBusy) return;
+    if (!Number.isInteger(reviewDraft.rating) || reviewDraft.rating < 1 || reviewDraft.rating > 5 || reviewDraft.comment.trim().length === 0) {
+      toast.error(t("productDetail.reviewRequired"));
+      return;
+    }
+    setReviewBusy(true);
+    try {
+      const payload = {
+        productId,
+        rating: reviewDraft.rating,
+        title: reviewDraft.title.trim() || undefined,
+        comment: reviewDraft.comment.trim(),
+      };
+      if (myReview) {
+        await updateReview({ reviewId: myReview.id, ...payload });
+        toast.success(t("productDetail.reviewUpdated"));
+      } else {
+        await createReview(payload);
+        toast.success(t("productDetail.reviewSubmitted"));
+      }
+      setEditingReview(false);
+      setReviewDraft({ rating: 5, title: "", comment: "" });
+      await load();
+    } catch (err) {
+      console.error("Submit review error:", err);
+      toast.error(t("productDetail.reviewRequired"));
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [productId, reviewBusy, reviewDraft, myReview, updateReview, createReview, load, t]);
+
+  const startEditReview = useCallback(() => {
+    if (!myReview) return;
+    setReviewDraft({ rating: myReview.rating, title: myReview.title ?? "", comment: myReview.comment ?? "" });
+    setEditingReview(true);
+  }, [myReview]);
+
+  const cancelEditReview = useCallback(() => {
+    setEditingReview(false);
+    setReviewDraft({ rating: 5, title: "", comment: "" });
+  }, []);
+
+  const handleDeleteReview = useCallback(async () => {
+    if (!myReview || reviewBusy) return;
+    if (!window.confirm(t("productDetail.confirmDeleteReview"))) return;
+    setReviewBusy(true);
+    try {
+      await deleteReview({ reviewId: myReview.id });
+      toast.success(t("productDetail.reviewDeleted"));
+      setMyReview(null);
+      setEditingReview(false);
+      setReviewDraft({ rating: 5, title: "", comment: "" });
+      await load();
+    } catch (err) {
+      console.error("Delete review error:", err);
+      toast.error(t("productDetail.reviewRequired"));
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [myReview, reviewBusy, deleteReview, load, t]);
 
   /* ── Product view tracking ──────────────────────────────────────── */
 
@@ -512,8 +652,7 @@ export default function ShopProductDetail() {
   const displayStock = selectedVariant?.stock ?? baseAvailable;
   const outOfStock = displayStock <= 0;
   const lowStock = !outOfStock && displayStock <= 5;
-  const displayedReviews = reviewsExpanded ? reviews : reviews.slice(0, 5);
-  const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
+  const avgRating = reviewSummary.total > 0 ? reviewSummary.avgRating : null;
   const hasOptionGroups = optionGroups.length > 0;
   const allRequiredSelected = useMemo(() => {
     if (!hasOptionGroups) return true;
@@ -530,7 +669,7 @@ export default function ShopProductDetail() {
 
   useEffect(() => {
     if (!product) return;
-    const rating = reviews.length > 0 ? { ratingValue: (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1), ratingCount: reviews.length } : undefined;
+    const rating = reviewSummary.total > 0 ? { ratingValue: reviewSummary.avgRating.toFixed(1), ratingCount: reviewSummary.total } : undefined;
     setSeo({
       title: `${product.name} — VelShop`,
       description: product.description ?? t("productDetail.seoDesc", { name: product.name, price: formatBaht(product.price), unit: product.unit, shop: product.shopName ?? t("productDetail.defaultShop") }),
@@ -541,7 +680,7 @@ export default function ShopProductDetail() {
         offers: { "@type": "Offer", priceCurrency: "THB", price: product.price, availability: outOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock" },
       },
     });
-  }, [product, reviews, images, outOfStock, t]);
+  }, [product, reviewSummary, images, outOfStock, t]);
 
   /* ── Scroll restoration for refresh + back/forward ───────────────── */
   useEffect(() => {
@@ -935,11 +1074,11 @@ export default function ShopProductDetail() {
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   {product.soldCount != null && product.soldCount > 0 && <span className="hidden text-xs text-slate-400 sm:inline">{t("productDetail.sold", { count: product.soldCount })}</span>}
-                  {reviews.length > 0 && (
+                  {reviewSummary.total > 0 && (
                     <div className="flex items-center gap-1 text-sm">
                       <Star className="size-4 fill-amber-400 text-amber-400" />
                       <span className="font-semibold tabular-nums text-slate-900">{avgRating?.toFixed(1)}</span>
-                      <span className="text-xs text-slate-400">({reviews.length})</span>
+                      <span className="text-xs text-slate-400">({reviewSummary.total})</span>
                     </div>
                   )}
                 </div>
@@ -1033,7 +1172,7 @@ export default function ShopProductDetail() {
             {tabs.map((tab) => (
               <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`flex-1 px-4 py-3 text-center text-sm font-semibold transition-colors ${activeTab === tab.key ? "border-b-2 border-[#10B981] text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
                 {tab.label}
-                {tab.key === "reviews" && reviews.length > 0 && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-slate-500">{reviews.length}</span>}
+                {tab.key === "reviews" && reviewSummary.total > 0 && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-slate-500">{reviewSummary.total}</span>}
               </button>
             ))}
           </div>
@@ -1066,37 +1205,159 @@ export default function ShopProductDetail() {
             {/* Tab: Reviews */}
             {activeTab === "reviews" && (
               <div className="space-y-5">
-                {reviews.length > 0 && <div className="rounded-2xl border border-slate-200 bg-white p-5"><RatingDistribution reviews={reviews} t={t} /></div>}
-                {reviews.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-                    <Star className="mx-auto size-7 text-slate-300" />
-                    <p className="mt-3 text-sm font-medium text-slate-600">{t("productDetail.noReviews")}</p>
-                    <p className="mt-1 text-xs text-slate-400">{t("productDetail.noReviewsDesc")}</p>
+                {reviewsLoading ? (
+                  <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-12 text-sm text-slate-400">
+                    <Loader2 className="size-4 animate-spin" />
+                    {t("productDetail.loadingReviews")}
+                  </div>
+                ) : reviewsError ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center">
+                    <p className="text-sm text-slate-500">{t("productDetail.reviewsFailed")}</p>
+                    <button type="button" onClick={() => { setReviewsError(false); setReviewsLoading(true); void load(); }} className="mt-3 inline-flex items-center gap-1 rounded-[10px] border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                      <RefreshCw className="size-3.5" />
+                      {t("productDetail.reviewsRetry")}
+                    </button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {displayedReviews.map((r) => (
-                      <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <Star key={i} className={`size-3.5 ${i < r.rating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
-                            ))}
-                          </div>
-                          <span className="text-[11px] text-slate-400">{formatIsoDate(r.createdAt)}</span>
+                  <>
+                    {/* Review composer (signed-in) */}
+                    {isAuthenticated ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {editingReview ? t("productDetail.updateReview") : myReview ? t("productDetail.yourReview") : t("productDetail.writeReview")}
+                        </p>
+                        <div className="mt-3 flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setReviewDraft((d) => ({ ...d, rating: n }))}
+                              className="transition-transform hover:scale-110"
+                              aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                            >
+                              <Star className={`size-5 ${n <= reviewDraft.rating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
+                            </button>
+                          ))}
                         </div>
-                        {r.title && <p className="mt-2 text-sm font-semibold text-slate-900">{r.title}</p>}
-                        {r.comment && <p className="mt-1 text-sm leading-6 text-slate-600">{r.comment}</p>}
-                        <p className="mt-2 text-[11px] text-slate-400">{r.customerName ?? t("productDetail.customer")} · {r.orderId ? t("productDetail.verifiedPurchase") : ""}</p>
+                        <input
+                          value={reviewDraft.title}
+                          onChange={(e) => setReviewDraft((d) => ({ ...d, title: e.target.value }))}
+                          placeholder={t("productDetail.reviewTitlePlaceholder")}
+                          maxLength={120}
+                          className="mt-3 w-full rounded-[10px] border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                        />
+                        <textarea
+                          value={reviewDraft.comment}
+                          onChange={(e) => setReviewDraft((d) => ({ ...d, comment: e.target.value }))}
+                          placeholder={t("productDetail.reviewCommentPlaceholder")}
+                          rows={3}
+                          maxLength={2000}
+                          className="mt-2 w-full resize-none rounded-[10px] border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                        />
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            onClick={() => void submitReview()}
+                            disabled={reviewBusy}
+                            className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                          >
+                            {reviewBusy && <Loader2 className="size-3.5 animate-spin" />}
+                            {myReview && !editingReview ? t("productDetail.updateReview") : t("productDetail.submitReview")}
+                          </Button>
+                          {myReview && (
+                            <>
+                              {!editingReview && (
+                                <Button type="button" variant="outline" size="sm" className="border-slate-200 text-slate-600" onClick={startEditReview}>
+                                  <Pencil className="size-3.5" />
+                                  {t("productDetail.editReview")}
+                                </Button>
+                              )}
+                              {editingReview && (
+                                <Button type="button" variant="ghost" size="sm" className="text-slate-500" onClick={cancelEditReview}>
+                                  {t("productDetail.cancelEdit")}
+                                </Button>
+                              )}
+                              <Button type="button" variant="outline" size="sm" className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50" onClick={() => void handleDeleteReview()} disabled={reviewBusy}>
+                                <Trash2 className="size-3.5" />
+                                {t("productDetail.deleteReview")}
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    ))}
-                    {reviews.length > 5 && (
-                      <button type="button" onClick={() => setReviewsExpanded((v) => !v)} className="mx-auto flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]">
-                        {reviewsExpanded ? t("productDetail.hideReviews") : t("productDetail.seeAllReviews")}
-                        {reviewsExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-                      </button>
+                    ) : (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 text-center">
+                        <p className="text-sm font-semibold text-slate-900">{t("productDetail.reviewLoginTitle")}</p>
+                        <p className="mt-1 text-xs text-slate-400">{t("productDetail.reviewLoginDesc")}</p>
+                        <Button type="button" className="mt-4 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => navigate(`/auth?returnTo=${encodeURIComponent(`/product/${productId}`)}`)}>
+                          {t("auth.signIn")}
+                        </Button>
+                      </div>
                     )}
-                  </div>
+
+                    {/* Summary + list */}
+                    {reviewSummary.total > 0 && <div className="rounded-2xl border border-slate-200 bg-white p-5"><RatingDistribution summary={reviewSummary} t={t} /></div>}
+                    {reviews.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center">
+                        <Star className="mx-auto size-7 text-slate-300" />
+                        <p className="mt-3 text-sm font-medium text-slate-600">{t("productDetail.noReviews")}</p>
+                        <p className="mt-1 text-xs text-slate-400">{t("productDetail.noReviewsDesc")}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {reviews.map((r) => (
+                          <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2.5">
+                                {r.customerAvatar ? (
+                                  <img src={r.customerAvatar} alt="" className="size-8 shrink-0 rounded-full object-cover" />
+                                ) : (
+                                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-400">
+                                    {(r.customerName ?? "?").charAt(0).toUpperCase()}
+                                  </span>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1">
+                                    {Array.from({ length: 5 }).map((_, i) => (
+                                      <Star key={i} className={`size-3 ${i < r.rating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
+                                    ))}
+                                  </div>
+                                  <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{r.customerName ?? t("productDetail.customer")}</p>
+                                </div>
+                              </div>
+                              <span className="shrink-0 text-[11px] text-slate-400">{formatIsoDate(r.createdAt)}</span>
+                            </div>
+                            {r.verifiedPurchase && (
+                              <p className="mt-2 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                                <BadgeCheck className="size-3.5" />
+                                {t("productDetail.verifiedPurchase")}
+                              </p>
+                            )}
+                            {r.title && <p className="mt-2 text-sm font-semibold text-slate-900">{r.title}</p>}
+                            {r.comment && <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-600">{r.comment}</p>}
+                            {r.mine && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <button type="button" onClick={startEditReview} className="text-xs font-medium text-slate-500 transition-colors hover:text-slate-700">{t("productDetail.editReview")}</button>
+                                <span className="text-slate-200">·</span>
+                                <button type="button" onClick={() => void handleDeleteReview()} className="text-xs font-medium text-red-500 transition-colors hover:text-red-700">{t("productDetail.deleteReview")}</button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {reviewHasMore && (
+                          <button
+                            type="button"
+                            onClick={() => void loadMoreReviews()}
+                            disabled={reviewsLoadingMore}
+                            className="mx-auto flex items-center gap-1.5 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669] disabled:opacity-50"
+                          >
+                            {reviewsLoadingMore ? <Loader2 className="size-3.5 animate-spin" /> : <ChevronDown className="size-3.5" />}
+                            {t("productDetail.loadMoreReviews")}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -1104,7 +1365,7 @@ export default function ShopProductDetail() {
         </section>
 
         {/* ═══════════ SHOP SECTION ═══════════ */}
-        <section className="mt-8">
+        <section className="mt-8 space-y-3">
           <Link to={`/shops/${product.shopId}`} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-slate-900">{product.shopName ?? t("productDetail.defaultShop")}</p>
@@ -1112,6 +1373,24 @@ export default function ShopProductDetail() {
             </div>
             <ArrowLeft className="size-4 rotate-180 text-slate-300" />
           </Link>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-1.5 border-slate-200 text-slate-700"
+            onClick={() => void (async () => {
+              if (!product.shopId) return;
+              try {
+                const conv = await createConversation({ shopId: product.shopId, productId: product.id });
+                navigate(`/chat${conv?.id ? `?conv=${encodeURIComponent(conv.id)}` : ""}`);
+              } catch (err) {
+                console.error("Open chat error:", err);
+                toast.error(t("chat.sendError"));
+              }
+            })()}
+          >
+            <MessageCircle className="size-4" />
+            {t("chat.chatWithShop")}
+          </Button>
         </section>
       </main>
 
