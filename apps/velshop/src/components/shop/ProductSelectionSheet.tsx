@@ -470,15 +470,15 @@ export function ProductSelectionSheet({
                 </span>
               )}
             </button>
+
+            {/* Short description */}
+            {product.description && (
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
+                {product.description}
+              </p>
+            )}
           </div>
         </div>
-
-        {/* Short description */}
-        {product.description && (
-          <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">
-            {product.description}
-          </p>
-        )}
 
         {/* Variant option groups */}
         {hasOptionGroups && (
