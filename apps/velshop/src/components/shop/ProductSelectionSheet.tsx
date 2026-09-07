@@ -385,7 +385,7 @@ export function ProductSelectionSheet({
         {/* Product Preview header: large image left, details right */}
         <div className="flex items-start gap-3 pt-2 sm:gap-5">
           {/* Large product preview — visual anchor on the left */}
-          <div className="aspect-[4/3] w-24 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:w-44 lg:w-56">
+          <div className="aspect-[4/3] w-28 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:w-44 lg:w-56">
             {activeImage ? (
               <img
                 src={activeImage.displayUrl || activeImage.url}

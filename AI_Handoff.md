@@ -1,6 +1,6 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-09-02**
+**LAST UPDATED: 2026-09-07**
 
 ---
 
@@ -372,6 +372,38 @@ PORT=3001
 8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-09-07 — VelShop ProductSelectionSheet: Top Product Preview (image left → details right)
+
+**Status:** The top product preview in `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` is a single unified container: **IMAGE LEFT → DETAILS RIGHT**.
+
+**Final structure (verified in source):**
+```
+TOP PRODUCT PREVIEW
+├── IMAGE (aspect-[4/3]; w-28 mobile (112px) → sm:w-44 → lg:w-56)
+└── DETAILS (min-w-0 flex-1 flex-col gap-1)
+    ├── NAME (expandable, line-clamp-2 + chevron)
+    ├── PRICE
+    ├── DISCOUNT (compareAt strikethrough + % badge)
+    ├── STOCK
+    └── DESCRIPTION (inside the details column)
+```
+- The description lives INSIDE the right-hand details column — there is no separate description block below the preview.
+- Preview image is never a tiny 80px/96px thumbnail on any breakpoint (mobile = 112px).
+- The `{/* Variant option groups */}` section below the preview is untouched by this task — option cards, selection state, stock/disabled logic, and handlers are exactly as merged (image-left/details-right option cards).
+- No business logic changed: state, hooks, handlers, cart, Buy Now, VelRepeat, quantity, API, backend, database, navigation, image resolution — all preserved.
+
+**This task changed:**
+- `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` — mobile preview image `w-24` (96px) → `w-28` (112px). The image-left/details-right preview structure itself was already merged via PRs #7/#8/#9; this session reverted earlier wrong-target edits (variant option cards / `ShopProductDetail.tsx`) and verified the merged structure against the spec.
+- `AI_Handoff.md` — this entry.
+
+**Verification:**
+- VelShop typecheck (`tsc -p apps/velshop/tsconfig.json --noEmit`): ✅ PASS
+- `git diff --check`: ✅ PASS
+- Diff vs merged preview: exactly 1 line (image width class only)
+- Database changed: NO
+
+---
 
 ### 2026-09-05 — Fix Order Detail Crash: shippingAddress null (production)
 
