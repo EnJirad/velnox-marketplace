@@ -382,102 +382,105 @@ export function ProductSelectionSheet({
       )}
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
-        {/* Product Preview header: large image left, details right */}
-        <div className="flex items-start gap-3 pt-2 sm:gap-5">
-          {/* Large product preview — visual anchor on the left */}
-          <div className="aspect-[4/3] w-28 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:w-44 lg:w-56">
-            {activeImage ? (
-              <img
-                src={activeImage.displayUrl || activeImage.url}
-                alt={activeImage.alt || product.name}
-                className="size-full object-cover"
-              />
-            ) : (
-              <span className="flex size-full items-center justify-center">
-                <ImageOff className="size-8 text-slate-300" />
-              </span>
-            )}
-          </div>
-
-          {/* Product details — right-hand column */}
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            {/* Expandable product name */}
-            <button
-              type="button"
-              className="flex w-full items-start gap-2 text-left"
-              onClick={() => setNameExpanded((v) => !v)}
-              aria-expanded={nameExpanded}
-            >
-              <p
-                className={`min-w-0 flex-1 text-sm font-semibold leading-5 text-slate-900 ${
-                  !nameExpanded && needsExpand ? "line-clamp-2" : ""
-                }`}
-                style={{ overflowWrap: "anywhere" }}
-              >
-                {product.name}
-              </p>
-              {needsExpand && (
-                <span className="mt-0.5 shrink-0 text-slate-400">
-                  {nameExpanded ? (
-                    <ChevronUp className="size-4" />
-                  ) : (
-                    <ChevronDown className="size-4" />
-                  )}
+        {/* Product Preview */}
+        <div className="pt-2">
+          {/* Top row: image left · price/discount/stock right */}
+          <div className="flex items-start gap-3 sm:gap-5">
+            {/* Large product preview — visual anchor on the left */}
+            <div className="aspect-[4/3] w-28 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:w-44 lg:w-56">
+              {activeImage ? (
+                <img
+                  src={activeImage.displayUrl || activeImage.url}
+                  alt={activeImage.alt || product.name}
+                  className="size-full object-cover"
+                />
+              ) : (
+                <span className="flex size-full items-center justify-center">
+                  <ImageOff className="size-8 text-slate-300" />
                 </span>
               )}
-            </button>
-
-            <div className="flex items-baseline gap-2">
-              <p className="text-xl font-bold tabular-nums text-slate-900">
-                {formatBaht(resolvedPrice)}
-              </p>
-              <span className="text-xs font-normal text-slate-400">
-                /{product.unit}
-              </span>
             </div>
-            {(() => {
-              const compareAt = selectedVariant?.compareAtPrice ?? null;
-              const discountPct = selectedVariant?.discountPercent ?? null;
-              if ((compareAt && compareAt > resolvedPrice) || (discountPct && discountPct > 0)) {
-                return (
-                  <div className="mt-1 flex items-center gap-2">
-                    {compareAt && compareAt > resolvedPrice && (
-                      <span className="text-xs text-slate-400 line-through">{formatBaht(compareAt)}</span>
-                    )}
-                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
-                      -{Math.round(discountPct ?? ((compareAt! - resolvedPrice) / compareAt!) * 100)}%
-                    </span>
-                  </div>
-                );
-              }
-              return null;
-            })()}
-            <p
-              className={`mt-1 text-xs ${
-                outOfStock
-                  ? "font-medium text-red-500"
-                  : resolvedStock <= 5
-                    ? "font-medium text-amber-600"
-                    : "text-slate-400"
-              }`}
-            >
-              {outOfStock
-                ? t("product.outOfStock")
-                : resolvedStock <= 5
-                  ? t("product.lowStock", {
-                      count: resolvedStock,
-                      unit: product.unit,
-                    })
-                  : t("product.inStockShort")}
-            </p>
 
-            {/* Short description */}
-            {product.description && (
-              <p className="line-clamp-2 text-xs leading-5 text-slate-500">
-                {product.description}
+            {/* Price / discount / stock — right column only */}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <p className="text-xl font-bold tabular-nums text-slate-900">
+                  {formatBaht(resolvedPrice)}
+                </p>
+                <span className="text-xs font-normal text-slate-400">
+                  /{product.unit}
+                </span>
+              </div>
+              {(() => {
+                const compareAt = selectedVariant?.compareAtPrice ?? null;
+                const discountPct = selectedVariant?.discountPercent ?? null;
+                if ((compareAt && compareAt > resolvedPrice) || (discountPct && discountPct > 0)) {
+                  return (
+                    <div className="mt-1 flex items-center gap-2">
+                      {compareAt && compareAt > resolvedPrice && (
+                        <span className="text-xs text-slate-400 line-through">{formatBaht(compareAt)}</span>
+                      )}
+                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+                        -{Math.round(discountPct ?? ((compareAt! - resolvedPrice) / compareAt!) * 100)}%
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              <p
+                className={`mt-1 text-xs ${
+                  outOfStock
+                    ? "font-medium text-red-500"
+                    : resolvedStock <= 5
+                      ? "font-medium text-amber-600"
+                      : "text-slate-400"
+                }`}
+              >
+                {outOfStock
+                  ? t("product.outOfStock")
+                  : resolvedStock <= 5
+                    ? t("product.lowStock", {
+                        count: resolvedStock,
+                        unit: product.unit,
+                      })
+                    : t("product.inStockShort")}
               </p>
-            )}
+            </div>
           </div>
+
+          {/* Product name — full width below the image row */}
+          <button
+            type="button"
+            className="mt-3 flex w-full items-start gap-2 text-left"
+            onClick={() => setNameExpanded((v) => !v)}
+            aria-expanded={nameExpanded}
+          >
+            <p
+              className={`min-w-0 flex-1 text-sm font-semibold leading-5 text-slate-900 ${
+                !nameExpanded && needsExpand ? "line-clamp-2" : ""
+              }`}
+              style={{ overflowWrap: "anywhere" }}
+            >
+              {product.name}
+            </p>
+            {needsExpand && (
+              <span className="mt-0.5 shrink-0 text-slate-400">
+                {nameExpanded ? (
+                  <ChevronUp className="size-4" />
+                ) : (
+                  <ChevronDown className="size-4" />
+                )}
+              </span>
+            )}
+          </button>
+
+          {/* Short description — below the name */}
+          {product.description && (
+            <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">
+              {product.description}
+            </p>
+          )}
         </div>
 
         {/* Variant option groups */}

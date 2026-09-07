@@ -373,34 +373,31 @@ PORT=3001
 
 ## Recent Work History
 
-### 2026-09-07 — VelShop ProductSelectionSheet: Top Product Preview (image left → details right)
+### 2026-09-07 — VelShop ProductSelectionSheet: Product Preview (image left · price/discount/stock right; name + description full-width below)
 
-**Status:** The top product preview in `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` is a single unified container: **IMAGE LEFT → DETAILS RIGHT**.
-
-**Final structure (verified in source):**
+**Status:** The top product preview in `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` follows the final agreed structure:
 ```
-TOP PRODUCT PREVIEW
-├── IMAGE (aspect-[4/3]; w-28 mobile (112px) → sm:w-44 → lg:w-56)
-└── DETAILS (min-w-0 flex-1 flex-col gap-1)
-    ├── NAME (expandable, line-clamp-2 + chevron)
-    ├── PRICE
-    ├── DISCOUNT (compareAt strikethrough + % badge)
-    ├── STOCK
-    └── DESCRIPTION (inside the details column)
+PRODUCT PREVIEW
+├── Top Row
+│   ├── LEFT:  IMAGE (aspect-[4/3]; w-28 mobile (112px) → sm:w-44 → lg:w-56)
+│   └── RIGHT: PRICE / DISCOUNT / STOCK ONLY (min-w-0 flex-1)
+├── PRODUCT NAME (full width below the image row; expandable line-clamp-2 + chevron)
+└── DESCRIPTION (below the name, if present)
 ```
-- The description lives INSIDE the right-hand details column — there is no separate description block below the preview.
+- The right column of the image row contains ONLY price, discount, and stock — name and description are NOT in the right column.
+- Name is full-width below the image row; description (if any) sits below the name; the variant selector comes next.
 - Preview image is never a tiny 80px/96px thumbnail on any breakpoint (mobile = 112px).
-- The `{/* Variant option groups */}` section below the preview is untouched by this task — option cards, selection state, stock/disabled logic, and handlers are exactly as merged (image-left/details-right option cards).
-- No business logic changed: state, hooks, handlers, cart, Buy Now, VelRepeat, quantity, API, backend, database, navigation, image resolution — all preserved.
+- The `{/* Variant option groups */}` section below the preview is untouched — option cards, selection state, stock/disabled logic, and handlers are exactly as merged (image-left/details-right option cards).
+- No business logic changed: state, hooks, handlers, cart, Buy Now, VelRepeat, quantity, API, backend, database, navigation, image resolution, `activeImage` — all preserved.
 
 **This task changed:**
-- `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` — mobile preview image `w-24` (96px) → `w-28` (112px). The image-left/details-right preview structure itself was already merged via PRs #7/#8/#9; this session reverted earlier wrong-target edits (variant option cards / `ShopProductDetail.tsx`) and verified the merged structure against the spec.
+- `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` — restructured the top preview: moved the product name and description OUT of the right-hand column (they previously sat inside `details` next to price/stock) into full-width blocks below the image+price/discount/stock row. JSX/Tailwind only.
 - `AI_Handoff.md` — this entry.
 
 **Verification:**
 - VelShop typecheck (`tsc -p apps/velshop/tsconfig.json --noEmit`): ✅ PASS
 - `git diff --check`: ✅ PASS
-- Diff vs merged preview: exactly 1 line (image width class only)
+- Diff scope: preview block only; variant option groups section unchanged
 - Database changed: NO
 
 ---
