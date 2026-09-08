@@ -19,6 +19,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
+import { reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -757,6 +758,15 @@ export function setupCartRoutes(app: Express): void {
       const items = itemsResult.rows;
       let priceChanged = false;
       for (const item of items) {
+        // Server-side quantity validation — never trust the frontend.
+        const qtyError = validateCheckoutQuantity(item.quantity);
+        if (qtyError) {
+          res.status(400).json({
+            success: false,
+            error: { code: "VALIDATION_ERROR", message: `Invalid quantity for "${item.product_name}": ${qtyError}` },
+          });
+          return;
+        }
         if (item.product_status !== "published") {
           res.status(400).json({
             success: false,
@@ -935,10 +945,9 @@ export function setupCartRoutes(app: Express): void {
                 throw new Error(`INSUFFICIENT_STOCK: variant ${item.variant_id}`);
               }
             } else {
-              await client.query(
-                `UPDATE inventory SET reserved = reserved + $1 WHERE product_id = $2`,
-                [item.quantity, item.product_id],
-              );
+              // Atomic guarded reservation — validation and mutation in one
+              // statement so concurrent checkouts can never oversell.
+              await reserveInventoryStock(client, item.product_id, item.quantity);
             }
           }
 
@@ -1021,6 +1030,17 @@ export function setupCartRoutes(app: Express): void {
 
       res.json({ success: true, data: responseData });
     } catch (err) {
+      // Atomic stock guard fired (race with another purchase) — tell the
+      // customer it is a stock conflict, not a generic server failure.
+      const errMsg = err instanceof Error ? err.message : "";
+      if (errMsg.startsWith("INSUFFICIENT_STOCK:")) {
+        console.error("[checkout] insufficient stock (concurrent purchase):", errMsg);
+        res.status(409).json({
+          success: false,
+          error: { code: "INSUFFICIENT_STOCK", message: "Insufficient stock — please refresh and try again." },
+        });
+        return;
+      }
       console.error("[checkout] error:", err);
       res.status(500).json({ success: false, error: { code: "CHECKOUT_FAILED", message: "Failed to create order" } });
     }

@@ -20,6 +20,7 @@
  * changing the run/order machinery.
  */
 import { query, withTransaction } from "../db/index.js";
+import { reserveInventoryStock } from "../lib/inventory.js";
 import type pg from "pg";
 
 export type FrequencyType = "days" | "weeks" | "months";
@@ -333,10 +334,11 @@ export async function processPlan(planId: string): Promise<string | null> {
             throw new Error(`INSUFFICIENT_STOCK: variant ${item.variant_id}`);
           }
         } else {
-          await client.query(
-            `UPDATE inventory SET reserved = reserved + $1 WHERE product_id = $2`,
-            [item.quantity, item.product_id],
-          );
+          // Atomic guarded reservation — same protection as the variant path,
+          // so a plan run can never oversell against a concurrent checkout
+          // or another plan run. On insufficient stock the throw rolls back
+          // this run's transaction; the plan stays active and is retried.
+          await reserveInventoryStock(client, item.product_id, item.quantity);
         }
         await client.query(
           `UPDATE products SET sold_count = sold_count + $1 WHERE id = $2`,
