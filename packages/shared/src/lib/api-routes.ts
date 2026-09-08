@@ -191,7 +191,7 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
     return apiGet(`/api/products/catalog?${params}`);
   },
   "api.commerce.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),
-  "api.commerce.sellerOrders": () => apiGet("/api/seller/orders"),
+  "api.commerce.sellerOrders": (a) => apiGet(`/api/seller/orders?limit=${a?.limit ?? 50}`),
   "api.commerce.setOrderStatus": (a) => apiPatch(`/api/seller/orders/${a.orderId}/status`, a),
   "api.commerce.cancelOrderAction": (a) => apiPatch(`/api/customer/orders/${a.orderId}/cancel`, {}),
   // VelRepeat packages (new system)

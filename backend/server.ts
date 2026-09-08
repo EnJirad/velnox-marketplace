@@ -15,6 +15,7 @@ import { setupProductRoutes } from "./routes/products.js";
 import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
 import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
+import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupChatRoutes } from "./routes/chat.js";
@@ -263,6 +264,9 @@ setupRoutes(app);
 
 // ─── Seller (onboarding & approval) ────────────────────
 setupSellerRoutes(app);
+
+// ─── Seller Orders (list / detail / status / subscriptions) ─────────────
+setupSellerOrderRoutes(app);
 
 // ─── Products (CRUD, images, catalog) ────────────────────
 setupProductRoutes(app);
