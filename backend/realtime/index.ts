@@ -1,10 +1,12 @@
 import type { IncomingMessage } from "http";
 import jwt from "jsonwebtoken";
+import { isTokenRevokedSync } from "../middleware/auth.js";
 import type { WebSocketServer, WebSocket } from "ws";
 
 interface ConnectedClient {
   ws: WebSocket;
   userId?: string;
+  jti?: string;
   subscriptions: Set<string>;
 }
 
@@ -27,25 +29,58 @@ function readSessionCookie(req: IncomingMessage): string | null {
   return value ? decodeURIComponent(value) : null;
 }
 
-/** Resolve the authenticated user id from the upgrade request cookie (if any). */
-function resolveUserIdFromRequest(req: IncomingMessage): string | undefined {
+/** Resolve the authenticated user id and jti from the upgrade request cookie (if any).
+ *  Checks revocation synchronously via the in-memory cache. */
+function resolveUserFromRequest(req: IncomingMessage): { userId: string; jti?: string } | undefined {
   try {
     const token = readSessionCookie(req);
     if (!token) return undefined;
     const secret = process.env.JWT_SECRET;
     if (!secret) return undefined;
-    const payload = jwt.verify(token, secret) as { userId: string };
-    return payload.userId;
+    const payload = jwt.verify(token, secret) as { userId: string; jti?: string };
+    // Reject revoked tokens — do not authenticate.
+    if (payload.jti && isTokenRevokedSync(payload.jti)) return undefined;
+    return { userId: payload.userId, jti: payload.jti };
   } catch {
     return undefined;
   }
 }
 
+/**
+ * Periodic revocation sweep — every 30 seconds, check all authenticated
+ * WebSocket connections. If their jti has been revoked (in-memory cache
+ * or DB), close the connection with 4001 (Policy Violation).
+ *
+ * This closes the gap where a user logs out (revoking the token) but
+ * their existing WebSocket connection was established before the logout.
+ */
+let revocationSweepStarted = false;
+function startRevocationSweep(): void {
+  if (revocationSweepStarted) return;
+  revocationSweepStarted = true;
+  const SWEEP_INTERVAL_MS = 30_000; // 30 seconds
+  setInterval(() => {
+    for (const [ws, client] of clients) {
+      if (!client.userId || !client.jti) continue;
+      if (client.ws.readyState !== 1) continue; // not OPEN
+      if (isTokenRevokedSync(client.jti)) {
+        try {
+          ws.close(4001, "Session revoked");
+        } catch { /* already closing/closed */ }
+        clients.delete(ws);
+      }
+    }
+  }, SWEEP_INTERVAL_MS).unref(); // .unref() so it doesn't keep the process alive
+}
+
 export function setupWebSocket(wss: WebSocketServer): void {
+  startRevocationSweep();
   wss.on("connection", (ws, req: IncomingMessage) => {
+    const authed = resolveUserFromRequest(req);
     const client: ConnectedClient = {
       ws,
-      userId: resolveUserIdFromRequest(req),
+      userId: authed?.userId,
+      jti: authed?.jti,
       subscriptions: new Set(),
     };
     clients.set(ws, client);
@@ -111,6 +146,22 @@ export function broadcast(channel: string, event: string, data: unknown): void {
   for (const client of clients.values()) {
     if (client.ws.readyState === 1 && client.subscriptions.has(channel)) {
       client.ws.send(payload);
+    }
+  }
+}
+
+/**
+ * Immediately close ALL WebSocket connections for a specific user.
+ * Called on logout so the session is severed instantly, not just after
+ * the next periodic revocation sweep.
+ */
+export function closeUserConnections(userId: string): void {
+  for (const [ws, client] of clients) {
+    if (client.userId === userId && client.ws.readyState === 1) {
+      try {
+        ws.close(4001, "Session revoked");
+      } catch { /* already closing/closed */ }
+      clients.delete(ws);
     }
   }
 }

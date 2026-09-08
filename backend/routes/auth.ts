@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { query } from "../db/index.js";
+import { revokeToken } from "../middleware/auth.js";
+import { closeUserConnections } from "../realtime/index.js";
 
 /**
  * Google OAuth authentication routes.
@@ -336,6 +338,7 @@ export function setupGoogleAuth(app: Express): void {
         try {
           const revoked = await query("SELECT 1 FROM revoked_tokens WHERE token_id = $1", [payload.jti]);
           if (revoked.rows.length > 0) {
+            revokeToken(payload.jti); // populate in-memory cache for future requests
             res.clearCookie(SESSION_COOKIE, { path: "/" });
             res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Session revoked" } });
             return;
@@ -431,6 +434,10 @@ export function setupGoogleAuth(app: Express): void {
                  ON CONFLICT (token_id) DO NOTHING`,
                 [payload.jti, payload.userId, expiresAt]
               );
+              // Also add to in-memory cache so requireAuth rejects immediately.
+              revokeToken(payload.jti);
+              // Sever any live WebSocket connections for this user instantly.
+              closeUserConnections(payload.userId);
               console.log("[auth] Token revoked for user:", payload.userId);
             } catch (revokeErr: any) {
               // If revoked_tokens table doesn't exist yet, log warning but don't fail
