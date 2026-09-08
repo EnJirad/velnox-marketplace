@@ -1,17 +1,22 @@
 /**
- * P0 #2 — Non-variant inventory race condition.
+ * P0 #2 + P1 #1 — Non-variant inventory race condition + idempotent release.
  *
  * Unit tests cover the server-side quantity validation. The integration
- * tests (skipped when no DATABASE_URL is available) verify the atomic
- * reservation guard on real PostgreSQL: the concurrency test reproduces the
- * TOCTOU oversell scenario (two simultaneous quantity-1 purchases against
- * stock=1) and asserts exactly one allocation succeeds with stock never
- * going negative. Rollback and cancellation-restore consistency are also
- * verified against the real database.
+ * tests (skipped when no DATABASE_URL is available) verify:
+ *
+ *  • Atomic reservation guard (P0 #2)
+ *  • Idempotent inventory release via releaseOrderInventory (P1 #1)
+ *  • Concurrency: two simultaneous quantity-1 purchases on stock=1
+ *  • Rollback: reserve then failure → no partial release
+ *  • Double-release safety: calling releaseOrderInventory twice restores
+ *    stock exactly once
+ *  • Paid order receives late expiry → stock NOT restored
+ *  • Cancellation restore still works
  */
 import { describe, expect, test } from "bun:test";
 import {
   MAX_ORDER_QUANTITY,
+  releaseOrderInventory,
   reserveInventoryStock,
   validateCheckoutQuantity,
 } from "../lib/inventory.js";
@@ -45,7 +50,7 @@ describe("validateCheckoutQuantity", () => {
   });
 });
 
-// ─── Integration: atomic non-variant reservation (needs DATABASE_URL) ───────
+// ─── Integration: inventory reservation + release (needs DATABASE_URL) ──────
 
 describe("non-variant inventory reservation (integration)", () => {
   const hasDb = Boolean(process.env.DATABASE_URL);
@@ -80,6 +85,30 @@ describe("non-variant inventory reservation (integration)", () => {
       [productId, quantity],
     );
     return { query, userId, productId };
+  }
+
+  /** Seed a user → seller → shop → product → inventory + order with items. */
+  async function seedOrder(tag: string, stockQty: number, orderQty: number) {
+    const { query, withTransaction } = await import("../db/index.js");
+    const { userId, productId, ...rest } = await seedStock(tag, stockQty);
+    // Reserve stock
+    await withTransaction(async (client) => {
+      await reserveInventoryStock(client, productId, orderQty);
+    });
+    // Create order
+    const order = await query(
+      `INSERT INTO orders (user_id, status, total_amount, currency)
+       VALUES ($1, 'pending_payment', $2, 'THB') RETURNING id`,
+      [userId, 100 * orderQty],
+    );
+    const orderId = order.rows[0].id as string;
+    // Create order items
+    await query(
+      `INSERT INTO order_items (order_id, product_id, product_name, quantity, price, subtotal)
+       VALUES ($1, $2, 'test', $3, 100, $4)`,
+      [orderId, productId, orderQty, 100 * orderQty],
+    );
+    return { query, withTransaction, userId, productId, orderId, orderQty };
   }
 
   testFn("stock 10, buy 1 → reserved 1", async () => {
@@ -188,20 +217,102 @@ describe("non-variant inventory reservation (integration)", () => {
     }
   });
 
+  // ─── P1 #1: releaseOrderInventory tests ────────────────────────────────
+
+  testFn("releaseOrderInventory restores reserved stock exactly once (idempotent)", async () => {
+    const { randomUUID } = await import("crypto");
+    const { withTransaction } = await import("../db/index.js");
+    const tag = `inv-rel-${randomUUID().slice(0, 8)}`;
+    const { query, userId, productId, orderId } = await seedOrder(tag, 10, 3);
+    try {
+      // Confirm stock is reserved.
+      const before = await query(
+        `SELECT reserved FROM inventory WHERE product_id = $1`,
+        [productId],
+      );
+      expect(before.rows[0].reserved).toBe(3);
+
+      // First release → succeeds, sets inventory_released flag.
+      const r1 = await withTransaction(async (client) => {
+        return await releaseOrderInventory(client, orderId);
+      });
+      expect(r1).toBe(true);
+
+      const after1 = await query(
+        `SELECT reserved FROM inventory WHERE product_id = $1`,
+        [productId],
+      );
+      expect(after1.rows[0].reserved).toBe(0);
+
+      // Second release → idempotent no-op (flag already set).
+      const r2 = await withTransaction(async (client) => {
+        return await releaseOrderInventory(client, orderId);
+      });
+      expect(r2).toBe(false);
+
+      // Stock unchanged.
+      const after2 = await query(
+        `SELECT reserved FROM inventory WHERE product_id = $1`,
+        [productId],
+      );
+      expect(after2.rows[0].reserved).toBe(0);
+    } finally {
+      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+    }
+  });
+
+  testFn("paid order + late expiry webhook → inventory NOT restored", async () => {
+    const { randomUUID } = await import("crypto");
+    const { withTransaction } = await import("../db/index.js");
+    const tag = `inv-paid-${randomUUID().slice(0, 8)}`;
+    const { query, userId, productId, orderId } = await seedOrder(tag, 10, 2);
+    try {
+      // Simulate payment success: release reserved inventory (as Stripe
+      // success handler does) and mark order as paid.
+      await withTransaction(async (client) => {
+        // Release reserved (same as Stripe success handler).
+        await client.query(
+          `UPDATE inventory SET reserved = GREATEST(0, reserved - $1) WHERE product_id = $2`,
+          [2, productId],
+        );
+        await client.query(
+          `UPDATE orders SET status = 'paid', updated_at = NOW() WHERE id = $1`,
+          [orderId],
+        );
+      });
+
+      // Late expiry webhook tries to release — must not (status is paid).
+      const released = await withTransaction(async (client) => {
+        return await releaseOrderInventory(client, orderId);
+      });
+      expect(released).toBe(false);
+
+      // Stock must remain at quantity=10, reserved=0 (consumed by sale).
+      const after = await query(
+        `SELECT quantity, reserved FROM inventory WHERE product_id = $1`,
+        [productId],
+      );
+      expect(after.rows[0].quantity).toBe(10);
+      expect(after.rows[0].reserved).toBe(0);
+    } finally {
+      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+    }
+  });
+
   testFn("cancellation restore still works after atomic reservation", async () => {
     const { randomUUID } = await import("crypto");
     const { withTransaction } = await import("../db/index.js");
     const tag = `inv-cancel-${randomUUID().slice(0, 8)}`;
-    const { query, userId, productId } = await seedStock(tag, 5);
+    const { query, userId, productId, orderId } = await seedOrder(tag, 5, 2);
     try {
+      // Cancel + release via the shared path.
       await withTransaction(async (client) => {
-        await reserveInventoryStock(client, productId, 2);
+        await client.query(
+          `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+          [orderId],
+        );
+        await releaseOrderInventory(client, orderId);
       });
-      // Same restore statement the customer/seller cancel paths use.
-      await query(
-        `UPDATE inventory SET reserved = GREATEST(0, reserved - $1) WHERE product_id = $2`,
-        [2, productId],
-      );
       const after = await query(
         `SELECT reserved FROM inventory WHERE product_id = $1`,
         [productId],
@@ -211,4 +322,34 @@ describe("non-variant inventory reservation (integration)", () => {
       await query(`DELETE FROM users WHERE id = $1`, [userId]);
     }
   });
+
+  testFn("concurrent release attempts → only one effective restoration", async () => {
+    const { randomUUID } = await import("crypto");
+    const { withTransaction } = await import("../db/index.js");
+    const tag = `inv-drel-${randomUUID().slice(0, 8)}`;
+    const { query, userId, productId, orderId } = await seedOrder(tag, 5, 2);
+    try {
+      // Two concurrent release attempts for the same order.
+      const release = () =>
+        withTransaction(async (client) => {
+          return await releaseOrderInventory(client, orderId);
+        });
+      const [a, b] = await Promise.allSettled([release(), release()]);
+      // Both should complete (one returns true, one returns false).
+      const results = [a, b].map((r) =>
+        r.status === "fulfilled" ? r.value : null,
+      );
+      expect(results.filter((r) => r === true).length).toBe(1);
+      expect(results.filter((r) => r === false).length).toBe(1);
+
+      // Stock restored exactly once.
+      const after = await query(
+        `SELECT reserved FROM inventory WHERE product_id = $1`,
+        [productId],
+      );
+      expect(after.rows[0].reserved).toBe(0);
+    } finally {
+      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+    }
+  }, 30_000);
 });

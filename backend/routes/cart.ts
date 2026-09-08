@@ -19,7 +19,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
-import { reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
+import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1207,24 +1207,10 @@ export function setupCartRoutes(app: Express): void {
           `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
           [orderId],
         );
-        // Restore stock for each purchased item
-        const items = await client.query(
-          `SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1`,
-          [orderId],
-        );
-        for (const item of items.rows) {
-          if (item.variant_id) {
-            await client.query(
-              `UPDATE product_variants SET stock = stock + $1, updated_at = NOW() WHERE id = $2`,
-              [item.quantity, item.variant_id],
-            );
-          } else {
-            await client.query(
-              `UPDATE inventory SET reserved = GREATEST(0, reserved - $1) WHERE product_id = $2`,
-              [item.quantity, item.product_id],
-            );
-          }
-        }
+        // Restore stock atomically via the shared inventory-release path.
+        // Idempotent: the inventory_released flag ensures at-most-once
+        // restoration regardless of how many actors call cancel.
+        await releaseOrderInventory(client, orderId);
       });
 
       res.json({ success: true, data: { id: orderId, status: "cancelled" } });

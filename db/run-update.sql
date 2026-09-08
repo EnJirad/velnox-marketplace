@@ -1363,3 +1363,18 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON chat_messages (conversation_id, sender_id, read_at) WHERE read_at IS NULL;
+
+-- =============================================================
+-- Migration: V0037
+-- Date: 2026-09-08
+-- Description: orders.inventory_released — idempotent stock restoration
+-- Reason: Stripe checkout expiry and payment failure webhooks do not
+--         restore reserved inventory, leaking stock permanently.
+--         The flag ensures release happens at most once per order.
+-- =============================================================
+
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS inventory_released BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_orders_unreleased
+  ON orders (id) WHERE inventory_released = FALSE;

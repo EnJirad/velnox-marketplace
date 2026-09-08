@@ -10,6 +10,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
+import { releaseOrderInventory } from "../lib/inventory.js";
 import Stripe from "stripe";
 
 // Lazy-initialized Stripe client (only when STRIPE_SECRET_KEY is set)
@@ -272,11 +273,17 @@ export function setupStripeRoutes(app: Express): void {
           const session = event.data.object as Stripe.Checkout.Session;
           const orderId = session.metadata?.orderId;
           if (orderId) {
-            await query(
-              `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'pending_payment'`,
-              [orderId],
-            );
-            console.log(`[stripe webhook] Order ${orderId} cancelled (checkout expired)`);
+            await withTransaction(async (client) => {
+              // Set terminal status only if still in a pre-payment state.
+              await client.query(
+                `UPDATE orders SET status = 'cancelled', updated_at = NOW()
+                 WHERE id = $1 AND status IN ('pending_payment', 'pending')`,
+                [orderId],
+              );
+              // Release reserved inventory (idempotent via inventory_released flag).
+              const released = await releaseOrderInventory(client, orderId);
+              console.log(`[stripe webhook] Order ${orderId} checkout expired — status ${released ? 'cancelled, inventory released' : 'already terminal'}`);
+            });
           }
           break;
         }
@@ -285,16 +292,25 @@ export function setupStripeRoutes(app: Express): void {
           const paymentIntent = event.data.object as Stripe.PaymentIntent;
           const orderId = paymentIntent.metadata?.orderId;
           if (orderId) {
-            await query(
-              `UPDATE payments SET status = 'failed', updated_at = NOW()
-               WHERE order_id = $1 AND provider = 'stripe'`,
-              [orderId],
-            );
-            await query(
-              `UPDATE orders SET status = 'payment_failed', updated_at = NOW() WHERE id = $1`,
-              [orderId],
-            );
-            console.log(`[stripe webhook] Order ${orderId} payment failed`);
+            await withTransaction(async (client) => {
+              // Mark payment as failed.
+              await client.query(
+                `UPDATE payments SET status = 'failed', updated_at = NOW()
+                 WHERE order_id = $1 AND provider = 'stripe'`,
+                [orderId],
+              );
+              // Set terminal status only if still in a pre-payment state.
+              // A late failure after checkout.session.completed (paid) is
+              // ignored — the order is already consumed/sold.
+              await client.query(
+                `UPDATE orders SET status = 'payment_failed', updated_at = NOW()
+                 WHERE id = $1 AND status IN ('pending_payment', 'pending')`,
+                [orderId],
+              );
+              // Release reserved inventory (idempotent via inventory_released flag).
+              const released = await releaseOrderInventory(client, orderId);
+              console.log(`[stripe webhook] Order ${orderId} payment failed — status ${released ? 'payment_failed, inventory released' : 'already terminal'}`);
+            });
           }
           break;
         }

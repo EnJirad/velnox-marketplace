@@ -253,11 +253,13 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_address_id UUID REFERENCES addresses(id),
   shipping_address JSONB,
   notes TEXT,
+  inventory_released BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_number_unique ON orders (order_number) WHERE order_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_unreleased ON orders (id) WHERE inventory_released = FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_shop ON orders (shop_id);
