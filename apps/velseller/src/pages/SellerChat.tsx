@@ -3,8 +3,9 @@ import { Button } from "@velnox/shared/components/ui/button";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
-import { formatBaht } from "@velnox/shared/lib/commerce";
-import { connectChatSocket, disconnectChatSocket, onChatEvent } from "@velnox/shared/lib/chat-socket";
+import { useLanguage } from "@velnox/shared/lib/i18n";
+import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
+import { connectChatSocket, disconnectChatSocket, onChatEvent, sendChatCommand } from "@velnox/shared/lib/chat-socket";
 import {
   ArrowLeft,
   CheckCheck,
@@ -45,22 +46,8 @@ interface ChatMessage {
   createdAt: number;
 }
 
-function timeLabel(ts: number | null): string {
-  if (!ts) return "";
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return "เมื่อสักครู่";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} นาที`;
-  const d = new Date(ts);
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
-  const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  if (sameDay(d, today)) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (sameDay(d, yesterday)) return "เมื่อวาน";
-  return d.toLocaleDateString([], { day: "numeric", month: "short" });
-}
-
 export default function SellerChat() {
+  const { t, lang } = useLanguage();
   const { user, isAuthenticated } = useAuth();
   const myConversations = useAction(api.seller.sellerConversations);
   const conversationMessages = useAction(api.seller.sellerConversationMessages);
@@ -75,16 +62,18 @@ export default function SellerChat() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdRef = useRef<string | null>(null);
 
   const loadConversations = useCallback(async () => {
+    setError(false);
     try {
       const res = await myConversations();
       setConversations((res ?? []) as Conversation[]);
     } catch (err) {
       console.error("Load conversations error:", err);
-      setConversations([]);
+      setError(true);
     }
   }, [myConversations]);
 
@@ -127,6 +116,7 @@ export default function SellerChat() {
       }
     });
     return () => {
+      if (activeIdRef.current) sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
       offMessage();
       offRead();
       disconnectChatSocket();
@@ -139,10 +129,22 @@ export default function SellerChat() {
     }
   }, [messages.length, active?.id]);
 
+  const closeActive = useCallback(() => {
+    if (activeIdRef.current) {
+      sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
+      activeIdRef.current = null;
+    }
+    setActive(null);
+  }, []);
+
   const openConversation = useCallback(
     async (conv: Conversation) => {
+      if (activeIdRef.current && activeIdRef.current !== conv.id) {
+        sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
+      }
       setActive(conv);
       activeIdRef.current = conv.id;
+      sendChatCommand("chat:viewing", { conversationId: conv.id });
       setMessages([]);
       setHasMore(false);
       setMessagesLoading(true);
@@ -154,12 +156,12 @@ export default function SellerChat() {
         void markConversationRead({ conversationId: conv.id });
       } catch (err) {
         console.error("Load messages error:", err);
-        toast.error("โหลดข้อความไม่สำเร็จ");
+        toast.error(t("chat.loadError"));
       } finally {
         setMessagesLoading(false);
       }
     },
-    [conversationMessages, markConversationRead],
+    [conversationMessages, markConversationRead, t],
   );
 
   const loadOlder = useCallback(async () => {
@@ -209,12 +211,12 @@ export default function SellerChat() {
       }
     } catch (err) {
       console.error("Send message error:", err);
-      toast.error("ส่งข้อความไม่สำเร็จ กรุณาลองอีกครั้ง");
+      toast.error(t("chat.sendError"));
       setMessages((prev) => prev.filter((m) => m.id !== temp.id));
     } finally {
       setSending(false);
     }
-  }, [active, draft, sending, user?.id, sendMessage]);
+  }, [active, draft, sending, user?.id, sendMessage, t]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -224,17 +226,17 @@ export default function SellerChat() {
         <div className="mb-4">
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
             <MessageCircle className="size-4 text-[#10B981]" />
-            velseller · แชทกับลูกค้า
+            {t("sellerChat.eyebrow")}
           </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">แชท</h1>
-          <p className="mt-1.5 text-sm text-slate-500">ตอบข้อความจากลูกค้าที่สอบถามสินค้าในร้านของคุณ</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{t("sellerChat.title")}</h1>
+          <p className="mt-1.5 text-sm text-slate-500">{t("sellerChat.desc")}</p>
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:grid md:grid-cols-[320px_1fr]">
           {/* ── Conversation list ─────────────────────────────────── */}
           <aside className={`${active ? "hidden md:block" : "block"} max-h-[calc(100dvh-260px)] overflow-y-auto border-slate-200 md:border-r`}>
             <div className="border-b border-slate-100 px-4 py-3">
-              <h2 className="text-base font-bold text-slate-900">การสนทนา</h2>
+              <h2 className="text-base font-bold text-slate-900">{t("sellerChat.conversations")}</h2>
             </div>
             {conversations === null ? (
               <div className="space-y-2 p-4">
@@ -242,11 +244,19 @@ export default function SellerChat() {
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
               </div>
+            ) : error ? (
+              <div className="px-6 py-14 text-center">
+                <MessageCircle className="mx-auto size-7 text-slate-300" />
+                <p className="mt-3 text-sm font-medium text-slate-600">{t("chat.loadError")}</p>
+                <button type="button" onClick={() => void loadConversations()} className="mt-3 inline-flex items-center gap-1 rounded-[10px] border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                  {t("chat.retry")}
+                </button>
+              </div>
             ) : conversations.length === 0 ? (
               <div className="px-6 py-14 text-center">
                 <MessageCircle className="mx-auto size-7 text-slate-300" />
-                <p className="mt-3 text-sm font-medium text-slate-600">ยังไม่มีข้อความ</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">เมื่อลูกค้ากด "แชทกับร้านค้า" การสนทนาจะมาแสดงที่นี่</p>
+                <p className="mt-3 text-sm font-medium text-slate-600">{t("chat.emptyTitle")}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">{t("sellerChat.emptyDesc")}</p>
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
@@ -273,8 +283,8 @@ export default function SellerChat() {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-semibold text-slate-900">{c.participantName ?? "ลูกค้า"}</span>
-                        <span className="shrink-0 text-[10px] text-slate-400">{timeLabel(c.lastMessageAt)}</span>
+                        <span className="truncate text-sm font-semibold text-slate-900">{c.participantName ?? t("sellerChat.customerFallback")}</span>
+                        <span className="shrink-0 text-[10px] text-slate-400">{formatRelativeTime(c.lastMessageAt, lang, t)}</span>
                       </span>
                       <span className={`mt-0.5 block truncate text-xs ${c.unreadCount > 0 ? "font-medium text-slate-700" : "text-slate-400"}`}>
                         {c.lastMessage ?? "—"}
@@ -294,18 +304,18 @@ export default function SellerChat() {
                 <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100">
                   <MessageCircle className="size-7 text-slate-300" />
                 </span>
-                <p className="mt-4 text-sm font-medium text-slate-600">เลือกการสนทนาเพื่อตอบลูกค้า</p>
+                <p className="mt-4 text-sm font-medium text-slate-600">{t("sellerChat.chooseConversation")}</p>
               </div>
             ) : (
               <>
                 {/* Header */}
                 <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-                  <button type="button" onClick={() => setActive(null)} className="flex size-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 md:hidden" aria-label="กลับ">
+                  <button type="button" onClick={closeActive} className="flex size-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 md:hidden" aria-label={t("chat.back")}>
                     <ArrowLeft className="size-4" />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-900">{active.participantName ?? "ลูกค้า"}</p>
-                    {active.product && <p className="truncate text-[11px] text-slate-400">สอบถามเกี่ยวกับสินค้า</p>}
+                    <p className="truncate text-sm font-semibold text-slate-900">{active.participantName ?? t("sellerChat.customerFallback")}</p>
+                    {active.product && <p className="truncate text-[11px] text-slate-400">{t("sellerChat.aboutProduct")}</p>}
                   </div>
                 </div>
 
@@ -333,7 +343,7 @@ export default function SellerChat() {
                   {messagesLoading ? (
                     <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-400">
                       <Loader2 className="size-4 animate-spin" />
-                      กำลังโหลดข้อความ...
+                      {t("chat.loadingMessages")}
                     </div>
                   ) : (
                     <>
@@ -345,13 +355,13 @@ export default function SellerChat() {
                           className="mx-auto flex items-center gap-1 text-xs font-medium text-[#10B981] transition-colors hover:text-[#059669] disabled:opacity-50"
                         >
                           {loadingMore && <Loader2 className="size-3 animate-spin" />}
-                          โหลดข้อความก่อนหน้า
+                          {t("chat.loadOlder")}
                         </button>
                       )}
                       {messages.length === 0 ? (
                         <div className="py-12 text-center">
-                          <p className="text-sm text-slate-500">ยังไม่มีข้อความ</p>
-                          <p className="mt-1 text-xs text-slate-400">เริ่มต้นการสนทนาได้เลย</p>
+                          <p className="text-sm text-slate-500">{t("chat.emptyTitle")}</p>
+                          <p className="mt-1 text-xs text-slate-400">{t("chat.emptyDesc")}</p>
                         </div>
                       ) : (
                         messages.map((m) => {
@@ -361,7 +371,7 @@ export default function SellerChat() {
                               <div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${mine ? "rounded-br-md bg-slate-900 text-white" : "rounded-bl-md border border-slate-200 bg-slate-50 text-slate-800"}`}>
                                 <p className="whitespace-pre-line break-words">{m.body}</p>
                                 <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-slate-400" : "text-slate-400"}`}>
-                                  {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                  {formatLocaleTime(m.createdAt, lang)}
                                   {mine && <CheckCheck className={`size-3 ${m.status === "read" ? "text-sky-400" : ""}`} />}
                                 </p>
                               </div>
@@ -384,8 +394,8 @@ export default function SellerChat() {
                         void handleSend();
                       }
                     }}
-                    placeholder="พิมพ์ข้อความ..."
-                    aria-label="พิมพ์ข้อความ"
+                    placeholder={t("chat.inputPlaceholder")}
+                    aria-label={t("chat.typeMessageAria")}
                     maxLength={4000}
                     className="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
                   />
@@ -394,7 +404,7 @@ export default function SellerChat() {
                     onClick={() => void handleSend()}
                     disabled={!draft.trim() || sending}
                     className="size-11 shrink-0 gap-1.5 rounded-full bg-[#10B981] p-0 text-white hover:bg-[#059669]"
-                    aria-label="ส่งข้อความ"
+                    aria-label={t("chat.sendAria")}
                   >
                     {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                   </Button>

@@ -4,8 +4,8 @@ import { useLanguage } from "@/lib/i18n";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
-import { formatBaht } from "@velnox/shared/lib/commerce";
-import { connectChatSocket, disconnectChatSocket, onChatEvent } from "@velnox/shared/lib/chat-socket";
+import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
+import { connectChatSocket, disconnectChatSocket, onChatEvent, sendChatCommand } from "@velnox/shared/lib/chat-socket";
 import { Button } from "@velnox/shared/components/ui/button";
 import {
   ArrowLeft,
@@ -50,24 +50,8 @@ interface ChatMessage {
 
 const MESSAGES_PAGE = 30;
 
-function timeLabel(ts: number | null, t: (k: string, v?: Record<string, string | number>) => string): string {
-  if (!ts) return "";
-  const now = Date.now();
-  const diff = now - ts;
-  if (diff < 60_000) return t("chat.justNow");
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
-  const d = new Date(ts);
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
-  const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  if (sameDay(d, today)) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (sameDay(d, yesterday)) return t("chat.yesterday");
-  return d.toLocaleDateString([], { day: "numeric", month: "short" });
-}
-
 export default function ShopChat() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useAuth();
@@ -143,6 +127,7 @@ export default function ShopChat() {
       }
     });
     return () => {
+      if (activeIdRef.current) sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
       offMessage();
       offRead();
       disconnectChatSocket();
@@ -157,10 +142,22 @@ export default function ShopChat() {
   }, [messages.length, active?.id]);
 
   // ── Open a conversation thread ──────────────────────────────────────
+  const closeActive = useCallback(() => {
+    if (activeIdRef.current) {
+      sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
+      activeIdRef.current = null;
+    }
+    setActive(null);
+  }, []);
+
   const openConversation = useCallback(
     async (conv: Conversation) => {
+      if (activeIdRef.current && activeIdRef.current !== conv.id) {
+        sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
+      }
       setActive(conv);
       activeIdRef.current = conv.id;
+      sendChatCommand("chat:viewing", { conversationId: conv.id });
       setMessages([]);
       setHasMore(false);
       setMessagesLoading(true);
@@ -323,7 +320,7 @@ export default function ShopChat() {
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-semibold text-slate-900">{c.shopName}</span>
-                        <span className="shrink-0 text-[10px] text-slate-400">{timeLabel(c.lastMessageAt, t)}</span>
+                        <span className="shrink-0 text-[10px] text-slate-400">{formatRelativeTime(c.lastMessageAt, lang, t)}</span>
                       </span>
                       <span className={`mt-0.5 block truncate text-xs ${c.unreadCount > 0 ? "font-medium text-slate-700" : "text-slate-400"}`}>
                         {c.lastMessage ?? "—"}
@@ -350,7 +347,7 @@ export default function ShopChat() {
               <>
                 {/* Header */}
                 <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-                  <button type="button" onClick={() => setActive(null)} className="flex size-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 md:hidden" aria-label={t("chat.back")}>
+                  <button type="button" onClick={closeActive} className="flex size-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 md:hidden" aria-label={t("chat.back")}>
                     <ArrowLeft className="size-4" />
                   </button>
                   <div className="min-w-0 flex-1">
@@ -418,7 +415,7 @@ export default function ShopChat() {
                               <div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${mine ? "rounded-br-md bg-[#10B981] text-white" : "rounded-bl-md border border-slate-200 bg-slate-50 text-slate-800"}`}>
                                 <p className="whitespace-pre-line break-words">{m.body}</p>
                                 <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-emerald-50/80" : "text-slate-400"}`}>
-                                  {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                  {formatLocaleTime(m.createdAt, lang)}
                                   {mine && <CheckCheck className={`size-3 ${m.status === "read" ? "text-sky-200" : ""}`} />}
                                 </p>
                               </div>

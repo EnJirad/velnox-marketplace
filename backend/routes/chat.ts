@@ -28,7 +28,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
-import { CHANNELS, sendToUser } from "../realtime/index.js";
+import { CHANNELS, getViewingConversation, sendToUser } from "../realtime/index.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -371,14 +371,17 @@ export function setupChatRoutes(app: Express): void {
         message,
         clientId,
       });
-      // Notification row for the seller.
-      await notifyUser(
-        conv.seller_user_id,
-        "chat",
-        "ข้อความใหม่จากลูกค้า",
-        body.slice(0, 120),
-        { conversationId },
-      );
+      // Notification row for the seller (skipped while they are viewing this
+      // thread — the message still arrives over the realtime socket).
+      if (!getViewingConversation(conv.seller_user_id, conversationId)) {
+        await notifyUser(
+          conv.seller_user_id,
+          "chat",
+          "ข้อความใหม่จากลูกค้า",
+          body.slice(0, 120),
+          { conversationId },
+        );
+      }
 
       res.json({ success: true, data: { message, clientId } });
     } catch (err) {
@@ -529,13 +532,17 @@ export function setupChatRoutes(app: Express): void {
         message,
         clientId,
       });
-      await notifyUser(
-        conv.customer_id,
-        "chat",
-        `ข้อความใหม่จากร้าน ${conv.shop_name ?? ""}`.trim(),
-        body.slice(0, 120),
-        { conversationId },
-      );
+      // Notification row for the customer (skipped while they are viewing
+      // this thread — the message still arrives over the realtime socket).
+      if (!getViewingConversation(conv.customer_id, conversationId)) {
+        await notifyUser(
+          conv.customer_id,
+          "chat",
+          `ข้อความใหม่จากร้าน ${conv.shop_name ?? ""}`.trim(),
+          body.slice(0, 120),
+          { conversationId },
+        );
+      }
 
       res.json({ success: true, data: { message, clientId } });
     } catch (err) {

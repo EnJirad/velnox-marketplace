@@ -393,6 +393,53 @@ export function formatLocaleDateTime(
   }).format(d);
 }
 
+/**
+ * Relative-time formatter for reviews / chat, localized via i18n.
+ * Uses these keys (must exist at parity in th/en/my):
+ *   common.justNow, common.minutesAgo ({count}), common.today,
+ *   common.yesterday, common.daysAgo ({count})
+ * Falls back to formatLocaleDate (absolute) for anything older than 7 days.
+ */
+export function formatRelativeTime(
+  value: string | number | Date | null | undefined,
+  lang: string,
+  t: (k: string, v?: Record<string, string | number>) => string,
+): string {
+  if (value == null || value === "") return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = Date.now();
+  const ts = d.getTime();
+  const diffMs = now - ts;
+  const minute = 60_000;
+  if (diffMs < minute) return t("common.justNow");
+  if (diffMs < 60 * minute) return t("common.minutesAgo", { count: Math.max(1, Math.floor(diffMs / minute)) });
+
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const todayStart = startOfDay(new Date());
+  const dayStart = startOfDay(d);
+  if (dayStart === todayStart) return t("common.today");
+  if (dayStart === todayStart - 24 * 60 * minute) return t("common.yesterday");
+
+  const days = Math.floor((todayStart - dayStart) / (24 * 60 * minute));
+  if (days > 0 && days <= 7) return t("common.daysAgo", { count: days });
+  return formatLocaleDate(value, lang);
+}
+
+/** Clock time (hour:minute) localized to the active UI language. */
+export function formatLocaleTime(
+  value: string | number | Date | null | undefined,
+  lang: string,
+): string {
+  if (value == null || value === "") return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat(DATE_LOCALE_MAP[lang] ?? "en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+}
+
 export function shortOrderId(id: string): string {
   return `#${id.slice(0, 8).toUpperCase()}`;
 }

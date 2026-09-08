@@ -2496,7 +2496,6 @@ export function setupProductRoutes(app: Express): void {
         userId: r.user_id,
         orderId: r.order_id ?? null,
         rating: r.rating,
-        title: r.title ?? null,
         comment: r.comment ?? null,
         images: r.images ?? [],
         status: r.status,
@@ -2511,7 +2510,7 @@ export function setupProductRoutes(app: Express): void {
       let myReview: Record<string, unknown> | null = null;
       if (viewerId) {
         const myRes = await query(
-          `SELECT id, rating, title, comment, created_at FROM product_reviews
+          `SELECT id, rating, comment, created_at FROM product_reviews
            WHERE product_id = $1 AND user_id = $2 LIMIT 1`,
           [productId, viewerId],
         );
@@ -2520,7 +2519,6 @@ export function setupProductRoutes(app: Express): void {
           myReview = {
             id: r.id,
             rating: r.rating,
-            title: r.title ?? null,
             comment: r.comment ?? null,
             createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
           };
@@ -2552,7 +2550,6 @@ export function setupProductRoutes(app: Express): void {
       const productId = param(req, "productId");
       const userId = req.user!.userId;
       const rating = Number(req.body?.rating);
-      const title = typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 120) : null;
       const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
 
       if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -2579,15 +2576,15 @@ export function setupProductRoutes(app: Express): void {
       if (existing.rows[0]) {
         reviewId = existing.rows[0].id;
         await query(
-          `UPDATE product_reviews SET rating = $1, title = $2, comment = $3, status = 'approved', updated_at = NOW()
-           WHERE id = $4`,
-          [rating, title, comment, reviewId],
+          `UPDATE product_reviews SET rating = $1, comment = $2, status = 'approved', updated_at = NOW()
+           WHERE id = $3`,
+          [rating, comment, reviewId],
         );
       } else {
         const ins = await query(
-          `INSERT INTO product_reviews (product_id, user_id, shop_id, rating, title, comment, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'approved') RETURNING id`,
-          [productId, userId, shopId, rating, title, comment],
+          `INSERT INTO product_reviews (product_id, user_id, shop_id, rating, comment, status)
+           VALUES ($1, $2, $3, $4, $5, 'approved') RETURNING id`,
+          [productId, userId, shopId, rating, comment],
         );
         reviewId = ins.rows[0].id;
       }
@@ -2605,7 +2602,6 @@ export function setupProductRoutes(app: Express): void {
       const reviewId = param(req, "reviewId");
       const userId = req.user!.userId;
       const rating = Number(req.body?.rating);
-      const title = typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 120) : null;
       const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
 
       if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -2628,8 +2624,8 @@ export function setupProductRoutes(app: Express): void {
       }
       const productId = revRes.rows[0].product_id;
       await query(
-        `UPDATE product_reviews SET rating = $1, title = $2, comment = $3, updated_at = NOW() WHERE id = $4`,
-        [rating, title, comment, reviewId],
+        `UPDATE product_reviews SET rating = $1, comment = $2, updated_at = NOW() WHERE id = $3`,
+        [rating, comment, reviewId],
       );
       await recomputeProductRating(productId);
       res.json({ success: true, data: { id: reviewId } });

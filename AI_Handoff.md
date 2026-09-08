@@ -2677,3 +2677,31 @@ Verification: VelShop `tsc -b --noEmit` PASS · `vite build` PASS · `bun run i1
 - i18n: chat + review keys added to th/en and merged for my (Burmese) via `myChatPatch` in `locales/index.ts`; `i18n:check` parity ✅ (989 keys × 3).
 
 **Verification:** backend `tsc -p backend/tsconfig.json` ✅ · velshop/velseller/velcenter/velnox `tsc -p` ✅ · `i18n:check` ✅ · `git diff --check` clean ✅ · existing test suite 16/17 pass (1 pre-existing unrelated FK failure in velrepeat-core scheduler integration test). Build not run (platform check runs on push).
+
+---
+
+### 2026-09-08 — Reviews + Chat UX refinement (title removed, i18n, viewing-aware notifications)
+
+**Task:** Refine Reviews/Comment UX to feel like a mature marketplace (spec: remove review title, frictionless composer, clean display, centralized localized dates, chat i18n, notification hygiene). No business-rule changes, no DB migration, no shared component changes.
+
+**Audit findings (from real code):**
+- `product_reviews` had a legacy nullable `title` column; the Comments & Chat feature (40cd36a) still exposed it in GET items/myReview, POST and PATCH (validation + SQL). `title` also had a composer input + card display in `ShopProductDetail.tsx` and a `productDetail.reviewTitlePlaceholder` i18n key.
+- Review dates used `formatIsoDate` (th-TH absolute); chat pages had two duplicated `timeLabel()` implementations (ShopChat partly i18n'd, SellerChat hardcoded Thai).
+- `SellerChat.tsx` was 100% hardcoded Thai — no `useLanguage`.
+- Chat notifications were created on every send even when the recipient was viewing the thread (Part 18).
+- After submit/edit/delete, the product page refetched the ENTIRE product (product + reviews + wishlist + recommendations) — wasted requests (Part 21).
+
+**Changes:**
+1. **Review title removed (API + UI + i18n):** `backend/routes/products.ts` — GET items/myReview no longer return `title`; POST/PATCH no longer accept/validate/store it (SQL updated, params renumbered). `ShopProductDetail.tsx` — `title` removed from `ReviewRow`/`MyReview`/`reviewDraft`/payload/JSX (input + card line deleted). `reviewTitlePlaceholder` removed from th/en/my (incl. `myChatPatch`). **No DB migration** — the nullable `title` column stays (existing data preserved, reversible; unused).
+2. **Frictionless composer:** stars + comment only, localized star aria (`productDetail.ariaStar` `{count}`), textarea label (`productDetail.reviewCommentAria`), submit button already disabled while busy (no duplicates).
+3. **Review display:** localized relative dates via new centralized `formatRelativeTime(value, lang, t)` in `packages/shared/src/lib/commerce.ts` (keys `common.justNow/minutesAgo/today/yesterday/daysAgo`, falls back to absolute `formatLocaleDate` > 7 days) — used by review cards + both chat pages. Review image grid renders `r.images[]` when present (display only — no upload; backend has no review-image upload endpoint). Verified-purchase badge unchanged (server-computed).
+4. **Performance:** extracted `loadReviews()` in `ShopProductDetail`; submit/edit/delete now refresh only the reviews endpoint instead of the full product payload.
+5. **Chat i18n:** `SellerChat.tsx` fully localized (`sellerChat.*` keys: title/desc/eyebrow/conversations/chooseConversation/customerFallback/aboutProduct/emptyDesc, reusing `chat.*` for the rest) + added an error state with retry. Message bubble timestamps use new localized `formatLocaleTime`.
+6. **Notification hygiene (Part 18):** `backend/realtime/index.ts` tracks `chat:viewing` / `chat:viewingEnd` presence per user (new `getViewingConversation`); both chat POST handlers skip the `notifyUser` row when the recipient is currently viewing that conversation (realtime `sendToUser` still always fires). `chat-socket.ts` gained `sendChatCommand`; ShopChat + SellerChat emit viewing signals on open/close/switch/unmount.
+
+**Verified unchanged:** one-review-per-user edit/delete with `window.confirm`, keyset pagination (latest-first), rating summary + distribution, server-side rating 1-5 / comment 1-2000 validation, ownership checks (edit/delete own only), server-computed `verifiedPurchase`, React-escaped rendering (XSS-safe), API contract shape (`{items,total,avgRating,distribution,hasMore,nextCursor,myReview}`), WebSocket auth/private channels, unread counts/mark-read flow.
+
+**Database changed:** NO (no migration; `product_reviews.title` column retained, unused).
+**API changes:** review responses/writes no longer carry `title`.
+
+**Verification:** backend `tsc --noEmit` ✅ · velshop `tsc -b --noEmit` ✅ · velseller `tsc -b --noEmit` ✅ · velcenter/velnox `tsc -b` ✅ · `bun run i18n:check` th=en=my=1003 ✅ · velshop `vite build` ✅ · velseller `vite build` ✅ · `git diff --check` clean ✅. Live browser E2E not run in this sandbox (no DATABASE_URL/headless browser) — verified via code trace + builds.

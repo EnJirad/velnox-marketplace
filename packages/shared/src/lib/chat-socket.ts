@@ -140,6 +140,17 @@ export function onChatEvent(event: string, handler: EventHandler): () => void {
   };
 }
 
+/**
+ * Send a lightweight command frame to the server over the open socket
+ * (no-op when disconnected). Used for presence signals such as
+ * `chat:viewing` / `chat:viewingEnd` { conversationId }.
+ */
+export function sendChatCommand(type: string, data?: unknown): void {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type, data }));
+  }
+}
+
 export function offChatEvent(event: string, handler: EventHandler): void {
   const set = handlers.get(event);
   if (set) set.delete(handler);

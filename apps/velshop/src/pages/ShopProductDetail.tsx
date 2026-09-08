@@ -15,7 +15,7 @@ import { useCartFlyAnimation } from "@/components/shop/CartFlyAnimation";
 import {
   PRODUCT_CATEGORY_META,
   formatBaht,
-  formatIsoDate,
+  formatRelativeTime,
   type StoreProduct,
 } from "@velnox/shared/lib/commerce";
 import { setSeo } from "@/lib/seo";
@@ -58,7 +58,6 @@ interface ReviewRow {
   userId: string;
   orderId: string | null;
   rating: number;
-  title: string | null;
   comment: string | null;
   images: string[];
   status: string;
@@ -78,7 +77,6 @@ interface ReviewSummary {
 interface MyReview {
   id: string;
   rating: number;
-  title: string | null;
   comment: string | null;
   createdAt: number;
 }
@@ -211,7 +209,7 @@ export default function ShopProductDetail() {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const getProduct = useAction(api.commerce.getProductDetail);
   const productReviews = useAction(api.customer.productReviews);
   const createReview = useAction(api.customer.createReviewAction);
@@ -238,7 +236,7 @@ export default function ShopProductDetail() {
   const [reviewsLoadingMore, setReviewsLoadingMore] = useState(false);
   const [reviewsError, setReviewsError] = useState(false);
   const [myReview, setMyReview] = useState<MyReview | null>(null);
-  const [reviewDraft, setReviewDraft] = useState({ rating: 5, title: "", comment: "" });
+  const [reviewDraft, setReviewDraft] = useState({ rating: 5, comment: "" });
   const [editingReview, setEditingReview] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [wishlisted, setWishlisted] = useState(false);
@@ -264,6 +262,35 @@ export default function ShopProductDetail() {
   const [similar, setSimilar] = useState<StoreProduct[]>([]);
 
   /* ── Load product + dependent data ──────────────────────────────── */
+
+  /** Load the reviews page + rating summary + the viewer's own review. */
+  const loadReviews = useCallback(async () => {
+    if (!productId) return;
+    try {
+      const revData = (await productReviews({ productId })) as any;
+      if (Array.isArray(revData)) {
+        // Legacy array shape (defensive)
+        setReviews(revData as ReviewRow[]);
+        setReviewSummary((s) => ({ ...s, total: revData.length }));
+      } else {
+        const items = Array.isArray(revData.items) ? revData.items : [];
+        setReviews(items as ReviewRow[]);
+        setReviewSummary({
+          total: Number(revData.total ?? items.length),
+          avgRating: Number(revData.avgRating ?? 0),
+          distribution: revData.distribution ?? { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+        });
+        setReviewHasMore(!!revData.hasMore);
+        setReviewCursor(revData.nextCursor ?? null);
+        setMyReview(revData.myReview ?? null);
+      }
+    } catch (err) {
+      console.error("Load reviews error:", err);
+      setReviewsError(true);
+    } finally {
+      setReviewsLoading(false);
+    }
+  }, [productId, productReviews]);
 
   const load = useCallback(async () => {
     if (!productId) return;
@@ -296,28 +323,10 @@ export default function ShopProductDetail() {
         const autoVariant = pAny.featuredVariant ?? pAny.variants[0];
         setSelectedVariant(autoVariant);
       }
-      const [revs, wl] = await Promise.all([
-        productReviews({ productId }),
+      const [, wl] = await Promise.all([
+        loadReviews(),
         isAuthenticated ? myWishlist() : Promise.resolve([]),
       ]);
-      const revData = (revs ?? {}) as any;
-      if (Array.isArray(revData)) {
-        // Legacy array shape (defensive)
-        setReviews(revData as ReviewRow[]);
-        setReviewSummary((s) => ({ ...s, total: revData.length }));
-      } else {
-        const items = Array.isArray(revData.items) ? revData.items : [];
-        setReviews(items as ReviewRow[]);
-        setReviewSummary({
-          total: Number(revData.total ?? items.length),
-          avgRating: Number(revData.avgRating ?? 0),
-          distribution: revData.distribution ?? { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
-        });
-        setReviewHasMore(!!revData.hasMore);
-        setReviewCursor(revData.nextCursor ?? null);
-        setMyReview(revData.myReview ?? null);
-      }
-      setReviewsLoading(false);
       setWishlisted((wl ?? []).some((i: { productId: string }) => i.productId === productId));
 
       const fetches: Promise<void>[] = [];
@@ -342,7 +351,7 @@ export default function ShopProductDetail() {
     } finally {
       setLoading(false);
     }
-  }, [productId, getProduct, productReviews, isAuthenticated, myWishlist, catalogProducts]);
+  }, [productId, getProduct, loadReviews, isAuthenticated, myWishlist, catalogProducts]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -382,7 +391,6 @@ export default function ShopProductDetail() {
       const payload = {
         productId,
         rating: reviewDraft.rating,
-        title: reviewDraft.title.trim() || undefined,
         comment: reviewDraft.comment.trim(),
       };
       if (myReview) {
@@ -393,25 +401,25 @@ export default function ShopProductDetail() {
         toast.success(t("productDetail.reviewSubmitted"));
       }
       setEditingReview(false);
-      setReviewDraft({ rating: 5, title: "", comment: "" });
-      await load();
+      setReviewDraft({ rating: 5, comment: "" });
+      await loadReviews();
     } catch (err) {
       console.error("Submit review error:", err);
       toast.error(t("productDetail.reviewRequired"));
     } finally {
       setReviewBusy(false);
     }
-  }, [productId, reviewBusy, reviewDraft, myReview, updateReview, createReview, load, t]);
+  }, [productId, reviewBusy, reviewDraft, myReview, updateReview, createReview, loadReviews, t]);
 
   const startEditReview = useCallback(() => {
     if (!myReview) return;
-    setReviewDraft({ rating: myReview.rating, title: myReview.title ?? "", comment: myReview.comment ?? "" });
+    setReviewDraft({ rating: myReview.rating, comment: myReview.comment ?? "" });
     setEditingReview(true);
   }, [myReview]);
 
   const cancelEditReview = useCallback(() => {
     setEditingReview(false);
-    setReviewDraft({ rating: 5, title: "", comment: "" });
+    setReviewDraft({ rating: 5, comment: "" });
   }, []);
 
   const handleDeleteReview = useCallback(async () => {
@@ -423,15 +431,15 @@ export default function ShopProductDetail() {
       toast.success(t("productDetail.reviewDeleted"));
       setMyReview(null);
       setEditingReview(false);
-      setReviewDraft({ rating: 5, title: "", comment: "" });
-      await load();
+      setReviewDraft({ rating: 5, comment: "" });
+      await loadReviews();
     } catch (err) {
       console.error("Delete review error:", err);
       toast.error(t("productDetail.reviewRequired"));
     } finally {
       setReviewBusy(false);
     }
-  }, [myReview, reviewBusy, deleteReview, load, t]);
+  }, [myReview, reviewBusy, deleteReview, loadReviews, t]);
 
   /* ── Product view tracking ──────────────────────────────────────── */
 
@@ -1232,27 +1240,22 @@ export default function ShopProductDetail() {
                               key={n}
                               type="button"
                               onClick={() => setReviewDraft((d) => ({ ...d, rating: n }))}
-                              className="transition-transform hover:scale-110"
-                              aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                              className="rounded-md p-1 transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+                              aria-label={t("productDetail.ariaStar", { count: n })}
                             >
                               <Star className={`size-5 ${n <= reviewDraft.rating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
                             </button>
                           ))}
                         </div>
-                        <input
-                          value={reviewDraft.title}
-                          onChange={(e) => setReviewDraft((d) => ({ ...d, title: e.target.value }))}
-                          placeholder={t("productDetail.reviewTitlePlaceholder")}
-                          maxLength={120}
-                          className="mt-3 w-full rounded-[10px] border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                        />
+
                         <textarea
                           value={reviewDraft.comment}
                           onChange={(e) => setReviewDraft((d) => ({ ...d, comment: e.target.value }))}
                           placeholder={t("productDetail.reviewCommentPlaceholder")}
+                          aria-label={t("productDetail.reviewCommentAria")}
                           rows={3}
                           maxLength={2000}
-                          className="mt-2 w-full resize-none rounded-[10px] border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                          className="mt-3 w-full resize-none rounded-[10px] border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                         />
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           <Button
@@ -1325,7 +1328,7 @@ export default function ShopProductDetail() {
                                   <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{r.customerName ?? t("productDetail.customer")}</p>
                                 </div>
                               </div>
-                              <span className="shrink-0 text-[11px] text-slate-400">{formatIsoDate(r.createdAt)}</span>
+                              <span className="shrink-0 text-[11px] text-slate-400">{formatRelativeTime(r.createdAt, lang, t)}</span>
                             </div>
                             {r.verifiedPurchase && (
                               <p className="mt-2 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
@@ -1333,8 +1336,14 @@ export default function ShopProductDetail() {
                                 {t("productDetail.verifiedPurchase")}
                               </p>
                             )}
-                            {r.title && <p className="mt-2 text-sm font-semibold text-slate-900">{r.title}</p>}
-                            {r.comment && <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-600">{r.comment}</p>}
+                            {r.comment && <p className="mt-1.5 whitespace-pre-line text-sm leading-6 text-slate-600">{r.comment}</p>}
+                            {Array.isArray(r.images) && r.images.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {r.images.map((img, i) => (
+                                  <img key={i} src={img} alt="" loading="lazy" className="size-16 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                                ))}
+                              </div>
+                            )}
                             {r.mine && (
                               <div className="mt-2 flex items-center gap-2">
                                 <button type="button" onClick={startEditReview} className="text-xs font-medium text-slate-500 transition-colors hover:text-slate-700">{t("productDetail.editReview")}</button>

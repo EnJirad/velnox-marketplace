@@ -10,6 +10,14 @@ interface ConnectedClient {
 
 const clients = new Map<WebSocket, ConnectedClient>();
 
+/**
+ * Presence: which conversation a user is currently viewing (chat:viewing /
+ * chat:viewingEnd frames). Used so chat notifications are skipped while the
+ * recipient is already looking at that thread — the message still arrives
+ * over the socket; only the notification row/toast is suppressed.
+ */
+const viewingConversation = new Map<string, string>();
+
 /** Extract the velnox_session cookie from an upgrade request. */
 function readSessionCookie(req: IncomingMessage): string | null {
   const header = req.headers.cookie;
@@ -71,6 +79,20 @@ export function setupWebSocket(wss: WebSocketServer): void {
           client.subscriptions.delete(msg.channel);
           ws.send(JSON.stringify({ type: "unsubscribed", channel: msg.channel }));
         }
+
+        // Chat presence — track which conversation this user is viewing.
+        if (msg.type === "chat:viewing" || msg.type === "chat:viewingEnd") {
+          const data = (msg as { data?: { conversationId?: unknown } }).data;
+          const conversationId =
+            typeof data?.conversationId === "string" ? data.conversationId : null;
+          if (client.userId) {
+            if (msg.type === "chat:viewing" && conversationId) {
+              viewingConversation.set(client.userId, conversationId);
+            } else {
+              viewingConversation.delete(client.userId);
+            }
+          }
+        }
       } catch { /* ignore malformed messages */ }
     });
 
@@ -107,6 +129,11 @@ export function sendToUser(userId: string, channel: string, event: string, data:
       client.ws.send(payload);
     }
   }
+}
+
+/** Whether the user is currently viewing the given conversation thread. */
+export function getViewingConversation(userId: string, conversationId: string): boolean {
+  return viewingConversation.get(userId) === conversationId;
 }
 
 export const CHANNELS = {

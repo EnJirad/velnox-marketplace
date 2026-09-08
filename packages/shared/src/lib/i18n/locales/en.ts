@@ -20,6 +20,11 @@ export const en: Dict = {
     confirm: "Confirm",
     remove: "Remove",
     edit: "Edit",
+    justNow: "Just now",
+    minutesAgo: "{count} minutes ago",
+    today: "Today",
+    yesterday: "Yesterday",
+    daysAgo: "{count} days ago",
   },
 
   nav: {
@@ -377,8 +382,9 @@ export const en: Dict = {
     yourReview: "Your review",
     writeReview: "Write a review",
     ratingLabel: "Rating",
-    reviewTitlePlaceholder: "Title (optional)",
+    ariaStar: "Rate {count} stars",
     reviewCommentPlaceholder: "Share your experience with this product...",
+    reviewCommentAria: "Comment",
     submitReview: "Submit review",
     updateReview: "Save changes",
     editReview: "Edit",
@@ -1125,6 +1131,17 @@ export const en: Dict = {
     justNow: "Just now",
     typeMessageAria: "Type a message",
     sendAria: "Send message",
+  },
+
+  sellerChat: {
+    title: "Chat",
+    desc: "Reply to customers asking about your shop's products",
+    eyebrow: "velseller · customer chat",
+    conversations: "Conversations",
+    chooseConversation: "Select a conversation to reply",
+    customerFallback: "Customer",
+    aboutProduct: "Asking about a product",
+    emptyDesc: "When a customer taps \"Chat with shop\" the conversation appears here",
   },
 
   // __APPEND__

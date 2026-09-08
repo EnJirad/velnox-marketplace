@@ -281,8 +281,9 @@ const myChatPatch = {
     yourReview: "သင့်သုံးသပ်ချက်",
     writeReview: "သုံးသပ်ချက်ရေးရန်",
     ratingLabel: "အဆင့်သတ်မှတ်ချက်",
-    reviewTitlePlaceholder: "ခေါင်းစဉ် (ချန်လှပ်နိုင်သည်)",
+    ariaStar: "{count} ကြယ်သတ်မှတ်ရန်",
     reviewCommentPlaceholder: "ဤပစ္စည်းနှင့်ပတ်သက်သော သင့်အတွေ့အကြုံကို မျှဝေပါ...",
+    reviewCommentAria: "မှတ်ချက်",
     submitReview: "သုံးသပ်ချက်တင်ရန်",
     updateReview: "ပြောင်းလဲမှုများသိမ်းရန်",
     editReview: "ပြင်ရန်",
@@ -327,6 +328,16 @@ const myChatPatch = {
     typeMessageAria: "စာတိုရိုက်ပါ",
     sendAria: "စာတိုပို့ရန်",
   } satisfies Partial<Dict["chat"]>,
+  sellerChat: {
+    title: "ချတ်",
+    desc: "ဆိုင်၏ ကုန်ပစ္စည်းများအကြောင်း မေးမြန်းသော ဖောက်သည်များကို ပြန်ဖြေပါ",
+    eyebrow: "velseller · ဖောက်သည်များနှင့် စကားပြောရန်",
+    conversations: "စကားပြောဆိုမှုများ",
+    chooseConversation: "ပြန်ဖြေရန် စကားပြောဆိုမှုတစ်ခု ရွေးပါ",
+    customerFallback: "ဖောက်သည်",
+    aboutProduct: "ကုန်ပစ္စည်းအကြောင်း မေးမြန်းနေသည်",
+    emptyDesc: "ဖောက်သည်က \"ဆိုင်နှင့် စကားပြောရန်\" နှိပ်သောအခါ ဤနေရာတွင် ပေါ်လာပါမည်",
+  } satisfies Partial<Dict["sellerChat"]>,
 };
 
 /**
@@ -351,6 +362,7 @@ export const translations: Record<Language, Dict> = {
     shopDetail: { ...myBase.shopDetail, ...myShopPatch.shopDetail },
     productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
     chat: { ...myChatPatch.chat },
+    sellerChat: myChatPatch.sellerChat,
     cartPage: { ...myBase.cartPage, ...myShopPatch.cartPage },
     velrepeat: { ...myBase.velrepeat, ...myShopPatch.velrepeat },
     cookies: myShopPatch.cookies,

@@ -21,6 +21,11 @@ export const th = {
     confirm: "ยืนยัน",
     remove: "ลบ",
     edit: "แก้ไข",
+    justNow: "เมื่อสักครู่",
+    minutesAgo: "เมื่อ {count} นาทีที่แล้ว",
+    today: "วันนี้",
+    yesterday: "เมื่อวาน",
+    daysAgo: "{count} วันที่แล้ว",
   },
 
   nav: {
@@ -378,8 +383,9 @@ export const th = {
     yourReview: "รีวิวของคุณ",
     writeReview: "เขียนรีวิว",
     ratingLabel: "คะแนน",
-    reviewTitlePlaceholder: "หัวข้อ (ไม่บังคับ)",
+    ariaStar: "ให้คะแนน {count} ดาว",
     reviewCommentPlaceholder: "เล่าประสบการณ์เกี่ยวกับสินค้านี้...",
+    reviewCommentAria: "ความคิดเห็น",
     submitReview: "ส่งรีวิว",
     updateReview: "บันทึกการแก้ไข",
     editReview: "แก้ไข",
@@ -1126,6 +1132,17 @@ export const th = {
     justNow: "เมื่อสักครู่",
     typeMessageAria: "พิมพ์ข้อความ",
     sendAria: "ส่งข้อความ",
+  },
+
+  sellerChat: {
+    title: "แชท",
+    desc: "ตอบข้อความจากลูกค้าที่สอบถามสินค้าในร้านของคุณ",
+    eyebrow: "velseller · แชทกับลูกค้า",
+    conversations: "การสนทนา",
+    chooseConversation: "เลือกการสนทนาเพื่อตอบลูกค้า",
+    customerFallback: "ลูกค้า",
+    aboutProduct: "สอบถามเกี่ยวกับสินค้า",
+    emptyDesc: "เมื่อลูกค้ากด \"แชทกับร้านค้า\" การสนทนาจะมาแสดงที่นี่",
   },
 
   // __APPEND__

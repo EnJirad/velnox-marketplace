@@ -22,6 +22,11 @@ export const my = {
     confirm: "အတည်ပြုမည်",
     remove: "ဖယ်ရှားမည်",
     edit: "ပြင်မည်",
+    justNow: "ခုနက",
+    minutesAgo: "{count} မိနစ်က",
+    today: "ယနေ့",
+    yesterday: "မနေ့က",
+    daysAgo: "{count} ရက်က",
   },
 
   nav: {
