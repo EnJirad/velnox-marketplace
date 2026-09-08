@@ -28,4 +28,4 @@ Monorepo (bun workspaces: `apps/velshop|velseller|velcenter|velnox`, `backend`, 
 
 ## Current state (2026-09-07)
 - `fix/velshop-selection-sheet-preview-details-order` @`5ec53b7` — preview fix (name/description into right details column;already merged to `main` via PR #9;`main` since diverged (`40cd36a` Comments & Chat ± layout moved name/description **out** of right column). Opening a PR from that branch now fails (422 "No commits between…").
-- **Open/pending:** Dependabot auto-merge GitHub Action (requested, not yet implemented).
+- **Dependabot auto-merge GitHub Action** — requested 2026-09-07;implemented in `.github/workflows/dependabot-auto-merge.yml` (runs tests;auto-merges Dependabot PRs with `gh pr merge --auto --squash`). Pushed on the preview-details branch (no PR opened unless asked).
