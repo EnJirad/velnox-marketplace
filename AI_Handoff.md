@@ -2705,3 +2705,17 @@ Verification: VelShop `tsc -b --noEmit` PASS · `vite build` PASS · `bun run i1
 **API changes:** review responses/writes no longer carry `title`.
 
 **Verification:** backend `tsc --noEmit` ✅ · velshop `tsc -b --noEmit` ✅ · velseller `tsc -b --noEmit` ✅ · velcenter/velnox `tsc -b` ✅ · `bun run i18n:check` th=en=my=1003 ✅ · velshop `vite build` ✅ · velseller `vite build` ✅ · `git diff --check` clean ✅. Live browser E2E not run in this sandbox (no DATABASE_URL/headless browser) — verified via code trace + builds.
+
+### 2026-09-08 — Production readiness audit (NO code changes)
+
+Full audit of customer flow / cart-checkout / orders / auth / security / products / reviews / chat / notifications / R2 / mobile / i18n / DB / builds. Verdict: **NOT READY for MVP**.
+
+P0 (2):
+1. Seller order management backend MISSING — `/api/seller/orders`, `/api/seller/orders/:id/status`, `/api/seller/subscriptions`, `/api/subscriptions/process-due` are called by VelSeller (SellerOrders.tsx) but no route exists. Sellers cannot see/process orders; order lifecycle dead-ends (no confirm/ship/deliver transitions anywhere).
+2. Non-variant inventory TOCTOU oversell — checkout validates stock outside the transaction then `reserved = reserved + qty` unconditionally; concurrent checkouts can oversell. (Variant path is safe: atomic `WHERE stock >= $1`.)
+
+P1 highlights: abandoned Stripe checkout leaks stock (expired → cancelled, no restore); requireAuth never checks revoked_tokens (logout doesn't revoke on other routes); ShopOrderDetail review/return post to non-existent `/api/customer/reviews` + `/api/customer/returns`; VelSeller Goals/Reorder/Income + VelCenter orders/overview/intel/staff/audit tabs call missing endpoints; product hard-delete cascades reviews + velrepeat_items; no rate limiting / CSRF tokens.
+
+P2 highlights: root `typecheck` script broken (bun --filter + missing per-app typecheck scripts); hardcoded Thai in VelSeller/VelCenter pages; chat clientId not persisted (dupe risk on retry); COD orders never bump sold_count; product_reviews lacks UNIQUE(product_id,user_id); guest cart dropped on sign-in; `/api/cart` placeholder dead routes.
+
+Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 pass / 1 skip (integration, needs DB). Detailed report given to user; fixes deferred per instruction.
