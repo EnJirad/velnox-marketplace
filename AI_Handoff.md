@@ -373,6 +373,21 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-09 — P1 Security Hardening: Rate Limiting + CSRF/Origin + Abuse Protection
+
+**Problem:** No rate limiting anywhere; cookie auth uses `SameSite=None` (cross-site API) with no Origin/CSRF validation; global JSON body limit was 10mb; upload presign and chat/checkout/review mutations were unprotected against floods; WebSocket had no frame budget.
+
+**Fixes:**
+- `backend/middleware/rate-limit.ts` (NEW) — bounded in-memory fixed-window limiter (expiring buckets, 60s sweep, hard 20k bucket cap, `Retry-After`, 429 with frontend-compatible `{success,error}` envelope). Differentiated route-class rules: auth endpoints IP-keyed (30–120/min), money/order mutations user-keyed 5–10/min (checkout already has `checkout_requests` idempotency as primary guard), chat 30/min, reviews 10/min, upload intents 20/min, seller/admin 60/min, public reads 300/min per IP, 600/min catch-all. Authenticated keys derive from the session JWT (userId) when present, else IP. Documented as single-instance store (no Redis in infra) — swap to shared store if scaled to multiple instances.
+- `backend/middleware/origin-guard.ts` (NEW) — CSRF defense via Origin validation for state-changing requests: browser Origin must be in the CORS allowlist (CORS_ORIGINS + known prod origins + dev origins), else 403. No-Origin requests (curl, Stripe webhook, mobile) allowed; GET/HEAD/OPTIONS never checked; OAuth/WS unaffected.
+- `backend/server.ts` — `app.set("trust proxy", 1)` (correct `req.ip` behind Render), JSON body limit 10mb → 1mb (R2 bytes go via presigned URLs), wired origin guard + rate limiter after CORS, WS `maxPayload: 16KB`.
+- `backend/realtime/index.ts` — per-connection frame budget (120 frames/10s → close 1008; >4KB frame → close 1009).
+- `backend/tests/security-hardening.test.ts` (NEW) — 18 tests: limiter under/over/window-expiry, per-user vs per-IP keying, bounded store + sweep cleanup, route-class floods (checkout/chat/reviews → 429 at thresholds), origin guard (trusted/untrusted/no-origin/GET), oversized body → 413.
+
+**Verification:** backend typecheck ✅ · 72 backend tests pass / 14 DB-gated skip / 0 fail · all 4 apps typecheck + build ✅ · i18n parity ✅ · `git diff --check` ✅
+
+---
+
 ### 2026-09-09 — P1 #3 Order Detail / Reviews / Returns API Contract Audit & Fix
 
 **Problem:**

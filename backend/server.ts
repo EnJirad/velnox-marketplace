@@ -3,6 +3,8 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
+import { rateLimitSecurity } from "./middleware/rate-limit.js";
+import { createOriginGuard } from "./middleware/origin-guard.js";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { setupRoutes } from "./routes/index.js";
@@ -26,6 +28,10 @@ const server = createServer(app);
 
 // ─── Middleware ──────────────────────────────────────────
 app.use(helmet());
+// Render sits behind a single proxy hop — required for correct req.ip
+// (used by IP-keyed rate limits). trust proxy = 1 trusts only the
+// immediate peer's X-Forwarded-For value, not arbitrary spoofing.
+app.set("trust proxy", 1);
 app.use(cookieParser());
 
 // Stripe webhook needs the raw body for signature verification.
@@ -39,7 +45,11 @@ app.use((req, res, next) => {
   }
 });
 
-app.use(express.json({ limit: "10mb" }));
+// JSON payload cap. All bodies here are small (chat ≤4k chars, reviews ≤2k,
+// checkout/address metadata) — R2 file bytes go straight to Cloudflare via
+// presigned URLs and never transit the API. 10mb was more than any legit
+// request needs and invited oversized-body abuse.
+app.use(express.json({ limit: "1mb" }));
 
 const corsOrigins = process.env.CORS_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean) || [];
 
@@ -66,6 +76,16 @@ app.use(cors({
   origin: allOrigins,
   credentials: true,
 }));
+
+// ─── CSRF / Origin validation ──────────────────────────────
+// Cookie auth + SameSite=None means browsers will attach the session cookie
+// to cross-site state-changing requests. The Origin header (always sent by
+// browsers on POST/PUT/PATCH/DELETE) must be a trusted Velnox origin.
+app.use(createOriginGuard(allOrigins));
+
+// ─── Rate limiting ─────────────────────────────────────────
+// Differentiated limits per route class (see middleware/rate-limit.ts).
+app.use(rateLimitSecurity);
 
 // ─── Auto-create variant tables if missing (V0028) ─────────────────────
 async function ensureVariantTables(): Promise<void> {
@@ -293,7 +313,9 @@ setupChatRoutes(app);
 setupAdminRoutes(app);
 
 // ─── WebSocket ──────────────────────────────────────────
-const wss = new WebSocketServer({ server, path: "/ws" });
+// maxPayload caps WebSocket frames (control + presence frames only — chat
+// messages themselves go over REST, which is rate-limited separately).
+const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 16 * 1024 });
 setupWebSocket(wss);
 
 // ─── Start ──────────────────────────────────────────────

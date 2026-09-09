@@ -8,7 +8,14 @@ interface ConnectedClient {
   userId?: string;
   jti?: string;
   subscriptions: Set<string>;
+  /** Fixed-window frame budget — stops connection-level flooding. */
+  frameCount: number;
+  frameWindowStart: number;
 }
+
+/** Max client frames per window before the connection is closed (1008). */
+const MAX_FRAMES_PER_WINDOW = 120;
+const FRAME_WINDOW_MS = 10_000;
 
 const clients = new Map<WebSocket, ConnectedClient>();
 
@@ -77,17 +84,39 @@ export function setupWebSocket(wss: WebSocketServer): void {
   startRevocationSweep();
   wss.on("connection", (ws, req: IncomingMessage) => {
     const authed = resolveUserFromRequest(req);
+    const now = Date.now();
     const client: ConnectedClient = {
       ws,
       userId: authed?.userId,
       jti: authed?.jti,
       subscriptions: new Set(),
+      frameCount: 0,
+      frameWindowStart: now,
     };
     clients.set(ws, client);
 
     ws.on("message", (data) => {
+      const raw = data.toString();
+      // Per-connection frame budget — the socket only carries small control /
+      // presence frames (chat messages go over REST), so a flood means abuse.
+      if (raw.length > 4096) {
+        ws.close(1009, "Frame too large");
+        clients.delete(ws);
+        return;
+      }
+      const msgNow = Date.now();
+      if (msgNow - client.frameWindowStart >= FRAME_WINDOW_MS) {
+        client.frameCount = 0;
+        client.frameWindowStart = msgNow;
+      }
+      client.frameCount += 1;
+      if (client.frameCount > MAX_FRAMES_PER_WINDOW) {
+        ws.close(1008, "Rate limited");
+        clients.delete(ws);
+        return;
+      }
       try {
-        const msg = JSON.parse(data.toString()) as { type: string; channel?: string };
+        const msg = JSON.parse(raw) as { type: string; channel?: string };
 
         // Only allow subscribing to your OWN private user channel, or to
         // public broadcast channels (cart/order/product/notification feeds).
