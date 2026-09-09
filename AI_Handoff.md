@@ -373,6 +373,25 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-09 — P1 #6: product_reviews UNIQUE constraint + product soft-delete
+
+**Problem:**
+1. `product_reviews` had NO `UNIQUE(product_id, user_id)` constraint. The review create endpoint (POST `/api/products/:productId/reviews`) used a SELECT→INSERT/UPDATE pattern, so two concurrent requests for the same (product, user) could both pass the existence check and insert **duplicate reviews**.
+2. `DELETE /api/seller/products/:productId` did a hard `DELETE FROM products`, and the `ON DELETE CASCADE` chain silently destroyed customer **reviews** and **VelRepeat plan items** (`product_reviews` and `velrepeat_items` both reference `products(id) ON DELETE CASCADE`) every time a seller deleted a product.
+
+**Fixes:**
+- `db/migrations/038_product_reviews_unique.sql` (NEW) — additive + idempotent migration: (1) dedupes existing duplicate reviews keeping the newest per (product, user) (ties broken by lower id); (2) adds `uq_product_reviews_product_user UNIQUE (product_id, user_id)`; (3) recomputes `products.rating` / `review_count` for touched products so catalog aggregates stay correct. Synced into `db/schema.sql`, `db/run-sqleditor.sql` (inline UNIQUE on fresh CREATE TABLE), and `db/run-update.sql` (V0038).
+- `backend/routes/products.ts` — review create now uses an atomic `INSERT … ON CONFLICT (product_id, user_id) DO UPDATE` upsert (latest rating wins, order_id backfilled via COALESCE). Falls back to the legacy SELECT→INSERT/UPDATE path only while migration 038 is still pending (Postgres error 42P10) so deploys that land before the migration never 500.
+- `backend/routes/products.ts` — DELETE product is now a **soft delete**: `UPDATE products SET status = 'archived'` instead of hard DELETE. Archived products vanish from the catalog (all customer queries filter `status='published'`), can no longer be added to cart, are blocked at checkout, and are skipped by reorder + VelRepeat runs — but reviews, order snapshots, and VelRepeat plan items survive, and the seller can restore the product via `PATCH /api/seller/products/:productId/status`. R2 images are no longer deleted on archive (restore-friendly). `GET /api/seller/products` excludes archived rows so the seller list still behaves like "deleted". `product_count` decrement now only fires when a published product was archived (previously it decremented unconditionally, corrupting the count for draft/pending deletes).
+- `backend/tests/reviews-unique-soft-delete.test.ts` (NEW) — 3 always-run unit tests asserting migration/schema sync (migration 038 + inline UNIQUE in schema.sql/run-sqleditor.sql + V0038 in run-update.sql) + 3 DB-gated integration tests (upsert collapses double-submits to one row with latest rating; unique constraint rejects a second row; archiving preserves reviews + VelRepeat items and hides the product from the catalog).
+
+**Verification:**
+- Backend typecheck ✅ · Backend tests: 75 pass / 17 DB-gated skip / 0 fail
+- All 4 apps typecheck + production build ✅ · i18n parity ✅ (th=en=my=1003) · `git diff --check` ✅
+- Database changed: YES — additive migration 038 (unique constraint + dedupe + recompute). Applied to production automatically by `.github/workflows/migrate-neon.yml` on push to main.
+
+---
+
 ### 2026-09-09 — P1 Security Hardening: Rate Limiting + CSRF/Origin + Abuse Protection
 
 **Problem:** No rate limiting anywhere; cookie auth uses `SameSite=None` (cross-site API) with no Origin/CSRF validation; global JSON body limit was 10mb; upload presign and chat/checkout/review mutations were unprotected against floods; WebSocket had no frame budget.

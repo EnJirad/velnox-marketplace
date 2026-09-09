@@ -5,7 +5,7 @@
  *   GET    /api/seller/products                      — List seller's products
  *   POST   /api/seller/products                      — Create product
  *   PATCH  /api/seller/products/:productId            — Update product
- *   DELETE /api/seller/products/:productId            — Delete product + images
+ *   DELETE /api/seller/products/:productId            — Archive product (soft delete)
  *   PATCH  /api/seller/products/:productId/status     — Set product status
  *   PATCH  /api/seller/products/:productId/stock      — Set inventory quantity
  *   PATCH  /api/seller/products/:productId/reorder-level — Set reorder level
@@ -525,7 +525,7 @@ export function setupProductRoutes(app: Express): void {
         `SELECT p.*, sh.seller_id
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
-         WHERE p.shop_id = $1
+         WHERE p.shop_id = $1 AND p.status <> 'archived'
          ORDER BY p.created_at DESC`,
         [shop.id]
       );
@@ -1133,27 +1133,29 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
-      // Delete product images from R2
-      const images = await query("SELECT url FROM product_images WHERE product_id = $1", [productId]);
-      for (const img of images.rows) {
-        if (img.url) deleteR2Object(urlToKey(img.url));
-      }
-
-      // Delete product (CASCADE handles product_images and inventory)
+      // Soft delete (P1 #6): archive instead of hard-deleting so customer
+      // reviews, order snapshots, and VelRepeat plan items are never silently
+      // destroyed by the ON DELETE CASCADE chain. Archived products vanish
+      // from the catalog (customer queries filter status='published'), can no
+      // longer be added to cart, and are skipped by VelRepeat runs — but the
+      // historical data survives and the seller can restore the product via
+      // PATCH /api/seller/products/:productId/status.
+      const before = await query("SELECT shop_id, status FROM products WHERE id = $1", [productId]);
       const shopResult = await query(
-        `DELETE FROM products WHERE id = $1 RETURNING shop_id`,
+        `UPDATE products SET status = 'archived', updated_at = NOW()
+         WHERE id = $1 RETURNING shop_id`,
         [productId]
       );
 
-      // Decrement shop product count
-      if (shopResult.rows[0]?.shop_id) {
+      // Decrement shop product count only when a published product was archived
+      if (before.rows[0]?.status === "published" && shopResult.rows[0]?.shop_id) {
         await query(
           "UPDATE shops SET product_count = GREATEST(product_count - 1, 0), updated_at = NOW() WHERE id = $1",
           [shopResult.rows[0].shop_id]
         );
       }
 
-      console.log(`[products] deleted: ${productId} by seller ${seller.id}`);
+      console.log(`[products] archived: ${productId} by seller ${seller.id}`);
 
       res.json({ success: true, data: { id: productId } });
     } catch (err) {
@@ -2545,6 +2547,13 @@ export function setupProductRoutes(app: Express): void {
   });
 
   // ── POST /api/products/:productId/reviews ──────────────────────────────
+  /** True when an ON CONFLICT upsert failed because the unique constraint from
+   *  migration 038 is not applied yet — callers fall back to the legacy
+   *  SELECT→INSERT/UPDATE path until the migration lands. */
+  function isMissingReviewConstraint(err: unknown): boolean {
+    return (err as { code?: string } | null)?.code === "42P10";
+  }
+
   // Create or update the viewer's own review (one review per user per product).
   app.post("/api/products/:productId/reviews", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -2573,28 +2582,50 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
-      const existing = await query("SELECT id FROM product_reviews WHERE product_id = $1 AND user_id = $2", [
-        productId,
-        userId,
-      ]);
+      // Atomic upsert — UNIQUE(product_id, user_id) (migration 038) makes
+      // concurrent double-submits collapse into a single review instead of
+      // racing the old SELECT→INSERT and creating duplicates.
       let reviewId: string;
-      if (existing.rows[0]) {
-        reviewId = existing.rows[0].id;
-        // Backfill order_id when submitted from Order Detail (the product-page
-        // flow has no order context).
-        await query(
-          `UPDATE product_reviews SET rating = $1, comment = $2, status = 'approved',
-                  order_id = COALESCE($3, order_id), updated_at = NOW()
-           WHERE id = $4`,
-          [rating, comment, orderId, reviewId],
-        );
-      } else {
+      try {
         const ins = await query(
           `INSERT INTO product_reviews (product_id, user_id, shop_id, order_id, rating, comment, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'approved') RETURNING id`,
+           VALUES ($1, $2, $3, $4, $5, $6, 'approved')
+           ON CONFLICT (product_id, user_id) DO UPDATE
+             SET rating = EXCLUDED.rating,
+                 comment = EXCLUDED.comment,
+                 status = 'approved',
+                 order_id = COALESCE(EXCLUDED.order_id, product_reviews.order_id),
+                 updated_at = NOW()
+           RETURNING id`,
           [productId, userId, shopId, orderId, rating, comment],
         );
         reviewId = ins.rows[0].id;
+      } catch (err) {
+        // Migration 038 may not be applied yet (deploy vs migrate ordering).
+        // Keep review creation working until the constraint lands.
+        if (!isMissingReviewConstraint(err)) throw err;
+        const existing = await query("SELECT id FROM product_reviews WHERE product_id = $1 AND user_id = $2", [
+          productId,
+          userId,
+        ]);
+        if (existing.rows[0]) {
+          reviewId = existing.rows[0].id;
+          // Backfill order_id when submitted from Order Detail (the product-page
+          // flow has no order context).
+          await query(
+            `UPDATE product_reviews SET rating = $1, comment = $2, status = 'approved',
+                    order_id = COALESCE($3, order_id), updated_at = NOW()
+             WHERE id = $4`,
+            [rating, comment, orderId, reviewId],
+          );
+        } else {
+          const ins = await query(
+            `INSERT INTO product_reviews (product_id, user_id, shop_id, order_id, rating, comment, status)
+             VALUES ($1, $2, $3, $4, $5, $6, 'approved') RETURNING id`,
+            [productId, userId, shopId, orderId, rating, comment],
+          );
+          reviewId = ins.rows[0].id;
+        }
       }
       await recomputeProductRating(productId);
       res.json({ success: true, data: { id: reviewId } });

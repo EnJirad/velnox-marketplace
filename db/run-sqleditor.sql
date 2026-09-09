@@ -613,7 +613,8 @@ CREATE TABLE IF NOT EXISTS product_reviews (
   images JSONB DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (product_id, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);

@@ -1378,3 +1378,38 @@ ALTER TABLE orders
 
 CREATE INDEX IF NOT EXISTS idx_orders_unreleased
   ON orders (id) WHERE inventory_released = FALSE;
+
+-- =============================================================
+-- Migration: V0038
+-- Date: 2026-09-09
+-- Description: product_reviews UNIQUE(product_id, user_id) + dedupe
+-- Reason: the review create endpoint used SELECT→INSERT, so concurrent
+--         double-submits could create duplicate reviews. The constraint
+--         makes the race impossible; existing duplicates are removed
+--         (newest kept) and rating/review_count are recomputed.
+-- =============================================================
+
+DELETE FROM product_reviews a
+USING product_reviews b
+WHERE a.product_id = b.product_id
+  AND a.user_id = b.user_id
+  AND (a.created_at < b.created_at OR (a.created_at = b.created_at AND a.id > b.id));
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'uq_product_reviews_product_user'
+  ) THEN
+    ALTER TABLE product_reviews
+      ADD CONSTRAINT uq_product_reviews_product_user UNIQUE (product_id, user_id);
+  END IF;
+END $$;
+
+UPDATE products p
+SET rating = COALESCE(
+      (SELECT AVG(rating)::numeric(3,2) FROM product_reviews r
+       WHERE r.product_id = p.id AND r.status = 'approved'),
+      p.rating),
+    review_count = (SELECT COUNT(*) FROM product_reviews r
+                    WHERE r.product_id = p.id AND r.status = 'approved')
+WHERE p.id IN (SELECT DISTINCT product_id FROM product_reviews);
