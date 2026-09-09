@@ -1452,12 +1452,6 @@ export default function ShopProductDetail() {
               </div>
             </div>
 
-            {/* Product name (expandable) */}
-            <div className="mt-3 min-w-0 overflow-hidden">
-              <p className="text-sm font-semibold leading-5 text-slate-900" style={{ overflowWrap: "anywhere" }}>
-                {product.name}
-              </p>
-            </div>
           </div>
 
           {/* ── Scrollable options area ── */}
