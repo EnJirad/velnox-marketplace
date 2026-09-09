@@ -28,6 +28,17 @@ function param(req: Request, key: string): string {
 }
 
 /**
+ * Generate a human-readable order number like VNX-20260909-AB12CD.
+ * Used for COD orders (Stripe orders get this from stripe.ts).
+ */
+function generateOrderNumber(): string {
+  const date = new Date();
+  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
+  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `VNX-${dateStr}-${rand}`;
+}
+
+/**
  * Resolve order item display data (snapshot-first) for one or more orders.
  *
  * Image priority: purchased snapshot → current variant image → product gallery.
@@ -881,12 +892,13 @@ export function setupCartRoutes(app: Express): void {
             totalAmount += parseFloat(item.price) * item.quantity;
           }
 
-          // Create order
+          // Create order (with human-readable order number)
+          const orderNumber = generateOrderNumber();
           const orderResult = await client.query(
-            `INSERT INTO orders (user_id, shop_id, status, total_amount, currency, shipping_address_id, shipping_address, notes)
-             VALUES ($1, $2, 'pending', $3, 'THB', $4, $5, $6)
+            `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency, shipping_address_id, shipping_address, notes)
+             VALUES ($1, $2, $3, 'pending', $4, 'THB', $5, $6, $7)
              RETURNING id, created_at`,
-            [userId, shopId, totalAmount, shippingAddressId || null, serverAddressSnapshot ? JSON.stringify(serverAddressSnapshot) : null, notes || null],
+            [userId, shopId, orderNumber, totalAmount, shippingAddressId || null, serverAddressSnapshot ? JSON.stringify(serverAddressSnapshot) : null, notes || null],
           );
           const orderId = orderResult.rows[0].id;
 

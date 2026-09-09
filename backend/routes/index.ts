@@ -508,26 +508,6 @@ export function setupRoutes(app: Express): void {
     }
   });
 
-  // ─── Placeholder routes ──────────────────────────────
-  const placeholder = (name: string) => async (_req: Request, res: Response) => {
-    res.json({ success: true, data: { [name]: [] } });
-  };
-
-  app.get("/api/cart", requireAuth, placeholder("cart"));
-  app.post("/api/cart/items", requireAuth, placeholder("cart"));
-  app.patch("/api/cart/items/:id", requireAuth, placeholder("cart"));
-  app.delete("/api/cart/items/:id", requireAuth, placeholder("cart"));
-
-  // NOTE: /api/orders/:orderId is intentionally NOT registered here — the
-  // real implementation lives in routes/stripe.ts (registered after this
-  // module). A placeholder here would shadow it and break order lookups.
-
-  // Legacy address placeholders (kept for backward compatibility)
-  app.get("/api/addresses", requireAuth, placeholder("addresses"));
-  app.post("/api/addresses", requireAuth, placeholder("address"));
-  app.put("/api/addresses/:id", requireAuth, placeholder("address"));
-  app.delete("/api/addresses/:id", requireAuth, placeholder("address"));
-
   // /api/shops and /api/shops/:slug are handled by products.ts — do NOT add placeholders here
 
   // ─── Error Handler ──────────────────────────────────
