@@ -1,6 +1,6 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-09-07**
+**LAST UPDATED: 2026-09-09**
 
 ---
 
@@ -372,6 +372,29 @@ PORT=3001
 8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-09-09 — P1 #3 Order Detail / Reviews / Returns API Contract Audit & Fix
+
+**Problem:**
+1. `ShopOrderDetail` review flow called `POST /api/customer/reviews` — a route that does NOT exist → 404 → review from Order Detail was broken (the canonical review API `POST /api/products/:productId/reviews` was never reached).
+2. The Order Detail "request return" feature called `POST /api/customer/returns` — the backend has NO return system at all (only a financial `refunds` table; no `order_returns`/`return_items`), so every submit 404'd into an error toast. Stale API mappings for `/api/customer/returns`, `/api/seller/returns*` also pointed at non-existent routes.
+3. Reviews submitted from Order Detail passed `orderId`, but the backend ignored it — a client could not claim verified purchase via GET (verifiedPurchase is computed server-side from real order data), but order_id was never stored.
+
+**Fixes:**
+- `backend/lib/reviews.ts` (NEW) — shared server-side review validation (`validateReviewInput`: integer rating 1–5, comment 1–2000 chars) + verified-purchase eligibility (`verifyOrderContainsProduct`: order must belong to the authenticated user AND contain the product; cancelled/refunded orders excluded).
+- `backend/routes/products.ts` — POST + PATCH review handlers now use the shared validator (removed duplicated inline blocks); POST accepts optional `orderId`, validates it server-side (403 on mismatch), stores `order_id` on insert and backfills it on update.
+- `packages/shared/src/lib/api-routes.ts` — `api.customer.reviewProduct` now points at the canonical `POST /api/products/:productId/reviews`; removed stale return mappings (`requestReturnAction`, `myReturns`, `sellerReturns`, `sellerReturnStatsAction`, `updateReturnStatusAction`) that referenced non-existent backend routes.
+- `apps/velshop/src/pages/ShopOrderDetail.tsx` — removed the unsupported return-request UI (button, dialog, handler, reasons) so no broken API call is made and no fake success is shown; review flow now works via the fixed route.
+- `backend/tests/order-detail-reviews.test.ts` (NEW) — 9 unit tests for `validateReviewInput` (always run) + 4 DB-gated integration tests for `verifyOrderContainsProduct` (own order → verified; another user's order / product-not-in-order / non-existent order → not verified).
+
+**Verification:**
+- Backend typecheck: ✅ PASS · Backend tests: 54 pass / 14 DB-gated skip / 0 fail
+- All 4 apps typecheck: ✅ PASS · All 4 production builds: ✅ PASS
+- i18n parity: ✅ PASS (th=en=my=1003) · `git diff --check`: ✅ PASS
+- Stale-route grep (`customer/reviews`, `customer/returns`): zero matches
+- Database changed: NO (reuses existing `product_reviews.order_id` column)
+
+---
 
 ### 2026-09-07 — VelShop ProductSelectionSheet: Product Preview (image left · price/discount/stock right; name + description full-width below)
 

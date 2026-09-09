@@ -36,7 +36,6 @@ import {
   MapPin,
   Package,
   RefreshCw,
-  RotateCcw,
   Star,
   Store,
   Truck,
@@ -122,21 +121,12 @@ const ORDER_STEPS: Array<{ key: string; icon: LucideIcon }> = [
 const CANCELABLE = new Set(["pending", "confirmed"]);
 const REVIEWABLE = new Set(["delivered", "completed"]);
 
-/** Display keys → backend enum values (returnInputSchema in backend/validation.ts). */
-const RETURN_REASONS: Array<{ key: string; value: string }> = [
-  { key: "reasonWrong", value: "wrong_item" },
-  { key: "reasonDamaged", value: "damaged" },
-  { key: "reasonIncomplete", value: "missing_item" },
-  { key: "reasonChangedMind", value: "customer_changed_mind" },
-];
-
 export default function ShopOrderDetail() {
   const { t } = useLanguage();
   const { orderId } = useParams<{ orderId: string }>();
   const orderDetail = useAction(api.customer.orderDetail);
   const reorder = useAction(api.customer.reorderAction);
   const cancelOrder = useAction(api.commerce.cancelOrderAction);
-  const requestReturn = useAction(api.customer.requestReturnAction);
   const reviewProduct = useAction(api.customer.reviewProduct);
   const createStripeCheckout = useAction(api.stripe.createStripeCheckoutAction);
 
@@ -148,10 +138,6 @@ export default function ShopOrderDetail() {
 
   // cancel dialog
   const [cancelOpen, setCancelOpen] = useState(false);
-  // return dialog
-  const [returnOpen, setReturnOpen] = useState(false);
-  const [returnReason, setReturnReason] = useState("");
-  const [returnDesc, setReturnDesc] = useState("");
   // review dialog
   const [reviewTarget, setReviewTarget] = useState<OrderItemRow | null>(null);
   const [reviewRating, setReviewRating] = useState(5);
@@ -240,27 +226,6 @@ export default function ShopOrderDetail() {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("orderDetail.buyAgainFailed"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleSubmitReturn = async () => {
-    if (!order || !returnReason.trim()) return;
-    setBusy(true);
-    try {
-      await requestReturn({
-        orderId: order.id,
-        items: (order.items ?? []).map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
-        reason: returnReason.trim(),
-        description: returnDesc.trim() || undefined,
-      });
-      toast.success(t("orderDetail.returnSuccess"));
-      setReturnOpen(false);
-      setReturnReason("");
-      setReturnDesc("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("orderDetail.returnFailed"));
     } finally {
       setBusy(false);
     }
@@ -688,17 +653,6 @@ export default function ShopOrderDetail() {
               {t("orderDetail.buyAgain")}
             </Button>
           )}
-          {REVIEWABLE.has(order.status) && (
-            <Button
-              variant="outline"
-              className="gap-1.5 border-slate-200 text-slate-700"
-              onClick={() => setReturnOpen(true)}
-              disabled={busy}
-            >
-              <RotateCcw className="size-4" />
-              {t("orderDetail.requestReturn")}
-            </Button>
-          )}
           {CANCELABLE.has(order.status) && (
             <Button
               variant="outline"
@@ -728,63 +682,6 @@ export default function ShopOrderDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Return request */}
-      <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
-        <DialogContent className="bg-white sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-slate-900">{t("orderDetail.returnTitle")}</DialogTitle>
-            <DialogDescription>{t("orderDetail.returnDesc")}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="rounded-[10px] border border-slate-100 bg-slate-50 p-3 text-sm">
-              {items.map((i) => (
-                <div key={i.id} className="flex items-center justify-between py-1">
-                  <span className="truncate pr-3 text-slate-700">{i.productName}</span>
-                  <span className="shrink-0 text-xs text-slate-400">×{i.quantity}</span>
-                </div>
-              ))}
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-500">{t("orderDetail.reason")}</label>
-              <select
-                value={returnReason}
-                onChange={(e) => setReturnReason(e.target.value)}
-                className="mt-1.5 h-10 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-[#10B981]"
-              >
-                <option value="">{t("orderDetail.reasonPlaceholder")}</option>
-                {RETURN_REASONS.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {t(`orderDetail.${r.key}`)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-500">{t("orderDetail.extraDesc")}</label>
-              <Textarea
-                value={returnDesc}
-                onChange={(e) => setReturnDesc(e.target.value)}
-                placeholder={t("orderDetail.extraDescPlaceholder")}
-                className="mt-1.5 rounded-[10px] border-slate-200 text-sm"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="border-slate-200 text-slate-600" onClick={() => setReturnOpen(false)}>
-              {t("orderDetail.close")}
-            </Button>
-            <Button
-              className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-              onClick={handleSubmitReturn}
-              disabled={busy || !returnReason.trim()}
-            >
-              {busy ? t("orderDetail.sending") : t("orderDetail.sendReturn")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Review */}
       <Dialog open={reviewTarget !== null} onOpenChange={(open) => !open && setReviewTarget(null)}>

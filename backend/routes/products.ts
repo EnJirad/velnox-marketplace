@@ -27,6 +27,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } fr
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
+import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
 
 // ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
 
@@ -2549,15 +2550,9 @@ export function setupProductRoutes(app: Express): void {
     try {
       const productId = param(req, "productId");
       const userId = req.user!.userId;
-      const rating = Number(req.body?.rating);
-      const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
-
-      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Rating must be 1-5" } });
-        return;
-      }
-      if (comment.length === 0 || comment.length > 2000) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Comment must be 1-2000 characters" } });
+      const { error, rating, comment } = validateReviewInput(req.body);
+      if (error) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: error } });
         return;
       }
 
@@ -2568,6 +2563,16 @@ export function setupProductRoutes(app: Express): void {
       }
       const shopId = prodRes.rows[0].shop_id;
 
+      // Verified-purchase eligibility: when an order is supplied it must be
+      // the authenticated user's own order containing this product. A client
+      // can never claim a verified purchase by knowing productId + orderId.
+      const orderId =
+        typeof req.body?.orderId === "string" && req.body.orderId.trim() ? req.body.orderId.trim() : null;
+      if (orderId && !(await verifyOrderContainsProduct(userId, productId, orderId))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Order does not contain this product" } });
+        return;
+      }
+
       const existing = await query("SELECT id FROM product_reviews WHERE product_id = $1 AND user_id = $2", [
         productId,
         userId,
@@ -2575,16 +2580,19 @@ export function setupProductRoutes(app: Express): void {
       let reviewId: string;
       if (existing.rows[0]) {
         reviewId = existing.rows[0].id;
+        // Backfill order_id when submitted from Order Detail (the product-page
+        // flow has no order context).
         await query(
-          `UPDATE product_reviews SET rating = $1, comment = $2, status = 'approved', updated_at = NOW()
-           WHERE id = $3`,
-          [rating, comment, reviewId],
+          `UPDATE product_reviews SET rating = $1, comment = $2, status = 'approved',
+                  order_id = COALESCE($3, order_id), updated_at = NOW()
+           WHERE id = $4`,
+          [rating, comment, orderId, reviewId],
         );
       } else {
         const ins = await query(
-          `INSERT INTO product_reviews (product_id, user_id, shop_id, rating, comment, status)
-           VALUES ($1, $2, $3, $4, $5, 'approved') RETURNING id`,
-          [productId, userId, shopId, rating, comment],
+          `INSERT INTO product_reviews (product_id, user_id, shop_id, order_id, rating, comment, status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'approved') RETURNING id`,
+          [productId, userId, shopId, orderId, rating, comment],
         );
         reviewId = ins.rows[0].id;
       }
@@ -2601,15 +2609,9 @@ export function setupProductRoutes(app: Express): void {
     try {
       const reviewId = param(req, "reviewId");
       const userId = req.user!.userId;
-      const rating = Number(req.body?.rating);
-      const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
-
-      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Rating must be 1-5" } });
-        return;
-      }
-      if (comment.length === 0 || comment.length > 2000) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Comment must be 1-2000 characters" } });
+      const { error, rating, comment } = validateReviewInput(req.body);
+      if (error) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: error } });
         return;
       }
 
