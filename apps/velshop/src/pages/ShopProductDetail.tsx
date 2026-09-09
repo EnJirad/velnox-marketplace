@@ -1418,21 +1418,21 @@ export default function ShopProductDetail() {
           <div className="sticky top-0 z-30 shrink-0 border-b border-slate-200 bg-white px-4 pt-2 pb-3 shadow-sm sm:px-6">
             {/* Product header — larger preview (stacks on narrow screens so
                 the 180px image + price column can never exceed the viewport) */}
-            <div className="flex flex-col gap-4 sm:flex-row">
-              <div className="h-[180px] w-[180px] shrink-0 self-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[220px] sm:w-[220px] sm:self-auto">
+            <div className="flex flex-row items-start gap-3">
+              <div className="h-[96px] w-[96px] shrink-0 self-start overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[140px] sm:w-[140px]">
                 {mainImage ? (
                   <img src={mainImage?.displayUrl || mainImage?.url} alt={mainImage?.alt || product.name} className="size-full object-contain" />
                 ) : (
                   <span className="flex size-full items-center justify-center"><ImageOff className="size-8 text-slate-300" /></span>
                 )}
               </div>
-              <div className="w-full min-w-0 flex-1">
+              <div className="min-w-0 flex-1">
                 {/* Selected summary */}
                 {selectedSummary && (
                   <p className="mb-1 text-xs font-medium text-[#047857]" style={{ overflowWrap: "anywhere" }}>{selectedSummary}</p>
                 )}
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <p className="text-2xl font-bold tabular-nums text-slate-900" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayPrice)}</p>
+                  <p className="text-lg font-bold tabular-nums text-slate-900 sm:text-2xl" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayPrice)}</p>
                   <span className="text-xs font-normal text-slate-400">/{product.unit}</span>
                 </div>
                 {displayCompareAt && displayCompareAt > displayPrice && (
