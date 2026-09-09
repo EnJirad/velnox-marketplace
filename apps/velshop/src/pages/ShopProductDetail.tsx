@@ -1414,10 +1414,11 @@ export default function ShopProductDetail() {
             <div className="h-1 w-10 rounded-full bg-slate-300" />
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
+          {/* ── Sticky product preview header ── */}
+          <div className="sticky top-0 z-30 shrink-0 border-b border-slate-200 bg-white px-4 pt-2 pb-3 shadow-sm sm:px-6">
             {/* Product header — larger preview (stacks on narrow screens so
                 the 180px image + price column can never exceed the viewport) */}
-            <div className="flex flex-col gap-4 pt-2 sm:flex-row">
+            <div className="flex flex-col gap-4 sm:flex-row">
               <div className="h-[180px] w-[180px] shrink-0 self-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[220px] sm:w-[220px] sm:self-auto">
                 {mainImage ? (
                   <img src={mainImage?.displayUrl || mainImage?.url} alt={mainImage?.alt || product.name} className="size-full object-contain" />
@@ -1457,6 +1458,10 @@ export default function ShopProductDetail() {
                 {product.name}
               </p>
             </div>
+          </div>
+
+          {/* ── Scrollable options area ── */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
 
             {/* Option groups with thumbnails */}
             {hasOptionGroups && (
