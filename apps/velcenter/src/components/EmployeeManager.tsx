@@ -54,6 +54,8 @@ interface EmployeeRow {
   permissions: string[];
   active: boolean;
   mustChangePassword: boolean;
+  /** False when the account has no password provider (signs in via Google). */
+  passwordAuth?: boolean;
   createdAt: number;
 }
 
@@ -158,11 +160,15 @@ export default function EmployeeManager() {
         role: newEmployee.role,
         permissions: newPermissions,
       });
-      setTempCredential({ password: result.tempPassword, email: result.email });
+      if (result.tempPassword) {
+        setTempCredential({ password: result.tempPassword, email: result.email });
+        toast.success("สร้างบัญชีพนักงานแล้ว — แจ้งรหัสชั่วคราวให้พนักงานทราบ");
+      } else {
+        toast.success("สร้างบัญชีพนักงานแล้ว — พนักงานเข้าสู่ระบบด้วย Google ด้วยอีเมลนี้");
+      }
       setShowCreate(false);
       setNewEmployee({ name: "", email: "", employeeId: "", department: "general", role: "staff" });
       setNewPermissions([]);
-      toast.success("สร้างบัญชีพนักงานแล้ว — แจ้งรหัสชั่วคราวให้พนักงานทราบ");
       void load();
     } catch (error) {
       console.error("Create employee error:", error);
@@ -332,16 +338,18 @@ export default function EmployeeManager() {
                             <ShieldCheck className="size-3.5" />
                             สิทธิ์
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1.5 border-slate-200 text-slate-600"
-                            onClick={() => handleReset(e)}
-                            disabled={busy === e.userId}
-                          >
-                            <KeyRound className="size-3.5" />
-                            รีเซ็ตรหัส
-                          </Button>
+                          {e.passwordAuth && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 border-slate-200 text-slate-600"
+                              onClick={() => handleReset(e)}
+                              disabled={busy === e.userId}
+                            >
+                              <KeyRound className="size-3.5" />
+                              รีเซ็ตรหัส
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -414,16 +422,18 @@ export default function EmployeeManager() {
                       <ShieldCheck className="size-3.5" />
                       สิทธิ์
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 border-slate-200 text-slate-600"
-                      onClick={() => handleReset(e)}
-                      disabled={busy === e.userId}
-                    >
-                      <KeyRound className="size-3.5" />
-                      รีเซ็ตรหัส
-                    </Button>
+                    {e.passwordAuth && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 border-slate-200 text-slate-600"
+                        onClick={() => handleReset(e)}
+                        disabled={busy === e.userId}
+                      >
+                        <KeyRound className="size-3.5" />
+                        รีเซ็ตรหัส
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"

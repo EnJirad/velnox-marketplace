@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   phone TEXT,
   role TEXT NOT NULL DEFAULT 'customer',
   status TEXT NOT NULL DEFAULT 'active',
+  department TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -225,6 +226,24 @@ CREATE TABLE IF NOT EXISTS seller_analytics (
 );
 CREATE INDEX IF NOT EXISTS idx_seller_analytics_seller_date ON seller_analytics (seller_id, date);
 
+-- Seller goals (P1 #4 — VelSeller Goals tab)
+CREATE TABLE IF NOT EXISTS seller_goals (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT NOT NULL DEFAULT 'other',
+  period TEXT NOT NULL DEFAULT 'monthly',
+  unit TEXT NOT NULL DEFAULT 'ครั้ง',
+  target_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  current_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  due_date TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_seller_goals_seller ON seller_goals (seller_id);
+
 -- ─── Commerce Domain ────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -388,6 +407,8 @@ CREATE TABLE IF NOT EXISTS employees (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
   role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'manager', 'staff')),
+  employee_id TEXT,
+  permissions JSONB NOT NULL DEFAULT '[]',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

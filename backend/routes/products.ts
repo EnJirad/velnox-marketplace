@@ -2002,6 +2002,56 @@ export function setupProductRoutes(app: Express): void {
         return formatted;
       });
 
+      // P1 #4 — enrich catalog rows with reorder-intelligence fields so the
+      // VelCenter Intelligence tab can compute cycles from real order data.
+      const catalogIds = products.map((p: any) => p.id as string);
+      const purchaseByProduct = new Map<string, Record<string, unknown>>();
+      if (catalogIds.length > 0) {
+        const statsRes = await query(
+          `SELECT oi.product_id,
+                  COUNT(DISTINCT o.id)::int AS purchase_count,
+                  SUM(oi.quantity)::int AS units_sold,
+                  MIN(o.created_at) AS first_at,
+                  MAX(o.created_at) AS last_at
+           FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+           WHERE oi.product_id = ANY($1) AND o.status NOT IN ('cancelled', 'failed', 'refunded')
+           GROUP BY oi.product_id`,
+          [catalogIds],
+        );
+        for (const r of statsRes.rows) {
+          const count = r.purchase_count ?? 0;
+          const first = r.first_at ? new Date(r.first_at).getTime() : null;
+          const last = r.last_at ? new Date(r.last_at).getTime() : null;
+          const avgCycleDays =
+            count >= 2 && first !== null && last !== null && last > first
+              ? (last - first) / (count - 1) / (24 * 60 * 60 * 1000)
+              : null;
+          purchaseByProduct.set(r.product_id, {
+            purchaseCount: count,
+            unitsSold: r.units_sold ?? 0,
+            lastOrderedAt: last,
+            avgCycleDays,
+            estimatedCycleDays: avgCycleDays,
+            lastPurchaseQty: null,
+          });
+        }
+      }
+      for (const p of products as any[]) {
+        const stats = purchaseByProduct.get(p.id);
+        p._id = p.id;
+        p.currentStock = p.inventory?.available ?? p.inventory?.quantity ?? 0;
+        p.reorderLevel = p.inventory?.reorderLevel ?? 0;
+        if (stats) {
+          p.lastOrderedAt = stats.lastOrderedAt;
+          p.avgCycleDays = stats.avgCycleDays;
+          p.estimatedCycleDays = stats.estimatedCycleDays;
+          p.purchaseCount = stats.purchaseCount;
+          p.unitsSold = stats.unitsSold;
+          p.lastPurchaseQty = stats.lastPurchaseQty;
+        }
+      }
+
       res.json({ success: true, data: products });
     } catch (err) {
       console.error("[products] catalog error:", err);

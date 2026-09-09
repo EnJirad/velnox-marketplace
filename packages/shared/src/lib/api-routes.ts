@@ -271,8 +271,8 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   // Employee auth
   "api.employeeAuth.employeeListAction": () => apiGet("/api/admin/employees"),
   "api.employeeAuth.createEmployeeAction": (a) => apiPost("/api/admin/employees", a),
-  "api.employeeAuth.resetEmployeePasswordAction": (a) => apiPost(`/api/admin/employees/${a.employeeId}/reset-password`, a),
-  "api.employeeAuth.setEmployeeActiveAction": (a) => apiPatch(`/api/admin/employees/${a.employeeId}/active`, a),
+  "api.employeeAuth.resetEmployeePasswordAction": (a) => apiPost(`/api/admin/employees/${a.userId ?? a.employeeId}/reset-password`, a),
+  "api.employeeAuth.setEmployeeActiveAction": (a) => apiPatch(`/api/admin/employees/${a.userId ?? a.employeeId}/active`, a),
   "api.employeeAuth.setOwnPasswordAction": (a) => apiPost("/api/auth/change-password", a),
 
   // Goals (seller)

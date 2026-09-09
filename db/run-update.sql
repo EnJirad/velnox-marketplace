@@ -1413,3 +1413,39 @@ SET rating = COALESCE(
     review_count = (SELECT COUNT(*) FROM product_reviews r
                     WHERE r.product_id = p.id AND r.status = 'approved')
 WHERE p.id IN (SELECT DISTINCT product_id FROM product_reviews);
+
+-- =============================================================
+-- Migration: V0039
+-- Date: 2026-09-09
+-- Description: seller_goals table + users.department + employees columns
+-- Reason: VelSeller Goals and VelCenter staff/users tabs called endpoints
+--         with no backend support. Adds the seller_goals table (goals were
+--         previously UI-only), users.department (company dept on the user
+--         row), and employees.employee_id/permissions.
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS seller_goals (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT NOT NULL DEFAULT 'other',
+  period TEXT NOT NULL DEFAULT 'monthly',
+  unit TEXT NOT NULL DEFAULT 'ครั้ง',
+  target_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  current_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  due_date TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_seller_goals_seller ON seller_goals (seller_id);
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS department TEXT;
+
+ALTER TABLE employees
+  ADD COLUMN IF NOT EXISTS employee_id TEXT;
+
+ALTER TABLE employees
+  ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '[]';

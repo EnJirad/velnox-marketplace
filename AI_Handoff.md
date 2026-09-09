@@ -373,6 +373,31 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-09 — P1 #4: Missing Seller/Center APIs (Goals / Income / Reorder + Center tabs)
+
+**Problem:** VelSeller Goals / Income / Reorder tabs and VelCenter overview / orders / intel / staff / audit tabs called API actions with **no backend route** behind them — every tab failed with 404/empty state. Contract-gap audit found 39 frontend-mapped routes with no backend registration.
+
+**Fixes (all scoped to what the current UI actually calls):**
+- `db/migrations/039_seller_goals_and_center.sql` (NEW) — `seller_goals` table (Goals had zero backend storage), `users.department`, `employees.employee_id` + `employees.permissions`. Synced into `schema.sql`, `run-sqleditor.sql`, `run-update.sql` (V0039).
+- `backend/lib/seller-stats.ts` (NEW) — pure helpers: `computeIncomeReport` (3% commission, 10% return coverage, payout), `validateGoalInput`, `computePurchaseStats`/`estimatedNextPurchase`/`reorderConfidence`.
+- `backend/routes/seller-intelligence.ts` (NEW) — `GET/POST /api/seller/goals`, `PATCH/DELETE /api/seller/goals/:goalId`, `POST /api/seller/goals/:goalId/progress` (seller-scoped CRUD), `GET /api/seller/income` (live from real orders: gross = completed/delivered, returns = cancelled/failed, commission, payout), `GET /api/seller/reorder-suggestions` (stock vs reorder level + learned purchase cycle from order history).
+- `backend/routes/center.ts` (NEW) — `GET /api/admin/overview`, `GET /api/admin/market-overview`, `GET /api/admin/orders` + `PATCH /api/admin/orders/:orderId/status` (transition-guarded + audit-logged), `GET /api/admin/audit-logs`, `GET /api/admin/permissions` (static catalog), `GET /api/admin/users` + `PATCH /api/admin/users/:userId/access`, `GET/POST /api/admin/employees`, `PATCH /api/admin/employees/:userId/active`, `PATCH /api/admin/staff`, `GET /api/memory/insights` (privacy-safe aggregates from behavioral_events). Also added the **missing event pipeline** feeding insights: `POST /api/events/track` + `POST /api/events/merge` (the frontends were fire-and-forget posting to these with no backend route). Role model: owner/admin/staff read, owner/admin mutate, owner for employees/users.
+- `backend/routes/products.ts` — `GET /api/products/catalog` now enriches rows with `_id`, `currentStock`, `reorderLevel`, `lastOrderedAt`, `avgCycleDays`, `estimatedCycleDays`, `purchaseCount`, `unitsSold` (batched from order history) so the VelCenter Intelligence tab computes real cycles.
+- `backend/server.ts` — registered the two new route modules.
+- `packages/shared/src/lib/api-routes.ts` — fixed `resetEmployeePasswordAction`/`setEmployeeActiveAction` reading `a.employeeId` while the UI sends `userId` (was calling `/api/admin/employees/undefined/...`).
+- `apps/velcenter/src/components/EmployeeManager.tsx` — honest handling of the **no-password reality**: employee accounts are created (login via Google with the same email) and the UI no longer invents/fakes a temp password; the reset-password button is hidden for accounts without password auth. `POST /api/admin/employees/:userId/reset-password` returns a clear `PASSWORD_AUTH_UNAVAILABLE` error rather than a fake success.
+- `backend/tests/seller-center-apis.test.ts` (NEW) — 18 always-run unit tests (income math, goal validation, purchase cycles, migration/schema sync) + 3 DB-gated integration tests (goal CRUD, income aggregates, market overview).
+
+**Verification:**
+- Backend typecheck ✅ · Backend tests: 91 pass / 20 DB-gated skip / 0 fail
+- All 4 apps typecheck + production build ✅ · i18n parity ✅ (th=en=my=1003) · `git diff --check` ✅
+- Contract-gap recheck: the 18 P1 #4 routes are all covered; remaining unmatched mappings are dead code not called by any UI (admin payouts/revenue/rules, seller shipments/payouts, memory flush/recommendations, categories stats/tree, shops reviews/settings).
+- Database changed: YES — additive migration 039 (auto-applied by `migrate-neon.yml` on push).
+
+**Remaining (documented, NOT faked):** password authentication does not exist in this system (Google OAuth only, no `password_hash`, no login route, no `must_change_password` column) — employee create/reset/change-password flows were designed against an unimplemented spec. Employee accounts are created and sign in via Google; password endpoints return honest errors. Building a password provider is a separate feature decision.
+
+---
+
 ### 2026-09-09 — P1 #6: product_reviews UNIQUE constraint + product soft-delete
 
 **Problem:**
