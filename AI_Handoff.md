@@ -2875,3 +2875,15 @@ Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 p
 **Preserved 100%:** `resolveVariant`, `selectedOptions`/`selectedVariant` calculation, `displayPrice`/`displayCompareAt`/`displayDiscountPct`/`displayStock`/`outOfStock`/`lowStock`, `cartImageUrl`, `handleOptionSelect` business logic (only `setOptionOverrideIndex` removed), `handleAddToCart`/`handleBuyNow`/`handleVelRepeat`/`handleSheetAction`/`handleSheetConfirm`, quantity/stock sheets, VelRepeat/orders/reviews/chat, R2 URLs (consumed as-is), project structure. `ProductSelectionSheet` untouched.
 
 **Verification:** velshop/velseller/velcenter/velnox `tsc --noEmit` PASS · `bun run i18n:check` th=en=my=1006 PASS · `git diff --check` clean · velshop `vite build` PASS (ShopProductDetail 49.68 kB gzip 13.11 kB).
+
+---
+
+### 2026-09-09 — VelShop Variant Sheet preview — sync to selected option/variant
+
+**Scope:** `apps/velshop/src/pages/ShopProductDetail.tsx` only (gallery fix was prior commit `e19b5f6`).
+
+**Root cause:** Variant Bottom Sheet preview rendered `activeImage` (the main gallery's current image). Selecting an option updated `selectedOptions`/`selectedVariant` and the gallery's `activeIndex` only when the new variant's image happened to match a `validGallery` URL — but the sheet's sticky header was bound to `activeImage`, not to the selection. For partial selections (e.g. Color=Blue, Size not selected) where `selectedVariant` is still `null`, the sheet never switched.
+
+**Fix:** derived `variantSheetPreviewImage` (`useMemo`, no new `useState`) with priority 1) exact `selectedVariant.images[0]` (first non-broken) 2) selected `optionValueImageMap[valId]` for any selected option (first match in group order) 3) `activeImage`/`validGallery[0]` fallback. `handleSheetPreviewError` feeds `failedImageUrls` so a broken preview never repeats. Sheet header now renders `variantSheetPreviewImage` instead of `activeImage`. `handleOptionSelect`/`selectedOptions`/`selectedVariant`/pricing/stock/cart/buy/VelRepeat and main gallery untouched.
+
+**Verification:** velshop/velseller/velcenter/velnox `tsc --noEmit` PASS · `bun run i18n:check` 1006 PASS · velshop `vite build` PASS (50.34 kB) · `git diff --check` clean.

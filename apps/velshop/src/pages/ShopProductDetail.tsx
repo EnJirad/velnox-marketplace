@@ -728,6 +728,58 @@ export default function ShopProductDetail() {
     if (dx < 0) goNext(); else goPrev();
   }, [canSwipe, goNext, goPrev]);
 
+  /* ── Variant Sheet preview: derived, no extra state — variant image > option image > main gallery ── */
+  const variantSheetPreviewImage = useMemo(() => {
+    // 1) Exact selected variant image
+    const vImgs: Array<{ url: string; displayUrl?: string; alt?: string }> | undefined = (selectedVariant as any)?.images;
+    if (Array.isArray(vImgs) && vImgs.length > 0) {
+      for (const img of vImgs) {
+        const u = (img as any)?.url;
+        if (u && typeof u === "string" && u.trim() && !failedImageUrls.has(u)) {
+          return {
+            url: u,
+            displayUrl: (img as any).displayUrl ?? u,
+            thumbUrl: (img as any).thumbUrl ?? u,
+            alt: (img as any).alt ?? selectedVariant?.name ?? product?.name ?? "",
+          } as any;
+        }
+      }
+    }
+    // 2) Option-value image for any currently selected option (first match in group order)
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (!valId) continue;
+      const url = optionValueImageMap[valId];
+      if (url && typeof url === "string" && url.trim() && !failedImageUrls.has(url)) {
+        const val = group.values?.find((v: any) => v.id === valId);
+        return {
+          url,
+          displayUrl: url,
+          thumbUrl: url,
+          alt: val?.label ?? val?.value ?? product?.name ?? "",
+        } as any;
+      }
+    }
+    // 3) Fallback to main gallery's current image
+    if (activeImage && activeImage.url && !failedImageUrls.has(activeImage.url)) return activeImage;
+    if (validGallery.length > 0) {
+      const first = validGallery[0]?.img;
+      if (first && first.url && !failedImageUrls.has(first.url)) return first;
+    }
+    return null as any;
+  }, [selectedVariant, selectedOptions, optionGroups, optionValueImageMap, activeImage, validGallery, failedImageUrls, product]);
+
+  const handleSheetPreviewError = useCallback(() => {
+    const bad = (variantSheetPreviewImage as any)?.url;
+    if (!bad) return;
+    setFailedImageUrls((prev) => {
+      if (prev.has(bad)) return prev;
+      const next = new Set(prev);
+      next.add(bad);
+      return next;
+    });
+  }, [variantSheetPreviewImage]);
+
   /* ── Cart image: first IMAGE option value image, fallback to product image ── */
   const cartImageUrl = useMemo(() => {
     for (const group of optionGroups) {
@@ -1531,15 +1583,15 @@ export default function ShopProductDetail() {
                 the 180px image + price column can never exceed the viewport) */}
             <div className="flex flex-row items-start gap-3">
               <div className="h-[96px] w-[96px] shrink-0 self-start overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[140px] sm:w-[140px]">
-                {activeImage ? (
+                {variantSheetPreviewImage ? (
                   <img
-                    key={activeImage.url}
-                    src={activeImage.displayUrl || activeImage.url}
-                    alt={activeImage.alt || product.name}
+                    key={variantSheetPreviewImage.url}
+                    src={(variantSheetPreviewImage as any).displayUrl || variantSheetPreviewImage.url}
+                    alt={(variantSheetPreviewImage as any).alt || product.name}
                     className="size-full object-contain p-1.5"
                     loading="lazy"
                     decoding="async"
-                    onError={handleMainImageError}
+                    onError={handleSheetPreviewError}
                   />
                 ) : (
                   <span className="flex size-full flex-col items-center justify-center gap-1.5 bg-slate-50 px-2 text-center"><ImageOff className="size-8 text-slate-300" /><span className="text-[11px] font-medium text-slate-400">{(t as any)("productDetail.noImage") ?? "no image"}</span></span>
