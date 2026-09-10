@@ -7,13 +7,11 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 /**
- * VelShop footer — one compact layout shared by every page.
+ * VelShop footer — compact, auth-aware.
  *
- * Deliberately small: brand + tagline, three short link columns
- * (ช่วยเหลือ / บัญชี / สำหรับผู้ขาย) and a bottom bar with copyright,
- * Privacy · Terms (corporate site) and an in-app Cookie Settings action.
- * No icons, no card stacks, no long link lists — the storefront stays
- * focused on shopping.
+ * Logged in: account navigation (My Account, Orders, Wishlist, VelRepeat…),
+ * never a "Login" entry. Logged out: Sign In + Browse Shop + Help.
+ * Every link points to a real route — no "#", no dead pages.
  */
 export function ShopFooter() {
   const { t } = useLanguage();
@@ -34,16 +32,29 @@ export function ShopFooter() {
           {/* Link columns */}
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
             <FooterColumn title={t("footer.colHelp")}>
-              <FooterLink to="/profile">{t("footer.helpContact")}</FooterLink>
-              <FooterLink to="/profile">{t("footer.helpFaq")}</FooterLink>
+              <FooterLink to="/help">{t("footer.helpCenter")}</FooterLink>
+              <FooterLink to="/help#contact">{t("footer.contactSupport")}</FooterLink>
+              <FooterLink to="/orders">{t("footer.trackOrder")}</FooterLink>
               <FooterLink to="/orders">{t("footer.helpReturns")}</FooterLink>
             </FooterColumn>
 
             <FooterColumn title={t("footer.colAccount")}>
-              <FooterLink to={isAuthenticated ? "/profile" : "/auth?returnTo=/profile"}>
-                {t("footer.accountLogin")}
-              </FooterLink>
-              <FooterLink to="/orders">{t("footer.accountOrders")}</FooterLink>
+              {isAuthenticated ? (
+                <>
+                  <FooterLink to="/profile">{t("footer.myAccount")}</FooterLink>
+                  <FooterLink to="/orders">{t("footer.accountOrders")}</FooterLink>
+                  <FooterLink to="/wishlist">{t("footer.wishlist")}</FooterLink>
+                  <FooterLink to="/velrepeat">{t("footer.velrepeat")}</FooterLink>
+                  <FooterLink to="/addresses">{t("footer.addresses")}</FooterLink>
+                  <FooterLink to="/chat">{t("footer.messages")}</FooterLink>
+                </>
+              ) : (
+                <>
+                  <FooterLink to="/auth?returnTo=/">{t("footer.accountLogin")}</FooterLink>
+                  <FooterLink to="/products">{t("footer.browseShop")}</FooterLink>
+                  <FooterLink to="/help">{t("footer.helpCenter")}</FooterLink>
+                </>
+              )}
             </FooterColumn>
 
             <FooterColumn title={t("footer.colSeller")}>
@@ -54,6 +65,14 @@ export function ShopFooter() {
                 className="text-sm text-slate-500 transition-colors hover:text-[#10B981]"
               >
                 {t("footer.sellerJoin")}
+              </a>
+              <a
+                href={`${SITE_URLS.velseller}/seller/login`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-slate-500 transition-colors hover:text-[#10B981]"
+              >
+                {t("footer.sellerLogin")}
               </a>
             </FooterColumn>
           </div>

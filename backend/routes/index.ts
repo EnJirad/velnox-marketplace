@@ -253,6 +253,78 @@ export function setupRoutes(app: Express): void {
     }
   });
 
+  // ─── Customer Account Summary (Profile dashboard quick stats) ────────────
+  // Returns REAL counts for the account overview. Each stat is queried
+  // independently and defensively: if a table is missing on a legacy DB the
+  // value is null and the UI omits that stat rather than inventing a number.
+  app.get("/api/customer/account-summary", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const out: Record<string, number | null> = {
+        orders: null,
+        wishlist: null,
+        velrepeat: null,
+        addresses: null,
+        notificationsUnread: null,
+        chatUnread: null,
+      };
+
+      try {
+        const r = await query("SELECT COUNT(*)::int AS c FROM orders WHERE user_id = $1", [userId]);
+        out.orders = r.rows[0]?.c ?? 0;
+      } catch { /* table may not exist */ }
+
+      // Wishlist — published products only, mirrors GET /api/customer/wishlist
+      try {
+        const r = await query(
+          `SELECT COUNT(*)::int AS c FROM customer_wishlist w
+           JOIN products p ON w.product_id = p.id
+           WHERE w.user_id = $1 AND p.status = 'published'`,
+          [userId],
+        );
+        out.wishlist = r.rows[0]?.c ?? 0;
+      } catch { /* table may not exist */ }
+
+      // VelRepeat — active recurring plans
+      try {
+        const r = await query(
+          "SELECT COUNT(*)::int AS c FROM velrepeat_plans WHERE user_id = $1 AND status = 'active'",
+          [userId],
+        );
+        out.velrepeat = r.rows[0]?.c ?? 0;
+      } catch { /* table may not exist */ }
+
+      try {
+        const r = await query("SELECT COUNT(*)::int AS c FROM addresses WHERE user_id = $1", [userId]);
+        out.addresses = r.rows[0]?.c ?? 0;
+      } catch { /* table may not exist */ }
+
+      try {
+        const r = await query(
+          "SELECT COUNT(*)::int AS c FROM notifications WHERE user_id = $1 AND read = FALSE",
+          [userId],
+        );
+        out.notificationsUnread = r.rows[0]?.c ?? 0;
+      } catch { /* table may not exist */ }
+
+      // Chat unread — seller messages to this customer not yet read
+      try {
+        const r = await query(
+          `SELECT COUNT(*)::int AS c FROM chat_messages m
+           JOIN conversations c ON m.conversation_id = c.id
+           WHERE c.customer_id = $1 AND m.sender_role = 'seller' AND m.read_at IS NULL`,
+          [userId],
+        );
+        out.chatUnread = r.rows[0]?.c ?? 0;
+      } catch { /* table may not exist */ }
+
+      res.json({ success: true, data: out });
+    } catch (err) {
+      console.error("[account-summary] error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch account summary" } });
+    }
+  });
+
   // ─── Addresses ────────────────────────────────────────
   // GET /api/customer/addresses — list all addresses for the authenticated user
   app.get("/api/customer/addresses", requireAuth, async (req: Request, res: Response) => {

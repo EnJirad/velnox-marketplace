@@ -123,6 +123,7 @@ async function apiDelete(path: string): Promise<any> {
 const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   // Customer actions
   "api.customer.myProfile": () => apiGet("/api/customer/profile"),
+  "api.customer.accountSummary": () => apiGet("/api/customer/account-summary"),
   "api.customer.updateProfileAction": (a) => apiPut("/api/customer/profile", a),
   "api.customer.getProfileImageUploadIntent": (a) => apiPost("/api/customer/profile-image/upload-intent", a),
   "api.customer.saveProfileImage": (a) => apiPost("/api/customer/profile-image/save", a),

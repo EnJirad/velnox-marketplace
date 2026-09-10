@@ -19,6 +19,9 @@ interface ImportMetaEnv {
   /** Full URL of the Velnox corporate website (e.g. https://velnox.com) */
   readonly VITE_CORPORATE_URL?: string;
 
+  /** Customer-support email shown on the Help Center (optional). */
+  readonly VITE_SUPPORT_EMAIL?: string;
+
   /** Sentry DSN for error monitoring (optional) */
   readonly VITE_SENTRY_DSN?: string;
 }

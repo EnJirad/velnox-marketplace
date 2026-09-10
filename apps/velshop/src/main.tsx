@@ -74,6 +74,7 @@ const ShopWishlist = lazy(() => import("@/pages/ShopWishlist"));
 const ShopAddresses = lazy(() => import("@/pages/ShopAddresses"));
 const ShopProfile = lazy(() => import("@/pages/ShopProfile"));
 const ShopAccount = lazy(() => import("@/pages/ShopAccount"));
+const ShopHelp = lazy(() => import("@/pages/ShopHelp"));
 const ShopNotifications = lazy(() => import("@/pages/ShopNotifications"));
 const ShopChat = lazy(() => import("@/pages/ShopChat"));
 const CookiePolicy = lazy(() => import("@/pages/CookiePolicy"));
@@ -188,6 +189,7 @@ createRoot(document.getElementById("root")!).render(
               </RequireAuth>
             }
           />
+          <Route path="/help" element={<ShopHelp />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/cookies" element={<CookiePolicy />} />
           <Route path="*" element={<NotFound />} />

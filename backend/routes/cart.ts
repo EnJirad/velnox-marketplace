@@ -596,21 +596,56 @@ export function setupCartRoutes(app: Express): void {
   // ─── WISHLIST ──────────────────────────────────────────────────────────────
 
   // ── GET /api/customer/wishlist ────────────────────────────────────────────
+  // Returns the wishlist rows WITH product data joined in (name/price/unit,
+  // shop name, primary image, rating, sold count, live stock, variant flag) so
+  // the frontend never has to load the full product catalog to render the page.
   app.get("/api/customer/wishlist", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const result = await query(
-        `SELECT w.id, w.product_id, w.created_at,
-                p.name, p.price, p.unit, p.currency, p.status,
-                sh.name AS shop_name,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-         FROM customer_wishlist w
-         JOIN products p ON w.product_id = p.id
-         LEFT JOIN shops sh ON p.shop_id = sh.id
-         WHERE w.user_id = $1 AND p.status = 'published'
-         ORDER BY w.created_at DESC`,
-        [userId],
-      );
+
+      const ENRICHED_SELECT = `
+        SELECT w.id, w.product_id, w.created_at,
+               p.name, p.price, p.unit, p.currency, p.status,
+               p.rating, p.review_count, p.sold_count,
+               sh.name AS shop_name,
+               (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
+               (SELECT COALESCE(i.quantity - i.reserved, 0) FROM inventory i WHERE i.product_id = p.id) AS available_stock,
+               EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active') AS has_variants
+        FROM customer_wishlist w
+        JOIN products p ON w.product_id = p.id
+        LEFT JOIN shops sh ON p.shop_id = sh.id
+      `;
+
+      let result;
+      try {
+        result = await query(
+          `${ENRICHED_SELECT}
+           WHERE w.user_id = $1 AND p.status = 'published'
+           ORDER BY w.created_at DESC`,
+          [userId],
+        );
+      } catch (err: any) {
+        // product_variants / inventory tables may not exist on a legacy DB —
+        // fall back to the base join (no stock/variant info) instead of failing.
+        if (err?.code === "42P01") {
+          console.warn("[wishlist] variant/inventory tables not found — using base wishlist query");
+          result = await query(
+            `SELECT w.id, w.product_id, w.created_at,
+                    p.name, p.price, p.unit, p.currency, p.status,
+                    p.rating, p.review_count, p.sold_count,
+                    sh.name AS shop_name,
+                    (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
+             FROM customer_wishlist w
+             JOIN products p ON w.product_id = p.id
+             LEFT JOIN shops sh ON p.shop_id = sh.id
+             WHERE w.user_id = $1 AND p.status = 'published'
+             ORDER BY w.created_at DESC`,
+            [userId],
+          );
+        } else {
+          throw err;
+        }
+      }
 
       const items = result.rows.map((r: any) => ({
         id: r.id,
@@ -621,6 +656,13 @@ export function setupCartRoutes(app: Express): void {
         currency: r.currency,
         shopName: r.shop_name,
         productImageUrl: r.product_image_url,
+        rating: r.rating != null ? Number(r.rating) : null,
+        reviewCount: r.review_count != null ? Number(r.review_count) : null,
+        soldCount: r.sold_count != null ? Number(r.sold_count) : null,
+        availableStock: r.available_stock != null ? Number(r.available_stock) : null,
+        hasVariants:
+          r.has_variants === true || r.has_variants === "true" ||
+          r.has_variants === 1 || r.has_variants === "1",
         createdAt: r.created_at,
       }));
 

@@ -298,6 +298,12 @@ export function setupUploadRoutes(app: Express): void {
       }
 
       invalidateCachedProfile(userId);
+      // Also invalidate the /api/customer/profile cache (routes/index.ts) so
+      // the profile page never serves a stale avatar/cover for up to 30s.
+      try {
+        const { invalidateCustomerProfileCache } = await import("./index.js");
+        invalidateCustomerProfileCache(userId);
+      } catch { /* non-fatal */ }
 
       // Cleanup stale media records
       await cleanupStaleMediaRecords(userId, purpose, objectKey).catch(() => {});
@@ -423,8 +429,12 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      // 3. DB save succeeded — invalidate cache
+      // 3. DB save succeeded — invalidate caches
       invalidateCachedProfile(userId);
+      try {
+        const { invalidateCustomerProfileCache } = await import("./index.js");
+        invalidateCustomerProfileCache(userId);
+      } catch { /* non-fatal */ }
 
       // 4. Cleanup stale media records for same user+kind
       await cleanupStaleMediaRecords(userId, kind, objectKey).catch(() => {});
@@ -475,6 +485,10 @@ export function setupUploadRoutes(app: Express): void {
 
       await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [image, userId]);
       invalidateCachedProfile(userId);
+      try {
+        const { invalidateCustomerProfileCache } = await import("./index.js");
+        invalidateCustomerProfileCache(userId);
+      } catch { /* non-fatal */ }
 
       res.json({ success: true, data: { avatar: image } });
     } catch (err) {

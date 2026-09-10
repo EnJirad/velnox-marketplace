@@ -142,10 +142,18 @@ async function resolveUser(google: {
 
     if (providerResult.rows.length > 0) {
       const userId = providerResult.rows[0].id;
-      // Update name/avatar if changed
+      // Sync Google profile, but NEVER overwrite a custom avatar/name.
+      // Google's picture is only the INITIAL default: once the user uploads
+      // a custom avatar (or edits their display name), it is the source of
+      // truth and must survive every subsequent login / session refresh.
       await poolClient.query(
-        `UPDATE users SET name = COALESCE(NULLIF($2, ''), name),
-         avatar = NULLIF($3, ''), updated_at = NOW() WHERE id = $1`,
+        `UPDATE users SET
+           name = CASE WHEN NULLIF(TRIM(name), '') IS NULL
+                       THEN COALESCE(NULLIF($2, ''), name) ELSE name END,
+           avatar = CASE WHEN NULLIF(avatar, '') IS NULL
+                         THEN NULLIF($3, '') ELSE avatar END,
+           updated_at = NOW()
+         WHERE id = $1`,
         [userId, google.name, google.picture]
       );
       invalidateCachedProfile(userId);
@@ -168,10 +176,16 @@ async function resolveUser(google: {
          ON CONFLICT (provider, provider_id) DO NOTHING`,
         [userId, google.sub, google.email]
       );
-      // Update name/avatar
+      // Sync Google profile, but NEVER overwrite a custom avatar/name
+      // (same rule as the provider-match branch above).
       await poolClient.query(
-        `UPDATE users SET name = COALESCE(NULLIF($2, ''), name),
-         avatar = NULLIF($3, ''), updated_at = NOW() WHERE id = $1`,
+        `UPDATE users SET
+           name = CASE WHEN NULLIF(TRIM(name), '') IS NULL
+                       THEN COALESCE(NULLIF($2, ''), name) ELSE name END,
+           avatar = CASE WHEN NULLIF(avatar, '') IS NULL
+                         THEN NULLIF($3, '') ELSE avatar END,
+           updated_at = NOW()
+         WHERE id = $1`,
         [userId, google.name, google.picture]
       );
       invalidateCachedProfile(userId);
