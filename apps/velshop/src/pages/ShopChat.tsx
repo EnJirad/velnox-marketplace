@@ -11,13 +11,22 @@ import {
   ArrowLeft,
   CheckCheck,
   ChevronRight,
+  Headphones,
   Loader2,
   MessageCircle,
   Send,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+      {children}
+    </p>
+  );
+}
 
 interface Conversation {
   id: string;
@@ -25,6 +34,8 @@ interface Conversation {
   sellerId: string;
   shopId: string;
   productId: string | null;
+  /** true for the dedicated Velnox Support conversation (never a seller). */
+  isSupport: boolean;
   shopName: string;
   shopLogo: string | null;
   participantId: string | null;
@@ -57,6 +68,7 @@ export default function ShopChat() {
   const { user, isAuthenticated } = useAuth();
   const myConversations = useAction(api.customer.myConversations);
   const createConversation = useAction(api.customer.createConversationAction);
+  const supportConversationAction = useAction(api.customer.supportConversationAction);
   const conversationMessages = useAction(api.customer.conversationMessages);
   const sendMessage = useAction(api.customer.sendMessageAction);
   const markConversationRead = useAction(api.customer.markConversationReadAction);
@@ -142,6 +154,64 @@ export default function ShopChat() {
   }, [messages.length, active?.id]);
 
   // ── Open a conversation thread ──────────────────────────────────────
+  const supportConvs = conversations?.filter((c) => c.isSupport) ?? [];
+  const sellerConvs = conversations?.filter((c) => !c.isSupport) ?? [];
+
+  const convRow = (c: Conversation, support: boolean) => (
+    <button
+      key={c.id}
+      type="button"
+      onClick={() => void openConversation(c)}
+      className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 ${
+        active?.id === c.id ? "bg-[#F0FDF9]" : ""
+      }`}
+    >
+      <span className="relative shrink-0">
+        {support ? (
+          <span className="flex size-11 items-center justify-center rounded-full bg-[#10B981] text-white">
+            <Headphones className="size-5" />
+          </span>
+        ) : c.shopLogo ? (
+          <img src={c.shopLogo} alt="" className="size-11 rounded-full object-cover" />
+        ) : (
+          <span className="flex size-11 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-400">
+            {(c.shopName ?? "?").charAt(0).toUpperCase()}
+          </span>
+        )}
+        {c.unreadCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[10px] font-bold text-white">
+            {c.unreadCount > 9 ? "9+" : c.unreadCount}
+          </span>
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center justify-between gap-2">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-slate-900">
+              {support ? t("chat.supportTitle") : c.shopName}
+            </span>
+            {support && (
+              <span className="shrink-0 rounded-full bg-[#ECFDF5] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
+                {t("chat.supportBadge")}
+              </span>
+            )}
+          </span>
+          <span className="shrink-0 text-[10px] text-slate-400">
+            {formatRelativeTime(c.lastMessageAt, lang, t)}
+          </span>
+        </span>
+        <span
+          className={`mt-0.5 block truncate text-xs ${
+            c.unreadCount > 0 ? "font-medium text-slate-700" : "text-slate-400"
+          }`}
+        >
+          {c.lastMessage ?? "—"}
+        </span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-slate-300" />
+    </button>
+  );
+
   const closeActive = useCallback(() => {
     if (activeIdRef.current) {
       sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
@@ -187,6 +257,33 @@ export default function ShopChat() {
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, conversations, openConversation, setSearchParams]);
+
+  // ── Get-or-create the Velnox Support conversation ──────────────────────
+  const startSupport = useCallback(async () => {
+    try {
+      const conv = (await supportConversationAction()) as Conversation;
+      setConversations((prev) =>
+        prev ? (prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev]) : [conv],
+      );
+      void openConversation(conv);
+    } catch (err) {
+      console.error("Start support chat error:", err);
+      toast.error(t("chat.supportError"));
+    }
+  }, [supportConversationAction, openConversation, t]);
+
+  // ── Auto-open Velnox Support from ?support=1 (Help Center CTA) ────────
+  useEffect(() => {
+    const wantsSupport = searchParams.get("support");
+    if (!wantsSupport || !isAuthenticated) return;
+    setSearchParams({}, { replace: true });
+    const existing = conversations?.find((c) => c.isSupport);
+    if (existing) {
+      void openConversation(existing);
+    } else {
+      void startSupport();
+    }
+  }, [searchParams, conversations, isAuthenticated, setSearchParams, openConversation, startSupport]);
 
   // ── Load older messages (keyset pagination) ─────────────────────────
   const loadOlder = useCallback(async () => {
@@ -288,47 +385,48 @@ export default function ShopChat() {
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
               </div>
-            ) : conversations.length === 0 ? (
-              <div className="px-6 py-14 text-center">
-                <MessageCircle className="mx-auto size-7 text-slate-300" />
-                <p className="mt-3 text-sm font-medium text-slate-600">{t("chat.emptyTitle")}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">{t("chat.emptyDesc")}</p>
-              </div>
             ) : (
-              <div className="divide-y divide-slate-100">
-                {conversations.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => void openConversation(c)}
-                    className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 ${active?.id === c.id ? "bg-[#F0FDF9]" : ""}`}
-                  >
-                    <span className="relative shrink-0">
-                      {c.shopLogo ? (
-                        <img src={c.shopLogo} alt="" className="size-11 rounded-full object-cover" />
-                      ) : (
-                        <span className="flex size-11 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-400">
-                          {(c.shopName ?? "?").charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                      {c.unreadCount > 0 && (
-                        <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[10px] font-bold text-white">
-                          {c.unreadCount > 9 ? "9+" : c.unreadCount}
-                        </span>
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-semibold text-slate-900">{c.shopName}</span>
-                        <span className="shrink-0 text-[10px] text-slate-400">{formatRelativeTime(c.lastMessageAt, lang, t)}</span>
+              <div className="pb-2">
+                {/* Velnox Support — dedicated section, never mixed with sellers */}
+                {supportConvs.length > 0 ? (
+                  <>
+                    <SectionLabel>{t("chat.supportTitle")}</SectionLabel>
+                    <div className="border-b border-slate-100">
+                      {supportConvs.map((c) => convRow(c, true))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="border-b border-slate-100 px-4 py-3.5">
+                    <button
+                      type="button"
+                      onClick={() => void startSupport()}
+                      className="flex w-full items-center gap-3 rounded-xl border border-[#10B981]/25 bg-[#F0FDF9] px-3.5 py-3 text-left transition-colors hover:border-[#10B981]/50 hover:bg-[#D1FAE5]"
+                    >
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#10B981] text-white">
+                        <Headphones className="size-5" />
                       </span>
-                      <span className={`mt-0.5 block truncate text-xs ${c.unreadCount > 0 ? "font-medium text-slate-700" : "text-slate-400"}`}>
-                        {c.lastMessage ?? "—"}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-slate-900">{t("chat.supportTitle")}</span>
+                        <span className="mt-0.5 block text-xs leading-5 text-slate-500">{t("chat.chatWithSupport")}</span>
                       </span>
-                    </span>
-                    <ChevronRight className="size-4 shrink-0 text-slate-300" />
-                  </button>
-                ))}
+                      <ChevronRight className="size-4 shrink-0 text-slate-300" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Sellers — customer's shop conversations */}
+                <SectionLabel>{t("chat.sellers")}</SectionLabel>
+                {sellerConvs.length === 0 ? (
+                  <div className="px-6 py-10 text-center">
+                    <MessageCircle className="mx-auto size-7 text-slate-300" />
+                    <p className="mt-3 text-sm font-medium text-slate-600">{t("chat.emptyTitle")}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">{t("chat.emptyDesc")}</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {sellerConvs.map((c) => convRow(c, false))}
+                  </div>
+                )}
               </div>
             )}
           </aside>
@@ -351,9 +449,23 @@ export default function ShopChat() {
                     <ArrowLeft className="size-4" />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-900">{active.shopName}</p>
-                    {active.product && (
-                      <p className="truncate text-[11px] text-slate-400">{t("chat.productContext")}</p>
+                    {active.isSupport ? (
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                        <Headphones className="size-4 text-[#10B981]" />
+                        {t("chat.supportTitle")}
+                        <span className="rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          {t("chat.supportBadge")}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="truncate text-sm font-semibold text-slate-900">{active.shopName}</p>
+                    )}
+                    {active.isSupport ? (
+                      <p className="truncate text-[11px] text-slate-400">{t("chat.supportDesc")}</p>
+                    ) : (
+                      active.product && (
+                        <p className="truncate text-[11px] text-slate-400">{t("chat.productContext")}</p>
+                      )
                     )}
                   </div>
                 </div>

@@ -1,21 +1,22 @@
 import { CartDrawer } from "@/components/shop/CartDrawer";
 import { LanguageSwitcher } from "@/components/shop/LanguageSwitcher";
+import { NotificationBell } from "@/components/shop/NotificationBell";
 import { Logo } from "@velnox/shared/components/Logo";
 import { Button } from "@velnox/shared/components/ui/button";
-import { Input } from "@velnox/shared/components/ui/input";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
-import { Search, ShoppingCart, User } from "lucide-react";
+import { ShoppingCart, User } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 /**
  * VelShop header — kept deliberately minimal so shopping stays the focus.
- * Desktop: logo · Home/Products/Categories · search · language · cart · account.
- * Mobile: logo · search · cart · account (the bottom tab bar is the menu).
- * Everything else (wishlist, notifications, VelRepeat) lives in the profile
- * hub, not the header.
+ * Desktop: logo · Home/Products/Categories · language · notifications · cart · account.
+ * Mobile: logo · language · notifications · cart · account (bottom tab bar is the menu).
+ * Product search lives on the products page; the header shows a notification
+ * bell instead (real unread data, floating panel). Everything else
+ * (wishlist, VelRepeat) lives in the profile hub.
  */
 export function ShopHeader() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -24,13 +25,6 @@ export function ShopHeader() {
   const location = useLocation();
   const navigate = useNavigate();
   const [cartOpen, setCartOpen] = useState(false);
-  const [query, setQuery] = useState("");
-
-  const submitSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const q = query.trim();
-    navigate(q ? `/products?q=${encodeURIComponent(q)}` : "/products");
-  };
 
   const navItem = (to: string, label: string, exact = false) => {
     const active = exact ? location.pathname === to : location.pathname.startsWith(to);
@@ -63,34 +57,8 @@ export function ShopHeader() {
           {navItem("/categories", t("nav.categories"))}
         </nav>
 
-        {/* Search (desktop) */}
-        <form
-          onSubmit={submitSearch}
-          className="relative ml-auto hidden w-full max-w-[240px] lg:block"
-        >
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("header.searchPlaceholder")}
-            className="h-9 rounded-[10px] border-slate-200 bg-slate-50 pl-9 pr-3 text-sm focus:bg-white"
-            aria-label={t("header.ariaSearch")}
-          />
-        </form>
-
         {/* Utility actions */}
         <div className="ml-auto flex items-center gap-1 lg:ml-2">
-          {/* Search (mobile) */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-10 cursor-pointer rounded-[10px] text-slate-600 hover:bg-slate-100 lg:hidden"
-            onClick={() => navigate("/products")}
-            aria-label={t("header.ariaSearch")}
-          >
-            <Search className="size-5" />
-          </Button>
-
           {/* Language — desktop full trigger, mobile compact icon */}
           <div className="hidden md:block">
             <LanguageSwitcher variant="desktop" />
@@ -98,6 +66,9 @@ export function ShopHeader() {
           <div className="md:hidden">
             <LanguageSwitcher variant="mobile" />
           </div>
+
+          {/* Notifications — real unread data, floating panel (auth only) */}
+          <NotificationBell />
 
           <Button
             variant="ghost"

@@ -152,6 +152,7 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   // Chat — customer
   "api.customer.myConversations": () => apiGetFresh("/api/customer/conversations"),
   "api.customer.createConversationAction": (a) => apiPost("/api/customer/conversations", a),
+  "api.customer.supportConversationAction": () => apiPost("/api/customer/support/conversation"),
   "api.customer.conversationMessages": (a) => apiGetFresh(`/api/customer/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
   "api.customer.sendMessageAction": (a) => apiPost(`/api/customer/conversations/${a.conversationId}/messages`, a),
   "api.customer.markConversationReadAction": (a) => apiPost(`/api/customer/conversations/${a.conversationId}/read`, {}),

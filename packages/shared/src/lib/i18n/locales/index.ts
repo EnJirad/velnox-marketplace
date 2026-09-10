@@ -274,7 +274,7 @@ const myOrderPatch = {
 const myChatPatch = {
   profile: {
     chat: "ချတ်",
-    chatDesc: "ဆိုင်များနှင့် စကားပြောရန်",
+    chatDesc: "ဆိုင်များနှင့် Velnox အဖွဲ့ စကားပြောရန်",
   } satisfies Partial<Dict["profile"]>,
   productDetail: {
     verifiedPurchase: "အမှန်တကယ်ဝယ်ယူပြီးပါပြီ ✓",
@@ -327,6 +327,12 @@ const myChatPatch = {
     justNow: "ခုနက",
     typeMessageAria: "စာတိုရိုက်ပါ",
     sendAria: "စာတိုပို့ရန်",
+    sellers: "ဆိုင်များ",
+    supportTitle: "Velnox Support",
+    supportDesc: "Velnox အဖွဲ့က ကူညီရန် အသင့်ရှိသည်",
+    chatWithSupport: "Velnox အဖွဲ့နှင့် ချတ်လုပ်ရန်",
+    supportBadge: "အကူအညီ",
+    supportError: "အကူအညီချတ် ဖွင့်၍မရပါ ထပ်ကြိုးစားပါ",
   } satisfies Partial<Dict["chat"]>,
   sellerChat: {
     title: "ချတ်",
@@ -339,6 +345,17 @@ const myChatPatch = {
     emptyDesc: "ဖောက်သည်က \"ဆိုင်နှင့် စကားပြောရန်\" နှိပ်သောအခါ ဤနေရာတွင် ပေါ်လာပါမည်",
   } satisfies Partial<Dict["sellerChat"]>,
 };
+
+/**
+ * Burmese notification-bell labels (floating panel in the header).
+ * Same merge mechanism as the other patches.
+ */
+const myNotifyPatch = {
+  viewAll: "အားလုံးကြည့်ရန်",
+  allCaughtUp: "အားလုံး ဖတ်ပြီးပါပြီ",
+  ariaOpen: "အသိပေးချက်များ ဖွင့်ရန်",
+  ariaOpenWithCount: "မဖတ်ရသေးသော အသိပေးချက် {count} ခု",
+} satisfies Partial<Dict["notifications"]>;
 
 /**
  * All locale dictionaries keyed by language code. Adding a language means
@@ -363,6 +380,7 @@ export const translations: Record<Language, Dict> = {
     productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
     chat: { ...myChatPatch.chat },
     sellerChat: myChatPatch.sellerChat,
+    notifications: { ...myBase.notifications, ...myNotifyPatch },
     cartPage: { ...myBase.cartPage, ...myShopPatch.cartPage },
     velrepeat: { ...myBase.velrepeat, ...myShopPatch.velrepeat },
     cookies: myShopPatch.cookies,

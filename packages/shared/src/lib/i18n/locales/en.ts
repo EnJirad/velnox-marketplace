@@ -671,6 +671,10 @@ export const en: Dict = {
     emptyTitle: "No notifications yet",
     emptyDesc: "Order status, shipping and promotions will appear here",
     new: "New",
+    viewAll: "View all",
+    allCaughtUp: "You're all caught up.",
+    ariaOpen: "Open notifications",
+    ariaOpenWithCount: "{count} unread notifications",
   },
 
   orderDetail: {
@@ -946,7 +950,7 @@ export const en: Dict = {
     help: "Help & support",
     helpDesc: "Contact the Velnox team",
     chat: "Chat",
-    chatDesc: "Talk to shops",
+    chatDesc: "Talk to shops and the Velnox team",
     statusActive: "Active member",
     memberSince: "Member since {date}",
     editProfile: "Edit profile",
@@ -971,11 +975,6 @@ export const en: Dict = {
     groupShopping: "Shopping",
     groupCommunication: "Communication",
     groupAccount: "Account",
-    statsLabel: "Account overview",
-    statsOrders: "Orders",
-    statsWishlist: "Wishlist",
-    statsVelRepeat: "VelRepeat",
-    statsAddresses: "Addresses",
   },
 
   help: {
@@ -1221,6 +1220,12 @@ export const en: Dict = {
     justNow: "Just now",
     typeMessageAria: "Type a message",
     sendAria: "Send message",
+    sellers: "Sellers",
+    supportTitle: "Velnox Support",
+    supportDesc: "The Velnox team is here to help",
+    chatWithSupport: "Chat with Velnox Support",
+    supportBadge: "Support",
+    supportError: "Couldn't open support chat — please try again",
   },
 
   sellerChat: {

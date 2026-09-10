@@ -53,12 +53,13 @@ function bust(url: string | null | undefined): string | null {
 /**
  * ShopProfile — customer account center.
  *
- * Identity header (cover · avatar · name/email · status · member since),
- * real quick-stats from the backend account-summary endpoint, and the account
- * menu grouped into Shopping / Communication / Account / Session.
+ * Identity header (cover · avatar · name/email · status · member since) and
+ * a clean account menu grouped into Shopping / Communication / Account /
+ * Session. No dashboard statistic cards — the only numbers shown are small
+ * real unread badges (notifications) derived from the backend.
  *
  * Avatar/cover editing lives on the Account page (/profile/account).
- * Help now points to the real Help Center (/help).
+ * Help points to the real Help Center (/help).
  */
 interface ProfileRow {
   to: string;
@@ -84,44 +85,16 @@ const ACCOUNT: ProfileRow[] = [
   { to: "/profile/account", labelKey: "profile.account", descKey: "profile.accountDesc", icon: CircleUserRound },
 ];
 
-interface AccountStats {
-  orders: number | null;
-  wishlist: number | null;
-  velrepeat: number | null;
-  addresses: number | null;
-  notificationsUnread: number | null;
-  chatUnread: number | null;
-}
-
-interface StatTileDef {
-  to: string;
-  labelKey: string;
-  icon: LucideIcon;
-  value: number | null;
-}
-
-function StatTile({ to, labelKey, icon: Icon, value }: StatTileDef) {
-  const { t } = useLanguage();
-  if (value == null) return null; // no fake numbers — omit when unavailable
-  return (
-    <Link
-      to={to}
-      className="group flex flex-col gap-1.5 rounded-2xl border border-slate-200 bg-white p-3.5 transition-colors hover:border-slate-300 hover:bg-slate-50/60 sm:p-4"
-    >
-      <span className="flex size-8 items-center justify-center rounded-[10px] bg-slate-100 text-slate-500 transition-colors group-hover:bg-[#ECFDF5] group-hover:text-[#047857]">
-        <Icon className="size-4" />
-      </span>
-      <span className="text-xl font-bold tabular-nums tracking-tight text-slate-900">{value}</span>
-      <span className="text-[11px] font-medium leading-4 text-slate-400">{t(labelKey)}</span>
-    </Link>
-  );
+interface NotificationRow {
+  id: string;
+  isRead: boolean;
 }
 
 export default function ShopProfile() {
   const { t } = useLanguage();
   const { user, isLoading, isAuthenticated, signOut } = useAuth();
   const myProfile = useAction(api.customer.myProfile);
-  const accountSummary = useAction(api.customer.accountSummary);
+  const myNotifications = useAction(api.customer.myNotifications);
   const [profile, setProfile] = useState<{
     name: string | null;
     email: string | null;
@@ -130,18 +103,18 @@ export default function ShopProfile() {
     coverUrl: string | null;
     memberSince: number | null;
   } | null>(null);
-  const [stats, setStats] = useState<AccountStats | null>(null);
+  const [notifications, setNotifications] = useState<NotificationRow[] | null>(null);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const location = useLocation();
 
-  // Re-fetch profile + real quick-stats when navigating back to this page
-  // (e.g. from Account after an avatar/cover upload).
+  // Re-fetch profile + unread notifications when navigating back to this
+  // page (e.g. from Account after an avatar/cover upload).
   useEffect(() => {
     if (!isAuthenticated) return;
     let alive = true;
-    Promise.allSettled([myProfile(), accountSummary()])
-      .then(([profileRes, statsRes]) => {
+    Promise.allSettled([myProfile(), myNotifications()])
+      .then(([profileRes, notifRes]) => {
         if (!alive) return;
         if (profileRes.status === "fulfilled") {
           const data = profileRes.value as {
@@ -163,32 +136,25 @@ export default function ShopProfile() {
         } else {
           console.error("Load profile error:", profileRes.reason);
         }
-        if (statsRes.status === "fulfilled") {
-          const s = statsRes.value as Partial<AccountStats>;
-          setStats({
-            orders: s.orders ?? null,
-            wishlist: s.wishlist ?? null,
-            velrepeat: s.velrepeat ?? null,
-            addresses: s.addresses ?? null,
-            notificationsUnread: s.notificationsUnread ?? null,
-            chatUnread: s.chatUnread ?? null,
-          });
+        if (notifRes.status === "fulfilled") {
+          const res = notifRes.value as { items?: NotificationRow[] };
+          setNotifications(res.items ?? []);
         } else {
-          console.error("Load account summary error:", statsRes.reason);
-          setStats(null);
+          console.error("Load notifications error:", notifRes.reason);
+          setNotifications([]);
         }
       });
     return () => {
       alive = false;
     };
-  }, [myProfile, accountSummary, isAuthenticated, location.pathname]);
+  }, [myProfile, myNotifications, isAuthenticated, location.pathname]);
 
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
       await signOut();
       setProfile(null);
-      setStats(null);
+      setNotifications(null);
       toast.success(t("profile.signedOut"));
     } finally {
       setSigningOut(false);
@@ -217,18 +183,9 @@ export default function ShopProfile() {
       new Date(ms),
     );
 
-  const statTiles: StatTileDef[] = [
-    { to: "/orders", labelKey: "profile.statsOrders", icon: Package, value: stats?.orders ?? null },
-    { to: "/wishlist", labelKey: "profile.statsWishlist", icon: Heart, value: stats?.wishlist ?? null },
-    { to: "/velrepeat", labelKey: "profile.statsVelRepeat", icon: RefreshCw, value: stats?.velrepeat ?? null },
-    { to: "/addresses", labelKey: "profile.statsAddresses", icon: MapPin, value: stats?.addresses ?? null },
-  ];
-  const visibleTiles = statTiles.filter((s) => s.value != null);
-
-  const notificationsBadge =
-    stats?.notificationsUnread != null && stats.notificationsUnread > 0
-      ? stats.notificationsUnread
-      : 0;
+  // Real unread count only — the badge is omitted entirely when there is
+  // nothing unread (no fake numbers on the profile page).
+  const notificationsBadge = notifications?.filter((n) => !n.isRead).length ?? 0;
 
   const renderRow = (row: ProfileRow, showBadge = 0) => {
     const Icon = row.icon;
@@ -343,18 +300,6 @@ export default function ShopProfile() {
                 </div>
               </div>
             </section>
-
-            {/* Quick stats — real counts only (no fake numbers) */}
-            {visibleTiles.length > 0 && (
-              <section
-                className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4"
-                aria-label={t("profile.statsLabel")}
-              >
-                {visibleTiles.map((tile) => (
-                  <StatTile key={tile.to} {...tile} />
-                ))}
-              </section>
-            )}
 
             {/* Shopping */}
             <section className="mt-6">

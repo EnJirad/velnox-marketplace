@@ -45,6 +45,79 @@ async function getSellerForUser(userId: string): Promise<{ id: string; user_id: 
   return res.rows[0] ?? null;
 }
 
+// ─── Velnox Support chat ────────────────────────────────────────────────────
+// Velnox Support is a reserved shop (slug 'velnox-support') owned by a seeded
+// approved support seller. This keeps the existing customer↔shop conversation
+// architecture untouched — support conversations are ordinary conversation
+// rows flagged by shop slug, so no schema change is required and seller chat
+// keeps working unchanged. The support agent replies through the existing
+// seller chat of that shop (velseller), including realtime + notifications.
+const SUPPORT_SHOP_SLUG = "velnox-support";
+
+/** Ensure the Velnox Support shop exists (idempotent) and return its ids. */
+async function getSupportShop(): Promise<{ shopId: string; sellerId: string } | null> {
+  const existing = await query(
+    `SELECT sh.id AS shop_id, sh.seller_id FROM shops sh
+     JOIN sellers sl ON sl.id = sh.seller_id
+     WHERE sh.slug = $1 AND sl.status = 'approved' LIMIT 1`,
+    [SUPPORT_SHOP_SLUG],
+  );
+  if (existing.rows[0]) return existing.rows[0];
+
+  // Idempotent seed: support agent user → approved seller → support shop.
+  try {
+    const supportEmail = (process.env.SUPPORT_EMAIL ?? "support@velnox.com").toLowerCase();
+    const userRes = await query(
+      `INSERT INTO users (email, name, role, status) VALUES ($1, 'Velnox Support', 'support', 'active')
+       ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id`,
+      [supportEmail],
+    );
+    const userId = userRes.rows[0]?.id;
+    if (!userId) return null;
+
+    let sellerId: string | null = null;
+    const sellerRes = await query(
+      "SELECT id FROM sellers WHERE user_id = $1 AND status = 'approved' LIMIT 1",
+      [userId],
+    );
+    if (sellerRes.rows[0]) {
+      sellerId = sellerRes.rows[0].id;
+    } else {
+      try {
+        const inserted = await query(
+          "INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id",
+          [userId],
+        );
+        sellerId = inserted.rows[0]?.id ?? null;
+      } catch {
+        const retry = await query(
+          "SELECT id FROM sellers WHERE user_id = $1 AND status = 'approved' LIMIT 1",
+          [userId],
+        );
+        sellerId = retry.rows[0]?.id ?? null;
+      }
+    }
+    if (!sellerId) return null;
+
+    let shopId: string | null = null;
+    const shopRes = await query(
+      `INSERT INTO shops (seller_id, name, slug, description)
+       VALUES ($1, 'Velnox Support', $2, 'Velnox official customer support')
+       ON CONFLICT (slug) DO NOTHING RETURNING id`,
+      [sellerId, SUPPORT_SHOP_SLUG],
+    );
+    shopId = shopRes.rows[0]?.id ?? null;
+    if (!shopId) {
+      const retry = await query("SELECT id FROM shops WHERE slug = $1 LIMIT 1", [SUPPORT_SHOP_SLUG]);
+      shopId = retry.rows[0]?.id ?? null;
+    }
+    return shopId && sellerId ? { shopId, sellerId } : null;
+  } catch (err) {
+    console.error("[chat] getSupportShop failed:", err);
+    return null;
+  }
+}
+
 /** Map a chat_messages row to the API shape. */
 function mapMessage(r: any): Record<string, unknown> {
   return {
@@ -84,7 +157,7 @@ async function loadMessages(conversationId: string, before?: string): Promise<{ 
 async function getConversationById(conversationId: string): Promise<any | null> {
   const res = await query(
     `SELECT c.*,
-            sh.name AS shop_name, sh.logo AS shop_logo,
+            sh.name AS shop_name, sh.logo AS shop_logo, sh.slug AS shop_slug,
             sl.user_id AS seller_user_id,
             su.name AS seller_name, su.avatar AS seller_avatar,
             cu.name AS customer_name, cu.avatar AS customer_avatar,
@@ -116,6 +189,7 @@ function mapConversation(r: any, viewerUserId: string): Record<string, unknown> 
     sellerId: r.seller_id,
     shopId: r.shop_id,
     productId: r.product_id ?? null,
+    isSupport: r.shop_slug === SUPPORT_SHOP_SLUG,
     shopName: r.shop_name,
     shopLogo: r.shop_logo,
     // The person on the other side of the thread, from the viewer's perspective
@@ -173,7 +247,7 @@ export function setupChatRoutes(app: Express): void {
   app.get("/api/customer/notifications", requireAuth, async (req: Request, res: Response) => {
     try {
       const result = await query(
-        `SELECT id, type, title, message, read, created_at
+        `SELECT id, type, title, message, read, data, created_at
          FROM notifications WHERE user_id = $1
          ORDER BY created_at DESC LIMIT 50`,
         [req.user!.userId],
@@ -185,6 +259,7 @@ export function setupChatRoutes(app: Express): void {
         message: r.message ?? null,
         isRead: !!r.read,
         createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+        data: r.data ?? null,
       }));
       res.json({ success: true, data: { items } });
     } catch (err) {
@@ -227,7 +302,7 @@ export function setupChatRoutes(app: Express): void {
     try {
       const result = await query(
         `SELECT c.*,
-                sh.name AS shop_name, sh.logo AS shop_logo,
+                sh.name AS shop_name, sh.logo AS shop_logo, sh.slug AS shop_slug,
                 sl.user_id AS seller_user_id,
                 su.name AS seller_name, su.avatar AS seller_avatar,
                 cu.name AS customer_name, cu.avatar AS customer_avatar,
@@ -309,6 +384,41 @@ export function setupChatRoutes(app: Express): void {
     } catch (err) {
       console.error("[chat] create conversation error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to create conversation" } });
+    }
+  });
+
+  // ── POST /api/customer/support/conversation — get-or-create Velnox Support ──
+  // Support is a reserved shop (slug 'velnox-support'), so this reuses the
+  // existing conversation architecture: the customer gets one distinct
+  // conversation that is clearly labelled as Velnox Support (isSupport) and
+  // is never mixed with seller conversations.
+  app.post("/api/customer/support/conversation", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const support = await getSupportShop();
+      if (!support) {
+        res.status(500).json({ success: false, error: { code: "SUPPORT_UNAVAILABLE", message: "Support chat is not available" } });
+        return;
+      }
+      const userId = req.user!.userId;
+      await query(
+        `INSERT INTO conversations (customer_id, seller_id, shop_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (customer_id, shop_id) DO NOTHING`,
+        [userId, support.sellerId, support.shopId],
+      );
+      const convRes = await query(
+        "SELECT id FROM conversations WHERE customer_id = $1 AND shop_id = $2",
+        [userId, support.shopId],
+      );
+      if (!convRes.rows[0]) {
+        res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to create support conversation" } });
+        return;
+      }
+      const conversation = await getConversationById(convRes.rows[0].id);
+      res.json({ success: true, data: mapConversation(conversation, userId) });
+    } catch (err) {
+      console.error("[chat] support conversation error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to create support conversation" } });
     }
   });
 
@@ -433,7 +543,7 @@ export function setupChatRoutes(app: Express): void {
       }
       const result = await query(
         `SELECT c.*,
-                sh.name AS shop_name, sh.logo AS shop_logo,
+                sh.name AS shop_name, sh.logo AS shop_logo, sh.slug AS shop_slug,
                 sl.user_id AS seller_user_id,
                 su.name AS seller_name, su.avatar AS seller_avatar,
                 cu.name AS customer_name, cu.avatar AS customer_avatar,

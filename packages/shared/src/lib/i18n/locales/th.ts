@@ -673,6 +673,10 @@ export const th = {
     emptyTitle: "ยังไม่มีการแจ้งเตือน",
     emptyDesc: "สถานะออเดอร์ การจัดส่ง และโปรโมชันจะมาแจ้งที่นี่",
     new: "ใหม่",
+    viewAll: "ดูทั้งหมด",
+    allCaughtUp: "คุณอ่านครบแล้ว",
+    ariaOpen: "เปิดการแจ้งเตือน",
+    ariaOpenWithCount: "การแจ้งเตือนที่ยังไม่ได้อ่าน {count} รายการ",
   },
 
   orderDetail: {
@@ -948,7 +952,7 @@ export const th = {
     help: "ความช่วยเหลือ",
     helpDesc: "ติดต่อทีมงาน Velnox",
     chat: "แชท",
-    chatDesc: "สนทนากับร้านค้า",
+    chatDesc: "สนทนากับร้านค้าและทีมงาน Velnox",
     statusActive: "สมาชิกที่ใช้งานอยู่",
     memberSince: "เป็นสมาชิกตั้งแต่ {date}",
     editProfile: "แก้ไขโปรไฟล์",
@@ -973,11 +977,6 @@ export const th = {
     groupShopping: "การช้อปปิ้ง",
     groupCommunication: "การสื่อสาร",
     groupAccount: "บัญชี",
-    statsLabel: "ภาพรวมบัญชี",
-    statsOrders: "ออเดอร์",
-    statsWishlist: "รายการโปรด",
-    statsVelRepeat: "VelRepeat",
-    statsAddresses: "ที่อยู่",
   },
 
   help: {
@@ -1222,6 +1221,12 @@ export const th = {
     justNow: "เมื่อสักครู่",
     typeMessageAria: "พิมพ์ข้อความ",
     sendAria: "ส่งข้อความ",
+    sellers: "ร้านค้า",
+    supportTitle: "Velnox Support",
+    supportDesc: "ทีมงาน Velnox พร้อมช่วยเหลือคุณ",
+    chatWithSupport: "แชทกับทีมงาน Velnox",
+    supportBadge: "ซัพพอร์ต",
+    supportError: "เปิดแชทซัพพอร์ตไม่สำเร็จ กรุณาลองอีกครั้ง",
   },
 
   sellerChat: {

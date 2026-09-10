@@ -862,11 +862,6 @@ export const my = {
     groupShopping: "ဈေးဝယ်ခြင်း",
     groupCommunication: "ဆက်သွယ်ရေး",
     groupAccount: "အကောင့်",
-    statsLabel: "အကောင့် ခြုံငုံကြည့်ရှုမှု",
-    statsOrders: "မှာယူမှုများ",
-    statsWishlist: "အကြိုက်ဆုံးစာရင်း",
-    statsVelRepeat: "VelRepeat",
-    statsAddresses: "လိပ်စာများ",
   },
 
   auth: {

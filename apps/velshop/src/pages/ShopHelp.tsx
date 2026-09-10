@@ -219,7 +219,7 @@ export default function ShopHelp() {
           </div>
           <div className="mt-4 flex flex-wrap gap-2.5">
             <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild>
-              <Link to="/chat">
+              <Link to="/chat?support=1">
                 <MessageCircle className="size-4" />
                 {t("help.chatSupport")}
               </Link>

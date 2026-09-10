@@ -2929,3 +2929,24 @@ Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 p
 **Verification:** backend tsc ✅ · velshop/velseller/velcenter/velnox tsc --noEmit ✅ · velshop `vite build` ✅ (11.49s) · i18n:check 1090×3 ✅ · `git diff --check` clean. Live browser E2E not run (no DATABASE_URL/headless browser in sandbox) — verified via code trace + typecheck + production build.
 
 **Remaining limitations:** Dedicated "Velnox support" conversation type not added (would need a seeded platform shop + schema work) — "Chat with Velnox Support" reuses the existing customer↔shop chat hub (/chat) per the reuse requirement; email/phone contact only shown when VITE_SUPPORT_EMAIL (or a future phone var) is configured.
+
+---
+
+## 2026-09-10 — Profile, Navigation & Communication UX Overhaul (bell + Velnox Support chat)
+
+**What changed:**
+- **Profile (`ShopProfile.tsx`):** removed the four statistic/count cards (orders/wishlist/velrepeat/addresses) and the account-summary fetch entirely — the page is now a clean grouped navigation hub (Shopping / Communication / Account / Session) with the identity header kept. Only a small real unread badge (from `GET /api/customer/notifications`) is shown on the Notifications row — no fake numbers anywhere.
+- **Header (`ShopHeader.tsx` + new `NotificationBell.tsx`):** top-level Search (desktop input + mobile icon) removed; replaced by a Notification Bell (auth-only) between Language and Cart. Bell opens a floating panel (right-aligned, `w-[min(360px,calc(100vw-1.5rem))]`, max-height + internal scroll) with real notifications, unread badge derived from backend data, mark-one-read / mark-all, empty state, outside-click/Escape close, and click-to-navigate when the notification payload has a real destination (`data.conversationId` → `/chat?conv=…`, `data.orderId` → `/orders/:id`, `data.productId` → `/products/:id`). Live refresh via the existing `notification:created` realtime event.
+- **Velnox Support chat (backend `routes/chat.ts` + `ShopChat.tsx` + `ShopHelp.tsx`):** implemented a dedicated, clearly separated Velnox Support conversation with **no schema change** — support is a reserved shop (`slug='velnox-support'`) owned by an idempotently seeded approved support seller, so the existing customer↔shop conversation architecture is untouched. New `POST /api/customer/support/conversation` (get-or-create); conversation mapping now returns `isSupport`; support conversations are labelled "Velnox Support" (Headphones branding + badge) and rendered in their own section above Sellers in `/chat`. Help Center CTA now opens `/chat?support=1`, which auto-creates/opens the support thread. Seller chat, realtime, read receipts, and notifications unchanged; the support agent replies through the existing velseller chat of the support shop.
+- **Backend notifications list** now also returns the `data` payload (used for click destinations).
+- **i18n:** `notifications.*` (viewAll/allCaughtUp/ariaOpen/ariaOpenWithCount), `chat.*` (sellers/supportTitle/supportDesc/chatWithSupport/supportBadge/supportError), `profile.chatDesc` updated; removed unused `profile.stats*` keys — th/en/my at parity (1095×3).
+
+**Not touched (unchanged):** Orders/Addresses/VelRepeat/Account pages (already production-grade), cart, checkout, product detail, variant logic, VelRepeat logic, seller system, auth, R2, schema.
+
+**Backend changes:** `routes/chat.ts` (support shop helper + endpoint, `isSupport`/`shop_slug` in conversation mapping, `data` in notifications list). **Database changed: NO.**
+
+**Files changed:** `apps/velshop/src/pages/{ShopProfile,ShopChat,ShopHelp}.tsx`, `apps/velshop/src/components/shop/{ShopHeader.tsx, NotificationBell.tsx (new)}`, `backend/routes/chat.ts`, `packages/shared/src/lib/api-routes.ts`, `packages/shared/src/lib/i18n/locales/{th,en,my,index}.ts`.
+
+**Verification:** backend tsc ✅ · velshop/velseller/velcenter/velnox `tsc --noEmit` ✅ · velshop `vite build` ✅ (10.52s) · i18n:check 1095×3 ✅ · `git diff --check` clean. Live browser E2E not run (no DATABASE_URL/headless browser in sandbox) — verified via code trace + typecheck + production build.
+
+**Known limitations:** support replies require a human operator on the seeded support seller account (velseller chat of the support shop); no fake contact info — email support CTA only appears when `VITE_SUPPORT_EMAIL` is configured.
