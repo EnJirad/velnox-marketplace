@@ -1,6 +1,6 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-09-09**
+**LAST UPDATED: 2026-09-10**
 
 ## Production Readiness Status
 
@@ -2887,3 +2887,15 @@ Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 p
 **Fix:** derived `variantSheetPreviewImage` (`useMemo`, no new `useState`) with priority 1) exact `selectedVariant.images[0]` (first non-broken) 2) selected `optionValueImageMap[valId]` for any selected option (first match in group order) 3) `activeImage`/`validGallery[0]` fallback. `handleSheetPreviewError` feeds `failedImageUrls` so a broken preview never repeats. Sheet header now renders `variantSheetPreviewImage` instead of `activeImage`. `handleOptionSelect`/`selectedOptions`/`selectedVariant`/pricing/stock/cart/buy/VelRepeat and main gallery untouched.
 
 **Verification:** velshop/velseller/velcenter/velnox `tsc --noEmit` PASS · `bun run i18n:check` 1006 PASS · velshop `vite build` PASS (50.34 kB) · `git diff --check` clean.
+
+---
+
+### 2026-09-10 — VelShop Variant Sheet preview — exact variant resolution + isolated failure tracking
+
+**Scope:** `apps/velshop/src/pages/ShopProductDetail.tsx` only.
+
+**Root cause:** `variantSheetPreviewImage` gave priority 1 to `selectedVariant.images` unconditionally. But `selectedVariant` is resolved via subset matching (`entries.every`), so with a partial selection (e.g. Color=Blue, Size unset) it returns the FIRST half-matching variant (Blue+S) — its image is not the exact selection — and for one render after an option change it still holds the previous selection's variant (stale state). Also, `handleSheetPreviewError` wrote into the shared `failedImageUrls`, so a broken preview URL removed the same image from the main Product Gallery.
+
+**Fix:** sheet preview now resolves the EXACT variant directly from `selectedOptions` + `variantOptions` (strict: every option group selected and matching the variant mapping) instead of trusting the lagged `selectedVariant` state; partial selections skip variant images entirely and fall to the selected option value's own `imageUrl` (image-type options), then `optionValueImageMap`, then main gallery image, then first valid product image, then no-image fallback. Added `sheetFailedImageUrls` (separate Set, reset on product change) so preview failures never corrupt gallery state. No new duplicated state; `handleOptionSelect`/`selectedOptions`/`selectedVariant`/pricing/stock/cart/buy/VelRepeat and main gallery untouched.
+
+**Verification:** velshop `tsc --noEmit` PASS · `bun run i18n:check` 1006 PASS · velshop `vite build` PASS (50.79 kB) · `git diff --check` clean.

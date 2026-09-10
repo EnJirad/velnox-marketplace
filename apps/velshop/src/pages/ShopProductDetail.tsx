@@ -229,6 +229,9 @@ export default function ShopProductDetail() {
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(() => new Set());
+  // Sheet-preview image failures tracked separately so a broken preview URL
+  // never removes the same image from the main Product Gallery.
+  const [sheetFailedImageUrls, setSheetFailedImageUrls] = useState<Set<string>>(() => new Set());
   const [mainImageLoaded, setMainImageLoaded] = useState(false);
   const galleryTouchRef = useRef<{ startX: number; startY: number; startTime: number } | null>(null);
   const thumbStripRef = useRef<HTMLDivElement>(null);
@@ -616,6 +619,7 @@ export default function ShopProductDetail() {
     if (pid && pid !== prevProductIdRef.current) {
       prevProductIdRef.current = pid;
       setFailedImageUrls(new Set());
+      setSheetFailedImageUrls(new Set());
       setActiveIndex(0);
       setMainImageLoaded(false);
     }
@@ -728,51 +732,98 @@ export default function ShopProductDetail() {
     if (dx < 0) goNext(); else goPrev();
   }, [canSwipe, goNext, goPrev]);
 
-  /* ── Variant Sheet preview: derived, no extra state — variant image > option image > main gallery ── */
+  /* ── Variant Sheet preview: derived from the current selection, no extra state ──
+     Priority:
+       1. Exact fully-selected variant image (every option group selected + matching)
+       2. Selected option value's own imageUrl (works with partial selections)
+       3. Option-value image from variant mapping (optionValueImageMap)
+       4. Main gallery's current image
+       5. First valid product image
+       6. null → no-image fallback UI                                    */
   const variantSheetPreviewImage = useMemo(() => {
-    // 1) Exact selected variant image
-    const vImgs: Array<{ url: string; displayUrl?: string; alt?: string }> | undefined = (selectedVariant as any)?.images;
-    if (Array.isArray(vImgs) && vImgs.length > 0) {
-      for (const img of vImgs) {
-        const u = (img as any)?.url;
-        if (u && typeof u === "string" && u.trim() && !failedImageUrls.has(u)) {
-          return {
-            url: u,
-            displayUrl: (img as any).displayUrl ?? u,
-            thumbUrl: (img as any).thumbUrl ?? u,
-            alt: (img as any).alt ?? selectedVariant?.name ?? product?.name ?? "",
-          } as any;
+    // Returns the image object only for valid, non-failed URLs.
+    const pick = (u?: string, displayUrl?: string, alt?: string) => {
+      if (!u || typeof u !== "string" || !u.trim()) return null;
+      if (sheetFailedImageUrls.has(u) || failedImageUrls.has(u)) return null;
+      return { url: u, displayUrl: displayUrl || u, thumbUrl: displayUrl || u, alt: alt || product?.name || "" } as any;
+    };
+
+    // 1) Exact fully-selected variant image.
+    //    With option groups: used ONLY when every group is selected and the
+    //    variant's mapping matches each one — never for partial selections and
+    //    never for a stale variant from the previous selection.
+    //    Without option groups: the auto-selected single/first variant is the
+    //    product's own image, so its first valid image is the preview.
+    let exactVariant: any = null;
+    if (optionGroups.length === 0) {
+      exactVariant = selectedVariant;
+    } else {
+      const pVariants = (product as any)?.variants;
+      if (Array.isArray(pVariants)) {
+        exactVariant = pVariants.find((v: any) => {
+          const vOpts = variantOptions[v.id];
+          if (!vOpts || typeof vOpts !== "object" || Array.isArray(vOpts)) return false;
+          return optionGroups.every((g: any) => {
+            const valId = selectedOptions[g.id];
+            return !!valId && vOpts[g.id] === valId;
+          });
+        }) ?? null;
+      }
+    }
+    if (exactVariant) {
+      const vImgs: any[] = (exactVariant as any)?.images;
+      if (Array.isArray(vImgs)) {
+        for (const img of vImgs) {
+          const hit = pick((img as any)?.url, (img as any)?.displayUrl, (img as any)?.alt ?? (exactVariant as any)?.name);
+          if (hit) return hit;
         }
       }
     }
-    // 2) Option-value image for any currently selected option (first match in group order)
+
+    // 2) Image directly on a selected option value (image-type options such as
+    //    Color) — applies immediately even when not all required options are
+    //    selected yet.
     for (const group of optionGroups) {
       const valId = selectedOptions[group.id];
       if (!valId) continue;
-      const url = optionValueImageMap[valId];
-      if (url && typeof url === "string" && url.trim() && !failedImageUrls.has(url)) {
-        const val = group.values?.find((v: any) => v.id === valId);
-        return {
-          url,
-          displayUrl: url,
-          thumbUrl: url,
-          alt: val?.label ?? val?.value ?? product?.name ?? "",
-        } as any;
-      }
+      const val = Array.isArray(group.values) ? group.values.find((v: any) => v.id === valId) : undefined;
+      const hit = pick(val?.imageUrl, undefined, val?.label ?? val?.value);
+      if (hit) return hit;
     }
-    // 3) Fallback to main gallery's current image
-    if (activeImage && activeImage.url && !failedImageUrls.has(activeImage.url)) return activeImage;
+
+    // 3) Option-value image from variant mapping (optionValueImageMap) for a
+    //    selected option value that has no imageUrl of its own.
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (!valId) continue;
+      const val = Array.isArray(group.values) ? group.values.find((v: any) => v.id === valId) : undefined;
+      const hit = pick(optionValueImageMap[valId], undefined, val?.label ?? val?.value);
+      if (hit) return hit;
+    }
+
+    // 4) Main gallery's current image (respects the user's gallery selection)
+    if (activeImage) {
+      const hit = pick(activeImage.url, activeImage.displayUrl, activeImage.alt);
+      if (hit) return hit;
+    }
+
+    // 5) First valid product gallery image
     if (validGallery.length > 0) {
       const first = validGallery[0]?.img;
-      if (first && first.url && !failedImageUrls.has(first.url)) return first;
+      const hit = pick(first?.url, first?.displayUrl, first?.alt);
+      if (hit) return hit;
     }
+
+    // 6) No valid image at all — JSX renders the no-image fallback.
     return null as any;
-  }, [selectedVariant, selectedOptions, optionGroups, optionValueImageMap, activeImage, validGallery, failedImageUrls, product]);
+  }, [selectedVariant, optionGroups, selectedOptions, variantOptions, optionValueImageMap, activeImage, validGallery, failedImageUrls, sheetFailedImageUrls, product]);
 
   const handleSheetPreviewError = useCallback(() => {
     const bad = (variantSheetPreviewImage as any)?.url;
     if (!bad) return;
-    setFailedImageUrls((prev) => {
+    // Track sheet-preview failures in their own set so a broken preview URL
+    // never removes the same image from the main Product Gallery.
+    setSheetFailedImageUrls((prev) => {
       if (prev.has(bad)) return prev;
       const next = new Set(prev);
       next.add(bad);
