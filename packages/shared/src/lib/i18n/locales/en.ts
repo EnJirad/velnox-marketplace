@@ -401,6 +401,9 @@ export const en: Dict = {
     loadMoreReviews: "Load more reviews",
     reviewsFailed: "Failed to load reviews",
     reviewsRetry: "Try again",
+    prevImage: "Previous image",
+    nextImage: "Next image",
+    noImage: "No product image",
   },
 
   cartPage: {

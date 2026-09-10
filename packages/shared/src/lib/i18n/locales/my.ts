@@ -269,6 +269,9 @@ export const my = {
     stockLeft: "လက်ကျန် {count}",
     stockPieces: "{count} ခု",
     stockOut: "ကုန်သွားပါပြီ",
+    prevImage: "ယခင်ပုံ",
+    nextImage: "နောက်ပုံ",
+    noImage: "ကုန်ပစ္စည်းပုံ မရှိပါ",
   },
 
   cartPage: {

@@ -402,6 +402,9 @@ export const th = {
     loadMoreReviews: "โหลดรีวิวเพิ่มเติม",
     reviewsFailed: "ไม่สามารถโหลดรีวิวได้",
     reviewsRetry: "ลองอีกครั้ง",
+    prevImage: "รูปก่อนหน้า",
+    nextImage: "รูปถัดไป",
+    noImage: "ไม่มีรูปภาพสินค้า",
   },
 
   cartPage: {

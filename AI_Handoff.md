@@ -2847,3 +2847,31 @@ P1 highlights: abandoned Stripe checkout leaks stock (expired → cancelled, no 
 P2 highlights: root `typecheck` script broken (bun --filter + missing per-app typecheck scripts); hardcoded Thai in VelSeller/VelCenter pages; chat clientId not persisted (dupe risk on retry); COD orders never bump sold_count; product_reviews lacks UNIQUE(product_id,user_id); guest cart dropped on sign-in; `/api/cart` placeholder dead routes.
 
 Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 pass / 1 skip (integration, needs DB). Detailed report given to user; fixes deferred per instruction.
+
+---
+
+### 2026-09-09 — VelShop Product Detail — Gallery UX refinement (image/gallery only)
+
+**Scope:** `apps/velshop/src/pages/ShopProductDetail.tsx` + gallery i18n only. No cart/checkout/orders/auth/R2/schema/business-logic changes.
+
+**Audit findings (from real code):**
+- Gallery state had two independent sources — `activeIndex` for the thumbnail strip and `optionOverrideIndex` for the option-value image — with duplicated sync effects (`optionOverrideIndex` + `selectedOptionImages` + a separate `images.findIndex` effect). Variant-to-gallery sync was not filtered by `failedImageUrls`, and `activeIndex` could drift out of range after filtering.
+- Main image used `object-cover` on an `aspect-square` container (cropped product), no `onError` handling (broken R2 URLs left a broken `<img>` icon), no loading state (layout shift on slow load), and no swipe.
+- Thumbnails had no failure handling (broken `thumbUrl` would also show a broken icon), used raw `images` indices rather than the filtered set (could go out of sync with the main image after a failure), and did not auto-scroll the active thumb into view.
+- Bottom-sheet preview used the old `mainImage` (option-override) path, not the unified gallery image.
+- `ChevronLeft` was not imported (desktop prev/next arrows missing by design).
+
+**Changes:**
+1. **Single source of truth:** `activeIndex` only. Removed `optionOverrideIndex` / `selectedOptionImages` override path and the duplicate sync effect. Added `failedImageUrls` (`Set<string>`), `mainImageLoaded`, `thumbStripRef`, `galleryTouchRef`; derived `validGallery` (filters empty/broken URLs), `activeImage` / `activeValidIndex` (clamped), and helpers `handleMainImageError` / `handleThumbError` (no retry — failed URL is permanently filtered).
+2. **Variant sync:** single effect keyed on `selectedVariant` (tracks `prevVariantIdRef` so only variant changes trigger a jump). If the new variant has images, jump to its first image in `validGallery`; otherwise try the selected option-value's image (from `optionValueImageMap`); otherwise keep current position (safe fallback for no-image variants). Product change resets failures + index + loading. Effect never touches `selectedOptions`, pricing, stock, or cart.
+3. **Main image UX:** `object-contain p-1.5 sm:p-2` (no crop/distortion), fixed `aspect-square` container (no layout jump), lightweight `Loader2` overlay until `onLoad`, `onError` → `handleMainImageError` (filters + auto-falls back to next valid image), `draggable={false}`, `decoding="async"`. SEO `ogImage` now prefers `activeImage` (falls back to `validGallery[0]`).
+4. **Swipe:** touch-only on the gallery frame — `onTouchStart`/`onTouchEnd` with thresholds (≥36px horizontal, >1.2× vertical, ≤600ms). Horizontal swipe changes image, vertical scroll is untouched (no interference with variant/cart/VelRepeat).
+5. **Navigation:** desktop `ChevronLeft`/`ChevronRight` arrows (visible `sm:` only, wrap-around via `goPrev`/`goNext`), mobile dot strip (`role="tablist"` + `aria-selected`) + bottom-center count badge `1 / N` + numeric corner badge on desktop — all bound to `activeValidIndex`/`goToImage`. Thumb strip auto-scrolls the active thumb into view.
+6. **Thumbnails:** rebuilt from `validGallery` (so a broken-then-filtered image never leaves a hole), `object-cover` with `onError` → `handleThumbError`, group-divider preserved, `data-thumb-index` + `aria-current` + `thumbStripRef` for scroll, `goToImage(i)` only (no second state).
+7. **Empty/missing cases:** `validGallery.length===0` → centered `ImageOff` + localized `productDetail.noImage` (th/en/my at parity) in both the page gallery and the variant bottom-sheet preview. Multiple valid images → full gallery + dots + thumbs; single image → main only (no dots/thumbs, no arrows).
+8. **Cleanup:** removed dead `productThumbnails` / `variantThumbnails` / `handleSelectVariantFromThumbnail` / `variantThumbsWithActive` memos (unused after variant sync was moved to the gallery-level effect). `ChevronLeft` added to lucide imports. `ShopProductDetail` still the only gallery consumer — no shared component touched.
+9. **i18n:** added `productDetail.prevImage` / `nextImage` / `noImage` to `th` / `en` / `my` (3× parity).
+
+**Preserved 100%:** `resolveVariant`, `selectedOptions`/`selectedVariant` calculation, `displayPrice`/`displayCompareAt`/`displayDiscountPct`/`displayStock`/`outOfStock`/`lowStock`, `cartImageUrl`, `handleOptionSelect` business logic (only `setOptionOverrideIndex` removed), `handleAddToCart`/`handleBuyNow`/`handleVelRepeat`/`handleSheetAction`/`handleSheetConfirm`, quantity/stock sheets, VelRepeat/orders/reviews/chat, R2 URLs (consumed as-is), project structure. `ProductSelectionSheet` untouched.
+
+**Verification:** velshop/velseller/velcenter/velnox `tsc --noEmit` PASS · `bun run i18n:check` th=en=my=1006 PASS · `git diff --check` clean · velshop `vite build` PASS (ShopProductDetail 49.68 kB gzip 13.11 kB).

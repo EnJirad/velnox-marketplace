@@ -26,6 +26,7 @@ import {
   BadgeCheck,
   CalendarClock,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Heart,
@@ -227,7 +228,10 @@ export default function ShopProductDetail() {
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [optionOverrideIndex, setOptionOverrideIndex] = useState<number | null>(null);
+  const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(() => new Set());
+  const [mainImageLoaded, setMainImageLoaded] = useState(false);
+  const galleryTouchRef = useRef<{ startX: number; startY: number; startTime: number } | null>(null);
+  const thumbStripRef = useRef<HTMLDivElement>(null);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({ total: 0, avgRating: 0, distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
   const [reviewHasMore, setReviewHasMore] = useState(false);
@@ -576,72 +580,153 @@ export default function ShopProductDetail() {
     return map;
   }, [product, variantOptions, optionGroups]);
 
-  /* ── Currently selected option value images (deterministic) ───────── */
-  const selectedOptionImages = useMemo(() => {
-    const imgs: Array<{ url: string; groupId: string; valueId: string; sortOrder: number }> = [];
-    for (const group of optionGroups) {
-      const valId = selectedOptions[group.id];
-      if (valId && optionValueImageMap[valId]) {
-        imgs.push({
-          url: optionValueImageMap[valId],
-          groupId: group.id,
-          valueId: valId,
-          sortOrder: 0,
-        });
-      }
-    }
-    return imgs;
-  }, [optionGroups, selectedOptions, optionValueImageMap]);
+  /* ── Gallery: single source of truth (activeIndex) + variant sync + failure handling ── */
 
-  /* ── Unified main image: option override > gallery activeIndex ────── */
-  const mainImage = useMemo(() => {
-    // Option override: user selected an option with an image
-    if (optionOverrideIndex !== null) {
-      const imgSrc = selectedOptionImages[0];
-      if (imgSrc) {
-        return {
-          id: `ov-${imgSrc.valueId}`,
-          productId: product?.id ?? '',
-          url: imgSrc.url,
-          displayUrl: imgSrc.url,
-          thumbUrl: imgSrc.url,
-          storageProvider: 'r2' as const,
-          storageKey: '',
-          alt: '',
-          sortOrder: 0,
-          isPrimary: false,
-          width: null,
-          height: null,
-          createdAt: Date.now(),
-        };
-      }
-    }
-    // Gallery activeIndex (thumbnail click, swipe, or initial)
-    return images[activeIndex]?.img ?? images[0]?.img ?? null;
-  }, [optionOverrideIndex, selectedOptionImages, images, activeIndex, product]);
+  const validGallery = useMemo(() => {
+    return images.filter((entry) => {
+      const u = entry.img?.url;
+      if (!u || typeof u !== "string" || !u.trim()) return false;
+      if (failedImageUrls.has(u)) return false;
+      return true;
+    });
+  }, [images, failedImageUrls]);
 
-  // Sync gallery index when option selection changes
+  const activeImage = useMemo(() => {
+    if (validGallery.length === 0) return null;
+    const idx = Math.min(Math.max(0, activeIndex), validGallery.length - 1);
+    return validGallery[idx]?.img ?? validGallery[0]?.img ?? null;
+  }, [validGallery, activeIndex]);
+
+  const activeValidIndex = useMemo(() => {
+    if (validGallery.length === 0) return 0;
+    return Math.min(Math.max(0, activeIndex), validGallery.length - 1);
+  }, [validGallery.length, activeIndex]);
+
   useEffect(() => {
-    if (!product || optionGroups.length === 0) return;
-    // Find selected option image URL
-    let selectedImgUrl: string | null = null;
-    for (const group of optionGroups) {
-      const valId = selectedOptions[group.id];
-      if (valId && optionValueImageMap[valId]) {
-        selectedImgUrl = optionValueImageMap[valId];
-        break;
-      }
-    }
-    if (!selectedImgUrl) {
-      // No option image — keep gallery at current position
+    if (validGallery.length === 0) {
+      if (activeIndex !== 0) setActiveIndex(0);
       return;
     }
-    // Find matching image in gallery by URL
-    const idx = images.findIndex((entry) => entry.img.url === selectedImgUrl);
-    if (idx >= 0) {
-      setActiveIndex(idx);
+    if (activeIndex >= validGallery.length) setActiveIndex(validGallery.length - 1);
+  }, [validGallery.length, activeIndex]);
+
+  const prevProductIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const pid = (product as any)?.id ?? null;
+    if (pid && pid !== prevProductIdRef.current) {
+      prevProductIdRef.current = pid;
+      setFailedImageUrls(new Set());
+      setActiveIndex(0);
+      setMainImageLoaded(false);
     }
-  }, [selectedOptions, optionValueImageMap, images, optionGroups, product]);
+  }, [product]);
+
+  useEffect(() => {
+    setMainImageLoaded(false);
+  }, [activeImage?.url]);
+
+  const prevVariantIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const vid = (selectedVariant as any)?.id ?? null;
+    // Always record the current vid for next comparison (even when vid is null)
+    const prevVid = prevVariantIdRef.current;
+    prevVariantIdRef.current = vid;
+    if (!vid || vid === prevVid) return;
+    const vImgs: Array<{ url: string }> = (selectedVariant as any)?.images ?? [];
+    const firstUrl: string | undefined = vImgs[0]?.url;
+    if (firstUrl) {
+      const idxInValid = validGallery.findIndex((e) => e.img.url === firstUrl);
+      if (idxInValid >= 0) {
+        setActiveIndex(idxInValid);
+        return;
+      }
+      let optionImg: string | null = null;
+      for (const group of optionGroups) {
+        const valId = selectedOptions[group.id];
+        if (valId && optionValueImageMap[valId]) { optionImg = optionValueImageMap[valId]; break; }
+      }
+      if (optionImg) {
+        const optIdx = validGallery.findIndex((e) => e.img.url === optionImg);
+        if (optIdx >= 0) setActiveIndex(optIdx);
+      }
+      return;
+    }
+    // Variant has no image — prefer an option-value image if available, otherwise keep current
+    let optionImg: string | null = null;
+    for (const group of optionGroups) {
+      const valId = selectedOptions[group.id];
+      if (valId && optionValueImageMap[valId]) { optionImg = optionValueImageMap[valId]; break; }
+    }
+    if (optionImg) {
+      const optIdx = validGallery.findIndex((e) => e.img.url === optionImg);
+      if (optIdx >= 0) setActiveIndex(optIdx);
+    }
+  }, [selectedVariant, validGallery, optionGroups, selectedOptions, optionValueImageMap]);
+
+  useEffect(() => {
+    if (!thumbStripRef.current) return;
+    const el = thumbStripRef.current.querySelector(`[data-thumb-index="${activeValidIndex}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [activeValidIndex]);
+
+  const handleMainImageError = useCallback(() => {
+    const bad = activeImage?.url;
+    if (!bad) return;
+    setFailedImageUrls((prev) => {
+      if (prev.has(bad)) return prev;
+      const next = new Set(prev);
+      next.add(bad);
+      return next;
+    });
+  }, [activeImage]);
+
+  const handleThumbError = useCallback((url: string) => {
+    if (!url) return;
+    setFailedImageUrls((prev) => {
+      if (prev.has(url)) return prev;
+      const next = new Set(prev);
+      next.add(url);
+      return next;
+    });
+  }, []);
+
+  const goToImage = useCallback((idx: number) => {
+    if (validGallery.length === 0) return;
+    const clamped = Math.min(Math.max(0, idx), validGallery.length - 1);
+    setActiveIndex(clamped);
+  }, [validGallery.length]);
+
+  const goPrev = useCallback(() => {
+    if (validGallery.length <= 1) return;
+    setActiveIndex((prev) => (prev - 1 + validGallery.length) % validGallery.length);
+  }, [validGallery.length]);
+
+  const goNext = useCallback(() => {
+    if (validGallery.length <= 1) return;
+    setActiveIndex((prev) => (prev + 1) % validGallery.length);
+  }, [validGallery.length]);
+
+  const canSwipe = validGallery.length > 1;
+  const onGalleryTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!canSwipe) return;
+    const t = e.touches[0];
+    if (!t) return;
+    galleryTouchRef.current = { startX: t.clientX, startY: t.clientY, startTime: Date.now() };
+  }, [canSwipe]);
+
+  const onGalleryTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!canSwipe || !galleryTouchRef.current) return;
+    const t = e.changedTouches[0];
+    if (!t) { galleryTouchRef.current = null; return; }
+    const dx = t.clientX - galleryTouchRef.current.startX;
+    const dy = t.clientY - galleryTouchRef.current.startY;
+    const dt = Date.now() - galleryTouchRef.current.startTime;
+    galleryTouchRef.current = null;
+    if (Math.abs(dx) < 36) return;
+    if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    if (dt > 600) return;
+    if (dx < 0) goNext(); else goPrev();
+  }, [canSwipe, goNext, goPrev]);
 
   /* ── Cart image: first IMAGE option value image, fallback to product image ── */
   const cartImageUrl = useMemo(() => {
@@ -681,14 +766,14 @@ export default function ShopProductDetail() {
     setSeo({
       title: `${product.name} — VelShop`,
       description: product.description ?? t("productDetail.seoDesc", { name: product.name, price: formatBaht(product.price), unit: product.unit, shop: product.shopName ?? t("productDetail.defaultShop") }),
-      ogType: "product", ogImage: images[0]?.img?.displayUrl ?? undefined,
+      ogType: "product", ogImage: (activeImage?.displayUrl || activeImage?.url || validGallery[0]?.img?.displayUrl) ?? undefined,
       jsonLd: {
-        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: images[0]?.img?.displayUrl ?? undefined,
+        "@context": "https://schema.org", "@type": "Product", name: product.name, description: product.description ?? undefined, image: (activeImage?.displayUrl || activeImage?.url || validGallery[0]?.img?.displayUrl) ?? undefined,
         ...(rating ? { aggregateRating: { "@type": "AggregateRating", ...rating } } : {}),
         offers: { "@type": "Offer", priceCurrency: "THB", price: product.price, availability: outOfStock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock" },
       },
     });
-  }, [product, reviewSummary, images, outOfStock, t]);
+  }, [product, reviewSummary, images, validGallery, activeImage, outOfStock, t]);
 
   /* ── Scroll restoration for refresh + back/forward ───────────────── */
   useEffect(() => {
@@ -720,57 +805,6 @@ export default function ShopProductDetail() {
     return optionGroups.reduce((sum: number, g: any) => sum + (Array.isArray(g.values) ? g.values.length : 0), 0);
   }, [optionGroups]);
 
-  /* ── Gallery thumbnails: product images + variant images ──────── */
-
-  const productThumbnails = useMemo(() => {
-    if (product?.images && product.images.length > 0) return product.images;
-    if (product?.primaryImage) return [product.primaryImage];
-    return [];
-  }, [product]);
-
-  const variantThumbnails = useMemo(() => {
-    if (!selectedVariant) return [];
-    if (selectedVariant.images && selectedVariant.images.length > 0) {
-      return selectedVariant.images.map((img: any, i: number) => ({
-        id: `vi-${img.id ?? i}`,
-        url: img.url,
-        displayUrl: img.url,
-        thumbUrl: img.url,
-        label: selectedVariant.name ?? '',
-        isVariant: true as const,
-      }));
-    }
-    return [];
-  }, [selectedVariant]);
-
-  const handleSelectVariantFromThumbnail = useCallback((variantId: string) => {
-    const pVariants = (product as any)?.variants;
-    if (!Array.isArray(pVariants)) return;
-    const variant = pVariants.find((v: any) => v.id === variantId);
-    if (!variant) return;
-    const vOpts = variantOptions[variantId];
-    if (vOpts && typeof vOpts === 'object') {
-      setSelectedOptions((prev) => {
-        const next = { ...prev };
-        for (const [gId, vId] of Object.entries(vOpts)) {
-          next[gId] = vId as string;
-        }
-        return next;
-      });
-    }
-  }, [product, variantOptions]);
-
-  const variantThumbsWithActive = useMemo(() => {
-    if (variantThumbnails.length === 0) return [];
-    return variantThumbnails.map((vt: any) => ({
-      id: vt.id,
-      url: vt.thumbUrl || vt.url,
-      label: vt.label,
-      onClick: () => handleSelectVariantFromThumbnail(selectedVariant?.id ?? ''),
-      isActive: true,
-      isVariant: true as const,
-    }));
-  }, [variantThumbnails, selectedVariant, handleSelectVariantFromThumbnail]);
 
   const selectedSummary = useMemo(() => {
     if (!hasOptionGroups || Object.keys(selectedOptions).length === 0) return null;
@@ -926,7 +960,6 @@ export default function ShopProductDetail() {
       ...prev,
       [groupId]: prev[groupId] === valueText ? "" : valueText,
     }));
-    setOptionOverrideIndex(0); // Show option image (sync effect will set activeIndex)
   }, []);
 
   const handleWishlist = async () => {
@@ -998,13 +1031,76 @@ export default function ShopProductDetail() {
 
         {/* ═══════════ TOP: Gallery + Info + Purchase ═══════════ */}
         <div className="mt-5 grid gap-6 lg:grid-cols-2 lg:gap-8">
-          {/* Gallery */}
+          {/* Gallery — single source activeIndex, contain, swipe, dots, a11y */}
           <div className="min-w-0">
-            <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ maxWidth: "100%" }}>
-              {mainImage ? (
-                <img src={mainImage?.displayUrl || mainImage?.url} alt={mainImage?.alt || product.name} className="size-full object-cover" />
+            <div
+              className="relative flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white"
+              style={{ maxWidth: "100%" }}
+              onTouchStart={onGalleryTouchStart}
+              onTouchEnd={onGalleryTouchEnd}
+            >
+              {activeImage ? (
+                <>
+                  {!mainImageLoaded && (
+                    <span className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-white/60">
+                      <Loader2 className="size-6 animate-spin text-slate-300" aria-hidden />
+                    </span>
+                  )}
+                  <img
+                    key={activeImage.url}
+                    src={activeImage.displayUrl || activeImage.url}
+                    alt={activeImage.alt || product.name}
+                    className="size-full object-contain p-1.5 sm:p-2"
+                    loading="eager"
+                    decoding="async"
+                    draggable={false}
+                    onLoad={() => setMainImageLoaded(true)}
+                    onError={handleMainImageError}
+                  />
+                  {validGallery.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={goPrev}
+                        className="absolute left-2 top-1/2 hidden size-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900 sm:flex"
+                        aria-label={t("productDetail.prevImage") as string}
+                      >
+                        <ChevronLeft className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={goNext}
+                        className="absolute right-2 top-1/2 hidden size-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900 sm:flex"
+                        aria-label={t("productDetail.nextImage") as string}
+                      >
+                        <ChevronRight className="size-4" />
+                      </button>
+                    </>
+                  )}
+                  {validGallery.length > 1 && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center sm:hidden">
+                      <span className="flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 backdrop-blur">
+                        {validGallery.map((_, i) => (
+                          <span
+                            key={i}
+                            className={"size-1.5 rounded-full transition-colors " + (i === activeValidIndex ? "bg-white" : "bg-white/45")}
+                            aria-hidden
+                          />
+                        ))}
+                      </span>
+                    </div>
+                  )}
+                  {validGallery.length > 1 && (
+                    <span className="pointer-events-none absolute bottom-2 right-2 hidden rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white backdrop-blur sm:inline-flex">
+                      {activeValidIndex + 1} / {validGallery.length}
+                    </span>
+                  )}
+                </>
               ) : (
-                <span className="flex size-full items-center justify-center"><ImageOff className="size-12 text-slate-300" /></span>
+                <span className="flex size-full flex-col items-center justify-center gap-2 bg-slate-50 px-6 text-center">
+                  <ImageOff className="size-10 text-slate-300" aria-hidden />
+                  <span className="text-xs font-medium text-slate-400">{(t as any)("productDetail.noImage") ?? "\u0e44\u0e21\u0e48\u0e21\u0e35\u0e23\u0e39\u0e1b\u0e20\u0e32\u0e1e\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32"}</span>
+                </span>
               )}
               <button type="button" onClick={handleWishlist} disabled={wishToggling} className={`absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-colors ${wishlisted ? "text-rose-500" : "text-slate-400 hover:text-rose-500"}`} aria-label={t("productDetail.ariaWishlist")}>
                 {wishToggling ? <Loader2 className="size-4 animate-spin" /> : <Heart className={`size-4 ${wishlisted ? "fill-rose-500" : ""}`} />}
@@ -1013,41 +1109,56 @@ export default function ShopProductDetail() {
                 <Share2 className="size-4" />
               </button>
             </div>
-            {/* Gallery thumbnails: product images + divider + variant images */}
-            {(() => {
-              const allThumbs: { id: string; url: string; label?: string; onClick: () => void; isActive: boolean; isVariant?: boolean; group?: number }[] = [];
-              // All gallery images in group order (from the images memo)
-              images.forEach((entry: any, i: number) => {
-                allThumbs.push({
-                  id: `gi-${entry.img.id ?? i}`,
-                  url: entry.img.thumbUrl || entry.img.displayUrl || entry.img.url,
-                  onClick: () => { setActiveIndex(i); setOptionOverrideIndex(null); },
-                  isActive: i === activeIndex,
-                  isVariant: entry.group === 1,
-                  group: entry.group,
-                });
-              });
-              if (allThumbs.length <= 1) return null;
-              return (
-                <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
-                  {allThumbs.map((thumb, i) => (
-                    <span key={thumb.id} className="flex items-center gap-2">
-                      {i > 0 && allThumbs[i].group !== allThumbs[i - 1].group && (
-                        <span className="h-8 w-px shrink-0 bg-slate-200" />
-                      )}
+            {validGallery.length > 1 && (
+              <div className="mt-2 flex justify-center gap-1 sm:hidden" role="tablist" aria-label={(t as any)("productDetail.imageAlt") ?? "Product images"}>
+                {validGallery.map((entry, i) => (
+                  <button
+                    key={"dot-" + (entry.img.id ?? i)}
+                    type="button"
+                    role="tab"
+                    aria-selected={i === activeValidIndex}
+                    aria-label={t("productDetail.imageAlt", { n: i + 1 })}
+                    onClick={() => goToImage(i)}
+                    className={"h-1.5 rounded-full transition-all " + (i === activeValidIndex ? "w-5 bg-[#10B981]" : "w-1.5 bg-slate-200 hover:bg-slate-300")}
+                  />
+                ))}
+              </div>
+            )}
+            {validGallery.length > 1 && (
+              <div
+                ref={thumbStripRef}
+                className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+                style={{ scrollbarWidth: "none" }}
+              >
+                {validGallery.map((entry, i) => {
+                  const thumbUrl = entry.img.thumbUrl || entry.img.displayUrl || entry.img.url;
+                  const isActive = i === activeValidIndex;
+                  const showDivider = i > 0 && validGallery[i].group !== validGallery[i - 1].group;
+                  return (
+                    <span key={"gi-" + (entry.img.id ?? i)} className="flex items-center gap-2">
+                      {showDivider && <span className="h-8 w-px shrink-0 bg-slate-200" aria-hidden />}
                       <button
                         type="button"
-                        onClick={thumb.onClick}
-                        className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${thumb.isActive ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
-                        aria-label={thumb.label || t("productDetail.imageAlt", { n: i + 1 })}
+                        data-thumb-index={i}
+                        onClick={() => goToImage(i)}
+                        className={"size-16 shrink-0 overflow-hidden rounded-[10px] border-2 bg-white transition-colors " + (isActive ? "border-[#10B981] ring-1 ring-[#10B981]/20" : "border-slate-200 hover:border-slate-300")}
+                        aria-label={t("productDetail.imageAlt", { n: i + 1 })}
+                        aria-current={isActive ? "true" : undefined}
                       >
-                        <img src={thumb.url} alt="" className="size-full object-cover" loading="lazy" />
+                        <img
+                          src={thumbUrl}
+                          alt=""
+                          className="size-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          onError={() => handleThumbError(entry.img.url)}
+                        />
                       </button>
                     </span>
-                  ))}
-                </div>
-              );
-            })()}
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Product Info */}
@@ -1420,10 +1531,18 @@ export default function ShopProductDetail() {
                 the 180px image + price column can never exceed the viewport) */}
             <div className="flex flex-row items-start gap-3">
               <div className="h-[96px] w-[96px] shrink-0 self-start overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[140px] sm:w-[140px]">
-                {mainImage ? (
-                  <img src={mainImage?.displayUrl || mainImage?.url} alt={mainImage?.alt || product.name} className="size-full object-contain" />
+                {activeImage ? (
+                  <img
+                    key={activeImage.url}
+                    src={activeImage.displayUrl || activeImage.url}
+                    alt={activeImage.alt || product.name}
+                    className="size-full object-contain p-1.5"
+                    loading="lazy"
+                    decoding="async"
+                    onError={handleMainImageError}
+                  />
                 ) : (
-                  <span className="flex size-full items-center justify-center"><ImageOff className="size-8 text-slate-300" /></span>
+                  <span className="flex size-full flex-col items-center justify-center gap-1.5 bg-slate-50 px-2 text-center"><ImageOff className="size-8 text-slate-300" /><span className="text-[11px] font-medium text-slate-400">{(t as any)("productDetail.noImage") ?? "no image"}</span></span>
                 )}
               </div>
               <div className="min-w-0 flex-1">
