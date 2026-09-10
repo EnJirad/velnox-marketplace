@@ -2899,3 +2899,15 @@ Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 p
 **Fix:** sheet preview now resolves the EXACT variant directly from `selectedOptions` + `variantOptions` (strict: every option group selected and matching the variant mapping) instead of trusting the lagged `selectedVariant` state; partial selections skip variant images entirely and fall to the selected option value's own `imageUrl` (image-type options), then `optionValueImageMap`, then main gallery image, then first valid product image, then no-image fallback. Added `sheetFailedImageUrls` (separate Set, reset on product change) so preview failures never corrupt gallery state. No new duplicated state; `handleOptionSelect`/`selectedOptions`/`selectedVariant`/pricing/stock/cart/buy/VelRepeat and main gallery untouched.
 
 **Verification:** velshop `tsc --noEmit` PASS · `bun run i18n:check` 1006 PASS · velshop `vite build` PASS (50.79 kB) · `git diff --check` clean.
+
+---
+
+### 2026-09-10 — VelShop Product Detail — decouple Main Gallery from Variant selection
+
+**Scope:** `apps/velshop/src/pages/ShopProductDetail.tsx` only.
+
+**Root cause:** A `useEffect` keyed on `selectedVariant` (tracking `prevVariantIdRef`) called `setActiveIndex(...)` to jump the Main Product Gallery whenever the resolved variant changed — including partial selections and the one-render-stale `selectedVariant` (subset matching returns the first half-matching variant). This made the Main Gallery jump around while the user was just picking options in the Variant Bottom Sheet.
+
+**Fix:** Removed that variant→gallery sync effect entirely (+ `prevVariantIdRef`). The Main Gallery's `activeIndex` is now controlled exclusively by user actions (thumbnail click, prev/next arrows, mobile swipe) plus out-of-range clamps and product-change reset. Variant images are NOT removed — they still appear in the gallery via `images` group 1 (`selectedVariant.images`). The Variant Bottom Sheet preview stays fully selection-reactive through the derived `variantSheetPreviewImage` memo (priority: exact variant → option value imageUrl → optionValueImageMap → current gallery image → first valid product image → no-image fallback), and `failedImageUrls` / `sheetFailedImageUrls` remain separate sets.
+
+**Verification:** velshop `tsc --noEmit` PASS · velshop `vite build` PASS (ShopProductDetail 50.30 kB / gzip 13.29 kB) · `git diff --check` clean · only `ShopProductDetail.tsx` modified (8 insertions, 39 deletions). Cases verified by code trace: option selection updates sheet preview immediately; main gallery index unchanged by option/partial/full variant changes or sheet open/close; thumbnails/swipe/prev-next/fallback/broken-image handling intact; text-only options keep fallback; preview failure isolated from gallery; close/reopen sheet reflects current selection.

@@ -546,7 +546,7 @@ export default function ShopProductDetail() {
 
     return allRaw;
   }, [product, selectedVariant]);
-  // Reset active index when images change (e.g. variant option selected)
+  // Clamp active index only if the image list shrinks — never auto-moves on selection.
   useEffect(() => {
     if (activeIndex >= images.length && images.length > 0) setActiveIndex(0);
   }, [images.length, activeIndex]);
@@ -583,7 +583,7 @@ export default function ShopProductDetail() {
     return map;
   }, [product, variantOptions, optionGroups]);
 
-  /* ── Gallery: single source of truth (activeIndex) + variant sync + failure handling ── */
+  /* ── Gallery: single source of truth (activeIndex) + failure handling ── */
 
   const validGallery = useMemo(() => {
     return images.filter((entry) => {
@@ -629,43 +629,12 @@ export default function ShopProductDetail() {
     setMainImageLoaded(false);
   }, [activeImage?.url]);
 
-  const prevVariantIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const vid = (selectedVariant as any)?.id ?? null;
-    // Always record the current vid for next comparison (even when vid is null)
-    const prevVid = prevVariantIdRef.current;
-    prevVariantIdRef.current = vid;
-    if (!vid || vid === prevVid) return;
-    const vImgs: Array<{ url: string }> = (selectedVariant as any)?.images ?? [];
-    const firstUrl: string | undefined = vImgs[0]?.url;
-    if (firstUrl) {
-      const idxInValid = validGallery.findIndex((e) => e.img.url === firstUrl);
-      if (idxInValid >= 0) {
-        setActiveIndex(idxInValid);
-        return;
-      }
-      let optionImg: string | null = null;
-      for (const group of optionGroups) {
-        const valId = selectedOptions[group.id];
-        if (valId && optionValueImageMap[valId]) { optionImg = optionValueImageMap[valId]; break; }
-      }
-      if (optionImg) {
-        const optIdx = validGallery.findIndex((e) => e.img.url === optionImg);
-        if (optIdx >= 0) setActiveIndex(optIdx);
-      }
-      return;
-    }
-    // Variant has no image — prefer an option-value image if available, otherwise keep current
-    let optionImg: string | null = null;
-    for (const group of optionGroups) {
-      const valId = selectedOptions[group.id];
-      if (valId && optionValueImageMap[valId]) { optionImg = optionValueImageMap[valId]; break; }
-    }
-    if (optionImg) {
-      const optIdx = validGallery.findIndex((e) => e.img.url === optionImg);
-      if (optIdx >= 0) setActiveIndex(optIdx);
-    }
-  }, [selectedVariant, validGallery, optionGroups, selectedOptions, optionValueImageMap]);
+  // NOTE: No variant → main-gallery sync here (deliberate). Selecting an option
+  // or resolving a variant must NOT move the Main Product Gallery's activeIndex.
+  // The gallery stays fully under the user's control (thumbnails, prev/next,
+  // swipe). The Variant Bottom Sheet preview reacts to the selection via
+  // `variantSheetPreviewImage` (see below) — the two image systems are decoupled.
+  // Variant images themselves still appear in the gallery (group 1 of `images`).
 
   useEffect(() => {
     if (!thumbStripRef.current) return;
