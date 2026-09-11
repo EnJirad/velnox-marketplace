@@ -20,6 +20,7 @@ import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupCenterRoutes } from "./routes/center.js";
+import { registerVerificationRoutes } from "./routes/verification.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupChatRoutes } from "./routes/chat.js";
@@ -316,6 +317,9 @@ setupAdminRoutes(app);
 
 // ─── Center (company dashboard: overview/orders/intel/staff/audit) ──────
 setupCenterRoutes(app);
+
+// ─── Verification (dual seller + product verification system) ──────
+registerVerificationRoutes(app);
 
 // ─── Seller Intelligence (goals / income / reorder suggestions) ──────────
 setupSellerIntelligenceRoutes(app);

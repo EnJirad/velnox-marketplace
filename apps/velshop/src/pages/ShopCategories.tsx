@@ -6,7 +6,8 @@ import { api } from "@velnox/shared/lib/api-routes";
 import { useLanguage } from "@/lib/i18n";
 import { setSeo } from "@/lib/seo";
 import { useAction } from "@velnox/shared/lib/api-routes";
-import { ArrowRight, Boxes, ImageOff, LayoutGrid, Package } from "lucide-react";
+import { VBadge } from "@velnox/shared/components/VBadge";
+import { ArrowRight, Boxes, ImageOff, LayoutGrid, Package, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
@@ -143,6 +144,28 @@ export default function ShopCategories() {
                 </div>
               );
             })}
+          {/* VelShop Verified card */}
+          <div className="flex flex-col overflow-hidden rounded-2xl border border-emerald-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(16,185,129,0.1)]">
+            <Link to="/products?verified=true" className="block">
+              <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#065f46] via-[#059669] to-[#10B981] px-5">
+                <span className="flex size-12 items-center justify-center rounded-[12px] bg-white/20 backdrop-blur">
+                  <span className="text-lg font-extrabold text-white">V<span className="text-emerald-200">✓</span></span>
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate text-lg font-bold tracking-tight text-white">{t("verification.velshopVerified")}</h2>
+                  <p className="text-xs text-emerald-50/90">{t("verification.velshopVerifiedDesc")}</p>
+                </div>
+              </div>
+            </Link>
+            <div className="mt-auto p-5 pt-4">
+              <Button variant="ghost" className="h-9 w-full gap-1 text-xs text-slate-500 hover:bg-emerald-50 hover:text-emerald-700" asChild>
+                <Link to="/products?verified=true">
+                  {t("categories.velshopVerified")}
+                  <ArrowRight className="size-3.5" />
+                </Link>
+              </Button>
+            </div>
+          </div>
           </div>
         )}
       </main>

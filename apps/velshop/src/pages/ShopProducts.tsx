@@ -90,6 +90,7 @@ export default function ShopProducts() {
   const minPrice = params.get("min") ?? "";
   const maxPrice = params.get("max") ?? "";
   const inStock = params.get("inStock") === "1";
+  const verifiedOnly = params.get("verified") === "true";
   const sortBy = params.get("sort") ?? "newest";
   const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
 
@@ -165,6 +166,7 @@ export default function ShopProducts() {
         minPrice: minPrice ? Number(minPrice) : undefined,
         maxPrice: maxPrice ? Number(maxPrice) : undefined,
         inStock: inStock || undefined,
+        verified: verifiedOnly || undefined,
         sortBy,
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
@@ -277,14 +279,15 @@ export default function ShopProducts() {
   };
 
   const hasFilters =
-    q !== "" || category !== "all" || shopId !== "" || minPrice !== "" || maxPrice !== "" || inStock;
+    q !== "" || category !== "all" || shopId !== "" || minPrice !== "" || maxPrice !== "" || inStock || verifiedOnly;
 
   const activeFilterCount =
     (category !== "all" ? 1 : 0) +
     (shopId !== "" ? 1 : 0) +
     (minPrice !== "" ? 1 : 0) +
     (maxPrice !== "" ? 1 : 0) +
-    (inStock ? 1 : 0);
+    (inStock ? 1 : 0) +
+    (verifiedOnly ? 1 : 0);
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
   const pageNumbers = useMemo(() => {
@@ -331,6 +334,22 @@ export default function ShopProducts() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* VelShop Verified */}
+      <div>
+        <button
+          type="button"
+          onClick={() => updateParam("verified", verifiedOnly ? null : "true")}
+          className={`flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-xs font-medium transition-colors ${
+            verifiedOnly
+              ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15"
+              : "border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700"
+          }`}
+        >
+          <span className="font-extrabold">V</span><span className="text-emerald-600">✓</span>
+          <span>{t("verification.velshopVerifiedFilter")}</span>
+        </button>
       </div>
 
       {/* Shop */}

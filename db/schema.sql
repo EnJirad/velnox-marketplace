@@ -117,7 +117,13 @@ CREATE TABLE IF NOT EXISTS categories (
   icon TEXT,
   parent_id UUID REFERENCES categories(id) ON DELETE SET NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  names JSONB DEFAULT '{}',
+  description TEXT,
+  description_names JSONB DEFAULT '{}',
+  image_url TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug);
@@ -128,11 +134,30 @@ CREATE TABLE IF NOT EXISTS sellers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'suspended')),
+  verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
+  verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_sellers_user ON sellers (user_id);
+
+CREATE TABLE IF NOT EXISTS seller_verifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'unverified' CHECK (status IN ('unverified','pending','verified','rejected','suspended')),
+  verification_type TEXT NOT NULL DEFAULT 'identity',
+  evidence_urls JSONB DEFAULT '[]',
+  submitted_at TIMESTAMPTZ,
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES users(id),
+  rejection_reason TEXT,
+  suspension_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_seller_verifications_seller ON seller_verifications (seller_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_verifications_pending ON seller_verifications (seller_id) WHERE status = 'pending';
 
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -179,6 +204,8 @@ CREATE TABLE IF NOT EXISTS products (
   vrepeat_weekly_qty INTEGER,
   vrepeat_monthly_qty INTEGER,
   featured_variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
+  verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -192,6 +219,26 @@ CREATE INDEX IF NOT EXISTS idx_products_slug ON products (slug);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products (price);
 CREATE INDEX IF NOT EXISTS idx_products_vrepeat ON products (vrepeat_enabled) WHERE vrepeat_enabled = TRUE;
 CREATE INDEX IF NOT EXISTS idx_products_featured_variant ON products (featured_variant_id) WHERE featured_variant_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_products_verification ON products (verification_status);
+
+CREATE TABLE IF NOT EXISTS product_verifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'unverified' CHECK (status IN ('unverified','pending','verified','rejected','suspended')),
+  verification_type TEXT NOT NULL DEFAULT 'standard',
+  evidence_urls JSONB DEFAULT '[]',
+  evidence_notes TEXT,
+  category_requirements JSONB DEFAULT '{}',
+  submitted_at TIMESTAMPTZ,
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES users(id),
+  rejection_reason TEXT,
+  suspension_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_product_verifications_product ON product_verifications (product_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_verifications_pending ON product_verifications (product_id) WHERE status = 'pending';
 
 CREATE TABLE IF NOT EXISTS product_images (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

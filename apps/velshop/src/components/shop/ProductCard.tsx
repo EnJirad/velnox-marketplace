@@ -1,5 +1,6 @@
 import { useLanguage } from "@/lib/i18n";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
+import { VBadge } from "@velnox/shared/components/VBadge";
 import { Heart, ImageOff, Loader2, Star } from "lucide-react";
 import { Link } from "react-router";
 
@@ -96,12 +97,19 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
       {/* ── Info ── */}
       <div className={`flex flex-1 flex-col ${compact ? "gap-0.5 p-1.5" : "p-3 sm:p-3.5"}`}>
         {/* Product name (navigates to Product Detail) */}
-        <Link
-          to={detailUrl}
-          className={`line-clamp-2 font-medium leading-snug text-slate-900 hover:text-[#10B981] ${compact ? "text-[12px]" : "text-sm font-semibold leading-5"}`}
-        >
-          {product.name}
-        </Link>
+        <div className="flex items-start gap-1">
+          <Link
+            to={detailUrl}
+            className={`line-clamp-2 min-w-0 flex-1 font-medium leading-snug text-slate-900 hover:text-[#10B981] ${compact ? "text-[12px]" : "text-sm font-semibold leading-5"}`}
+          >
+            {product.name}
+          </Link>
+          <VBadge
+            productVerification={(product as any).verificationStatus}
+            sellerVerification={(product as any).sellerVerificationStatus}
+            size="sm"
+          />
+        </div>
 
         {/* Price */}
         <div className={`flex items-baseline gap-1.5 ${compact ? "mt-0.5" : "mt-1.5"}`}>

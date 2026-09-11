@@ -15,17 +15,45 @@ import {
 import { setSeo } from "@/lib/seo";
 import { useTracking } from "@velnox/shared/lib/track";
 import {
+  Armchair,
   ArrowRight,
+  Baby,
   BellRing,
+  BookOpen,
+  Briefcase,
+  Car,
+  Cpu,
+  Dumbbell,
+  Fish,
+  Flower2,
+  Footprints,
+  Gamepad2,
+  Gem,
+  Headphones,
+  Heart,
   History,
+  Home,
+  Laptop,
+  Map as MapIcon,
+  Shirt,
+  Wrench,
+  MapPin,
+  Monitor,
   Package,
   PackageOpen,
+  PawPrint,
+  PenTool,
   RefreshCw,
   Search,
   ShoppingBag,
   ShoppingBasket,
+  Smartphone,
   Sparkles,
+  Stamp,
+  Sprout,
+  Star,
   TrendingUp,
+  Truck,
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
@@ -43,12 +71,39 @@ interface RecommendedRow {
   views: number;
 }
 
-const CATEGORY_ICONS: Record<StoreProductCategory, LucideIcon> = {
+const CATEGORY_ICONS: Partial<Record<StoreProductCategory, LucideIcon>> = {
   general: Package,
   food: UtensilsCrossed,
+  "food-beverage": UtensilsCrossed,
   daily: ShoppingBasket,
+  "grocery-household": ShoppingBasket,
   beauty: Sparkles,
+  "beauty-personal-care": Sparkles,
+  "health-wellness": Heart,
+  fashion: Shirt,
+  "shoes-bags": Footprints,
+  "jewelry-accessories": Gem,
+  electronics: Cpu,
+  "phones-accessories": Smartphone,
+  "computers-accessories": Monitor,
+  "home-appliances": Home,
+  "home-living": Home,
+  furniture: Armchair,
+  "garden-outdoor": Flower2,
+  "baby-kids": Baby,
+  "toys-games": Gamepad2,
+  pets: PawPrint,
+  "sports-outdoors": Dumbbell,
+  automotive: Car,
+  "tools-hardware": Wrench,
+  "stationery-office": PenTool,
+  "business-equipment": Briefcase,
   packaging: PackageOpen,
+  "books-media": BookOpen,
+  "hobbies-collectibles": Stamp,
+  agriculture: Sprout,
+  "local-products": MapPin,
+  services: Headphones,
   other: Package,
 };
 
@@ -134,7 +189,7 @@ export default function ShopHome() {
   const reminders = useMemo(() => remindersData.data ?? [], [remindersData.data]);
 
   const popularCategories = useMemo(() => {
-    const counts = new Map<StoreProductCategory, number>();
+    const counts = new globalThis.Map<string, number>();
     for (const p of products) { counts.set(p.category, (counts.get(p.category) ?? 0) + 1); }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6);
   }, [products]);
@@ -207,9 +262,7 @@ export default function ShopHome() {
               <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("home.searchPlaceholder")} className="h-10 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0" aria-label={t("header.ariaSearch")} />
               <Button type="submit" className="h-9 shrink-0 gap-1.5 rounded-full bg-slate-900 px-5 text-white hover:bg-slate-800">{t("common.search")}<ArrowRight className="size-4" /></Button>
             </form>
-            <div className="mt-5">
-              <Button className="h-10 gap-1.5 rounded-full bg-[#10B981] px-6 text-white hover:bg-emerald-700" asChild><Link to="/products"><ShoppingBag className="size-4" />{t("home.shopNow")}</Link></Button>
-            </div>
+            {/* Search is the primary discovery action — Shop Now removed */}
           </div>
         </div>
       </section>
@@ -222,7 +275,7 @@ export default function ShopHome() {
               <Link to="/categories" onClick={() => track("CATEGORY_VIEW", { value: "all", context: { label: "explore" } })} className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("home.viewAllCategories")}<ArrowRight className="size-3.5" /></Link>
             </div>
             <div className="mt-4 flex gap-3 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-6">
-              {popularCategories.map(([id, count]) => { const Icon = CATEGORY_ICONS[id] ?? Package; const meta = PRODUCT_CATEGORY_META[id]; return (<Link key={id} to={`/products?category=${id}`} onClick={() => handleCategory(id)} className="group flex min-w-[110px] flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white p-3.5 text-center transition-colors hover:border-[#10B981]/40 sm:min-w-0"><span className="flex size-11 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#10B981] transition-colors group-hover:bg-[#10B981] group-hover:text-white"><Icon className="size-5" /></span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-900">{meta.label}</span><span className="mt-0.5 block text-[11px] text-slate-400">{t("home.categoryCount", { count })}</span></span></Link>); })}
+              {popularCategories.map(([id, count]) => { const Icon = (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package; const meta = (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id]; return (<Link key={id} to={`/products?category=${id}`} onClick={() => handleCategory(id as StoreProductCategory)} className="group flex min-w-[110px] flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white p-3.5 text-center transition-colors hover:border-[#10B981]/40 sm:min-w-0"><span className="flex size-11 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#10B981] transition-colors group-hover:bg-[#10B981] group-hover:text-white"><Icon className="size-5" /></span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-900">{meta?.label ?? id}</span><span className="mt-0.5 block text-[11px] text-slate-400">{t("home.categoryCount", { count })}</span></span></Link>); })}
             </div>
           </div>
         </section>

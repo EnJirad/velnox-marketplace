@@ -239,6 +239,12 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     vrepeatMinQty: row.vrepeat_min_qty ?? null,
     vrepeatMaxQty: row.vrepeat_max_qty ?? null,
     featuredVariantId: row.featured_variant_id ?? null,
+    // Verification fields
+    verificationStatus: row.verification_status || "unverified",
+    sellerVerificationStatus: row.seller_verification_status || "unverified",
+    isVerifiedProduct:
+      (row.verification_status === "verified") &&
+      (row.seller_verification_status === "verified"),
   };
 }
 
@@ -1970,6 +1976,11 @@ export function setupProductRoutes(app: Express): void {
           OR EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active' AND pv.stock > 0)
         )`;
       }
+      // VelShop Verified filter: BOTH seller AND product must be verified
+      if (req.query.verified === "true") {
+        where += ` AND p.verification_status = 'verified'
+                   AND EXISTS (SELECT 1 FROM sellers s WHERE s.id = sh.seller_id AND s.verification_status = 'verified')`;
+      }
 
       let orderBy = "ORDER BY p.created_at DESC";
       if (sortBy === "price_asc") orderBy = "ORDER BY p.price ASC";
@@ -1977,9 +1988,11 @@ export function setupProductRoutes(app: Express): void {
       if (sortBy === "popular") orderBy = "ORDER BY p.sold_count DESC";
 
       const result = await query(
-        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id,
+                COALESCE(s.verification_status, 'unverified') AS seller_verification_status
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
+         LEFT JOIN sellers s ON s.id = sh.seller_id
          ${where}
          ${orderBy}
          LIMIT $${idx++} OFFSET $${idx}`,
@@ -2459,15 +2472,107 @@ export function setupProductRoutes(app: Express): void {
   });
 
   // ── GET /api/categories ─────────────────────────────────────────────────
-  app.get("/api/categories", async (_req: Request, res: Response) => {
+  // Returns full category tree with localized names, descriptions, and metadata.
+  app.get("/api/categories", async (req: Request, res: Response) => {
     try {
+      const lang = typeof req.query.lang === "string" ? req.query.lang : "th";
       const result = await query(
-        "SELECT id, name, slug, icon, parent_id, sort_order FROM categories ORDER BY sort_order ASC, name ASC"
+        `SELECT id, name, slug, icon, parent_id, sort_order, is_active,
+                COALESCE(names->>$1, name) AS display_name,
+                COALESCE(description_names->>$1, description) AS display_description,
+                image_url
+         FROM categories
+         WHERE is_active = TRUE
+         ORDER BY sort_order ASC, name ASC`,
+        [lang]
       );
       res.json({ success: true, data: result.rows });
     } catch (err) {
       console.error("[products] categories error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch categories" } });
+    }
+  });
+
+  // ── GET /api/categories/verified ─────────────────────────────────────────
+  // Special endpoint for VelShop Verified: products where BOTH seller AND product are verified.
+  // (used by frontend to distinguish "verified" from normal categories)
+  // This is a metadata endpoint — the actual filtering happens in the catalog route.
+
+  // ── GET /api/categories/tree ─────────────────────────────────────────────
+  // Returns full category tree with children and product counts.
+  app.get("/api/categories/tree", async (req: Request, res: Response) => {
+    try {
+      const lang = typeof req.query.lang === "string" ? req.query.lang : "th";
+      const result = await query(
+        `SELECT c.id, c.name, c.slug, c.icon, c.parent_id, c.sort_order, c.is_active,
+                COALESCE(c.names->>$1, c.name) AS display_name,
+                COALESCE(c.description_names->>$1, c.description) AS display_description,
+                c.image_url,
+                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.status = 'published')::int AS product_count
+         FROM categories c
+         WHERE c.is_active = TRUE
+         ORDER BY c.sort_order ASC, c.name ASC`,
+        [lang]
+      );
+
+      // Build tree structure
+      const rows = result.rows;
+      const byId = new Map<string, any>();
+      const roots: any[] = [];
+      for (const row of rows) {
+        byId.set(row.id, { ...row, children: [] });
+      }
+      for (const row of rows) {
+        const node = byId.get(row.id)!;
+        if (row.parent_id && byId.has(row.parent_id)) {
+          byId.get(row.parent_id)!.children.push(node);
+        } else {
+          roots.push(node);
+        }
+      }
+
+      res.json({ success: true, data: roots });
+    } catch (err) {
+      console.error("[categories] tree error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch category tree" } });
+    }
+  });
+
+  // ── GET /api/categories/stats ─────────────────────────────────────────────
+  app.get("/api/categories/stats", async (req: Request, res: Response) => {
+    try {
+      const lang = typeof req.query.lang === "string" ? req.query.lang : "th";
+      const result = await query(
+        `SELECT c.id, c.name, c.slug, c.icon, c.parent_id, c.sort_order, c.is_active,
+                COALESCE(c.names->>$1, c.name) AS display_name,
+                COALESCE(c.description_names->>$1, c.description) AS display_description,
+                c.image_url,
+                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.status = 'published')::int AS product_count
+         FROM categories c
+         WHERE c.is_active = TRUE
+         ORDER BY c.sort_order ASC, c.name ASC`,
+        [lang]
+      );
+
+      const rows = result.rows;
+      const byId = new Map<string, any>();
+      const roots: any[] = [];
+      for (const row of rows) {
+        byId.set(row.id, { ...row, children: [] });
+      }
+      for (const row of rows) {
+        const node = byId.get(row.id)!;
+        if (row.parent_id && byId.has(row.parent_id)) {
+          byId.get(row.parent_id)!.children.push(node);
+        } else {
+          roots.push(node);
+        }
+      }
+
+      res.json({ success: true, data: roots });
+    } catch (err) {
+      console.error("[categories] stats error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch category stats" } });
     }
   });
 

@@ -297,7 +297,12 @@ export const th = {
     viewProducts: "ดูสินค้าในหมวดนี้",
     seoTitle: "หมวดหมู่สินค้า — VelShop",
     seoDesc: "เลือกหมวดหมู่เพื่อค้นหาสินค้าจากร้านค้าจริงทั่วตลาด Velnox",
-  },
+    searchPlaceholder: "ค้นหาหมวดหมู่...",
+    allCategories: "ทุกหมวดหมู่",
+    velshopVerified: "VelShop Verified",
+    velshopVerifiedDesc: "สินค้าที่ผ่านการตรวจสอบแล้ว",
+    viewAllCategories: "ดูทุกหมวดหมู่",
+},
 
   cartDrawer: {
     emptyTitle: "ตะกร้ายังว่าง",
@@ -1240,5 +1245,39 @@ export const th = {
     emptyDesc: "เมื่อลูกค้ากด \"แชทกับร้านค้า\" การสนทนาจะมาแสดงที่นี่",
   },
 
-  // __APPEND__
+  verification: {
+    // General
+    verifiedProduct: "สินค้าที่ผ่านการตรวจสอบแล้ว",
+    sellerVerified: "ร้านค้าที่ผ่านการตรวจสอบแล้ว",
+    productVerifiedTooltip: "สินค้านี้ผ่านการตรวจสอบทั้งร้านค้าและตัวสินค้าแล้วโดย VelShop",
+    sellerVerifiedTooltip: "ร้านค้านี้ผ่านการตรวจสอบตัวตนโดย Velnox แล้ว",
+    // Status labels
+    statusUnverified: "ยังไม่ได้ตรวจสอบ",
+    statusPending: "รอตรวจสอบ",
+    statusVerified: "ตรวจสอบแล้ว",
+    statusRejected: "ถูกปฏิเสธ",
+    statusSuspended: "ระงับชั่วคราว",
+    // Shop page
+    sellerVerificationTitle: "การยืนยันตัวตนร้านค้า",
+    sellerVerificationDesc: "ตัวตนของร้านค้าได้รับการตรวจสอบโดย Velnox แล้ว",
+    productVerificationTitle: "การยืนยันสินค้า",
+    productVerificationDesc: "สินค้านี้ได้รับการตรวจสอบโดย Velnox แล้ว",
+    // Seller dashboard
+    sellerVerificationBadge: "ร้านค้าผ่านการตรวจสอบแล้ว",
+    productVerificationBadge: "สินค้าผ่านการตรวจสอบแล้ว",
+    productNotVerified: "ยังไม่ได้ตรวจสอบ",
+    productPending: "รอตรวจสอบ",
+    // Actions
+    submitForVerification: "ส่งตรวจสอบ",
+    resubmitForVerification: "ส่งตรวจสอบอีกครั้ง",
+    // VelShop Verified
+    velshopVerified: "VelShop Verified",
+    velshopVerifiedDesc: "สินค้าที่ผ่านการตรวจสอบทั้งร้านค้าและตัวสินค้าแล้ว",
+    velshopVerifiedFilter: "VelShop Verified เท่านั้น",
+    // Evidence
+    evidenceRequired: "กรุณาแนบหลักฐาน",
+    evidenceHint: "แนบเอกสารยืนยัน รูปถ่าย หรือหลักฐานที่เกี่ยวข้อง",
+  },
+
+// __APPEND__
 };

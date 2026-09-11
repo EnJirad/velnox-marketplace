@@ -1,10 +1,10 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-09-10**
+**LAST UPDATED: 2026-09-11**
 
 ## Production Readiness Status
 
-**STATUS: PRODUCTION READY WITH KNOWN NON-BLOCKERS** (Final audit completed 2026-09-09)
+**STATUS: IMPLEMENTED — Velnox Verified + Scalable Categories (2026-09-11)** — previous audit: PRODUCTION READY WITH KNOWN NON-BLOCKERS
 
 All P0/P1 issues are CLOSED. The marketplace is safe for MVP production deployment.
 See "Production Readiness Audit" section in Recent Work History for full report.
@@ -380,6 +380,29 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-11 — Velnox Verified: Dual Verification, Verified Products & Scalable Category System
+
+**Status: IMPLEMENTED**
+
+- Removed "Shop Now" / "เริ่มช้อปปิ้ง" button from VelShop Home hero section (search remains primary discovery).
+- Scalable category taxonomy: 29 parent categories + 16 subcategories (parent_id, slugs, multilingual names, sort order, active/inactive). Designed for admin-expandable taxonomy.
+- 28 new `StoreProductCategory` values (plus 6 legacy). `CATEGORY_ICONS` updated with full coverage.
+- DB: `categories` enhanced with `names`/`description_names` JSONB + `is_active` + `updated_at` + `image_url`.
+- Dual verification system:
+  - Seller Verification: `sellers.verification_status` (unverified/pending/verified/rejected/suspended) + `seller_verifications` audit table.
+  - Product Verification: `products.verification_status` (same enum) + `product_verifications` audit table.
+  - V✓ eligibility = seller verified AND product verified (server-side enforced in catalog query and ProductCard).
+- Catalog: new `?verified=true` filter for VelShop Verified. Backend enforces dual check.
+- VBadge component (`@velnox/shared/components/VBadge.tsx`) with tooltip, seller/product modes, size variants.
+- Category API: `/api/categories` (localized via `?lang=`), `/api/categories/tree`, `/api/categories/stats`.
+- Verification API: `/api/seller/verification`, `/api/seller/products/:id/verification`, `/api/admin/verifications`, `/api/shops/:shopId/verification`.
+- i18n: `verification.*` and extended `categories.*` keys for th/en/my.
+- Migration: `db/migrations/040_verification_and_categories.sql` (V0040).
+- Schema sync: `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`.
+- ShopDetail: seller verification via VBadge. ProductCard: V✓ when eligible. ShopCategories: VelShop Verified card.
+- MyShop (Velseller): seller verification status card. Center: `verifications` tab.
+- **Typechecks:** backend ✅, 4 apps ✅. **Remaining:** builds, i18n check, diff --check pending final push.
+
 ### 2026-09-09 — Final Production Readiness Audit + P2 Cleanup
 
 **Audit Result: PRODUCTION READY WITH KNOWN NON-BLOCKERS**
@@ -406,6 +429,12 @@ Full E2E audit traced every critical flow: auth → browse → product → cart 
 - Backend typecheck ✅ · Tests: 91 pass / 20 DB-gated skip / 0 fail
 - All 4 apps typecheck + production build ✅
 - i18n parity ✅ (1003×3) · `git diff --check` ✅
+
+**2026-09-11 — Velnox Verified:**
+- 29 parent categories + 16 subcategories with multilingual JSONB names
+- Dual verification: seller + product, V✓ only when both verified (server-enforced)
+- `StoreProductCategory` 6→34, VBadge, VelShop Verified filter (`?verified=true`), Center `verifications` tab
+- Migration V0040, schema sync, i18n (th/en/my), catalog `?verified` filter
 
 **Complete fix history (all CLOSED):**
 - P0 #1: Seller Order Management

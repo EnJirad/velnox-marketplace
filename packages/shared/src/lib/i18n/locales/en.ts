@@ -296,7 +296,12 @@ export const en: Dict = {
     viewProducts: "Browse products",
     seoTitle: "Product categories — VelShop",
     seoDesc: "Browse categories and shop from real shops across the Velnox marketplace",
-  },
+    searchPlaceholder: "Search categories...",
+    allCategories: "All categories",
+    velshopVerified: "VelShop Verified",
+    velshopVerifiedDesc: "Products verified by VelShop",
+    viewAllCategories: "View all categories",
+},
 
   cartDrawer: {
     emptyTitle: "Your cart is empty",
@@ -1239,5 +1244,39 @@ export const en: Dict = {
     emptyDesc: "When a customer taps \"Chat with shop\" the conversation appears here",
   },
 
-  // __APPEND__
+  verification: {
+    // General
+    verifiedProduct: "Verified Product",
+    sellerVerified: "Verified Seller",
+    productVerifiedTooltip: "This product has been verified by VelShop for both seller identity and product authenticity",
+    sellerVerifiedTooltip: "This seller's identity has been verified by Velnox",
+    // Status labels
+    statusUnverified: "Not verified",
+    statusPending: "Pending review",
+    statusVerified: "Verified",
+    statusRejected: "Rejected",
+    statusSuspended: "Suspended",
+    // Shop page
+    sellerVerificationTitle: "Seller Verification",
+    sellerVerificationDesc: "This seller's identity has been verified by Velnox",
+    productVerificationTitle: "Product Verification",
+    productVerificationDesc: "This product has been verified by Velnox",
+    // Seller dashboard
+    sellerVerificationBadge: "Seller verified",
+    productVerificationBadge: "Product verified",
+    productNotVerified: "Not verified",
+    productPending: "Pending review",
+    // Actions
+    submitForVerification: "Submit for verification",
+    resubmitForVerification: "Resubmit for verification",
+    // VelShop Verified
+    velshopVerified: "VelShop Verified",
+    velshopVerifiedDesc: "Products verified by both seller identity and product authenticity checks",
+    velshopVerifiedFilter: "VelShop Verified only",
+    // Evidence
+    evidenceRequired: "Please attach evidence",
+    evidenceHint: "Attach verification documents, photos, or relevant evidence",
+  },
+
+// __APPEND__
 };

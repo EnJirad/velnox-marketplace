@@ -40,7 +40,17 @@ export interface StoreInventory {
 }
 
 export type StoreProductStatus = "draft" | "pending_review" | "published" | "rejected" | "archived";
-export type StoreProductCategory = "general" | "food" | "daily" | "beauty" | "packaging" | "other";
+export type StoreProductCategory = "general" | "food" | "daily" | "beauty" | "packaging" | "other"
+  // Extended categories (UUID-backed, mapped from categories table)
+  | "food-beverage" | "grocery-household" | "beauty-personal-care" | "health-wellness"
+  | "fashion" | "shoes-bags" | "jewelry-accessories" | "electronics"
+  | "phones-accessories" | "computers-accessories" | "home-appliances" | "home-living"
+  | "furniture" | "garden-outdoor" | "baby-kids" | "toys-games"
+  | "pets" | "sports-outdoors" | "automotive" | "tools-hardware"
+  | "stationery-office" | "business-equipment" | "books-media"
+  | "hobbies-collectibles" | "agriculture" | "local-products" | "services";
+
+export type VerificationStatus = "unverified" | "pending" | "verified" | "rejected" | "suspended";
 
 export interface StoreProduct {
   id: string;
@@ -65,11 +75,17 @@ export interface StoreProduct {
   shopName?: string;
   shopSlug?: string;
   sellerName?: string;
+  /** Seller/shop verification status */
+  sellerVerificationStatus?: VerificationStatus;
   /** real storefront stats (from the backend — never invented) */
   soldCount?: number;
   /** average published review rating (0–5), null = no reviews yet */
   rating?: number | null;
   reviewCount?: number;
+  /** Product verification status (server-side enforced) */
+  verificationStatus?: VerificationStatus;
+  /** Whether this product qualifies for V✓ badge (seller verified AND product verified) */
+  isVerifiedProduct?: boolean;
   // VelRepeat configuration
   vrepeatEnabled?: boolean;
   vrepeatWeeklyEnabled?: boolean;
@@ -132,6 +148,8 @@ export interface StoreShop {
   status: "active" | "suspended" | "closed";
   commissionRate: number;
   currency: string;
+  /** Seller/shop verification status */
+  verificationStatus?: VerificationStatus;
   /** Unix ms */
   createdAt: number;
 }
@@ -458,4 +476,31 @@ export const PRODUCT_CATEGORY_META: Record<StoreProductCategory, { label: string
   beauty: { label: "ความงาม" },
   packaging: { label: "บรรจุภัณฑ์" },
   other: { label: "อื่น ๆ" },
+  "food-beverage": { label: "อาหารและเครื่องดื่ม" },
+  "grocery-household": { label: "ของชำและของใช้ในครัวเรือน" },
+  "beauty-personal-care": { label: "ความงามและการดูแลส่วนบุคคล" },
+  "health-wellness": { label: "สุขภาพและความเป็นอยู่ที่ดี" },
+  fashion: { label: "แฟชั่น" },
+  "shoes-bags": { label: "รองเท้าและกระเป๋า" },
+  "jewelry-accessories": { label: "เครื่องประดับและแอคเซสเซอรี่" },
+  electronics: { label: "อิเล็กทรอนิกส์" },
+  "phones-accessories": { label: "โทรศัพท์มือถือและอุปกรณ์เสริม" },
+  "computers-accessories": { label: "คอมพิวเตอร์และอุปกรณ์เสริม" },
+  "home-appliances": { label: "เครื่องใช้ไฟฟ้าภายในบ้าน" },
+  "home-living": { label: "บ้านและไลฟ์สไตล์" },
+  furniture: { label: "เฟอร์นิเจอร์" },
+  "garden-outdoor": { label: "สวนและกลางแจ้ง" },
+  "baby-kids": { label: "ทารกและเด็ก" },
+  "toys-games": { label: "ของเล่นและเกม" },
+  pets: { label: "สัตว์เลี้ยง" },
+  "sports-outdoors": { label: "กีฬาและกลางแจ้ง" },
+  automotive: { label: "ยานยนต์" },
+  "tools-hardware": { label: "เครื่องมือและฮาร์ดแวร์" },
+  "stationery-office": { label: "เครื่องเขียนและสำนักงาน" },
+  "business-equipment": { label: "อุปกรณ์ธุรกิจ" },
+  "books-media": { label: "หนังสือและสื่อ" },
+  "hobbies-collectibles": { label: "งานอดิเรกและของสะสม" },
+  agriculture: { label: "เกษตรกรรม" },
+  "local-products": { label: "สินค้าท้องถิ่น" },
+  services: { label: "บริการ" },
 };

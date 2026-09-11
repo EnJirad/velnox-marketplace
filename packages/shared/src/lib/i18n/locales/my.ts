@@ -194,7 +194,12 @@ export const my = {
     viewProducts: "ကုန်ပစ္စည်းများကြည့်ရန်",
     seoTitle: "ကုန်ပစ္စည်းအမျိုးအစားများ — VelShop",
     seoDesc: "Velnox ဈေးကွက်ရှိ အစစ်အမှန်ဆိုင်များမှ အမျိုးအစားအလိုက် ဈေးဝယ်ပါ",
-  },
+    searchPlaceholder: "အမျိုးအစားရှာဖွေရန်...",
+    allCategories: "အမျိုးအစားအားလုံး",
+    velshopVerified: "VelShop Verified",
+    velshopVerifiedDesc: "VelShop မှ အတည်ပြုထားသော ထုတ်ကုန်များ",
+    viewAllCategories: "အမျိုးအစားအားလုံးကြည့်ရန်",
+},
 
   cartDrawer: {
     emptyTitle: "ခြင်းတောင်း ဗလာဖြစ်နေသည်",
@@ -909,7 +914,39 @@ export const my = {
     satelliteUnavailable: "ဂြိုဟ်တုပုံရိပ် ရယူ၍မရပါ",
   },
 
-  // __APPEND__
+  verification: {
+    // General
+    verifiedProduct: "အတည်ပြုထားသောထုတ်ကုန်",
+    sellerVerified: "အတည်ပြုထားသောရောင်းချသူ",
+    productVerifiedTooltip: "ဤထုတ်ကုန်ကို VelShop မှ ရောင်းချသူနှင့် ထုတ်ကုန်စစ်ဆေးမှု နှစ်ခုလုံးအတွက် အတည်ပြုပြီးဖြစ်သည်",
+    sellerVerifiedTooltip: "ဤရောင်းချသ့၏ မူလအာခံကို Velnox မှ အတည်ပြုပြီးဖြစ်သည်",
+    // Status labels
+    statusUnverified: "အတည်မပြုရသေး",
+    statusPending: "စစ်ဆေးဆဲ",
+    statusVerified: "အတည်ပြုပြီး",
+    statusRejected: "ငြင်းဆိုထားသည်",
+    statusSuspended: "ခေတ္တရပ်ဆိုင်းထားသည်",
+    // Shop page
+    sellerVerificationTitle: "ရောင်းချသူအတည်ပြုမှု",
+    sellerVerificationDesc: "ဤရောင်းချသ့၏ မူလအာခံကို Velnox မှ အတည်ပြုပြီးဖြစ်သည်",
+    productVerificationTitle: "ထုတ်ကုန်အတည်ပြုမှု",
+    productVerificationDesc: "ဤထုတ်ကုန်ကို Velnox မှ အတည်ပြုပြီးဖြစ်သည်",
+    // Seller dashboard
+    sellerVerificationBadge: "ရောင်းချသူ အတည်ပြုပြီး",
+    productVerificationBadge: "ထုတ်ကုန် အတည်ပြုပြီး",
+    productNotVerified: "အတည်မပြုရသေး",
+    productPending: "စစ်ဆေးဆဲ",
+    // Actions
+    submitForVerification: "စစ်ဆေးရန်တင်သွင်းရန်",
+    resubmitForVerification: "ထပ်မံတင်သွင်းရန်",
+    // VelShop Verified
+    velshopVerified: "VelShop Verified",
+    velshopVerifiedDesc: "ရောင်းချသူနှင့် ထုတ်ကုန် နှစ်ခုလုံးအတည်ပြုပြီးသော ထုတ်ကုန်များ",
+    velshopVerifiedFilter: "VelShop Verified သာ",
+    // Evidence
+    evidenceRequired: "အထောက်အထား ထည့်သွင်းပါ",
+    evidenceHint: "အတည်ပြုစာရွက်စာတမ်း၊ ဓာတ်ပုံ သို့မဟုတ် သက်ဆိုင်ရာ အထောက်အထားကို ထည့်သွင်းပါ",
+  },
 
   help: {
     eyebrow: "velshop · အကူအညီစင်တာ",
@@ -975,4 +1012,6 @@ export const my = {
     viewOrders: "ကျွန်ုပ်၏ မှာယူမှုများ ကြည့်ရန်",
     supportNote: "ပံ့ပိုးကူညီမှုချတ်သည် ဆိုင်ချတ်စနစ်နှင့် ချိတ်ဆက်ထားသည် — အဖွဲ့က ဤနေရာတွင် ကူညီနိုင်သည်",
   },
+
+  // __APPEND__
 };

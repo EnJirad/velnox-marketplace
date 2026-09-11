@@ -2,6 +2,7 @@ import { Logo } from "@velnox/shared/components/Logo";
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
+import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
 import EmployeeManager from "../components/EmployeeManager";
 import { Badge } from "@velnox/shared/components/ui/badge";
@@ -82,7 +83,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "staff" | "audit" | "settings";
+type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "verifications" | "staff" | "audit" | "settings";
 
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
@@ -115,6 +116,8 @@ function canSeeTab(tab: Tab, role?: string | null, department?: string | null): 
     case "products":
     case "sellers":
       return true;
+    case "verifications":
+      return true;  // All admin/staff can see verifications
     case "staff":
       return role === "owner";
     case "audit":

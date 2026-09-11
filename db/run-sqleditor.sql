@@ -112,7 +112,13 @@ CREATE TABLE IF NOT EXISTS categories (
   icon TEXT,
   parent_id UUID REFERENCES categories(id) ON DELETE SET NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  names JSONB DEFAULT '{}',
+  description TEXT,
+  description_names JSONB DEFAULT '{}',
+  image_url TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug);
 
@@ -126,6 +132,44 @@ CREATE TABLE IF NOT EXISTS sellers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_sellers_user ON sellers (user_id);
+
+CREATE TABLE IF NOT EXISTS seller_verifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'unverified' CHECK (status IN ('unverified','pending','verified','rejected','suspended')),
+  verification_type TEXT NOT NULL DEFAULT 'identity',
+  evidence_urls JSONB DEFAULT '[]',
+  submitted_at TIMESTAMPTZ,
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES users(id),
+  rejection_reason TEXT,
+  suspension_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_seller_verifications_seller ON seller_verifications (seller_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_verifications_pending ON seller_verifications (seller_id) WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS product_verifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'unverified' CHECK (status IN ('unverified','pending','verified','rejected','suspended')),
+  verification_type TEXT NOT NULL DEFAULT 'standard',
+  evidence_urls JSONB DEFAULT '[]',
+  evidence_notes TEXT,
+  category_requirements JSONB DEFAULT '{}',
+  submitted_at TIMESTAMPTZ,
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES users(id),
+  rejection_reason TEXT,
+  suspension_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_product_verifications_product ON product_verifications (product_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_verifications_pending ON product_verifications (product_id) WHERE status = 'pending';
+
+
 
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

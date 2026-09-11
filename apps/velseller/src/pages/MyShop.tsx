@@ -1,6 +1,7 @@
 import { AppHeader } from "@velnox/shared/components/AppHeader";
 import { SITE_URLS } from "@velnox/shared/lib/sites";
 import { ProductFormDialog } from "@velnox/shared/components/seller/ProductFormDialog";
+import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
@@ -61,9 +62,11 @@ export default function MyShop() {
   const openShop = useAction(api.commerce.openShop);
   const listProducts = useAction(api.commerce.listProducts);
   const setStatus = useAction(api.commerce.setProductStatusAction);
+  const sellerVerification = useAction(api.seller.verificationStatus);
   const deleteProduct = useAction(api.commerce.deleteProductAction);
 
   const [profile, setProfile] = useState<SellerProfile | null | undefined>(undefined);
+  const [sellerVerifData, setSellerVerifData] = useState<any>(null);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [onboard, setOnboard] = useState(EMPTY_ONBOARD);
   const [opening, setOpening] = useState(false);
@@ -414,6 +417,18 @@ export default function MyShop() {
               <p className="text-sm font-semibold text-slate-900">ครอบคลุมไม่เกิน 10% ของยอดขาย</p>
             </div>
           </div>
+
+          {/* Seller Verification Card */}
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+            <span className="flex size-10 items-center justify-center rounded-[10px] bg-emerald-50">
+              <span className="text-base font-extrabold text-emerald-700">V<span className="text-emerald-500">✓</span></span>
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-slate-400">{t("verification.sellerVerificationTitle")}</p>
+              <p className="text-sm font-semibold text-slate-900">{t("verification.sellerVerificationBadge")}</p>
+            </div>
+            <VerificationStatusLabel status={(profile?.seller as any)?.verificationStatus ?? "unverified"} />
+          </div>
         </div>
 
         {/* products */}
@@ -522,7 +537,7 @@ export default function MyShop() {
                             <div>
                               <p className="font-medium text-slate-900">{product.name}</p>
                               <p className="text-xs text-slate-400">
-                                {PRODUCT_CATEGORY_META[product.category].label}
+                                {PRODUCT_CATEGORY_META[product.category]?.label ?? product.category}
                                 {product.images && product.images.length > 0
                                   ? ` · ${product.images.length} รูป`
                                   : " · ยังไม่มีรูป"}
