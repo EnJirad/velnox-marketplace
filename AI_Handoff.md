@@ -401,7 +401,14 @@ PORT=3001
 - Schema sync: `db/schema.sql`, `db/run-sqleditor.sql`, `db/run-update.sql`.
 - ShopDetail: seller verification via VBadge. ProductCard: V✓ when eligible. ShopCategories: VelShop Verified card.
 - MyShop (Velseller): seller verification status card. Center: `verifications` tab.
-- **Typechecks:** backend ✅, 4 apps ✅. **Remaining:** builds, i18n check, diff --check pending final push.
+- **Fix 2026-09-11-hotfix:** Replaced 3 × hard-coded `VALID_CATEGORIES` blocks (general/food/daily/beauty/packaging/other) with DB-backed `resolveCategory()` helper. Accepts both category UUIDs and slugs (e.g. `food-beverage`, `electronics`). Validates `is_active`. Stores canonical UUID in `products.category_id`. Catalog `?category=` filter resolves slugs → UUID (legacy strings fall back to direct match). Backward compat: existing legacy category values remain readable. Added shared `INVALID_CATEGORY` error response.
+- **Typechecks:** backend ✅, 4 apps ✅. i18n parity 1124×3 ✅. `git diff --check` ✅. Pushed.
+
+### 2026-09-11-fix — Product Category API Hotfix
+
+**Root cause:** 3 × `VALID_CATEGORIES = ["general","food",…]` in `backend/routes/products.ts` (POST simple, POST create-full, PATCH) blocked sellers from selecting any new V0040 categories ("electronics" → 400).
+
+**Fix:** DB-backed `resolveCategory()` in `backend/routes/products.ts` — accepts slug or UUID, validates `categories.is_active`, stores canonical UUID. See Previous entry for full detail.
 
 ### 2026-09-09 — Final Production Readiness Audit + P2 Cleanup
 

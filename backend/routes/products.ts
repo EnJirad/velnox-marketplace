@@ -293,6 +293,26 @@ function applyVariantStock(formatted: any, variants: any[]): void {
   }
 }
 
+// ── Shared: resolve and validate category (DB-backed, not hard-coded) ──────
+async function resolveCategory(input: unknown): Promise<{ ok: boolean; categoryId: string | null; error?: string }> {
+  if (input === undefined || input === null || input === "") return { ok: true, categoryId: null };
+  if (typeof input !== "string") return { ok: false, categoryId: null, error: "Category must be a string" };
+  const raw = input.trim();
+  if (!raw) return { ok: true, categoryId: null };
+  let row: any = null;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
+    const r = await query("SELECT id, is_active FROM categories WHERE id = $1", [raw]);
+    row = r.rows[0] ?? null;
+  }
+  if (!row) {
+    const r = await query("SELECT id, is_active FROM categories WHERE slug = $1", [raw]);
+    row = r.rows[0] ?? null;
+  }
+  if (!row) return { ok: false, categoryId: null, error: "Selected category does not exist or is inactive" };
+  if (!row.is_active) return { ok: false, categoryId: null, error: "Selected category is inactive" };
+  return { ok: true, categoryId: row.id };
+}
+
 /**
  * Compute per-option-value stock for product detail.
  * For each option value, sums stock of matching active variants
@@ -592,13 +612,11 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
-      // Validate category — must be one of the known StoreProductCategory values
-      const VALID_CATEGORIES = ["general", "food", "daily", "beauty", "packaging", "other"];
-      if (category !== undefined && category !== null && category !== "") {
-        if (typeof category !== "string" || !VALID_CATEGORIES.includes(category.trim())) {
-          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` } });
-          return;
-        }
+      // Validate category via DB-backed categories table
+      const catResult = await resolveCategory(category);
+      if (!catResult.ok) {
+        res.status(400).json({ success: false, error: { code: "INVALID_CATEGORY", message: catResult.error } });
+        return;
       }
 
       // Generate unique slug
@@ -616,10 +634,8 @@ export function setupProductRoutes(app: Express): void {
       const stockQty = initialStock != null ? Math.max(0, Number(initialStock)) : 0;
       const reorder = reorderLevel != null ? Math.max(0, Number(reorderLevel)) : 5;
 
-      // category: frontend sends simple strings ("food", "general", etc.)
-      // not UUIDs. Store as TEXT in the category_id column.
-      const resolvedCategory = (category && typeof category === "string" && category.trim())
-        ? category.trim() : null;
+      // Store canonical UUID from categories table
+      const resolvedCategory = catResult.categoryId;
 
       // ── Transaction: create product + inventory + update shop count ──
       const client = await getClient();
@@ -719,13 +735,14 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
-      // Validate category
-      const VALID_CATEGORIES = ["general", "food", "daily", "beauty", "packaging", "other"];
-      const cat = productData.category?.trim() || null;
-      if (cat && !VALID_CATEGORIES.includes(cat)) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` } });
+      // Validate category via DB-backed categories table
+      const _catResultFull = await resolveCategory(productData.category);
+      if (!_catResultFull.ok) {
+        res.status(400).json({ success: false, error: { code: "INVALID_CATEGORY", message: _catResultFull.error } });
         return;
       }
+      const cat = _catResultFull.categoryId;
+      productData.category = cat ?? undefined;
 
       // Validate image counts (max 10 per type)
       const MAX_IMAGES = 10;
@@ -1033,13 +1050,11 @@ export function setupProductRoutes(app: Express): void {
 
       const { name, category, unit, price, description, supplier, status, compareAtPrice, shortDescription } = req.body;
 
-      // Validate category if provided
-      const VALID_CATEGORIES = ["general", "food", "daily", "beauty", "packaging", "other"];
-      if (category !== undefined && category !== null && category !== "") {
-        if (typeof category !== "string" || !VALID_CATEGORIES.includes(category.trim())) {
-          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` } });
-          return;
-        }
+      // Validate category via DB-backed categories table
+      const catPatchResult = category !== undefined ? await resolveCategory(category) : null;
+      if (catPatchResult && !catPatchResult.ok) {
+        res.status(400).json({ success: false, error: { code: "INVALID_CATEGORY", message: catPatchResult.error } });
+        return;
       }
 
       const updates: string[] = [];
@@ -1054,7 +1069,7 @@ export function setupProductRoutes(app: Express): void {
       if (unit !== undefined) { updates.push(`unit = $${idx++}`); values.push(unit); }
       if (supplier !== undefined) { updates.push(`supplier = $${idx++}`); values.push(supplier || null); }
       if (category !== undefined) {
-        const catVal = (typeof category === "string" && category.trim()) ? category.trim() : null;
+        const catVal = catPatchResult!.categoryId;
         updates.push(`category_id = $${idx++}`); values.push(catVal);
       }
       if (status !== undefined) {
@@ -1949,10 +1964,29 @@ export function setupProductRoutes(app: Express): void {
         params.push(`%${q}%`);
         idx++;
       }
+      // Resolve category by slug or UUID → canonical UUID. Legacy values stay readable via direct match.
       if (category && typeof category === "string") {
-        where += ` AND p.category_id = $${idx}`;
-        params.push(category);
-        idx++;
+        const raw = category.trim();
+        if (raw) {
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
+            where += ` AND p.category_id = $${idx}`;
+            params.push(raw);
+            idx++;
+          } else {
+            // slug or legacy string
+            const catRow = await query("SELECT id FROM categories WHERE slug = $1", [raw]);
+            if (catRow.rows.length > 0) {
+              where += ` AND p.category_id = $${idx}`;
+              params.push(catRow.rows[0].id);
+              idx++;
+            } else {
+              // No matching category → direct string match (legacy products) or empty result
+              where += ` AND p.category_id = $${idx}`;
+              params.push(raw);
+              idx++;
+            }
+          }
+        }
       }
       if (shopId && typeof shopId === "string") {
         where += ` AND p.shop_id = $${idx}`;
