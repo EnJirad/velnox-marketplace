@@ -1,8 +1,6 @@
 import { api } from "@velnox/shared/lib/api-routes";
 import {
-  PRODUCT_CATEGORY_META,
   type StoreProduct,
-  type StoreProductCategory,
   type StoreShop,
 } from "@velnox/shared/lib/commerce";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -391,10 +389,15 @@ function VariantManager({ productId, price }: { productId: string; price: number
   );
 }
 
+// ─── Category options ────────────────────────────────────────────────
+// Loaded from the Category API at runtime so the seller selector always
+// matches the real `categories` table — no hard-coded slugs.
+type CategoryOption = { id: string; slug: string; name: string };
+
 // ─── Default form state ──────────────────────────────────────────────
 const defaultForm = {
   name: "",
-  category: "general" as StoreProductCategory,
+  category: "",
   unit: "ชิ้น",
   description: "",
   supplier: "",
@@ -432,6 +435,34 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   );
   const [current, setCurrent] = useState<StoreProduct | null>(product ?? null);
   const [saving, setSaving] = useState(false);
+
+  // ─── Categories (DB-backed, localized) ────────────────────────────────
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [categoriesError, setCategoriesError] = useState(false);
+
+  const loadCategories = useCallback(async () => {
+    setCategoriesLoading(true);
+    setCategoriesError(false);
+    try {
+      const rows = await api.customer.categoriesLocalized({ lang: "th" });
+      const list: CategoryOption[] = (Array.isArray(rows) ? rows : [])
+        .map((r: any) => ({
+          id: String(r?.id ?? ""),
+          slug: String(r?.slug ?? ""),
+          name: String(r?.display_name ?? r?.name ?? r?.slug ?? ""),
+        }))
+        .filter((c: CategoryOption) => c.slug);
+      setCategories(list);
+      setForm((prev) => (prev.category ? prev : { ...prev, category: list[0]?.slug ?? "" }));
+    } catch {
+      setCategoriesError(true);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadCategories(); }, [loadCategories]);
   const isEdit = product !== null;
 
   // ─── Draft state (for new products) ──────────────────────────────────
@@ -664,6 +695,10 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const validate = useCallback((): string[] => {
     const errors: string[] = [];
     if (!form.name.trim()) errors.push("กรุณากรอกชื่อสินค้า");
+    if (categoriesLoading) errors.push("กำลังโหลดหมวดหมู่สินค้า กรุณารอสักครู่");
+    else if (categoriesError) errors.push("โหลดหมวดหมู่สินค้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    else if (!form.category) errors.push("กรุณาเลือกหมวดหมู่สินค้า");
+    else if (!categories.some((c) => c.slug === form.category)) errors.push("หมวดหมู่ที่เลือกไม่พร้อมใช้งาน กรุณาเลือกหมวดหมู่ใหม่");
     if (variantCount > 100) errors.push("จำนวน Variant เกินขีดจำกัด 100 — กรุณาลดจำนวนตัวเลือก");
     if (galleryImages.length === 0 && (!current?.images || current.images.length === 0)) errors.push("ต้องมีรูปตัวอย่างสินค้าอย่างน้อย 1 รูป");
     // Validate option values
@@ -688,7 +723,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       if (!hasStock) errors.push("ต้องมี variant อย่างน้อย 1 ตัวที่มี stock > 0");
     }
     return errors;
-  }, [form, galleryImages, current, optionGroups, draftVariants, isEdit]);
+  }, [form, galleryImages, current, optionGroups, draftVariants, isEdit, categories, categoriesError, categoriesLoading]);
 
   // ─── Submit handler ───────────────────────────────────────────────────
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -834,7 +869,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       }
     } catch (error) {
       console.error("Product save error:", error);
-      toast.error(error instanceof Error ? error.message : "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
+      const message = error instanceof Error ? error.message : "";
+      // Surface category failures as an actual category error, not a generic save failure.
+      if (/categor/i.test(message)) {
+        toast.error(`หมวดหมู่สินค้าไม่ถูกต้อง: ${message}`);
+      } else {
+        toast.error(message || "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
+      }
     } finally { setSaving(false); }
   };
 
@@ -886,12 +927,29 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-2">
                 <Label>หมวดหมู่</Label>
-                <Select value={form.category} onValueChange={(v) => set("category", v as StoreProductCategory)}>
-                  <SelectTrigger className="w-full"><SelectValue placeholder="เลือกหมวดหมู่" /></SelectTrigger>
+                <Select
+                  value={form.category}
+                  onValueChange={(v) => set("category", v)}
+                  disabled={categoriesLoading || categoriesError}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={categoriesLoading ? "กำลังโหลด..." : "เลือกหมวดหมู่"} />
+                  </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(PRODUCT_CATEGORY_META).map(([key, meta]) => <SelectItem key={key} value={key}>{meta.label}</SelectItem>)}
+                    {form.category && !categories.some((c) => c.slug === form.category) && (
+                      <SelectItem value={form.category}>{form.category} — ไม่พร้อมใช้งาน กรุณาเลือกใหม่</SelectItem>
+                    )}
+                    {categories.map((c) => (
+                      <SelectItem key={c.slug} value={c.slug}>{c.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                {categoriesError && (
+                  <p className="text-[11px] text-red-600">
+                    โหลดหมวดหมู่ไม่สำเร็จ{" "}
+                    <button type="button" className="underline" onClick={() => void loadCategories()}>ลองใหม่</button>
+                  </p>
+                )}
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="p-unit">หน่วย</Label>

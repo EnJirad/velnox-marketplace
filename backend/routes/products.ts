@@ -28,6 +28,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
+import { CATEGORY_UUID_RE, INVALID_CATEGORY_MESSAGE, validateCategory, type CategoryLookupRow } from "../lib/categories.js";
 
 // ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
 
@@ -293,24 +294,26 @@ function applyVariantStock(formatted: any, variants: any[]): void {
   }
 }
 
-// ── Shared: resolve and validate category (DB-backed, not hard-coded) ──────
+/** Look up a category row by canonical UUID or by slug. */
+async function lookupCategoryRow(raw: string): Promise<CategoryLookupRow | null> {
+  const r = CATEGORY_UUID_RE.test(raw)
+    ? await query("SELECT slug, is_active FROM categories WHERE id = $1", [raw])
+    : await query("SELECT slug, is_active FROM categories WHERE slug = $1", [raw]);
+  return (r.rows[0] as CategoryLookupRow | undefined) ?? null;
+}
+
+/**
+ * DB-backed category resolver. Never throws: schema drift or a DB failure is
+ * reported as a clean INVALID_CATEGORY result instead of a raw 500/Postgres error.
+ */
 async function resolveCategory(input: unknown): Promise<{ ok: boolean; categoryId: string | null; error?: string }> {
-  if (input === undefined || input === null || input === "") return { ok: true, categoryId: null };
-  if (typeof input !== "string") return { ok: false, categoryId: null, error: "Category must be a string" };
-  const raw = input.trim();
-  if (!raw) return { ok: true, categoryId: null };
-  let row: any = null;
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
-    const r = await query("SELECT id, is_active FROM categories WHERE id = $1", [raw]);
-    row = r.rows[0] ?? null;
+  try {
+    const result = await validateCategory(input, lookupCategoryRow);
+    return { ok: result.ok, categoryId: result.categorySlug, error: result.error };
+  } catch (err) {
+    console.error("[products] category resolve error:", err);
+    return { ok: false, categoryId: null, error: INVALID_CATEGORY_MESSAGE };
   }
-  if (!row) {
-    const r = await query("SELECT id, is_active FROM categories WHERE slug = $1", [raw]);
-    row = r.rows[0] ?? null;
-  }
-  if (!row) return { ok: false, categoryId: null, error: "Selected category does not exist or is inactive" };
-  if (!row.is_active) return { ok: false, categoryId: null, error: "Selected category is inactive" };
-  return { ok: true, categoryId: row.id };
 }
 
 /**
@@ -1028,7 +1031,8 @@ export function setupProductRoutes(app: Express): void {
       }
     } catch (err) {
       console.error("[products] create-full error:", err);
-      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: err instanceof Error ? err.message : "Failed to create product" } });
+      // Never leak raw PostgreSQL/driver errors to the client.
+      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: "Failed to create product" } });
     }
   });
 
@@ -1964,28 +1968,18 @@ export function setupProductRoutes(app: Express): void {
         params.push(`%${q}%`);
         idx++;
       }
-      // Resolve category by slug or UUID → canonical UUID. Legacy values stay readable via direct match.
       if (category && typeof category === "string") {
         const raw = category.trim();
         if (raw) {
-          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
-            where += ` AND p.category_id = $${idx}`;
-            params.push(raw);
-            idx++;
-          } else {
-            // slug or legacy string
-            const catRow = await query("SELECT id FROM categories WHERE slug = $1", [raw]);
-            if (catRow.rows.length > 0) {
-              where += ` AND p.category_id = $${idx}`;
-              params.push(catRow.rows[0].id);
-              idx++;
-            } else {
-              // No matching category → direct string match (legacy products) or empty result
-              where += ` AND p.category_id = $${idx}`;
-              params.push(raw);
-              idx++;
-            }
-          }
+          // `products.category_id` stores the canonical slug. A UUID input
+          // (category tree) is normalised to its slug; legacy values that are no
+          // longer categories still match directly.
+          const catSlug = CATEGORY_UUID_RE.test(raw)
+            ? (await query("SELECT slug FROM categories WHERE id = $1", [raw])).rows[0]?.slug ?? raw
+            : raw;
+          where += ` AND p.category_id = $${idx}`;
+          params.push(catSlug);
+          idx++;
         }
       }
       if (shopId && typeof shopId === "string") {
@@ -2542,7 +2536,7 @@ export function setupProductRoutes(app: Express): void {
                 COALESCE(c.names->>$1, c.name) AS display_name,
                 COALESCE(c.description_names->>$1, c.description) AS display_description,
                 c.image_url,
-                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.status = 'published')::int AS product_count
+                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.slug AND p.status = 'published')::int AS product_count
          FROM categories c
          WHERE c.is_active = TRUE
          ORDER BY c.sort_order ASC, c.name ASC`,
@@ -2581,7 +2575,7 @@ export function setupProductRoutes(app: Express): void {
                 COALESCE(c.names->>$1, c.name) AS display_name,
                 COALESCE(c.description_names->>$1, c.description) AS display_description,
                 c.image_url,
-                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.status = 'published')::int AS product_count
+                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.slug AND p.status = 'published')::int AS product_count
          FROM categories c
          WHERE c.is_active = TRUE
          ORDER BY c.sort_order ASC, c.name ASC`,

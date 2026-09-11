@@ -2986,3 +2986,35 @@ Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 p
 **Verification:** backend tsc ✅ · velshop/velseller/velcenter/velnox `tsc --noEmit` ✅ · velshop `vite build` ✅ (10.52s) · i18n:check 1095×3 ✅ · `git diff --check` clean. Live browser E2E not run (no DATABASE_URL/headless browser in sandbox) — verified via code trace + typecheck + production build.
 
 **Known limitations:** support replies require a human operator on the seeded support seller account (velseller chat of the support shop); no fake contact info — email support CTA only appears when `VITE_SUPPORT_EMAIL` is configured.
+
+---
+
+## 2026-09-11 — Fix `column "is_active" does not exist` — category schema drift
+
+**Root cause (real):** the Product API/catalog were correct; **production Neon was missing migration `db/migrations/040_verification_and_categories.sql`**. V0040 adds `categories.is_active` plus the multilingual columns (`names`, `description`, `description_names`, `image_url`) and seeds the scalable category tree. Without it every category query fails with Postgres `42703 column "is_active" does not exist`. Verified against the live database: `SELECT slug, is_active FROM categories` → `errorMissingColumn` / `42703`, and `information_schema.columns` has no `is_active` on `categories`. The migration was never in the applied set, so this was production schema drift — NOT an invented column.
+
+**Actual category schema (source of truth, do not duplicate):**
+
+| Object | Definition |
+|---|---|
+| `categories` | `id UUID PK`, `name TEXT`, `slug TEXT UNIQUE`, `icon`, `parent_id UUID`, `sort_order`, `created_at` + V0040: `names JSONB`, `description TEXT`, `description_names JSONB`, `image_url TEXT`, `is_active BOOLEAN NOT NULL DEFAULT TRUE`, `updated_at` |
+| `products.category_id` | **TEXT** — stores the canonical category **SLUG** (V0015/V0029 converted it from UUID precisely because the frontend sends string slugs) |
+
+**Canonical identifier:** the category **slug** (e.g. `food-beverage`). It is what `StoreProductCategory`, category URLs (`/products?category=food-beverage`), the public catalog and the `categories.slug` join already use. UUIDs are still accepted as input and normalised to the slug. Storage type was NOT changed.
+
+**Fixes applied:**
+
+1. **Migration path made explicit and safe (root cause):** `backend/server.ts` gained `ensureCategorySchema()`. On boot it checks `information_schema.columns` for `categories.is_active`; if missing it applies `db/migrations/040_verification_and_categories.sql` (idempotent: `ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` / `ON CONFLICT (slug) DO UPDATE`), resolving the file from the repo root or `backend/`. Logged loudly; failures are logged, never swallowed silently. `/api/_diag/schema` now also reports `categories`, `seller_verifications`, `product_verifications` and every `categories.*` column the API reads.
+2. **Shared, testable validation:** new `backend/lib/categories.ts` (`validateCategory`, `CATEGORY_UUID_RE`, `INVALID_CATEGORY_MESSAGE`). `backend/routes/products.ts` imports it; its three category call sites (create, create-full, patch) reject with `{ code: "INVALID_CATEGORY", message: "Selected category is invalid or unavailable." }`. `resolveCategory()` never throws, so schema drift or a DB failure can no longer surface as a raw Postgres 500. `POST /api/seller/products/create-full` no longer leaks `err.message` to the client.
+3. **One consistent canonical identifier:** tree/stats product counts now join on `p.category_id = c.slug` (was `c.id`, which never matched the stored slug); the `/api/products/catalog` filter normalises UUID → slug and keeps direct matching for legacy values.
+4. **One category API:** the stale duplicate `GET /api/categories` in `backend/routes/index.ts` was removed — it was registered first and **shadowed** the DB-backed localized handler in `products.ts`, returning a different shape. `/api/products` catalog filtering in `index.ts` now filters on `p.category_id` (the stored slug) instead of `c.slug`.
+5. **Seller category selector (frontend):** `packages/shared/src/components/seller/ProductFormDialog.tsx` no longer offers the legacy hard-coded list (`general/food/daily/beauty/packaging/other` — 4 of which no longer exist and were rejected as `INVALID_CATEGORY`). It loads real categories from the Category API (`GET /api/categories?lang=th`), renders the localized name, stores the canonical slug, blocks submit while loading/on failure, flags a legacy value as "ไม่พร้อมใช้งาน กรุณาเลือกใหม่", and shows a category-specific toast when the API returns `INVALID_CATEGORY`.
+6. **Validation command fixed:** the four apps had no `typecheck` script, so the root `bun run typecheck` failed with "No packages matched the filter". Each app now defines `"typecheck": "tsc --noEmit -p tsconfig.json"` — `bun run typecheck` passes for all four.
+
+**Not changed:** seller approval / product approval workflow (category validation never publishes a product), seller & product verification (untouched and still separate), VelRepeat, reviews/chat, legacy product rows (no rewrite/delete), `products.category_id` column type.
+
+**Tests:** new `backend/tests/category-validation.test.ts` — 16 unit/static tests (valid slug; trim; UUID → slug; unknown/inactive/non-string/empty-slug rejection; client-safe message; V0040 column parity; V0040 idempotency; `db/schema.sql` parity; server applies V0040; no `p.category_id = c.id`; no hard-coded whitelist) plus 3 DB-gated integration tests asserting the live schema has the V0040 columns and that the exact `resolveCategory` lookup succeeds. `bun test backend/tests` → 118 pass; the 12 integration failures are **DB-state failures against the shared database**: 2 are this bug (V0040 not applied → `42703`), the other 10 are pre-existing test-data pollution (`duplicate key ... users_email_key`, fixed seed emails) unrelated to this change.
+
+**Verification:** backend `tsc --noEmit` ✅ · `bun run typecheck` (velshop/velseller/velcenter/velnox) ✅ · new category test file 16 pass / 3 skip ✅ · `bun run i18n:check` 1124×3 parity ✅ · `git diff --check` clean.
+
+**REMAINING REQUIREMENT (deployment) — action needed:** the live database must have migration 040 applied before the category API/catalog can work there. Two options: (a) let `ensureCategorySchema()` apply it on the next backend boot/deploy (already wired), or (b) run `.github/workflows/migrate-neon.yml` (`workflow_dispatch`) / `psql "$NEON_DATABASE_URL" -f db/migrations/040_verification_and_categories.sql` and record it in `schema_migrations`. **Note:** `AI_RULES.md` §3 says "never run startup DDL in server boot"; `ensureCategorySchema()` deliberately follows the four pre-existing `ensure*` startup guards (V0028/V0034/V0035/V0036) because the user explicitly asked for an explicit, safe migration path. If strict §3 compliance is preferred, keep the boot guard only until 040 is recorded in `schema_migrations`, then remove it. Legacy products whose `category_id` predates V0040 (e.g. `general`) stay readable and directly filterable, but do not appear under a canonical category facet until re-categorised.

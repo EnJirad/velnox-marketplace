@@ -46,7 +46,9 @@ export function setupRoutes(app: Express): void {
       let paramIndex = 1;
 
       if (search) { where += ` AND (p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`; params.push(`%${search}%`); paramIndex++; }
-      if (category) { where += ` AND c.slug = $${paramIndex}`; params.push(category); paramIndex++; }
+      // `products.category_id` stores the canonical category slug (V0015/V0029).
+      // Filter on the stored value so canonical slugs and legacy values both match.
+      if (category) { where += ` AND p.category_id = $${paramIndex}`; params.push(category.trim()); paramIndex++; }
       if (featured) { where += ` AND p.featured = true`; }
 
       const countResult = await query(`SELECT COUNT(*) FROM products p LEFT JOIN categories c ON c.slug = p.category_id ${where}`, params);
@@ -114,14 +116,9 @@ export function setupRoutes(app: Express): void {
 
 
   // ─── Categories ──────────────────────────────────────
-  app.get("/api/categories", async (_req, res) => {
-    try {
-      const result = await query("SELECT * FROM categories ORDER BY name");
-      res.json({ success: true, data: { categories: result.rows.map((r: Record<string, unknown>) => ({ id: r.id, name: r.name, slug: r.slug, icon: r.icon, parentId: r.parent_id })) } });
-    } catch {
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch categories" } });
-    }
-  });
+  // NOTE: /api/categories (and /tree, /stats) are defined in routes/products.ts
+  // so there is ONE DB-backed, localized category API. Do NOT re-define them here —
+  // an earlier handler would shadow the real one.
 
   // ─── Customer Profile ──────────────────────────────────
   app.get("/api/customer/profile", requireAuth, async (req: Request, res: Response) => {
