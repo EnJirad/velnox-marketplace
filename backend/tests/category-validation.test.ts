@@ -12,7 +12,7 @@
  * The integration test (skipped without DATABASE_URL) checks the live schema.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import {
   CATEGORY_UUID_RE,
@@ -118,11 +118,33 @@ describe("category schema consistency", () => {
     expect(schema).toContain("is_active BOOLEAN NOT NULL DEFAULT TRUE");
   });
 
-  test("server applies V0040 explicitly when categories.is_active is missing", () => {
-    const server = read("backend/server.ts");
-    expect(server).toContain("040_verification_and_categories.sql");
-    expect(server).toContain("ensureCategorySchema");
-    expect(server).toContain("column_name = 'is_active'");
+  test("no migration contains a backslash-escaped quote (psql-invalid)", () => {
+    // Regression guard for the actual production failure: V0040 shipped
+    // `'Men\'s Clothing'`. With standard_conforming_strings=on the literal ends
+    // at `Men\` and psql aborts with "invalid command \'s", so the whole
+    // --single-transaction migration (including the ALTERs that add is_active)
+    // is rolled back. Doubling the quote is the only valid escape.
+    const files = [
+      ...readdirSync(join(REPO_ROOT, "db", "migrations"))
+        .filter((f) => f.endsWith(".sql"))
+        .map((f) => `db/migrations/${f}`),
+      "db/run-update.sql",
+      "db/run-sqleditor.sql",
+      "db/schema.sql",
+    ];
+    for (const file of files) {
+      expect(read(file)).not.toContain("\\'");
+    }
+  });
+
+  test("V0040 apostrophe seed rows use the doubled-quote escape", () => {
+    for (const value of ["Men''s Clothing", "Women''s Clothing", "Children''s Clothing"]) {
+      expect(migration).toContain(`'${value}'`);
+    }
+  });
+
+  test("db/run-update.sql history mirrors the same escape fix", () => {
+    expect(read("db/run-update.sql")).toContain("'Men''s Clothing'");
   });
 
   test("product counts use the canonical slug stored in products.category_id", () => {

@@ -237,48 +237,6 @@ async function ensureChatTables(): Promise<void> {
 }
 ensureChatTables();
 
-// ─── Auto-apply scalable categories / verification schema if missing (V0040) ──
-// Migration 040 adds categories.is_active plus the multilingual category columns
-// (names / description / description_names / image_url) that the Product API and
-// the public catalog read. Without it every category query fails with
-// `column "is_active" does not exist`. Apply it here explicitly and idempotently
-// rather than hiding the drift behind fallback SQL.
-async function ensureCategorySchema(): Promise<void> {
-  const { query } = await import("./db/index.js");
-  const startMs = Date.now();
-  try {
-    const colCheck = await query(
-      `SELECT EXISTS (
-         SELECT 1 FROM information_schema.columns
-         WHERE table_name = 'categories' AND column_name = 'is_active'
-       ) AS exists`,
-    );
-    if (colCheck.rows[0]?.exists) {
-      return;
-    }
-
-    console.log("[startup] categories.is_active missing — applying V0040 (scalable categories + verification)...");
-    const fs = await import("fs");
-    const pathMod = await import("path");
-    // Works whether the process runs from the repo root or from backend/.
-    const candidates = [
-      pathMod.join(process.cwd(), "db", "migrations", "040_verification_and_categories.sql"),
-      pathMod.join(process.cwd(), "..", "db", "migrations", "040_verification_and_categories.sql"),
-    ];
-    const sqlPath = candidates.find((candidate) => fs.existsSync(candidate));
-    if (!sqlPath) {
-      console.error(`[startup] V0040 migration file not found. Looked in: ${candidates.join(", ")}`);
-      return;
-    }
-    const sql = fs.readFileSync(sqlPath, "utf-8");
-    await query(sql);
-    console.log(`[startup] V0040 categories/verification schema applied in ${Date.now() - startMs}ms`);
-  } catch (err: any) {
-    console.error("[startup] ensureCategorySchema failed:", err?.message ?? err);
-  }
-}
-ensureCategorySchema();
-
 // ─── Health Check ───────────────────────────────────────
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

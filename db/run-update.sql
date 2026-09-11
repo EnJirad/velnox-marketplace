@@ -1740,12 +1740,12 @@ INSERT INTO categories (id, name, slug, parent_id, names, sort_order, is_active)
   '{"th":"กล้อง","en":"Cameras","my":"ကင်မရာများ"}', 2, true),
 
 -- Fashion subcategories
-('b0000001-0005-0000-0000-000000000001', 'Men\'s Clothing', 'mens-clothing', 'a0000001-0000-0000-0000-000000000005',
-  '{"th":"เสื้อผ้าผู้ชาย","en":"Men\'s clothing","my":"အမျိုးသားအဝတ်အထည်"}', 1, true),
-('b0000001-0005-0000-0000-000000000002', 'Women\'s Clothing', 'womens-clothing', 'a0000001-0000-0000-0000-000000000005',
-  '{"th":"เสื้อผ้าผู้หญิง","en":"Women\'s clothing","my":"အမျိုးသမီးအဝတ်အထည်"}', 2, true),
-('b0000001-0005-0000-0000-000000000003', 'Children\'s Clothing', 'childrens-clothing', 'a0000001-0000-0000-0000-000000000005',
-  '{"th":"เสื้อผ้าเด็ก","en":"Children\'s clothing","my":"ကလေးအဝတ်အထည်"}', 3, true),
+('b0000001-0005-0000-0000-000000000001', 'Men''s Clothing', 'mens-clothing', 'a0000001-0000-0000-0000-000000000005',
+  '{"th":"เสื้อผ้าผู้ชาย","en":"Men''s clothing","my":"အမျိုးသားအဝတ်အထည်"}', 1, true),
+('b0000001-0005-0000-0000-000000000002', 'Women''s Clothing', 'womens-clothing', 'a0000001-0000-0000-0000-000000000005',
+  '{"th":"เสื้อผ้าผู้หญิง","en":"Women''s clothing","my":"အမျိုးသမီးအဝတ်အထည်"}', 2, true),
+('b0000001-0005-0000-0000-000000000003', 'Children''s Clothing', 'childrens-clothing', 'a0000001-0000-0000-0000-000000000005',
+  '{"th":"เสื้อผ้าเด็ก","en":"Children''s clothing","my":"ကလေးအဝတ်အထည်"}', 3, true),
 
 -- Phones subcategories
 ('b0000001-0009-0000-0000-000000000001', 'Smartphones', 'smartphones', 'a0000001-0000-0000-0000-000000000009',

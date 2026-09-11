@@ -3018,3 +3018,30 @@ Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 p
 **Verification:** backend `tsc --noEmit` ✅ · `bun run typecheck` (velshop/velseller/velcenter/velnox) ✅ · new category test file 16 pass / 3 skip ✅ · `bun run i18n:check` 1124×3 parity ✅ · `git diff --check` clean.
 
 **REMAINING REQUIREMENT (deployment) — action needed:** the live database must have migration 040 applied before the category API/catalog can work there. Two options: (a) let `ensureCategorySchema()` apply it on the next backend boot/deploy (already wired), or (b) run `.github/workflows/migrate-neon.yml` (`workflow_dispatch`) / `psql "$NEON_DATABASE_URL" -f db/migrations/040_verification_and_categories.sql` and record it in `schema_migrations`. **Note:** `AI_RULES.md` §3 says "never run startup DDL in server boot"; `ensureCategorySchema()` deliberately follows the four pre-existing `ensure*` startup guards (V0028/V0034/V0035/V0036) because the user explicitly asked for an explicit, safe migration path. If strict §3 compliance is preferred, keep the boot guard only until 040 is recorded in `schema_migrations`, then remove it. Legacy products whose `category_id` predates V0040 (e.g. `general`) stay readable and directly filterable, but do not appear under a canonical category facet until re-categorised.
+
+---
+
+## 2026-09-11 (update) — ACTUAL root cause: migration 040 failed on a psql escape error
+
+**Corrected root cause.** The previous entry said V0040 was "never applied". It was *attempted* and **failed**. `.github/workflows/migrate-neon.yml` run `34547957488` (push of `3936b39` "feat: Velnox Verified dual verification + scalable categories (P#040)") is `completed / failure`:
+
+```
+🔄 Applying: 040_verification_and_categories
+ALTER TABLE ... (x6) CREATE TABLE CREATE INDEX ... INSERT 0 29
+psql:db/migrations/040_verification_and_categories.sql:294: error: invalid command \'s
+❌ 040_verification_and_categories FAILED.  Stopping. Fix the migration and re-run.
+```
+
+The workflow applies each migration with `psql --single-transaction`, so the `ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_active` statements that had already run were **rolled back** with the failing statement. That is why `categories.is_active` does not exist in production → `42703 column "is_active" does not exist` in the Product API/catalog. The other 3 columns added earlier in that same block (`names`, `description`, `description_names`) and the verification tables were rolled back too. Every other migration in history applied successfully.
+
+**The bug:** the seed block escaped apostrophes as `\'` — `'Men\'s Clothing'`, `'Women\'s Clothing'`, `'Children\'s Clothing'` (and the same inside the `names` JSON). PostgreSQL runs with `standard_conforming_strings = on`, so backslash is not an escape character: the literal ends at `Men\` and psql then parses `\'s Clothing'` as a meta-command → `invalid command \'s`. Only 6 characters were wrong.
+
+**Fix (migration system, not a startup workaround):**
+
+- `db/migrations/040_verification_and_categories.sql` and `db/run-update.sql` — the 6 backslash escapes in each are now doubled quotes (`'Men''s Clothing'`, and `Men''s clothing` inside the JSON so the stored JSON is valid). Migration semantics unchanged; the file is still idempotent (`ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` / `ON CONFLICT (slug) DO UPDATE`).
+- **Reverted the `ensureCategorySchema()` startup DDL** added in the previous entry. `AI_RULES.md` §3 forbids `ALTER TABLE` in server boot, and the migration itself is now correct, so the sanctioned path is used: pushing a change under `db/migrations/` triggers the Migrate Neon Database workflow, which applies 040 and records it in `schema_migrations`. The read-only `/api/_diag/schema` additions (category/verification tables + `categories.*` columns) are kept for future diagnosis.
+- `backend/tests/category-validation.test.ts` — replaced the "server applies V0040" assertion with regression guards that fail on this exact class of bug: **no** file in `db/migrations/`, `db/run-update.sql`, `db/run-sqleditor.sql`, `db/schema.sql` may contain `\'`, and V0040 must keep the doubled-quote apostrophe rows.
+
+**Verification:** backend `tsc --noEmit` ✅ · category tests **19 pass / 2 fail** — the 2 failures are the DB-gated integration tests (`42703 is_active`) and are expected to pass once the workflow applies 040 on this push. `db/run-sqleditor.sql` is not affected by the escape bug (it has no category seed rows).
+
+**Remaining gap (pre-existing, not introduced here):** `db/schema.sql` and `db/run-sqleditor.sql` define the `categories` table with `is_active` but contain **no** category seed rows (only `db/run-update.sql` does). A brand-new database bootstrapped from `db/run-sqleditor.sql` therefore has an empty `categories` table and the seller category selector would show nothing. `AI_RULES.md` §3 requires the three SQL files to stay in sync — worth adding the canonical seed to `run-sqleditor.sql` (idempotent `ON CONFLICT (slug)`).
