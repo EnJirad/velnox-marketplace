@@ -404,7 +404,7 @@ PORT=3001
 
 **Database changed: NO** (no migration; existing tables/columns only).
 
-**Verification:** backend `tsc --noEmit` ✅ · velshop/velseller/velcenter/velnox `tsc -b --noEmit` ✅ · `bun test backend/tests` → **120 pass / 23 skip (DB-gated) / 0 fail** · `bun run i18n:check` 1129×3 ✅ · `git diff --check` ✅. Live browser E2E not run (no DATABASE_URL / headless browser in the sandbox) — verified by code trace + typechecks + tests. **NOT VERIFIED:** an actual seller submission against the production database.
+**Verification:** backend `tsc --noEmit` ✅ · velshop/velseller/velcenter/velnox `tsc -b --noEmit` ✅ · `bun test backend/tests` → **120 pass / 23 skip (DB-gated) / 0 fail** · `bun run i18n:check` 1124×3 ✅ · `git diff --check` ✅. Live browser E2E not run (no DATABASE_URL / headless browser in the sandbox) — verified by code trace + typechecks + tests. **NOT VERIFIED:** an actual seller submission against the production database.
 
 ---
 
