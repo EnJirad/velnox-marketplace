@@ -1102,6 +1102,16 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
+      // TASK 2 §9 — terminal products (suspended/archived) are read-only for sellers (admin-only to unsuspend/restore)
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin to restore" } });
+          return;
+        }
+      }
+
       const { name, category, unit, price, description, supplier, status, compareAtPrice, shortDescription } = req.body;
 
       // Validate category via DB-backed categories table
@@ -1127,32 +1137,43 @@ export function setupProductRoutes(app: Express): void {
         updates.push(`category_id = $${idx++}`); values.push(catVal);
       }
       if (status !== undefined) {
-        const validStatuses = ["draft", "published", "pending_review", "rejected", "archived"];
-        if (!validStatuses.includes(status)) {
-          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid status: ${status}` } });
-          return;
-        }
-        // Seller transition validation: sellers can only submit (-> pending_review) or withdraw (-> draft)
+        // TASK 2 §6-9: Seller status transitions are strictly seller-facing.
+        // Allowed transitions: draft -> pending_review (submit), rejected -> pending_review (resubmit),
+        // pending_review -> draft (withdraw), published -> draft (unpublish/self-hide).
+        // Suspended/archived are terminal for sellers (admin-only). Same-status is treated as no-op
+        // so that the general edit dialog (which does not manage status) can be submitted
+        // without triggering an INVALID_TRANSITION when status is unchanged.
+        const validStatuses = ["draft", "pending_review"];
         const currentResult = await query("SELECT status FROM products WHERE id = $1", [productId]);
         if (currentResult.rows.length === 0) {
           res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
           return;
         }
-        const currentStatus = currentResult.rows[0].status;
-        const SELLER_TRANSITIONS: Record<string, string[]> = {
-          draft: ["pending_review"],
-          rejected: ["pending_review"],
-          pending_review: ["draft"],
-        };
-        const allowed = SELLER_TRANSITIONS[currentStatus];
-        if (!allowed || !allowed.includes(status)) {
-          res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change product from ${currentStatus} to ${status}. Allowed: ${(allowed ?? []).join(", ") || "none"}` } });
-          return;
-        }
-        updates.push(`status = $${idx++}`); values.push(status);
-        // Clear rejection_reason when resubmitting
-        if (status === "pending_review") {
-          updates.push(`rejection_reason = NULL`);
+        const currentStatus: string = currentResult.rows[0].status;
+        if (status === currentStatus) {
+          // No-op: caller sent the same status (e.g. editing a draft without intending a transition).
+          // Do not touch status/rejection_reason; the other field updates will still be applied.
+        } else {
+          if (!validStatuses.includes(status)) {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Sellers can only set status to: ${validStatuses.join(", ")}. Cannot set to ${status} — approval to published is admin-only.` } });
+            return;
+          }
+          const SELLER_TRANSITIONS: Record<string, string[]> = {
+            draft: ["pending_review"],
+            rejected: ["pending_review"],
+            pending_review: ["draft"],
+            published: ["draft"],
+          };
+          const allowed = SELLER_TRANSITIONS[currentStatus];
+          if (!allowed || !allowed.includes(status)) {
+            res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change product from ${currentStatus} to ${status}. Allowed: ${(allowed ?? []).join(", ") || "none"} (suspended/archived require admin)` } });
+            return;
+          }
+          updates.push(`status = $${idx++}`); values.push(status);
+          // Clear rejection_reason when (re)submitting for review
+          if (status === "pending_review") {
+            updates.push(`rejection_reason = NULL`);
+          }
         }
       }
       updates.push(`updated_at = NOW()`);
@@ -1206,6 +1227,15 @@ export function setupProductRoutes(app: Express): void {
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
         return;
+      }
+
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin to restore" } });
+          return;
+        }
       }
 
       // Soft delete (P1 #6): archive instead of hard-deleting so customer
@@ -1262,11 +1292,13 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
-      // CRITICAL: Enforce state machine — sellers CANNOT set published/rejected/archived
+      // CRITICAL: Enforce state machine — sellers CANNOT set published/rejected/archived/suspended
+      // TASK 2 §5-9 — published -> draft (unpublish) is allowed; suspended/archived are terminal (admin-only)
       const SELLER_STATUS_TRANSITIONS: Record<string, string[]> = {
         draft: ["pending_review"],
         rejected: ["pending_review"],
         pending_review: ["draft"],
+        published: ["draft"],
       };
       const currentStatusResult = await query("SELECT status FROM products WHERE id = $1", [productId]);
       if (currentStatusResult.rows.length === 0) {
@@ -1274,6 +1306,10 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
       const currentStatus = currentStatusResult.rows[0].status;
+      if (currentStatus === "suspended" || currentStatus === "archived") {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin to restore" } });
+        return;
+      }
       const allowedTransitions = SELLER_STATUS_TRANSITIONS[currentStatus];
       if (!allowedTransitions || !allowedTransitions.includes(status)) {
         res.status(403).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change status from '${currentStatus}' to '${status}'. Sellers can only: ${Object.entries(SELLER_STATUS_TRANSITIONS).map(([from, to]) => `${from} -> ${to.join(', ')}`).join('; ')}` } });
@@ -1288,7 +1324,11 @@ export function setupProductRoutes(app: Express): void {
         statusUpdates.push(`rejection_reason = NULL`);
       }
 
-      // Check auto-approval mode
+      // Auto-approval vs manual review (TASK 2 §6: seller cannot self-publish).
+      // When platform_settings.product_approval_mode = 'auto', a seller submission
+      // that passes validation is published immediately by the system. When mode
+      // is 'manual' (default) the product stays pending_review until VelCenter
+      // moderates it. The seller still never sets status='published' directly.
       let finalStatus = status;
       let actorLog = `seller ${seller.id}`;
       if (status === "pending_review") {
@@ -1375,6 +1415,14 @@ export function setupProductRoutes(app: Express): void {
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
       }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
 
       const { variantId } = req.body;
 
@@ -1415,6 +1463,14 @@ export function setupProductRoutes(app: Express): void {
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
       }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
 
       const { quantity } = req.body;
       const qty = Math.max(0, Number(quantity) || 0);
@@ -1446,6 +1502,14 @@ export function setupProductRoutes(app: Express): void {
       const productId = param(req, "productId");
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
       }
 
       const { reorderLevel } = req.body;
@@ -1540,6 +1604,14 @@ export function setupProductRoutes(app: Express): void {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
         return;
       }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
 
       const shop = await getShopForSeller(seller.id);
       if (!shop) { res.status(404).json({ success: false, error: { code: "NO_SHOP", message: "No shop found" } }); return; }
@@ -1593,6 +1665,14 @@ export function setupProductRoutes(app: Express): void {
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
         return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
       }
 
       // Verify R2 object exists
@@ -1665,6 +1745,15 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [imgResult.rows[0].product_id]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
       const img = imgResult.rows[0];
 
       // Delete from R2
@@ -1703,6 +1792,14 @@ export function setupProductRoutes(app: Express): void {
       const productId = param(req, "productId");
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
       }
 
       const { imageId } = req.body;
@@ -1755,6 +1852,14 @@ export function setupProductRoutes(app: Express): void {
       const productId = param(req, "productId");
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
       }
 
       // Accept both "imageIds" (backend convention) and "orderedIds" (frontend sends this)
@@ -1828,6 +1933,14 @@ export function setupProductRoutes(app: Express): void {
       const productId = param(req, "productId");
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
       }
       const groupsResult = await query("SELECT * FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC", [productId]);
       if (groupsResult.rows.length === 0) { res.json({ success: true, data: { variants: [] } }); return; }
@@ -1907,6 +2020,14 @@ export function setupProductRoutes(app: Express): void {
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
       }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
       const { price, compareAtPrice, discountPercent, stock, sku, status } = req.body;
       const updates: string[] = []; const values: any[] = []; let idx = 1;
       if (price != null) { updates.push(`price = $${idx++}`); values.push(Number(price)); }
@@ -1938,6 +2059,14 @@ export function setupProductRoutes(app: Express): void {
       const variantId = param(req, "variantId");
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
       }
       await query("DELETE FROM product_variant_values WHERE variant_id = $1", [variantId]);
       try {
@@ -1981,6 +2110,14 @@ export function setupProductRoutes(app: Express): void {
       const productId = param(req, "productId"); const variantId = param(req, "variantId");
       if (!(await verifyProductOwnership(productId, seller.id))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
       }
       const { url, alt } = req.body;
       if (!url) { res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "url required" } }); return; }

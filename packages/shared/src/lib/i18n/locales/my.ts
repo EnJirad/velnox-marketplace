@@ -488,6 +488,7 @@ export const my = {
     statusPublished: "ကြော်ငြာထား",
     statusRejected: "ပယ်ချခံရ",
     statusArchived: "သိမ်းထား",
+    statusSuspended: "ဆိုင်းငံ့ထား",
     rejectedReason: "ပယ်ချသည့် အကြောင်းရင်း: {reason}",
     submitForReview: "စစ်ဆေးရန် တင်ရန်",
     submitting: "တင်နေသည်...",
@@ -497,6 +498,9 @@ export const my = {
     sellerPendingTitle: "ကုန်ပစ္စည်း စစ်ဆေးဆဲ",
     sellerPendingDesc:
       "သင့်ကုန်ပစ္စည်းကို စစ်ဆေးရန် တင်ပြီးပါပြီ — အတည်ပြုပြီးပါက ဆိုင်၏ ရှေ့ဆိုင်တွင် ပြသပါမည်",
+    suspendedHint: "စီမံခန့်ခွဲသူမှ ဆိုင်းငံ့/သိမ်းဆည်းထား — ပြန်ဖွင့်ရန် ဆက်သွယ်ပါ",
+    suspendedActionDisabled: "ဆိုင်းငံ့ထား — ပြင်ဆင်ခြင်း ပိတ်ထားသည်",
+    suspendedDeleteDisabled: "စီမံခန့်ခွဲသူမှ ပြန်ဖွင့်ပေးရမည်",
   },
 
   checkout: {

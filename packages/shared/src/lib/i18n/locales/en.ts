@@ -1188,6 +1188,7 @@ export const en: Dict = {
     statusPublished: "Published",
     statusRejected: "Rejected",
     statusArchived: "Archived",
+    statusSuspended: "Suspended",
     rejectedReason: "Rejection reason: {reason}",
     submitForReview: "Submit for review",
     submitting: "Submitting...",
@@ -1197,6 +1198,9 @@ export const en: Dict = {
     sellerPendingTitle: "Products under review",
     sellerPendingDesc:
       "Your product was submitted to the review team — once approved it will appear in the shop storefront.",
+    suspendedHint: "Suspended/archived by admin — contact support to restore",
+    suspendedActionDisabled: "Suspended/archived — editing is disabled",
+    suspendedDeleteDisabled: "Requires admin to unsuspend first",
   },
 
   chat: {

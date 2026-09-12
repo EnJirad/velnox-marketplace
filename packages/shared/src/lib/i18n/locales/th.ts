@@ -1189,6 +1189,7 @@ export const th = {
     statusPublished: "ประกาศขาย",
     statusRejected: "ถูกปฏิเสธ",
     statusArchived: "เก็บแล้ว",
+    statusSuspended: "ถูกระงับ",
     rejectedReason: "เหตุผลที่ถูกปฏิเสธ: {reason}",
     submitForReview: "ส่งตรวจสอบ",
     submitting: "กำลังส่งตรวจสอบ...",
@@ -1198,6 +1199,9 @@ export const th = {
     sellerPendingTitle: "รอการตรวจสอบสินค้า",
     sellerPendingDesc:
       "สินค้าของคุณถูกส่งให้ทีมงานตรวจสอบแล้ว — เมื่ออนุมัติจะแสดงที่หน้าร้าน velshop",
+    suspendedHint: "ถูกระงับ/เก็บถาวรโดยผู้ดูแล — ติดต่อทีมงานเพื่อปลด",
+    suspendedActionDisabled: "สินค้าถูกระงับ/เก็บถาวร — การแก้ไขถูกปิดไว้",
+    suspendedDeleteDisabled: "ต้องให้ผู้ดูแลปลดระงับก่อน",
   },
 
   chat: {

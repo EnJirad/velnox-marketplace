@@ -206,10 +206,28 @@ export default function MyShop() {
         </Badge>
       );
     }
+    if (product.status === "archived") {
+      return (
+        <Badge className="gap-1 rounded-full bg-slate-100 text-slate-400 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
+          <span className="size-1.5 rounded-full bg-slate-300" />
+          {t("productModeration.statusArchived")}
+        </Badge>
+      );
+    }
+    // TASK 2 §9: suspended is a terminal, admin-only status — seller can see it
+    // but has no action to unsuspend (backend enforces this; UI must also block it).
+    if ((product.status as string) === "suspended") {
+      return (
+        <Badge className="gap-1 rounded-full bg-zinc-100 text-zinc-600 ring-1 ring-inset ring-zinc-500/15 hover:bg-zinc-100">
+          <span className="size-1.5 rounded-full bg-zinc-500" />
+          {t("productModeration.statusSuspended")}
+        </Badge>
+      );
+    }
     return (
       <Badge className="gap-1 rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
         <span className="size-1.5 rounded-full bg-slate-400" />
-        {product.status === "archived" ? t("productModeration.statusArchived") : t("productModeration.statusDraft")}
+        {t("productModeration.statusDraft")}
       </Badge>
     );
   };
@@ -218,8 +236,14 @@ export default function MyShop() {
     if (product.status === "published") return "ปิดขาย";
     if (product.status === "pending_review") return t("productModeration.statusPendingReview");
     if (product.status === "rejected") return t("productModeration.submitForReview");
+    // suspended/archived are terminal (admin-only) — no seller transition
+    if ((product.status as string) === "suspended") return t("productModeration.statusSuspended");
+    if (product.status === "archived") return t("productModeration.statusArchived");
     return t("productModeration.submitForReview");
   };
+
+  const isTerminal = (product: StoreProduct) =>
+    (product.status as string) === "suspended" || product.status === "archived";
 
   // ---------------------------------------------------------------- onboarding
   if (profile === undefined) {
@@ -574,7 +598,8 @@ export default function MyShop() {
                               size="sm"
                               className="gap-1.5 border-slate-200 text-slate-600"
                               onClick={() => handleTogglePublish(product)}
-                              disabled={togglingId === product.id || product.status === "pending_review"}
+                              disabled={togglingId === product.id || product.status === "pending_review" || isTerminal(product)}
+                              title={isTerminal(product) ? t("productModeration.suspendedHint") : undefined}
                             >
                               {togglingId === product.id ? (
                                 <Loader2 className="size-3.5 animate-spin" />
@@ -593,6 +618,8 @@ export default function MyShop() {
                                 setEditing(product);
                                 setFormOpen(true);
                               }}
+                              disabled={isTerminal(product)}
+                              title={isTerminal(product) ? t("productModeration.suspendedActionDisabled") : undefined}
                             >
                               <Pencil className="size-3.5" />
                               แก้ไข
@@ -602,10 +629,15 @@ export default function MyShop() {
                               size="sm"
                               className="gap-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                               onClick={() => setDeleting(product)}
+                              disabled={isTerminal(product)}
+                              title={isTerminal(product) ? t("productModeration.suspendedDeleteDisabled") : undefined}
                             >
                               <Trash2 className="size-3.5" />
                             </Button>
                           </div>
+                          {isTerminal(product) && (
+                            <p className="mt-2 text-xs font-medium text-zinc-500">{t("productModeration.suspendedHint")}</p>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -619,10 +651,11 @@ export default function MyShop() {
               {filteredProducts.map((product) => {
                 const available = product.inventory?.available ?? product.inventory?.quantity ?? 0;
                 const published = product.status === "published";
+                const terminal = isTerminal(product);
                 return (
                   <div
                     key={product.id}
-                    className="rounded-xl border border-slate-200 bg-white p-4 transition-all duration-200 active:scale-[0.99]"
+                    className={`rounded-xl border bg-white p-4 transition-all duration-200 active:scale-[0.99] ${terminal ? "border-zinc-200 opacity-90" : "border-slate-200"}`}
                   >
                     <div className="flex items-center gap-3">
                       {product.primaryImage ? (
@@ -640,30 +673,33 @@ export default function MyShop() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-900">{product.name}</p>
                         <p className="mt-0.5 text-xs text-slate-400">
-                          {PRODUCT_CATEGORY_META[product.category].label}
+                          {PRODUCT_CATEGORY_META[product.category]?.label ?? product.category}
                           {product.images && product.images.length > 0 ? ` · ${product.images.length} รูป` : " · ยังไม่มีรูป"}
                         </p>
-                        <div className="mt-1.5 flex items-center gap-2">
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
                           <p className="text-sm font-bold tabular-nums text-slate-900">
                             {formatBaht(product.price)}
                             <span className="text-xs font-normal text-slate-400"> / {product.unit}</span>
                           </p>
                           <span className="text-xs text-slate-400">· สต็อก {available}</span>
                           {renderStatus(product)}
-                          {product.status === "rejected" && product.rejectionReason && (
-                            <p className="mt-1 text-xs font-medium text-rose-600">
-                              {t("productModeration.rejectedReason", { reason: product.rejectionReason })}
-                            </p>
-                          )}
                         </div>
+                        {product.status === "rejected" && product.rejectionReason && (
+                          <p className="mt-1 text-xs font-medium text-rose-600">
+                            {t("productModeration.rejectedReason", { reason: product.rejectionReason })}
+                          </p>
+                        )}
+                        {terminal && (
+                          <p className="mt-1 text-xs font-medium text-zinc-500">{t("productModeration.suspendedHint")}</p>
+                        )}
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
                       <Button
                         size="sm"
-                        className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                        className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
                         onClick={() => handleTogglePublish(product)}
-                        disabled={togglingId === product.id || product.status === "pending_review"}
+                        disabled={togglingId === product.id || product.status === "pending_review" || terminal}
                       >
                         {togglingId === product.id ? (
                           <Loader2 className="size-3.5 animate-spin" />
@@ -682,6 +718,7 @@ export default function MyShop() {
                           setEditing(product);
                           setFormOpen(true);
                         }}
+                        disabled={terminal}
                       >
                         <Pencil className="size-3.5" />
                         แก้ไข
@@ -691,6 +728,7 @@ export default function MyShop() {
                         size="icon"
                         className="size-9 shrink-0 text-slate-400 hover:bg-red-50 hover:text-red-600"
                         onClick={() => setDeleting(product)}
+                        disabled={terminal}
                         aria-label={`ลบ ${product.name}`}
                       >
                         <Trash2 className="size-4" />

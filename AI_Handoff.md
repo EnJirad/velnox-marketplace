@@ -4,7 +4,7 @@
 
 ## Production Readiness Status
 
-**STATUS: IMPLEMENTED — Velnox Verified + Scalable Categories (2026-09-11); seller product creation audited + variant option-value mapping fixed (2026-09-12)** — previous audit: PRODUCTION READY WITH KNOWN NON-BLOCKERS
+**STATUS: IMPLEMENTED — Velnox Verified + Scalable Categories (2026-09-11); seller product creation audited + variant option-value mapping fixed (2026-09-12); seller product management lifecycle hardened — Task 2 complete (2026-09-12)** — previous audit: PRODUCTION READY WITH KNOWN NON-BLOCKERS
 
 All P0/P1 issues are CLOSED. The marketplace is safe for MVP production deployment.
 See "Production Readiness Audit" section in Recent Work History for full report.
@@ -379,6 +379,49 @@ PORT=3001
 8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-09-12 — TASK 2: Seller Product Management — lifecycle, authorization & i18n hardening
+
+**Scope (Task 2 only):** seller product management in `apps/velseller` (MyShop) + seller product APIs in `backend/routes/products.ts`. No repo restructure, no duplicate product system, no new DB tables, no Cloudinary, no VelRepeat changes. Reuses existing product creation, category, R2, auth and approval workflow per AI_RULES.md.
+
+**What was already working (reused, not reinvented):**
+- Seller product list scoped by `verifyProductOwnership`/`getSellerForUser` — `GET /api/seller/products` returns only own products (`WHERE p.shop_id = $1`), excludes `archived`; `GET /api/seller/products/:id` checks ownership.
+- Category: DB-backed `resolveCategory()` + `GET /api/categories` with `is_active` check — no hard-coded `VALID_CATEGORIES` (already fixed in Task 1 / Hotfix). `ProductFormDialog` loads `categoriesLocalized` at runtime.
+- Images: Cloudflare R2 presigned flow (`draft-upload-intent`, `presign`, `confirm`, `reorder-images`, `set-primary`, `variant-image`) — no Cloudinary references (`grep cloudinary` → 0).
+- ProductFormDialog edit path reuses create-full payload (`previewImages`/`detailImages`/`variants`/`options`) via existing APIs.
+- V✓ invariant preserved: `seller verified && product verified → V✓` (dual verification, server-enforced in catalog/shop queries) — this task does not touch verification.
+
+**Gaps found & fixed (this task):**
+1. **PATCH /api/seller/products/:productId — invalid seller status transitions:** previously allowed no `published -> draft` (unpublish) and errored on same-status no-op (editing a draft without intending a transition returned 400 `INVALID_TRANSITION`). Fixed: seller `SELLER_TRANSITIONS` now `{draft:[pending_review], rejected:[pending_review], pending_review:[draft], published:[draft]}`; same-status is a no-op (other field updates still applied). Direct seller `published`/`rejected`/`suspended`/`archived` remains blocked with `VALIDATION_ERROR` (seller cannot self-publish — must go via VelCenter moderation; `auto` approval still via `platform_settings.product_approval_mode` system path, not seller-set `published`).
+2. **Suspended/archived were not terminal for sellers:** seller could still `PATCH` fields, `PATCH stock/reorder/featured`, mutate variants/images, and toggle status on a `suspended` product, bypassing suspension. Fixed: every seller-mutating handler now loads `products.status` and returns `403 FORBIDDEN` (`suspended`/`archived` — contact admin to restore) before any mutation. Applies to `PATCH /api/seller/products/:productId`, `DELETE /api/seller/products/:productId` (soft-archive), `PATCH /api/seller/products/:productId/status`, `POST /api/seller/products/:productId/featured`, `PATCH stock`, `PATCH reorder-level`, `POST draft-upload-intent`/`confirm`, `POST presign`, `DELETE image`, `POST set-primary`, `POST reorder-images`, `GET/PUT/DELETE variants` and variant image routes. `PATCH status` also has explicit `if (currentStatus === 'suspended' || currentStatus === 'archived') → 403` before transition check and now allows `published -> draft`.
+3. **MyShop UI did not surface/ enforce suspended:** `renderStatus` treated `suspended` as `draft` (wrong), action buttons remained enabled, no hint. `handleTogglePublish` used hard-coded Thai `ปิดขาย/ปิดการขายแล้ว`. `PRODUCT_CATEGORY_META[product.category].label` could throw if category not in meta. Fixed: `renderStatus` renders distinct badges for `archived` (slate) and `suspended` (zinc + `productModeration.statusSuspended`), `statusActionLabel` returns i18n for terminal rows, `isTerminal()` disables Edit/Delete/Toggle (with `title`/`suspendedHint`), shows `suspendedHint` line on both table and mobile cards, category label falls back to `?? product.category`, toggle button uses `disabled:bg-slate-200` styling for terminal state.
+4. **Hard-coded Thai in status path:** toggle handler now uses `t("productModeration.unpublishedToast")` / `republishToast` consistently (already done for pending flows).
+5. **i18n gap:** `productModeration.statusSuspended` + `suspendedHint`/`suspendedActionDisabled`/`suspendedDeleteDisabled` missing in th/en/my. Added in `packages/shared/src/lib/i18n/locales/th.ts|en.ts|my.ts` (3 langs at parity).
+
+**Authorization / security verified (backend is source of truth, not just UI):**
+- `GET /api/seller/products` & `GET /api/seller/products/:productId` — seller-scoped, `verifyProductOwnership` check on every mutating route; no `userId`/`sellerId` trust from body.
+- Seller cannot: edit another seller's product (403 `Not your product`), change another seller's status, self-approve (`pending_review -> published` not in `SELLER_STATUS_TRANSITIONS` → 403 `INVALID_TRANSITION`), bypass VelCenter, manipulate ownership via body IDs, unsuspend/suspend via seller API (no seller endpoint writes `suspended`).
+- `suspended`/`archived` → all seller mutations blocked (403) until admin restores via `backend/routes/admin.ts` / `backend/routes/center.ts` moderation.
+- Rejected → seller can see `rejected` badge + `rejectionReason`, edit via `ProductFormDialog`, resubmit → `pending_review` (transition allowed, `rejection_reason` cleared).
+- Draft → seller can edit, save, submit → `pending_review`; `pending_review` → seller can withdraw → `draft`; Published → seller can edit allowed fields (name/desc/category/price/stock/variants/images) and unpublish `published -> draft` but cannot re-publish directly.
+- Category remains DB-backed (`resolveCategory` + runtime `categoriesLocalized`), R2 remains sole image store, no Cloudinary, no duplicate product/status APIs.
+
+**Database changed: NO** — no new columns/tables; existing `products.status` + `rejection_reason` + `product_variants`/`product_images` already support the lifecycle. No `db/schema.sql`/`db/run-sqleditor.sql`/`db/run-update.sql` sync needed per AI_RULES.md §8 ("prefer NO database changes if existing schema already supports").
+
+**Verification:**
+- `cd backend && bun tsc --noEmit` ✅ · `bun run typecheck` (4 apps) ✅ · `bun run i18n:check` parity th=en=my ✅ · `git diff --check` ✅ · `grep -R cloudinary` 0 · `grep -R VALID_CATEGORIES` 0 (except task docs) · `grep -R productModeration` keys present in th/en/my.
+- Manual lifecycle trace (code + typechecks + route guards; no live DB/browser in sandbox): Draft→Submit→Pending→(admin approve→Published | admin reject→Rejected→Edit→Resubmit→Pending)→Published→Edit/Unpublish→Draft; Suspended/Archived → seller read-only until admin restores.
+- **Not verified live:** actual seller submission against production Neon/R2 (no `DATABASE_URL` / browser in sandbox) — verified by code trace, typechecks and guard inspection.
+
+**Files changed:**
+- `backend/routes/products.ts` — seller status machine + terminal guards (9 handlers)
+- `apps/velseller/src/pages/MyShop.tsx` — terminal UI, i18n, category fallback
+- `packages/shared/src/lib/i18n/locales/th.ts` — `statusSuspended` + 3 suspended hints
+- `packages/shared/src/lib/i18n/locales/en.ts` — same (EN)
+- `packages/shared/src/lib/i18n/locales/my.ts` — same (MY)
+- `AI_Handoff.md` — this entry
+
+---
 
 ### 2026-09-12 — TASK 1: Seller Product Creation — end-to-end audit + variant↔option-value fix
 
