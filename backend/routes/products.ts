@@ -28,6 +28,11 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
+import {
+  buildOptionValueIndex,
+  normalizeVariantOptions,
+  resolveVariantOptionValueIds,
+} from "../lib/variant-options.js";
 import { CATEGORY_UUID_RE, INVALID_CATEGORY_MESSAGE, validateCategory, type CategoryLookupRow } from "../lib/categories.js";
 
 // ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
@@ -766,6 +771,42 @@ export function setupProductRoutes(app: Express): void {
         }
       }
 
+      // ── Option-value consistency (checked before touching the database) ────
+      // Every variant must point at option values declared by THIS product.
+      // A variant whose selection cannot be mapped would be stored without its
+      // `product_variant_values` link, leaving the storefront unable to resolve
+      // it — reject that here instead of writing a silently broken product.
+      const declaredOptionValues = new Map<string, Set<string>>();
+      if (Array.isArray(optionGroupsData)) {
+        for (const group of optionGroupsData) {
+          const groupName = typeof group?.name === "string" ? group.name.trim() : "";
+          if (!groupName) continue;
+          const values = declaredOptionValues.get(groupName) ?? new Set<string>();
+          for (const value of Array.isArray(group.values) ? group.values : []) {
+            const text = typeof value?.value === "string" ? value.value.trim() : "";
+            if (text) values.add(text);
+          }
+          declaredOptionValues.set(groupName, values);
+        }
+      }
+      if (Array.isArray(variantsData)) {
+        for (const v of variantsData) {
+          const variantName = v?.name || v?.optionLabels || "Variant";
+          const selections = normalizeVariantOptions(v?.options);
+          const unknown = Object.entries(selections)
+            .filter(([groupName, value]) => !declaredOptionValues.get(groupName)?.has(value))
+            .map(([groupName, value]) => `${groupName} = ${value}`);
+          if (unknown.length > 0) {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Variant "${variantName}" uses option values that are not part of this product: ${unknown.join(", ")}` } });
+            return;
+          }
+          if (declaredOptionValues.size > 0 && Object.keys(selections).length === 0) {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Variant "${variantName}" is missing its option selection` } });
+            return;
+          }
+        }
+      }
+
       // Generate unique slug
       const baseSlug = slugify(productData.name.trim());
       let slug = baseSlug;
@@ -844,6 +885,9 @@ export function setupProductRoutes(app: Express): void {
         const groupIdMap = new Map<string, string>(); // localIndex -> server UUID
         // Map: valueKey -> { groupName, valueText } for building variant options JSON
         const valueInfoMap = new Map<string, { groupName: string; valueText: string }>();
+        // Inserted option values in insertion order — used to build the
+        // group/value → option_value UUID index for variant resolution.
+        const optionValueRows: Array<{ groupName: string; valueText: string; valueId: string }> = [];
         if (Array.isArray(optionGroupsData)) {
           for (let gi = 0; gi < optionGroupsData.length; gi++) {
             const group = optionGroupsData[gi];
@@ -873,31 +917,35 @@ export function setupProductRoutes(app: Express): void {
                 const valKey = `value-${gi}-${vi}`;
                 groupIdMap.set(valKey, valResult.rows[0].id);
                 valueInfoMap.set(valKey, { groupName: group.name.trim(), valueText: val.value.trim() });
+                optionValueRows.push({ groupName: group.name.trim(), valueText: val.value.trim(), valueId: valResult.rows[0].id });
               }
             }
           }
         }
 
         // 6. Create variants + variant-option mappings
+        const optionValuesByName = buildOptionValueIndex(optionValueRows);
         if (Array.isArray(variantsData)) {
           for (let vi = 0; vi < variantsData.length; vi++) {
             const variant = variantsData[vi];
             const variantName = variant.name || variant.optionLabels || `Variant ${vi + 1}`;
 
-            // Build options JSON from optionValueIds so backfill can recover if needed
-            const optionsObj: Record<string, string> = {};
+            // Options JSON records the selection (and lets
+            // `backfill-variant-mappings` rebuild missing links).
+            const optionsObj: Record<string, string> = normalizeVariantOptions(variant.options);
             if (Array.isArray(variant.optionValueIds)) {
               for (const ovKey of variant.optionValueIds) {
                 const info = valueInfoMap.get(ovKey);
-                if (info) optionsObj[info.groupName] = info.valueText;
+                if (info && !optionsObj[info.groupName]) optionsObj[info.groupName] = info.valueText;
               }
             }
-            // Merge with any options sent by frontend (fallback)
-            if (variant.options && typeof variant.options === "object") {
-              for (const [k, v] of Object.entries(variant.options)) {
-                if (!optionsObj[k] && typeof v === "string") optionsObj[k] = v;
-              }
-            }
+            // Resolve the exact option_value rows this variant maps to.
+            const resolution = resolveVariantOptionValueIds({
+              variantOptions: optionsObj,
+              valueIdsByName: optionValuesByName,
+              legacyValueKeys: variant.optionValueIds,
+              legacyValueIdMap: Object.fromEntries(groupIdMap),
+            });
 
             const variantResult = await client.query(
               `INSERT INTO product_variants (product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order)
@@ -918,17 +966,19 @@ export function setupProductRoutes(app: Express): void {
             );
             const variantId = variantResult.rows[0].id;
 
-            // Create variant-option value mappings
-            if (Array.isArray(variant.optionValueIds)) {
-              for (const ovId of variant.optionValueIds) {
-                const resolvedId = groupIdMap.get(ovId) ?? ovId;
-                await client.query(
-                  `INSERT INTO product_variant_values (variant_id, option_value_id)
-                   VALUES ($1, $2)
-                   ON CONFLICT DO NOTHING`,
-                  [variantId, resolvedId]
-                );
-              }
+            // Create variant-option value mappings — only option_value ids
+            // validated above ever reach the database.
+            for (const optionValueId of resolution.optionValueIds) {
+              await client.query(
+                `INSERT INTO product_variant_values (variant_id, option_value_id)
+                 VALUES ($1, $2)
+                 ON CONFLICT DO NOTHING`,
+                [variantId, optionValueId]
+              );
+            }
+            if (resolution.unresolved.length > 0) {
+              // Pre-validated above — logged if it ever slips through.
+              console.warn(`[products] create-full: variant "${variantName}" unresolved options: ${resolution.unresolved.join(", ")}`);
             }
 
             // Create variant images (support single imageUrl or multiple images array)

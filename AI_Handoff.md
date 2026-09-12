@@ -1,10 +1,10 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-09-11**
+**LAST UPDATED: 2026-09-12**
 
 ## Production Readiness Status
 
-**STATUS: IMPLEMENTED — Velnox Verified + Scalable Categories (2026-09-11)** — previous audit: PRODUCTION READY WITH KNOWN NON-BLOCKERS
+**STATUS: IMPLEMENTED — Velnox Verified + Scalable Categories (2026-09-11); seller product creation audited + variant option-value mapping fixed (2026-09-12)** — previous audit: PRODUCTION READY WITH KNOWN NON-BLOCKERS
 
 All P0/P1 issues are CLOSED. The marketplace is safe for MVP production deployment.
 See "Production Readiness Audit" section in Recent Work History for full report.
@@ -379,6 +379,34 @@ PORT=3001
 8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-09-12 — TASK 1: Seller Product Creation — end-to-end audit + variant↔option-value fix
+
+**Scope:** seller product creation only (`apps/velseller` → `packages/shared/src/components/seller/ProductFormDialog.tsx` → `backend/routes/products.ts` `POST /api/seller/products/create-full`). No schema change, no unrelated features touched.
+
+**Audit result (all 7 required steps traced against the current code):**
+
+1. **Create page** — `/seller/shop` (MyShop) renders `ProductFormDialog` ("เพิ่มสินค้า") for approved sellers; edit mode reuses the same dialog.
+2. **Category** — already DB-backed: the form loads `api.customer.categoriesLocalized({lang})` at runtime (no hardcoded list), the selector is validated against the loaded rows, and the backend validates through `resolveCategory()` (`backend/lib/categories.ts`). Live DB has 46 active categories. **No change needed.**
+3. **Name / description** — required name + `Textarea` description, passed to create-full.
+4. **Price / stock** — variant-level (intentional: `product_variants.stock` is the source of truth). The form auto-creates one default variant when no options exist, and each variant requires a full price; validation requires at least one variant with `stock > 0`.
+5. **Variants** — option groups → auto-generated cartesian variants. **BUG FOUND AND FIXED (see below).**
+6. **Images (R2)** — `POST /api/seller/products/draft-upload-intent` → presigned PUT → `cdnUrl` returned in the create-full payload as `previewImages` / `detailImages`; stored in `product_images` with `image_type` `gallery` / `detail`. Unchanged.
+7. **Save** — `POST /api/seller/products/create-full` (single atomic transaction: product + inventory + gallery/detail images + option groups/values + variants + variant images + attributes + VelRepeat), product status `pending_review`.
+
+**Root cause fixed (variants were unsavable/broken):** the form encoded each variant's option selection as positional keys (`value-{groupIndex}-{valueIndex}`) built from the *unfiltered* `optionGroups` array, while the backend mapped them against the *filtered* payload array. Any shift (a group with an empty name, or a group whose values were empty) made the key miss the transaction map, so the backend fell back to `groupIdMap.get(ovId) ?? ovId` and inserted the raw string into `product_variant_values.option_value_id` (UUID) → Postgres `invalid input syntax for type uuid` aborted the whole create transaction (500). Even when it did not error, a mis-mapped variant was stored with the wrong/absent `product_variant_values` link, so the storefront could not resolve a selection to a variant.
+
+**Fix:**
+- `backend/lib/variant-options.ts` (NEW) — pure, testable helpers: `normalizeVariantOptions` (only non-empty `group → value` strings), `buildOptionValueIndex` (`groupName → valueText → option_value UUID` from the rows inserted in the same transaction), `resolveVariantOptionValueIds` (resolves ids, reports unresolved pairs, keeps legacy `value-g-v` keys only when they map to a value created in this transaction — never passes an arbitrary string to the DB).
+- `backend/routes/products.ts` — create-full now (a) pre-validates that every variant's selection belongs to the submitted option groups (clear `400 VALIDATION_ERROR` instead of a broken product), and (b) writes `product_variant_values` only from resolved option_value UUIDs; the `options` JSON is still recorded for `backfill-variant-mappings`.
+- `packages/shared/src/components/seller/ProductFormDialog.tsx` — each draft variant now carries its real selection (`selections: [{ groupName, valueText }]`, trimmed) and the payload sends `options: { groupName: valueText }` instead of index-based keys.
+- `backend/tests/product-variant-options.test.ts` (NEW) — 11 unit tests: normalization, index building, multi-group resolution, unresolved reporting, the stale-key regression (no raw string reaches the DB), legacy-key support, dedupe, default variant.
+
+**Database changed: NO** (no migration; existing tables/columns only).
+
+**Verification:** backend `tsc --noEmit` ✅ · velshop/velseller/velcenter/velnox `tsc -b --noEmit` ✅ · `bun test backend/tests` → **120 pass / 23 skip (DB-gated) / 0 fail** · `bun run i18n:check` 1129×3 ✅ · `git diff --check` ✅. Live browser E2E not run (no DATABASE_URL / headless browser in the sandbox) — verified by code trace + typechecks + tests. **NOT VERIFIED:** an actual seller submission against the production database.
+
+---
 
 ### 2026-09-11 — Velnox Verified: Dual Verification, Verified Products & Scalable Category System
 

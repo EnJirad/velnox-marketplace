@@ -93,6 +93,9 @@ interface DraftVariant {
   key: string; // e.g. "0-1" for group0/value1, or "0-1:2-0" for group0/value1+group2/value0
   name: string;
   optionValueIndices: number[]; // indices into flat option values
+  /** The exact option selection behind this variant (group name → chosen value).
+   *  Sent to the backend so it can link the variant to real option_value rows. */
+  selections: { groupName: string; valueText: string }[];
   sku: string;
   price: string;
   compareAtPrice: string;
@@ -554,6 +557,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           key: "default",
           name: form.name.trim() || "Default",
           optionValueIndices: [],
+          selections: [],
           sku: existing?.sku ?? "",
           price: existing?.price ?? "",
           compareAtPrice: existing?.compareAtPrice ?? "",
@@ -578,10 +582,11 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       [[]],
     );
 
-    const newVariants: DraftVariant[] = cartesian.map((combo, i) => ({
+    const newVariants: DraftVariant[] = cartesian.map((combo, _i) => ({
       key: combo.map((c) => `${c.groupIdx}-${c.valueIdx}`).join(":"),
       name: combo.map((c) => c.value).join(" / "),
       optionValueIndices: combo.map((c) => c.valueIdx),
+      selections: combo.map((c) => ({ groupName: c.groupName.trim(), valueText: c.value.trim() })),
       sku: "",
       price: "",
       compareAtPrice: "",
@@ -802,23 +807,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             const fullPrice = Number(v.compareAtPrice) || 0;
             const discPct = Number(v.discountPercent) || 0;
             const finalPrice = Math.max(0, Math.round(fullPrice * (1 - discPct / 100) * 100) / 100);
-            // Map optionValueIndices to groupIdMap keys so backend can resolve server UUIDs
-            const optionValueIds: string[] = [];
-            const validGroups = optionGroups.filter((g) => g.name.trim() && g.values.some((val) => val.value.trim()));
-            if (v.key !== "default" && validGroups.length > 0) {
-              // Parse key like "0-1:1-0" → [{groupIdx:0, valueIdx:1}, {groupIdx:1, valueIdx:0}]
-              const parts = v.key.split(":");
-              for (const part of parts) {
-                const [gIdx, vIdx] = part.split("-").map(Number);
-                if (Number.isFinite(gIdx) && Number.isFinite(vIdx)) {
-                  // Find the actual index in the full optionGroups array
-                  const group = validGroups[gIdx];
-                  if (group) {
-                    const actualGroupIdx = optionGroups.indexOf(group);
-                    optionValueIds.push(`value-${actualGroupIdx}-${vIdx}`);
-                  }
-                }
-              }
+            // Send the real group/value selection (not positional index math) so
+            // the backend links this variant to the option_value rows it inserts.
+            const options: Record<string, string> = {};
+            for (const sel of v.selections) {
+              const groupName = sel.groupName.trim();
+              const valueText = sel.valueText.trim();
+              if (groupName && valueText) options[groupName] = valueText;
             }
             return {
               name: v.name,
@@ -828,8 +823,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               discountPercent: discPct || null,
               stock: Math.max(0, Number(v.stock) || 0),
               status: "active",
-              options: {},
-              optionValueIds,
+              options,
               images: v.images.map((img) => ({ url: img.url, alt: img.alt || v.name })),
             };
           }),
