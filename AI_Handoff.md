@@ -4,7 +4,7 @@
 
 ## Production Readiness Status
 
-**STATUS: IMPLEMENTED — Velnox Verified + Scalable Categories (2026-09-11); seller product creation audited + variant option-value mapping fixed (2026-09-12); seller product management lifecycle hardened — Task 2 complete (2026-09-12)** — previous audit: PRODUCTION READY WITH KNOWN NON-BLOCKERS
+**STATUS: IMPLEMENTED — Velnox Verified + Scalable Categories (2026-09-11); seller product creation audited + variant option-value mapping fixed (2026-09-12); seller product management lifecycle hardened — Task 2 complete (2026-09-12); LIVE E2E verification audited — Task 2.5 PASSED WITH LIMITATIONS (2026-09-12)** — previous audit: PRODUCTION READY WITH KNOWN NON-BLOCKERS
 
 All P0/P1 issues are CLOSED. The marketplace is safe for MVP production deployment.
 See "Production Readiness Audit" section in Recent Work History for full report.
@@ -380,7 +380,93 @@ PORT=3001
 
 ## Recent Work History
 
-### 2026-09-12 — TASK 2: Seller Product Management — lifecycle, authorization & i18n hardening
+### 2026-09-12 — TASK 2.5: LIVE E2E VERIFICATION — Velseller → R2 → Draft → VelCenter → Catalog (audit only, no redesign)
+
+**Task type:** TESTING/AUDITING only (spec §16 — no restructure, no duplicate lifecycle/API, no DB migration, no Cloudinary, no VelRepeat rebuild, no UI redesign). Scope was to **prove** the existing implementation works across the real deployed system, not just `tsc`.
+
+**Date / commit:** 2026-09-12 — `a9627f7` (`fix(velseller): harden seller product management — status lifecycle + suspended guards + i18n (TASK 2)`). HEAD at audit start = `a9627f7fe9da3a6ac68d47a7b75a07d0cffa6e5e`.
+
+**Environment tested:**
+- Velseller/VelCenter/VelShop: source `apps/velseller|velcenter|velshop` + `@velnox/shared` (Vite 7, `packages/shared/src/lib/sites.ts` → `VITE_API_URL` default `https://velnox-api.onrender.com`; 4 Vercel projects per `INSTALLATION.md`/`vercel.json` — SPA rewrites verified).
+- Backend: `backend/server.ts` (Express + Helmet/CORS/Origin-guard/Rate-limit, WebSocket at `/ws`). Live prod `https://velnox-api.onrender.com` probed directly (health + catalog + unauth guards). Local `backend/.env`/`DATABASE_URL`/`R2_*` not present in this sandbox — Neon/R2 credentialled flows inspected via code.
+- DB: Neon PostgreSQL — 42 migrations (`db/migrations/001–040` plus V0040 dual-verification + scalable categories), `db/schema.sql`/`run-sqleditor.sql`/`run-update.sql` synchronized per AI_RULES §8. Runtime checks via `GET /api/_diag/schema` + `GET /api/categories`.
+- R2: Cloudflare R2 only (`@aws-sdk/client-s3` + `s3-request-presigner`, no Cloudinary). Verified by `grep -ri cloudinary` → 0 + `ProductFormDialog.tsx` → `POST /api/seller/products/draft-upload-intent` → `PUT <uploadUrl>` → `cdnUrl` flow.
+
+**Actual routes & screens recorded (no new APIs invented):**
+- Seller create/save: `POST /api/seller/products` (approved-seller only, `resolveCategory()` DB-backed), `POST /api/seller/products/create-full` (atomic: product + inventory + gallery/detail `product_images` + option groups/values + `product_variants` + `product_variant_values` + attributes + VelRepeat; uses `backend/lib/variant-options.ts`).
+- Images (R2): `POST /api/seller/products/draft-upload-intent` + `PUT <uploadUrl>` + `POST /api/seller/products/save-image` (HeadObject check), plus `POST /api/seller/products/image-upload-intent`, `DELETE .../images/:imageId`, `PATCH .../primary-image|reorder-images`, variant images `POST .../variants/:variantId/images`.
+- Seller list/edit: `GET /api/seller/products` (`WHERE p.shop_id=$1 AND p.status<>'archived'`, `loadProductExtras`), `PATCH /api/seller/products/:productId` (Task 2 hardened), `DELETE ...` (soft-archive), `PATCH .../featured-variant|stock|reorder-level`, option/variant routes in `backend/routes/product-options.ts`.
+- Status: `PATCH /api/seller/products/:productId/status` — `SELLER_STATUS_TRANSITIONS={draft:[pending_review], rejected:[pending_review], pending_review:[draft], published:[draft]}`; same-status no-op; `suspended/archived→403`; never allows `published` directly (auto-publish only via `platform_settings.product_approval_mode=auto` system path).
+- VelCenter moderation: `GET /api/admin/products/moderation` (owner|admin only, `?status=`), `PATCH /api/admin/products/:productId/moderation` (`VALID_ADMIN_TRANSITIONS=[published,rejected]`, source must be `pending_review`, writes `audit_logs`+`moderation_records`, rejection requires `rejectionReason`).
+- Public catalog: `GET /api/products/catalog` (`WHERE p.status='published'` + optional `?verified=true` dual check), `GET /api/products/:productId` (404 if not `published`), `GET /api/categories|/tree|/stats`, `GET /api/shops`, `GET /api/products/:productId/options` (published only).
+- Screens: `apps/velcenter/src/pages/Center.tsx` tabs `overview|orders|intel|products|sellers|verifications|staff|audit|settings` with `productModerationAction → GET /api/admin/products/moderation` and `setModerationAction → PATCH /api/admin/products/:productId/moderation`; Velseller `apps/velseller/src/pages/MyShop.tsx` + `packages/shared/src/components/seller/ProductFormDialog.tsx` (DB-backed category Select, image/variant editors).
+
+**Test accounts / roles (PART 2):**
+- No test credentials were provisioned in the sandbox; `backend/.env` absent, `DATABASE_URL`/`JWT_SECRET`/`R2_*` not set via environment, and no existing authenticated session/cookie was available to `curl` with. No production users were created. No secrets printed. **Prerequisite missing:** approved seller session + VelCenter `owner|admin` session + optional second seller for cross-owner live test. Per spec: do not fabricate credentials — reported as missing. Public/unauthenticated probes *were* executed live (see below).
+
+**PART 3 — Test product creation: CODE VERIFIED (NOT LIVE)**
+- Velseller `MyShop → ProductFormDialog` traced end-to-end: DB-backed `Select` loads `api.customer.categoriesLocalized({lang:"th"})` → validates `categories.some(c=>c.slug===form.category)` + backend `resolveCategory()` (`is_active` check, stores canonical `category_id`). Required `name/description/price/stock` + variant `compareAtPrice/discountPercent/stock` + `initialStock/reorderLevel` + shop ownership (`getSellerForUser`+`getShopForSeller`). No new dedicated `E2E TEST PRODUCT — DO NOT USE` was created live (would pollute prod without safe cleanup session); behaviour verified by code trace + existing published artefacts below.
+
+**PART 4 — R2 live verification: CODE VERIFIED + LIVE NEGATIVE**
+- Inspected: `draftUpload()` in `ProductFormDialog.tsx` → `POST /api/seller/products/draft-upload-intent` (`requireAuth`, `PutObjectCommand` + `getSignedUrl` 300s → `{uploadUrl, objectKey, cdnUrl}`) → `PUT` to R2 → `POST .../save-image` verifies `HeadObject` then inserts `product_images` with `cdnUrl`/`storage_key`. Keys point to R2 (`products/...`/`option-values/...`/`profile/...`), no Cloudinary. **LIVE:** unauth `POST .../draft-upload-intent` → `401 UNAUTHORIZED` (guard enforced); `grep -ri cloudinary` → 0. **NOT LIVE:** authenticated presign/PUT/confirm with real file (requires seller session + R2 creds) — CODE VERIFIED.
+
+**PART 5 — Draft verification: CODE VERIFIED (NOT LIVE)**
+- `POST /api/seller/products` maps `status==='published' ? 'pending_review' : 'draft'` (seller cannot self-publish even via legacy endpoint); `POST .../create-full` similar plus `platform_settings.product_approval_mode` auto-publish branch (system actor, not seller). `GET /api/seller/products` returns own shop only (`shop_id=$1`), excludes `archived`. Ownership via `verifyProductOwnership` on every mutating route (no body `sellerId` trust). Public `GET /api/products/catalog` filters `p.status='published'` so draft is not public. Cross-owner direct live test (Seller A vs B) **NOT EXECUTED** — CODE-LEVEL VERIFIED via `verifyProductOwnership`+`requireAuth`.
+
+**PART 6 — Submit for review: CODE VERIFIED (NOT LIVE)**
+- `PATCH .../status {status:'pending_review'}` enforces `SELLER_STATUS_TRANSITIONS[draft]=['pending_review']`, clears `rejection_reason=NULL`. Forbidden `pending_review→published` not in `validStatuses=[draft,pending_review]` → `400 VALIDATION_ERROR`. After submit row is `pending_review`; catalog excludes it (`WHERE p.status='published'`). Refresh persistence is DB-backed. Live unauth submit → `401`. Live state transition itself requires auth — CODE VERIFIED.
+
+**PART 7 — VelCenter review: CODE VERIFIED (NOT LIVE) + LIVE NEGATIVE**
+- `GET /api/admin/products/moderation` (VelCenter `products` tab) joins `products→shops→sellers→users`+`inventory`, returns `{primaryImage, images, shop_name, seller_name/email, inventory_*}`; supports `?status=pending_review`. Approve `PATCH .../moderation {status:'published'}` — `VALID_ADMIN_TRANSITIONS=[published,rejected]`, source must be `pending_review` else `400 INVALID_TRANSITION`, updates `shops.product_count`, writes `audit_logs`+`moderation_records`. Auth: `requireAdmin` (`owner|admin`). Seller cannot call this (403). **LIVE:** unauth `GET /api/admin/products/moderation` → `401` (guard enforced). **NOT LIVE:** admin listing/approve with real pending product — CODE VERIFIED (`backend/routes/products.ts:3149/3245` wired in `server.ts`, consumed by `Center.tsx:202-245`).
+
+**PART 8 — Public catalog after approval: LIVE VERIFIED (positive) + CODE VERIFIED (full field parity)**
+- **LIVE:** `GET /api/products/catalog?limit=3` → 3 rows all `status='published'` (`so-test-35c7bff2-c/a/b` — 8340b312...,30e253cd...,77aa16fa... — prior E2E artefacts); `GET /api/products/:productId` for `8340b312...` → `{success:true, status:'published'}`; `GET /api/categories` → 48 rows (e.g. `audio-electronics:Audio`, `coffee:Coffee`). Draft/pending/rejected never in catalog (`WHERE p.status='published'` at `products.ts:2149,2301`). **CODE:** post-approval enrichment (shop, images, variants, `featuredVariant`, `detailImages`, `optionGroups`, `variantOptions`) verified in `loadProductExtras`/`formatProduct` + `GET /api/products/:productId` assembly.
+
+**PART 9 — Rejection flow: CODE VERIFIED (NOT LIVE)**
+- VelCenter reject `PATCH .../moderation {status:'rejected', rejectionReason}` — requires trimmed reason, sets `status='rejected'`+`rejection_reason`. MyShop shows `rejected` badge + `rejection_reason` via `productModeration` i18n, product not in public catalog, seller can edit (ownership still passes) and resubmit `rejected→pending_review` (allowed transition, clears `rejection_reason`), never `rejected→published` (seller `validStatuses` blocks). Then normal `pending_review→published` via VelCenter. **NOT LIVE** (no admin session to reject live product).
+
+**PART 10 — Status transition matrix: CODE VERIFIED (exhaustive) + LIVE NEGATIVE (unauth)**
+- `draft→pending_review` ✅ seller submit; `pending_review→draft` ✅ seller withdraw; `pending_review→published` ✅ admin only (seller→403); `pending_review→rejected` ✅ admin only; `rejected→pending_review` ✅ seller resubmit (clears reason); `published→draft` ✅ seller unpublish (Task 2); `suspended|archived→*` seller `403` (all seller handlers check `SELECT status` first; `Center.tsx` disables Edit/Delete/Toggle on terminal rows + `suspendedHint`). Forbidden seller transitions explicitly via code paths + live unauth `PATCH .../status {status:'published'}` → `401` (auth layer) and would be `403/400` with auth. Cross-owner `verifyProductOwnership→403` (not live-executed without second seller).
+
+**PART 11 — Authorization: LIVE VERIFIED (unauth) + CODE VERIFIED (full matrix)**
+- LIVE (unauth, `curl` against prod `https://velnox-api.onrender.com`): `GET /api/seller/products`→401 ✅; `POST /api/seller/products`→401 ✅; `PATCH .../status`→401 ✅; `POST .../draft-upload-intent`→401 ✅; `GET /api/admin/products/moderation`→401 ✅; `GET /api/products/000...0001` (non-existent/draft-like)→404 ✅ (public filter hides non-published).
+- CODE VERIFIED (backend is source of truth, not UI `disabled`): `requireAuth` on every seller mutating route (27 routes in `products.ts` + 3 in `seller.ts`); non-seller → `403`/empty list via `getSellerForUser`; seller can mutate only own products — `verifyProductOwnership` on every `PATCH/DELETE/POST` under `/api/seller/products` (15+ sites incl. variants/images/options in `product-options.ts`); seller cannot approve/bypass `pending_review`/set `published` — `validStatuses=[draft,pending_review]` + transition map excludes `published`; seller cannot modify `suspended/archived` — `SELECT status` guard→403; VelCenter/admin can approve/reject — `requireAdmin`+`currentStatus!=='pending_review'→400`+`rejectionReason` required; public only sees `published` — `catalog`+`products/:id`+`products/:id/options`+cart all filter `status='published`.
+
+**PART 12 — Data consistency: CODE VERIFIED (NOT LIVE, within scope)**
+- Invariant `Seller UI status = Backend API status = Neon products.status = VelCenter status` — VelCenter list + Seller list read the same `products` row (no duplicate record; `shops.product_count` recomputed `COUNT(*) WHERE status='published'` on every moderation/status change). Live sample: `so-test-…` returned via `GET /api/products/catalog` (`status=published`) and `GET /api/products/:id` (same) — consistent within public view. Full round-trip (seller UI↔Neon↔VelCenter) not exercised live without auth — CODE VERIFIED via shared `query("SELECT ... FROM products")`+`loadProductExtras`+`formatProduct`.
+
+**PART 13 — Public catalog safety: LIVE VERIFIED**
+- `GET /api/products/catalog` SQL `WHERE p.status='published'` — live response only `published` rows (3/3). `GET /api/products/000...0001`→404. `GET /api/products/:publishedId`→200; non-published would 404. Verified `suspended`/`archived` never in catalog (same `WHERE` + seller lists exclude `archived`).
+
+**PART 14 — R2 / image safety: LIVE NEGATIVE + CODE VERIFIED**
+- R2 sole store (`@aws-sdk/client-s3`+`s3-request-presigner`, 0 Cloudinary). `POST draft-upload-intent → PUT presigned → POST save-image` verifies `HeadObject` before inserting `product_images`. `image_type` (`gallery`/`detail`) + `product_variant_images`+`product_option_values.image_url` all store `cdnUrl=${R2_PUBLIC_DOMAIN}/${objectKey}`; public image retrievable when `published` (detail returns `detailImages`), draft/pending/rejected `404` so images not exposed via public APIs (seller-only routes return images only after ownership check). Unauth `save-image`/presign→401 (LIVE). No `R2_*` secrets exposed to frontend.
+
+**PART 15 — Regression checks (exact commands & results):**
+- `bun run typecheck` (4 apps) → `velshop 0 | velseller 0 | velcenter 0 | velnox 0` ✅
+- `cd backend && bun tsc --noEmit` → 0 ✅
+- `bun test backend/tests` → `120 pass / 23 skip (DB-gated) / 0 fail` (10 files; 23 DB-gated skips: categories table, inventory race, verifyOrderContainsProduct, reviews unique+soft-delete, goals+center, seller order scoping, velrepeat idempotency) — incl. `product-variant-options` 11 tests ✅
+- `bun run i18n:check` → `th=1128 en=1128 my=1128 keys, all locales at parity` ✅
+- `git diff --check` → clean ✅
+- `grep -ri cloudinary` → 0; `grep -R VALID_CATEGORIES` in `products.ts` → 0 (DB-backed `resolveCategory()` remains) ✅
+
+**Bugs found:** none inside the `Seller → R2 → Draft → Submit → VelCenter → Catalog` lifecycle that block the matrix. Note: `GET /api/products/catalog` contains 3 leftover `so-test-35c7bff2-{a,b,c} product` rows dated 2026-09-12 (prior runs, correctly `published` and public) — harmless test artefacts.
+
+**Bugs fixed in this task:** none — per §16 this was audit-only; lifecycle already correct after Task 2. No architecture change, no new API, no DB migration (per AI_RULES §8/§9, `db/schema.sql`/`run-sqleditor.sql`/`run-update.sql` remain synchronized as of V0040).
+
+**Known limitations (explicit):**
+- No live authenticated E2E product was created/submitted/approved/rejected in this run — requires real seller Google OAuth session + VelCenter `owner|admin` session in this sandbox; spec forbids fabricating credentials, so create/R2/draft/submit/VelCenter approve/reject/resubmit are **CODE VERIFIED**, not **LIVE VERIFIED**.
+- Cross-owner live test (Seller A vs B) **NOT EXECUTED** live (needs second seller) — **CODE-LEVEL VERIFIED** via `verifyProductOwnership`.
+- R2 live `PUT` to presigned URL not exercised (needs seller auth) — presign guard + wiring **CODE VERIFIED**, unauth presign **LIVE VERIFIED** as `401`.
+- Second dedicated rejection-flow product not created live for same reason — lifecycle fully **CODE VERIFIED**.
+- `VITE_API_URL`/`R2_PUBLIC_DOMAIN`/`DATABASE_URL` live values not read via blocked env access; prod values inferred from `sites.ts` defaults + `INSTALLATION.md` + live health response.
+
+**Task 2.5 verdict: PASSED WITH LIMITATIONS** (all LIVE-verifiable surfaces passed; all auth-gated lifecycle steps are CODE-VERIFIED against the actual implementation with no blocking bug found).
+
+**Files changed:** `AI_Handoff.md` only (this entry). Database changed: NO.
+
+---
+
+### 2026-09-12 — TASK 2: Seller Product Management
 
 **Scope (Task 2 only):** seller product management in `apps/velseller` (MyShop) + seller product APIs in `backend/routes/products.ts`. No repo restructure, no duplicate product system, no new DB tables, no Cloudinary, no VelRepeat changes. Reuses existing product creation, category, R2, auth and approval workflow per AI_RULES.md.
 
