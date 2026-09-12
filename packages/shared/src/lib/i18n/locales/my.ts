@@ -488,7 +488,8 @@ export const my = {
     statusPublished: "ကြော်ငြာထား",
     statusRejected: "ပယ်ချခံရ",
     statusArchived: "သိမ်းထား",
-    statusSuspended: "ဆိုင်းငံ့ထား",
+    statusSuspended: "ရပ်ဆိုင်းထား",
+    filterAll: "အားလုံး",
     rejectedReason: "ပယ်ချသည့် အကြောင်းရင်း: {reason}",
     submitForReview: "စစ်ဆေးရန် တင်ရန်",
     submitting: "တင်နေသည်...",
@@ -950,6 +951,12 @@ export const my = {
     // Evidence
     evidenceRequired: "အထောက်အထား ထည့်သွင်းပါ",
     evidenceHint: "အတည်ပြုစာရွက်စာတမ်း၊ ဓာတ်ပုံ သို့မဟုတ် သက်ဆိုင်ရာ အထောက်အထားကို ထည့်သွင်းပါ",
+    evidencePlaceholder: "အထောက်အထား လင့်ခ်များ ထည့်ပါ (တစ်ကြောင်းလျှင် တစ်ခု) နှင့် အသေးစိတ် ဖော်ပြပါ",
+    evidencePrivateNote: "ဤအထောက်အထားကို Velnox စစ်ဆေးရေးအဖွဲ့သာ မြင်နိုင်သည် — ဖောက်သည်များအား မပြပါ",
+    sellerVerificationSubmitted: "ဆိုင် အတည်ပြုရန် တင်ပြီးပါပြီ — အဖွဲ့ စစ်ဆေးပါမည်",
+    productVerificationSubmitted: "ကုန်ပစ္စည်း အတည်ပြုရန် တင်ပြီးပါပြီ — အဖွဲ့ စစ်ဆေးပါမည်",
+    sellerVerificationSeparateNote: "ဆိုင် အတည်ပြုခြင်းသည် ဆိုင်၏ အထောက်အထားကို စစ်ဆေးခြင်းဖြစ်ပြီး ကုန်ပစ္စည်းများကို အလိုအလျောက် အတည်မပြုပါ",
+    productVerificationSeparateNote: "ကုန်ပစ္စည်း အတည်ပြုခြင်းသည် ဤကုန်ပစ္စည်းကို သီးခြား စစ်ဆေးခြင်းဖြစ်သည် — V✓ ရရှိရန် ဆိုင်နှင့် ကုန်ပစ္စည်း နှစ်ခုလုံး အတည်ပြုရမည်",
   },
 
   help: {

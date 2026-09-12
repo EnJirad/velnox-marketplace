@@ -175,6 +175,14 @@ const RULES: Array<{ match: (req: Request) => boolean; limiter: RequestHandler }
   { match: (req) => req.method === "POST" && /^\/api\/(customer|seller)\/conversations\/[^/]+\/messages$/.test(req.path), limiter: createRateLimiter({ name: "chat-send", windowMs: 60_000, max: 30 }) },
   { match: (req) => (req.method === "PATCH" || req.method === "PUT") && /^\/api\/customer\/notifications/.test(req.path), limiter: createRateLimiter({ name: "notify-read", windowMs: 60_000, max: 120 }) },
 
+  // ── Verification submissions (user-keyed — evidence spam guard) ─────────
+  { match: (req) => req.method === "POST" && /^\/api\/seller\/verification$/.test(req.path), limiter: createRateLimiter({ name: "seller-verification", windowMs: 60_000, max: 5 }) },
+  { match: (req) => req.method === "POST" && /^\/api\/seller\/products\/[^/]+\/verification$/.test(req.path), limiter: createRateLimiter({ name: "product-verification", windowMs: 60_000, max: 5 }) },
+
+  // ── Seller product images (user-keyed — presign generation is the surface) ─
+  { match: (req) => req.method === "POST" && /^\/api\/seller\/products\/(draft-upload-intent|image-upload-intent)$/.test(req.path), limiter: createRateLimiter({ name: "seller-upload-intent", windowMs: 60_000, max: 30 }) },
+  { match: (req) => req.method === "POST" && /^\/api\/seller\/products\/save-image$/.test(req.path), limiter: createRateLimiter({ name: "seller-upload-confirm", windowMs: 60_000, max: 60 }) },
+
   // ── Uploads (user-keyed — presign generation is the abuse surface) ───────
   { match: (req) => req.method === "POST" && (req.path === "/api/upload/presign" || req.path === "/api/customer/profile-image/upload-intent"), limiter: createRateLimiter({ name: "upload-intent", windowMs: 60_000, max: 20 }) },
   { match: (req) => req.method === "POST" && (req.path === "/api/upload/confirm" || req.path === "/api/customer/profile-image/save"), limiter: createRateLimiter({ name: "upload-confirm", windowMs: 60_000, max: 40 }) },

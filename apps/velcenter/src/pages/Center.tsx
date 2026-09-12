@@ -85,6 +85,74 @@ import { toast } from "sonner";
 
 type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "verifications" | "staff" | "audit" | "settings";
 
+/** Private verification evidence — rendered only inside the admin review tab. */
+function EvidenceCell({ urls, notes }: { urls: string[] | null; notes: string | null }) {
+  const list = Array.isArray(urls) ? urls : [];
+  if (list.length === 0 && !notes) {
+    return <span className="text-xs text-slate-400">ไม่แนบหลักฐาน</span>;
+  }
+  return (
+    <div className="space-y-1">
+      {notes && <p className="line-clamp-2 text-xs text-slate-500">{notes}</p>}
+      {list.map((url) => (
+        <a
+          key={url}
+          href={url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="block truncate text-xs font-medium text-[#10B981] hover:underline"
+        >
+          {url}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function VerificationActions({
+  row,
+  busy,
+  onApprove,
+  onReason,
+}: {
+  row: { status: string };
+  busy: boolean;
+  onApprove: () => void;
+  onReason: (action: "reject" | "suspend") => void;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      {row.status === "pending" && (
+        <>
+          <Button size="sm" className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={onApprove} disabled={busy}>
+            อนุมัติ
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 border-rose-200 text-rose-600 hover:bg-rose-50"
+            onClick={() => onReason("reject")}
+            disabled={busy}
+          >
+            ปฏิเสธ
+          </Button>
+        </>
+      )}
+      {row.status === "verified" && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1 border-orange-200 text-orange-600 hover:bg-orange-50"
+          onClick={() => onReason("suspend")}
+          disabled={busy}
+        >
+          ระงับ
+        </Button>
+      )}
+    </div>
+  );
+}
+
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
   { id: "marketing", label: "การตลาด" },
@@ -201,12 +269,19 @@ export default function Center() {
   const setSellerStatusAction = useAction(api.centerAdmin.setSellerStatusAction);
   const productModerationAction = useAction(api.centerAdmin.productModerationList);
   const setModerationAction = useAction(api.centerAdmin.setProductModerationStatus);
+  // Dual verification review — seller verification and product verification are
+  // independent queues (a verified shop never verifies its products).
+  const verificationsAction = useAction(api.admin.verifications);
+  const sellerVerificationAction = useAction(api.admin.sellerVerificationAction);
+  const productVerificationAction = useAction(api.admin.productVerificationAction);
   const [sellerRows, setSellerRows] = useState<SellerRow[] | null>(null);
   const [modProducts, setModProducts] = useState<ModProductRow[] | null>(null);
   const [rejectingSeller, setRejectingSeller] = useState<SellerRow | null>(null);
   const [rejectingProduct, setRejectingProduct] = useState<ModProductRow | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [modBusy, setModBusy] = useState(false);
+  const [verificationRows, setVerificationRows] = useState<{ sellers: VerificationRow[]; products: VerificationRow[] } | null>(null);
+  const [actingVerification, setActingVerification] = useState<{ kind: "seller" | "product"; row: VerificationRow; action: "reject" | "suspend" } | null>(null);
 
   interface SellerRow {
     id: string;
@@ -231,6 +306,19 @@ export default function Center() {
     shop_name: string;
     seller_name: string;
   }
+  /** A seller_verifications or product_verifications row (evidence is admin-only). */
+  interface VerificationRow {
+    id: string;
+    status: string;
+    verification_type: string | null;
+    evidence_urls: string[] | null;
+    evidence_notes: string | null;
+    submitted_at: string | null;
+    rejection_reason: string | null;
+    shop_name: string | null;
+    product_name: string | null;
+    product_slug: string | null;
+  }
 
   const reloadSellers = useCallback(async () => {
     try {
@@ -249,13 +337,33 @@ export default function Center() {
     }
   }, [productModerationAction]);
 
+  const reloadVerifications = useCallback(async () => {
+    try {
+      const [pending, verified] = await Promise.all([
+        verificationsAction({ status: "pending" }),
+        verificationsAction({ status: "verified" }),
+      ]);
+      setVerificationRows({
+        sellers: [...(pending?.sellers ?? []), ...(verified?.sellers ?? [])],
+        products: [...(pending?.products ?? []), ...(verified?.products ?? [])],
+      });
+    } catch (error) {
+      console.error("Verification list error:", error);
+      setVerificationRows({ sellers: [], products: [] });
+    }
+  }, [verificationsAction]);
+
   useEffect(() => {
     reloadSellers();
     reloadProducts();
-  }, [reloadSellers, reloadProducts]);
+    reloadVerifications();
+  }, [reloadSellers, reloadProducts, reloadVerifications]);
 
   const pendingSellers = (sellerRows ?? []).filter((s) => s.status === "pending").length;
   const pendingProducts = (modProducts ?? []).filter((p) => p.status === "pending_review").length;
+  const pendingVerifications =
+    (verificationRows?.sellers ?? []).filter((v) => v.status === "pending").length +
+    (verificationRows?.products ?? []).filter((v) => v.status === "pending").length;
 
   const handleSellerStatus = async (seller: SellerRow, status: string) => {
     // Frontend guard: cannot approve/reject own seller application
@@ -301,6 +409,35 @@ export default function Center() {
       setModBusy(false);
     }
   };
+  const handleVerificationAction = async (
+    kind: "seller" | "product",
+    row: VerificationRow,
+    action: "approve" | "reject" | "suspend",
+    reason?: string,
+  ) => {
+    if (action !== "approve" && !reason?.trim()) {
+      toast.error(action === "suspend" ? "กรุณาระบุเหตุผลการระงับ" : "กรุณาระบุเหตุผลการปฏิเสธ");
+      return;
+    }
+    setModBusy(true);
+    try {
+      const payload = { verificationId: row.id, action, reason: reason?.trim() || undefined };
+      if (kind === "seller") await sellerVerificationAction(payload);
+      else await productVerificationAction(payload);
+      toast.success(
+        action === "approve" ? "อนุมัติการยืนยันแล้ว ✅" : action === "suspend" ? "ระงับการยืนยันแล้ว" : "ปฏิเสธการยืนยันแล้ว",
+      );
+      setActingVerification(null);
+      setRejectReason("");
+      await reloadVerifications();
+    } catch (error) {
+      console.error("Verification action error:", error);
+      toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
+    } finally {
+      setModBusy(false);
+    }
+  };
+
   // Employee list returns [] for non-owners (the staff tab is owner-only anyway).
   const users = useQuery(api.users.listUsers);
   const setUserAccess = useMutation(api.users.setUserAccess);
@@ -650,6 +787,14 @@ export default function Center() {
               {pendingSellers > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
                   {pendingSellers}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="verifications" className="gap-1.5 rounded-[10px]">
+              <ShieldCheck className="size-4" /> การยืนยัน
+              {pendingVerifications > 0 && (
+                <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                  {pendingVerifications}
                 </span>
               )}
             </TabsTrigger>
@@ -1294,6 +1439,153 @@ export default function Center() {
             </DialogContent>
           </Dialog>
 
+          {/* ============ Verifications — seller + product (two independent systems) ============ */}
+          <TabsContent value="verifications" className="mt-6">
+            <div className="mb-4 flex items-start gap-2 text-sm text-slate-500">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#10B981]" />
+              <p>
+                การยืนยันร้านค้าและสินค้าเป็นสองระบบแยกกัน — สินค้าจะได้รับ V✓ เมื่อ
+                <span className="font-medium text-slate-700"> ทั้งร้านค้าและสินค้า</span> ผ่านการยืนยันแล้วเท่านั้น
+                เอกสารหลักฐานเห็นได้เฉพาะทีมงาน
+              </p>
+            </div>
+
+            {/* Seller verification queue */}
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <Store className="size-4 text-slate-400" /> การยืนยันร้านค้า (Seller Verification)
+            </h3>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <Table className="min-w-[720px]">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-5 text-slate-400">ร้านค้า</TableHead>
+                    <TableHead className="text-slate-400">ประเภท</TableHead>
+                    <TableHead className="text-slate-400">หลักฐาน</TableHead>
+                    <TableHead className="text-slate-400">สถานะ</TableHead>
+                    <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(verificationRows?.sellers ?? []).map((v) => (
+                    <TableRow key={v.id} className="hover:bg-slate-50/60">
+                      <TableCell className="pl-5 font-medium text-slate-900">{v.shop_name ?? "—"}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{v.verification_type ?? "identity"}</TableCell>
+                      <TableCell className="max-w-[280px]">
+                        <EvidenceCell urls={v.evidence_urls} notes={v.evidence_notes} />
+                      </TableCell>
+                      <TableCell><VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} /></TableCell>
+                      <TableCell className="pr-5">
+                        <VerificationActions
+                          row={v}
+                          busy={modBusy}
+                          onApprove={() => void handleVerificationAction("seller", v, "approve")}
+                          onReason={(action) => { setActingVerification({ kind: "seller", row: v, action }); setRejectReason(""); }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(verificationRows?.sellers ?? []).length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-400">
+                        ไม่มีคำขอยืนยันร้านค้า
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Product verification queue */}
+            <h3 className="mb-2 mt-6 flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <Package className="size-4 text-slate-400" /> การยืนยันสินค้า (Product Verification)
+            </h3>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <Table className="min-w-[720px]">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-5 text-slate-400">สินค้า</TableHead>
+                    <TableHead className="text-slate-400">ร้านค้า</TableHead>
+                    <TableHead className="text-slate-400">หลักฐาน</TableHead>
+                    <TableHead className="text-slate-400">สถานะ</TableHead>
+                    <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(verificationRows?.products ?? []).map((v) => (
+                    <TableRow key={v.id} className="hover:bg-slate-50/60">
+                      <TableCell className="pl-5 font-medium text-slate-900">{v.product_name ?? "—"}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{v.shop_name ?? "—"}</TableCell>
+                      <TableCell className="max-w-[280px]">
+                        <EvidenceCell urls={v.evidence_urls} notes={v.evidence_notes} />
+                      </TableCell>
+                      <TableCell><VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} /></TableCell>
+                      <TableCell className="pr-5">
+                        <VerificationActions
+                          row={v}
+                          busy={modBusy}
+                          onApprove={() => void handleVerificationAction("product", v, "approve")}
+                          onReason={(action) => { setActingVerification({ kind: "product", row: v, action }); setRejectReason(""); }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(verificationRows?.products ?? []).length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-400">
+                        ไม่มีคำขอยืนยันสินค้า
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Reject / suspend reason dialog */}
+            <Dialog open={actingVerification !== null} onOpenChange={(open) => !open && setActingVerification(null)}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {actingVerification?.action === "suspend" ? "ระงับการยืนยัน?" : "ปฏิเสธการยืนยัน?"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    ระบุเหตุผลเพื่อให้ผู้ขายแก้ไขและยื่นใหม่ได้ — สถานะการยืนยันจะถูกอัปเดตทันที
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-2">
+                  <Label htmlFor="verification-reason">เหตุผล</Label>
+                  <Textarea
+                    id="verification-reason"
+                    rows={3}
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="เช่น เอกสารไม่ชัดเจน / ไม่ตรงกับข้อมูลร้านค้า"
+                  />
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setActingVerification(null)} disabled={modBusy}>
+                    ยกเลิก
+                  </Button>
+                  <Button
+                    className="gap-1.5 bg-rose-600 text-white hover:bg-rose-700"
+                    disabled={modBusy || !rejectReason.trim()}
+                    onClick={() => {
+                      if (!actingVerification) return;
+                      void handleVerificationAction(
+                        actingVerification.kind,
+                        actingVerification.row,
+                        actingVerification.action,
+                        rejectReason,
+                      );
+                    }}
+                  >
+                    {modBusy && <Loader2 className="size-4 animate-spin" />}
+                    ยืนยัน
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
+
           {/* ============ Products — moderation queue (Neon, spec §37) ============ */}
           <TabsContent value="products" className="mt-6">
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
@@ -1333,6 +1625,8 @@ export default function Center() {
                           <Badge className="gap-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15">รอตรวจสอบ</Badge>
                         ) : p.status === "rejected" ? (
                           <Badge className="gap-1 rounded-full bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15">ถูกปฏิเสธ</Badge>
+                        ) : p.status === "suspended" ? (
+                          <Badge className="gap-1 rounded-full bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/15">ถูกระงับ</Badge>
                         ) : (
                           <Badge className="gap-1 rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10">
                             {p.status === "draft" ? "ฉบับร่าง" : p.status}
@@ -1379,6 +1673,16 @@ export default function Center() {
                               ระงับ
                             </Button>
                           )}
+                          {p.status === "suspended" && (
+                            <Button
+                              size="sm"
+                              className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
+                              onClick={() => handleProductModeration(p, "published")}
+                              disabled={modBusy}
+                            >
+                              คืนสถานะ
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1400,6 +1704,8 @@ export default function Center() {
                       <Badge className="shrink-0 gap-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15">รอตรวจสอบ</Badge>
                     ) : p.status === "published" ? (
                       <Badge className="shrink-0 gap-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15">ประกาศขาย</Badge>
+                    ) : p.status === "suspended" ? (
+                      <Badge className="shrink-0 gap-1 rounded-full bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/15">ถูกระงับ</Badge>
                     ) : (
                       <Badge className="shrink-0 gap-1 rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10">{p.status}</Badge>
                     )}
@@ -1416,6 +1722,20 @@ export default function Center() {
                       </Button>
                       <Button size="sm" variant="outline" className="gap-1 border-rose-200 text-rose-600 hover:bg-rose-50" onClick={() => { setRejectingProduct(p); setRejectReason(""); }} disabled={modBusy}>
                         ปฏิเสธ
+                      </Button>
+                    </div>
+                  )}
+                  {p.status === "published" && (
+                    <div className="mt-3">
+                      <Button size="sm" variant="outline" className="w-full gap-1 border-slate-200 text-slate-600" onClick={() => { setRejectingProduct(p); setRejectReason(""); }} disabled={modBusy}>
+                        ระงับ
+                      </Button>
+                    </div>
+                  )}
+                  {p.status === "suspended" && (
+                    <div className="mt-3">
+                      <Button size="sm" className="w-full gap-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => handleProductModeration(p, "published")} disabled={modBusy}>
+                        คืนสถานะ
                       </Button>
                     </div>
                   )}

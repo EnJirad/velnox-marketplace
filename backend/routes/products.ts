@@ -23,6 +23,15 @@
  *   GET    /api/categories                            — List categories
  */
 import type { Express, Request, Response } from "express";
+import {
+  ADMIN_MODERATION_TRANSITIONS,
+  SELLER_STATUS_TRANSITIONS,
+  canAdminModerate,
+  canSellerTransition,
+  computeIsVerifiedProduct,
+  moderationRequiresReason,
+  resolveCreationStatus,
+} from "../lib/product-lifecycle.js";
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
@@ -175,6 +184,9 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     name: row.name,
     description: row.description || null,
     category: row.category_id || "general",
+    // Canonical category slug (resolved from the categories table). Legacy
+    // products keep their raw string; new products resolve to a real slug.
+    categorySlug: row.category_slug ?? null,
     unit: row.unit || "ชิ้น",
     price: parseFloat(row.price) || 0,
     currency: row.currency || "THB",
@@ -248,9 +260,10 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     // Verification fields
     verificationStatus: row.verification_status || "unverified",
     sellerVerificationStatus: row.seller_verification_status || "unverified",
-    isVerifiedProduct:
-      (row.verification_status === "verified") &&
-      (row.seller_verification_status === "verified"),
+    isVerifiedProduct: computeIsVerifiedProduct(
+      row.verification_status,
+      row.seller_verification_status,
+    ),
   };
 }
 
@@ -556,9 +569,13 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const result = await query(
-        `SELECT p.*, sh.seller_id
+        `SELECT p.*, sh.seller_id,
+                COALESCE(s.verification_status, 'unverified') AS seller_verification_status,
+                c.slug AS category_slug
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
+         LEFT JOIN sellers s ON s.id = sh.seller_id
+         LEFT JOIN categories c ON c.id::text = p.category_id
          WHERE p.shop_id = $1 AND p.status <> 'archived'
          ORDER BY p.created_at DESC`,
         [shop.id]
@@ -638,7 +655,7 @@ export function setupProductRoutes(app: Express): void {
         suffix++;
       }
 
-      const productStatus = status === "published" ? "pending_review" : "draft";
+      const productStatus = resolveCreationStatus(status);
       const stockQty = initialStock != null ? Math.max(0, Number(initialStock)) : 0;
       const reorder = reorderLevel != null ? Math.max(0, Number(reorderLevel)) : 5;
 
@@ -818,7 +835,7 @@ export function setupProductRoutes(app: Express): void {
         suffix++;
       }
 
-      const productStatus = productData.status === "published" ? "pending_review" : (productData.status || "draft");
+      const productStatus = resolveCreationStatus(productData.status);
       const stockQty = productData.stock != null ? Math.max(0, Number(productData.stock)) : 0;
       const reorder = productData.reorderLevel != null ? Math.max(0, Number(productData.reorderLevel)) : 5;
 
@@ -1292,27 +1309,15 @@ export function setupProductRoutes(app: Express): void {
         return;
       }
 
-      // CRITICAL: Enforce state machine — sellers CANNOT set published/rejected/archived/suspended
-      // TASK 2 §5-9 — published -> draft (unpublish) is allowed; suspended/archived are terminal (admin-only)
-      const SELLER_STATUS_TRANSITIONS: Record<string, string[]> = {
-        draft: ["pending_review"],
-        rejected: ["pending_review"],
-        pending_review: ["draft"],
-        published: ["draft"],
-      };
+      // CRITICAL: Enforce state machine — sellers CANNOT set published/rejected/archived
       const currentStatusResult = await query("SELECT status FROM products WHERE id = $1", [productId]);
       if (currentStatusResult.rows.length === 0) {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
         return;
       }
       const currentStatus = currentStatusResult.rows[0].status;
-      if (currentStatus === "suspended" || currentStatus === "archived") {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin to restore" } });
-        return;
-      }
-      const allowedTransitions = SELLER_STATUS_TRANSITIONS[currentStatus];
-      if (!allowedTransitions || !allowedTransitions.includes(status)) {
-        res.status(403).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change status from '${currentStatus}' to '${status}'. Sellers can only: ${Object.entries(SELLER_STATUS_TRANSITIONS).map(([from, to]) => `${from} -> ${to.join(', ')}`).join('; ')}` } });
+      if (!canSellerTransition(currentStatus, status)) {
+        res.status(403).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change status from '${currentStatus}' to '${status}'. Sellers can only: ${Object.entries(SELLER_STATUS_TRANSITIONS).map(([from, to]) => `${from} -> ${to.join(", ")}`).join("; ")}` } });
         return;
       }
 
@@ -2208,6 +2213,7 @@ export function setupProductRoutes(app: Express): void {
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
          LEFT JOIN sellers s ON s.id = sh.seller_id
+         LEFT JOIN categories c ON c.id::text = p.category_id
          ${where}
          ${orderBy}
          LIMIT $${idx++} OFFSET $${idx}`,
@@ -2295,9 +2301,13 @@ export function setupProductRoutes(app: Express): void {
 
       // Public access only shows published products
       const result = await query(
-        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id,
+                COALESCE(s.verification_status, 'unverified') AS seller_verification_status,
+                c.slug AS category_slug
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
+         LEFT JOIN sellers s ON s.id = sh.seller_id
+         LEFT JOIN categories c ON c.id::text = p.category_id
          WHERE p.id = $1 AND p.status = 'published'`,
         [productId]
       );
@@ -2612,11 +2622,13 @@ export function setupProductRoutes(app: Express): void {
       // PostgreSQL cannot compare UUID = text in an OR branch.
       // We must route to the correct column based on input format.
       const shopQuery = isUuid(shopId)
-        ? `SELECT sh.*, s.status as seller_status
+        ? `SELECT sh.*, s.status as seller_status,
+                  COALESCE(s.verification_status, 'unverified') as seller_verification_status
            FROM shops sh
            JOIN sellers s ON sh.seller_id = s.id
            WHERE sh.id = $1 AND s.status = 'approved'`
-        : `SELECT sh.*, s.status as seller_status
+        : `SELECT sh.*, s.status as seller_status,
+                  COALESCE(s.verification_status, 'unverified') as seller_verification_status
            FROM shops sh
            JOIN sellers s ON sh.seller_id = s.id
            WHERE sh.slug = $1 AND s.status = 'approved'`;
@@ -2649,6 +2661,8 @@ export function setupProductRoutes(app: Express): void {
         orderCount: parseInt(row.order_count ?? '0', 10),
         rating: row.rating != null ? parseFloat(row.rating) : null,
         reviewCount: parseInt(row.review_count ?? '0', 10),
+        // Seller/shop verification (separate from product verification)
+        verificationStatus: row.seller_verification_status ?? "unverified",
       };
 
       // Fetch published products for this shop
@@ -2656,9 +2670,11 @@ export function setupProductRoutes(app: Express): void {
         `SELECT p.*,
                 i.quantity AS stock_qty,
                 i.reserved AS stock_reserved,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS primary_image_url
+                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS primary_image_url,
+                c.slug AS category_slug
          FROM products p
          LEFT JOIN inventory i ON i.product_id = p.id
+         LEFT JOIN categories c ON c.id::text = p.category_id
          WHERE p.shop_id = $1 AND p.status = 'published'
          ORDER BY p.created_at DESC
          LIMIT 50`,
@@ -2670,7 +2686,13 @@ export function setupProductRoutes(app: Express): void {
       const shopExtras = productIds.length > 0 ? await loadProductExtras(productIds) : { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map() };
       const products = productsResult.rows.map((r: any) => {
         const formatted = formatProduct(
-          { ...r, seller_id: row.seller_id },
+          {
+            ...r,
+            seller_id: row.seller_id,
+            // Seller verification belongs to the shop owner — attach it so V✓
+            // eligibility can be evaluated for every product in this shop.
+            seller_verification_status: row.seller_verification_status ?? "unverified",
+          },
           shopExtras.imagesByProduct.get(r.id) ?? [],
           r.stock_qty != null ? { quantity: r.stock_qty, reserved: r.stock_reserved ?? 0 } : null,
         );
@@ -3153,7 +3175,7 @@ export function setupProductRoutes(app: Express): void {
       const statusFilter = req.query.status as string | undefined;
       let where = "";
       const params: any[] = [];
-      if (statusFilter && ["pending_review", "published", "rejected", "draft", "archived"].includes(statusFilter)) {
+      if (statusFilter && ["pending_review", "published", "rejected", "draft", "suspended", "archived"].includes(statusFilter)) {
         where = "WHERE p.status = $1";
         params.push(statusFilter);
       }
@@ -3250,16 +3272,17 @@ export function setupProductRoutes(app: Express): void {
       const { status, rejectionReason } = req.body;
       const userId = req.user!.userId;
 
-      // Validate status
-      const VALID_ADMIN_TRANSITIONS = ["published", "rejected"];
+      // Validate status. Admin moderation is a separate state machine from the
+      // seller one — sellers can never reach published/rejected/suspended.
+      const VALID_ADMIN_TRANSITIONS = Object.keys(ADMIN_MODERATION_TRANSITIONS);
       if (!status || !VALID_ADMIN_TRANSITIONS.includes(status)) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid status. Admin can set: ${VALID_ADMIN_TRANSITIONS.join(", ")}` } });
         return;
       }
 
-      // Rejection requires a reason
-      if (status === "rejected" && (!rejectionReason || typeof rejectionReason !== "string" || !rejectionReason.trim())) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Rejection reason is required" } });
+      // Rejection and suspension require a reason
+      if (moderationRequiresReason(status) && (!rejectionReason || typeof rejectionReason !== "string" || !rejectionReason.trim())) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: status === "rejected" ? "Rejection reason is required" : "Suspension reason is required" } });
         return;
       }
 
@@ -3271,8 +3294,8 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const currentStatus = currentResult.rows[0].status;
-      if (currentStatus !== "pending_review") {
-        res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot ${status} a product with status: ${currentStatus}. Only pending_review products can be moderated.` } });
+      if (!canAdminModerate(currentStatus, status)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot ${status} a product with status: ${currentStatus}` } });
         return;
       }
 

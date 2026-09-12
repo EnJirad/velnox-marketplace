@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS sellers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'suspended')),
+  verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
+  verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -214,9 +216,12 @@ CREATE TABLE IF NOT EXISTS products (
   vrepeat_monthly_price NUMERIC(12, 2),
   vrepeat_weekly_qty INTEGER,
   vrepeat_monthly_qty INTEGER,
+  verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
+  verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_products_verification ON products (verification_status);
 
 CREATE INDEX IF NOT EXISTS idx_products_shop ON products (shop_id);
 CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status);

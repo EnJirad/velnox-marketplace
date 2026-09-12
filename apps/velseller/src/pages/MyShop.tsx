@@ -8,6 +8,14 @@ import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@velnox/shared/components/ui/dialog";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -32,7 +40,9 @@ import {
   formatBaht,
   type SellerProfile,
   type StoreProduct,
+  type StoreProductStatus,
   type StoreShop,
+  type VerificationStatus,
 } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -62,7 +72,8 @@ export default function MyShop() {
   const openShop = useAction(api.commerce.openShop);
   const listProducts = useAction(api.commerce.listProducts);
   const setStatus = useAction(api.commerce.setProductStatusAction);
-  const sellerVerification = useAction(api.seller.verificationStatus);
+  const submitSellerVerification = useAction(api.seller.submitVerification);
+  const submitProductVerification = useAction(api.seller.submitProductVerification);
   const deleteProduct = useAction(api.commerce.deleteProductAction);
 
   const [profile, setProfile] = useState<SellerProfile | null | undefined>(undefined);
@@ -76,14 +87,31 @@ export default function MyShop() {
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | StoreProductStatus>("all");
+  // Verification submissions (seller-level and product-level are INDEPENDENT)
+  const [verifyTarget, setVerifyTarget] = useState<{ kind: "seller" } | { kind: "product"; product: StoreProduct } | null>(null);
+  const [verifyNotes, setVerifyNotes] = useState("");
+  const [verifyBusy, setVerifyBusy] = useState(false);
 
   const shop: StoreShop | null = profile?.shops[0] ?? null;
 
   const filteredProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter((p) => p.name.toLowerCase().includes(q));
-  }, [products, query]);
+    return products.filter((p) => {
+      if (statusFilter !== "all" && p.status !== statusFilter) return false;
+      if (!q) return true;
+      return p.name.toLowerCase().includes(q);
+    });
+  }, [products, query, statusFilter]);
+
+  const statusFilters: Array<{ key: "all" | StoreProductStatus; label: string }> = [
+    { key: "all", label: t("productModeration.filterAll") },
+    { key: "draft", label: t("productModeration.statusDraft") },
+    { key: "pending_review", label: t("productModeration.statusPendingReview") },
+    { key: "published", label: t("productModeration.statusPublished") },
+    { key: "rejected", label: t("productModeration.statusRejected") },
+    { key: "suspended", label: t("productModeration.statusSuspended") },
+  ];
 
   const publishedCount = products.filter((p) => p.status === "published").length;
   const pendingCount = products.filter((p) => p.status === "pending_review").length;
@@ -164,6 +192,67 @@ export default function MyShop() {
     }
   };
 
+  /** Submit a seller- or product-level verification request. */
+  const handleSubmitVerification = async () => {
+    if (!verifyTarget) return;
+    setVerifyBusy(true);
+    try {
+      const evidenceUrls = verifyNotes
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => /^https?:\/\//i.test(line));
+      if (verifyTarget.kind === "seller") {
+        await submitSellerVerification({ verificationType: "identity", evidenceUrls });
+        toast.success(t("verification.sellerVerificationSubmitted"));
+        setProfile(await mySellerProfile());
+      } else {
+        await submitProductVerification({
+          productId: verifyTarget.product.id,
+          evidenceUrls,
+          evidenceNotes: verifyNotes.trim() || undefined,
+        });
+        toast.success(t("verification.productVerificationSubmitted"));
+        await reloadProducts();
+      }
+      setVerifyTarget(null);
+      setVerifyNotes("");
+    } catch (error) {
+      console.error("Verification submit error:", error);
+      toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
+
+  /**
+   * Product verification is INDEPENDENT from seller verification: a verified
+   * shop does not verify its products, and the V✓ badge needs both.
+   */
+  const renderProductVerification = (product: StoreProduct) => {
+    const status = (product.verificationStatus ?? "unverified") as VerificationStatus;
+    const sellerStatus = ((profile?.seller as { verificationStatus?: VerificationStatus } | undefined)?.verificationStatus ?? "unverified") as VerificationStatus;
+    const canSubmit = product.status === "published" && status !== "pending" && status !== "verified";
+    return (
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] text-slate-400">{t("verification.productVerificationTitle")}</span>
+        <VerificationStatusLabel status={status} />
+        <VBadge productVerification={status} sellerVerification={sellerStatus} size="sm" />
+        {canSubmit && (
+          <button
+            type="button"
+            className="text-[11px] font-medium text-[#10B981] underline-offset-2 hover:underline"
+            onClick={() => {
+              setVerifyTarget({ kind: "product", product });
+              setVerifyNotes("");
+            }}
+          >
+            {status === "rejected" ? t("verification.resubmitForVerification") : t("verification.submitForVerification")}
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const handleDelete = async () => {
     if (!deleting) return;
     setDeletingBusy(true);
@@ -206,20 +295,10 @@ export default function MyShop() {
         </Badge>
       );
     }
-    if (product.status === "archived") {
+    if (product.status === "suspended") {
       return (
-        <Badge className="gap-1 rounded-full bg-slate-100 text-slate-400 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">
-          <span className="size-1.5 rounded-full bg-slate-300" />
-          {t("productModeration.statusArchived")}
-        </Badge>
-      );
-    }
-    // TASK 2 §9: suspended is a terminal, admin-only status — seller can see it
-    // but has no action to unsuspend (backend enforces this; UI must also block it).
-    if ((product.status as string) === "suspended") {
-      return (
-        <Badge className="gap-1 rounded-full bg-zinc-100 text-zinc-600 ring-1 ring-inset ring-zinc-500/15 hover:bg-zinc-100">
-          <span className="size-1.5 rounded-full bg-zinc-500" />
+        <Badge className="gap-1 rounded-full bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/15 hover:bg-orange-50">
+          <XCircle className="size-3" />
           {t("productModeration.statusSuspended")}
         </Badge>
       );
@@ -451,7 +530,25 @@ export default function MyShop() {
               <p className="text-xs text-slate-400">{t("verification.sellerVerificationTitle")}</p>
               <p className="text-sm font-semibold text-slate-900">{t("verification.sellerVerificationBadge")}</p>
             </div>
-            <VerificationStatusLabel status={(profile?.seller as any)?.verificationStatus ?? "unverified"} />
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <VerificationStatusLabel status={((profile?.seller as { verificationStatus?: VerificationStatus } | undefined)?.verificationStatus ?? "unverified") as VerificationStatus} />
+              {(() => {
+                const vs = ((profile?.seller as { verificationStatus?: VerificationStatus } | undefined)?.verificationStatus ?? "unverified") as VerificationStatus;
+                if (vs === "pending" || vs === "verified") return null;
+                return (
+                  <button
+                    type="button"
+                    className="text-[11px] font-medium text-[#10B981] underline-offset-2 hover:underline"
+                    onClick={() => {
+                      setVerifyTarget({ kind: "seller" });
+                      setVerifyNotes("");
+                    }}
+                  >
+                    {vs === "rejected" ? t("verification.resubmitForVerification") : t("verification.submitForVerification")}
+                  </button>
+                );
+              })()}
+            </div>
           </div>
         </div>
 
@@ -494,6 +591,29 @@ export default function MyShop() {
               <p className="text-lg font-bold tabular-nums text-rose-600">{rejectedCount}</p>
               <p className="text-[11px] text-slate-400">ถูกปฏิเสธ</p>
             </div>
+          </div>
+
+          {/* status filters — all / draft / pending / published / rejected / suspended */}
+          <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
+            {statusFilters.map((f) => {
+              const active = statusFilter === f.key;
+              const count = f.key === "all" ? products.length : products.filter((p) => p.status === f.key).length;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setStatusFilter(f.key)}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    active
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                  }`}
+                >
+                  {f.label}
+                  <span className={`ml-1.5 tabular-nums ${active ? "text-white/70" : "text-slate-400"}`}>{count}</span>
+                </button>
+              );
+            })}
           </div>
 
           {products.length === 0 ? (
@@ -561,7 +681,8 @@ export default function MyShop() {
                             <div>
                               <p className="font-medium text-slate-900">{product.name}</p>
                               <p className="text-xs text-slate-400">
-                                {PRODUCT_CATEGORY_META[product.category]?.label ?? product.category}
+                                {PRODUCT_CATEGORY_META[(product.categorySlug ?? product.category) as StoreProduct["category"]]?.label
+                                  ?? product.categorySlug ?? product.category}
                                 {product.images && product.images.length > 0
                                   ? ` · ${product.images.length} รูป`
                                   : " · ยังไม่มีรูป"}
@@ -586,6 +707,7 @@ export default function MyShop() {
                         </TableCell>
                         <TableCell>
                           {renderStatus(product)}
+                          {renderProductVerification(product)}
                           {product.status === "rejected" && product.rejectionReason && (
                             <p className="mt-1 text-xs font-medium text-rose-600">
                               {t("productModeration.rejectedReason", { reason: product.rejectionReason })}
@@ -673,7 +795,8 @@ export default function MyShop() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-900">{product.name}</p>
                         <p className="mt-0.5 text-xs text-slate-400">
-                          {PRODUCT_CATEGORY_META[product.category]?.label ?? product.category}
+                          {PRODUCT_CATEGORY_META[(product.categorySlug ?? product.category) as StoreProduct["category"]]?.label
+                            ?? product.categorySlug ?? product.category}
                           {product.images && product.images.length > 0 ? ` · ${product.images.length} รูป` : " · ยังไม่มีรูป"}
                         </p>
                         <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -684,14 +807,7 @@ export default function MyShop() {
                           <span className="text-xs text-slate-400">· สต็อก {available}</span>
                           {renderStatus(product)}
                         </div>
-                        {product.status === "rejected" && product.rejectionReason && (
-                          <p className="mt-1 text-xs font-medium text-rose-600">
-                            {t("productModeration.rejectedReason", { reason: product.rejectionReason })}
-                          </p>
-                        )}
-                        {terminal && (
-                          <p className="mt-1 text-xs font-medium text-zinc-500">{t("productModeration.suspendedHint")}</p>
-                        )}
+                        {renderProductVerification(product)}
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
@@ -755,6 +871,49 @@ export default function MyShop() {
           });
         }}
       />
+
+      <Dialog open={verifyTarget !== null} onOpenChange={(open) => {
+        if (!open) {
+          setVerifyTarget(null);
+          setVerifyNotes("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {verifyTarget?.kind === "seller" ? t("verification.sellerVerificationTitle") : t("verification.productVerificationTitle")}
+            </DialogTitle>
+            <DialogDescription>
+              {verifyTarget?.kind === "seller"
+                ? t("verification.sellerVerificationSeparateNote")
+                : t("verification.productVerificationSeparateNote")}
+            </DialogDescription>
+          </DialogHeader>
+          {verifyTarget?.kind === "product" && (
+            <p className="rounded-[10px] bg-slate-50 px-3 py-2 text-xs text-slate-600">{verifyTarget.product.name}</p>
+          )}
+          <div className="grid gap-2">
+            <Label htmlFor="verification-evidence">{t("verification.evidenceHint")}</Label>
+            <Textarea
+              id="verification-evidence"
+              rows={4}
+              value={verifyNotes}
+              onChange={(e) => setVerifyNotes(e.target.value)}
+              placeholder={t("verification.evidencePlaceholder")}
+            />
+            <p className="text-[11px] leading-5 text-slate-400">{t("verification.evidencePrivateNote")}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVerifyTarget(null)} disabled={verifyBusy}>
+              ยกเลิก
+            </Button>
+            <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void handleSubmitVerification()} disabled={verifyBusy}>
+              {verifyBusy && <Loader2 className="size-4 animate-spin" />}
+              {t("verification.submitForVerification")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>

@@ -428,7 +428,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     product
       ? {
           name: product.name,
-          category: product.category,
+          // Prefer the canonical slug so the category select shows the current
+          // value; legacy rows fall back to their stored category value.
+          category: (product.categorySlug ?? product.category) as typeof defaultForm.category,
           unit: product.unit,
           description: product.description ?? "",
           supplier: product.supplier ?? "",

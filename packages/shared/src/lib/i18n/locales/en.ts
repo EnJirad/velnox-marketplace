@@ -1189,6 +1189,7 @@ export const en: Dict = {
     statusRejected: "Rejected",
     statusArchived: "Archived",
     statusSuspended: "Suspended",
+    filterAll: "All",
     rejectedReason: "Rejection reason: {reason}",
     submitForReview: "Submit for review",
     submitting: "Submitting...",
@@ -1280,6 +1281,12 @@ export const en: Dict = {
     // Evidence
     evidenceRequired: "Please attach evidence",
     evidenceHint: "Attach verification documents, photos, or relevant evidence",
+    evidencePlaceholder: "Paste evidence links (one per line) and describe the evidence",
+    evidencePrivateNote: "Only the Velnox review team can see this evidence — it is never shown to customers.",
+    sellerVerificationSubmitted: "Seller verification submitted — the team will review it",
+    productVerificationSubmitted: "Product verification submitted — the team will review it",
+    sellerVerificationSeparateNote: "Seller verification checks the shop's identity — it does not verify products automatically.",
+    productVerificationSeparateNote: "Product verification reviews this specific product — V✓ requires both the shop and the product to be verified.",
   },
 
 // __APPEND__

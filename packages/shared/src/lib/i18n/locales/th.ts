@@ -1190,6 +1190,7 @@ export const th = {
     statusRejected: "ถูกปฏิเสธ",
     statusArchived: "เก็บแล้ว",
     statusSuspended: "ถูกระงับ",
+    filterAll: "ทั้งหมด",
     rejectedReason: "เหตุผลที่ถูกปฏิเสธ: {reason}",
     submitForReview: "ส่งตรวจสอบ",
     submitting: "กำลังส่งตรวจสอบ...",
@@ -1281,6 +1282,12 @@ export const th = {
     // Evidence
     evidenceRequired: "กรุณาแนบหลักฐาน",
     evidenceHint: "แนบเอกสารยืนยัน รูปถ่าย หรือหลักฐานที่เกี่ยวข้อง",
+    evidencePlaceholder: "วางลิงก์เอกสารยืนยัน (หนึ่งลิงก์ต่อบรรทัด) และระบุรายละเอียด",
+    evidencePrivateNote: "หลักฐานนี้เห็นได้เฉพาะทีมตรวจสอบของ Velnox เท่านั้น — ไม่แสดงต่อลูกค้า",
+    sellerVerificationSubmitted: "ส่งคำขอยืนยันร้านค้าแล้ว — รอทีมงานตรวจสอบ",
+    productVerificationSubmitted: "ส่งคำขอยืนยันสินค้าแล้ว — รอทีมงานตรวจสอบ",
+    sellerVerificationSeparateNote: "การยืนยันร้านค้าตรวจสอบตัวตนของร้าน — ไม่ได้ยืนยันสินค้าอัตโนมัติ",
+    productVerificationSeparateNote: "การยืนยันสินค้าตรวจสอบสินค้าชิ้นนี้โดยเฉพาะ — V✓ ต้องมีทั้งร้านค้าและสินค้าที่ผ่านการยืนยัน",
   },
 
 // __APPEND__

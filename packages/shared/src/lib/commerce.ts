@@ -39,7 +39,7 @@ export interface StoreInventory {
   available: number;
 }
 
-export type StoreProductStatus = "draft" | "pending_review" | "published" | "rejected" | "archived";
+export type StoreProductStatus = "draft" | "pending_review" | "published" | "rejected" | "suspended" | "archived";
 export type StoreProductCategory = "general" | "food" | "daily" | "beauty" | "packaging" | "other"
   // Extended categories (UUID-backed, mapped from categories table)
   | "food-beverage" | "grocery-household" | "beauty-personal-care" | "health-wellness"
@@ -59,6 +59,8 @@ export interface StoreProduct {
   name: string;
   description: string | null;
   category: StoreProductCategory;
+  /** Canonical slug resolved from the categories table (null for legacy rows) */
+  categorySlug?: string | null;
   unit: string;
   price: number;
   compareAtPrice?: number | null;

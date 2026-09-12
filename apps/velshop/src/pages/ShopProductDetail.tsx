@@ -3,6 +3,7 @@ import { ShopFooter } from "@/components/shop/ShopFooter";
 import { VelRepeatPlanDialog } from "@/components/shop/VelRepeatPlanDialog";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { Badge } from "@velnox/shared/components/ui/badge";
+import { VBadge } from "@velnox/shared/components/VBadge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@velnox/shared/components/ui/sheet";
@@ -1085,7 +1086,8 @@ export default function ShopProductDetail() {
 
   /* ── Main render ────────────────────────────────────────────────── */
 
-  const categoryMeta = PRODUCT_CATEGORY_META[product.category];
+  const categoryKey = (product.categorySlug ?? product.category) as StoreProduct["category"];
+  const categoryMeta = PRODUCT_CATEGORY_META[categoryKey];
   const tabs: { key: TabKey; label: string }[] = [
     { key: "recommend", label: t("productDetail.tabsRecommend") },
     { key: "details", label: t("productDetail.tabsDetails") },
@@ -1236,10 +1238,17 @@ export default function ShopProductDetail() {
           {/* Product Info */}
           <div className="flex min-w-0 flex-col">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10">{categoryMeta?.label ?? product.category}</Badge>
+              <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10">{categoryMeta?.label ?? product.categorySlug ?? product.category}</Badge>
               {product.supplier && <Badge className="rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15">{product.supplier}</Badge>}
             </div>
-            <div className="mt-3"><ProductTitle name={product.name} t={t} /></div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <ProductTitle name={product.name} t={t} />
+              <VBadge
+                productVerification={product.verificationStatus}
+                sellerVerification={product.sellerVerificationStatus}
+                size="md"
+              />
+            </div>
 
             {/* Price + Rating */}
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
@@ -1387,7 +1396,7 @@ export default function ShopProductDetail() {
                 <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-100 pt-5 text-sm">
                   <div><span className="text-slate-400">{t("productDetail.name")}</span><p className="mt-0.5 font-medium text-slate-900">{product.name}</p></div>
                   <div><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><p className="mt-0.5 font-medium text-slate-900">{t("productDetail.thailand")}</p></div>
-                  <div><span className="text-slate-400">{t("productDetail.category")}</span><p className="mt-0.5 font-medium text-slate-900">{categoryMeta?.label ?? product.category}</p></div>
+                  <div><span className="text-slate-400">{t("productDetail.category")}</span><p className="mt-0.5 font-medium text-slate-900">{categoryMeta?.label ?? product.categorySlug ?? product.category}</p></div>
                   {product.supplier && <div><span className="text-slate-400">{t("productDetail.supplier")}</span><p className="mt-0.5 font-medium text-slate-900">{product.supplier}</p></div>}
                 </div>
               </div>
@@ -1560,7 +1569,10 @@ export default function ShopProductDetail() {
         <section className="mt-8 space-y-3">
           <Link to={`/shops/${product.shopId}`} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">{product.shopName ?? t("productDetail.defaultShop")}</p>
+              <span className="flex items-center gap-1.5">
+                <p className="truncate text-sm font-semibold text-slate-900">{product.shopName ?? t("productDetail.defaultShop")}</p>
+                <VBadge sellerOnly sellerVerification={product.sellerVerificationStatus} size="sm" />
+              </span>
               <p className="mt-0.5 text-xs text-slate-400">{t("productDetail.viewShop")}</p>
             </div>
             <ArrowLeft className="size-4 rotate-180 text-slate-300" />
