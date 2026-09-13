@@ -1,6 +1,6 @@
 AI_RULES.md — Velnox Marketplace
 
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 ---
 
@@ -48,11 +48,11 @@ Another AI may have modified the repository after the current AI's context was c
 
 Therefore:
 
-«Always inspect the current GitHub repository and actual source code before making changes.»
+"Always inspect the current GitHub repository and actual source code before making changes."
 
 If previous AI context conflicts with the current repository:
 
-«THE CURRENT REPOSITORY WINS.»
+"THE CURRENT REPOSITORY WINS."
 
 ---
 
@@ -72,18 +72,7 @@ When information conflicts, AI agents MUST use the following order of authority:
 
 Lower-level information MUST NEVER override higher-level information.
 
-For example:
-
-If an old AI conversation says:
-
-ProductCard.tsx is located at:
-apps/velshop/src/components/ProductCard.tsx
-
-but the current repository contains:
-
-apps/velshop/src/features/products/ProductCard.tsx
-
-the AI MUST follow the current repository.
+The AI MUST verify information against the current repository before acting.
 
 ---
 
@@ -113,10 +102,10 @@ Never overwrite another AI's work simply because previous context says otherwise
 
 Before starting ANY task, every AI agent MUST:
 
-1. Read AI_RULES.md
-2. Read AI_Handoff.md
-3. Read INSTALLATION.md
-4. Read VELNOX_DESIGN_THEME.md when working on UI/UX
+1. Read "AI_RULES.md"
+2. Read "AI_Handoff.md"
+3. Read "INSTALLATION.md"
+4. Read "VELNOX_DESIGN_THEME.md" when working on UI/UX
 5. Read relevant database documentation when touching DB
 6. Inspect the CURRENT GitHub repository
 7. Inspect the ACTUAL source files involved
@@ -148,7 +137,7 @@ Never assume:
 
 When uncertain:
 
-«Inspect the current repository instead of guessing.»
+"Inspect the current repository instead of guessing."
 
 ---
 
@@ -164,7 +153,7 @@ Every AI agent MUST:
 - Reuse existing systems
 - Reuse existing components where possible
 - Follow the existing architecture
-- Follow the existing naming conventions
+- Follow existing naming conventions
 - Follow existing security rules
 - Follow existing database conventions
 - Verify changes before declaring completion
@@ -184,9 +173,7 @@ AI agents MUST NOT:
 
 ---
 
-7. DATABASE RULES
-
-7.1 Database Source of Truth
+7. DATABASE ARCHITECTURE
 
 The database source of truth is:
 
@@ -197,136 +184,596 @@ Frontend applications MUST NEVER connect directly to Neon.
 Architecture:
 
 Frontend
-    ↓
+↓
 Backend API
-    ↓
+↓
 Neon PostgreSQL
 
 Critical commerce and financial data MUST remain authoritative in Neon.
 
 R2 is for binary storage.
 
-Neon stores the corresponding metadata.
+Neon stores the corresponding metadata and critical commerce state.
 
 AI agents MUST NOT introduce a second competing source of truth.
 
 ---
 
-8. DATABASE FILES MUST ALWAYS STAY SYNCHRONIZED
+8. DATABASE CANONICAL FILES
 
-This is a MANDATORY RULE.
-
-Whenever an AI agent touches or changes the database, it MUST update ALL THREE files:
+Velnox Marketplace uses TWO canonical SQL files:
 
 db/schema.sql
 db/run-sqleditor.sql
+
+These are the ONLY current database snapshot/bootstrap files that must be maintained.
+
+The previous:
+
 db/run-update.sql
 
-These files MUST always represent the latest intended database state.
+is NO LONGER USED.
 
-This rule applies EVERY TIME.
+"db/run-update.sql" MUST NOT be treated as a current database source.
+
+If "db/run-update.sql" still exists in the repository, it should be removed as part of the database-file cleanup, provided the current repository and deployment workflow confirm that nothing actively depends on it.
+
+AI agents MUST NOT recreate "db/run-update.sql".
+
+AI agents MUST NOT add new functionality to "db/run-update.sql".
+
+---
+
+9. "db/schema.sql" MUST ALWAYS BE COMPLETE AND CURRENT
+
+This is a MANDATORY RULE.
+
+"db/schema.sql" is the authoritative representation of the CURRENT COMPLETE DATABASE SCHEMA.
+
+It MUST contain everything that belongs to the current Velnox Marketplace database architecture.
+
+It MUST NOT contain only:
+
+- Newly added tables
+- Recently changed tables
+- Important tables
+- A partial schema
+- An old schema
+- Only the original schema
+
+It must represent the complete current state.
+
+Whenever the project gains a database object, "db/schema.sql" MUST be updated.
+
+This includes, where applicable:
+
+- Tables
+- Columns
+- Data types
+- Defaults
+- Primary keys
+- Foreign keys
+- Unique constraints
+- Check constraints
+- Indexes
+- PostgreSQL extensions
+- PostgreSQL types/enums
+- Functions
+- Triggers
+- Views
+- Relationships
+- Other database objects required by the application
+
+If something was added to the database months ago and is still part of the current architecture, it MUST still exist in "db/schema.sql".
+
+AI agents MUST NOT allow later additions to disappear from the current schema.
+
+---
+
+10. "db/run-sqleditor.sql" MUST ALWAYS BE A COMPLETE BOOTSTRAP
+
+"db/run-sqleditor.sql" is the COMPLETE DATABASE BOOTSTRAP.
+
+Its purpose is to allow Velnox Marketplace to create a NEW DATABASE from an empty PostgreSQL/Neon database and reach the CURRENT database schema in one run.
+
+Therefore:
+
+Empty Database
+      ↓
+db/run-sqleditor.sql
+      ↓
+CURRENT COMPLETE VELNOX DATABASE
+
+The file MUST contain everything required to create the current database.
+
+It MUST include all current database objects that belong in the production schema, including where applicable:
+
+- All tables
+- All columns
+- All types
+- All constraints
+- All indexes
+- All functions
+- All triggers
+- All views
+- All required extensions
+- All required relationships
+- All other required PostgreSQL objects
+
+A new database MUST NOT require an AI or developer to remember old database changes manually.
+
+The goal is:
+
+"Create a completely new Neon database and run "db/run-sqleditor.sql" once."
+
+The resulting database MUST contain the complete current Velnox Marketplace schema.
+
+---
+
+11. FUTURE DATABASE CHANGES MUST UPDATE BOTH FILES
+
+Whenever a database change is made, the AI MUST update BOTH:
+
+db/schema.sql
+db/run-sqleditor.sql
 
 No exceptions.
 
 Database changes include:
 
 - New table
-- Removed table
 - New column
+- Removed table
 - Removed column
 - Changed column
 - Changed data type
 - Default value
-- Index
+- Primary key
 - Foreign key
 - Unique constraint
 - Check constraint
+- Index
 - Enum
+- PostgreSQL type
 - Function
 - Trigger
 - View
 - Relationship
-- Data migration
-- Structural migration
 - Database behavior
+- Structural change
 - Any PostgreSQL schema change
-- Any other modification to the database
 
-The AI MUST NOT update only one or two of these files.
+The AI MUST NOT update only one file.
 
-The AI MUST NOT leave any of them outdated.
+The AI MUST NOT leave either file outdated.
 
-Required state after every database change:
+Required state:
 
 db/schema.sql
         +
 db/run-sqleditor.sql
-        +
-db/run-update.sql
         =
-CURRENT DATABASE STATE
-
-Before declaring the task complete, the AI MUST verify that all three files are synchronized.
+CURRENT COMPLETE DATABASE STATE
 
 ---
 
-9. DATABASE MIGRATION RULES
+12. NEW TABLES AND LATER DATABASE FEATURES MUST NEVER BE LOST
 
-Database migrations are append-only.
+This rule is especially important.
 
-Migration files:
+If a table is added later during development:
+
+Initial schema
+    ↓
+New table added
+    ↓
+More columns added
+    ↓
+More indexes added
+    ↓
+More relationships added
+
+then the final:
+
+db/schema.sql
+
+and:
+
+db/run-sqleditor.sql
+
+MUST contain the latest complete version.
+
+They must not remain frozen at the original database structure.
+
+For example, if the project originally had:
+
+users
+products
+orders
+
+and later added:
+
+shops
+sellers
+product_variants
+product_images
+cart_items
+payments
+seller_verifications
+
+then the current canonical schema/bootstrap MUST contain all of those objects if they still belong to the current architecture.
+
+The AI MUST inspect the entire repository to determine the actual current state.
+
+Never assume that a later-added feature is optional or can be omitted from the bootstrap.
+
+---
+
+13. FUTURE NEW DATABASE CREATION REQUIREMENT
+
+The purpose of maintaining these two files is to make future database recreation simple and reliable.
+
+A future developer or AI should be able to:
+
+1. Create a new empty Neon PostgreSQL database
+2. Open the SQL editor
+3. Run "db/run-sqleditor.sql"
+4. Obtain the complete current Velnox Marketplace database
+
+There MUST NOT be a hidden requirement such as:
+
+"Run the original schema first."
+
+"Then find migration V0034."
+
+"Then run V0035."
+
+"Then remember another table added later."
+
+"Then manually add another index."
+
+The current bootstrap MUST contain the complete current schema.
+
+---
+
+14. NO COMMENTS IN THE TWO CANONICAL SQL FILES
+
+The following files MUST NOT contain SQL comments:
+
+db/schema.sql
+db/run-sqleditor.sql
+
+Do not add comments such as:
+
+-- create users
+-- migration
+-- fix
+-- important
+-- temporary
+-- V0034
+
+Do not add explanatory comments.
+
+Do not add AI-generated notes.
+
+Do not add TODO comments.
+
+Do not add historical explanations.
+
+The files should contain clean executable SQL.
+
+If explanation is necessary, put it in:
+
+- AI_Handoff.md
+- AI_RULES.md
+- Final AI report
+
+NOT inside the two canonical SQL files.
+
+---
+
+15. DATABASE FILES MUST NOT BECOME HISTORICAL PATCH FILES
+
+"db/schema.sql" and "db/run-sqleditor.sql" are current-state files.
+
+They are NOT a chronological list of every change ever made.
+
+Do not append old migrations to them simply because those migrations once existed.
+
+Instead:
+
+- Resolve the final current schema
+- Represent the current schema directly
+- Preserve current functionality
+- Preserve required relationships
+- Preserve required constraints
+- Preserve required indexes
+- Preserve required functions/triggers/views
+- Remove obsolete historical implementation details when they are no longer part of the current schema
+
+The goal is a clean current-state database definition.
+
+---
+
+16. MIGRATION HISTORY
+
+Existing migration history may exist under:
 
 db/migrations/*.sql
 
-Migration tracking:
+Migration files represent historical database changes and MUST NOT be rewritten merely to make the current schema look cleaner.
 
-schema_migrations
+Historical migrations MUST NOT be modified to hide previous database history.
 
-Automatic migration workflow:
+Do not delete historical migrations merely because the current bootstrap contains their final result.
 
-.github/workflows/migrate-neon.yml
+However, historical migrations are NOT a substitute for maintaining:
 
-When creating a database migration:
+db/schema.sql
+db/run-sqleditor.sql
 
-1. Create migration file
-2. Update db/schema.sql
-3. Update db/run-sqleditor.sql
-4. Update db/run-update.sql
-5. Verify consistency
-6. Test the migration
-7. Commit
-8. Push
+The current canonical schema/bootstrap MUST always contain the final current state.
 
-Never modify historical migrations to hide or rewrite previous database history.
+AI agents MUST inspect the current repository before deciding whether an existing migration workflow is still actively used.
 
-Never create startup DDL such as:
+Do not create a new migration framework.
 
-ALTER TABLE ...
-
-inside server boot code as a replacement for the migration system.
+Do not create a second migration system.
 
 ---
 
-10. DATABASE SAFETY
+17. "db/run-update.sql" IS DEPRECATED AND MUST NOT BE USED
 
-Never execute destructive database operations without explicit approval.
+The project no longer uses:
+
+db/run-update.sql
+
+AI agents MUST NOT:
+
+- Recreate it
+- Update it
+- Add new SQL to it
+- Treat it as a current source of truth
+- Require it for creating a new database
+- Reference it as a required database file
+
+The two canonical database files are:
+
+db/schema.sql
+db/run-sqleditor.sql
+
+If the file exists, inspect the current repository and dependency references before removing it.
+
+If no active system depends on it, remove it.
+
+Do not replace it with another file of the same purpose.
+
+---
+
+18. DATABASE DEPENDENCY ORDER
+
+"db/run-sqleditor.sql" MUST use valid PostgreSQL dependency ordering.
+
+Before modifying it, inspect dependencies between:
+
+- Extensions
+- Types
+- Tables
+- Foreign keys
+- Indexes
+- Functions
+- Triggers
+- Views
+- Other database objects
+
+A referenced table MUST exist before a foreign key depends on it, unless PostgreSQL's valid deferred creation strategy is intentionally used.
+
+For example:
+
+If:
+
+product_verifications
+
+references:
+
+products
+
+then the bootstrap MUST ensure that "products" exists before creating the dependency.
+
+If:
+
+product_images
+
+references:
+
+product_variants
+
+then the bootstrap MUST ensure that "product_variants" exists before the dependency is created.
+
+The AI MUST inspect ALL such dependencies rather than fixing only the first error encountered.
+
+---
+
+19. POSTGRESQL SYNTAX MUST BE VALID
+
+The AI MUST verify that all SQL is valid PostgreSQL syntax.
+
+Pay special attention to:
+
+- UNIQUE constraints
+- Expression indexes
+- CHECK constraints
+- Foreign keys
+- Default expressions
+- PostgreSQL types
+- Functions
+- Triggers
+- Views
+- Extensions
+- Dependency ordering
+
+For example, PostgreSQL table-level "UNIQUE" constraints cannot simply contain arbitrary expressions such as:
+
+UNIQUE (
+    cart_id,
+    product_id,
+    COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid)
+)
+
+If the actual root cause is an expression being used where PostgreSQL requires an index, use the correct PostgreSQL mechanism, such as an expression-based unique index, while preserving the intended behavior.
+
+Do not change business logic merely to bypass SQL syntax errors.
+
+---
+
+20. ROOT CAUSE DATABASE RULE
+
+When a database problem occurs:
+
+SQL Error
+    ↓
+Trace dependency
+    ↓
+Inspect actual schema
+    ↓
+Inspect application usage
+    ↓
+Identify root cause
+    ↓
+Apply smallest correct fix
+    ↓
+Synchronize schema.sql
+    ↓
+Synchronize run-sqleditor.sql
+    ↓
+Verify
+
+Do not fix database problems with:
+
+- Random retries
+- Arbitrary delays
+- Fake success
+- Dropping tables
+- Resetting the database
+- Creating duplicate tables
+- Creating duplicate columns
+- Creating duplicate APIs
+- Hiding SQL errors
+
+---
+
+21. DATABASE SOURCE CODE COMPATIBILITY
+
+Before changing a database object, inspect the application source code that uses it.
+
+Search for:
+
+- Table names
+- Column names
+- SQL queries
+- Joins
+- Inserts
+- Updates
+- Deletes
+- Foreign keys
+- API endpoints
+- Backend services
+- Transactions
+- Commerce logic
+
+The database definition MUST remain compatible with the actual application.
+
+Never change a table or column based only on the SQL file.
+
+---
+
+22. NO DUPLICATE DATABASE SYSTEMS
+
+Before creating a:
+
+- Table
+- Column
+- Index
+- Function
+- Trigger
+- View
+- Relationship
+- API
+- Service
+
+search the repository first.
+
+If an existing canonical system already handles the requirement:
+
+"Reuse or extend it."
+
+Do not create:
+
+products_v2
+orders_v2
+users_new
+new_products
+alternative_orders
+
+or equivalent duplicate systems unless explicitly authorized.
+
+---
+
+23. DATABASE ARCHITECTURE MUST NOT CHANGE
+
+AI agents MUST NOT independently decide to:
+
+- Replace Neon
+- Add another database
+- Move critical commerce data to Convex
+- Make R2 the source of truth
+- Store critical commerce state only in object storage
+- Introduce another competing database
+- Replace the backend database architecture
+- Introduce an ORM solely to solve a SQL issue
+
+Current architecture remains:
+
+Frontend
+    ↓
+Backend API
+    ↓
+Neon PostgreSQL
+
+and:
+
+R2
+=
+Binary Storage
+
+Neon
+=
+Metadata + Critical Commerce Data
+
+---
+
+24. DATABASE SAFETY
+
+Never execute destructive database operations without explicit authorization.
 
 Never:
 
 DROP DATABASE
-TRUNCATE production data
-RESET production database
-DELETE production data
+DROP SCHEMA
+DROP TABLE
+TRUNCATE
 
-unless explicitly authorized.
+against production data without explicit authorization.
 
-Never silently change production data to make a test pass.
+Never reset the production database to solve a development problem.
 
-Never use production data as disposable test data.
+Never delete production data to make tests pass.
+
+Never treat production data as disposable test data.
 
 ---
 
-11. SECURITY RULES
+25. SECURITY RULES
 
 Always maintain:
 
@@ -358,7 +805,7 @@ The backend MUST verify ownership and authorization.
 
 ---
 
-12. SECRET MANAGEMENT
+26. SECRET MANAGEMENT
 
 Never expose server secrets to frontend code.
 
@@ -384,7 +831,7 @@ Never commit secrets to Git.
 
 ---
 
-13. API RULES
+27. API RULES
 
 API endpoints MUST:
 
@@ -407,7 +854,7 @@ Never create duplicate endpoints when an existing canonical endpoint already pro
 
 ---
 
-14. CANONICAL SELLER STATUS
+28. CANONICAL SELLER STATUS
 
 Seller status MUST use the canonical values:
 
@@ -427,7 +874,7 @@ unless the architecture explicitly requires them and the canonical model is inte
 
 ---
 
-15. ARCHITECTURE RULES
+29. APPLICATION ARCHITECTURE
 
 Current application structure:
 
@@ -440,7 +887,7 @@ backend/            → Express API server
 
 packages/shared/    → Shared code
 
-db/                 → Database schema, migrations and SQL
+db/                 → Database schema and database history
 
 Key invariants:
 
@@ -453,11 +900,11 @@ Neon = metadata and critical commerce data
 
 AI agents MUST preserve these invariants.
 
-Do not change the architecture without explicit authorization.
+Do not change architecture without explicit authorization.
 
 ---
 
-16. FRONTEND RULES
+30. FRONTEND RULES
 
 For UI work:
 
@@ -476,11 +923,9 @@ packages/shared/src/components/ui/
 
 Do not introduce random colors, styles, spacing systems, or component libraries without a clear reason.
 
-Do not replace an existing working UI system simply because another implementation is easier.
-
 ---
 
-17. UI/UX CHANGE RULE
+31. UI/UX CHANGE RULE
 
 Before changing UI:
 
@@ -497,7 +942,7 @@ Do not modify unrelated pages simply because they use similar components.
 
 ---
 
-18. PERFORMANCE RULES
+32. PERFORMANCE RULES
 
 Before fixing performance:
 
@@ -530,7 +975,7 @@ Never blindly:
 
 ---
 
-19. FILE UPLOAD RULES
+33. FILE UPLOAD RULES
 
 R2 is the binary storage system.
 
@@ -568,26 +1013,32 @@ Images should be converted to WebP when required by the current upload architect
 
 ---
 
-20. DOCUMENTATION RULES
+34. DOCUMENTATION RULES
 
 When architecture changes:
 
-Update AI_Handoff.md
+Update:
+
+AI_Handoff.md
 
 When installation/deployment changes:
 
-Update INSTALLATION.md
+Update:
+
+INSTALLATION.md
 
 When database changes:
 
 Update:
+
 db/schema.sql
 db/run-sqleditor.sql
-db/run-update.sql
 
 When a permanent AI rule changes:
 
-Update AI_RULES.md
+Update:
+
+AI_RULES.md
 
 Documentation MUST reflect the current implementation.
 
@@ -597,7 +1048,7 @@ Do not claim an implementation is complete if the source code does not support t
 
 ---
 
-21. AI_HANDOFF RULES
+35. AI_HANDOFF RULES
 
 "AI_Handoff.md" is the handoff document between AI agents.
 
@@ -615,21 +1066,19 @@ After every significant task, update it with:
 
 However:
 
-«AI_Handoff.md is NOT more authoritative than the current source code.»
+"AI_Handoff.md is NOT more authoritative than the current source code."
 
 If the handoff document conflicts with the actual repository:
 
-«The repository wins.»
+"The repository wins."
 
 ---
 
-22. MULTI-AI COLLABORATION
+36. MULTI-AI COLLABORATION
 
 Multiple AI agents may work on the same project.
 
-Therefore:
-
-GitHub = shared synchronization point
+GitHub is the shared synchronization point.
 
 Every AI MUST:
 
@@ -645,11 +1094,11 @@ Every AI MUST:
 
 Never assume:
 
-«"Nobody changed this because I did not see it in my previous context."»
+"Nobody changed this because I did not see it in my previous context."
 
 ---
 
-23. GIT RULE — MANDATORY
+37. GIT RULE — MANDATORY
 
 EVERY COMPLETED TASK MUST BE COMMITTED AND PUSHED.
 
@@ -669,7 +1118,7 @@ The working tree should be clean unless there is a documented reason otherwise.
 
 ---
 
-24. COMMIT MESSAGE RULES
+38. COMMIT MESSAGE RULES
 
 Commit messages MUST describe the actual change.
 
@@ -677,7 +1126,7 @@ Valid examples:
 
 feat: add seller verification
 fix: repair google authentication
-fix(db): update seller status constraint
+fix(db): repair database schema
 feat(db): add seller documents
 chore: update project documentation
 refactor: improve address service
@@ -695,7 +1144,7 @@ work
 
 ---
 
-25. NEVER FORCE PUSH
+39. NEVER FORCE PUSH
 
 Never use:
 
@@ -708,7 +1157,7 @@ A force push can destroy another AI's work.
 
 ---
 
-26. GIT CONFLICT RULE
+40. GIT CONFLICT RULE
 
 If a merge conflict occurs:
 
@@ -734,7 +1183,7 @@ without understanding the changes.
 
 ---
 
-27. ROOT CAUSE RULE
+41. ROOT CAUSE RULE
 
 When fixing a bug:
 
@@ -758,11 +1207,11 @@ Do not hide problems with:
 - Duplicate requests
 - Silent error suppression
 
-Unless the workaround is explicitly part of the intended architecture.
+unless the workaround is explicitly part of the intended architecture.
 
 ---
 
-28. NO FAKE IMPLEMENTATION
+42. NO FAKE IMPLEMENTATION
 
 Never claim a feature works if it is only:
 
@@ -782,11 +1231,11 @@ Do not present a mock implementation as production-ready functionality.
 
 ---
 
-29. PRESERVE EXISTING FUNCTIONALITY
+43. PRESERVE EXISTING FUNCTIONALITY
 
 When implementing a requested change:
 
-«Change what is necessary. Preserve everything else.»
+"Change what is necessary. Preserve everything else."
 
 Before completing the task, check whether the change affects:
 
@@ -805,7 +1254,7 @@ Do not remove existing behavior unless explicitly requested.
 
 ---
 
-30. TESTING RULES
+44. TESTING RULES
 
 Testing requirements depend on the change.
 
@@ -813,37 +1262,39 @@ At minimum, the AI MUST verify relevant areas.
 
 For frontend changes:
 
-TypeScript
-Build
-Affected page
-Responsive behavior
-Existing interaction
+- TypeScript
+- Build
+- Affected page
+- Responsive behavior
+- Existing interaction
 
 For backend changes:
 
-TypeScript
-Build
-Affected API
-Authentication
-Authorization
-Error handling
+- TypeScript
+- Build
+- Affected API
+- Authentication
+- Authorization
+- Error handling
 
 For database changes:
 
-Migration
-Schema consistency
-Queries
-Constraints
-Affected API
+- SQL syntax
+- Schema consistency
+- Bootstrap consistency
+- Queries
+- Constraints
+- Affected API
+- Application compatibility
 
 For authentication changes:
 
-Login
-Logout
-Session
-OAuth
-Authorization
-Redirect behavior
+- Login
+- Logout
+- Session
+- OAuth
+- Authorization
+- Redirect behavior
 
 Never claim tests passed if they were not actually run.
 
@@ -855,7 +1306,7 @@ must be reported.
 
 ---
 
-31. BUILD AND TYPECHECK
+45. BUILD AND TYPECHECK
 
 Before declaring completion when applicable:
 
@@ -870,7 +1321,7 @@ Do not hide or suppress errors simply to make the build appear successful.
 
 ---
 
-32. DEPLOYMENT RULES
+46. DEPLOYMENT RULES
 
 Deployment configuration MUST remain consistent with the current architecture.
 
@@ -887,7 +1338,7 @@ Never expose secrets in:
 
 ---
 
-33. ENVIRONMENT RULES
+47. ENVIRONMENT RULES
 
 Before changing environment variables:
 
@@ -903,18 +1354,18 @@ Do not create duplicate environment variables for the same purpose.
 
 ---
 
-34. API AND DATABASE OWNERSHIP
+48. API AND DATABASE OWNERSHIP
 
 The frontend MUST NOT decide whether a user is allowed to perform an operation.
 
 The backend MUST enforce:
 
-Authentication
-Authorization
-Ownership
-Seller status
-Admin permissions
-Resource access
+- Authentication
+- Authorization
+- Ownership
+- Seller status
+- Admin permissions
+- Resource access
 
 Frontend checks are for UX only.
 
@@ -922,28 +1373,28 @@ They are NOT security boundaries.
 
 ---
 
-35. PRODUCT AND COMMERCE DATA
+49. PRODUCT AND COMMERCE DATA
 
 Critical commerce data MUST remain authoritative in Neon.
 
 This includes, where applicable:
 
-Users
-Sellers
-Shops
-Products
-Product variants
-Orders
-Order items
-Payments
-Financial records
-Commerce relationships
+- Users
+- Sellers
+- Shops
+- Products
+- Product variants
+- Orders
+- Order items
+- Payments
+- Financial records
+- Commerce relationships
 
 Do not create a second database containing competing versions of critical commerce data.
 
 ---
 
-36. R2 DATA RULE
+50. R2 DATA RULE
 
 R2 stores binary objects.
 
@@ -955,7 +1406,7 @@ Do not treat an object-storage URL as the database source of truth.
 
 ---
 
-37. ERROR HANDLING
+51. ERROR HANDLING
 
 Errors MUST be handled explicitly.
 
@@ -972,42 +1423,42 @@ Use meaningful status codes and messages.
 
 ---
 
-38. LOGGING RULES
+52. LOGGING RULES
 
 Logs MUST help diagnose real problems.
 
 Useful logs may include:
 
-Request ID
-Operation
-Duration
-Status
-Relevant non-sensitive identifiers
-Database timing
-External service timing
+- Request ID
+- Operation
+- Duration
+- Status
+- Relevant non-sensitive identifiers
+- Database timing
+- External service timing
 
 Never log:
 
-Passwords
-JWT secrets
-OAuth client secrets
-Database URLs containing credentials
-R2 secrets
-Session secrets
-Private tokens
-Sensitive personal information
+- Passwords
+- JWT secrets
+- OAuth client secrets
+- Database URLs containing credentials
+- R2 secrets
+- Session secrets
+- Private tokens
+- Sensitive personal information
 
 ---
 
-39. CHANGE SCOPE RULE
+53. CHANGE SCOPE RULE
 
 If the user asks:
 
-Fix X
+"Fix X"
 
 the default scope is:
 
-Fix X
+"Fix X"
 
 Do not use the request as permission to:
 
@@ -1023,7 +1474,7 @@ If a larger change is genuinely required, explain why before expanding scope.
 
 ---
 
-40. NO DUPLICATE SYSTEMS
+54. NO DUPLICATE SYSTEMS
 
 Before creating a new:
 
@@ -1041,13 +1492,13 @@ search the existing project first.
 
 If an existing system already solves the problem:
 
-«Reuse or extend it.»
+"Reuse or extend it."
 
 Do not create parallel implementations.
 
 ---
 
-41. DESIGN SYSTEM RULE
+55. DESIGN SYSTEM RULE
 
 All UI changes MUST follow:
 
@@ -1070,13 +1521,13 @@ Consistency is more important than individual-page experimentation.
 
 ---
 
-42. RESPONSIVE DESIGN RULE
+56. RESPONSIVE DESIGN RULE
 
 Every UI change MUST consider:
 
-Mobile
-Tablet
-Desktop
+- Mobile
+- Tablet
+- Desktop
 
 A desktop fix MUST NOT break mobile.
 
@@ -1096,7 +1547,7 @@ When relevant, verify:
 
 ---
 
-43. ACCESSIBILITY RULE
+57. ACCESSIBILITY RULE
 
 Do not intentionally remove:
 
@@ -1111,7 +1562,7 @@ Interactive elements MUST remain usable.
 
 ---
 
-44. DOCUMENTATION VS SOURCE CODE
+58. DOCUMENTATION VS SOURCE CODE
 
 Documentation describes the project.
 
@@ -1119,17 +1570,17 @@ The actual implementation defines the project.
 
 If documentation says:
 
-Feature A exists
+"Feature A exists"
 
 but the current source does not contain Feature A:
 
-«Do not pretend it exists.»
+"Do not pretend it exists."
 
 Inspect the source and update documentation when appropriate.
 
 ---
 
-45. NO UNAUTHORIZED ARCHITECTURE CHANGE
+59. NO UNAUTHORIZED ARCHITECTURE CHANGE
 
 AI agents MUST NOT independently decide to:
 
@@ -1148,11 +1599,11 @@ unless explicitly instructed.
 
 ---
 
-46. WHEN REQUIREMENTS ARE AMBIGUOUS
+60. WHEN REQUIREMENTS ARE AMBIGUOUS
 
 If a request is ambiguous but can safely be implemented using the existing architecture:
 
-«Prefer the smallest reasonable interpretation.»
+"Prefer the smallest reasonable interpretation."
 
 If ambiguity could cause:
 
@@ -1167,7 +1618,7 @@ the AI MUST stop and clarify before proceeding.
 
 ---
 
-47. BEFORE COMMITTING
+61. BEFORE COMMITTING
 
 Every AI agent MUST review:
 
@@ -1186,29 +1637,51 @@ Look specifically for:
 - Database files not updated
 - Documentation not updated
 - Generated files that should not be committed
+- Accidental recreation of "db/run-update.sql"
 
 ---
 
-48. DATABASE FINAL CHECK
+62. DATABASE FINAL CHECK
 
 If the task touched the database, verify:
 
 [ ] db/schema.sql updated
 [ ] db/run-sqleditor.sql updated
-[ ] db/run-update.sql updated
-[ ] Migration created when required
-[ ] Migration history preserved
-[ ] Schema synchronized
+[ ] db/run-update.sql is NOT used
+[ ] Current schema is complete
+[ ] Bootstrap is complete
+[ ] All later-added database objects are included
+[ ] Schema and bootstrap are synchronized
 [ ] SQL syntax verified
+[ ] Dependencies verified
 [ ] Affected queries verified
+[ ] Application compatibility verified
 
-If any of these are missing:
+If "db/run-update.sql" is recreated or used as a required current database file:
 
-«The database task is NOT complete.»
+"The database task is NOT complete."
 
 ---
 
-49. FINAL VERIFICATION CHECKLIST
+63. COMPLETE DATABASE SNAPSHOT RULE
+
+At every database change, the AI MUST ask:
+
+"ถ้าพรุ่งนี้ต้องสร้าง Neon Database ใหม่จากศูนย์ เราสามารถรัน "db/run-sqleditor.sql" เพียงครั้งเดียวแล้วได้ Database ปัจจุบันครบทุกอย่างหรือไม่?"
+
+If the answer is NO:
+
+"The database task is NOT complete."
+
+The AI MUST update the canonical files until the current schema can be recreated completely.
+
+This includes database features added months earlier.
+
+Nothing that is still part of the current architecture may be omitted merely because it was added later.
+
+---
+
+64. FINAL VERIFICATION CHECKLIST
 
 Before declaring ANY task complete:
 
@@ -1228,7 +1701,12 @@ Before declaring ANY task complete:
 [ ] AI_RULES.md updated when a permanent rule changed
 [ ] db/schema.sql updated when DB was touched
 [ ] db/run-sqleditor.sql updated when DB was touched
-[ ] db/run-update.sql updated when DB was touched
+[ ] db/run-update.sql NOT used
+[ ] Database schema is complete
+[ ] Bootstrap is complete
+[ ] Later-added tables and objects are included
+[ ] No SQL comments exist in schema.sql
+[ ] No SQL comments exist in run-sqleditor.sql
 [ ] git status reviewed
 [ ] git diff reviewed
 [ ] git diff --check passed
@@ -1238,15 +1716,15 @@ Before declaring ANY task complete:
 
 ---
 
-50. DO NOT SAY "DONE" PREMATURELY
+65. DO NOT SAY "DONE" PREMATURELY
 
 The AI MUST NOT say:
 
-Done
-Completed
-Finished
-Fixed
-Successfully implemented
+- Done
+- Completed
+- Finished
+- Fixed
+- Successfully implemented
 
 until the required verification has been performed.
 
@@ -1261,7 +1739,7 @@ Task status: NOT COMPLETE
 
 ---
 
-51. FINAL REPORT FORMAT
+66. FINAL REPORT FORMAT
 
 After every significant task, provide:
 
@@ -1279,8 +1757,17 @@ Files changed:
 Database changed:
 YES / NO
 
-Database SQL synchronization:
-PASS / FAIL / NOT APPLICABLE
+Database schema:
+COMPLETE / INCOMPLETE / NOT VERIFIED
+
+Database bootstrap:
+COMPLETE / INCOMPLETE / NOT VERIFIED
+
+Schema synchronization:
+PASS / FAIL / NOT VERIFIED
+
+db/run-update.sql:
+NOT USED
 
 Typecheck:
 PASS / FAIL / NOT VERIFIED
@@ -1309,57 +1796,71 @@ Never report PASS when something was not actually verified.
 
 ---
 
-52. GOLDEN RULE
+67. GOLDEN RULE
 
 The following rules are absolute:
 
-«NEVER GUESS.»
+"NEVER GUESS."
 
-«ALWAYS INSPECT THE CURRENT GITHUB REPOSITORY BEFORE MODIFYING THE PROJECT.»
+"ALWAYS INSPECT THE CURRENT GITHUB REPOSITORY BEFORE MODIFYING THE PROJECT."
 
-«CURRENT GITHUB STATE HAS PRIORITY OVER STALE AI MEMORY OR PREVIOUS CONVERSATIONS.»
+"CURRENT GITHUB STATE HAS PRIORITY OVER STALE AI MEMORY OR PREVIOUS CONVERSATIONS."
 
-«EVERY AI AGENT WORKING ON VELNOX MARKETPLACE MUST FOLLOW AI_RULES.md.»
+"NEVER OVERWRITE ANOTHER AI'S WORK BLINDLY."
 
-«NEVER OVERWRITE ANOTHER AI'S WORK BLINDLY.»
+"FIX ROOT CAUSES, NOT SYMPTOMS."
 
-«FIX ROOT CAUSES, NOT SYMPTOMS.»
+"PRESERVE EXISTING FUNCTIONALITY."
 
-«PRESERVE EXISTING FUNCTIONALITY.»
+"DO NOT CREATE DUPLICATE SYSTEMS."
 
-«DO NOT CREATE DUPLICATE SYSTEMS.»
+"NEVER EXPOSE SECRETS."
 
-«NEVER EXPOSE SECRETS.»
+"NEVER LET THE FRONTEND BYPASS BACKEND AUTHORIZATION."
 
-«NEVER LET THE FRONTEND BYPASS BACKEND AUTHORIZATION.»
+"NEVER LET THE FRONTEND BECOME THE DATABASE SOURCE OF TRUTH."
 
-«NEVER TREAT THE FRONTEND AS THE DATABASE SOURCE OF TRUTH.»
+"NEON POSTGRESQL IS THE SOURCE OF TRUTH FOR CRITICAL COMMERCE DATA."
 
-«NEON POSTGRESQL IS THE SOURCE OF TRUTH FOR CRITICAL COMMERCE DATA.»
+"R2 STORES BINARIES; NEON STORES METADATA AND CRITICAL COMMERCE DATA."
 
-«R2 STORES BINARIES; NEON STORES METADATA.»
+""db/schema.sql" MUST ALWAYS REPRESENT THE COMPLETE CURRENT DATABASE SCHEMA."
 
-«EVERY DATABASE CHANGE REQUIRES ALL THREE SQL FILES TO BE UPDATED:
+""db/run-sqleditor.sql" MUST ALWAYS REPRESENT THE COMPLETE CURRENT DATABASE BOOTSTRAP."
 
-"db/schema.sql"
+"EVERY DATABASE CHANGE MUST UPDATE BOTH CANONICAL SQL FILES."
 
-"db/run-sqleditor.sql"
+"NO DATABASE CHANGE IS COMPLETE IF "db/schema.sql" OR "db/run-sqleditor.sql" IS OUTDATED."
 
-"db/run-update.sql"»
+"ALL TABLES, COLUMNS, INDEXES, CONSTRAINTS, FUNCTIONS, TRIGGERS, VIEWS, TYPES, AND OTHER CURRENT DATABASE OBJECTS MUST BE REPRESENTED IN THE CURRENT SCHEMA."
 
-«THE THREE DATABASE FILES MUST ALWAYS REPRESENT THE LATEST DATABASE STATE.»
+"LATER-ADDED DATABASE OBJECTS MUST ALWAYS BE INCORPORATED INTO THE CURRENT COMPLETE SCHEMA."
 
-«ALWAYS VERIFY BEFORE DECLARING COMPLETION.»
+"A NEW EMPTY NEON DATABASE MUST BE ABLE TO REACH THE CURRENT VELNOX DATABASE STATE BY RUNNING "db/run-sqleditor.sql"."
 
-«EVERY COMPLETED TASK MUST BE COMMITTED AND PUSHED.»
+""db/run-update.sql" IS NO LONGER USED."
 
-«NEVER FORCE PUSH WITHOUT EXPLICIT AUTHORIZATION.»
+"DO NOT RECREATE "db/run-update.sql"."
 
-«IF GIT PUSH FAILS, THE TASK IS NOT COMPLETE.»
+""db/schema.sql" AND "db/run-sqleditor.sql" MUST NOT CONTAIN SQL COMMENTS."
 
-«IF SOMETHING CANNOT BE VERIFIED, REPORT NOT VERIFIED.»
+"DO NOT USE HISTORICAL MIGRATIONS AS A SUBSTITUTE FOR THE CURRENT COMPLETE BOOTSTRAP."
 
-«GITHUB IS THE SHARED PROJECT STATE BETWEEN AI AGENTS.»
+"DO NOT CREATE A NEW MIGRATION SYSTEM."
+
+"DO NOT CHANGE ARCHITECTURE WITHOUT EXPLICIT AUTHORIZATION."
+
+"ALWAYS VERIFY BEFORE DECLARING COMPLETION."
+
+"EVERY COMPLETED TASK MUST BE COMMITTED AND PUSHED."
+
+"NEVER FORCE PUSH WITHOUT EXPLICIT AUTHORIZATION."
+
+"IF GIT PUSH FAILS, THE TASK IS NOT COMPLETE."
+
+"IF SOMETHING CANNOT BE VERIFIED, REPORT NOT VERIFIED."
+
+"GITHUB IS THE SHARED PROJECT STATE BETWEEN AI AGENTS."
 
 ---
 
