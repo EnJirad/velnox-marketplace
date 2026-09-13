@@ -152,11 +152,6 @@ describe("P1 #4 migration + schema sync", () => {
     }
   });
 
-  test("run-update.sql appends the V0039 migration", () => {
-    const sql = readFileSync(join(root, "db/run-update.sql"), "utf8");
-    expect(sql).toContain("Migration: V0039");
-    expect(sql).toContain("seller_goals");
-  });
 });
 
 // ─── Integration (needs DATABASE_URL) ──────────────────────────────────────

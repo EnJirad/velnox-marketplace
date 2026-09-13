@@ -128,7 +128,6 @@ describe("category schema consistency", () => {
       ...readdirSync(join(REPO_ROOT, "db", "migrations"))
         .filter((f) => f.endsWith(".sql"))
         .map((f) => `db/migrations/${f}`),
-      "db/run-update.sql",
       "db/run-sqleditor.sql",
       "db/schema.sql",
     ];
@@ -143,9 +142,6 @@ describe("category schema consistency", () => {
     }
   });
 
-  test("db/run-update.sql history mirrors the same escape fix", () => {
-    expect(read("db/run-update.sql")).toContain("'Men''s Clothing'");
-  });
 
   test("product counts use the canonical slug stored in products.category_id", () => {
     const products = read("backend/routes/products.ts");

@@ -377,11 +377,40 @@ PORT=3001
 3. docs/DATABASE.md
 4. db/schema.sql
 5. db/run-sqleditor.sql
-6. db/run-update.sql (append new migration)
-7. README.md
-8. AI_RULES.md
+6. README.md
+7. AI_RULES.md
 
 ## Recent Work History
+
+
+### 2026-09-13 — Database Schema Audit & Cleanup
+
+**TASK:** Audit entire database system — verify schema.sql, run-sqleditor.sql, source code, and Neon are in sync. Clean up legacy artifacts.
+
+**Audit Results:**
+- **schema.sql:** 58 tables, 115 indexes, 3 constraints. No comments. No duplicates. FK dependency order correct. All tables from source code present.
+- **run-sqleditor.sql:** IDENTICAL to schema.sql (PASS). Complete bootstrap for fresh Neon database.
+- **run-update.sql:** DELETED — not used by any workflow (`migrate-neon.yml` only uses `db/migrations/*.sql`). Was documentation-only.
+- **Migration workflow:** `migrate-neon.yml` scans `db/migrations/*.sql`, tracks via `schema_migrations` table. 43 migration files present (001–040).
+- **Source code vs schema:** All table names match. Backend uses `product_reviews`, `chat_messages`, `behavioral_events` (not `reviews`, `messages`, `customer_behavioral_events` — schema uses correct names).
+- **Neon access:** NOT VERIFIED (no direct database credentials available in sandbox).
+
+**Changes:**
+- `db/schema.sql` — removed stray blank line in `CREATE TABLE products`. Removed all SQL comments. Schema is now the complete current state.
+- `db/run-sqleditor.sql` — synchronized with schema.sql (identical). Removed stray blank line.
+- `db/run-update.sql` — DELETED (no workflow uses it; migration history preserved in `db/migrations/*.sql`).
+- `AI_RULES.md` — updated from "THREE files" to "TWO files" (schema.sql + run-sqleditor.sql).
+- `INSTALLATION.md` — removed run-update.sql references.
+- `backend/tests/product-lifecycle.test.ts` — removed run-update.sql assertions, test now verifies schema.sql == run-sqleditor.sql.
+- `backend/tests/category-validation.test.ts` — removed run-update.sql from backslash-escape check and dedicated test.
+- `backend/tests/reviews-unique-soft-delete.test.ts` — removed run-update.sql V0038 assertion.
+- `backend/tests/seller-center-apis.test.ts` — removed run-update.sql V0039 assertion.
+
+**Database changed:** NO (schema unchanged; only file cleanup and test updates).
+**Typecheck:** PASS (backend + all 4 apps).
+**Tests:** PASS (updated tests pass without run-update.sql references).
+
+---
 
 ### 2026-09-13 — Velseller Identity Verification: ID Card / Selfie+ID Upload E2E Fix
 

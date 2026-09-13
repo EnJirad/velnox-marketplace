@@ -39,7 +39,7 @@ const badgeSrc = readFileSync(join(root, "packages/shared/src/components/VBadge.
 const migration040 = readFileSync(join(root, "db/migrations/040_verification_and_categories.sql"), "utf8");
 const schemaSql = readFileSync(join(root, "db/schema.sql"), "utf8");
 const sqlEditor = readFileSync(join(root, "db/run-sqleditor.sql"), "utf8");
-const runUpdate = readFileSync(join(root, "db/run-update.sql"), "utf8");
+
 
 // ─── Creation status (sellers cannot self-publish) ─────────────────────────
 
@@ -361,14 +361,13 @@ describe("migration 040 + schema sync", () => {
     expect(migration040).toContain("verified_at TIMESTAMPTZ");
   });
 
-  test("all schema files agree (schema.sql, run-sqleditor.sql, run-update.sql)", () => {
+  test("all schema files agree (schema.sql = run-sqleditor.sql)", () => {
+    expect(schemaSql).toBe(sqlEditor);
     for (const sql of [schemaSql, sqlEditor]) {
       expect(sql).toContain("verification_status TEXT NOT NULL DEFAULT 'unverified'");
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS seller_verifications");
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS product_verifications");
     }
-    expect(runUpdate).toContain("V0040");
-    expect(runUpdate).toContain("seller_verifications");
   });
 
   test("products.status has no CHECK constraint that would reject 'suspended'", () => {
@@ -383,7 +382,6 @@ describe("migration 040 + schema sync", () => {
   test("category seed rows are part of the migration path", () => {
     expect(migration040).toContain("INSERT INTO categories");
     expect(migration040).toContain("ON CONFLICT (slug) DO UPDATE");
-    expect(runUpdate).toContain("INSERT INTO categories");
   });
 });
 

@@ -61,7 +61,6 @@ velnox-marketplace/
 ├── db/
 │   ├── schema.sql       # Complete database schema (canonical reference)
 │   ├── run-sqleditor.sql # Bootstrap SQL for Neon (must sync with schema.sql)
-│   ├── run-update.sql    # Incremental migration history (NEVER overwrite)
 │   └── migrations/      # Sequential migration files
 └── docs/                # Documentation
 ```
@@ -164,8 +163,7 @@ For Vercel deployment, set in the Vercel dashboard for each project.
 
 This creates all tables, indexes, and constraints.
 
-**Important:** `db/run-sqleditor.sql` and `db/schema.sql` must always be synchronized.
-For incremental updates to an existing database, use `db/run-update.sql`.
+**Important:** `db/run-sqleditor.sql` and `db/schema.sql` must always be identical and synchronized.
 
 ### 6. Database Migration System
 
@@ -179,7 +177,7 @@ Velnox uses a **two-tier migration system**:
 #### How migrations work
 
 1. **New database changes** go into `db/migrations/` as individual files (e.g., `013_schema_migrations_and_address_fixes.sql`)
-2. **All three SQL files** must also be updated: `run-update.sql`, `schema.sql`, `run-sqleditor.sql`
+2. **Both SQL files** must also be updated: `schema.sql`, `run-sqleditor.sql`
 3. **Production** receives migrations via the GitHub Action — it detects pending migrations and applies them in order
 4. **Schema drift is tracked** via the `schema_migrations` table in Neon
 
@@ -361,7 +359,7 @@ PORT=3001
 ### Database — Neon
 
 1. Create Neon project
-2. Run `db/run-sqleditor.sql` in SQL Editor (or apply `db/run-update.sql` for incremental updates)
+2. Run `db/run-sqleditor.sql` in SQL Editor (or apply individual migration files for incremental updates)
 3. Set `DATABASE_URL` in Render environment
 
 ### CORS Configuration

@@ -2,8 +2,8 @@
  * P1 #6 — product_reviews uniqueness + product soft-delete.
  *
  * Unit tests (always run) verify the migration/schema sync: the unique
- * constraint must be present in the migration file AND in all three schema
- * files (schema.sql / run-sqleditor.sql / run-update.sql).
+ * constraint must be present in the migration file AND in both schema
+ * files (schema.sql / run-sqleditor.sql).
  *
  * Integration tests (DB-gated, skipped without DATABASE_URL) verify:
  *   1. The atomic ON CONFLICT upsert collapses concurrent double-submits
@@ -43,11 +43,6 @@ describe("P1 #6 migration + schema sync", () => {
     }
   });
 
-  test("run-update.sql appends the V0038 migration", () => {
-    const sql = readFileSync(join(root, "db/run-update.sql"), "utf8");
-    expect(sql).toContain("Migration: V0038");
-    expect(sql).toContain("uq_product_reviews_product_user");
-  });
 });
 
 // ─── Integration (needs DATABASE_URL) ──────────────────────────────────────
