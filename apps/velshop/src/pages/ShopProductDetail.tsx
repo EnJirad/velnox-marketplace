@@ -1178,7 +1178,6 @@ export default function ShopProductDetail() {
               )}
               {/* V Badge — TOP-LEFT overlay */}
               <VBadge
-                productVerification={(product as any).verificationStatus}
                 sellerVerification={(product as any).sellerVerificationStatus}
                 size="md"
               />
@@ -1250,7 +1249,6 @@ export default function ShopProductDetail() {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <ProductTitle name={product.name} t={t} />
               <VBadge
-                productVerification={product.verificationStatus}
                 sellerVerification={product.sellerVerificationStatus}
                 size="md"
               />

@@ -7,7 +7,7 @@
  *   • which statuses are publicly visible in the VelShop catalog,
  *   • when a product earns the V badge.
  *
- * NOTE: seller verification and product verification are two independent
+ * NOTE: V badge is now seller-only (product verification removed 2026-09-13).
  * systems. A verified seller never implies a verified product, and vice versa.
  */
 
@@ -79,12 +79,13 @@ export function resolveCreationStatus(requested: unknown): ProductCreationStatus
 }
 
 /**
- * V eligibility — the public badge requires BOTH verifications.
- * Enforced server-side; the frontend must never decide this.
+ * V eligibility — seller-verified only.
+ * A verified seller's products automatically get the V badge.
+ * Product verification was removed (2026-09-13).
  */
 export function computeIsVerifiedProduct(
-  productVerification: unknown,
+  _productVerification: unknown,
   sellerVerification: unknown,
 ): boolean {
-  return productVerification === "verified" && sellerVerification === "verified";
+  return sellerVerification === "verified";
 }

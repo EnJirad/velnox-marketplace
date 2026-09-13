@@ -1,11 +1,11 @@
 /**
- * V Badge — Velnox Product Verification Indicator
+ * V Badge — Velnox Seller Verification Indicator
  *
  * Shows a compact green "V" overlay on product images.
  * Clicking V opens a verification info popover (desktop) or bottom sheet (mobile).
  *
- * Eligibility: BOTH seller AND product must be verified ("verified" status).
- * For shop-level verification, use `sellerOnly` prop.
+ * Eligibility: seller/shop must be verified ("verified" status).
+ * All products owned by a verified seller display the V badge.
  */
 
 import { useLanguage } from "@velnox/shared/lib/i18n";
@@ -26,8 +26,6 @@ import { useIsMobile } from "@velnox/shared/hooks/use-mobile";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface VBadgeProps {
-  /** Product-level verification status */
-  productVerification?: VerificationStatus;
   /** Seller-level verification status */
   sellerVerification?: VerificationStatus;
   /** When true, shows seller-only verification badge (not the combined V) */
@@ -40,13 +38,13 @@ interface VBadgeProps {
 
 /**
  * Determine if the product qualifies for the V badge.
- * BOTH seller AND product must be verified.
+ * Seller/shop must be verified — all their products show V.
  */
 export function isProductVerified(
-  productVerification?: VerificationStatus,
+  _productVerification?: VerificationStatus,
   sellerVerification?: VerificationStatus,
 ): boolean {
-  return productVerification === "verified" && sellerVerification === "verified";
+  return sellerVerification === "verified";
 }
 
 /* ─── V Verification Info Content ─────────────────────────────────── */
@@ -83,28 +81,8 @@ function VVerificationContent({ onClose }: { onClose?: () => void }) {
         {t("verification.vInfoDesc")}
       </p>
 
-      {/* Verification checks */}
+      {/* Verification check — seller identity only */}
       <div className="space-y-2.5">
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-            <svg className="size-3 text-emerald-600" viewBox="0 0 12 12" fill="none">
-              <path d="M2 6.5L4.5 9L10 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <span className="text-sm text-slate-700">
-            {t("verification.vInfoCheckProduct")}
-          </span>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-            <svg className="size-3 text-emerald-600" viewBox="0 0 12 12" fill="none">
-              <path d="M2 6.5L4.5 9L10 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <span className="text-sm text-slate-700">
-            {t("verification.vInfoCheckEvidence")}
-          </span>
-        </div>
         <div className="flex items-center gap-2.5">
           <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100">
             <svg className="size-3 text-emerald-600" viewBox="0 0 12 12" fill="none">
@@ -142,12 +120,10 @@ function VVerificationContent({ onClose }: { onClose?: () => void }) {
  * Clicking opens V info popover (desktop) or bottom sheet (mobile).
  */
 function VOverlayBadge({
-  productVerification,
   sellerVerification,
   size = "sm",
   className,
 }: {
-  productVerification?: VerificationStatus;
   sellerVerification?: VerificationStatus;
   size?: "sm" | "md" | "lg";
   className?: string;
@@ -157,7 +133,7 @@ function VOverlayBadge({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const verified = isProductVerified(productVerification, sellerVerification);
+  const verified = isProductVerified(undefined, sellerVerification);
   if (!verified) return null;
 
   const toggle = useCallback(
@@ -312,7 +288,6 @@ function SellerOnlyBadge({
  * - Seller-only mode: renders a small inline badge for shop pages.
  */
 export function VBadge({
-  productVerification,
   sellerVerification,
   sellerOnly = false,
   size = "sm",
@@ -330,7 +305,6 @@ export function VBadge({
 
   return (
     <VOverlayBadge
-      productVerification={productVerification}
       sellerVerification={sellerVerification}
       size={size}
       className={className}

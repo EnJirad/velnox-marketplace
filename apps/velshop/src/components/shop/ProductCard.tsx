@@ -69,7 +69,6 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
         })()}
         {/* V Badge — TOP-LEFT overlay */}
         <VBadge
-          productVerification={(product as any).verificationStatus}
           sellerVerification={(product as any).sellerVerificationStatus}
           size="sm"
         />

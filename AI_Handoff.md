@@ -3628,3 +3628,65 @@ The `handleSubmitVerification` function showed a success toast regardless of whe
 **Database changed:** NO (uses existing `media` table)
 
 **Verification:** backend tsc ✅ · velshop/velseller/velcenter/velnox tsc ✅ · i18n 1162×3 ✅ · git diff --check ✅
+
+### 2026-09-13 — Redesign: Single Seller Verification System (Remove Product Verification)
+
+**Scope:** VBadge, Center, MyShop, i18n — complete redesign from dual verification (seller + product) to single seller-only verification.
+
+**Design Decision:** Velnox now uses ONE verification system: Seller/Shop Identity Verification. A verified seller's products automatically show the V badge. No separate product verification.
+
+**V eligibility rule (new):**
+```
+seller.verification_status === "approved"
+→ all products owned by that seller show V
+```
+
+**What was removed:**
+
+1. **Product Verification sub-tab** from VelCenter Products tab — removed entirely
+2. **Product verification submission** from MyShop — removed `submitProductVerification` action, `renderProductVerification` function, product verification button per product
+3. **`productVerification` prop** from VBadge component — removed
+4. **`isProductVerified` dual check** — changed from `productVerified && sellerVerified` to `sellerVerified` only
+5. **`productVerifFilter` state** from Center.tsx — removed
+6. **Product verification info text** from V badge popover — now says "Verified Shop" instead of "Verified Product"
+7. **Product verification dialog section** from MyShop verification dialog — removed product info preview
+
+**What was preserved:**
+
+1. **Seller verification** — completely intact (submit, evidence upload, R2, VelCenter review)
+2. **Product moderation** — completely intact (pending_review → published workflow)
+3. **EvidenceUploader** — still used for seller verification evidence
+4. **Backend verification endpoints** — all kept (seller + product endpoints remain for API compatibility)
+5. **VelCenter seller verification queue** — intact with status filters and evidence viewer
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `packages/shared/src/components/VBadge.tsx` | Removed `productVerification` prop; `isProductVerified()` now checks seller-only; V popover says "Verified Shop" |
+| `apps/velcenter/src/pages/Center.tsx` | Removed Products verification sub-tab, `productVerifFilter` state, product verification table; updated seller verification description |
+| `apps/velseller/src/pages/MyShop.tsx` | Removed `submitProductVerification` action, `renderProductVerification` function, product verification button, product verification dialog section |
+| `apps/velshop/src/components/shop/ProductCard.tsx` | Removed `productVerification` prop from VBadge |
+| `apps/velshop/src/pages/ShopProductDetail.tsx` | Removed `productVerification` prop from VBadge |
+| `packages/shared/src/lib/i18n/locales/th.ts` | Updated vInfoTitle/vInfoDesc to seller-only; removed vInfoCheckProduct |
+| `packages/shared/src/lib/i18n/locales/en.ts` | Updated vInfoTitle/vInfoDesc to seller-only; removed vInfoCheckProduct |
+| `packages/shared/src/lib/i18n/locales/my.ts` | Updated vInfoTitle/vInfoDesc to seller-only; removed vInfoCheckProduct |
+
+**i18n:** vInfoCheckProduct removed from all 3 locales → 1161×3 keys (down from 1162)
+
+**Database changed:** NO
+**R2 changes:** NO
+
+**Verification:**
+- backend `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velcenter `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1161×3 ✅ PASS
+- `git diff --check` ✅ PASS
+
+**Limitations:**
+- Backend product verification endpoints (`POST /api/seller/products/:productId/verification`, `GET /api/admin/verifications?type=product`) are preserved for API compatibility but no longer called by frontend
+- Live E2E testing not performed (no headless browser in sandbox)
+- VelCenter verification review uses hardcoded Thai text (consistent with existing pattern)

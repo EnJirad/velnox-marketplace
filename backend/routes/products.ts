@@ -2198,8 +2198,7 @@ export function setupProductRoutes(app: Express): void {
       }
       // VelShop Verified filter: BOTH seller AND product must be verified
       if (req.query.verified === "true") {
-        where += ` AND p.verification_status = 'verified'
-                   AND EXISTS (SELECT 1 FROM sellers s WHERE s.id = sh.seller_id AND s.verification_status = 'verified')`;
+        where += ` AND EXISTS (SELECT 1 FROM sellers s WHERE s.id = sh.seller_id AND s.verification_status = 'verified')`;
       }
 
       let orderBy = "ORDER BY p.created_at DESC";

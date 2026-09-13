@@ -242,58 +242,7 @@ export function registerVerificationRoutes(app: Express) {
     }
   });
 
-  // GET /api/seller/products/:productId/verification/evidence — List evidence for a product
-  app.get("/api/seller/products/:productId/verification/evidence", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = req.user!.userId;
-      const productId = req.params.productId;
-
-      // Verify ownership
-      const ownRes = await query(
-        `SELECT p.id FROM products p
-         JOIN shops sh ON sh.id = p.shop_id
-         JOIN sellers s ON s.id = sh.seller_id
-         WHERE p.id = $1 AND s.user_id = $2`,
-        [productId, userId]
-      );
-
-      if (ownRes.rows.length === 0) {
-        return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
-      }
-
-      // Get evidence from the latest verification record
-      const verRes = await query(
-        `SELECT evidence_urls, evidence_notes FROM product_verifications
-         WHERE product_id = $1
-         ORDER BY created_at DESC LIMIT 1`,
-        [productId]
-      );
-
-      const row = verRes.rows[0];
-      const evidenceUrls = row?.evidence_urls || [];
-
-      // For each URL, try to get more info from media table
-      const evidenceFiles = [];
-      for (const url of evidenceUrls) {
-        const mediaRes = await query(
-          "SELECT id, url, key, content_type, size, created_at FROM media WHERE url = $1",
-          [url]
-        );
-        evidenceFiles.push(mediaRes.rows[0] || { url, key: null, content_type: null, size: null, created_at: null });
-      }
-
-      res.json({
-        success: true,
-        data: {
-          evidenceFiles,
-          notes: row?.evidence_notes || null,
-        },
-      });
-    } catch (err) {
-      console.error("[verification] evidence list error:", err);
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list evidence" } });
-    }
-  });
+  // Product verification evidence endpoint removed (2026-09-13)
 
 
   // ════════════════════════════════════════════════════════════════════════

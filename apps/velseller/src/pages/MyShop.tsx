@@ -74,7 +74,6 @@ export default function MyShop() {
   const listProducts = useAction(api.commerce.listProducts);
   const setStatus = useAction(api.commerce.setProductStatusAction);
   const submitSellerVerification = useAction(api.seller.submitVerification);
-  const submitProductVerification = useAction(api.seller.submitProductVerification);
   const deleteProduct = useAction(api.commerce.deleteProductAction);
 
   const [profile, setProfile] = useState<SellerProfile | null | undefined>(undefined);
@@ -90,7 +89,7 @@ export default function MyShop() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | StoreProductStatus>("all");
   // Verification submissions (seller-level and product-level are INDEPENDENT)
-  const [verifyTarget, setVerifyTarget] = useState<{ kind: "seller" } | { kind: "product"; product: StoreProduct } | null>(null);
+  const [verifyTarget, setVerifyTarget] = useState<{ kind: "seller" } | null>(null);
   const [verifyNotes, setVerifyNotes] = useState("");
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [evidenceFiles, setEvidenceFiles] = useState<EvidenceFile[]>([]);
@@ -230,32 +229,12 @@ export default function MyShop() {
           return acc;
         }, {} as Record<string, number>);
 
-      const notesParts: string[] = [];
-      if (evidenceByPurpose.product_photo) notesParts.push(`รูปสินค้า ${evidenceByPurpose.product_photo} ไฟล์`);
-      if (evidenceByPurpose.packaging) notesParts.push(`บรรจุภัณฑ์/ฉลาก ${evidenceByPurpose.packaging} ไฟล์`);
-      if (evidenceByPurpose.receipt) notesParts.push(`ใบเสร็จ/ใบแจ้งหนี้ ${evidenceByPurpose.receipt} ไฟล์`);
-      if (evidenceByPurpose.other) notesParts.push(`เอกสารอื่นๆ ${evidenceByPurpose.other} ไฟล์`);
-      if (verifyNotes.trim()) notesParts.push(verifyNotes.trim());
-      const evidenceNotes = notesParts.length > 0 ? notesParts.join("\n") : undefined;
+
 
       if (verifyTarget.kind === "seller") {
         await submitSellerVerification({ verificationType: "identity", evidenceUrls });
         toast.success(t("verification.sellerVerificationSubmitted"));
         setProfile(await mySellerProfile());
-      } else {
-        const result = await submitProductVerification({
-          productId: verifyTarget.product.id,
-          evidenceUrls,
-          evidenceNotes,
-        });
-        // Verify the backend actually accepted the submission
-        if (result?.success === false) {
-          const errMsg = result?.error?.message || "Backend ไม่สามารถรับคำขอได้";
-          toast.error(errMsg);
-          return; // Don't close dialog or clear state
-        }
-        toast.success(t("verification.productVerificationSubmitted"));
-        await reloadProducts();
       }
       setVerifyTarget(null);
       setVerifyNotes("");
@@ -268,34 +247,7 @@ export default function MyShop() {
     }
   };
 
-  /**
-   * Product verification is INDEPENDENT from seller verification: a verified
-   * shop does not verify its products, and the V badge needs both.
-   */
-  const renderProductVerification = (product: StoreProduct) => {
-    const status = (product.verificationStatus ?? "unverified") as VerificationStatus;
-    const sellerStatus = ((profile?.seller as { verificationStatus?: VerificationStatus } | undefined)?.verificationStatus ?? "unverified") as VerificationStatus;
-    const canSubmit = product.status === "published" && status !== "pending" && status !== "verified";
-    return (
-      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] text-slate-400">{t("verification.productVerificationTitle")}</span>
-        <VerificationStatusLabel status={status} />
-        <VBadge productVerification={status} sellerVerification={sellerStatus} size="sm" />
-        {canSubmit && (
-          <button
-            type="button"
-            className="text-[11px] font-medium text-[#10B981] underline-offset-2 hover:underline"
-            onClick={() => {
-              setVerifyTarget({ kind: "product", product });
-              setVerifyNotes("");
-            }}
-          >
-            {status === "rejected" ? t("verification.resubmitForVerification") : t("verification.submitForVerification")}
-          </button>
-        )}
-      </div>
-    );
-  };
+
 
   const handleDelete = async () => {
     if (!deleting) return;
@@ -751,7 +703,6 @@ export default function MyShop() {
                         </TableCell>
                         <TableCell>
                           {renderStatus(product)}
-                          {renderProductVerification(product)}
                           {product.status === "rejected" && product.rejectionReason && (
                             <p className="mt-1 text-xs font-medium text-rose-600">
                               {t("productModeration.rejectedReason", { reason: product.rejectionReason })}
@@ -851,7 +802,6 @@ export default function MyShop() {
                           <span className="text-xs text-slate-400">· สต็อก {available}</span>
                           {renderStatus(product)}
                         </div>
-                        {renderProductVerification(product)}
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
@@ -926,39 +876,16 @@ export default function MyShop() {
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {verifyTarget?.kind === "seller" ? t("verification.sellerVerificationTitle") : t("verification.productVerificationTitle")}
+              {t("verification.sellerVerificationTitle")}
             </DialogTitle>
             <DialogDescription>
               {verifyTarget?.kind === "seller"
                 ? t("verification.sellerVerificationSeparateNote")
-                : t("verification.productVerificationSeparateNote")}
+                : ""}
             </DialogDescription>
           </DialogHeader>
 
-          {/* Product info when submitting product verification */}
-          {verifyTarget?.kind === "product" && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-start gap-3">
-                {verifyTarget.product.images?.[0] && (
-                  <img
-                    src={verifyTarget.product.images[0].url}
-                    alt={verifyTarget.product.name}
-                    className="size-14 shrink-0 rounded-lg object-cover"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900 truncate">{verifyTarget.product.name}</p>
-                  <p className="text-xs text-slate-500">฿{verifyTarget.product.price?.toLocaleString()}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <VerificationStatusLabel status={(verifyTarget.product.verificationStatus ?? "unverified") as VerificationStatus} />
-                    {verifyTarget.product.categorySlug && (
-                      <span className="text-[10px] text-slate-400">{verifyTarget.product.categorySlug}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+
 
           {/* Evidence upload sections */}
           <div className="grid gap-4">
