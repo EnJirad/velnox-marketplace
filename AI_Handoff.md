@@ -382,6 +382,27 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-13 — FIX VELSELLER INFINITE LOADING — RequireRole state machine root cause
+
+**Root cause:** `RequireRole.tsx` used `seller === null` as a loading guard (`if (sellerLoading || seller === null) return <LoadingGate />`). When the backend returns `data: null` (meaning "authenticated but no seller application"), `setSeller(null)` keeps `seller === null`, and the condition remains true even after `sellerLoading` becomes false → infinite spinner.
+
+**Fix:** Added `sellerLoaded` boolean state. Loading gate now checks `sellerLoading && !sellerLoaded` instead of `seller === null`. After fetch completes, `sellerLoaded=true` with `seller=null` correctly shows the seller registration form instead of a spinner.
+
+**State machine after fix:**
+- `sellerLoading=true, sellerLoaded=false` → LoadingGate (spinner)
+- `sellerLoaded=true, seller=null` → Seller Registration form (no application)
+- `sellerLoaded=true, seller.status='pending'` → Pending page
+- `sellerLoaded=true, seller.status='rejected'` → Rejected page + form
+- `sellerLoaded=true, seller.status='suspended'` → Suspended page
+- `sellerLoaded=true, seller.status='approved'` → Seller app (children)
+- `sellerLoaded=true, sellerError!=null` → Error page + Retry
+
+**Files changed:** `packages/shared/src/components/RequireRole.tsx`
+**Database changed:** NO
+**Typecheck:** PASS (all 4 apps + backend)
+
+---
+
 ### 2026-09-13 — Seller Authentication & Registration Flow Audit + Hardening
 
 **Scope:** Seller auth/registration/approval lifecycle across 3 files. No architecture change, no DB migration, no new endpoints.

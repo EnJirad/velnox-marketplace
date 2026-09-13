@@ -72,6 +72,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
 
   const [seller, setSeller] = useState<{ status: string | null; rejectionReason: string | null } | null>(null);
   const [sellerLoading, setSellerLoading] = useState(true);
+  const [sellerLoaded, setSellerLoaded] = useState(false);
   const [sellerError, setSellerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [bootstrapCode, setBootstrapCode] = useState("");
@@ -106,11 +107,20 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((s) => { if (alive) { setSeller(s.data ?? null); setSellerError(null); } })
+      .then((s) => {
+        if (!alive) return;
+        // data=null means "authenticated but no seller application" — this is NOT loading
+        setSeller(s.data ?? null);
+        setSellerError(null);
+        setSellerLoaded(true);
+      })
       .catch((err) => {
         console.error("[seller] status fetch failed:", err);
-        // On error, show retry option instead of silently defaulting to registration
-        if (alive) { setSeller({ status: null, rejectionReason: null }); setSellerError("ไม่สามารถตรวจสอบสถานะร้านค้าได้ กรุณาลองใหม่"); }
+        if (alive) {
+          setSeller({ status: null, rejectionReason: null });
+          setSellerError("ไม่สามารถตรวจสอบสถานะร้านค้าได้ กรุณาลองใหม่");
+          setSellerLoaded(true);
+        }
       })
       .finally(() => { if (alive) setSellerLoading(false); });
 
@@ -190,42 +200,51 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   }
 
   // ── seller ──
-  if (sellerLoading || seller === null) {
-    // Show error with retry if seller status fetch failed
-    if (sellerError && !sellerLoading) {
-      return (
-        <GateCard icon={XCircle} title="เกิดข้อผิดพลาด" desc={sellerError}>
-        <Button
-          className="mt-4 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-          onClick={() => {
-            setSellerLoading(true);
-            setSellerError(null);
-            fetch(`${API_BASE}/seller/status`, { credentials: "include" })
-              .then((r) => r.json())
-              .then((s) => setSeller(s.data ?? null))
-              .catch(() => setSellerError("ไม่สามารถตรวจสอบสถานะได้ กรุณาลองใหม่"))
-              .finally(() => setSellerLoading(false));
-          }}
-        >
-          ลองใหม่
-        </Button>
-        </GateCard>
-      );
-    }
+  // Show spinner only while the initial fetch is in-flight.
+  // After fetch completes (sellerLoaded=true), seller=null means "no application" → show registration.
+  if (sellerLoading && !sellerLoaded) {
     return <LoadingGate />;
   }
 
-  if (seller.status === "approved") return children;
+  // Fetch completed with an error
+  if (sellerError && sellerLoaded) {
+    return (
+      <GateCard icon={XCircle} title="เกิดข้อผิดพลาด" desc={sellerError}>
+      <Button
+        className="mt-4 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+        onClick={() => {
+          setSellerLoading(true);
+          setSellerLoaded(false);
+          setSellerError(null);
+          setSeller(null);
+          fetch(`${API_BASE}/seller/status`, { credentials: "include" })
+            .then((r) => {
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              return r.json();
+            })
+            .then((s) => { setSeller(s.data ?? null); setSellerError(null); setSellerLoaded(true); })
+            .catch(() => { setSellerError("ไม่สามารถตรวจสอบสถานะได้ กรุณาลองใหม่"); setSellerLoaded(true); })
+            .finally(() => setSellerLoading(false));
+        }}
+      >
+        ลองใหม่
+      </Button>
+      </GateCard>
+    );
+  }
 
-  if (seller.status === "pending" || seller.status === "under_review") {
+  // seller === null means "authenticated but no seller application" → fall through to registration form below
+  if (seller?.status === "approved") return children;
+
+  if (seller?.status === "pending" || seller?.status === "under_review") {
     return <GateCard icon={Clock} title={t("gate.sellerPendingTitle")} desc={t("gate.sellerPendingDesc")} />;
   }
 
-  if (seller.status === "suspended") {
+  if (seller?.status === "suspended") {
     return <GateCard icon={XCircle} title={t("gate.sellerSuspendedTitle")} desc={t("gate.sellerSuspendedDesc")} />;
   }
 
-  const isRejected = seller.status === "rejected";
+  const isRejected = seller?.status === "rejected";
 
   // ── Multi-step seller onboarding ──
 
