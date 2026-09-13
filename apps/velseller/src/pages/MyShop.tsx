@@ -93,6 +93,14 @@ export default function MyShop() {
   const [verifyNotes, setVerifyNotes] = useState("");
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [evidenceFiles, setEvidenceFiles] = useState<EvidenceFile[]>([]);
+  // Multi-step identity verification
+  const [verifyStep, setVerifyStep] = useState<1 | 2 | 3>(1);
+  const [personalInfo, setPersonalInfo] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+    address: "",
+  });
 
   const shop: StoreShop | null = profile?.shops[0] ?? null;
 
@@ -871,6 +879,8 @@ export default function MyShop() {
           setVerifyTarget(null);
           setVerifyNotes("");
           setEvidenceFiles([]);
+          setVerifyStep(1);
+          setPersonalInfo({ firstName: "", lastName: "", phone: "", address: "" });
         }
       }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
@@ -879,93 +889,139 @@ export default function MyShop() {
               {t("verification.sellerVerificationTitle")}
             </DialogTitle>
             <DialogDescription>
-              {verifyTarget?.kind === "seller"
-                ? t("verification.sellerVerificationSeparateNote")
-                : ""}
+              {t("verification.sellerVerificationSeparateNote")}
             </DialogDescription>
           </DialogHeader>
 
-
-
-          {/* Evidence upload sections */}
-          <div className="grid gap-4">
-            {/* Product photos */}
-            <EvidenceUploader
-              purpose="product_photo"
-              label="รูปสินค้า"
-              description="รูปสินค้าจากหลายมุม แสดงสินค้าจริงที่ต้องการจำหน่าย"
-              files={evidenceFiles.filter((f) => f.purpose === "product_photo")}
-              onFilesChange={(newFiles) => {
-                const other = evidenceFiles.filter((f) => f.purpose !== "product_photo");
-                setEvidenceFiles([...other, ...newFiles]);
-              }}
-              maxFiles={10}
-            />
-
-            {/* Packaging / Labels */}
-            <EvidenceUploader
-              purpose="packaging"
-              label="บรรจุภัณฑ์ / ฉลาก"
-              description="รูปบรรจุภัณฑ์ ฉลากสินค้า หรือแท็ก"
-              files={evidenceFiles.filter((f) => f.purpose === "packaging")}
-              onFilesChange={(newFiles) => {
-                const other = evidenceFiles.filter((f) => f.purpose !== "packaging");
-                setEvidenceFiles([...other, ...newFiles]);
-              }}
-              maxFiles={5}
-            />
-
-            {/* Receipt / Invoice */}
-            <EvidenceUploader
-              purpose="receipt"
-              label="ใบเสร็จ / ใบแจ้งหนี้"
-              description="หลักฐานการซื้อหรือใบแจ้งหนี้จากซัพพลายเออร์"
-              files={evidenceFiles.filter((f) => f.purpose === "receipt")}
-              onFilesChange={(newFiles) => {
-                const other = evidenceFiles.filter((f) => f.purpose !== "receipt");
-                setEvidenceFiles([...other, ...newFiles]);
-              }}
-              maxFiles={5}
-            />
-
-            {/* Other supporting evidence */}
-            <EvidenceUploader
-              purpose="other"
-              label="เอกสารอื่นๆ"
-              description="เอกสารเพิ่มเติม เช่น ใบรับรอง หรือหลักฐานอื่น"
-              files={evidenceFiles.filter((f) => f.purpose === "other")}
-              onFilesChange={(newFiles) => {
-                const other = evidenceFiles.filter((f) => f.purpose !== "other");
-                setEvidenceFiles([...other, ...newFiles]);
-              }}
-              maxFiles={5}
-            />
-
-            {/* Additional notes */}
-            <div className="grid gap-1.5">
-              <Label htmlFor="verification-notes">หมายเหตุเพิ่มเติม</Label>
-              <Textarea
-                id="verification-notes"
-                rows={2}
-                value={verifyNotes}
-                onChange={(e) => setVerifyNotes(e.target.value)}
-                placeholder="อธิบายเพิ่มเติมเกี่ยวกับสินค้าหรือหลักฐาน..."
-              />
-            </div>
-
-            <p className="text-[11px] leading-5 text-slate-400">
-              หลักฐานจะถูกส่งให้ทีมตรวจสอบของ Velnox เท่านั้น ไม่เปิดเผยต่อลูกค้าหรือบุคคลที่สาม
-            </p>
+          {/* Step indicator */}
+          <div className="flex items-center justify-center gap-2 py-2">
+            {[1, 2, 3].map((s) => (
+              <div key={s} className="flex items-center gap-2">
+                <div className={`flex size-7 items-center justify-center rounded-full text-xs font-bold transition-colors ${
+                  verifyStep >= s ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-400"
+                }`}>{s}</div>
+                {s < 3 && <div className={`h-0.5 w-8 rounded ${verifyStep > s ? "bg-emerald-600" : "bg-slate-200"}`} />}
+              </div>
+            ))}
           </div>
+          <div className="flex justify-center gap-6 text-[10px] text-slate-400">
+            <span className={verifyStep === 1 ? "font-medium text-emerald-600" : ""}>ข้อมูลส่วนตัว</span>
+            <span className={verifyStep === 2 ? "font-medium text-emerald-600" : ""}>เอกสารยืนยันตัวตน</span>
+            <span className={verifyStep === 3 ? "font-medium text-emerald-600" : ""}>ตรวจสอบและส่ง</span>
+          </div>
+
+          {/* Step 1: Personal Information */}
+          {verifyStep === 1 && (
+            <div className="grid gap-4 pt-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="v-firstname">ชื่อ *</Label>
+                  <Input id="v-firstname" value={personalInfo.firstName} onChange={(e) => setPersonalInfo((p) => ({ ...p, firstName: e.target.value }))} placeholder="ชื่อจริง" />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="v-lastname">นามสกุล *</Label>
+                  <Input id="v-lastname" value={personalInfo.lastName} onChange={(e) => setPersonalInfo((p) => ({ ...p, lastName: e.target.value }))} placeholder="นามสกุล" />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="v-phone">เบอร์โทรศัพท์ *</Label>
+                <Input id="v-phone" value={personalInfo.phone} onChange={(e) => setPersonalInfo((p) => ({ ...p, phone: e.target.value }))} placeholder="08X-XXX-XXXX" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="v-address">ที่อยู่ *</Label>
+                <Textarea id="v-address" rows={2} value={personalInfo.address} onChange={(e) => setPersonalInfo((p) => ({ ...p, address: e.target.value }))} placeholder="ที่อยู่ตามบัตรประชาชน" />
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Identity Documents */}
+          {verifyStep === 2 && (
+            <div className="grid gap-4 pt-2">
+              <EvidenceUploader
+                purpose="id_card"
+                label="บัตรประชาชน (หน้า)"
+                description="ถ่ายรูปบัตรประชาชนด้านหน้า ชัดเจน อ่านข้อมูลได้"
+                files={evidenceFiles.filter((f) => f.purpose === "id_card")}
+                onFilesChange={(newFiles) => {
+                  const other = evidenceFiles.filter((f) => f.purpose !== "id_card");
+                  setEvidenceFiles([...other, ...newFiles]);
+                }}
+                maxFiles={2}
+              />
+              <EvidenceUploader
+                purpose="selfie_id"
+                label="เซลฟี่คู่บัตรประชาชน"
+                description="ถ่ายรูปตัวเองถือบัตรประชาชน ใบหน้าชัดเจน บัตรอ่านได้"
+                files={evidenceFiles.filter((f) => f.purpose === "selfie_id")}
+                onFilesChange={(newFiles) => {
+                  const other = evidenceFiles.filter((f) => f.purpose !== "selfie_id");
+                  setEvidenceFiles([...other, ...newFiles]);
+                }}
+                maxFiles={2}
+              />
+              <div className="grid gap-1.5">
+                <Label htmlFor="verification-notes">หมายเหตุเพิ่มเติม</Label>
+                <Textarea id="verification-notes" rows={2} value={verifyNotes} onChange={(e) => setVerifyNotes(e.target.value)} placeholder="ข้อมูลเพิ่มเติม (ถ้ามี)..." />
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Review & Submit */}
+          {verifyStep === 3 && (
+            <div className="grid gap-4 pt-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <h4 className="text-xs font-semibold text-slate-600 mb-2">ข้อมูลส่วนตัว</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-slate-400">ชื่อ:</span> {personalInfo.firstName} {personalInfo.lastName}</div>
+                  <div><span className="text-slate-400">เบอร์โทร:</span> {personalInfo.phone}</div>
+                  <div className="col-span-2"><span className="text-slate-400">ที่อยู่:</span> {personalInfo.address}</div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <h4 className="text-xs font-semibold text-slate-600 mb-2">เอกสารที่อัปโหลด</h4>
+                <div className="flex flex-wrap gap-2">
+                  {evidenceFiles.filter((f) => f.status === "uploaded").map((f, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                      ✓ {f.purpose === "id_card" ? "บัตรประชาชน" : f.purpose === "selfie_id" ? "เซลฟี่คู่บัตร" : f.purpose}
+                    </span>
+                  ))}
+                  {evidenceFiles.filter((f) => f.status === "uploaded").length === 0 && (
+                    <span className="text-xs text-rose-500">ยังไม่ได้อัปโหลดเอกสาร</span>
+                  )}
+                </div>
+              </div>
+              <p className="text-[11px] leading-5 text-slate-400">
+                ข้อมูลจะถูกส่งให้ทีมตรวจสอบของ Velnox เท่านั้น ไม่เปิดเผยต่อลูกค้าหรือบุคคลที่สาม
+              </p>
+            </div>
+          )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setVerifyTarget(null)} disabled={verifyBusy}>
               ยกเลิก
             </Button>
-            <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void handleSubmitVerification()} disabled={verifyBusy || hasUploadingFiles}>
-              {(verifyBusy || hasUploadingFiles) && <Loader2 className="size-4 animate-spin" />}
-              {hasUploadingFiles ? "กำลังอัปโหลด..." : t("verification.submitForVerification")}
-            </Button>
+            {verifyStep > 1 && (
+              <Button variant="outline" onClick={() => setVerifyStep((s) => (s - 1) as 1 | 2 | 3)} disabled={verifyBusy}>
+                ย้อนกลับ
+              </Button>
+            )}
+            {verifyStep < 3 ? (
+              <Button
+                className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                onClick={() => setVerifyStep((s) => (s + 1) as 1 | 2 | 3)}
+                disabled={
+                  (verifyStep === 1 && (!personalInfo.firstName || !personalInfo.lastName || !personalInfo.phone || !personalInfo.address)) ||
+                  (verifyStep === 2 && !hasUploadedFiles)
+                }
+              >
+                ถัดไป
+              </Button>
+            ) : (
+              <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void handleSubmitVerification()} disabled={verifyBusy || hasUploadingFiles || !hasUploadedFiles}>
+                {(verifyBusy || hasUploadingFiles) && <Loader2 className="size-4 animate-spin" />}
+                {hasUploadingFiles ? "กำลังอัปโหลด..." : t("verification.submitForVerification")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

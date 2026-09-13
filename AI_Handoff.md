@@ -3690,3 +3690,59 @@ seller.verification_status === "approved"
 - Backend product verification endpoints (`POST /api/seller/products/:productId/verification`, `GET /api/admin/verifications?type=product`) are preserved for API compatibility but no longer called by frontend
 - Live E2E testing not performed (no headless browser in sandbox)
 - VelCenter verification review uses hardcoded Thai text (consistent with existing pattern)
+
+### 2026-09-13 — Velseller Identity Verification Redesign (Multi-Step Flow)
+
+**Scope:** Redesigned seller verification dialog in MyShop.tsx from generic evidence upload to structured multi-step identity verification flow.
+
+**Audit Findings (WHAT EXISTS):**
+1. **Auth:** Google OAuth → JWT cookie → `/api/auth/me` → role-based (customer/seller/admin/owner)
+2. **Seller:** `POST /api/seller/apply` → creates seller (status: pending) → admin approves via `PATCH /api/admin/sellers/:id/status`
+3. **Verification:** `POST /api/seller/verification` → creates `seller_verifications` record → `sellers.verification_status = pending`
+4. **Upload:** R2 presigned URL system via `EvidenceUploader` component
+5. **VelCenter:** Sellers tab with Applications + Verification sub-tabs
+
+**Root Cause:** The verification dialog used generic evidence upload sections (product_photo, packaging, receipt, other) — these were product-related, not identity-related. No structured personal information collection, no ID card upload step, no selfie step.
+
+**WHAT WAS CHANGED:**
+- MyShop.tsx verification dialog redesigned as 3-step flow:
+  - **Step 1: Personal Information** — first name, last name, phone, address
+  - **Step 2: Identity Documents** — ID card upload (EvidenceUploader for `id_card` purpose) + selfie with ID card (EvidenceUploader for `selfie_id` purpose)
+  - **Step 3: Review & Submit** — shows summary of personal info + uploaded documents
+- Added step indicator (numbered circles with labels)
+- Added back/next navigation between steps
+- Step 1 validates required fields before advancing
+- Step 2 requires at least 1 uploaded file before advancing
+- Step 3 shows review summary before final submit
+- Dialog resets all state (step, personal info, notes, evidence) on close
+- Privacy notice preserved
+
+**WHAT WAS NOT CHANGED:**
+- Backend API (existing `POST /api/seller/verification` reused)
+- Database schema (no new tables/fields)
+- Auth system
+- Seller approval flow
+- Product moderation
+- V badge logic
+- VelCenter review UI
+
+**Files changed:** `apps/velseller/src/pages/MyShop.tsx`
+
+**i18n:** 1161×3 keys — no new keys added (using existing verification.* keys + hardcoded Thai labels for new form fields, consistent with existing MyShop pattern)
+
+**Database changed:** NO
+**R2 changes:** NO
+
+**Verification:**
+- backend `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velcenter `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1161×3 ✅ PASS
+- `git diff --check` ✅ PASS
+
+**Limitations:**
+- Personal information (Step 1) is collected on the frontend but sent as part of the evidence URLs payload — the backend currently stores `evidence_urls` as JSON and `verification_type` as text. Structured personal info fields are not persisted in a separate DB table (would require migration to add `first_name`, `last_name`, `phone`, `address` to `seller_verifications` table)
+- Live E2E testing not performed (no headless browser in sandbox)
+- The review step (Step 3) shows summary but personal info is not yet sent to backend — would need a backend update to accept and store structured personal info
