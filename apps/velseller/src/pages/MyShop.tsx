@@ -74,10 +74,31 @@ export default function MyShop() {
   const listProducts = useAction(api.commerce.listProducts);
   const setStatus = useAction(api.commerce.setProductStatusAction);
   const submitSellerVerification = useAction(api.seller.submitVerification);
+  const confirmEvidence = useAction(api.seller.evidenceConfirm);
   const deleteProduct = useAction(api.commerce.deleteProductAction);
 
   const [profile, setProfile] = useState<SellerProfile | null | undefined>(undefined);
   const [sellerVerifData, setSellerVerifData] = useState<any>(null);
+
+  // Persist evidence metadata to backend after R2 upload succeeds
+  const handleEvidenceUploaded = useCallback(
+    async (info: { objectKey: string; cdnUrl: string; filename: string; contentType: string; fileSize: number; purpose: string }) => {
+      try {
+        await confirmEvidence({
+          objectKey: info.objectKey,
+          publicUrl: info.cdnUrl,
+          filename: info.filename,
+          contentType: info.contentType,
+          fileSize: info.fileSize,
+        });
+      } catch (err) {
+        // Non-fatal: the file is in R2 but metadata not in media table.
+        // The submit step will still send the cdnUrl as evidence.
+        console.warn("[evidence] confirm failed (non-fatal):", err);
+      }
+    },
+    [confirmEvidence],
+  );
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [onboard, setOnboard] = useState(EMPTY_ONBOARD);
   const [opening, setOpening] = useState(false);
@@ -946,6 +967,7 @@ export default function MyShop() {
                   const other = evidenceFiles.filter((f) => f.purpose !== "id_card");
                   setEvidenceFiles([...other, ...newFiles]);
                 }}
+                onUploadSuccess={handleEvidenceUploaded}
                 maxFiles={2}
               />
               <EvidenceUploader
@@ -957,6 +979,7 @@ export default function MyShop() {
                   const other = evidenceFiles.filter((f) => f.purpose !== "selfie_id");
                   setEvidenceFiles([...other, ...newFiles]);
                 }}
+                onUploadSuccess={handleEvidenceUploaded}
                 maxFiles={2}
               />
               <div className="grid gap-1.5">

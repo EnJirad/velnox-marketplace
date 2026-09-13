@@ -2,6 +2,8 @@
 
 **LAST UPDATED: 2026-09-13**
 
+**STATUS: EVIDENCE PERSISTENCE FIX (2026-09-13)** — EvidenceUploader now calls evidence-confirm API after successful R2 upload, ensuring metadata is persisted to database. Images survive page refresh.
+
 ## Production Readiness Status
 
 **STATUS: IMPLEMENTED — TASK 3 VelCenter Product Approval & Moderation hardened (2026-09-12); Tasks 1–2.5 complete; LIVE E2E verification audited (2026-09-12)** — Product lifecycle state machine extracted; review queue + verification tabs functional; seller verification submission enabled; i18n at parity
@@ -3746,3 +3748,62 @@ seller.verification_status === "approved"
 - Personal information (Step 1) is collected on the frontend but sent as part of the evidence URLs payload — the backend currently stores `evidence_urls` as JSON and `verification_type` as text. Structured personal info fields are not persisted in a separate DB table (would require migration to add `first_name`, `last_name`, `phone`, `address` to `seller_verifications` table)
 - Live E2E testing not performed (no headless browser in sandbox)
 - The review step (Step 3) shows summary but personal info is not yet sent to backend — would need a backend update to accept and store structured personal info
+
+### 2026-09-13 — Fix: Evidence Upload Persistence + Evidence-Confirm Flow
+
+**Scope:** `EvidenceUploader.tsx`, `MyShop.tsx`, `api-routes.ts` — fix evidence upload not persisting metadata to database after R2 upload.
+
+**ROOT CAUSE ANALYSIS:**
+
+The `EvidenceUploader` component successfully uploaded files to Cloudflare R2 via presigned URLs, but it NEVER called the `POST /api/seller/evidence/confirm` endpoint to persist the evidence metadata to the database. After the R2 PUT succeeded, the component only marked files as "uploaded" in local React state with `cdnUrl`. This meant:
+
+1. **No database record** — After page refresh, all uploaded evidence was gone because there was no database record to reload from.
+2. **VelCenter couldn't see evidence** — The admin verification queue enriched evidence via the `media` table join, but since `EvidenceUploader` never called evidence-confirm, the `media` table had no records.
+3. **Submission succeeded but evidence was ephemeral** — The `POST /api/seller/verification` endpoint received `cdnUrl` values and created verification records, but the evidence metadata itself was never persisted to the `media` table.
+
+**FIX:**
+
+1. **EvidenceUploader.tsx** — Added `onUploadSuccess` callback prop. After a successful R2 PUT, the component fires this callback with upload details (objectKey, cdnUrl, filename, contentType, fileSize, purpose). This allows the parent component (MyShop) to call the evidence-confirm API.
+
+2. **api-routes.ts** — Added `api.seller.evidenceConfirm` route mapping → `apiPost("/api/seller/evidence/confirm", a)`.
+
+3. **MyShop.tsx** — Added `handleEvidenceUploaded` callback that calls `confirmEvidence()` after each successful upload. Both EvidenceUploader instances (id_card, selfie_id) now receive `onUploadSuccess={handleEvidenceUploaded}`.
+
+**FILES CHANGED:**
+
+| File | Change |
+|------|--------|
+| `packages/shared/src/components/seller/EvidenceUploader.tsx` | Added `onUploadSuccess` prop to interface and component; fires callback after successful R2 upload |
+| `packages/shared/src/lib/api-routes.ts` | Added `api.seller.evidenceConfirm` route mapping |
+| `apps/velseller/src/pages/MyShop.tsx` | Added `confirmEvidence` action, `handleEvidenceUploaded` callback, wired to both EvidenceUploader instances |
+
+**UPLOAD FLOW AFTER FIX:**
+
+```
+File selected
+  → createObjectURL (local preview) ✅
+  → presign request to /api/seller/evidence/upload-intent ✅
+  → PUT to R2 ✅
+  → R2 responds success ✅
+  → NEW: onUploadSuccess fires → POST /api/seller/evidence/confirm ✅
+  → Evidence metadata persisted to media table ✅
+  → VelCenter can enrich evidence via media table join ✅
+```
+
+**VERIFICATION:**
+- backend `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velcenter `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1161×3 ✅ PASS
+- `git diff --check` ✅ PASS
+
+**Database changed:** NO
+**R2 changes:** NO
+**i18n changes:** NO
+
+**Limitations:**
+- Live E2E testing not performed (no headless browser in sandbox)
+- Evidence-confirm failure is logged as warning but does not block upload (non-fatal by design — the cdnUrl is still sent as evidence_url in the submit step)
+- Evidence preview uses local object URLs until R2 upload completes (by design)

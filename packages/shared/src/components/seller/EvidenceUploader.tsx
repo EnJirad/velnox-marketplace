@@ -47,6 +47,8 @@ interface EvidenceUploaderProps {
   files: EvidenceFile[];
   onFilesChange: (files: EvidenceFile[]) => void;
   maxFiles?: number;
+  /** Called after a successful R2 upload with the uploaded file details for persistence. */
+  onUploadSuccess?: (info: { objectKey: string; cdnUrl: string; filename: string; contentType: string; fileSize: number; purpose: string }) => void;
 }
 
 export function EvidenceUploader({
@@ -56,6 +58,7 @@ export function EvidenceUploader({
   files,
   onFilesChange,
   maxFiles = MAX_FILES,
+  onUploadSuccess,
 }: EvidenceUploaderProps) {
   const getUploadIntent = useAction(api.seller.evidenceUploadIntent);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -137,6 +140,16 @@ export function EvidenceUploader({
             : f
         );
         onFilesChange(finalFiles);
+
+        // 4. Notify parent so it can persist evidence via evidence-confirm API
+        onUploadSuccess?.({
+          objectKey: intent.objectKey,
+          cdnUrl: intent.cdnUrl,
+          filename: file.name,
+          contentType: file.type,
+          fileSize: file.size,
+          purpose,
+        });
       } catch (err) {
         console.error("Evidence upload error:", err);
         const latestFiles = filesRef.current;
