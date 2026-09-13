@@ -83,7 +83,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "verifications" | "staff" | "audit" | "settings";
+type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "staff" | "audit" | "settings";
 
 /** Private verification evidence — rendered only inside the admin review tab. */
 function EvidenceCell({ urls, notes }: { urls: string[] | null; notes: string | null }) {
@@ -184,8 +184,7 @@ function canSeeTab(tab: Tab, role?: string | null, department?: string | null): 
     case "products":
     case "sellers":
       return true;
-    case "verifications":
-      return true;  // All admin/staff can see verifications
+
     case "staff":
       return role === "owner";
     case "audit":
@@ -790,14 +789,7 @@ export default function Center() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="verifications" className="gap-1.5 rounded-[10px]">
-              <ShieldCheck className="size-4" /> การยืนยัน
-              {pendingVerifications > 0 && (
-                <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
-                  {pendingVerifications}
-                </span>
-              )}
-            </TabsTrigger>
+
             {isOwner && (
               <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
                 <Users className="size-4" /> พนักงาน
@@ -833,6 +825,40 @@ export default function Center() {
                 </div>
               ))}
             </div>
+
+            {/* Action Required */}
+            {(pendingProducts > 0 || pendingSellers > 0 || pendingVerifications > 0) && (
+              <Card className="mt-6 border-amber-200 bg-amber-50/50 shadow-none">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <AlertTriangle className="size-4 text-amber-500" />
+                    ต้องดำเนินการ
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {pendingProducts > 0 && (
+                      <button type="button" onClick={() => setTab("products")} className="flex w-full items-center justify-between rounded-xl bg-white p-3 text-left transition-colors hover:border-amber-300 border border-amber-200">
+                        <span className="text-sm text-slate-700">สินค้ารอตรวจสอบ</span>
+                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">{pendingProducts}</span>
+                      </button>
+                    )}
+                    {pendingSellers > 0 && (
+                      <button type="button" onClick={() => setTab("sellers")} className="flex w-full items-center justify-between rounded-xl bg-white p-3 text-left transition-colors hover:border-amber-300 border border-amber-200">
+                        <span className="text-sm text-slate-700">ใบสมัครพ่อค้ารอตรวจสอบ</span>
+                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">{pendingSellers}</span>
+                      </button>
+                    )}
+                    {pendingVerifications > 0 && (
+                      <button type="button" onClick={() => setTab("products")} className="flex w-full items-center justify-between rounded-xl bg-white p-3 text-left transition-colors hover:border-amber-300 border border-amber-200">
+                        <span className="text-sm text-slate-700">การยืนยันรอตรวจสอบ</span>
+                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">{pendingVerifications}</span>
+                      </button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card className="mt-6 border-slate-200 shadow-none">
               <CardHeader>
@@ -1439,155 +1465,25 @@ export default function Center() {
             </DialogContent>
           </Dialog>
 
-          {/* ============ Verifications — seller + product (two independent systems) ============ */}
-          <TabsContent value="verifications" className="mt-6">
-            <div className="mb-4 flex items-start gap-2 text-sm text-slate-500">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#10B981]" />
-              <p>
-                การยืนยันร้านค้าและสินค้าเป็นสองระบบแยกกัน — สินค้าจะได้รับ V✓ เมื่อ
-                <span className="font-medium text-slate-700"> ทั้งร้านค้าและสินค้า</span> ผ่านการยืนยันแล้วเท่านั้น
-                เอกสารหลักฐานเห็นได้เฉพาะทีมงาน
-              </p>
-            </div>
-
-            {/* Seller verification queue */}
-            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Store className="size-4 text-slate-400" /> การยืนยันร้านค้า (Seller Verification)
-            </h3>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-              <Table className="min-w-[720px]">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-5 text-slate-400">ร้านค้า</TableHead>
-                    <TableHead className="text-slate-400">ประเภท</TableHead>
-                    <TableHead className="text-slate-400">หลักฐาน</TableHead>
-                    <TableHead className="text-slate-400">สถานะ</TableHead>
-                    <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(verificationRows?.sellers ?? []).map((v) => (
-                    <TableRow key={v.id} className="hover:bg-slate-50/60">
-                      <TableCell className="pl-5 font-medium text-slate-900">{v.shop_name ?? "—"}</TableCell>
-                      <TableCell className="text-sm text-slate-600">{v.verification_type ?? "identity"}</TableCell>
-                      <TableCell className="max-w-[280px]">
-                        <EvidenceCell urls={v.evidence_urls} notes={v.evidence_notes} />
-                      </TableCell>
-                      <TableCell><VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} /></TableCell>
-                      <TableCell className="pr-5">
-                        <VerificationActions
-                          row={v}
-                          busy={modBusy}
-                          onApprove={() => void handleVerificationAction("seller", v, "approve")}
-                          onReason={(action) => { setActingVerification({ kind: "seller", row: v, action }); setRejectReason(""); }}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {(verificationRows?.sellers ?? []).length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-400">
-                        ไม่มีคำขอยืนยันร้านค้า
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Product verification queue */}
-            <h3 className="mb-2 mt-6 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Package className="size-4 text-slate-400" /> การยืนยันสินค้า (Product Verification)
-            </h3>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-              <Table className="min-w-[720px]">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-5 text-slate-400">สินค้า</TableHead>
-                    <TableHead className="text-slate-400">ร้านค้า</TableHead>
-                    <TableHead className="text-slate-400">หลักฐาน</TableHead>
-                    <TableHead className="text-slate-400">สถานะ</TableHead>
-                    <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(verificationRows?.products ?? []).map((v) => (
-                    <TableRow key={v.id} className="hover:bg-slate-50/60">
-                      <TableCell className="pl-5 font-medium text-slate-900">{v.product_name ?? "—"}</TableCell>
-                      <TableCell className="text-sm text-slate-600">{v.shop_name ?? "—"}</TableCell>
-                      <TableCell className="max-w-[280px]">
-                        <EvidenceCell urls={v.evidence_urls} notes={v.evidence_notes} />
-                      </TableCell>
-                      <TableCell><VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} /></TableCell>
-                      <TableCell className="pr-5">
-                        <VerificationActions
-                          row={v}
-                          busy={modBusy}
-                          onApprove={() => void handleVerificationAction("product", v, "approve")}
-                          onReason={(action) => { setActingVerification({ kind: "product", row: v, action }); setRejectReason(""); }}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {(verificationRows?.products ?? []).length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-400">
-                        ไม่มีคำขอยืนยันสินค้า
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Reject / suspend reason dialog */}
-            <Dialog open={actingVerification !== null} onOpenChange={(open) => !open && setActingVerification(null)}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>
-                    {actingVerification?.action === "suspend" ? "ระงับการยืนยัน?" : "ปฏิเสธการยืนยัน?"}
-                  </DialogTitle>
-                  <DialogDescription>
-                    ระบุเหตุผลเพื่อให้ผู้ขายแก้ไขและยื่นใหม่ได้ — สถานะการยืนยันจะถูกอัปเดตทันที
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-2">
-                  <Label htmlFor="verification-reason">เหตุผล</Label>
-                  <Textarea
-                    id="verification-reason"
-                    rows={3}
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="เช่น เอกสารไม่ชัดเจน / ไม่ตรงกับข้อมูลร้านค้า"
-                  />
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setActingVerification(null)} disabled={modBusy}>
-                    ยกเลิก
-                  </Button>
-                  <Button
-                    className="gap-1.5 bg-rose-600 text-white hover:bg-rose-700"
-                    disabled={modBusy || !rejectReason.trim()}
-                    onClick={() => {
-                      if (!actingVerification) return;
-                      void handleVerificationAction(
-                        actingVerification.kind,
-                        actingVerification.row,
-                        actingVerification.action,
-                        rejectReason,
-                      );
-                    }}
-                  >
-                    {modBusy && <Loader2 className="size-4 animate-spin" />}
-                    ยืนยัน
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </TabsContent>
-
           {/* ============ Products — moderation queue (Neon, spec §37) ============ */}
           <TabsContent value="products" className="mt-6">
+            {/* Product sub-tabs: Moderation + Verification */}
+            <Tabs defaultValue="moderation" className="w-full">
+              <TabsList className="mb-4 w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
+                <TabsTrigger value="moderation" className="gap-1.5 rounded-[10px]">
+                  <Package className="size-4" /> สินค้าทั้งหมด
+                </TabsTrigger>
+                <TabsTrigger value="verification" className="gap-1.5 rounded-[10px]">
+                  <ShieldCheck className="size-4" /> การยืนยันสินค้า
+                  {(verificationRows?.products ?? []).filter(v => v.status === "pending").length > 0 && (
+                    <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                      {(verificationRows?.products ?? []).filter(v => v.status === "pending").length}
+                    </span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="moderation">
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
               <Package className="size-4 text-[#10B981]" />
               ตรวจสอบสินค้าที่พ่อค้าส่งมา — อนุมัติแล้วจะแสดงที่หน้าร้าน velshop
@@ -1742,10 +1638,80 @@ export default function Center() {
                 </div>
               ))}
             </div>
+              </TabsContent>
+
+              {/* Product Verification Queue */}
+              <TabsContent value="verification">
+                <div className="mb-4 flex items-start gap-2 text-sm text-slate-500">
+                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#10B981]" />
+                  <p>
+                    การยืนยันสินค้าเป็นระบบแยกจากการอนุมัติสินค้า — สินค้าจะได้รับ V✓ เมื่อ
+                    <span className="font-medium text-slate-700"> ทั้งร้านค้าและสินค้า</span> ผ่านการยืนยันแล้วเท่านั้น
+                  </p>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                  <Table className="min-w-[720px]">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="pl-5 text-slate-400">สินค้า</TableHead>
+                        <TableHead className="text-slate-400">ร้านค้า</TableHead>
+                        <TableHead className="text-slate-400">หลักฐาน</TableHead>
+                        <TableHead className="text-slate-400">สถานะ</TableHead>
+                        <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(verificationRows?.products ?? []).map((v) => (
+                        <TableRow key={v.id} className="hover:bg-slate-50/60">
+                          <TableCell className="pl-5 font-medium text-slate-900">{v.product_name ?? "—"}</TableCell>
+                          <TableCell className="text-sm text-slate-600">{v.shop_name ?? "—"}</TableCell>
+                          <TableCell className="max-w-[280px]">
+                            <EvidenceCell urls={v.evidence_urls} notes={v.evidence_notes} />
+                          </TableCell>
+                          <TableCell><VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} /></TableCell>
+                          <TableCell className="pr-5">
+                            <VerificationActions
+                              row={v}
+                              busy={modBusy}
+                              onApprove={() => void handleVerificationAction("product", v, "approve")}
+                              onReason={(action) => { setActingVerification({ kind: "product", row: v, action }); setRejectReason(""); }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {(verificationRows?.products ?? []).length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-400">
+                            ไม่มีคำขอยืนยันสินค้า
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           {/* ============ Sellers — application review (Neon, spec §36) ============ */}
           <TabsContent value="sellers" className="mt-6">
+            {/* Seller sub-tabs: Applications + Verification */}
+            <Tabs defaultValue="applications" className="w-full">
+              <TabsList className="mb-4 w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
+                <TabsTrigger value="applications" className="gap-1.5 rounded-[10px]">
+                  <Store className="size-4" /> พ่อค้าทั้งหมด
+                </TabsTrigger>
+                <TabsTrigger value="verification" className="gap-1.5 rounded-[10px]">
+                  <ShieldCheck className="size-4" /> การยืนยันร้านค้า
+                  {(verificationRows?.sellers ?? []).filter(v => v.status === "pending").length > 0 && (
+                    <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                      {(verificationRows?.sellers ?? []).filter(v => v.status === "pending").length}
+                    </span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="applications">
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
               <Store className="size-4 text-[#10B981]" />
               ตรวจสอบใบสมัครพ่อค้า — อนุมัติแล้วพ่อค้าจะใช้ velseller ได้
@@ -1877,6 +1843,59 @@ export default function Center() {
                 );
               })}
             </div>
+              </TabsContent>
+
+              {/* Seller Verification Queue */}
+              <TabsContent value="verification">
+                <div className="mb-4 flex items-start gap-2 text-sm text-slate-500">
+                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#10B981]" />
+                  <p>
+                    การยืนยันร้านค้าตรวจสอบตัวตนของร้าน — สินค้าจะได้รับ V✓ เมื่อ
+                    <span className="font-medium text-slate-700"> ทั้งร้านค้าและสินค้า</span> ผ่านการยืนยันแล้วเท่านั้น
+                  </p>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                  <Table className="min-w-[720px]">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="pl-5 text-slate-400">ร้านค้า</TableHead>
+                        <TableHead className="text-slate-400">ประเภท</TableHead>
+                        <TableHead className="text-slate-400">หลักฐาน</TableHead>
+                        <TableHead className="text-slate-400">สถานะ</TableHead>
+                        <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(verificationRows?.sellers ?? []).map((v) => (
+                        <TableRow key={v.id} className="hover:bg-slate-50/60">
+                          <TableCell className="pl-5 font-medium text-slate-900">{v.shop_name ?? "—"}</TableCell>
+                          <TableCell className="text-sm text-slate-600">{v.verification_type ?? "identity"}</TableCell>
+                          <TableCell className="max-w-[280px]">
+                            <EvidenceCell urls={v.evidence_urls} notes={v.evidence_notes} />
+                          </TableCell>
+                          <TableCell><VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} /></TableCell>
+                          <TableCell className="pr-5">
+                            <VerificationActions
+                              row={v}
+                              busy={modBusy}
+                              onApprove={() => void handleVerificationAction("seller", v, "approve")}
+                              onReason={(action) => { setActingVerification({ kind: "seller", row: v, action }); setRejectReason(""); }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {(verificationRows?.sellers ?? []).length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-400">
+                            ไม่มีคำขอยืนยันร้านค้า
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           {/* ============ Staff (owner only) ============ */}

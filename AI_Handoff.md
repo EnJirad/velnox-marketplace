@@ -3239,3 +3239,61 @@ The workflow applies each migration with `psql --single-transaction`, so the `AL
 - velnox `tsc --noEmit` ✅ PASS
 - `bun run i18n:check` 1132×3 ✅ PASS (8 new keys × 3 locales)
 - Live browser E2E not run — verified via code trace + typecheck
+
+---
+
+### 2026-09-13 — VelCenter Control Center Overhaul — Navigation Restructure + Action Required + Product/Seller Verification Consolidation
+
+**Scope:** VelCenter admin panel navigation, Overview, Products tab, Sellers tab. No database changes, no backend changes.
+
+**What was changed:**
+
+1. **Removed standalone "Verifications" navigation tab** — verification functionality is now consolidated into Products and Sellers tabs as sub-tabs. The tab type, permission check, and desktop/mobile nav triggers were updated.
+
+2. **Enhanced Overview with "Action Required" section** — Added an amber-highlighted card showing pending items that need admin attention:
+   - Product moderation waiting (links to Products tab)
+   - Seller applications waiting (links to Sellers tab)
+   - Verification waiting (links to Products tab)
+   - Only shown when there are actual pending items
+
+3. **Enhanced Products tab** — Added sub-tabs:
+   - "สินค้าทั้งหมด" (All Products) — existing product moderation queue
+   - "การยืนยันสินค้า" (Product Verification) — verification queue with approve/reject/suspend actions, evidence display, and status labels
+
+4. **Enhanced Sellers tab** — Added sub-tabs:
+   - "พ่อค้าทั้งหมด" (All Sellers) — existing seller application queue
+   - "การยืนยันร้านค้า" (Seller Verification) — verification queue with approve/reject/suspend actions, evidence display, and status labels
+
+**What was NOT changed:**
+- Backend APIs (all existing verification endpoints remain the same)
+- Database (no schema changes)
+- Verification data loading (still fetched on mount for overview counts)
+- Verification action handlers (still functional in Products/Sellers sub-tabs)
+- Other tabs (Orders, Intelligence, Staff, Audit, Settings) unchanged
+
+**Verification behavior:**
+- Product V eligibility: unchanged — requires BOTH seller AND product verified
+- Seller verification actions: approve/reject/suspend with reason dialog
+- Product verification actions: approve/reject/suspend with reason dialog
+- Evidence display: admin-only, via EvidenceCell component
+
+**Verification:**
+- velcenter `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1143×3 ✅ PASS
+- `git diff --check` ✅ PASS
+- Backend tests: 167 pass / 26 skip / 2 pre-existing DB-state failures / 0 new failures
+- Live browser E2E not run — verified via code trace + typecheck
+
+**Database changed:** NO
+**R2 changes:** NO
+**Security changes:** NO (existing backend authorization unchanged)
+
+**Limitations:**
+- VelCenter uses hardcoded Thai text (no i18n) — new UI follows same pattern for consistency
+- Product verification sub-tab shows all verification records (pending + verified) — no status filter UI yet
+- Seller verification sub-tab shows all verification records — no status filter yet
+- No product detail review screen (evidence viewer) — shows evidence URLs only
+- No seller detail review screen — shows verification records in table format
