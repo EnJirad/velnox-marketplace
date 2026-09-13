@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 
 CREATE TABLE IF NOT EXISTS auth_identities (
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS auth_identities (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (provider, provider_id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_auth_identities_provider ON auth_identities (provider, provider_id);
 CREATE INDEX IF NOT EXISTS idx_auth_identities_email ON auth_identities (email);
 
@@ -58,6 +60,7 @@ CREATE TABLE IF NOT EXISTS addresses (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses (user_id);
 
 CREATE TABLE IF NOT EXISTS carts (
@@ -68,19 +71,6 @@ CREATE TABLE IF NOT EXISTS carts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS cart_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL,
-  variant_id UUID,
-  quantity INTEGER NOT NULL DEFAULT 1,
-  price NUMERIC(12, 2) NOT NULL,
-  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))
-);
-CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items (cart_id);
-CREATE INDEX IF NOT EXISTS idx_cart_items_variant ON cart_items (variant_id);
-
 CREATE TABLE IF NOT EXISTS media (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   url TEXT NOT NULL,
@@ -90,6 +80,7 @@ CREATE TABLE IF NOT EXISTS media (
   uploaded_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_media_key ON media (key);
 CREATE INDEX IF NOT EXISTS idx_media_owner ON media (uploaded_by);
 
@@ -108,23 +99,28 @@ CREATE TABLE IF NOT EXISTS categories (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug);
 
 CREATE TABLE IF NOT EXISTS sellers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'suspended')),
-  verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'approved', 'rejected', 'suspended')),
+  verification_status TEXT NOT NULL DEFAULT 'unverified'
+    CHECK (verification_status IN ('unverified', 'pending', 'verified', 'rejected', 'suspended')),
   verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_sellers_user ON sellers (user_id);
 
 CREATE TABLE IF NOT EXISTS seller_verifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'unverified' CHECK (status IN ('unverified','pending','verified','rejected','suspended')),
+  status TEXT NOT NULL DEFAULT 'unverified'
+    CHECK (status IN ('unverified', 'pending', 'verified', 'rejected', 'suspended')),
   verification_type TEXT NOT NULL DEFAULT 'identity',
   evidence_urls JSONB DEFAULT '[]',
   submitted_at TIMESTAMPTZ,
@@ -135,8 +131,11 @@ CREATE TABLE IF NOT EXISTS seller_verifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_seller_verifications_seller ON seller_verifications (seller_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_verifications_pending ON seller_verifications (seller_id) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_verifications_pending
+  ON seller_verifications (seller_id)
+  WHERE status = 'pending';
 
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -151,6 +150,7 @@ CREATE TABLE IF NOT EXISTS shops (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_shops_slug ON shops (slug);
 CREATE INDEX IF NOT EXISTS idx_shops_seller ON shops (seller_id);
 
@@ -180,12 +180,16 @@ CREATE TABLE IF NOT EXISTS products (
   vrepeat_monthly_price NUMERIC(12, 2),
   vrepeat_weekly_qty INTEGER,
   vrepeat_monthly_qty INTEGER,
+  vrepeat_min_qty INTEGER,
+  vrepeat_max_qty INTEGER,
   featured_variant_id UUID,
-  verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
+  verification_status TEXT NOT NULL DEFAULT 'unverified'
+    CHECK (verification_status IN ('unverified', 'pending', 'verified', 'rejected', 'suspended')),
   verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_products_shop ON products (shop_id);
 CREATE INDEX IF NOT EXISTS idx_products_shop_status ON products (shop_id, status);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products (category_id);
@@ -194,7 +198,6 @@ CREATE INDEX IF NOT EXISTS idx_products_featured ON products (featured) WHERE fe
 CREATE INDEX IF NOT EXISTS idx_products_slug ON products (slug);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products (price);
 CREATE INDEX IF NOT EXISTS idx_products_vrepeat ON products (vrepeat_enabled) WHERE vrepeat_enabled = TRUE;
-CREATE INDEX IF NOT EXISTS idx_products_featured_variant ON products (featured_variant_id) WHERE featured_variant_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_products_verification ON products (verification_status);
 
 CREATE TABLE IF NOT EXISTS product_variants (
@@ -206,14 +209,41 @@ CREATE TABLE IF NOT EXISTS product_variants (
   compare_at_price NUMERIC(12, 2),
   discount_percent NUMERIC(5, 2),
   stock INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'archived')),
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'inactive', 'archived')),
   options JSONB DEFAULT '{}',
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_variants_status ON product_variants (product_id, status);
+
+ALTER TABLE products
+  ADD CONSTRAINT products_featured_variant_id_fkey
+  FOREIGN KEY (featured_variant_id)
+  REFERENCES product_variants(id)
+  ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS cart_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  price NUMERIC(12, 2) NOT NULL,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items (cart_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_variant ON cart_items (variant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_items_unique
+  ON cart_items (
+    cart_id,
+    product_id,
+    COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  );
 
 CREATE TABLE IF NOT EXISTS product_images (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -225,6 +255,7 @@ CREATE TABLE IF NOT EXISTS product_images (
   variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_images_type ON product_images (product_id, image_type);
 CREATE INDEX IF NOT EXISTS idx_product_images_variant ON product_images (variant_id) WHERE variant_id IS NOT NULL;
@@ -239,13 +270,15 @@ CREATE TABLE IF NOT EXISTS product_variant_images (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_variant_images_variant ON product_variant_images (variant_id);
 CREATE INDEX IF NOT EXISTS idx_variant_images_product ON product_variant_images (product_id);
 
 CREATE TABLE IF NOT EXISTS product_verifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'unverified' CHECK (status IN ('unverified','pending','verified','rejected','suspended')),
+  status TEXT NOT NULL DEFAULT 'unverified'
+    CHECK (status IN ('unverified', 'pending', 'verified', 'rejected', 'suspended')),
   verification_type TEXT NOT NULL DEFAULT 'standard',
   evidence_urls JSONB DEFAULT '[]',
   evidence_notes TEXT,
@@ -258,8 +291,11 @@ CREATE TABLE IF NOT EXISTS product_verifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_product_verifications_product ON product_verifications (product_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_product_verifications_pending ON product_verifications (product_id) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_verifications_pending
+  ON product_verifications (product_id)
+  WHERE status = 'pending';
 
 CREATE TABLE IF NOT EXISTS inventory (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -288,6 +324,7 @@ CREATE TABLE IF NOT EXISTS seller_analytics (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (seller_id, date)
 );
+
 CREATE INDEX IF NOT EXISTS idx_seller_analytics_seller_date ON seller_analytics (seller_id, date);
 
 CREATE TABLE IF NOT EXISTS seller_goals (
@@ -304,6 +341,7 @@ CREATE TABLE IF NOT EXISTS seller_goals (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_seller_goals_seller ON seller_goals (seller_id);
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -321,34 +359,39 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_address JSONB,
   notes TEXT,
   inventory_released BOOLEAN NOT NULL DEFAULT FALSE,
+  velrepeat_run_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_number_unique ON orders (order_number) WHERE order_number IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_number_unique
+  ON orders (order_number)
+  WHERE order_number IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_orders_unreleased ON orders (id) WHERE inventory_released = FALSE;
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_shop ON orders (shop_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
-CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_run ON orders (velrepeat_run_id) WHERE velrepeat_run_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS checkout_requests (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
-    request_key TEXT NOT NULL,
-    order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
-    response JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (user_id, request_key)
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  request_key TEXT NOT NULL,
+  order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+  response JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, request_key)
 );
+
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_order ON checkout_requests (order_id);
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_user ON checkout_requests (user_id);
 
 CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL,
+  product_id UUID NOT NULL REFERENCES products(id),
   shop_id UUID REFERENCES shops(id),
-  variant_id UUID,
+  variant_id UUID REFERENCES product_variants(id),
   product_name_snapshot TEXT NOT NULL DEFAULT '',
   variant_name_snapshot TEXT,
   image_url_snapshot TEXT,
@@ -358,6 +401,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_shop ON order_items (shop_id);
 
@@ -371,6 +415,7 @@ CREATE TABLE IF NOT EXISTS shipments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments (order_id);
 
 CREATE TABLE IF NOT EXISTS tracking_events (
@@ -381,6 +426,7 @@ CREATE TABLE IF NOT EXISTS tracking_events (
   location TEXT,
   occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_tracking_events_shipment ON tracking_events (shipment_id, occurred_at);
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -398,6 +444,7 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_session ON payments (provider_checkout_session_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_payment ON payments (provider_payment_id);
@@ -411,6 +458,7 @@ CREATE TABLE IF NOT EXISTS payment_events (
   payload JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_payment_events_provider ON payment_events (provider);
 CREATE INDEX IF NOT EXISTS idx_payment_events_type ON payment_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_payment_events_processed ON payment_events (processed_at);
@@ -445,7 +493,7 @@ CREATE TABLE IF NOT EXISTS settlements (
 CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id),
-  product_id UUID,
+  product_id UUID REFERENCES products(id),
   seller_id UUID REFERENCES sellers(id),
   shop_id UUID REFERENCES shops(id),
   frequency TEXT NOT NULL DEFAULT 'monthly',
@@ -455,8 +503,11 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_next_due ON subscriptions (next_due_date) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_subscriptions_next_due
+  ON subscriptions (next_due_date)
+  WHERE status = 'active';
 
 CREATE TABLE IF NOT EXISTS departments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -469,7 +520,8 @@ CREATE TABLE IF NOT EXISTS employees (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
-  role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'manager', 'staff')),
+  role TEXT NOT NULL DEFAULT 'staff'
+    CHECK (role IN ('admin', 'manager', 'staff')),
   employee_id TEXT,
   permissions JSONB NOT NULL DEFAULT '[]',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -502,6 +554,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   ip_address TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs (user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs (entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs (created_at);
@@ -528,9 +581,12 @@ CREATE TABLE IF NOT EXISTS notifications (
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications (user_id, read);
-CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id, read) WHERE read = FALSE;
+CREATE INDEX IF NOT EXISTS idx_notifications_unread
+  ON notifications (user_id, read)
+  WHERE read = FALSE;
 
 CREATE TABLE IF NOT EXISTS customer_wishlist (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -539,6 +595,7 @@ CREATE TABLE IF NOT EXISTS customer_wishlist (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, product_id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_customer_wishlist_user ON customer_wishlist (user_id);
 CREATE INDEX IF NOT EXISTS idx_customer_wishlist_product ON customer_wishlist (product_id);
 
@@ -553,6 +610,7 @@ CREATE TABLE IF NOT EXISTS behavioral_events (
   occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_behavioral_user ON behavioral_events (user_id);
 CREATE INDEX IF NOT EXISTS idx_behavioral_session ON behavioral_events (session_id);
 CREATE INDEX IF NOT EXISTS idx_behavioral_type ON behavioral_events (event_type);
@@ -563,12 +621,13 @@ CREATE TABLE IF NOT EXISTS customer_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   event_type TEXT NOT NULL,
-  product_id UUID,
+  product_id UUID REFERENCES products(id),
   category_id TEXT,
-  shop_id UUID,
+  shop_id UUID REFERENCES shops(id),
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_customer_events_user ON customer_events (user_id);
 CREATE INDEX IF NOT EXISTS idx_customer_events_type ON customer_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_customer_events_product ON customer_events (product_id);
@@ -582,6 +641,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by UUID REFERENCES users(id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_platform_settings_key ON platform_settings (key);
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -597,6 +657,7 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
   revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ NOT NULL
 );
+
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON revoked_tokens (token_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens (expires_at);
@@ -605,7 +666,7 @@ CREATE TABLE IF NOT EXISTS vrepeat_packages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   product_id UUID NOT NULL REFERENCES products(id),
-  variant_id UUID,
+  variant_id UUID REFERENCES product_variants(id),
   shop_id UUID NOT NULL REFERENCES shops(id),
   seller_id UUID NOT NULL REFERENCES sellers(id),
   package_type TEXT NOT NULL CHECK (package_type IN ('weekly', 'monthly', 'custom')),
@@ -621,11 +682,12 @@ CREATE TABLE IF NOT EXISTS vrepeat_packages (
   interval_days INTEGER NOT NULL DEFAULT 7,
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
-  payment_id UUID,
+  payment_id UUID REFERENCES payments(id),
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_user ON vrepeat_packages (user_id);
 CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_product ON vrepeat_packages (product_id);
 CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_shop ON vrepeat_packages (shop_id);
@@ -650,9 +712,12 @@ CREATE TABLE IF NOT EXISTS vrepeat_deliveries (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (package_id, delivery_number)
 );
+
 CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_package ON vrepeat_deliveries (package_id);
 CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_status ON vrepeat_deliveries (status);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_scheduled ON vrepeat_deliveries (scheduled_at) WHERE status = 'scheduled';
+CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_scheduled
+  ON vrepeat_deliveries (scheduled_at)
+  WHERE status = 'scheduled';
 CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_order ON vrepeat_deliveries (order_id);
 
 CREATE TABLE IF NOT EXISTS product_reviews (
@@ -660,16 +725,18 @@ CREATE TABLE IF NOT EXISTS product_reviews (
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   shop_id UUID REFERENCES shops(id),
-  order_id UUID,
+  order_id UUID REFERENCES orders(id),
   rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
   title TEXT,
   comment TEXT,
   images JSONB DEFAULT '[]',
-  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'rejected')),
+  status TEXT NOT NULL DEFAULT 'approved'
+    CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (product_id, user_id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_user ON product_reviews (user_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_status ON product_reviews (product_id, status);
@@ -678,12 +745,14 @@ CREATE TABLE IF NOT EXISTS product_option_groups (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  display_type TEXT NOT NULL DEFAULT 'text' CHECK (display_type IN ('text', 'color', 'image', 'button')),
+  display_type TEXT NOT NULL DEFAULT 'text'
+    CHECK (display_type IN ('text', 'color', 'image', 'button')),
   required BOOLEAN NOT NULL DEFAULT TRUE,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_option_groups_product ON product_option_groups (product_id);
 
 CREATE TABLE IF NOT EXISTS product_option_values (
@@ -692,10 +761,11 @@ CREATE TABLE IF NOT EXISTS product_option_values (
   value TEXT NOT NULL,
   label TEXT NOT NULL DEFAULT '',
   image_url TEXT,
-  is_enabled BOOLEAN NOT NULL DEFAULT true,
+  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_option_values_group ON product_option_values (option_group_id);
 
 CREATE TABLE IF NOT EXISTS option_value_images (
@@ -706,6 +776,7 @@ CREATE TABLE IF NOT EXISTS option_value_images (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_option_value_images_value ON option_value_images (option_value_id);
 
 CREATE TABLE IF NOT EXISTS product_variant_values (
@@ -714,6 +785,7 @@ CREATE TABLE IF NOT EXISTS product_variant_values (
   option_value_id UUID NOT NULL REFERENCES product_option_values(id) ON DELETE CASCADE,
   UNIQUE (variant_id, option_value_id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_variant_values_variant ON product_variant_values (variant_id);
 CREATE INDEX IF NOT EXISTS idx_variant_values_option_value ON product_variant_values (option_value_id);
 
@@ -725,6 +797,7 @@ CREATE TABLE IF NOT EXISTS product_attributes (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_product_attributes_product ON product_attributes (product_id);
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -735,11 +808,13 @@ CREATE TABLE IF NOT EXISTS conversations (
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
   last_message TEXT,
   last_message_at TIMESTAMPTZ,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'archived')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (customer_id, shop_id)
 );
+
 CREATE INDEX IF NOT EXISTS idx_conversations_customer ON conversations (customer_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_seller ON conversations (seller_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_shop ON conversations (shop_id);
@@ -748,23 +823,31 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller')),
+  sender_role TEXT NOT NULL DEFAULT 'customer'
+    CHECK (sender_role IN ('customer', 'seller')),
   body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
-  status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
+  status TEXT NOT NULL DEFAULT 'sent'
+    CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages (conversation_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON chat_messages (conversation_id, sender_id, read_at) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_chat_messages_unread
+  ON chat_messages (conversation_id, sender_id, read_at)
+  WHERE read_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS velrepeat_plans (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'active'
-    CHECK (status IN ('draft', 'active', 'paused', 'processing',
-                      'payment_failed', 'out_of_stock', 'item_unavailable',
-                      'price_changed', 'cancelled', 'completed')),
-  frequency_type TEXT NOT NULL CHECK (frequency_type IN ('days', 'weeks', 'months')),
+    CHECK (status IN (
+      'draft', 'active', 'paused', 'processing',
+      'payment_failed', 'out_of_stock', 'item_unavailable',
+      'price_changed', 'cancelled', 'completed'
+    )),
+  frequency_type TEXT NOT NULL
+    CHECK (frequency_type IN ('days', 'weeks', 'months')),
   interval_value INTEGER NOT NULL DEFAULT 30 CHECK (interval_value > 0),
   next_run_at TIMESTAMPTZ NOT NULL,
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -780,10 +863,12 @@ CREATE TABLE IF NOT EXISTS velrepeat_plans (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user ON velrepeat_plans (user_id);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user_status ON velrepeat_plans (user_id, status);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_due ON velrepeat_plans (status, next_run_at)
-  WHERE status IN ('active');
+CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_due
+  ON velrepeat_plans (status, next_run_at)
+  WHERE status = 'active';
 
 CREATE TABLE IF NOT EXISTS velrepeat_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -796,13 +881,21 @@ CREATE TABLE IF NOT EXISTS velrepeat_items (
   unit_price NUMERIC(12, 2) NOT NULL,
   currency TEXT NOT NULL DEFAULT 'THB',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (plan_id, product_id, variant_id)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_velrepeat_items_plan ON velrepeat_items (plan_id);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_items_product ON velrepeat_items (product_id);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_items_variant ON velrepeat_items (variant_id);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_items_shop ON velrepeat_items (shop_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_items_unique_variant
+  ON velrepeat_items (plan_id, product_id, variant_id)
+  WHERE variant_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_items_unique_no_variant
+  ON velrepeat_items (plan_id, product_id)
+  WHERE variant_id IS NULL;
 
 CREATE TABLE IF NOT EXISTS velrepeat_runs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -811,9 +904,11 @@ CREATE TABLE IF NOT EXISTS velrepeat_runs (
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'processing'
-    CHECK (status IN ('processing', 'success', 'payment_failed',
-                      'out_of_stock', 'item_unavailable', 'price_changed',
-                      'failed', 'cancelled')),
+    CHECK (status IN (
+      'processing', 'success', 'payment_failed',
+      'out_of_stock', 'item_unavailable', 'price_changed',
+      'failed', 'cancelled'
+    )),
   order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
   error_code TEXT,
   error_message TEXT,
@@ -821,10 +916,21 @@ CREATE TABLE IF NOT EXISTS velrepeat_runs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (plan_id, scheduled_for)
 );
+
 CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_plan ON velrepeat_runs (plan_id);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_status ON velrepeat_runs (status);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_scheduled ON velrepeat_runs (scheduled_for);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_order ON velrepeat_runs (order_id) WHERE order_id IS NOT NULL;
+
+ALTER TABLE orders
+  ADD CONSTRAINT orders_velrepeat_run_id_fkey
+  FOREIGN KEY (velrepeat_run_id)
+  REFERENCES velrepeat_runs(id)
+  ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_run
+  ON orders (velrepeat_run_id)
+  WHERE velrepeat_run_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS velrepeat_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -834,26 +940,11 @@ CREATE TABLE IF NOT EXISTS velrepeat_events (
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_velrepeat_events_plan ON velrepeat_events (plan_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_events_type ON velrepeat_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_events_run ON velrepeat_events (run_id) WHERE run_id IS NOT NULL;
 
-INSERT INTO platform_settings (key, value, description) VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto') ON CONFLICT (key) DO NOTHING;
-
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS velrepeat_run_id UUID REFERENCES velrepeat_runs(id) ON DELETE SET NULL;
-ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_min_qty INTEGER;
-ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_max_qty INTEGER;
-ALTER TABLE orders
-  ADD COLUMN IF NOT EXISTS inventory_released BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE velrepeat_plans DROP CONSTRAINT IF EXISTS velrepeat_plans_status_check;
-ALTER TABLE velrepeat_plans ADD CONSTRAINT velrepeat_plans_status_check
-  CHECK (status IN (
-    'draft', 'active', 'paused', 'processing',
-    'payment_failed', 'out_of_stock', 'item_unavailable',
-    'price_changed', 'cancelled', 'completed'
-  ));
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'products_featured_variant_id_fkey') THEN
-    ALTER TABLE products ADD CONSTRAINT products_featured_variant_id_fkey FOREIGN KEY (featured_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL;
-  END IF;
-END $$;
+INSERT INTO platform_settings (key, value, description)
+VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto')
+ON CONFLICT (key) DO NOTHING;
