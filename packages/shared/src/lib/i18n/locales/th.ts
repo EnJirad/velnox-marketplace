@@ -1288,6 +1288,15 @@ export const th = {
     productVerificationSubmitted: "ส่งคำขอยืนยันสินค้าแล้ว — รอทีมงานตรวจสอบ",
     sellerVerificationSeparateNote: "การยืนยันร้านค้าตรวจสอบตัวตนของร้าน — ไม่ได้ยืนยันสินค้าอัตโนมัติ",
     productVerificationSeparateNote: "การยืนยันสินค้าตรวจสอบสินค้าชิ้นนี้โดยเฉพาะ — V✓ ต้องมีทั้งร้านค้าและสินค้าที่ผ่านการยืนยัน",
+    // V Info UI
+    vInfoTitle: "V — สินค้าผ่านการตรวจสอบ",
+    vInfoDesc: "เครื่องหมาย V แสดงว่าสินค้านี้ผ่านกระบวนการตรวจสอบตามเกณฑ์ของ Velnox",
+    vInfoCheckProduct: "ข้อมูลสินค้าได้รับการตรวจสอบ",
+    vInfoCheckEvidence: "หลักฐานประกอบสินค้าได้รับการตรวจสอบ",
+    vInfoCheckSeller: "ร้านค้าได้รับการยืนยันตัวตน",
+    vInfoLastChecked: "ตรวจสอบล่าสุด: {date}",
+    vInfoDisclaimer: "V ไม่ใช่การรับประกันจากผู้ผลิตหรือแบรนด์ แต่เป็นเครื่องหมายว่าสินค้านี้ผ่านกระบวนการตรวจสอบของ Velnox",
+    vInfoAriaLabel: "ข้อมูลการตรวจสอบสินค้า",
   },
 
 // __APPEND__

@@ -1287,6 +1287,15 @@ export const en: Dict = {
     productVerificationSubmitted: "Product verification submitted — the team will review it",
     sellerVerificationSeparateNote: "Seller verification checks the shop's identity — it does not verify products automatically.",
     productVerificationSeparateNote: "Product verification reviews this specific product — V✓ requires both the shop and the product to be verified.",
+    // V Info UI
+    vInfoTitle: "V \u2014 Verified Product",
+    vInfoDesc: "The V mark indicates that this product has passed Velnox's verification process",
+    vInfoCheckProduct: "Product information verified",
+    vInfoCheckEvidence: "Product evidence verified",
+    vInfoCheckSeller: "Seller identity verified",
+    vInfoLastChecked: "Last verified: {date}",
+    vInfoDisclaimer: "V is not a warranty from the manufacturer or brand. It indicates the product has passed Velnox's verification process.",
+    vInfoAriaLabel: "Product verification information",
   },
 
 // __APPEND__

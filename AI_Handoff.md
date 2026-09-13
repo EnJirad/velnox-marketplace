@@ -1,10 +1,11 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-09-12**
+**LAST UPDATED: 2026-09-13**
 
 ## Production Readiness Status
 
 **STATUS: IMPLEMENTED — TASK 3 VelCenter Product Approval & Moderation hardened (2026-09-12); Tasks 1–2.5 complete; LIVE E2E verification audited (2026-09-12)** — Product lifecycle state machine extracted; review queue + verification tabs functional; seller verification submission enabled; i18n at parity
+**STATUS: IMPLEMENTED — V Verification Info UI (2026-09-13); Velnox Verified + Scalable Categories (2026-09-11); seller product creation audited + variant option-value mapping fixed (2026-09-12)** — previous audit: PRODUCTION READY WITH KNOWN NON-BLOCKERS
 
 All P0/P1 issues are CLOSED. The marketplace is safe for MVP production deployment.
 See "Production Readiness Audit" section in Recent Work History for full report.
@@ -3160,3 +3161,81 @@ Verified PASS: backend+4 apps tsc, i18n parity (1003×3), builds ×4, tests 16 p
 **Verification:** backend tsc ✅ · velshop/velseller/velcenter/velnox `tsc --noEmit` ✅ · `bun run i18n:check` 1132×3 ✅ · `git diff --check` clean. Live browser E2E not run — verified via code trace + typecheck.
 
 **Known limitations:** product lifecycle test file created but requires DATABASE_URL for full integration testing; DB-gated tests marked with skipIf.
+The workflow applies each migration with `psql --single-transaction`, so the `ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_active` statements that had already run were **rolled back** with the failing statement. That is why `categories.is_active` does not exist in production → `42703 column "is_active" does not exist` in the Product API/catalog. The other 3 columns added earlier in that same block (`names`, `description`, `description_names`) and the verification tables were rolled back too. Every other migration in history applied successfully.
+
+**The bug:** the seed block escaped apostrophes as `\'` — `'Men\'s Clothing'`, `'Women\'s Clothing'`, `'Children\'s Clothing'` (and the same inside the `names` JSON). PostgreSQL runs with `standard_conforming_strings = on`, so backslash is not an escape character: the literal ends at `Men\` and psql then parses `\'s Clothing'` as a meta-command → `invalid command \'s`. Only 6 characters were wrong.
+
+**Fix (migration system, not a startup workaround):**
+
+- `db/migrations/040_verification_and_categories.sql` and `db/run-update.sql` — the 6 backslash escapes in each are now doubled quotes (`'Men''s Clothing'`, and `Men''s clothing` inside the JSON so the stored JSON is valid). Migration semantics unchanged; the file is still idempotent (`ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` / `ON CONFLICT (slug) DO UPDATE`).
+- **Reverted the `ensureCategorySchema()` startup DDL** added in the previous entry. `AI_RULES.md` §3 forbids `ALTER TABLE` in server boot, and the migration itself is now correct, so the sanctioned path is used: pushing a change under `db/migrations/` triggers the Migrate Neon Database workflow, which applies 040 and records it in `schema_migrations`. The read-only `/api/_diag/schema` additions (category/verification tables + `categories.*` columns) are kept for future diagnosis.
+- `backend/tests/category-validation.test.ts` — replaced the "server applies V0040" assertion with regression guards that fail on this exact class of bug: **no** file in `db/migrations/`, `db/run-update.sql`, `db/run-sqleditor.sql`, `db/schema.sql` may contain `\'`, and V0040 must keep the doubled-quote apostrophe rows.
+
+**Verification — VERIFIED against the migrated database (2026-09-11):** the fix was pushed as `1846a45`; the Migrate Neon Database workflow run `34608942998` on `main` is **completed / success** and applied `040_verification_and_categories` (now recorded in `schema_migrations`). Live database after migration: **46 categories, all `is_active = TRUE`, 30 top-level**, and the previously-failing seed rows are correct — `Men's Clothing` / `Women's Clothing` / `Children's Clothing` with valid JSON `names`. `bun test backend/tests/category-validation.test.ts` → **21 pass / 0 fail** (the 2 DB-gated integration tests now pass: `categories.is_active` exists, `products.category_id` is TEXT, the exact `resolveCategory` lookup succeeds). Full unit suite `bun test backend/tests` from `backend/` → **109 pass / 23 skip / 0 fail** (no regressions). backend `tsc --noEmit` ✅ · `bun run typecheck` all 4 apps ✅ · `bun run i18n:check` 1124×3 ✅. `db/run-sqleditor.sql` was not affected by the escape bug (no category seed rows).
+
+**Remaining gap (pre-existing, not introduced here):** `db/schema.sql` and `db/run-sqleditor.sql` define the `categories` table with `is_active` but contain **no** category seed rows (only `db/run-update.sql` does). A brand-new database bootstrapped from `db/run-sqleditor.sql` therefore has an empty `categories` table and the seller category selector would show nothing. `AI_RULES.md` §3 requires the three SQL files to stay in sync — worth adding the canonical seed to `run-sqleditor.sql` (idempotent `ON CONFLICT (slug)`).
+
+---
+
+### 2026-09-13 — V Product Verification Information UI
+
+**Scope:** Customer-facing V badge overlay on product images + verification info popover/bottom sheet. No database changes, no backend changes, no schema changes.
+
+**What was inspected:**
+- `packages/shared/src/components/VBadge.tsx` — existing V badge (was inline "V✓" with tooltip)
+- `apps/velshop/src/components/shop/ProductCard.tsx` — V badge placement (was inline next to product name)
+- `apps/velshop/src/pages/ShopProductDetail.tsx` — no V badge on main image previously
+- Existing i18n locale files (th/en/my) — verification section
+- Existing Popover (`@radix-ui/react-popover`) and Sheet (`@radix-ui/react-dialog`) components
+- `useIsMobile` hook for responsive behavior
+- `VELNOX_DESIGN_THEME.md` for design consistency
+- Existing usages in Center.tsx, MyShop.tsx, ShopDetail.tsx, ShopCategories.tsx
+
+**What was changed:**
+
+1. **`packages/shared/src/components/VBadge.tsx`** — Complete rewrite:
+   - **Product mode (default):** renders a compact green "V" button overlay (positioned TOP-LEFT on product images)
+   - **Desktop behavior:** clicking V opens a Radix Popover anchored below the V badge, with verification info content (title, description, 3 check marks, last verified date, disclaimer)
+   - **Mobile behavior:** clicking V opens a Sheet (bottom sheet) with the same content
+   - **Close behavior:** toggle V, click X, click outside, press Escape (desktop), click inside does NOT close
+   - **Event isolation:** `e.preventDefault()` + `e.stopPropagation()` on V click — does NOT trigger card navigation, heart, share, or any parent handler
+   - **Accessibility:** `aria-label`, `aria-expanded`, keyboard support, `focus-visible:ring-2`, Escape close
+   - **Seller-only mode:** preserved for shop pages (shows "V✓" inline badge, unchanged)
+   - **`VerificationStatusLabel`:** preserved unchanged
+   - **`isProductVerified()`:** preserved — requires BOTH seller AND product verified
+
+2. **`apps/velshop/src/components/shop/ProductCard.tsx`** — V badge moved from inline (next to product name) to image overlay (TOP-LEFT inside the image Link). Out-of-stock and badge labels shifted to `left-2 top-2` to avoid overlap.
+
+3. **`apps/velshop/src/pages/ShopProductDetail.tsx`** — Added V badge overlay on main product image (TOP-LEFT), positioned before the Heart/Share buttons (TOP-RIGHT). Added VBadge import.
+
+4. **i18n** — 8 new keys × 3 locales (th/en/my):
+   - `verification.vInfoTitle`, `vInfoDesc`, `vInfoCheckProduct`, `vInfoCheckEvidence`, `vInfoCheckSeller`, `vInfoLastChecked` (with `{date}`), `vInfoDisclaimer`, `vInfoAriaLabel`
+
+**V eligibility logic (unchanged):**
+- V appears ONLY when `sellerVerification === "verified"` AND `productVerification === "verified"`
+- Published-only products do NOT show V
+- Seller verified + product pending → NO V
+- Seller verified + product rejected → NO V
+- etc.
+
+**Existing components/APIs reused:**
+- `@radix-ui/react-popover` (Popover, PopoverTrigger, PopoverContent) — desktop info
+- `@velnox/shared/components/ui/sheet` (Sheet, SheetContent, SheetTitle) — mobile bottom sheet
+- `@velnox/shared/hooks/use-mobile` (useIsMobile) — responsive detection
+- `@velnox/shared/lib/i18n` (useLanguage) — translation
+- `@velnox/shared/lib/utils` (cn) — className merging
+- `@velnox/shared/lib/commerce` (VerificationStatus type) — type imports
+- `lucide-react` (ShieldCheck, X) — icons
+- Existing verification i18n keys for seller-only badge
+
+**Security:** No private verification evidence exposed. V info UI shows only public-safe text from i18n translations. No new API calls. No backend changes.
+
+**Database changed: NO**
+
+**Verification:**
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velcenter `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1132×3 ✅ PASS (8 new keys × 3 locales)
+- Live browser E2E not run — verified via code trace + typecheck

@@ -1176,6 +1176,12 @@ export default function ShopProductDetail() {
                   <span className="text-xs font-medium text-slate-400">{(t as any)("productDetail.noImage") ?? "\u0e44\u0e21\u0e48\u0e21\u0e35\u0e23\u0e39\u0e1b\u0e20\u0e32\u0e1e\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32"}</span>
                 </span>
               )}
+              {/* V Badge — TOP-LEFT overlay */}
+              <VBadge
+                productVerification={(product as any).verificationStatus}
+                sellerVerification={(product as any).sellerVerificationStatus}
+                size="md"
+              />
               <button type="button" onClick={handleWishlist} disabled={wishToggling} className={`absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-colors ${wishlisted ? "text-rose-500" : "text-slate-400 hover:text-rose-500"}`} aria-label={t("productDetail.ariaWishlist")}>
                 {wishToggling ? <Loader2 className="size-4 animate-spin" /> : <Heart className={`size-4 ${wishlisted ? "fill-rose-500" : ""}`} />}
               </button>

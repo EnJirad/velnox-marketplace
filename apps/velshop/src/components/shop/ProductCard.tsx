@@ -67,13 +67,19 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             </span>
           );
         })()}
+        {/* V Badge — TOP-LEFT overlay */}
+        <VBadge
+          productVerification={(product as any).verificationStatus}
+          sellerVerification={(product as any).sellerVerificationStatus}
+          size="sm"
+        />
         {outOfStock && (
-          <span className="absolute left-1 top-1 rounded bg-slate-900/70 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+          <span className="absolute left-2 top-2 z-10 rounded bg-slate-900/70 px-1.5 py-0.5 text-[9px] font-semibold text-white">
             {t("product.outOfStock")}
           </span>
         )}
         {badgeLabel && !outOfStock && (
-          <span className="absolute left-1 top-1 rounded bg-[#10B981] px-1.5 py-0.5 text-[9px] font-semibold text-white">
+          <span className="absolute left-2 top-2 z-10 rounded bg-[#10B981] px-1.5 py-0.5 text-[9px] font-semibold text-white">
             {badgeLabel}
           </span>
         )}
@@ -97,19 +103,12 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
       {/* ── Info ── */}
       <div className={`flex flex-1 flex-col ${compact ? "gap-0.5 p-1.5" : "p-3 sm:p-3.5"}`}>
         {/* Product name (navigates to Product Detail) */}
-        <div className="flex items-start gap-1">
-          <Link
-            to={detailUrl}
-            className={`line-clamp-2 min-w-0 flex-1 font-medium leading-snug text-slate-900 hover:text-[#10B981] ${compact ? "text-[12px]" : "text-sm font-semibold leading-5"}`}
-          >
-            {product.name}
-          </Link>
-          <VBadge
-            productVerification={(product as any).verificationStatus}
-            sellerVerification={(product as any).sellerVerificationStatus}
-            size="sm"
-          />
-        </div>
+        <Link
+          to={detailUrl}
+          className={`line-clamp-2 min-w-0 flex-1 font-medium leading-snug text-slate-900 hover:text-[#10B981] ${compact ? "text-[12px]" : "text-sm font-semibold leading-5"}`}
+        >
+          {product.name}
+        </Link>
 
         {/* Price */}
         <div className={`flex items-baseline gap-1.5 ${compact ? "mt-0.5" : "mt-1.5"}`}>
