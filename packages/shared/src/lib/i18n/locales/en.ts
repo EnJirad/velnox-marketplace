@@ -1286,7 +1286,7 @@ export const en: Dict = {
     sellerVerificationSubmitted: "Seller verification submitted — the team will review it",
     productVerificationSubmitted: "Product verification submitted — the team will review it",
     sellerVerificationSeparateNote: "Seller verification checks the shop's identity — it does not verify products automatically.",
-    productVerificationSeparateNote: "Product verification reviews this specific product — V✓ requires both the shop and the product to be verified.",
+    productVerificationSeparateNote: "Product verification reviews this specific product — V requires both the shop and the product to be verified.",
     // V Info UI
     vInfoTitle: "V \u2014 Verified Product",
     vInfoDesc: "The V mark indicates that this product has passed Velnox's verification process",

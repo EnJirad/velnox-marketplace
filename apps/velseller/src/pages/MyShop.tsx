@@ -226,7 +226,7 @@ export default function MyShop() {
 
   /**
    * Product verification is INDEPENDENT from seller verification: a verified
-   * shop does not verify its products, and the V✓ badge needs both.
+   * shop does not verify its products, and the V badge needs both.
    */
   const renderProductVerification = (product: StoreProduct) => {
     const status = (product.verificationStatus ?? "unverified") as VerificationStatus;

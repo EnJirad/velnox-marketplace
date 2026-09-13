@@ -4,7 +4,7 @@
  * Seller Verification: identity/business verification of the seller/shop.
  * Product Verification: independent verification of each product.
  *
- * V✓ eligibility = seller verified AND product verified.
+ * V eligibility = seller verified AND product verified.
  * All verification decisions are server-side enforced.
  */
 

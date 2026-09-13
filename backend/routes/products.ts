@@ -2689,7 +2689,7 @@ export function setupProductRoutes(app: Express): void {
           {
             ...r,
             seller_id: row.seller_id,
-            // Seller verification belongs to the shop owner — attach it so V✓
+            // Seller verification belongs to the shop owner — attach it so V
             // eligibility can be evaluated for every product in this shop.
             seller_verification_status: row.seller_verification_status ?? "unverified",
           },

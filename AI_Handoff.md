@@ -3297,3 +3297,74 @@ The workflow applies each migration with `psql --single-transaction`, so the `AL
 - Seller verification sub-tab shows all verification records — no status filter yet
 - No product detail review screen (evidence viewer) — shows evidence URLs only
 - No seller detail review screen — shows verification records in table format
+
+---
+
+### 2026-09-13 — V Badge Cleanup + Real Verification Review Center
+
+**Scope:** VBadge component, i18n locale files, VelCenter verification review dialog, backend comments. No database changes.
+
+**What was changed:**
+
+1. **V Badge cleanup** — Removed V✓ from all customer-facing contexts:
+   - `packages/shared/src/components/VBadge.tsx`: SellerOnlyBadge now shows just "V" (removed ✓ character)
+   - All i18n locale files (th/en/my): Replaced "V✓" with "V" in explanatory text
+   - Backend comments: Updated V✓ references to V across `routes/products.ts`, `routes/verification.ts`, `lib/product-lifecycle.ts`
+   - VelCenter/Seller comments: Updated V✓ references
+
+2. **Verification Review Dialog** — New `VerificationReviewDialog` component (`apps/velcenter/src/components/VerificationReviewDialog.tsx`):
+   - Subject summary (seller or product information)
+   - Evidence/document/image viewer with secure display
+   - Review checklist (seller: identity, completeness, validity, consistency, requirements; product: info, evidence, match, images, rules)
+   - Approve / Reject / Suspend actions with reason dialog
+   - Verification history display (submitted date, reviewed date, rejection/suspension reason)
+   - V eligibility indicator for product verification
+   - Responsive layout (2-column on desktop)
+
+3. **Verification Queues Enhanced** — Products and Sellers verification sub-tabs now have:
+   - Status filter buttons (pending/verified/rejected/suspended) with real counts
+   - "Review" button that opens the VerificationReviewDialog
+   - Submitted date column
+   - Filtered view based on selected status
+
+4. **Verification data loading** — Now fetches all statuses (pending, verified, rejected, suspended) for accurate filter counts
+
+**V eligibility (unchanged):**
+- V = seller verified AND product verified
+- No `products.is_v` field
+- V remains derived from existing verification state
+
+**Security:**
+- Evidence viewer is admin-only (existing backend authorization)
+- Private evidence not exposed through public APIs
+- Backend enforces role-based access
+
+**Database changed:** NO
+**R2 changes:** NO
+
+**Verification:**
+- velcenter `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1143×3 ✅ PASS
+- `git diff --check` ✅ PASS
+- Backend tests: 167 pass / 26 skip / 2 pre-existing DB-state failures
+
+**Files changed:**
+- `packages/shared/src/components/VBadge.tsx` — removed ✓ from SellerOnlyBadge
+- `packages/shared/src/lib/i18n/locales/th.ts` — V✓ → V
+- `packages/shared/src/lib/i18n/locales/en.ts` — V✓ → V
+- `packages/shared/src/lib/i18n/locales/my.ts` — V✓ → V
+- `apps/velcenter/src/components/VerificationReviewDialog.tsx` — NEW
+- `apps/velcenter/src/pages/Center.tsx` — review dialog integration, status filters, enhanced queues
+- `backend/routes/products.ts` — comment updates
+- `backend/routes/verification.ts` — comment updates
+- `backend/lib/product-lifecycle.ts` — comment updates
+- `apps/velseller/src/pages/MyShop.tsx` — comment updates
+
+**Limitations:**
+- VelCenter uses hardcoded Thai text (no i18n) — consistent with existing pattern
+- Review checklist is UI-only (no backend persistence for checklist state)
+- No bulk approval actions
+- No verification history timeline (shows last review date/reason only)

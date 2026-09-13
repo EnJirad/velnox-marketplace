@@ -1,11 +1,11 @@
 /**
- * Product lifecycle rules — status state machines + V✓ eligibility.
+ * Product lifecycle rules — status state machines + V eligibility.
  *
  * These rules are the single source of truth for:
  *   • which status transitions a SELLER may perform,
  *   • which status transitions an ADMIN (VelCenter moderation) may perform,
  *   • which statuses are publicly visible in the VelShop catalog,
- *   • when a product earns the V✓ badge.
+ *   • when a product earns the V badge.
  *
  * NOTE: seller verification and product verification are two independent
  * systems. A verified seller never implies a verified product, and vice versa.
@@ -79,7 +79,7 @@ export function resolveCreationStatus(requested: unknown): ProductCreationStatus
 }
 
 /**
- * V✓ eligibility — the public badge requires BOTH verifications.
+ * V eligibility — the public badge requires BOTH verifications.
  * Enforced server-side; the frontend must never decide this.
  */
 export function computeIsVerifiedProduct(

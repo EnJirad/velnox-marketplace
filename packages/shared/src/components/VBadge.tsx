@@ -299,7 +299,6 @@ function SellerOnlyBadge({
       aria-label={t("verification.sellerVerified")}
     >
       <span className="font-extrabold">V</span>
-      <span className="text-emerald-600">✓</span>
     </span>
   );
 }
