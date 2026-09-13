@@ -26,7 +26,16 @@ export function setupSellerRoutes(app: Express): void {
   app.post("/api/seller/apply", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const { shopName } = req.body;
+      const {
+        shopName,
+        shopDescription,
+        shopCategory,
+        shopAddress,
+        // Applicant info (stored in seller_settings)
+        firstName,
+        lastName,
+        phone,
+      } = req.body;
 
       console.log("[seller] application received from user:", userId);
 
@@ -112,16 +121,37 @@ export function setupSellerRoutes(app: Express): void {
           suffix++;
         }
 
-        // Create shop record
+        // Create shop record with full profile data
+        const shopAddr = shopAddress || {};
         await query(
-          "INSERT INTO shops (seller_id, name, slug) VALUES ($1, $2, $3)",
-          [seller.id, trimmedShopName, slug]
+          `INSERT INTO shops (seller_id, name, slug, description, category,
+            address_line1, address_line2, subdistrict, district, city, state, postal_code, country, phone, email)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          [
+            seller.id, trimmedShopName, slug,
+            shopDescription?.trim()?.substring(0, 2000) || null,
+            shopCategory?.trim()?.substring(0, 100) || null,
+            shopAddr.line1?.trim()?.substring(0, 255) || null,
+            shopAddr.line2?.trim()?.substring(0, 255) || null,
+            shopAddr.subdistrict?.trim()?.substring(0, 100) || null,
+            shopAddr.district?.trim()?.substring(0, 100) || null,
+            shopAddr.city?.trim()?.substring(0, 100) || null,
+            shopAddr.state?.trim()?.substring(0, 100) || null,
+            shopAddr.postalCode?.trim()?.substring(0, 10) || null,
+            shopAddr.country?.trim()?.substring(0, 5) || "TH",
+            phone?.trim()?.substring(0, 20) || null,
+            null, // email comes from user account, not settable here
+          ]
         );
 
-        // Create default seller settings
+        // Create default seller settings with applicant info
+        const settings: Record<string, unknown> = { shopName: trimmedShopName };
+        if (firstName?.trim()) settings.firstName = firstName.trim().substring(0, 100);
+        if (lastName?.trim()) settings.lastName = lastName.trim().substring(0, 100);
+        if (phone?.trim()) settings.phone = phone.trim().substring(0, 20);
         await query(
           "INSERT INTO seller_settings (seller_id, settings) VALUES ($1, $2)",
-          [seller.id, JSON.stringify({ shopName: trimmedShopName })]
+          [seller.id, JSON.stringify(settings)]
         );
       }
 
@@ -236,6 +266,9 @@ export function setupSellerRoutes(app: Express): void {
                 sh.description as shop_description, sh.logo as shop_logo,
                 sh.cover as shop_cover, sh.rating as shop_rating,
                 sh.product_count as shop_product_count,
+                sh.category as shop_category,
+                sh.address_line1, sh.address_line2, sh.subdistrict, sh.district,
+                sh.city, sh.state, sh.postal_code, sh.country, sh.phone as shop_phone, sh.email as shop_email,
                 ss.settings as seller_settings
          FROM sellers s
          LEFT JOIN shops sh ON sh.seller_id = s.id
@@ -263,6 +296,19 @@ export function setupSellerRoutes(app: Express): void {
             cover: row.shop_cover,
             rating: row.shop_rating ? parseFloat(row.shop_rating) : null,
             productCount: row.shop_product_count || 0,
+            category: row.shop_category || null,
+            address: {
+              line1: row.address_line1 || null,
+              line2: row.address_line2 || null,
+              subdistrict: row.subdistrict || null,
+              district: row.district || null,
+              city: row.city || null,
+              state: row.state || null,
+              postalCode: row.postal_code || null,
+              country: row.country || "TH",
+            },
+            phone: row.shop_phone || null,
+            email: row.shop_email || null,
           }
         : null;
 
@@ -287,6 +333,154 @@ export function setupSellerRoutes(app: Express): void {
       res.status(500).json({
         success: false,
         error: { code: "DB_ERROR", message: "Failed to fetch seller profile" },
+      });
+    }
+  });
+
+  // ── PATCH /api/seller/shop ────────────────────────────────────────────
+  // Update shop profile (ownership verified server-side)
+  app.patch("/api/seller/shop", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const {
+        name,
+        description,
+        category,
+        address,
+        phone,
+        email,
+        logo,
+        cover,
+      } = req.body;
+
+      // Verify ownership: get seller → shop
+      const ownership = await query(
+        `SELECT sh.id as shop_id
+         FROM shops sh
+         JOIN sellers s ON s.id = sh.seller_id
+         WHERE s.user_id = $1`,
+        [userId]
+      );
+
+      if (ownership.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: { code: "NOT_FOUND", message: "No shop found for this seller" },
+        });
+        return;
+      }
+
+      const shopId = ownership.rows[0].shop_id;
+
+      // Build dynamic UPDATE
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      let idx = 1;
+
+      if (typeof name === "string" && name.trim()) {
+        sets.push(`name = $${idx++}`);
+        vals.push(name.trim().substring(0, 255));
+      }
+      if (typeof description === "string" || description === null) {
+        sets.push(`description = $${idx++}`);
+        vals.push(description?.trim()?.substring(0, 2000) || null);
+      }
+      if (typeof category === "string" || category === null) {
+        sets.push(`category = $${idx++}`);
+        vals.push(category?.trim()?.substring(0, 100) || null);
+      }
+      if (address && typeof address === "object") {
+        sets.push(`address_line1 = $${idx++}`);
+        vals.push(address.line1?.trim()?.substring(0, 255) || null);
+        sets.push(`address_line2 = $${idx++}`);
+        vals.push(address.line2?.trim()?.substring(0, 255) || null);
+        sets.push(`subdistrict = $${idx++}`);
+        vals.push(address.subdistrict?.trim()?.substring(0, 100) || null);
+        sets.push(`district = $${idx++}`);
+        vals.push(address.district?.trim()?.substring(0, 100) || null);
+        sets.push(`city = $${idx++}`);
+        vals.push(address.city?.trim()?.substring(0, 100) || null);
+        sets.push(`state = $${idx++}`);
+        vals.push(address.state?.trim()?.substring(0, 100) || null);
+        sets.push(`postal_code = $${idx++}`);
+        vals.push(address.postalCode?.trim()?.substring(0, 10) || null);
+        sets.push(`country = $${idx++}`);
+        vals.push(address.country?.trim()?.substring(0, 5) || "TH");
+      }
+      if (typeof phone === "string" || phone === null) {
+        sets.push(`phone = $${idx++}`);
+        vals.push(phone?.trim()?.substring(0, 20) || null);
+      }
+      if (typeof email === "string" || email === null) {
+        sets.push(`email = $${idx++}`);
+        vals.push(email?.trim()?.substring(0, 255) || null);
+      }
+      if (typeof logo === "string" || logo === null) {
+        sets.push(`logo = $${idx++}`);
+        vals.push(logo || null);
+      }
+      if (typeof cover === "string" || cover === null) {
+        sets.push(`cover = $${idx++}`);
+        vals.push(cover || null);
+      }
+
+      if (sets.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: { code: "VALIDATION_ERROR", message: "No fields to update" },
+        });
+        return;
+      }
+
+      sets.push(`updated_at = NOW()`);
+      vals.push(shopId);
+
+      await query(
+        `UPDATE shops SET ${sets.join(", ")} WHERE id = $${idx}`,
+        vals,
+      );
+
+      // Re-fetch updated shop
+      const updated = await query(
+        `SELECT id, name, slug, description, logo, cover, rating, product_count,
+                category, address_line1, address_line2, subdistrict, district,
+                city, state, postal_code, country, phone, email
+         FROM shops WHERE id = $1`,
+        [shopId],
+      );
+
+      const r = updated.rows[0];
+      res.json({
+        success: true,
+        data: {
+          id: r.id,
+          name: r.name,
+          slug: r.slug,
+          description: r.description,
+          logo: r.logo,
+          cover: r.cover,
+          rating: r.rating ? parseFloat(r.rating) : null,
+          productCount: r.product_count || 0,
+          category: r.category || null,
+          address: {
+            line1: r.address_line1 || null,
+            line2: r.address_line2 || null,
+            subdistrict: r.subdistrict || null,
+            district: r.district || null,
+            city: r.city || null,
+            state: r.state || null,
+            postalCode: r.postal_code || null,
+            country: r.country || "TH",
+          },
+          phone: r.phone || null,
+          email: r.email || null,
+        },
+      });
+    } catch (err) {
+      console.error("[seller] shop update error:", err);
+      res.status(500).json({
+        success: false,
+        error: { code: "DB_ERROR", message: "Failed to update shop profile" },
       });
     }
   });

@@ -2,6 +2,8 @@
 
 **LAST UPDATED: 2026-09-13**
 
+**STATUS: SELLER SYSTEM REDESIGN — Store Profile + 4-Step Onboarding + Shop Media (2026-09-13)** — DB migration adds shop address/phone/email/category columns; seller apply accepts full shop+applicant data; PATCH /api/seller/shop with ownership check; shop logo/cover upload via R2 presign+confirm; 4-step onboarding (Store Info → Applicant Info → Identity → Review); SellerProfile page at /seller/profile with cover/logo upload; VelSeller nav updated. See Recent Work History: `### 2026-09-13 — Velnox Seller System Redesign: Store Profile + Onboarding`.
+
 **STATUS: VERIFICATION IDENTITY UPLOAD E2E FIX (2026-09-13)** — Seller Identity Verification ID Card / Selfie+ID flow now completes end-to-end: presign → R2 PUT → evidence-confirm → DB (media) → reload after refresh. EvidenceUploader fixed (stale-closure, ref sync, error handling, diagnostic logs), backend evidence confirm enforces seller-scoped ownership, new GET /api/seller/evidence for hydration; seller profile now returns verificationStatus/verifiedAt; MyShop hydrates persisted evidence on mount so images survive refresh. See Recent Work History: `### 2026-09-13 — Velseller Identity Verification: ID Card / Selfie+ID Upload E2E Fix`.
 
 ## Production Readiness Status
@@ -381,6 +383,34 @@ PORT=3001
 7. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-09-13 — Velnox Seller System Redesign: Store Profile + Onboarding
+
+**Goal:** Redesign seller onboarding to a 4-step flow with full store profile, separate User/Shop media, and a dedicated SellerProfile page.
+
+**DB Changes (no migration required for existing prod — ALTER via migration 042):**
+- `db/migrations/042_seller_store_profile_fields.sql` — adds `address_line1`, `address_line2`, `subdistrict`, `district`, `city`, `state`, `postal_code`, `country`, `phone`, `email`, `category` to `shops`
+- `db/schema.sql` + `db/run-sqleditor.sql` updated to match
+
+**Backend:**
+- `POST /api/seller/apply` — now accepts `shopDescription`, `shopCategory`, `shopAddress`, `firstName`, `lastName`, `phone`; creates shop with full fields; saves applicant info in `seller_settings`
+- `PATCH /api/seller/shop` — new endpoint with ownership check (user→seller→shop); updates name, description, category, address, phone, email, logo, cover
+- `GET /api/seller/profile` — now returns shop `category`, `address`, `phone`, `email`
+- `POST /api/upload/presign` — supports `shop-logo`/`shop-cover` purposes with `shopId` param; validates ownership via DB
+- `POST /api/upload/confirm` — supports `shop-logo`/`shop-cover` purposes; updates `shops.logo`/`shops.cover` with ownership check
+
+**Frontend:**
+- `RequireRole.tsx` — 4-step onboarding: Step 0 (Store Info: name, description, category, address), Step 1 (Applicant: name, phone, email from Google), Step 2 (Identity: ID number, birthdate, doc upload), Step 3 (Review summary before submit)
+- `SellerProfile.tsx` — new page at `/seller/profile` with cover/logo upload, shop info editing, address management
+- `main.tsx` (velseller) — route `/seller/profile` + nav tab "โปรไฟล์" added (5 tabs total)
+
+**Verification:**
+- Backend typecheck: PASS
+- All 4 frontend app typechecks: PASS
+- No DB migration needed for existing prod (migration 042 for new deploys)
+- Shop User Profile ≠ User Profile: maintained (logo/cover stored on `shops`, avatar/cover on `users`)
+- Seller approval workflow: unchanged
+- Cloudinary: 0 references
 
 ### 2026-09-13 — FIX VELSELLER INFINITE LOADING — RequireRole state machine root cause
 

@@ -148,6 +148,17 @@ CREATE TABLE IF NOT EXISTS shops (
   cover TEXT,
   rating NUMERIC(3, 2),
   product_count INTEGER NOT NULL DEFAULT 0,
+  address_line1 TEXT,
+  address_line2 TEXT,
+  subdistrict TEXT,
+  district TEXT,
+  city TEXT,
+  state TEXT,
+  postal_code TEXT,
+  country TEXT NOT NULL DEFAULT 'TH',
+  phone TEXT,
+  email TEXT,
+  category TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

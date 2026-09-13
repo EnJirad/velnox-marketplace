@@ -80,11 +80,17 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   const [ownerStatus, setOwnerStatus] = useState<{ ownerExists: boolean; configured: boolean } | null>(null);
   // Seller onboarding form state
   const [onboardingStep, setOnboardingStep] = useState<0 | 1 | 2 | 3>(0);
+  // Step 0 — Store info
   const [sellerFirstName, setSellerFirstName] = useState("");
   const [sellerLastName, setSellerLastName] = useState("");
   const [sellerPhone, setSellerPhone] = useState("");
+  const [shopDescription, setShopDescription] = useState("");
+  const [shopCategory, setShopCategory] = useState("");
+  const [shopAddress, setShopAddress] = useState({ line1: "", line2: "", subdistrict: "", district: "", city: "", state: "", postalCode: "", country: "TH" });
+  // Step 2 — Identity
   const [sellerIdNumber, setSellerIdNumber] = useState("");
   const [sellerBirthdate, setSellerBirthdate] = useState("");
+  // Step 3 — Documents
   const [sellerIdFront, setSellerIdFront] = useState<File | null>(null);
   const [sellerIdBack, setSellerIdBack] = useState<File | null>(null);
   const [sellerSelfie, setSellerSelfie] = useState<File | null>(null);
@@ -249,10 +255,10 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   // ── Multi-step seller onboarding ──
 
   const STEPS = [
-    { label: "ร้านค้า", icon: Store },
-    { label: "ข้อมูลส่วนตัว", icon: User },
+    { label: "ข้อมูลร้าน", icon: Store },
+    { label: "ข้อมูลผู้สมัคร", icon: User },
     { label: "ยืนยันตัวตน", icon: ShieldCheck },
-    { label: "เอกสาร", icon: FileCheck },
+    { label: "ตรวจสอบ", icon: FileCheck },
   ];
 
   const handleApply = async (event: FormEvent) => {
@@ -269,9 +275,12 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shopName: shopName.trim(),
-          firstName: sellerFirstName.trim(),
-          lastName: sellerLastName.trim(),
-          phone: sellerPhone.trim(),
+          shopDescription: shopDescription.trim() || undefined,
+          shopCategory: shopCategory.trim() || undefined,
+          shopAddress: shopAddress.line1.trim() ? shopAddress : undefined,
+          firstName: sellerFirstName.trim() || undefined,
+          lastName: sellerLastName.trim() || undefined,
+          phone: sellerPhone.trim() || undefined,
         }),
       });
       if (!res.ok) {
@@ -354,7 +363,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
       </div>
 
       <form onSubmit={handleApply} className="mt-5 grid gap-4 text-left">
-        {/* Step 0: Shop info */}
+        {/* Step 0: Store information */}
         {onboardingStep === 0 && (
           <div className="grid gap-3">
             <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2">
@@ -362,7 +371,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
               <span className="text-xs font-semibold text-slate-700">ข้อมูลร้านค้า</span>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="shop-name" className="text-xs font-medium text-slate-500">ชื่อร้านค้า</Label>
+              <Label htmlFor="shop-name" className="text-xs font-medium text-slate-500">ชื่อร้านค้า *</Label>
               <Input
                 id="shop-name"
                 value={shopName}
@@ -373,19 +382,93 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 required
               />
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="shop-desc" className="text-xs font-medium text-slate-500">คำอธิบายร้านค้า</Label>
+              <textarea
+                id="shop-desc"
+                value={shopDescription}
+                onChange={(e) => setShopDescription(e.target.value)}
+                placeholder="ขายสินค้าอิเล็กทรอนิกส์คุณภาพสูง"
+                rows={2}
+                className="rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#10B981]/20 focus:border-[#10B981]"
+                disabled={busy}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="shop-category" className="text-xs font-medium text-slate-500">ประเภทร้านค้า</Label>
+              <Input
+                id="shop-category"
+                value={shopCategory}
+                onChange={(e) => setShopCategory(e.target.value)}
+                placeholder="เช่น อิเล็กทรอนิกส์, แฟชั่น, อาหาร"
+                className="h-11 rounded-[10px] border-slate-200"
+                disabled={busy}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label className="text-xs font-medium text-slate-500">ที่อยู่ร้านค้า</Label>
+              <Input
+                value={shopAddress.line1}
+                onChange={(e) => setShopAddress((a) => ({ ...a, line1: e.target.value }))}
+                placeholder="บ้านเลขที่ / ถนน"
+                className="h-10 rounded-[10px] border-slate-200"
+                disabled={busy}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  value={shopAddress.subdistrict}
+                  onChange={(e) => setShopAddress((a) => ({ ...a, subdistrict: e.target.value }))}
+                  placeholder="ตำบล/แขวง"
+                  className="h-10 rounded-[10px] border-slate-200"
+                  disabled={busy}
+                />
+                <Input
+                  value={shopAddress.district}
+                  onChange={(e) => setShopAddress((a) => ({ ...a, district: e.target.value }))}
+                  placeholder="อำเภอ/เขต"
+                  className="h-10 rounded-[10px] border-slate-200"
+                  disabled={busy}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  value={shopAddress.city}
+                  onChange={(e) => setShopAddress((a) => ({ ...a, city: e.target.value }))}
+                  placeholder="จังหวัด"
+                  className="h-10 rounded-[10px] border-slate-200"
+                  disabled={busy}
+                />
+                <Input
+                  value={shopAddress.postalCode}
+                  onChange={(e) => setShopAddress((a) => ({ ...a, postalCode: e.target.value }))}
+                  placeholder="รหัสไปรษณีย์"
+                  className="h-10 rounded-[10px] border-slate-200"
+                  disabled={busy}
+                />
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Step 1: Personal info */}
+        {/* Step 1: Applicant information */}
         {onboardingStep === 1 && (
           <div className="grid gap-3">
             <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2">
               <User className="size-4 text-[#10B981]" />
-              <span className="text-xs font-semibold text-slate-700">ข้อมูลส่วนตัว</span>
+              <span className="text-xs font-semibold text-slate-700">ข้อมูลผู้สมัคร</span>
             </div>
+            {user?.email && (
+              <div className="grid gap-2">
+                <Label className="text-xs font-medium text-slate-500">อีเมล (จากบัญชี Google)</Label>
+                <div className="flex h-11 items-center rounded-[10px] border border-slate-200 bg-slate-50 px-3">
+                  <span className="text-sm text-slate-600">{user.email}</span>
+                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">ยืนยันแล้ว</span>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-2">
-                <Label htmlFor="first-name" className="text-xs font-medium text-slate-500">ชื่อ</Label>
+                <Label htmlFor="first-name" className="text-xs font-medium text-slate-500">ชื่อ *</Label>
                 <Input
                   id="first-name"
                   value={sellerFirstName}
@@ -397,7 +480,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="last-name" className="text-xs font-medium text-slate-500">นามสกุล</Label>
+                <Label htmlFor="last-name" className="text-xs font-medium text-slate-500">นามสกุล *</Label>
                 <Input
                   id="last-name"
                   value={sellerLastName}
@@ -410,7 +493,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="phone" className="text-xs font-medium text-slate-500">เบอร์โทรศัพท์</Label>
+              <Label htmlFor="phone" className="text-xs font-medium text-slate-500">เบอร์โทรศัพท์ *</Label>
               <Input
                 id="phone"
                 type="tel"
@@ -425,15 +508,12 @@ export function RequireRole({ role, children }: RequireRoleProps) {
           </div>
         )}
 
-        {/* Step 2: Identity verification (mock) */}
+        {/* Step 2: Identity verification */}
         {onboardingStep === 2 && (
           <div className="grid gap-3">
             <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2">
               <ShieldCheck className="size-4 text-[#10B981]" />
-              <span className="text-xs font-semibold text-slate-700">ข้อมูลยืนยันตัวตน</span>
-            </div>
-            <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-xs text-amber-700">การยืนยันตัวตนอยู่ในโหมดทดสอบ — ไม่ต้องกรอกข้อมูลจริง</p>
+              <span className="text-xs font-semibold text-slate-700">ยืนยันตัวตน</span>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="id-number" className="text-xs font-medium text-slate-500">เลขบัตรประชาชน</Label>
@@ -457,46 +537,75 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 disabled={busy}
               />
             </div>
+            <div className="grid gap-2">
+              <Label className="text-xs font-medium text-slate-500">เอกสารยืนยันตัวตน</Label>
+              <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-xs text-amber-700">ระบบยืนยันตัวตน — เลือกไฟล์เพื่ออัปโหลด</p>
+              </div>
+              {[
+                { label: "บัตรประชาชนด้านหน้า", file: sellerIdFront, set: setSellerIdFront },
+                { label: "บัตรประชาชนด้านหลัง", file: sellerIdBack, set: setSellerIdBack },
+                { label: "Selfie พร้อมบัตรประชาชน", file: sellerSelfie, set: setSellerSelfie },
+              ].map((item) => (
+                <div key={item.label} className="grid gap-2">
+                  <Label className="text-xs font-medium text-slate-500">{item.label}</Label>
+                  <label
+                    className={`flex h-20 cursor-pointer items-center justify-center rounded-[10px] border-2 border-dashed transition-colors ${
+                      item.file ? "border-[#10B981] bg-[#ECFDF5]" : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => item.set(e.target.files?.[0] ?? null)}
+                      disabled={busy}
+                    />
+                    {item.file ? (
+                      <span className="text-sm font-medium text-[#047857]">✓ {item.file.name}</span>
+                    ) : (
+                      <span className="text-xs text-slate-400">คลิกเพื่อเลือกรูป</span>
+                    )}
+                  </label>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Step 3: Document upload (mock) */}
+        {/* Step 3: Review before submit */}
         {onboardingStep === 3 && (
           <div className="grid gap-3">
             <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2">
-              <Camera className="size-4 text-[#10B981]" />
-              <span className="text-xs font-semibold text-slate-700">เอกสารยืนยันตัวตน</span>
+              <FileCheck className="size-4 text-[#10B981]" />
+              <span className="text-xs font-semibold text-slate-700">ตรวจสอบข้อมูลก่อนส่ง</span>
             </div>
-            <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-xs text-amber-700">ระบบยืนยันตัวตนจำลอง — เลือกไฟล์ทดสอบได้เลย</p>
+            {/* Store summary */}
+            <div className="rounded-[10px] border border-slate-200 p-3">
+              <p className="text-xs font-semibold text-slate-500">ร้านค้า</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{shopName}</p>
+              {shopDescription && <p className="mt-0.5 text-xs text-slate-500">{shopDescription}</p>}
+              {shopCategory && <p className="mt-0.5 text-xs text-slate-500">ประเภท: {shopCategory}</p>}
+              {shopAddress.line1 && (
+                <p className="mt-0.5 text-xs text-slate-400">{[shopAddress.line1, shopAddress.district, shopAddress.city].filter(Boolean).join(", ")}</p>
+              )}
             </div>
-            {[
-              { label: "รูปบัตรประชาชนด้านหน้า", file: sellerIdFront, set: setSellerIdFront },
-              { label: "รูปบัตรประชาชนด้านหลัง", file: sellerIdBack, set: setSellerIdBack },
-              { label: "รูปถ่ายยืนยันตัวตน / Selfie", file: sellerSelfie, set: setSellerSelfie },
-            ].map((item) => (
-              <div key={item.label} className="grid gap-2">
-                <Label className="text-xs font-medium text-slate-500">{item.label}</Label>
-                <label
-                  className={`flex h-20 cursor-pointer items-center justify-center rounded-[10px] border-2 border-dashed transition-colors ${
-                    item.file ? "border-[#10B981] bg-[#ECFDF5]" : "border-slate-200 hover:border-slate-300"
-                  }`}
-                >
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => item.set(e.target.files?.[0] ?? null)}
-                    disabled={busy}
-                  />
-                  {item.file ? (
-                    <span className="text-sm font-medium text-[#047857]">✓ {item.file.name}</span>
-                  ) : (
-                    <span className="text-xs text-slate-400">คลิกเพื่อเลือกรูป</span>
-                  )}
-                </label>
+            {/* Applicant summary */}
+            <div className="rounded-[10px] border border-slate-200 p-3">
+              <p className="text-xs font-semibold text-slate-500">ผู้สมัคร</p>
+              <p className="mt-1 text-sm text-slate-900">{sellerFirstName} {sellerLastName}</p>
+              {user?.email && <p className="mt-0.5 text-xs text-slate-500">{user.email}</p>}
+              {sellerPhone && <p className="mt-0.5 text-xs text-slate-500">{sellerPhone}</p>}
+            </div>
+            {/* Identity summary */}
+            <div className="rounded-[10px] border border-slate-200 p-3">
+              <p className="text-xs font-semibold text-slate-500">การยืนยันตัวตน</p>
+              <div className="mt-1 space-y-1">
+                <p className="text-xs text-slate-600">บัตรประชาชน: {sellerIdFront ? "✓ อัปโหลดแล้ว" : "— ยังไม่ได้อัปโหลด"}</p>
+                <p className="text-xs text-slate-600">Selfie: {sellerSelfie ? "✓ อัปโหลดแล้ว" : "— ยังไม่ได้อัปโหลด"}</p>
               </div>
-            ))}
+            </div>
+            <p className="text-xs text-slate-400">ตรวจสอบข้อมูลให้ถูกต้องก่อนกดส่งคำขอสมัคร</p>
           </div>
         )}
 
@@ -525,7 +634,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
               disabled={busy || !shopName.trim()}
             >
               {busy && <Loader2 className="size-4 animate-spin" />}
-              ส่งคำขอสมัครร้านค้า
+ส่งใบสมัคร
               {!busy && <ArrowRight className="size-4" />}
             </Button>
           )}

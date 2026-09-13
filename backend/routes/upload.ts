@@ -100,6 +100,10 @@ function validateObjectKeyOwnership(objectKey: string, userId: string): boolean 
     const candidateBase = candidate?.split(".")[0];
     if (candidateBase === userId) return true;
   }
+  // Shop keys: shop/{shopId}/logo.webp or shop/{shopId}/cover.webp
+  if (parts.length >= 3 && parts[0] === "shop") {
+    return true; // allow presign; confirm handler validates ownership via DB
+  }
   return false;
 }
 
@@ -223,7 +227,28 @@ export function setupUploadRoutes(app: Express): void {
 
       const userId = req.user!.userId;
       // Fixed key — R2 PUT overwrites automatically
-      const objectKey = `${purpose}/${userId}.webp`;
+      let objectKey: string;
+      if (purpose === "shop-logo" || purpose === "shop-cover") {
+        const { shopId } = req.body;
+        if (!shopId) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "shopId required for shop uploads" } });
+          return;
+        }
+        // Verify ownership via DB
+        const ownership = await query(
+          `SELECT sh.id FROM shops sh JOIN sellers s ON s.id = sh.seller_id
+           WHERE sh.id = $1 AND s.user_id = $2`,
+          [shopId, userId]
+        );
+        if (ownership.rows.length === 0) {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Cannot upload to another seller's shop" } });
+          return;
+        }
+        const kind = purpose === "shop-logo" ? "logo" : "cover";
+        objectKey = `shop/${shopId}/${kind}.webp`;
+      } else {
+        objectKey = `${purpose}/${userId}.webp`;
+      }
 
       r2Log("presign", { step: "presign", purpose, objectKey, mimeType: contentType });
 
@@ -294,6 +319,24 @@ export function setupUploadRoutes(app: Express): void {
           await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [publicUrl, userId]);
         } catch (coverErr: any) {
           if (coverErr?.code !== "42703") throw coverErr;
+        }
+      } else if (purpose === "shop-logo" || purpose === "shop-cover") {
+        // Extract shopId from objectKey: shop/{shopId}/logo.webp or shop/{shopId}/cover.webp
+        const shopParts = objectKey.split("/");
+        const shopId = shopParts[1];
+        if (shopId) {
+          // Verify ownership: caller must own this shop
+          const ownership = await query(
+            `SELECT sh.id FROM shops sh JOIN sellers s ON s.id = sh.seller_id
+             WHERE sh.id = $1 AND s.user_id = $2`,
+            [shopId, userId]
+          );
+          if (ownership.rows.length === 0) {
+            res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Cannot upload to another seller's shop" } });
+            return;
+          }
+          const col = purpose === "shop-logo" ? "logo" : "cover";
+          await query(`UPDATE shops SET ${col} = $1, updated_at = NOW() WHERE id = $2`, [publicUrl, shopId]);
         }
       }
 

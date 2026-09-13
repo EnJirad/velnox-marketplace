@@ -8,7 +8,7 @@ import {
 import { siteBasename } from "@velnox/shared/lib/sites";
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
 import { IdentityMerge } from "@velnox/shared/lib/track";
-import { RefreshCw, ShoppingBag, Store, Target, Wallet } from "lucide-react";
+import { RefreshCw, ShoppingBag, Store, Target, UserCircle, Wallet } from "lucide-react";
 import { lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
@@ -21,7 +21,7 @@ const SELLER_TABS: MobileTabItem[] = [
   { to: "/seller/shop", label: "ร้านของฉัน", icon: Store },
   { to: "/seller/orders", label: "ออเดอร์", icon: ShoppingBag },
   { to: "/seller/income", label: "รายได้", icon: Wallet },
-  { to: "/seller/reorder", label: "สั่งซื้อซ้ำ", icon: RefreshCw },
+  { to: "/seller/profile", label: "โปรไฟล์", icon: UserCircle },
 ];
 
 initMonitoring();
@@ -31,6 +31,7 @@ const MyShop = lazy(() => import("@/pages/MyShop"));
 const Reorder = lazy(() => import("@/pages/Reorder"));
 const SellerOrders = lazy(() => import("@/pages/SellerOrders"));
 const SellerChat = lazy(() => import("@/pages/SellerChat"));
+const SellerProfile = lazy(() => import("@/pages/SellerProfile"));
 const Income = lazy(() => import("@/pages/Income"));
 const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
 const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
@@ -89,6 +90,14 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireRole role="seller">
                 <SellerChat />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/seller/profile"
+            element={
+              <RequireRole role="seller">
+                <SellerProfile />
               </RequireRole>
             }
           />
