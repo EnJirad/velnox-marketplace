@@ -94,20 +94,9 @@ export function registerVerificationRoutes(app: Express) {
       const userId = req.user!.userId;
       const productId = req.params.productId;
 
-      // Verify ownership
-      const ownRes = await query(
-        `SELECT pv.* FROM product_verifications pv
-         JOIN products p ON p.id = pv.product_id
-         JOIN shops sh ON sh.id = p.shop_id
-         JOIN sellers s ON s.id = sh.seller_id
-         WHERE pv.product_id = $1 AND s.user_id = $2
-         ORDER BY pv.created_at DESC LIMIT 1`,
-        [productId, userId],
-      );
-
-      // Also get current status from products table
+      // Verify ownership and get product status
       const prodRes = await query(
-        `SELECT p.verification_status FROM products p
+        `SELECT p.id, p.verification_status FROM products p
          JOIN shops sh ON sh.id = p.shop_id
          JOIN sellers s ON s.id = sh.seller_id
          WHERE p.id = $1 AND s.user_id = $2`,
@@ -118,10 +107,20 @@ export function registerVerificationRoutes(app: Express) {
         return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
       }
 
+      // Get the latest verification record from product_verifications (source of truth)
+      const ownRes = await query(
+        `SELECT * FROM product_verifications WHERE product_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [productId],
+      );
+
+      // Use the actual verification record status as the source of truth
+      // Fall back to products.verification_status if no record exists
+      const verificationStatus = ownRes.rows[0]?.status ?? prodRes.rows[0].verification_status ?? 'unverified';
+
       res.json({
         success: true,
         data: {
-          verificationStatus: prodRes.rows[0].verification_status,
+          verificationStatus,
           latestRequest: ownRes.rows[0] ?? null,
         },
       });
@@ -140,7 +139,7 @@ export function registerVerificationRoutes(app: Express) {
 
       // Verify ownership
       const ownRes = await query(
-        `SELECT p.id, p.verification_status FROM products p
+        `SELECT p.id FROM products p
          JOIN shops sh ON sh.id = p.shop_id
          JOIN sellers s ON s.id = sh.seller_id
          WHERE p.id = $1 AND s.user_id = $2`,
@@ -151,10 +150,14 @@ export function registerVerificationRoutes(app: Express) {
         return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
       }
 
-      const product = ownRes.rows[0];
+      // Check if a pending verification ALREADY EXISTS in the actual verification table
+      // (not relying on products.verification_status which can be out of sync)
+      const pendingCheck = await query(
+        `SELECT id FROM product_verifications WHERE product_id = $1 AND status = 'pending' LIMIT 1`,
+        [productId],
+      );
 
-      // Check if already pending
-      if (product.verification_status === "pending") {
+      if (pendingCheck.rows.length > 0) {
         return res.status(409).json({ success: false, error: { code: "ALREADY_PENDING", message: "Product verification already pending" } });
       }
 

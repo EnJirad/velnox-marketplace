@@ -3532,3 +3532,73 @@ But the VelRepeat scheduler (`backend/jobs/velrepeat-scheduler.ts`) writes `item
 - Live E2E testing not performed (no DATABASE_URL/headless browser in sandbox)
 - Evidence preview is local-only until R2 upload completes (by design — prevents unnecessary uploads)
 - VelCenter verification review uses hardcoded Thai text (consistent with existing pattern)
+
+### 2026-09-13 — Root-Cause Fix: Verification Submission Stale Closure + Backend Duplicate Check
+
+**Scope:** EvidenceUploader component, MyShop verification submission, backend verification routes.
+
+**PROBLEM:**
+1. Seller selects/uploads evidence images → images do NOT appear in preview
+2. After Submit, Seller UI says "Pending Verification" but no actual evidence visible in VelCenter
+3. System enters "pending" state even though verification submission was not successfully persisted
+
+**ROOT CAUSE 1 — Stale Closure in EvidenceUploader:**
+The `EvidenceUploader` component (`packages/shared/src/components/seller/EvidenceUploader.tsx`) had a **stale closure bug** in `uploadFile`. Both `handleFiles` and `uploadFile` captured the `files` array from the same render cycle via `useCallback`. When `handleFiles` called `onFilesChange(allFiles)` to add new files, then immediately called `uploadFile(ef)`, the `uploadFile` callback mapped over the OLD `files` array (from the closure) — which did NOT include the newly added files. This caused the upload status update to overwrite the state with only old files, effectively LOSING the newly added files from state.
+
+Consequence: Files appeared momentarily (from `handleFiles`'s `onFilesChange`), then disappeared (from `uploadFile`'s `onFilesChange`). After upload, the uploaded files were NOT in state. When submit happened, `evidenceFiles.filter(f => f.status === "uploaded" && f.cdnUrl)` found nothing → empty evidenceUrls sent to backend → verification record created with no evidence.
+
+**Fix:** Added `useRef` to track the latest files array (`filesRef`). All callbacks (`uploadFile`, `handleFiles`, `handleRemove`, `handleRetry`) now read from `filesRef.current` instead of the closure variable. This ensures they always operate on the latest state.
+
+**ROOT CAUSE 2 — Backend Duplicate Check Used Wrong Table:**
+The POST `/api/seller/products/:productId/verification` endpoint checked `products.verification_status === "pending"` to prevent duplicate submissions (returning 409 ALREADY_PENDING). But this field on the products table can be out of sync with actual `product_verifications` records. If `verification_status` was already "pending" from a previous incomplete attempt, the backend returned 409, but the frontend still showed success toast.
+
+**Fix:** Changed the duplicate check to query the `product_verifications` table directly: `SELECT id FROM product_verifications WHERE product_id = $1 AND status = 'pending'`. Also fixed the GET endpoint to use `product_verifications` as the source of truth for verification status.
+
+**ROOT CAUSE 3 — Frontend Didn't Verify Backend Response:**
+The `handleSubmitVerification` function showed a success toast regardless of whether the backend actually accepted the submission. Also, the submit button was not disabled during file uploads.
+
+**Fix:**
+- Added `hasUploadingFiles` check — submit button disabled while uploads are in progress
+- Added `hasUploadedFiles` check — requires at least 1 uploaded file before submission
+- Added backend response verification — checks `result?.success === false` before showing success
+- Shows specific error messages from backend (e.g., "Product verification already pending")
+
+**Files changed:**
+| File | Change |
+|------|--------|
+| `packages/shared/src/components/seller/EvidenceUploader.tsx` | Fixed stale closure with `useRef` for latest files; all callbacks read from ref |
+| `apps/velseller/src/pages/MyShop.tsx` | Added upload-in-progress guard, evidence validation, backend response check |
+| `backend/routes/verification.ts` | Fixed duplicate check to use `product_verifications` table; fixed GET to use verification records as source of truth |
+
+**Verification flow (end-to-end trace after fix):**
+1. Seller selects product → Opens verification dialog
+2. Seller selects evidence files → **Shows local preview immediately** (ref-based state)
+3. Files upload to R2 via presigned URLs → Returns `cdnUrl` + `objectKey`
+4. Submit button shows "กำลังอัปโหลด..." during upload → Disabled until all uploads complete
+5. Seller clicks Submit → Frontend validates ≥1 uploaded file
+6. Frontend sends `evidenceUrls` to `POST /api/seller/products/:productId/verification`
+7. Backend checks `product_verifications` table (not products table) for pending record
+8. Backend creates `product_verifications` record (status: 'pending')
+9. Backend updates `products.verification_status = 'pending'`
+10. Frontend verifies backend response before showing success
+11. VelCenter reads from `GET /api/admin/verifications?status=pending`
+12. Admin reviews evidence images/documents
+13. Admin approves/rejects/suspends
+
+**Database changed:** NO
+**R2 changes:** NO
+**i18n changes:** NO
+
+**Verification:**
+- velcenter `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- backend `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1162×3 ✅ PASS
+- Backend tests: 167 pass / 26 skip / 2 pre-existing failures / 0 new failures
+
+**Limitations:**
+- Live E2E testing not performed (no DATABASE_URL/headless browser in sandbox)
+- Evidence preview uses local object URLs until R2 upload completes (by design)
+- Backend response verification relies on the API returning `{ success: boolean }` format

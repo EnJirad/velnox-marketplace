@@ -195,8 +195,26 @@ export default function MyShop() {
   };
 
   /** Submit a seller- or product-level verification request. */
+  /** Check if any evidence files are still uploading or pending */
+  const hasUploadingFiles = evidenceFiles.some((f) => f.status === "uploading" || f.status === "pending");
+  const hasUploadedFiles = evidenceFiles.some((f) => f.status === "uploaded" && f.cdnUrl);
+  const hasErrorFiles = evidenceFiles.some((f) => f.status === "error");
+
   const handleSubmitVerification = async () => {
     if (!verifyTarget) return;
+
+    // Block if uploads are still in progress
+    if (hasUploadingFiles) {
+      toast.error("กรุณารอให้อัปโหลดไฟล์เสร็จสิ้นก่อนส่ง");
+      return;
+    }
+
+    // Require at least one successfully uploaded evidence file
+    if (!hasUploadedFiles) {
+      toast.error("กรุณาอัปโหลดหลักฐานอย่างน้อย 1 ไฟล์");
+      return;
+    }
+
     setVerifyBusy(true);
     try {
       // Collect evidence URLs from uploaded files
@@ -225,11 +243,17 @@ export default function MyShop() {
         toast.success(t("verification.sellerVerificationSubmitted"));
         setProfile(await mySellerProfile());
       } else {
-        await submitProductVerification({
+        const result = await submitProductVerification({
           productId: verifyTarget.product.id,
           evidenceUrls,
           evidenceNotes,
         });
+        // Verify the backend actually accepted the submission
+        if (result?.success === false) {
+          const errMsg = result?.error?.message || "Backend ไม่สามารถรับคำขอได้";
+          toast.error(errMsg);
+          return; // Don't close dialog or clear state
+        }
         toast.success(t("verification.productVerificationSubmitted"));
         await reloadProducts();
       }
@@ -1011,9 +1035,9 @@ export default function MyShop() {
             <Button variant="outline" onClick={() => setVerifyTarget(null)} disabled={verifyBusy}>
               ยกเลิก
             </Button>
-            <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void handleSubmitVerification()} disabled={verifyBusy}>
-              {verifyBusy && <Loader2 className="size-4 animate-spin" />}
-              {t("verification.submitForVerification")}
+            <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void handleSubmitVerification()} disabled={verifyBusy || hasUploadingFiles}>
+              {(verifyBusy || hasUploadingFiles) && <Loader2 className="size-4 animate-spin" />}
+              {hasUploadingFiles ? "กำลังอัปโหลด..." : t("verification.submitForVerification")}
             </Button>
           </DialogFooter>
         </DialogContent>

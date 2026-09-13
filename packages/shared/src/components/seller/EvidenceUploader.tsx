@@ -61,8 +61,10 @@ export function EvidenceUploader({
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  // Generate preview URLs for new files and clean up old ones
-  const fileIdsWithPreviews = useMemo(() => new Set(files.map((f) => f.id)), [files]);
+  // Ref to always access the latest files array, avoiding stale closures
+  // in uploadFile callbacks that run after state updates
+  const filesRef = useRef(files);
+  filesRef.current = files;
 
   const generateId = () => `ev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -92,8 +94,12 @@ export function EvidenceUploader({
         return;
       }
 
-      // Update status to uploading
-      const updatedFiles = files.map((f) =>
+      // Use ref to get latest files — avoids stale closure when called
+      // right after handleFiles updates state via onFilesChange
+      const currentFiles = filesRef.current;
+
+      // Update status to uploading using the LATEST files array
+      const updatedFiles = currentFiles.map((f) =>
         f.id === evidenceFile.id ? { ...f, status: "uploading" as const } : f
       );
       onFilesChange(updatedFiles);
@@ -117,8 +123,9 @@ export function EvidenceUploader({
           throw new Error(`R2 upload failed: ${uploadRes.status}`);
         }
 
-        // 3. Mark as uploaded — keep previewUrl for local preview
-        const finalFiles = updatedFiles.map((f) =>
+        // 3. Mark as uploaded — use LATEST files from ref
+        const latestFiles = filesRef.current;
+        const finalFiles = latestFiles.map((f) =>
           f.id === evidenceFile.id
             ? {
                 ...f,
@@ -132,7 +139,8 @@ export function EvidenceUploader({
         onFilesChange(finalFiles);
       } catch (err) {
         console.error("Evidence upload error:", err);
-        const errorFiles = updatedFiles.map((f) =>
+        const latestFiles = filesRef.current;
+        const errorFiles = latestFiles.map((f) =>
           f.id === evidenceFile.id
             ? {
                 ...f,
@@ -145,12 +153,13 @@ export function EvidenceUploader({
         toast.error(`อัปโหลด "${file.name}" ไม่สำเร็จ`);
       }
     },
-    [files, onFilesChange, getUploadIntent, purpose]
+    [onFilesChange, getUploadIntent, purpose]
   );
 
   const handleFiles = useCallback(
     async (fileList: FileList | File[]) => {
-      const newFiles = Array.from(fileList).slice(0, maxFiles - files.length);
+      const latestFiles = filesRef.current;
+      const newFiles = Array.from(fileList).slice(0, maxFiles - latestFiles.length);
       if (newFiles.length === 0) {
         toast.error(`รองรับสูงสุด ${maxFiles} ไฟล์`);
         return;
@@ -166,30 +175,34 @@ export function EvidenceUploader({
         previewUrl: isImage(file.type) ? URL.createObjectURL(file) : undefined,
       }));
 
-      const allFiles = [...files, ...evidenceFiles];
+      // Add new files to state — uploadFile will use filesRef.current
+      // which will be updated by the next render cycle
+      const allFiles = [...latestFiles, ...evidenceFiles];
       onFilesChange(allFiles);
 
-      // Upload each file
+      // Upload each file — uploadFile reads filesRef.current for latest state
       setUploading(true);
       for (const ef of evidenceFiles) {
         await uploadFile(ef);
       }
       setUploading(false);
     },
-    [files, onFilesChange, maxFiles, purpose, uploadFile]
+    [onFilesChange, maxFiles, purpose, uploadFile]
   );
 
   const handleRemove = (id: string) => {
-    const fileToRemove = files.find((f) => f.id === id);
+    const latestFiles = filesRef.current;
+    const fileToRemove = latestFiles.find((f) => f.id === id);
     // Revoke object URL to prevent memory leak
     if (fileToRemove?.previewUrl && fileToRemove.previewUrl.startsWith("blob:")) {
       URL.revokeObjectURL(fileToRemove.previewUrl);
     }
-    onFilesChange(files.filter((f) => f.id !== id));
+    onFilesChange(latestFiles.filter((f) => f.id !== id));
   };
 
   const handleRetry = async (ef: EvidenceFile) => {
-    const retryFiles = files.map((f) =>
+    const latestFiles = filesRef.current;
+    const retryFiles = latestFiles.map((f) =>
       f.id === ef.id ? { ...f, status: "pending" as const, error: undefined } : f
     );
     onFilesChange(retryFiles);
@@ -200,6 +213,7 @@ export function EvidenceUploader({
 
   const uploadedCount = files.filter((f) => f.status === "uploaded").length;
   const errorCount = files.filter((f) => f.status === "error").length;
+  const hasUploading = files.some((f) => f.status === "uploading" || f.status === "pending");
 
   // Get the best preview URL for a file: prefer cdnUrl when uploaded, else previewUrl
   const getPreviewUrl = (ef: EvidenceFile): string | undefined => {
