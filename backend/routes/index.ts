@@ -156,8 +156,7 @@ export function setupRoutes(app: Express): void {
       }
       const u = result.rows[0];
 
-      // If cover_url column doesn't exist, retrieve latest cover from media table
-      if (!coverUrl) {
+      if (!coverUrl && u.avatar) {
         try {
           const coverResult = await query(
             `SELECT url FROM media
@@ -169,8 +168,7 @@ export function setupRoutes(app: Express): void {
         } catch { /* media table query failed — ignore */ }
       }
 
-      // Also try fixed-key format (no slash between userId and filename)
-      if (!coverUrl) {
+      if (!coverUrl && u.avatar) {
         try {
           const fixedResult = await query(
             `SELECT url FROM media

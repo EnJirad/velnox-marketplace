@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS media (
 );
 CREATE INDEX IF NOT EXISTS idx_media_key ON media (key);
 CREATE INDEX IF NOT EXISTS idx_media_owner ON media (uploaded_by);
+CREATE INDEX IF NOT EXISTS idx_media_owner_key ON media (uploaded_by, key);
 
 CREATE TABLE IF NOT EXISTS categories (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

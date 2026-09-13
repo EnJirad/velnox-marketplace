@@ -385,8 +385,7 @@ export function setupGoogleAuth(app: Express): void {
       }
       const u = result.rows[0];
 
-      // If cover_url column doesn't exist, try both media key formats in parallel
-      if (!coverUrl) {
+      if (!coverUrl && u.avatar) {
         try {
           const [legacyResult, fixedResult] = await Promise.allSettled([
             query(
