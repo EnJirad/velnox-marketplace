@@ -3368,3 +3368,98 @@ The workflow applies each migration with `psql --single-transaction`, so the `AL
 - Review checklist is UI-only (no backend persistence for checklist state)
 - No bulk approval actions
 - No verification history timeline (shows last review date/reason only)
+
+### 2026-09-13 — VelSeller Product Verification Rebuild + VelCenter Evidence Review + Root Cause Fix
+
+**Scope:** Root cause fix for missing verification submissions, evidence upload system, VelSeller verification UX rebuild, VelCenter evidence review enhancement.
+
+**Root cause identified and fixed:**
+The admin verification API (`GET /api/admin/verifications`, `PATCH /api/admin/verifications/seller/:id`, `PATCH /api/admin/verifications/product/:id`) in `backend/routes/verification.ts` queried `employees WHERE status = 'active'`, but the `employees` table has NO `status` column. This caused every admin verification query to fail with a PostgreSQL error, returning 500 to VelCenter. VelCenter caught the error and defaulted to empty results — so seller submissions were invisible to admins.
+
+**Fix:** Changed all 3 admin checks from `SELECT role FROM employees WHERE user_id = $1 AND status = 'active'` to `SELECT role FROM users WHERE id = $1` with role validation (`owner`, `admin`, `staff`).
+
+**What was implemented:**
+
+1. **Root cause fix** (`backend/routes/verification.ts`):
+   - 3 admin authorization checks fixed — now use `users.role` instead of non-existent `employees.status`
+   - Verified the pattern `['owner', 'admin', 'staff'].includes(userRes.rows[0].role)` matches existing admin auth pattern in `products.ts`
+
+2. **Evidence upload backend** (`backend/routes/verification.ts`):
+   - New `POST /api/seller/evidence/upload-intent` endpoint
+   - Seller-only (verified via sellers table)
+   - Generates presigned R2 PUT URL for evidence files
+   - Supports: JPEG, PNG, WebP, AVIF, PDF, DOC, DOCX (max 10MB)
+   - Evidence stored under `verification/evidence/{sellerId}/{purpose}_{timestamp}.{ext}`
+   - Purpose categories: product_photo, packaging, receipt, other
+
+3. **EvidenceUploader component** (`packages/shared/src/components/seller/EvidenceUploader.tsx`):
+   - Reusable file upload component for verification evidence
+   - Drag & drop + file picker
+   - Image/document preview
+   - Upload progress + success/error states
+   - Remove + retry failed uploads
+   - File count badges + max file limits
+   - Full R2 upload pipeline (presign → PUT → confirm)
+
+4. **VelSeller verification dialog rebuilt** (`apps/velseller/src/pages/MyShop.tsx`):
+   - Shows product information when submitting product verification (image, name, price, status, category)
+   - 4 categorized evidence upload sections: Product Photos, Packaging/Labels, Receipt/Invoice, Other Documents
+   - Additional notes textarea
+   - Evidence URLs collected from uploaded files and sent to backend
+   - Evidence notes auto-generated with categorized file counts
+   - Privacy notice: evidence only visible to Velnox verification team
+
+5. **VelCenter evidence review enhanced** (`apps/velcenter/src/components/VerificationReviewDialog.tsx`):
+   - Evidence files now categorized by type (photos vs documents)
+   - Photo grid layout with click-to-lightbox
+   - Document list with file names and external links
+   - Evidence summary parsed from seller notes (file counts by category)
+   - Full-screen lightbox for image review
+   - Empty state for missing evidence
+
+6. **API routes** (`packages/shared/src/lib/api-routes.ts`):
+   - Added `api.seller.evidenceUploadIntent` mapping
+
+7. **i18n** (`packages/shared/src/lib/i18n/locales/{th,en,my}.ts`):
+   - 19 new keys × 3 locales for evidence upload UI
+   - All keys at parity (1162×3)
+
+8. **Tests** (`backend/tests/product-lifecycle.test.ts`):
+   - Updated admin-gated verification test to match new `users.role` pattern
+
+**Verification flow (end-to-end):**
+
+```
+Seller selects product
+→ Opens verification dialog
+→ Uploads evidence via R2 presigned URLs
+→ Evidence categorized by type
+→ Submits with evidence URLs + notes
+→ Backend creates product_verifications record (status: 'pending')
+→ Backend updates products.verification_status = 'pending'
+→ VelCenter reads from GET /api/admin/verifications?status=pending
+→ Admin reviews evidence images/documents
+→ Admin approves/rejects/suspends
+→ Backend updates verification + product status
+→ Customer sees V badge only when seller + product both verified
+```
+
+**Database changed:** NO
+**R2 changes:** NO (uses existing R2 infrastructure)
+**Security:** Evidence uploads are seller-only (ownership verified via sellers table). Admin verification endpoints check users.role.
+
+**Verification:**
+- velcenter `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- backend `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1162×3 ✅ PASS
+- `git diff --check` ✅ PASS
+- Backend tests: 167 pass / 26 skip / 2 pre-existing DB-state failures / 0 new failures
+- Admin-gated test: FIXED (now passes)
+
+**Limitations:**
+- Evidence upload uses public R2 URLs (same as product images). For truly private KYC documents, a private R2 bucket with signed GET URLs would be recommended as a future enhancement.
+- Evidence categorization is inferred from seller notes text, not stored as structured data in the database.
+- VelCenter verification review uses hardcoded Thai text (consistent with existing pattern).

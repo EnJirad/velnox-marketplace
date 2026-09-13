@@ -207,9 +207,12 @@ describe("V✓ eligibility", () => {
   });
 
   test("verification decisions are admin-gated", () => {
-    const gates = verificationSrc.match(/SELECT role FROM employees WHERE user_id = \$1 AND status = 'active'/g) ?? [];
+    // Admin access is checked via users.role (employees table has no 'status' column)
+    const gates = verificationSrc.match(/SELECT role FROM users WHERE id = \$1/g) ?? [];
     expect(gates.length).toBe(3);
     expect(verificationSrc).toContain("Admin access required");
+    // Verify the role check includes owner/admin/staff
+    expect(verificationSrc).toContain("'owner', 'admin', 'staff'");
   });
 
   test("private evidence is only returned by admin-gated endpoints", () => {

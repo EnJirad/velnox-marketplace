@@ -1,6 +1,7 @@
 import { AppHeader } from "@velnox/shared/components/AppHeader";
 import { SITE_URLS } from "@velnox/shared/lib/sites";
 import { ProductFormDialog } from "@velnox/shared/components/seller/ProductFormDialog";
+import { EvidenceUploader, type EvidenceFile } from "@velnox/shared/components/seller/EvidenceUploader";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -92,6 +93,7 @@ export default function MyShop() {
   const [verifyTarget, setVerifyTarget] = useState<{ kind: "seller" } | { kind: "product"; product: StoreProduct } | null>(null);
   const [verifyNotes, setVerifyNotes] = useState("");
   const [verifyBusy, setVerifyBusy] = useState(false);
+  const [evidenceFiles, setEvidenceFiles] = useState<EvidenceFile[]>([]);
 
   const shop: StoreShop | null = profile?.shops[0] ?? null;
 
@@ -197,10 +199,27 @@ export default function MyShop() {
     if (!verifyTarget) return;
     setVerifyBusy(true);
     try {
-      const evidenceUrls = verifyNotes
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => /^https?:\/\//i.test(line));
+      // Collect evidence URLs from uploaded files
+      const evidenceUrls = evidenceFiles
+        .filter((f) => f.status === "uploaded" && f.cdnUrl)
+        .map((f) => f.cdnUrl!);
+
+      // Build evidence notes with categorized file counts
+      const evidenceByPurpose = evidenceFiles
+        .filter((f) => f.status === "uploaded")
+        .reduce((acc, f) => {
+          acc[f.purpose] = (acc[f.purpose] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+      const notesParts: string[] = [];
+      if (evidenceByPurpose.product_photo) notesParts.push(`รูปสินค้า ${evidenceByPurpose.product_photo} ไฟล์`);
+      if (evidenceByPurpose.packaging) notesParts.push(`บรรจุภัณฑ์/ฉลาก ${evidenceByPurpose.packaging} ไฟล์`);
+      if (evidenceByPurpose.receipt) notesParts.push(`ใบเสร็จ/ใบแจ้งหนี้ ${evidenceByPurpose.receipt} ไฟล์`);
+      if (evidenceByPurpose.other) notesParts.push(`เอกสารอื่นๆ ${evidenceByPurpose.other} ไฟล์`);
+      if (verifyNotes.trim()) notesParts.push(verifyNotes.trim());
+      const evidenceNotes = notesParts.length > 0 ? notesParts.join("\n") : undefined;
+
       if (verifyTarget.kind === "seller") {
         await submitSellerVerification({ verificationType: "identity", evidenceUrls });
         toast.success(t("verification.sellerVerificationSubmitted"));
@@ -209,13 +228,14 @@ export default function MyShop() {
         await submitProductVerification({
           productId: verifyTarget.product.id,
           evidenceUrls,
-          evidenceNotes: verifyNotes.trim() || undefined,
+          evidenceNotes,
         });
         toast.success(t("verification.productVerificationSubmitted"));
         await reloadProducts();
       }
       setVerifyTarget(null);
       setVerifyNotes("");
+      setEvidenceFiles([]);
     } catch (error) {
       console.error("Verification submit error:", error);
       toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
@@ -876,9 +896,10 @@ export default function MyShop() {
         if (!open) {
           setVerifyTarget(null);
           setVerifyNotes("");
+          setEvidenceFiles([]);
         }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {verifyTarget?.kind === "seller" ? t("verification.sellerVerificationTitle") : t("verification.productVerificationTitle")}
@@ -889,20 +910,103 @@ export default function MyShop() {
                 : t("verification.productVerificationSeparateNote")}
             </DialogDescription>
           </DialogHeader>
+
+          {/* Product info when submitting product verification */}
           {verifyTarget?.kind === "product" && (
-            <p className="rounded-[10px] bg-slate-50 px-3 py-2 text-xs text-slate-600">{verifyTarget.product.name}</p>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-start gap-3">
+                {verifyTarget.product.images?.[0] && (
+                  <img
+                    src={verifyTarget.product.images[0].url}
+                    alt={verifyTarget.product.name}
+                    className="size-14 shrink-0 rounded-lg object-cover"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900 truncate">{verifyTarget.product.name}</p>
+                  <p className="text-xs text-slate-500">฿{verifyTarget.product.price?.toLocaleString()}</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <VerificationStatusLabel status={(verifyTarget.product.verificationStatus ?? "unverified") as VerificationStatus} />
+                    {verifyTarget.product.categorySlug && (
+                      <span className="text-[10px] text-slate-400">{verifyTarget.product.categorySlug}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
-          <div className="grid gap-2">
-            <Label htmlFor="verification-evidence">{t("verification.evidenceHint")}</Label>
-            <Textarea
-              id="verification-evidence"
-              rows={4}
-              value={verifyNotes}
-              onChange={(e) => setVerifyNotes(e.target.value)}
-              placeholder={t("verification.evidencePlaceholder")}
+
+          {/* Evidence upload sections */}
+          <div className="grid gap-4">
+            {/* Product photos */}
+            <EvidenceUploader
+              purpose="product_photo"
+              label="รูปสินค้า"
+              description="รูปสินค้าจากหลายมุม แสดงสินค้าจริงที่ต้องการจำหน่าย"
+              files={evidenceFiles.filter((f) => f.purpose === "product_photo")}
+              onFilesChange={(newFiles) => {
+                const other = evidenceFiles.filter((f) => f.purpose !== "product_photo");
+                setEvidenceFiles([...other, ...newFiles]);
+              }}
+              maxFiles={10}
             />
-            <p className="text-[11px] leading-5 text-slate-400">{t("verification.evidencePrivateNote")}</p>
+
+            {/* Packaging / Labels */}
+            <EvidenceUploader
+              purpose="packaging"
+              label="บรรจุภัณฑ์ / ฉลาก"
+              description="รูปบรรจุภัณฑ์ ฉลากสินค้า หรือแท็ก"
+              files={evidenceFiles.filter((f) => f.purpose === "packaging")}
+              onFilesChange={(newFiles) => {
+                const other = evidenceFiles.filter((f) => f.purpose !== "packaging");
+                setEvidenceFiles([...other, ...newFiles]);
+              }}
+              maxFiles={5}
+            />
+
+            {/* Receipt / Invoice */}
+            <EvidenceUploader
+              purpose="receipt"
+              label="ใบเสร็จ / ใบแจ้งหนี้"
+              description="หลักฐานการซื้อหรือใบแจ้งหนี้จากซัพพลายเออร์"
+              files={evidenceFiles.filter((f) => f.purpose === "receipt")}
+              onFilesChange={(newFiles) => {
+                const other = evidenceFiles.filter((f) => f.purpose !== "receipt");
+                setEvidenceFiles([...other, ...newFiles]);
+              }}
+              maxFiles={5}
+            />
+
+            {/* Other supporting evidence */}
+            <EvidenceUploader
+              purpose="other"
+              label="เอกสารอื่นๆ"
+              description="เอกสารเพิ่มเติม เช่น ใบรับรอง หรือหลักฐานอื่น"
+              files={evidenceFiles.filter((f) => f.purpose === "other")}
+              onFilesChange={(newFiles) => {
+                const other = evidenceFiles.filter((f) => f.purpose !== "other");
+                setEvidenceFiles([...other, ...newFiles]);
+              }}
+              maxFiles={5}
+            />
+
+            {/* Additional notes */}
+            <div className="grid gap-1.5">
+              <Label htmlFor="verification-notes">หมายเหตุเพิ่มเติม</Label>
+              <Textarea
+                id="verification-notes"
+                rows={2}
+                value={verifyNotes}
+                onChange={(e) => setVerifyNotes(e.target.value)}
+                placeholder="อธิบายเพิ่มเติมเกี่ยวกับสินค้าหรือหลักฐาน..."
+              />
+            </div>
+
+            <p className="text-[11px] leading-5 text-slate-400">
+              หลักฐานจะถูกส่งให้ทีมตรวจสอบของ Velnox เท่านั้น ไม่เปิดเผยต่อลูกค้าหรือบุคคลที่สาม
+            </p>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setVerifyTarget(null)} disabled={verifyBusy}>
               ยกเลิก

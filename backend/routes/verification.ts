@@ -11,6 +11,8 @@
 import type { Express, Request, Response } from "express";
 import { query } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export function registerVerificationRoutes(app: Express) {
 
@@ -190,12 +192,12 @@ export function registerVerificationRoutes(app: Express) {
       const type = req.query.type as string; // "seller" or "product"
       const status = (req.query.status as string) || "pending";
 
-      // Check admin/staff role
-      const empRes = await query(
-        "SELECT role FROM employees WHERE user_id = $1 AND status = 'active'",
+      // Check admin/owner role (employees table has no 'status' column)
+      const userRes = await query(
+        "SELECT role FROM users WHERE id = $1",
         [userId],
       );
-      if (empRes.rows.length === 0) {
+      if (userRes.rows.length === 0 || !['owner', 'admin', 'staff'].includes(userRes.rows[0].role)) {
         return res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
       }
 
@@ -245,12 +247,12 @@ export function registerVerificationRoutes(app: Express) {
       const { verificationId } = req.params;
       const { action, reason } = req.body; // action: "approve" | "reject" | "suspend"
 
-      // Check admin/staff role
-      const empRes = await query(
-        "SELECT role FROM employees WHERE user_id = $1 AND status = 'active'",
+      // Check admin/owner role (employees table has no 'status' column)
+      const userRes = await query(
+        "SELECT role FROM users WHERE id = $1",
         [userId],
       );
-      if (empRes.rows.length === 0) {
+      if (userRes.rows.length === 0 || !['owner', 'admin', 'staff'].includes(userRes.rows[0].role)) {
         return res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
       }
 
@@ -290,12 +292,12 @@ export function registerVerificationRoutes(app: Express) {
       const { verificationId } = req.params;
       const { action, reason } = req.body;
 
-      // Check admin/staff role
-      const empRes = await query(
-        "SELECT role FROM employees WHERE user_id = $1 AND status = 'active'",
+      // Check admin/owner role (employees table has no 'status' column)
+      const userRes = await query(
+        "SELECT role FROM users WHERE id = $1",
         [userId],
       );
-      if (empRes.rows.length === 0) {
+      if (userRes.rows.length === 0 || !['owner', 'admin', 'staff'].includes(userRes.rows[0].role)) {
         return res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
       }
 
@@ -357,6 +359,81 @@ export function registerVerificationRoutes(app: Express) {
     } catch (err) {
       console.error("[verification] shop status error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch shop verification" } });
+    }
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // EVIDENCE UPLOAD (for verification submissions)
+  // ════════════════════════════════════════════════════════════════════════
+
+  // R2 client for evidence upload
+  const evidenceR2 = new S3Client({
+    region: "auto",
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+    },
+  });
+  const evidenceBucket = process.env.R2_BUCKET || "";
+  const evidencePublicDomain = process.env.R2_PUBLIC_DOMAIN || "";
+
+  // Allowed evidence file types
+  const EVIDENCE_ALLOWED_TYPES = [
+    "image/jpeg", "image/png", "image/webp", "image/avif",
+    "application/pdf",
+    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ];
+  const EVIDENCE_MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
+  // POST /api/seller/evidence/upload-intent — Get presigned URL for evidence upload
+  app.post("/api/seller/evidence/upload-intent", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const { filename, mimeType, purpose } = req.body;
+      // purpose: 'product_photo' | 'packaging' | 'label' | 'serial' | 'receipt' | 'supplier_doc' | 'other'
+
+      if (!filename || !mimeType) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "filename and mimeType required" } });
+        return;
+      }
+
+      if (!EVIDENCE_ALLOWED_TYPES.includes(mimeType)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed" } });
+        return;
+      }
+
+      // Verify user is a seller
+      const sellerRes = await query("SELECT id FROM sellers WHERE user_id = $1", [userId]);
+      if (sellerRes.rows.length === 0) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Seller account required" } });
+        return;
+      }
+
+      const sellerId = sellerRes.rows[0].id;
+      const ext = filename.split(".").pop() || "jpg";
+      const safePurpose = (purpose || "other").replace(/[^a-z0-9_-]/g, "_");
+      const timestamp = Date.now();
+      const objectKey = `verification/evidence/${sellerId}/${safePurpose}_${timestamp}.${ext}`;
+
+      const command = new PutObjectCommand({
+        Bucket: evidenceBucket,
+        Key: objectKey,
+        ContentType: mimeType,
+      });
+
+      const uploadUrl = await getSignedUrl(evidenceR2, command, { expiresIn: 300 });
+      const cdnUrl = evidencePublicDomain ? `${evidencePublicDomain}/${objectKey}` : "";
+
+      console.log(`[verification] evidence presign: seller=${sellerId} purpose=${safePurpose} key=${objectKey}`);
+
+      res.json({
+        success: true,
+        data: { uploadUrl, objectKey, cdnUrl },
+      });
+    } catch (err) {
+      console.error("[verification] evidence presign error:", err);
+      res.status(500).json({ success: false, error: { code: "R2_PRESIGN_FAILED", message: "Failed to generate upload URL" } });
     }
   });
 }

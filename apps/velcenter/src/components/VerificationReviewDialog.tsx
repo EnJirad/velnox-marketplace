@@ -75,6 +75,7 @@ interface VerificationReviewDialogProps {
 function EvidenceViewer({ urls, notes }: { urls: string[] | null; notes: string | null }) {
   const list = Array.isArray(urls) ? urls : [];
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const handleImageError = useCallback((url: string) => {
     setFailedImages((prev) => {
@@ -83,6 +84,25 @@ function EvidenceViewer({ urls, notes }: { urls: string[] | null; notes: string 
       return next;
     });
   }, []);
+
+  const isImage = (url: string) => /\.(jpg|jpeg|png|gif|webp|avif|bmp)$/i.test(url);
+  const getFileName = (url: string) => {
+    try {
+      const path = new URL(url).pathname;
+      return path.split("/").pop() ?? url;
+    } catch {
+      return url.split("/").pop() ?? url;
+    }
+  };
+
+  // Parse evidence notes for categorization
+  const noteLines = notes ? notes.split("\n").filter(Boolean) : [];
+  const evidenceCounts = noteLines.reduce((acc, line) => {
+    const match = line.match(/(\d+)\s*ไฟล์/);
+    if (match) acc.push({ label: line.replace(/\s*\d+\s*ไฟล์/, ""), count: parseInt(match[1]) });
+    return acc;
+  }, [] as { label: string; count: number }[]);
+  const hasSummary = evidenceCounts.length > 0;
 
   if (list.length === 0 && !notes) {
     return (
@@ -95,39 +115,80 @@ function EvidenceViewer({ urls, notes }: { urls: string[] | null; notes: string 
 
   return (
     <div className="space-y-3">
-      {notes && (
+      {/* Evidence summary */}
+      {hasSummary && (
+        <div className="rounded-xl bg-slate-50 p-3">
+          <p className="text-xs font-medium text-slate-500">สรุปหลักฐาน</p>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            {evidenceCounts.map((ec, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs text-slate-600 ring-1 ring-inset ring-slate-200">
+                {ec.label}: {ec.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Evidence notes */}
+      {notes && !hasSummary && (
         <div className="rounded-xl bg-slate-50 p-3">
           <p className="text-xs font-medium text-slate-500">หมายเหตุจากผู้ขาย</p>
           <p className="mt-1 text-sm text-slate-700">{notes}</p>
         </div>
       )}
-      {list.map((url) => {
-        const isImage = /\.(jpg|jpeg|png|gif|webp|avif|bmp)$/i.test(url);
-        const isFailed = failedImages.has(url);
-        return (
-          <div key={url} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            {isImage && !isFailed ? (
-              <div className="relative">
-                <img
-                  src={url}
-                  alt="Evidence"
-                  className="w-full object-contain max-h-64 bg-slate-50"
-                  onError={() => handleImageError(url)}
-                  loading="lazy"
-                />
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-white/90 text-slate-500 shadow-sm backdrop-blur transition-colors hover:text-slate-700"
-                  aria-label="Open full image"
-                >
-                  <ExternalLink className="size-3.5" />
-                </a>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 p-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+
+      {/* Evidence files - image grid */}
+      {list.some(isImage) && (
+        <div>
+          <p className="mb-2 text-xs font-medium text-slate-500">รูปภาพหลักฐาน ({list.filter(isImage).length})</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {list.filter(isImage).map((url) => {
+              const failed = failedImages.has(url);
+              return (
+                <div key={url} className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  {failed ? (
+                    <div className="flex aspect-square items-center justify-center bg-slate-50">
+                      <ImageOff className="size-5 text-slate-300" />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setLightboxUrl(url)}
+                      className="block w-full"
+                    >
+                      <img
+                        src={url}
+                        alt="Evidence"
+                        className="aspect-square w-full object-cover bg-slate-50 transition-transform group-hover:scale-105"
+                        onError={() => handleImageError(url)}
+                        loading="lazy"
+                      />
+                    </button>
+                  )}
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-white/90 text-slate-500 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 hover:text-slate-700"
+                    aria-label="Open full size"
+                  >
+                    <ExternalLink className="size-3" />
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Evidence files - documents */}
+      {list.some((u) => !isImage(u)) && (
+        <div>
+          <p className="mb-2 text-xs font-medium text-slate-500">เอกสารหลักฐาน ({list.filter((u) => !isImage(u)).length})</p>
+          <div className="space-y-1.5">
+            {list.filter((u) => !isImage(u)).map((url) => (
+              <div key={url} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2.5">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                   <FileText className="size-4 text-slate-400" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -137,7 +198,7 @@ function EvidenceViewer({ urls, notes }: { urls: string[] | null; notes: string 
                     rel="noreferrer noopener"
                     className="block truncate text-xs font-medium text-[#10B981] hover:underline"
                   >
-                    {url.split("/").pop() ?? url}
+                    {getFileName(url)}
                   </a>
                   <p className="mt-0.5 truncate text-[10px] text-slate-400">{url}</p>
                 </div>
@@ -150,10 +211,32 @@ function EvidenceViewer({ urls, notes }: { urls: string[] | null; notes: string 
                   <ExternalLink className="size-3.5" />
                 </a>
               </div>
-            )}
+            ))}
           </div>
-        );
-      })}
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxUrl(null)}
+            className="absolute right-4 top-4 flex size-8 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition-colors hover:bg-white/30"
+          >
+            <X className="size-4" />
+          </button>
+          <img
+            src={lightboxUrl}
+            alt="Evidence full size"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
