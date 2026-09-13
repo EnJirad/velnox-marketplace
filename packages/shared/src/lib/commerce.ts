@@ -86,7 +86,7 @@ export interface StoreProduct {
   reviewCount?: number;
   /** Product verification status (server-side enforced) */
   verificationStatus?: VerificationStatus;
-  /** Whether this product qualifies for V✓ badge (seller verified AND product verified) */
+  /** Whether this product qualifies for V badge (seller verified AND product verified) */
   isVerifiedProduct?: boolean;
   // VelRepeat configuration
   vrepeatEnabled?: boolean;
