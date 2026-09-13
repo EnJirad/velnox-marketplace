@@ -363,18 +363,29 @@ export function setupGoogleAuth(app: Express): void {
       let result;
       let coverUrl: string | null = null;
       try {
+        // Single optimized query — cover_url is in schema since migration V0009+
         result = await query(
-          "SELECT id, email, name, avatar, cover_url, role, status, created_at, updated_at FROM users WHERE id = $1",
+          "SELECT id, email, name, avatar, cover_url, role, status, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
           [payload.userId]
         );
         coverUrl = result.rows[0]?.cover_url || null;
       } catch (queryErr: any) {
-        // cover_url column may not exist yet (migration pending)
+        // cover_url column may not exist yet (legacy DB) — graceful fallback
         if (queryErr?.code === "42703") {
           result = await query(
-            "SELECT id, email, name, avatar, role, status, created_at, updated_at FROM users WHERE id = $1",
+            "SELECT id, email, name, avatar, role, status, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
             [payload.userId]
           );
+          // Try media table fallback for cover_url (legacy path only)
+          try {
+            const mediaRes = await query(
+              `SELECT url FROM media
+               WHERE uploaded_by = $1 AND key LIKE $2
+               ORDER BY created_at DESC LIMIT 1`,
+              [payload.userId, `profile/cover/${payload.userId}%`]
+            );
+            coverUrl = mediaRes.rows[0]?.url || null;
+          } catch { /* non-fatal */ }
         } else {
           throw queryErr;
         }
@@ -384,28 +395,6 @@ export function setupGoogleAuth(app: Express): void {
         return;
       }
       const u = result.rows[0];
-
-      if (!coverUrl && u.avatar) {
-        try {
-          const [legacyResult, fixedResult] = await Promise.allSettled([
-            query(
-              `SELECT url FROM media
-               WHERE uploaded_by = $1 AND key LIKE $2
-               ORDER BY created_at DESC LIMIT 1`,
-              [payload.userId, `profile/cover/${payload.userId}/%`]
-            ),
-            query(
-              `SELECT url FROM media
-               WHERE uploaded_by = $1 AND key LIKE $2
-               ORDER BY created_at DESC LIMIT 1`,
-              [payload.userId, `profile/cover/${payload.userId}%`]
-            ),
-          ]);
-          const legacyUrl = legacyResult.status === 'fulfilled' ? legacyResult.value.rows[0]?.url : null;
-          const fixedUrl = fixedResult.status === 'fulfilled' ? fixedResult.value.rows[0]?.url : null;
-          coverUrl = legacyUrl || fixedUrl || null;
-        } catch { /* media table query failed — ignore */ }
-      }
 
       const userData = {
         id: u.id,

@@ -382,6 +382,45 @@ PORT=3001
 
 ## Recent Work History
 
+### 2026-09-13 — Seller Authentication & Registration Flow Audit + Hardening
+
+**Scope:** Seller auth/registration/approval lifecycle across 3 files. No architecture change, no DB migration, no new endpoints.
+
+**Root cause analysis:** After exhaustive code trace of the complete flow (Google OAuth → backend resolveUser → /api/auth/me → RequireRole → seller status gate → registration → approval), the architecture is correct:
+- Backend creates new Google users as `role='customer'` (not seller)
+- RequireRole correctly gates by `GET /api/seller/status` (not just `users.role`)
+- `/api/seller/apply` creates pending seller records correctly
+- VelCenter `PATCH /api/admin/sellers/:id/status` promotes role on approval
+- Profile cache invalidation ensures fresh role data after approval
+
+**Issues fixed:**
+1. **Dead `signInWithGoogle` POST in api-client.ts** — Would have called a nonexistent `POST /auth/google` (backend only exposes `GET /auth/google` for redirect-based OAuth). Replaced with a clear error explaining the redirect approach. Auth page already uses `window.location.href` for the actual flow.
+2. **RequireRole: no refetch after application submission** — After `handleApply` success, `setApplySuccess(true)` showed the success screen but never refetched seller status. Added `GET /api/seller/status` refetch after apply so the component reflects the new `pending` state immediately.
+3. **RequireRole: no error state on seller status fetch failure** — Backend errors (e.g., 500 from DB) silently defaulted to `{ status: null }` → registration form, which confused users who already had a pending/approved seller record. Added error state with retry button.
+4. **Backend `/api/auth/me` slow query** — Removed redundant `Promise.allSettled` media table queries for `cover_url` fallback (column exists since migration V0009+). Simplified to single query with `LIMIT 1`, media fallback only for legacy DBs missing the column.
+
+**Files changed:**
+- `packages/shared/src/lib/api-client.ts` — Removed dead `signInWithGoogle` POST, updated `signIn` in useAuth hook
+- `packages/shared/src/components/RequireRole.tsx` — Added seller status refetch after apply, error state with retry, improved status fetch error handling
+- `backend/routes/auth.ts` — Optimized `/api/auth/me` query (removed redundant media fallback for cover_url), added LIMIT 1
+
+**Acceptance Cases A-H (code-verified):**
+- Case A (new Google user → registration): PASS — backend creates `role='customer'`, RequireRole shows registration form when `/api/seller/status` returns null
+- Case B (no seller application): PASS — `GET /api/seller/status` returns `{ success: true, data: null }` → registration form
+- Case C (submit → pending): PASS — `POST /api/seller/apply` creates seller with `status='pending'`, now refetches status after apply
+- Case D (refresh pending): PASS — `GET /api/seller/status` returns `status='pending'` → pending gate on every page load
+- Case E (login while pending): PASS — session persists, seller status is DB-backed, login returns to same pending state
+- Case F (rejected → edit → resubmit): PASS — rejected status shows rejection reason, `SELLER_STATUS_TRANSITIONS[rejected]=[pending_review]`, resubmit clears reason
+- Case G (approved → dashboard): PASS — VelCenter approval promotes `users.role` to seller, `GET /api/seller/status` returns `status='approved'`, RequireRole renders children
+- Case H (approve without re-login): PASS — `invalidateCachedProfile` called after approval, next `/api/auth/me` returns fresh role, seller status endpoint returns current state from DB
+
+**Database changed:** NO
+**Typecheck:** PASS (backend + all 4 frontend apps)
+**Security verified:** Google OAuth creates customer (not seller), self-approval blocked, no role bypass from frontend, backend enforces all transitions
+
+---
+
+### 2026-09-12 — TASK 2.5: LIVE E2E VERIFICATION — Velseller → R2 → Draft → VelCenter → Catalog (audit only, no redesign)
 
 ### 2026-09-13 — Fix: Velseller Slow Page Load After DB Reset (Media Query Optimization)
 

@@ -72,6 +72,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
 
   const [seller, setSeller] = useState<{ status: string | null; rejectionReason: string | null } | null>(null);
   const [sellerLoading, setSellerLoading] = useState(true);
+  const [sellerError, setSellerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [bootstrapCode, setBootstrapCode] = useState("");
   const [shopName, setShopName] = useState("");
@@ -105,10 +106,11 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((s) => { if (alive) setSeller(s.data ?? null); })
+      .then((s) => { if (alive) { setSeller(s.data ?? null); setSellerError(null); } })
       .catch((err) => {
         console.error("[seller] status fetch failed:", err);
-        if (alive) setSeller({ status: null, rejectionReason: null });
+        // On error, show retry option instead of silently defaulting to registration
+        if (alive) { setSeller({ status: null, rejectionReason: null }); setSellerError("ไม่สามารถตรวจสอบสถานะร้านค้าได้ กรุณาลองใหม่"); }
       })
       .finally(() => { if (alive) setSellerLoading(false); });
 
@@ -188,7 +190,30 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   }
 
   // ── seller ──
-  if (sellerLoading || seller === null) return <LoadingGate />;
+  if (sellerLoading || seller === null) {
+    // Show error with retry if seller status fetch failed
+    if (sellerError && !sellerLoading) {
+      return (
+        <GateCard icon={XCircle} title="เกิดข้อผิดพลาด" desc={sellerError}>
+        <Button
+          className="mt-4 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+          onClick={() => {
+            setSellerLoading(true);
+            setSellerError(null);
+            fetch(`${API_BASE}/seller/status`, { credentials: "include" })
+              .then((r) => r.json())
+              .then((s) => setSeller(s.data ?? null))
+              .catch(() => setSellerError("ไม่สามารถตรวจสอบสถานะได้ กรุณาลองใหม่"))
+              .finally(() => setSellerLoading(false));
+          }}
+        >
+          ลองใหม่
+        </Button>
+        </GateCard>
+      );
+    }
+    return <LoadingGate />;
+  }
 
   if (seller.status === "approved") return children;
 
@@ -235,6 +260,17 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         throw new Error(data.error?.message || "สมัครไม่สำเร็จ กรุณาลองใหม่");
       }
       setApplySuccess(true);
+      // Refetch seller status so the component reflects the new pending state
+      try {
+        const statusRes = await fetch(`${API_BASE}/seller/status`, { credentials: "include" });
+        const statusData = await statusRes.json();
+        if (statusData.data) {
+          setSeller({
+            status: statusData.data.status,
+            rejectionReason: statusData.data.rejectionReason || null,
+          });
+        }
+      } catch { /* non-fatal — success screen already shown */ }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "เกิดข้อผิดพลาด");
     } finally {

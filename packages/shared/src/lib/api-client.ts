@@ -122,23 +122,24 @@ export async function refetchCurrentUser(): Promise<ApiUser | null> {
   return user;
 }
 
-/** Google OAuth sign-in */
-export async function signInWithGoogle(code: string): Promise<ApiUser> {
-  const res = await fetch(`${API_BASE}/auth/google`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ code }),
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Authentication failed");
-  }
-  const data = await res.json();
-  authState = { isLoading: false, isAuthenticated: true, user: data.user };
-  authInitPromise = null; // reset so next initAuth() will re-fetch
-  notifyAuthListeners();
-  return data.user;
+/**
+ * Google OAuth sign-in (redirect-based).
+ *
+ * The actual Google flow is browser-redirect only:
+ * 1. window.location.href → /auth/google?returnTo=... (GET, backend redirects to Google)
+ * 2. Google → /auth/google/callback (GET, backend creates session + redirects to frontend)
+ *
+ * The Auth page (Auth.tsx) handles this via window.location.href directly.
+ * This function is NOT used for the redirect flow — it exists only for
+ * programmatic use-cases where the caller needs to trigger sign-in without
+ * a full page reload (e.g., popup flow). In practice the Auth page handles everything.
+ */
+export async function signInWithGoogle(_code?: string): Promise<ApiUser> {
+  // Google OAuth is redirect-based in Velnox. The backend exposes GET /auth/google
+  // which redirects to Google. The frontend (Auth.tsx) does window.location.href =
+  // to start the flow. This function is a no-op placeholder — callers should
+  // use the redirect approach instead.
+  throw new Error("Use redirect-based Google sign-in: window.location.href = apiUrl + '/auth/google?returnTo=...'");
 }
 
 /** Sign out — invalidate server session and clear all local auth state. */
@@ -192,7 +193,7 @@ export function useAuth() {
     isLoading: state.isLoading,
     isAuthenticated: state.isAuthenticated,
     user: state.user,
-    signIn: signInWithGoogle,
+    signIn: async () => { throw new Error("Use redirect-based sign-in"); },
     signOut,
   };
 }
