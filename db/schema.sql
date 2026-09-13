@@ -817,3 +817,98 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON chat_messages (conversation_id, sender_id, read_at) WHERE read_at IS NULL;
+
+-- ─── VelRepeat V2 (V0034) ─────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS velrepeat_plans (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('draft', 'active', 'paused', 'processing',
+                      'payment_failed', 'out_of_stock', 'item_unavailable',
+                      'price_changed', 'cancelled', 'completed')),
+  frequency_type TEXT NOT NULL CHECK (frequency_type IN ('days', 'weeks', 'months')),
+  interval_value INTEGER NOT NULL DEFAULT 30 CHECK (interval_value > 0),
+  next_run_at TIMESTAMPTZ NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMPTZ,
+  shipping_address_id UUID REFERENCES addresses(id) ON DELETE SET NULL,
+  shipping_address JSONB,
+  payment_method TEXT NOT NULL DEFAULT 'cod',
+  payment_method_ref TEXT,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  timezone TEXT NOT NULL DEFAULT 'Asia/Bangkok',
+  notes TEXT,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user ON velrepeat_plans (user_id);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user_status ON velrepeat_plans (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_due ON velrepeat_plans (status, next_run_at)
+  WHERE status IN ('active');
+
+CREATE TABLE IF NOT EXISTS velrepeat_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
+  seller_id UUID REFERENCES sellers(id) ON DELETE CASCADE,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  unit_price NUMERIC(12, 2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (plan_id, product_id, variant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_velrepeat_items_plan ON velrepeat_items (plan_id);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_items_product ON velrepeat_items (product_id);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_items_variant ON velrepeat_items (variant_id);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_items_shop ON velrepeat_items (shop_id);
+
+CREATE TABLE IF NOT EXISTS velrepeat_runs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
+  scheduled_for TIMESTAMPTZ NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'processing'
+    CHECK (status IN ('processing', 'success', 'payment_failed',
+                      'out_of_stock', 'item_unavailable', 'price_changed',
+                      'failed', 'cancelled')),
+  order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+  error_code TEXT,
+  error_message TEXT,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (plan_id, scheduled_for)
+);
+
+CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_plan ON velrepeat_runs (plan_id);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_status ON velrepeat_runs (status);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_scheduled ON velrepeat_runs (scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_order ON velrepeat_runs (order_id) WHERE order_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS velrepeat_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
+  run_id UUID REFERENCES velrepeat_runs(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_velrepeat_events_plan ON velrepeat_events (plan_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_events_type ON velrepeat_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_events_run ON velrepeat_events (run_id) WHERE run_id IS NOT NULL;
+
+-- V0034: Link recurring orders to their run
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS velrepeat_run_id UUID REFERENCES velrepeat_runs(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_run ON orders (velrepeat_run_id) WHERE velrepeat_run_id IS NOT NULL;
+
+-- V0034: Product-level VelRepeat quantity bounds
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_min_qty INTEGER;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS vrepeat_max_qty INTEGER;

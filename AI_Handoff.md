@@ -3463,3 +3463,72 @@ Seller selects product
 - Evidence upload uses public R2 URLs (same as product images). For truly private KYC documents, a private R2 bucket with signed GET URLs would be recommended as a future enhancement.
 - Evidence categorization is inferred from seller notes text, not stored as structured data in the database.
 - VelCenter verification review uses hardcoded Thai text (consistent with existing pattern).
+
+### 2026-09-13 — Root-Cause Debug: Evidence Preview + VelRepeat CHECK Constraint
+
+**Scope:** EvidenceUploader component, db schema synchronization for VelRepeat V2.
+
+**ROOT CAUSE 1 — Image Preview Not Showing:**
+The EvidenceUploader component (`packages/shared/src/components/seller/EvidenceUploader.tsx`) did NOT use `URL.createObjectURL()` for local preview. When a seller selected an image file, the component only showed a generic `FileImage` icon. The actual image thumbnail only appeared AFTER the upload to R2 completed (when `ef.cdnUrl` was available). This meant sellers saw no visual preview during the upload process.
+
+**Fix:** Added `URL.createObjectURL(file)` immediately when files are selected, storing the result in `ef.previewUrl`. The component now shows:
+- Local preview via `previewUrl` for pending/uploading files
+- CDN URL via `cdnUrl` for uploaded files
+- Proper `URL.revokeObjectURL()` cleanup on file removal and component unmount
+- Fallback from CDN URL to local preview on image load error
+
+**ROOT CAUSE 2 — VelRepeat `item_unavailable` CHECK Constraint Violation:**
+The `velrepeat_plans` table was created by migration 034 with a CHECK constraint that only allowed:
+```
+'draft', 'active', 'paused', 'processing', 'payment_failed', 'out_of_stock', 'cancelled', 'completed'
+```
+But the VelRepeat scheduler (`backend/jobs/velrepeat-scheduler.ts`) writes `item_unavailable` and `price_changed` to `velrepeat_plans.status` when items fail validation. These values were NOT in the CHECK constraint, causing a constraint violation error.
+
+**Fix:** Created migration 035 (`db/migrations/035_velrepeat_plans_status_fix.sql`) that drops the old constraint and adds a new one including `item_unavailable` and `price_changed`.
+
+**Database files updated (all three synchronized):**
+- `db/schema.sql` — Added `velrepeat_plans`, `velrepeat_items`, `velrepeat_runs`, `velrepeat_events` tables with correct CHECK constraints (previously only in migration 034, missing from schema files)
+- `db/run-sqleditor.sql` — Added same tables + V0035 constraint fix
+- `db/run-update.sql` — Added V0035 migration
+
+**Files changed:**
+| File | Change |
+|------|--------|
+| `packages/shared/src/components/seller/EvidenceUploader.tsx` | Added `createObjectURL` preview, `revokeObjectURL` cleanup, CDN/local fallback |
+| `db/migrations/035_velrepeat_plans_status_fix.sql` | **NEW** — Fixes CHECK constraint to include `item_unavailable`, `price_changed` |
+| `db/schema.sql` | Added velrepeat_plans/items/runs/events tables with correct CHECK |
+| `db/run-sqleditor.sql` | Added velrepeat tables + V0035 constraint fix |
+| `db/run-update.sql` | Added V0035 migration |
+
+**Verification flow (end-to-end trace):**
+1. Seller selects product → Opens verification dialog
+2. Seller selects evidence files → **Now shows local preview immediately** (FIXED)
+3. Files upload to R2 via presigned URLs → Returns `cdnUrl` + `objectKey`
+4. Seller clicks Submit → Evidence URLs sent to `POST /api/seller/products/:productId/verification`
+5. Backend creates `product_verifications` record (status: 'pending')
+6. Backend updates `products.verification_status = 'pending'`
+7. VelCenter reads from `GET /api/admin/verifications?status=pending`
+8. Admin reviews evidence images/documents
+9. Admin approves/rejects/suspends
+
+**VelRepeat fix:**
+- Scheduler writes `item_unavailable` to `velrepeat_plans.status` → Now passes CHECK constraint
+- Scheduler writes `price_changed` to `velrepeat_plans.status` → Now passes CHECK constraint
+- No application code changes needed — only DB constraint fix
+
+**Database changed:** YES — migration 035 + schema sync
+**Database SQL synchronization:** PASS (all three files updated)
+
+**Verification:**
+- velcenter `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velnox `tsc --noEmit` ✅ PASS
+- `bun run i18n:check` 1162×3 ✅ PASS
+- `git diff --check` ✅ PASS
+- Backend tests: 167 pass / 26 skip / 2 pre-existing DB-state failures / 0 new failures
+
+**Limitations:**
+- Live E2E testing not performed (no DATABASE_URL/headless browser in sandbox)
+- Evidence preview is local-only until R2 upload completes (by design — prevents unnecessary uploads)
+- VelCenter verification review uses hardcoded Thai text (consistent with existing pattern)

@@ -6,13 +6,12 @@ import {
   FileImage,
   FileText,
   Loader2,
-  Paperclip,
   Upload,
   X,
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 
 const MAX_FILES = 20;
@@ -36,6 +35,7 @@ export interface EvidenceFile {
   status: "pending" | "uploading" | "uploaded" | "error";
   objectKey?: string;
   cdnUrl?: string;
+  previewUrl?: string; // local object URL for instant preview
   progress?: number;
   error?: string;
 }
@@ -61,10 +61,24 @@ export function EvidenceUploader({
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
+  // Generate preview URLs for new files and clean up old ones
+  const fileIdsWithPreviews = useMemo(() => new Set(files.map((f) => f.id)), [files]);
+
   const generateId = () => `ev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   const isImage = (type: string) => type.startsWith("image/");
-  const isDocument = (type: string) => !type.startsWith("image/");
+
+  // Cleanup preview URLs when files are removed
+  useEffect(() => {
+    return () => {
+      // Cleanup all preview URLs on unmount
+      for (const f of files) {
+        if (f.previewUrl && f.previewUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(f.previewUrl);
+        }
+      }
+    };
+  }, []); // Only on unmount
 
   const uploadFile = useCallback(
     async (evidenceFile: EvidenceFile) => {
@@ -103,7 +117,7 @@ export function EvidenceUploader({
           throw new Error(`R2 upload failed: ${uploadRes.status}`);
         }
 
-        // 3. Mark as uploaded
+        // 3. Mark as uploaded — keep previewUrl for local preview
         const finalFiles = updatedFiles.map((f) =>
           f.id === evidenceFile.id
             ? {
@@ -111,6 +125,7 @@ export function EvidenceUploader({
                 status: "uploaded" as const,
                 objectKey: intent.objectKey,
                 cdnUrl: intent.cdnUrl,
+                // Keep previewUrl for local display, prefer cdnUrl for uploaded state
               }
             : f
         );
@@ -141,11 +156,14 @@ export function EvidenceUploader({
         return;
       }
 
+      // Create evidence files with local preview URLs immediately
       const evidenceFiles: EvidenceFile[] = newFiles.map((file) => ({
         id: generateId(),
         file,
         purpose,
-        status: "pending",
+        status: "pending" as const,
+        // Create local object URL for instant preview
+        previewUrl: isImage(file.type) ? URL.createObjectURL(file) : undefined,
       }));
 
       const allFiles = [...files, ...evidenceFiles];
@@ -162,6 +180,11 @@ export function EvidenceUploader({
   );
 
   const handleRemove = (id: string) => {
+    const fileToRemove = files.find((f) => f.id === id);
+    // Revoke object URL to prevent memory leak
+    if (fileToRemove?.previewUrl && fileToRemove.previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(fileToRemove.previewUrl);
+    }
     onFilesChange(files.filter((f) => f.id !== id));
   };
 
@@ -176,8 +199,14 @@ export function EvidenceUploader({
   };
 
   const uploadedCount = files.filter((f) => f.status === "uploaded").length;
-  const pendingCount = files.filter((f) => f.status === "pending").length;
   const errorCount = files.filter((f) => f.status === "error").length;
+
+  // Get the best preview URL for a file: prefer cdnUrl when uploaded, else previewUrl
+  const getPreviewUrl = (ef: EvidenceFile): string | undefined => {
+    if (ef.status === "uploaded" && ef.cdnUrl) return ef.cdnUrl;
+    if (ef.previewUrl) return ef.previewUrl;
+    return undefined;
+  };
 
   return (
     <div className="grid gap-2">
@@ -205,76 +234,83 @@ export function EvidenceUploader({
       {/* Uploaded files list */}
       {files.length > 0 && (
         <div className="space-y-2">
-          {files.map((ef) => (
-            <div
-              key={ef.id}
-              className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2.5 transition-colors"
-            >
-              {/* File icon / thumbnail */}
-              <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                {isImage(ef.file.type) ? (
-                  ef.status === "uploaded" && ef.cdnUrl ? (
+          {files.map((ef) => {
+            const previewUrl = getPreviewUrl(ef);
+            return (
+              <div
+                key={ef.id}
+                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2.5 transition-colors"
+              >
+                {/* File icon / thumbnail with preview */}
+                <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                  {isImage(ef.file.type) && previewUrl ? (
                     <img
-                      src={ef.cdnUrl}
+                      src={previewUrl}
                       alt={ef.file.name}
                       className="size-full object-cover"
+                      onError={(e) => {
+                        // If CDN URL fails, try local preview
+                        if (ef.cdnUrl && ef.previewUrl && (e.target as HTMLImageElement).src !== ef.previewUrl) {
+                          (e.target as HTMLImageElement).src = ef.previewUrl;
+                        }
+                      }}
                     />
-                  ) : (
+                  ) : isImage(ef.file.type) ? (
                     <div className="flex size-full items-center justify-center">
                       <FileImage className="size-4 text-slate-400" />
                     </div>
-                  )
-                ) : (
-                  <div className="flex size-full items-center justify-center">
-                    <FileText className="size-4 text-slate-400" />
-                  </div>
-                )}
-              </div>
+                  ) : (
+                    <div className="flex size-full items-center justify-center">
+                      <FileText className="size-4 text-slate-400" />
+                    </div>
+                  )}
+                </div>
 
-              {/* File info */}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-slate-700">
-                  {ef.file.name}
-                </p>
-                <p className="text-[10px] text-slate-400">
-                  {(ef.file.size / 1024 / 1024).toFixed(1)} MB
-                  {ef.status === "uploading" && " · กำลังอัปโหลด..."}
-                  {ef.status === "uploaded" && " · อัปโหลดสำเร็จ"}
-                  {ef.status === "error" && ef.error && ` · ${ef.error}`}
-                </p>
-              </div>
+                {/* File info */}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-slate-700">
+                    {ef.file.name}
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    {(ef.file.size / 1024 / 1024).toFixed(1)} MB
+                    {ef.status === "uploading" && " · กำลังอัปโหลด..."}
+                    {ef.status === "uploaded" && " · อัปโหลดสำเร็จ"}
+                    {ef.status === "error" && ef.error && ` · ${ef.error}`}
+                  </p>
+                </div>
 
-              {/* Status / Actions */}
-              <div className="flex shrink-0 items-center gap-1">
-                {ef.status === "uploading" && (
-                  <Loader2 className="size-4 animate-spin text-[#10B981]" />
-                )}
-                {ef.status === "uploaded" && (
-                  <CheckCircle2 className="size-4 text-[#10B981]" />
-                )}
-                {ef.status === "error" && (
+                {/* Status / Actions */}
+                <div className="flex shrink-0 items-center gap-1">
+                  {ef.status === "uploading" && (
+                    <Loader2 className="size-4 animate-spin text-[#10B981]" />
+                  )}
+                  {ef.status === "uploaded" && (
+                    <CheckCircle2 className="size-4 text-[#10B981]" />
+                  )}
+                  {ef.status === "error" && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[10px] text-[#10B981]"
+                      onClick={() => void handleRetry(ef)}
+                    >
+                      ลองอีกครั้ง
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-[10px] text-[#10B981]"
-                    onClick={() => void handleRetry(ef)}
+                    size="icon"
+                    className="size-6 text-slate-400 hover:text-red-500"
+                    onClick={() => handleRemove(ef.id)}
                   >
-                    ลองอีกครั้ง
+                    <X className="size-3" />
                   </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-6 text-slate-400 hover:text-red-500"
-                  onClick={() => handleRemove(ef.id)}
-                >
-                  <X className="size-3" />
-                </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
