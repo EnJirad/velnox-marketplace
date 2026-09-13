@@ -159,16 +159,20 @@ export interface StoreShop {
 export interface SellerProfile {
   seller: {
     id: string;
-    ownerUserId: string;
-    name: string;
-    taxId: string | null;
+    ownerUserId?: string;
+    name?: string;
+    taxId?: string | null;
     status: "pending" | "approved" | "rejected" | "suspended";
+    verificationStatus?: VerificationStatus;
+    verifiedAt?: number | string | null;
     rejectionReason: string | null;
-    refundPolicyLimit: number;
+    refundPolicyLimit?: number;
     /** Unix ms */
     createdAt: number;
+    updatedAt?: number;
   };
   shops: StoreShop[];
+  settings?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------

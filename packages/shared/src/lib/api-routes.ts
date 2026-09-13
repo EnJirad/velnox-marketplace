@@ -319,6 +319,7 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.seller.submitProductVerification": (a) => apiPost(`/api/seller/products/${a.productId}/verification`, a),
   "api.seller.evidenceUploadIntent": (a) => apiPost("/api/seller/evidence/upload-intent", a),
   "api.seller.evidenceConfirm": (a) => apiPost("/api/seller/evidence/confirm", a),
+  "api.seller.evidenceList": () => apiGetFresh("/api/seller/evidence"),
   "api.admin.verifications": (a) => apiGet(`/api/admin/verifications${a?.type ? `?type=${a.type}` : ""}${a?.status ? `&status=${a.status}` : ""}`),
   "api.admin.sellerVerificationAction": (a) => apiPatch(`/api/admin/verifications/seller/${a.verificationId}`, a),
   "api.admin.productVerificationAction": (a) => apiPatch(`/api/admin/verifications/product/${a.verificationId}`, a),

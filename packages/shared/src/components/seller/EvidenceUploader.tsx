@@ -30,12 +30,16 @@ const ACCEPT = ALLOWED_TYPES.join(",");
 
 export interface EvidenceFile {
   id: string;
-  file: File;
+  file?: File;
+  /** For hydrated/server-persisted evidence where File is not available */
+  filename?: string;
+  contentType?: string;
+  fileSize?: number;
   purpose: string;
   status: "pending" | "uploading" | "uploaded" | "error";
   objectKey?: string;
   cdnUrl?: string;
-  previewUrl?: string; // local object URL for instant preview
+  previewUrl?: string; // local object URL for instant preview or persisted cdnUrl
   progress?: number;
   error?: string;
 }
@@ -72,6 +76,9 @@ export function EvidenceUploader({
   const generateId = () => `ev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   const isImage = (type: string) => type.startsWith("image/");
+  const getFileType = (ef: EvidenceFile) => ef.file?.type ?? ef.contentType ?? "";
+  const getFileName = (ef: EvidenceFile) => ef.file?.name ?? ef.filename ?? ef.objectKey?.split("/").pop() ?? "evidence";
+  const getFileSize = (ef: EvidenceFile) => ef.file?.size ?? ef.fileSize ?? 0;
 
   // Cleanup preview URLs when files are removed
   useEffect(() => {
@@ -87,7 +94,11 @@ export function EvidenceUploader({
 
   const uploadFile = useCallback(
     async (evidenceFile: EvidenceFile) => {
-      const { file } = evidenceFile;
+      const file = evidenceFile.file;
+      if (!file) {
+        // Hydrated entry without File — nothing to upload
+        return;
+      }
       if (!ALLOWED_TYPES.includes(file.type)) {
         toast.error(`ไฟล์ ${file.name} ไม่ใช่ประเภทที่รองรับ`);
         return;
@@ -100,29 +111,40 @@ export function EvidenceUploader({
       // Use ref to get latest files — avoids stale closure when called
       // right after handleFiles updates state via onFilesChange
       const currentFiles = filesRef.current;
+      const hasFile = currentFiles.some((f) => f.id === evidenceFile.id);
+      // If file not yet in ref (race with handleFiles), include it
+      const baseFiles = hasFile ? currentFiles : [...currentFiles, evidenceFile];
+      if (!hasFile) filesRef.current = baseFiles;
 
       // Update status to uploading using the LATEST files array
-      const updatedFiles = currentFiles.map((f) =>
+      const updatedFiles = baseFiles.map((f) =>
         f.id === evidenceFile.id ? { ...f, status: "uploading" as const } : f
       );
+      filesRef.current = updatedFiles;
       onFilesChange(updatedFiles);
+      console.log(`[VERIFICATION UPLOAD] R2 PUT started purpose=${purpose} file=${file.name}`);
 
       try {
         // 1. Get presigned R2 URL
+        console.log(`[VERIFICATION UPLOAD] presign requested purpose=${purpose} file=${file.name}`);
         const intent = await getUploadIntent({
           filename: file.name,
           mimeType: file.type,
           purpose,
         });
+        console.log(`[VERIFICATION UPLOAD] presign received purpose=${purpose} key=${intent.objectKey}`);
 
-        // 2. Upload to R2
+        // 2. Upload to R2 — must send exactly the signed Content-Type
         const uploadRes = await fetch(intent.uploadUrl, {
           method: "PUT",
           body: file,
           headers: { "Content-Type": file.type },
         });
 
+        console.log(`[VERIFICATION UPLOAD] R2 PUT completed purpose=${purpose} status=${uploadRes.status}`);
         if (!uploadRes.ok) {
+          const body = await uploadRes.text().catch(() => "");
+          console.warn(`[VERIFICATION UPLOAD] R2 PUT failed body=${body.slice(0,200)}`);
           throw new Error(`R2 upload failed: ${uploadRes.status}`);
         }
 
@@ -139,9 +161,11 @@ export function EvidenceUploader({
               }
             : f
         );
+        filesRef.current = finalFiles;
         onFilesChange(finalFiles);
 
         // 4. Notify parent so it can persist evidence via evidence-confirm API
+        console.log(`[VERIFICATION UPLOAD] confirmation started purpose=${purpose} key=${intent.objectKey}`);
         onUploadSuccess?.({
           objectKey: intent.objectKey,
           cdnUrl: intent.cdnUrl,
@@ -151,7 +175,7 @@ export function EvidenceUploader({
           purpose,
         });
       } catch (err) {
-        console.error("Evidence upload error:", err);
+        console.error("[VERIFICATION UPLOAD] R2 PUT error:", err);
         const latestFiles = filesRef.current;
         const errorFiles = latestFiles.map((f) =>
           f.id === evidenceFile.id
@@ -162,6 +186,7 @@ export function EvidenceUploader({
               }
             : f
         );
+        filesRef.current = errorFiles;
         onFilesChange(errorFiles);
         toast.error(`อัปโหลด "${file.name}" ไม่สำเร็จ`);
       }
@@ -179,23 +204,27 @@ export function EvidenceUploader({
       }
 
       // Create evidence files with local preview URLs immediately
-      const evidenceFiles: EvidenceFile[] = newFiles.map((file) => ({
+      const evidenceFilesLocal: EvidenceFile[] = newFiles.map((file) => ({
         id: generateId(),
         file,
+        filename: file.name,
+        contentType: file.type,
+        fileSize: file.size,
         purpose,
         status: "pending" as const,
         // Create local object URL for instant preview
         previewUrl: isImage(file.type) ? URL.createObjectURL(file) : undefined,
       }));
 
-      // Add new files to state — uploadFile will use filesRef.current
-      // which will be updated by the next render cycle
-      const allFiles = [...latestFiles, ...evidenceFiles];
+      // Add new files to state — sync ref immediately so uploadFile sees them
+      const allFiles = [...latestFiles, ...evidenceFilesLocal];
+      filesRef.current = allFiles;
       onFilesChange(allFiles);
+      console.log(`[VERIFICATION UPLOAD] file selected purpose=${purpose} count=${evidenceFilesLocal.length}`);
 
       // Upload each file — uploadFile reads filesRef.current for latest state
       setUploading(true);
-      for (const ef of evidenceFiles) {
+      for (const ef of evidenceFilesLocal) {
         await uploadFile(ef);
       }
       setUploading(false);
@@ -210,7 +239,9 @@ export function EvidenceUploader({
     if (fileToRemove?.previewUrl && fileToRemove.previewUrl.startsWith("blob:")) {
       URL.revokeObjectURL(fileToRemove.previewUrl);
     }
-    onFilesChange(latestFiles.filter((f) => f.id !== id));
+    const next = latestFiles.filter((f) => f.id !== id);
+    filesRef.current = next;
+    onFilesChange(next);
   };
 
   const handleRetry = async (ef: EvidenceFile) => {
@@ -218,6 +249,7 @@ export function EvidenceUploader({
     const retryFiles = latestFiles.map((f) =>
       f.id === ef.id ? { ...f, status: "pending" as const, error: undefined } : f
     );
+    filesRef.current = retryFiles;
     onFilesChange(retryFiles);
     setUploading(true);
     await uploadFile({ ...ef, status: "pending" });
@@ -270,10 +302,10 @@ export function EvidenceUploader({
               >
                 {/* File icon / thumbnail with preview */}
                 <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                  {isImage(ef.file.type) && previewUrl ? (
+                  {isImage(getFileType(ef)) && previewUrl ? (
                     <img
                       src={previewUrl}
-                      alt={ef.file.name}
+                      alt={getFileName(ef)}
                       className="size-full object-cover"
                       onError={(e) => {
                         // If CDN URL fails, try local preview
@@ -282,7 +314,7 @@ export function EvidenceUploader({
                         }
                       }}
                     />
-                  ) : isImage(ef.file.type) ? (
+                  ) : isImage(getFileType(ef)) ? (
                     <div className="flex size-full items-center justify-center">
                       <FileImage className="size-4 text-slate-400" />
                     </div>
@@ -296,10 +328,10 @@ export function EvidenceUploader({
                 {/* File info */}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium text-slate-700">
-                    {ef.file.name}
+                    {getFileName(ef)}
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    {(ef.file.size / 1024 / 1024).toFixed(1)} MB
+                    {(getFileSize(ef) / 1024 / 1024).toFixed(1)} MB
                     {ef.status === "uploading" && " · กำลังอัปโหลด..."}
                     {ef.status === "uploaded" && " · อัปโหลดสำเร็จ"}
                     {ef.status === "error" && ef.error && ` · ${ef.error}`}

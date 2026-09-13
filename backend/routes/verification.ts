@@ -199,6 +199,36 @@ export function registerVerificationRoutes(app: Express) {
   // EVIDENCE PERSISTENCE & RETRIEVAL
   // ════════════════════════════════════════════════════════════════════════
 
+  // GET /api/seller/evidence — List persisted evidence for current seller (for refresh hydration)
+  app.get("/api/seller/evidence", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const sellerRes = await query("SELECT id FROM sellers WHERE user_id = $1", [userId]);
+      if (sellerRes.rows.length === 0) {
+        res.json({ success: true, data: [] });
+        return;
+      }
+      const result = await query(
+        `SELECT id, url, key, content_type, size, created_at
+         FROM media
+         WHERE uploaded_by = $1 AND key LIKE 'verification/evidence/%'
+         ORDER BY created_at DESC`,
+        [userId],
+      );
+      // Enrich with purpose parsed from key: verification/evidence/{sellerId}/{purpose}_{ts}.ext
+      const rows = result.rows.map((r: any) => {
+        const parts = String(r.key).split("/");
+        const filename = parts[parts.length - 1] || "";
+        const purpose = filename.split("_")[0] || "other";
+        return { ...r, purpose };
+      });
+      res.json({ success: true, data: rows });
+    } catch (err) {
+      console.error("[verification] list evidence error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch evidence" } });
+    }
+  });
+
   // POST /api/seller/evidence/confirm — Persist evidence metadata after R2 upload
   app.post("/api/seller/evidence/confirm", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -210,9 +240,22 @@ export function registerVerificationRoutes(app: Express) {
         return;
       }
 
-      // Verify the object key belongs to this user
+      // Verify the object key belongs to this user — must be verification/evidence/{sellerId}/...
       if (!objectKey.startsWith("verification/evidence/")) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Invalid object key" } });
+        return;
+      }
+      // Ownership: sellerId segment must match current seller
+      const sellerResForConfirm = await query("SELECT id FROM sellers WHERE user_id = $1", [userId]);
+      if (sellerResForConfirm.rows.length === 0) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Seller account required" } });
+        return;
+      }
+      const sellerId = sellerResForConfirm.rows[0].id;
+      const keySellerId = objectKey.split("/")[2] || "";
+      if (keySellerId !== String(sellerId)) {
+        console.warn(`[verification] evidence confirm ownership mismatch: keySeller=${keySellerId} actual=${sellerId}`);
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Object key does not belong to this seller" } });
         return;
       }
 

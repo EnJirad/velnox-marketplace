@@ -231,7 +231,7 @@ export function setupSellerRoutes(app: Express): void {
       const userId = req.user!.userId;
 
       const result = await query(
-        `SELECT s.id, s.status, s.created_at, s.updated_at,
+        `SELECT s.id, s.status, s.verification_status, s.verified_at, s.created_at, s.updated_at,
                 sh.id as shop_id, sh.name as shop_name, sh.slug as shop_slug,
                 sh.description as shop_description, sh.logo as shop_logo,
                 sh.cover as shop_cover, sh.rating as shop_rating,
@@ -273,6 +273,8 @@ export function setupSellerRoutes(app: Express): void {
           seller: {
             id: row.id,
             status: row.status,
+            verificationStatus: row.verification_status ?? "unverified",
+            verifiedAt: row.verified_at ?? null,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
           },

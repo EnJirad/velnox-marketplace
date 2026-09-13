@@ -2,7 +2,7 @@
 
 **LAST UPDATED: 2026-09-13**
 
-**STATUS: EVIDENCE PERSISTENCE FIX (2026-09-13)** — EvidenceUploader now calls evidence-confirm API after successful R2 upload, ensuring metadata is persisted to database. Images survive page refresh.
+**STATUS: VERIFICATION IDENTITY UPLOAD E2E FIX (2026-09-13)** — Seller Identity Verification ID Card / Selfie+ID flow now completes end-to-end: presign → R2 PUT → evidence-confirm → DB (media) → reload after refresh. EvidenceUploader fixed (stale-closure, ref sync, error handling, diagnostic logs), backend evidence confirm enforces seller-scoped ownership, new GET /api/seller/evidence for hydration; seller profile now returns verificationStatus/verifiedAt; MyShop hydrates persisted evidence on mount so images survive refresh. See Recent Work History: `### 2026-09-13 — Velseller Identity Verification: ID Card / Selfie+ID Upload E2E Fix`.
 
 ## Production Readiness Status
 
@@ -382,6 +382,64 @@ PORT=3001
 8. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-09-13 — Velseller Identity Verification: ID Card / Selfie+ID Upload E2E Fix
+
+**TASK:** Fix Velseller Identity Verification — ID Card / Selfie+ID upload appeared stuck: spinner showed then disappeared with no image, no persisted evidence, image did not survive refresh. Render log confirmed presign succeeded (`[verification] evidence presign: seller=... purpose=id_card/selfie_id key=verification/evidence/...`) so root cause was after presign. Requirement: fix the existing system end-to-end — presign → R2 PUT → evidence-confirm → DB (media) → reload after refresh — without creating a duplicate verification/upload/R2 system.
+
+**Root Cause (proven from code inspection, not guessed):**
+1. **EvidenceUploader stale-closure / ref desync:** `handleFiles` appended new EvidenceFile entries and called `onFilesChange` but `uploadFile` read a stale `filesRef.current` (the ref was only updated by the next render). The `uploading→uploaded` transition could be lost — the UI transitioned `uploading → idle` with no visible image (the reported symptom). `handleRemove`/`handleRetry` also mutated local `latestFiles` without syncing `filesRef.current`, causing further desync.
+2. **Required evidence fields not hydrated:** `EvidenceFile.file` was required non-optional; hydrated (server-side) entries with no `File` object could not be represented, so no refresh hydration existed.
+3. **Evidence-confirm was fire-and-forget / swallow-error:** MyShop's `handleEvidenceUploaded` swallowed errors (warn only), never surfaced to user, and `EvidenceUploader.uploadFile` collapsed all failures into a generic toast without logging HTTP status or response body.
+4. **No ownership enforcement on evidence-confirm key:** Previous `POST /api/seller/evidence/confirm` only checked the `verification/evidence/` prefix, not that the sellerId segment matched the authenticated seller — cross-seller key reuse was not blocked.
+5. **No list endpoint for hydration:** No `GET /api/seller/evidence`; evidence could not be reloaded after refresh, so images appeared only in transient local state.
+6. **Seller verification status not returned by profile:** `GET /api/seller/profile` selected `s.id, s.status, s.created_at, s.updated_at` but not `s.verification_status / s.verified_at`, so MyShop's seller verification badge and gates rendered from stale/undef status even when DB had `pending/verified`. `SellerProfile` type was also missing those fields.
+7. **Reload did not re-hydrate Step 2:** Even after evidence-confirm persisted to `media`, MyShop never fetched it back — Step 2's two `EvidenceUploader` instances (id_card / selfie_id) showed empty after refresh.
+
+**Design Constraints Honored:**
+- No new verification/upload/R2/evidence system. All fixes reuse existing R2 presign (`POST /api/seller/evidence/upload-intent` with `purpose=id_card|selfie_id`), existing `media` table (key=`verification/evidence/{sellerId}/{purpose}_{ts}.ext`, url=cdnUrl), and existing `POST /api/seller/evidence/confirm` flow.
+- No DB schema change. `media` + `seller_verifications` + `sellers.verification_status` (V0040) already existed.
+- No new bucket/storage abstraction. No mock upload. No hardcoded image URL. No sellerId from frontend trusted (ownership derived from `req.user.userId → sellers.id`).
+- R2 CORS/security preserved: presign signs `Content-Type` and frontend sends exactly that header; object is not made public beyond existing `R2_PUBLIC_DOMAIN`; ownership check blocks cross-seller key reuse; no wildcard origin addition.
+
+**Fixes (6 files, 149 insertions / 27 deletions; `git diff --stat`):**
+- `backend/routes/seller.ts` — `GET /api/seller/profile` now selects `s.verification_status, s.verified_at` and returns `seller.verificationStatus` + `verifiedAt` (fallback `unverified`). MyShop gates/status card now render from DB.
+- `backend/routes/verification.ts` — New `GET /api/seller/evidence` (auth, seller-scoped; `requireAuth`; queries `media WHERE uploaded_by=$1 AND key LIKE 'verification/evidence/%' ORDER BY created_at DESC`; enriches `purpose` from key's last segment `split('_')[0]`). Hardened `POST /api/seller/evidence/confirm` to resolve `sellers.id` from `req.user.userId` and reject when `keySellerId !== sellerId` (403 + warn log). Existing presign (`evidenceUploadIntent`) unchanged.
+- `packages/shared/src/lib/api-routes.ts` — Added `api.seller.evidenceList → GET /api/seller/evidence` via `apiGetFresh` (no stale 60s GET cache — verification hydration must be fresh).
+- `packages/shared/src/lib/commerce.ts` — `SellerProfile.seller` now includes optional `verificationStatus?: VerificationStatus` and `verifiedAt?: number|string|null` plus optional `name/ownerUserId/taxId/refundPolicyLimit/updatedAt/settings` alignment so `MyShop` compiles against real DB shape.
+- `packages/shared/src/components/seller/EvidenceUploader.tsx` — Made `file?` optional; added `filename/contentType/fileSize` for hydrated entries plus helpers `getFileType/getFileName/getFileSize`. Fixed stale-closure: `filesRef.current` is synced immediately after `handleFiles` append and after `handleRemove/handleRetry`; `uploadFile` includes `baseFiles` race guard (`hasFile` check) and syncs ref after every `uploading→uploaded` and `→error` transition. R2 PUT always sends exactly the signed `Content-Type`. Added diagnostic logs at every step: `[VERIFICATION UPLOAD] file selected`, `presign requested`, `presign received`, `R2 PUT started`, `R2 PUT completed status=...`, `confirmation started` (with `body` preview on failure). Hydrated entries render via `cdnUrl`/`previewUrl` fallback and survive retry/remove. `isImage`/`previewUrl` fallback uses `getFileType` so hydrated image rows render.
+- `apps/velseller/src/pages/MyShop.tsx` — `handleEvidenceUploaded` now logs `confirmation started/completed status=200` and surfaces failure via `toast.error` (no longer swallowed). New `fetchEvidence` (`api.seller.evidenceList`) hydration `useEffect` on mount/when `profile` loads: fetches `GET /api/seller/evidence` once (`evidenceHydrated` guard, `cancelled` cleanup), maps DB rows to `EvidenceFile` (`id=hydrated_{id|key}`, `status=uploaded`, `cdnUrl=url`, `previewUrl=url`, `purpose` from server), and populates Step 2 so ID Card / Selfie+ID images survive refresh and can be resubmitted without re-uploading. Preserves existing `id_card`/`selfie_id` step separation (two `EvidenceUploader` instances with purpose filters via `files={evidenceFiles.filter(f=>f.purpose===...)}`).
+
+**Upload Flow After Fix (proven path, no mock):**
+```
+MyShop Step 2 EvidenceUploader (id_card / selfie_id)
+  → POST /api/seller/evidence/upload-intent {filename,mimeType,purpose} (auth, seller-scoped)
+  → Backend presign: PutObjectCommand(bucket, key=verification/evidence/{sellerId}/{purpose}_{ts}.ext, ContentType) → {uploadUrl, objectKey, cdnUrl}
+  → Frontend PUT {uploadUrl} body=File headers={Content-Type: file.type} → R2 (status checked, body preview on error)
+  → onUploadSuccess → MyShop handleEvidenceUploaded → POST /api/seller/evidence/confirm {objectKey, publicUrl, filename, contentType, fileSize} (auth, key ownership enforced)
+  → Backend INSERT INTO media(url,key,content_type,size,uploaded_by) ON CONFLICT(key) DO UPDATE → 200 {id, url, objectKey}
+  → MyShop reloads / refresh → GET /api/seller/evidence → hydrates EvidenceUploader with persisted rows → <img src=cdnUrl> renders
+  → Submit seller verification → POST /api/seller/verification {verificationType: identity, evidenceUrls: [cdnUrl...]} → seller_verifications pending + sellers.verification_status=pending
+```
+Each step surfaces `status` and errors; `presign success ≠ upload success` — R2 PUT and confirmation are both checked and logged.
+
+**Verification:**
+- Backend tsc (`bun tsc --noEmit --project backend/tsconfig.json`) ✅ PASS
+- All 4 apps typecheck (`bun --filter '@velnox/*' typecheck`) ✅ PASS (velshop/velseller/velcenter/velnox)
+- `git diff --check` clean (no whitespace errors)
+- No filesystem writes to R2/CORS config (uses existing `R2_BUCKET/R2_PUBLIC_DOMAIN/R2_ACCOUNT_ID` env; no wildcard CORS added)
+- Regression: product image upload (`draft-upload-intent`/`image-upload-intent`/`save-image`), profile avatar/cover (`profile/avatar/{userId}.webp` fixed-key), and existing catalog/verification list endpoints untouched; evidence confirm change is additive (only tightens ownership check, no broad shared-upload-service refactor).
+
+**Database:** Schema **unchanged** (no migration, no `db/schema.sql` / `run-*.sql` change needed — reuses V0040 `seller_verifications`, `sellers.verification_status/verified_at`, and generic `media` table).
+
+**Security:** No verification document made public beyond existing `R2_PUBLIC_DOMAIN` URL returned by `media.url`; no presigned URL / secret / full ID number logged; ownership derived from authenticated `req.user.userId`, never trusted `sellerId` from frontend; no verification bypass (frontend never sets `sellers.verification_status` directly — only via `POST /api/seller/verification` → backend sets pending and VelCenter approves).
+
+**Production Verification (honest):**
+- Code-level E2E path traced (UI → api-routes → presign → R2 PUT → confirm → media → GET hydration → UI) and typechecked; `EvidenceUploader` diagnostic logs allow production diagnosis via browser console + Render logs (`[verification] evidence presign` + `[VERIFICATION UPLOAD] ... status=...`).
+- Full live-browser R2 PUT + Neon persistence test against `https://velseller.vercel.app` + `https://velnox-api.onrender.com` + real R2 bucket **not yet performed in this sandbox run** (requires authenticated seller session + real R2 credentials/network). Marked `NOT VERIFIED (requires live prod session)` — not claimed as PASS.
+- Existing VelShop/VelSeller/VelCenter builds remain green; no new env vars required.
+
+---
 
 ### 2026-09-11 — Product Lifecycle: SELLER → PRODUCT → REVIEW → APPROVAL → PUBLISHED → VELSHOP
 

@@ -75,6 +75,7 @@ export default function MyShop() {
   const setStatus = useAction(api.commerce.setProductStatusAction);
   const submitSellerVerification = useAction(api.seller.submitVerification);
   const confirmEvidence = useAction(api.seller.evidenceConfirm);
+  const fetchEvidence = useAction(api.seller.evidenceList);
   const deleteProduct = useAction(api.commerce.deleteProductAction);
 
   const [profile, setProfile] = useState<SellerProfile | null | undefined>(undefined);
@@ -83,18 +84,19 @@ export default function MyShop() {
   // Persist evidence metadata to backend after R2 upload succeeds
   const handleEvidenceUploaded = useCallback(
     async (info: { objectKey: string; cdnUrl: string; filename: string; contentType: string; fileSize: number; purpose: string }) => {
+      console.log(`[VERIFICATION UPLOAD] confirmation started purpose=${info.purpose} key=${info.objectKey}`);
       try {
-        await confirmEvidence({
+        const res = await confirmEvidence({
           objectKey: info.objectKey,
           publicUrl: info.cdnUrl,
           filename: info.filename,
           contentType: info.contentType,
           fileSize: info.fileSize,
         });
+        console.log(`[VERIFICATION UPLOAD] confirmation completed status=200 purpose=${info.purpose}`);
       } catch (err) {
-        // Non-fatal: the file is in R2 but metadata not in media table.
-        // The submit step will still send the cdnUrl as evidence.
-        console.warn("[evidence] confirm failed (non-fatal):", err);
+        console.error(`[VERIFICATION UPLOAD] confirmation failed purpose=${info.purpose}`, err);
+        toast.error(`บันทึกหลักฐาน "${info.filename}" ไม่สำเร็จ กรุณาลองอีกครั้ง`);
       }
     },
     [confirmEvidence],
@@ -122,6 +124,7 @@ export default function MyShop() {
     phone: "",
     address: "",
   });
+  const [evidenceHydrated, setEvidenceHydrated] = useState(false);
 
   const shop: StoreShop | null = profile?.shops[0] ?? null;
 
@@ -169,6 +172,43 @@ export default function MyShop() {
       alive = false;
     };
   }, [mySellerProfile, reloadProducts]);
+
+  // Hydrate persisted evidence from DB so images survive refresh and show in Step 2
+  useEffect(() => {
+    if (!profile || evidenceHydrated) return;
+    let cancelled = false;
+    const vs = (profile.seller as any)?.verificationStatus as string | undefined;
+    // Only hydrate if seller is pending/verified/rejected/suspended or has attempted verification
+    // Also hydrate for unverified so previously uploaded evidence that failed submit can be retried
+    fetchEvidence()
+      .then((rows: any[]) => {
+        if (cancelled || !rows?.length) {
+          if (!cancelled) setEvidenceHydrated(true);
+          return;
+        }
+        // Map DB rows to EvidenceFile shape (hydrated entries have no File object)
+        const hydrated: EvidenceFile[] = rows.map((r: any) => ({
+          id: `hydrated_${r.id ?? r.key}`,
+          filename: String(r.key).split("/").pop() || "evidence",
+          contentType: r.content_type || "image/jpeg",
+          fileSize: r.size ?? 0,
+          purpose: r.purpose || "other",
+          status: "uploaded" as const,
+          objectKey: r.key,
+          cdnUrl: r.url,
+          previewUrl: r.url,
+        }));
+        if (!cancelled) {
+          setEvidenceFiles(hydrated);
+          setEvidenceHydrated(true);
+          console.log(`[VERIFICATION UPLOAD] hydrated ${hydrated.length} evidence from DB`);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEvidenceHydrated(true);
+      });
+    return () => { cancelled = true; };
+  }, [profile, evidenceHydrated, fetchEvidence]);
 
   const handleOpenShop = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
