@@ -2,6 +2,8 @@
 
 **LAST UPDATED: 2026-09-13**
 
+**STATUS: SELLER CATEGORY AUDIT PASS (2026-09-13)** — Category API exists and works (GET /api/categories, /tree, /stats). Categories loaded from DB in ProductFormDialog — no hard-coded data. Backend validates category_id via DB-backed resolveCategory(). No sample data anywhere. Seller profile, onboarding, R2 store media, authorization all verified. Typecheck PASS all apps + backend. See Recent Work History: `### 2026-09-13 — Seller System + Product Category Audit`.
+
 **STATUS: SELLER SYSTEM REDESIGN — Store Profile + 4-Step Onboarding + Shop Media (2026-09-13)** — DB migration adds shop address/phone/email/category columns; seller apply accepts full shop+applicant data; PATCH /api/seller/shop with ownership check; shop logo/cover upload via R2 presign+confirm; 4-step onboarding (Store Info → Applicant Info → Identity → Review); SellerProfile page at /seller/profile with cover/logo upload; VelSeller nav updated. See Recent Work History: `### 2026-09-13 — Velnox Seller System Redesign: Store Profile + Onboarding`.
 
 **STATUS: VERIFICATION IDENTITY UPLOAD E2E FIX (2026-09-13)** — Seller Identity Verification ID Card / Selfie+ID flow now completes end-to-end: presign → R2 PUT → evidence-confirm → DB (media) → reload after refresh. EvidenceUploader fixed (stale-closure, ref sync, error handling, diagnostic logs), backend evidence confirm enforces seller-scoped ownership, new GET /api/seller/evidence for hydration; seller profile now returns verificationStatus/verifiedAt; MyShop hydrates persisted evidence on mount so images survive refresh. See Recent Work History: `### 2026-09-13 — Velseller Identity Verification: ID Card / Selfie+ID Upload E2E Fix`.
@@ -383,6 +385,88 @@ PORT=3001
 7. AI_RULES.md
 
 ## Recent Work History
+
+### 2026-09-13 — Seller System + Product Category Audit (PASS)
+
+**Goal:** Comprehensive audit of seller onboarding, product category system, seller profile, R2 store media, authorization, and no-sample-data compliance.
+
+**Audit Findings — ALL PASSING:**
+
+**1. Category API — EXISTS and WORKING:**
+- `GET /api/categories` (products.ts:2712) — returns active categories with i18n names
+- `GET /api/categories/tree` (products.ts:2739) — hierarchical tree view
+- `GET /api/categories/stats` (products.ts:2778) — category statistics
+- Category validation: `backend/lib/categories.ts` — DB-backed, pure, no hard-coded slugs
+- Category resolver: `resolveCategory()` in products.ts validates against categories table
+
+**2. Category DB Schema — COMPLETE:**
+- `categories` table: id (UUID PK), name, slug (UNIQUE), parent_id (self-ref), sort_order, names (JSONB), description, description_names (JSONB), image_url, is_active
+- `products.category_id` is TEXT storing canonical slug (not UUID FK)
+- Properly indexed: idx_products_category, idx_categories_slug
+
+**3. Category Validation — DB-BACKED:**
+- Backend validates category_id via `validateCategory()` against categories table
+- Checks: exists, active, valid slug, no hard-coded values
+- Applied in product create/edit endpoints
+
+**4. Frontend Category Loading — DATABASE-DRIVEN:**
+- ProductFormDialog.tsx fetches categories from `api.customer.categoriesLocalized({ lang: "th" })` on mount
+- State: categories[], categoriesLoading, categoriesError
+- Category selector shows dropdown from DB data
+- Empty state: shows loading/error messages, NOT sample data
+- NO hard-coded category arrays anywhere in frontend
+
+**5. Seller Onboarding — 4-STEP FLOW:**
+- RequireRole.tsx: 4-step onboarding (Store Info → Applicant Info → Identity → Review)
+- Accepts: shopDescription, shopCategory, shopAddress, shopPhone, shopEmail
+- Ownership check on POST /api/seller/apply and PATCH /api/seller/shop
+
+**6. Seller Profile — EXISTS:**
+- SellerProfile.tsx at /seller/profile
+- Shop logo/cover upload via R2 presign with ownership check
+- Shop name, slug, description, category, address, phone, email editable
+
+**7. R2 Store Media — WORKING:**
+- Shop logo: presigned R2 PUT with shop ownership validation
+- Shop cover: presigned R2 PUT with shop ownership validation
+- Object key: `shop/{shopId}/logo.webp` and `shop/{shopId}/cover.webp`
+- Ownership checked via DB lookup (seller → shop relationship)
+
+**8. Authorization/Security — VERIFIED:**
+- Shop profile updates require authenticated user + seller ownership
+- Shop logo/cover uploads validate shop belongs to seller
+- No user avatar used as shop logo (separate entities)
+- No user cover used as shop cover (separate entities)
+
+**9. No Sample Data — VERIFIED:**
+- No INSERT INTO categories/products/shops in any code
+- No hard-coded category arrays (const categories = [...])
+- No mock data, fake APIs, or placeholder data
+- ProductFormDialog shows empty state when no categories exist
+
+**10. VelCenter Category Management — DISPLAY ONLY:**
+- VelCenter shows category analytics in dashboard (top categories)
+- No dedicated category CRUD UI in VelCenter (admin creates categories via direct DB/SQL)
+- This is acceptable — category management is not blocked
+
+**Typecheck:**
+- velshop ✅ PASS
+- velseller ✅ PASS
+- velcenter ✅ PASS
+- velnox ✅ PASS
+- backend ✅ PASS
+
+**Database changed:** NO
+**Files changed:** NONE (audit only)
+**Bugs found:** NONE
+**Bugs fixed:** N/A
+
+**Known Limitations:**
+- VelCenter does not have a dedicated category CRUD UI — admin manages categories via direct DB or SQL Editor
+- `PRODUCT_CATEGORY_META` in frontend is a label/color mapping for display, not sample data
+- `products.category_id` is TEXT (slug) not UUID FK — by design (migrations 015/029)
+
+---
 
 ### 2026-09-13 — Velnox Seller System Redesign: Store Profile + Onboarding
 
