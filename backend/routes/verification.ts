@@ -161,17 +161,26 @@ export function registerVerificationRoutes(app: Express) {
         return res.status(409).json({ success: false, error: { code: "ALREADY_PENDING", message: "Product verification already pending" } });
       }
 
-      // Create verification request
+      // CRITICAL: Require at least one evidence URL before setting pending
+      // This prevents "pending" status without real evidence
+      if (!evidenceUrls || evidenceUrls.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: { code: "EVIDENCE_REQUIRED", message: "At least one evidence file must be uploaded before submitting for verification" }
+        });
+      }
+
+      // Create verification request — only AFTER evidence is confirmed
       const verRes = await query(
         `INSERT INTO product_verifications (product_id, status, verification_type, evidence_urls, evidence_notes, submitted_at)
          VALUES ($1, 'pending', $2, $3, $4, NOW())
          ON CONFLICT (product_id) WHERE status = 'pending'
          DO UPDATE SET evidence_urls = $3, evidence_notes = $4, submitted_at = NOW(), updated_at = NOW()
          RETURNING *`,
-        [productId, verificationType || "standard", JSON.stringify(evidenceUrls || []), evidenceNotes || null],
+        [productId, verificationType || "standard", JSON.stringify(evidenceUrls), evidenceNotes || null],
       );
 
-      // Update product status
+      // Update product status — ONLY after evidence is persisted
       await query(
         "UPDATE products SET verification_status = 'pending', updated_at = NOW() WHERE id = $1",
         [productId],
@@ -183,6 +192,109 @@ export function registerVerificationRoutes(app: Express) {
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to submit verification" } });
     }
   });
+
+
+
+  // ════════════════════════════════════════════════════════════════════════
+  // EVIDENCE PERSISTENCE & RETRIEVAL
+  // ════════════════════════════════════════════════════════════════════════
+
+  // POST /api/seller/evidence/confirm — Persist evidence metadata after R2 upload
+  app.post("/api/seller/evidence/confirm", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const { objectKey, publicUrl, filename, contentType, fileSize, productId } = req.body;
+
+      if (!objectKey || !publicUrl) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "objectKey and publicUrl required" } });
+        return;
+      }
+
+      // Verify the object key belongs to this user
+      if (!objectKey.startsWith("verification/evidence/")) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Invalid object key" } });
+        return;
+      }
+
+      // Persist evidence metadata as a media record
+      const mediaRes = await query(
+        `INSERT INTO media (url, key, content_type, size, uploaded_by)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (key) DO UPDATE SET url = $1
+         RETURNING id`,
+        [publicUrl, objectKey, contentType || "image/jpeg", fileSize || 0, userId]
+      );
+
+      res.json({
+        success: true,
+        data: {
+          id: mediaRes.rows[0]?.id,
+          url: publicUrl,
+          objectKey,
+          filename: filename || objectKey.split("/").pop(),
+          contentType,
+          fileSize,
+        },
+      });
+    } catch (err) {
+      console.error("[verification] evidence-confirm error:", err);
+      res.status(500).json({ success: false, error: { code: "EVIDENCE_CONFIRM_FAILED", message: "Failed to confirm evidence upload" } });
+    }
+  });
+
+  // GET /api/seller/products/:productId/verification/evidence — List evidence for a product
+  app.get("/api/seller/products/:productId/verification/evidence", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const productId = req.params.productId;
+
+      // Verify ownership
+      const ownRes = await query(
+        `SELECT p.id FROM products p
+         JOIN shops sh ON sh.id = p.shop_id
+         JOIN sellers s ON s.id = sh.seller_id
+         WHERE p.id = $1 AND s.user_id = $2`,
+        [productId, userId]
+      );
+
+      if (ownRes.rows.length === 0) {
+        return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+      }
+
+      // Get evidence from the latest verification record
+      const verRes = await query(
+        `SELECT evidence_urls, evidence_notes FROM product_verifications
+         WHERE product_id = $1
+         ORDER BY created_at DESC LIMIT 1`,
+        [productId]
+      );
+
+      const row = verRes.rows[0];
+      const evidenceUrls = row?.evidence_urls || [];
+
+      // For each URL, try to get more info from media table
+      const evidenceFiles = [];
+      for (const url of evidenceUrls) {
+        const mediaRes = await query(
+          "SELECT id, url, key, content_type, size, created_at FROM media WHERE url = $1",
+          [url]
+        );
+        evidenceFiles.push(mediaRes.rows[0] || { url, key: null, content_type: null, size: null, created_at: null });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          evidenceFiles,
+          notes: row?.evidence_notes || null,
+        },
+      });
+    } catch (err) {
+      console.error("[verification] evidence list error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list evidence" } });
+    }
+  });
+
 
   // ════════════════════════════════════════════════════════════════════════
   // ADMIN VERIFICATION MANAGEMENT (VelCenter)
@@ -217,6 +329,20 @@ export function registerVerificationRoutes(app: Express) {
            LIMIT 50`,
           [status],
         );
+                // Enrich seller evidence with file metadata
+        for (const ver of sellerRes.rows) {
+          const urls = ver.evidence_urls || [];
+          const evidenceFiles = [];
+          for (const url of urls) {
+            const mediaRes = await query(
+              "SELECT id, url, key, content_type, size, created_at FROM media WHERE url = $1",
+              [url]
+            );
+            evidenceFiles.push(mediaRes.rows[0] || { url, content_type: null, size: null });
+          }
+          ver.evidence_files = evidenceFiles;
+        }
+
         results.sellers = sellerRes.rows;
       }
 
@@ -233,6 +359,20 @@ export function registerVerificationRoutes(app: Express) {
            LIMIT 50`,
           [status],
         );
+                // Enrich with evidence file metadata (images)
+        for (const ver of productRes.rows) {
+          const urls = ver.evidence_urls || [];
+          const evidenceFiles = [];
+          for (const url of urls) {
+            const mediaRes = await query(
+              "SELECT id, url, key, content_type, size, created_at FROM media WHERE url = $1",
+              [url]
+            );
+            evidenceFiles.push(mediaRes.rows[0] || { url, content_type: null, size: null });
+          }
+          ver.evidence_files = evidenceFiles;
+        }
+
         results.products = productRes.rows;
       }
 

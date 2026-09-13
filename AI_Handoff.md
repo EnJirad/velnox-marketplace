@@ -3602,3 +3602,29 @@ The `handleSubmitVerification` function showed a success toast regardless of whe
 - Live E2E testing not performed (no DATABASE_URL/headless browser in sandbox)
 - Evidence preview uses local object URLs until R2 upload completes (by design)
 - Backend response verification relies on the API returning `{ success: boolean }` format
+
+---
+
+### 2026-09-13 — Fix: Product Verification Evidence Transaction Integrity
+
+**Scope:** `backend/routes/verification.ts`, `apps/velcenter/src/pages/Center.tsx`
+
+**Root cause:** The backend `POST /api/seller/products/:productId/verification` accepted any `evidenceUrls` (even empty array) and unconditionally set `verification_status = 'pending'`. This allowed the system to enter "pending" state with no real evidence. The admin verification queue showed empty evidence with no image thumbnails.
+
+**Fixes:**
+
+1. **EVIDENCE_REQUIRED check** — product verification submission now rejects with `400 EVIDENCE_REQUIRED` if `evidenceUrls` is empty. Status changes to `pending` ONLY after evidence is confirmed persisted.
+
+2. **Evidence confirm endpoint** (`POST /api/seller/evidence/confirm`) — persists uploaded evidence metadata (URL, object key, content type, file size) to the `media` table after R2 upload.
+
+3. **Evidence list endpoint** (`GET /api/seller/products/:productId/verification/evidence`) — returns evidence files with media metadata for a product's verification.
+
+4. **Admin queue enrichment** — both seller and product verification queries now join `media` table to provide `evidence_files` with `content_type` and `size` for each evidence URL.
+
+5. **VelCenter EvidenceCell** — updated to show image thumbnails (12×12 / 16×16 px) from `evidence_files` with click-to-open and hover file size. Falls back to URL links when no `evidence_files` available. Added `evidence_files` field to `VerificationRow` interface.
+
+**Files changed:** `backend/routes/verification.ts`, `apps/velcenter/src/pages/Center.tsx`
+
+**Database changed:** NO (uses existing `media` table)
+
+**Verification:** backend tsc ✅ · velshop/velseller/velcenter/velnox tsc ✅ · i18n 1162×3 ✅ · git diff --check ✅

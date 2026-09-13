@@ -87,15 +87,50 @@ import { toast } from "sonner";
 type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "staff" | "audit" | "settings";
 
 /** Private verification evidence — rendered only inside the admin review tab. */
-function EvidenceCell({ urls, notes }: { urls: string[] | null; notes: string | null }) {
+function EvidenceCell({ urls, notes, evidenceFiles }: { urls: string[] | null; notes: string | null; evidenceFiles?: Array<{ url: string; content_type?: string | null; size?: number | null }> }) {
   const list = Array.isArray(urls) ? urls : [];
-  if (list.length === 0 && !notes) {
+  const files = evidenceFiles || [];
+  const isImage = (ct?: string | null) => ct && ct.startsWith("image/");
+  const formatSize = (bytes?: number | null) => {
+    if (!bytes) return "";
+    return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
+  };
+
+  if (list.length === 0 && files.length === 0 && !notes) {
     return <span className="text-xs text-slate-400">ไม่แนบหลักฐาน</span>;
   }
+
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       {notes && <p className="line-clamp-2 text-xs text-slate-500">{notes}</p>}
-      {list.map((url) => (
+      {/* Image thumbnails grid */}
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {files.map((file, idx) => (
+            <a
+              key={file.url || idx}
+              href={file.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="group relative block overflow-hidden rounded-lg border border-slate-200 hover:border-[#10B981] transition-colors"
+              title={formatSize(file.size)}
+            >
+              {isImage(file.content_type) ? (
+                <img src={file.url} alt="" className="size-12 object-cover sm:size-16" />
+              ) : (
+                <div className="flex size-12 items-center justify-center bg-slate-50 sm:size-16">
+                  <span className="text-[9px] text-slate-400">DOC</span>
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="text-[8px] text-white">{formatSize(file.size) || "ดู"}</span>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+      {/* Fallback: show URLs as links if no evidence_files */}
+      {files.length === 0 && list.map((url) => (
         <a
           key={url}
           href={url}
@@ -320,6 +355,7 @@ export default function Center() {
     verification_type: string | null;
     evidence_urls: string[] | null;
     evidence_notes: string | null;
+    evidence_files?: Array<{ url: string; content_type?: string | null; size?: number | null }>;
     submitted_at: string | null;
     rejection_reason: string | null;
     shop_name: string | null;
