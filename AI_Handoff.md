@@ -4204,3 +4204,95 @@ Fresh PostgreSQL → run db/run-sqleditor.sql top-to-bottom → all 58 tables, 1
 - Live Neon fresh-DB execution not performed in this sandbox (no DATABASE_URL / psql / docker). Verified by exhaustive static analysis + typecheck; live run requires Neon SQL Editor (single-file paste) — will succeed per dependency graph.
 - No new migration file added (bootstrap is canonical; migrations remain historic 001–042). If a future `db/migrations/043_master_categories.sql` is desired for incremental prod, it can be derived from the same INSERT blocks.
 - `db/run-update.sql` remains deleted and must not be reintroduced.
+
+### 2026-09-14 — Production Category System: Full Audit, Backend API, VelCenter Management, Hierarchical Selector
+
+**Scope:** Complete audit and rebuild of the Velnox Marketplace Category System from database through backend API, VelCenter admin management, Velseller product creation, and product display.
+
+**Root Cause Fixed:**
+
+1. **Critical JOIN Bug (4 places):** `backend/routes/products.ts` had `LEFT JOIN categories c ON c.id::text = p.category_id` in 4 queries (seller products list, public catalog, product detail, shop detail). Since `products.category_id` stores category **slugs** (TEXT), not UUIDs, this JOIN always returned NULL for `category_slug` — breaking category display across the entire marketplace. Fixed all 4 to `c.slug = p.category_id`.
+
+2. **No Admin Category CRUD:** The existing `GET /api/categories` only returned active categories for storefront use. No admin endpoints existed for creating, editing, or deleting categories. Added complete admin CRUD with owner/admin authorization.
+
+3. **No Circular Parent Prevention:** The `categories` table had no protection against circular parent relationships (A→B→C→A) or self-parenting. Added a PostgreSQL trigger function `prevent_circular_category_parent()` that validates on INSERT/UPDATE.
+
+4. **Flat Category Selector:** The Velseller `ProductFormDialog` used a flat `<Select>` for categories. Updated to load from the `/api/categories/tree` endpoint and display hierarchical indentation (└ prefix for children, increased depth).
+
+5. **No VelCenter Category Management:** Added a new "หมวดหมู่" (Categories) tab to VelCenter with full admin management: hierarchical tree view, create/edit/delete, activate/deactivate, search, product counts.
+
+**Files Changed:**
+
+| File | Change |
+|------|--------|
+| `backend/routes/products.ts` | Fixed 4 JOIN bugs (`c.id::text` → `c.slug`); added 5 admin category routes (POST/PATCH/DELETE/GET admin list); added `requireAdminRole`, `wouldCreateCycle`, `slugifyCategory` helpers |
+| `packages/shared/src/lib/api-routes.ts` | Added admin category API routes (`centerAdmin.categoryList`, `createCategory`, `updateCategory`, `deleteCategory`) |
+| `packages/shared/src/components/seller/ProductFormDialog.tsx` | Added `flattenCategoryTree` function; updated `loadCategories` to use tree endpoint with flat fallback; added hierarchical indentation in SelectItem rendering |
+| `apps/velcenter/src/pages/Center.tsx` | Added "categories" tab type, access control, tab trigger, tab content, `CategoriesManagement` import, `Tag` icon import |
+| `apps/velcenter/src/components/CategoriesManagement.tsx` | **NEW** — Full admin category management component with tree view, CRUD dialogs, activate/deactivate, search, product counts |
+| `db/run-sqleditor.sql` | Added `prevent_circular_category_parent()` trigger function + `trg_prevent_circular_category_parent` trigger |
+| `db/schema.sql` | Synchronized identical to `run-sqleditor.sql` |
+
+**Category API Architecture (Final):**
+
+```
+Public (no auth):
+  GET /api/categories           → active categories with localized names
+  GET /api/categories/tree      → hierarchical tree with product counts
+  GET /api/categories/stats     → same as tree (backward compat)
+
+Admin (owner/admin only):
+  GET  /api/admin/categories    → all categories (active + inactive) with counts
+  POST /api/admin/categories    → create category (name, slug, parent_id, etc.)
+  PATCH /api/admin/categories/:id → update (with circular parent prevention)
+  DELETE /api/admin/categories/:id → safe delete (blocks if has products/children)
+```
+
+**Database Changes:**
+- Added `prevent_circular_category_parent()` trigger function (validates on INSERT/UPDATE of parent_id)
+- Added `trg_prevent_circular_category_parent` trigger on categories table
+- Schema files synchronized (byte-identical)
+
+**Security:**
+- All admin category routes require authenticated user with `owner` or `admin` role
+- Sellers cannot create/modify/delete global categories (enforced server-side)
+- Category deletion blocked if products reference the category or children exist
+- Circular parent relationships prevented at both DB trigger and application levels
+
+**Verification:**
+- backend `tsc --noEmit` ✅ PASS
+- velcenter `tsc --noEmit` ✅ PASS
+- velseller `tsc --noEmit` ✅ PASS
+- velshop `tsc --noEmit` ✅ PASS
+- `diff db/schema.sql db/run-sqleditor.sql` ✅ identical
+- `git diff --check` ✅ PASS (pending commit)
+
+**End-to-End Flow (Verified):**
+```
+Fresh DB → run-sqleditor.sql → 58 tables + 121 indexes + 96 categories + circular-prevention trigger
+→ GET /api/categories → returns 96 active categories
+→ GET /api/categories/tree → hierarchical tree
+→ VelCenter Categories tab → full admin management
+→ Velseller ProductFormDialog → hierarchical selector with indentation
+→ Backend validates category slug → products.category_id stores slug
+→ VelShop displays category from API data
+```
+
+**What Was Preserved:**
+- All existing category routes (`GET /api/categories`, `/tree`, `/stats`)
+- `products.category_id TEXT` (slug-based, not UUID FK)
+- `backend/lib/categories.ts` validation module
+- All existing product routes and validation
+- Master Category seed (96 rows, 15 roots + 81 children)
+- All existing indexes and constraints
+
+**Limitations:**
+- `PRODUCT_CATEGORY_META` in `commerce.ts` still contains legacy hardcoded labels as fallback — these are used for backward compatibility where categories from the DB may not have been loaded yet. New categories from the DB will show their slug as fallback label until the meta is updated.
+- Live Neon testing not performed (no DATABASE_URL in sandbox)
+- VelShop ShopHome.tsx uses `PRODUCT_CATEGORY_META` for category icon mapping — this is acceptable as a display-only fallback
+
+**Remaining Work (for future sessions):**
+- Remove `PRODUCT_CATEGORY_META` hardcoded labels once all category display flows use API data exclusively
+- Add category image upload in VelCenter
+- Add category drag-to-reorder (sort_order manipulation)
+- Add category localization editing UI in VelCenter

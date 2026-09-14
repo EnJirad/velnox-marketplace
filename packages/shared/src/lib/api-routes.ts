@@ -259,6 +259,12 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.centerAdmin.processPayoutAction": (a) => apiPost("/api/admin/payouts/process", a),
   "api.centerAdmin.getBusinessRules": () => apiGet("/api/admin/rules"),
 
+
+  // Category admin (owner/admin)
+  "api.centerAdmin.categoryList": () => apiGet("/api/admin/categories"),
+  "api.centerAdmin.createCategory": (a) => apiPost("/api/admin/categories", a),
+  "api.centerAdmin.updateCategory": (a) => apiPatch(`/api/admin/categories/${a.categoryId}`, a),
+  "api.centerAdmin.deleteCategory": (a) => apiDelete(`/api/admin/categories/${a.categoryId}`),
   // Center overview/products
   "api.center.overview": () => apiGet("/api/admin/overview"),
   "api.products.listAll": () => apiGet("/api/products/catalog?limit=200"),

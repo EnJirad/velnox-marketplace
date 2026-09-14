@@ -575,7 +575,7 @@ export function setupProductRoutes(app: Express): void {
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
          LEFT JOIN sellers s ON s.id = sh.seller_id
-         LEFT JOIN categories c ON c.id::text = p.category_id
+         LEFT JOIN categories c ON c.slug = p.category_id
          WHERE p.shop_id = $1 AND p.status <> 'archived'
          ORDER BY p.created_at DESC`,
         [shop.id]
@@ -2212,7 +2212,7 @@ export function setupProductRoutes(app: Express): void {
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
          LEFT JOIN sellers s ON s.id = sh.seller_id
-         LEFT JOIN categories c ON c.id::text = p.category_id
+         LEFT JOIN categories c ON c.slug = p.category_id
          ${where}
          ${orderBy}
          LIMIT $${idx++} OFFSET $${idx}`,
@@ -2306,7 +2306,7 @@ export function setupProductRoutes(app: Express): void {
          FROM products p
          JOIN shops sh ON p.shop_id = sh.id
          LEFT JOIN sellers s ON s.id = sh.seller_id
-         LEFT JOIN categories c ON c.id::text = p.category_id
+         LEFT JOIN categories c ON c.slug = p.category_id
          WHERE p.id = $1 AND p.status = 'published'`,
         [productId]
       );
@@ -2673,7 +2673,7 @@ export function setupProductRoutes(app: Express): void {
                 c.slug AS category_slug
          FROM products p
          LEFT JOIN inventory i ON i.product_id = p.id
-         LEFT JOIN categories c ON c.id::text = p.category_id
+         LEFT JOIN categories c ON c.slug = p.category_id
          WHERE p.shop_id = $1 AND p.status = 'published'
          ORDER BY p.created_at DESC
          LIMIT 50`,
@@ -2704,6 +2704,278 @@ export function setupProductRoutes(app: Express): void {
     } catch (err) {
       console.error("[products] shop detail error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch shop" } });
+    }
+  });
+
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // CATEGORY ADMIN ROUTES (owner/admin only)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  async function requireAdminRole(userId: string): Promise<string | null> {
+    const r = await query("SELECT role FROM users WHERE id = $1", [userId]);
+    const role = r.rows[0]?.role as string | undefined;
+    if (role === "owner" || role === "admin") return role;
+    return null;
+  }
+
+  /**
+   * Prevent circular parent relationships.
+   * Walks up the parent chain from the proposed parent to ensure
+   * the target category is not an ancestor (which would create a cycle).
+   */
+  async function wouldCreateCycle(categoryId: string, newParentId: string): Promise<boolean> {
+    let current = newParentId;
+    const visited = new Set<string>();
+    while (current) {
+      if (current === categoryId) return true;
+      if (visited.has(current)) return true;
+      visited.add(current);
+      const r = await query("SELECT parent_id FROM categories WHERE id = $1", [current]);
+      current = r.rows[0]?.parent_id ?? null;
+    }
+    return false;
+  }
+
+  function slugifyCategory(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .substring(0, 120);
+  }
+
+  // ── POST /api/admin/categories ──────────────────────────────────────────
+  app.post("/api/admin/categories", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = await requireAdminRole(req.user!.userId);
+      if (!role) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const { name, slug: inputSlug, icon, parent_id, sort_order, description, image_url, names, description_names } = req.body;
+
+      if (!name || typeof name !== "string" || !name.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Category name is required" } });
+        return;
+      }
+
+      const slug = inputSlug && typeof inputSlug === "string" ? inputSlug.trim() : slugifyCategory(name.trim());
+      if (!slug) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Category slug is required" } });
+        return;
+      }
+
+      // Verify parent exists if provided
+      if (parent_id) {
+        const parentCheck = await query("SELECT id FROM categories WHERE id = $1", [parent_id]);
+        if (parentCheck.rows.length === 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Parent category not found" } });
+          return;
+        }
+      }
+
+      // Check for duplicate slug
+      const slugCheck = await query("SELECT id FROM categories WHERE slug = $1", [slug]);
+      if (slugCheck.rows.length > 0) {
+        res.status(409).json({ success: false, error: { code: "DUPLICATE_SLUG", message: "A category with this slug already exists" } });
+        return;
+      }
+
+      const result = await query(
+        `INSERT INTO categories (name, slug, icon, parent_id, sort_order, description, image_url, names, description_names)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING *`,
+        [
+          name.trim(), slug, icon || null, parent_id || null,
+          sort_order ?? 0, description || null, image_url || null,
+          names || '{}', description_names || '{}',
+        ]
+      );
+
+      res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+      console.error("[admin] create category error:", err);
+      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: "Failed to create category" } });
+    }
+  });
+
+  // ── PATCH /api/admin/categories/:categoryId ─────────────────────────────
+  app.patch("/api/admin/categories/:categoryId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = await requireAdminRole(req.user!.userId);
+      if (!role) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const categoryId = param(req, "categoryId");
+      const { name, slug: inputSlug, icon, parent_id, sort_order, description, image_url, is_active, names, description_names } = req.body;
+
+      // Verify category exists
+      const existing = await query("SELECT * FROM categories WHERE id = $1", [categoryId]);
+      if (existing.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Category not found" } });
+        return;
+      }
+
+      // Prevent self-parenting
+      if (parent_id === categoryId) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Cannot set a category as its own parent" } });
+        return;
+      }
+
+      // Prevent circular relationships
+      if (parent_id && parent_id !== existing.rows[0].parent_id) {
+        if (await wouldCreateCycle(categoryId, parent_id)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Moving this category would create a circular relationship" } });
+          return;
+        }
+      }
+
+      // Verify parent exists if provided
+      if (parent_id) {
+        const parentCheck = await query("SELECT id FROM categories WHERE id = $1", [parent_id]);
+        if (parentCheck.rows.length === 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Parent category not found" } });
+          return;
+        }
+      }
+
+      // Handle slug change
+      let slug = existing.rows[0].slug;
+      if (inputSlug && typeof inputSlug === "string" && inputSlug.trim() !== existing.rows[0].slug) {
+        const newSlug = inputSlug.trim();
+        const slugCheck = await query("SELECT id FROM categories WHERE slug = $1 AND id != $2", [newSlug, categoryId]);
+        if (slugCheck.rows.length > 0) {
+          res.status(409).json({ success: false, error: { code: "DUPLICATE_SLUG", message: "A category with this slug already exists" } });
+          return;
+        }
+        slug = newSlug;
+      }
+
+      const result = await query(
+        `UPDATE categories SET
+           name = COALESCE($1, name),
+           slug = $2,
+           icon = COALESCE($3, icon),
+           parent_id = $4,
+           sort_order = COALESCE($5, sort_order),
+           description = COALESCE($6, description),
+           image_url = COALESCE($7, image_url),
+           is_active = COALESCE($8, is_active),
+           names = COALESCE($9, names),
+           description_names = COALESCE($10, description_names),
+           updated_at = NOW()
+         WHERE id = $11
+         RETURNING *`,
+        [
+          name?.trim() || null, slug, icon || null,
+          parent_id !== undefined ? parent_id : existing.rows[0].parent_id,
+          sort_order ?? null, description !== undefined ? description : null,
+          image_url !== undefined ? image_url : null,
+          is_active !== undefined ? is_active : null,
+          names || null, description_names || null,
+          categoryId,
+        ]
+      );
+
+      res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+      console.error("[admin] update category error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update category" } });
+    }
+  });
+
+  // ── DELETE /api/admin/categories/:categoryId ─────────────────────────────
+  // Safe deletion: checks for products using this category before deleting.
+  app.delete("/api/admin/categories/:categoryId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = await requireAdminRole(req.user!.userId);
+      if (!role) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const categoryId = param(req, "categoryId");
+
+      // Verify category exists
+      const existing = await query("SELECT id, slug FROM categories WHERE id = $1", [categoryId]);
+      if (existing.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Category not found" } });
+        return;
+      }
+
+      // Check for products using this category
+      const productCheck = await query(
+        "SELECT COUNT(*)::int AS count FROM products WHERE category_id = $1",
+        [existing.rows[0].slug]
+      );
+      if (productCheck.rows[0].count > 0) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: "HAS_PRODUCTS",
+            message: `Cannot delete category: ${productCheck.rows[0].count} product(s) use this category. Deactivate it instead or migrate products first.`,
+          },
+        });
+        return;
+      }
+
+      // Check for child categories
+      const childCheck = await query(
+        "SELECT COUNT(*)::int AS count FROM categories WHERE parent_id = $1",
+        [categoryId]
+      );
+      if (childCheck.rows[0].count > 0) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: "HAS_CHILDREN",
+            message: `Cannot delete category: ${childCheck.rows[0].count} subcategory(s) exist. Remove or reassign them first.`,
+          },
+        });
+        return;
+      }
+
+      await query("DELETE FROM categories WHERE id = $1", [categoryId]);
+      res.json({ success: true, message: "Category deleted" });
+    } catch (err) {
+      console.error("[admin] delete category error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete category" } });
+    }
+  });
+
+  // ── GET /api/admin/categories ────────────────────────────────────────────
+  // Admin view: all categories (active + inactive), with product counts.
+  app.get("/api/admin/categories", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = await requireAdminRole(req.user!.userId);
+      if (!role) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const lang = typeof req.query.lang === "string" ? req.query.lang : "th";
+      const result = await query(
+        `SELECT c.id, c.name, c.slug, c.icon, c.parent_id, c.sort_order, c.is_active,
+                COALESCE(c.names->>$1, c.name) AS display_name,
+                COALESCE(c.description_names->>$1, c.description) AS display_description,
+                c.image_url,
+                c.created_at, c.updated_at,
+                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.slug AND p.status = 'published')::int AS product_count,
+                (SELECT COUNT(*) FROM categories ch WHERE ch.parent_id = c.id)::int AS child_count
+         FROM categories c
+         ORDER BY c.sort_order ASC, c.name ASC`,
+        [lang]
+      );
+
+      res.json({ success: true, data: result.rows });
+    } catch (err) {
+      console.error("[admin] list categories error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch categories" } });
     }
   });
 

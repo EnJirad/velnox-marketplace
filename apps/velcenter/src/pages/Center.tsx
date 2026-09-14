@@ -3,6 +3,7 @@ import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/Mobi
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
 import { VerificationReviewDialog, type VerificationReviewRow } from "../components/VerificationReviewDialog";
+import CategoriesManagement from "../components/CategoriesManagement";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
 import EmployeeManager from "../components/EmployeeManager";
@@ -76,6 +77,7 @@ import {
   ShoppingBag,
   Sparkles,
   Store,
+  Tag,
   Target,
   TrendingUp,
   Users,
@@ -84,7 +86,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "staff" | "audit" | "settings";
+type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings";
 
 /** Private verification evidence — rendered only inside the admin review tab. */
 function EvidenceCell({ urls, notes, evidenceFiles }: { urls: string[] | null; notes: string | null; evidenceFiles?: Array<{ url: string; content_type?: string | null; size?: number | null }> }) {
@@ -221,6 +223,8 @@ function canSeeTab(tab: Tab, role?: string | null, department?: string | null): 
     case "sellers":
       return true;
 
+    case "categories":
+      return role === "owner" || role === "admin";
     case "staff":
       return role === "owner";
     case "audit":
@@ -835,6 +839,11 @@ export default function Center() {
                 </span>
               )}
             </TabsTrigger>
+            {canSeeTab("categories", userRole, userDepartment) && (
+              <TabsTrigger value="categories" className="gap-1.5 rounded-[10px]">
+                <Tag className="size-4" /> หมวดหมู่
+              </TabsTrigger>
+            )}
 
             {isOwner && (
               <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
@@ -1932,6 +1941,13 @@ export default function Center() {
             </Tabs>
           </TabsContent>
 
+
+          {/* ============ Categories (admin/owner) ============ */}
+          {canSeeTab("categories", userRole, userDepartment) && (
+            <TabsContent value="categories" className="mt-6">
+              <CategoriesManagement />
+            </TabsContent>
+          )}
           {/* ============ Staff (owner only) ============ */}
           {isOwner && (
             <TabsContent value="staff" className="mt-6">

@@ -92,6 +92,46 @@ CREATE TABLE IF NOT EXISTS categories (
 CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug);
 CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories (parent_id);
 CREATE INDEX IF NOT EXISTS idx_categories_parent_active ON categories (parent_id, is_active);
+
+-- Prevent circular parent relationships and self-parenting in categories
+CREATE OR REPLACE FUNCTION prevent_circular_category_parent()
+RETURNS TRIGGER AS $$
+DECLARE
+  current_id UUID;
+  visited UUID[];
+BEGIN
+  -- Prevent self-parenting
+  IF NEW.parent_id IS NOT NULL AND NEW.parent_id = NEW.id THEN
+    RAISE EXCEPTION 'Category cannot be its own parent';
+  END IF;
+  
+  -- Prevent circular relationships by walking up the parent chain
+  IF NEW.parent_id IS NOT NULL THEN
+    current_id := NEW.parent_id;
+    visited := ARRAY[NEW.id];
+    
+    WHILE current_id IS NOT NULL LOOP
+      -- Check if we've visited this node (cycle detected)
+      IF current_id = ANY(visited) THEN
+        RAISE EXCEPTION 'Circular parent relationship detected for category %', NEW.id;
+      END IF;
+      
+      -- Add to visited list
+      visited := array_append(visited, current_id);
+      
+      -- Move to parent
+      SELECT parent_id INTO current_id FROM categories WHERE id = current_id;
+    END LOOP;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_prevent_circular_category_parent
+  BEFORE INSERT OR UPDATE OF parent_id ON categories
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_circular_category_parent();
 CREATE TABLE IF NOT EXISTS sellers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

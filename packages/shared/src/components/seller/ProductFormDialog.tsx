@@ -395,7 +395,25 @@ function VariantManager({ productId, price }: { productId: string; price: number
 // ─── Category options ────────────────────────────────────────────────
 // Loaded from the Category API at runtime so the seller selector always
 // matches the real `categories` table — no hard-coded slugs.
-type CategoryOption = { id: string; slug: string; name: string };
+type CategoryOption = { id: string; slug: string; name: string; depth: number; parent_id?: string | null };
+
+/** Flatten a category tree into a flat list with depth for indentation. */
+function flattenCategoryTree(nodes: any[], depth = 0): CategoryOption[] {
+  const result: CategoryOption[] = [];
+  for (const node of nodes) {
+    result.push({
+      id: String(node?.id ?? ""),
+      slug: String(node?.slug ?? ""),
+      name: String(node?.display_name ?? node?.name ?? node?.slug ?? ""),
+      depth,
+      parent_id: node?.parent_id ?? null,
+    });
+    if (Array.isArray(node?.children) && node.children.length > 0) {
+      result.push(...flattenCategoryTree(node.children, depth + 1));
+    }
+  }
+  return result;
+}
 
 // ─── Default form state ──────────────────────────────────────────────
 const defaultForm = {
@@ -450,14 +468,23 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     setCategoriesLoading(true);
     setCategoriesError(false);
     try {
-      const rows = await api.customer.categoriesLocalized({ lang: "th" });
-      const list: CategoryOption[] = (Array.isArray(rows) ? rows : [])
-        .map((r: any) => ({
-          id: String(r?.id ?? ""),
-          slug: String(r?.slug ?? ""),
-          name: String(r?.display_name ?? r?.name ?? r?.slug ?? ""),
-        }))
-        .filter((c: CategoryOption) => c.slug);
+      // Try tree endpoint first for hierarchical display; fall back to flat list
+      let list: CategoryOption[] = [];
+      try {
+        const tree = await api.customer.categoryTreeAction();
+        list = flattenCategoryTree(Array.isArray(tree) ? tree : []);
+      } catch {
+        // Fall back to flat categories if tree endpoint fails
+        const rows = await api.customer.categoriesLocalized({ lang: "th" });
+        list = (Array.isArray(rows) ? rows : [])
+          .map((r: any) => ({
+            id: String(r?.id ?? ""),
+            slug: String(r?.slug ?? ""),
+            name: String(r?.display_name ?? r?.name ?? r?.slug ?? ""),
+            depth: 0,
+          }))
+          .filter((c: CategoryOption) => c.slug);
+      }
       setCategories(list);
       setForm((prev) => (prev.category ? prev : { ...prev, category: list[0]?.slug ?? "" }));
     } catch {
@@ -936,7 +963,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       <SelectItem value={form.category}>{form.category} — ไม่พร้อมใช้งาน กรุณาเลือกใหม่</SelectItem>
                     )}
                     {categories.map((c) => (
-                      <SelectItem key={c.slug} value={c.slug}>{c.name}</SelectItem>
+                      <SelectItem key={c.slug} value={c.slug}>
+                        {"  ".repeat(c.depth)}{c.depth > 0 ? "└ " : ""}{c.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
