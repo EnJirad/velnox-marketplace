@@ -1,31 +1,57 @@
 # AGENTS.md — Velnox Marketplace
 
-Monorepo (bun workspaces: `apps/velshop|velseller|velcenter|velnox`, `backend`, `packages/shared`). Default branch: `main`.
+Monorepo (`bun` workspaces: `apps/velshop|velseller|velcenter|velnox`, `backend`, `packages/shared`). Default branch: `main`.
 
-## Version-control workflow (user standing instruction, 2026-09-07)
+## What is Velnox
 
-- When git commands are blocked by the hosting platform (Freebuff/Vly style), push exclusively via the **GitHub REST API** (Git Data API) — do not attempt `git push/pull/remote` in those environments.
-- Always use the ambient `$GITHUB_TOKEN` — **never** hardcode/commit/echo tokens. Any token pasted in chat is potentially sensitive: do not copy it into files/commands;advise rotation if it may have leaked.
+Multi-vendor marketplace. Four Vercel frontends → one Render backend (Express + WebSocket) → one Neon PostgreSQL (source of truth) + Cloudflare R2 (file storage). Google OAuth + JWT httpOnly cookies. Languages: th, en, my.
 
+## Progressive Context Loading — START HERE
 
+```
+1. AGENTS.md                          ← always (this file)
+2. AI_RULES.md                        ← when changing code
+3. docs/ai/PROJECT_MAP.md             ← to locate files
+4. docs/ai/<SUBSYSTEM>.md             ← only the subsystem you touch
+5. Actual source code                 ← authoritative implementation
+6. Verify → update AI_Handoff.md
+```
 
-### REST push recipe (equivalent of `push_to_github.py`)
-1. `GET /repos/{owner}/{repo}/git/ref/heads/{branch}` → `object.sha` (head)
-2. `GET /git/trees/{head_sha}?recursive=1` → map path→sha of remote blobs
-3. Walk local tree (skip `node_modules/`,`.git/`,`dist/`,`cache/`,`.env*`;extension `.local`); blob SHA = `sha1(b"blob {len}\0"+content)`
-4. `POST /git/blobs` (JSON `{"content": base64,…,"encoding":"base64"}`) per changed file
-5sec. `POST /git/trees` with `base_tree:head_sha` + `[{path,mode:"100644",type:"blob",sha}]` (include **all** blobs,not just changed)
-6. `POST /git/commits` (message,tree,parents:[head_sha])
-7. `PATCH /git/refs/heads/{branch}` `{"sha":…}` (force only if clearly needed)​
+Do NOT read every doc file. Load the smallest useful set.
 
-⚠️ **Never blindly run this recipe against `main` from a stale checkout** —it rebuilds the tree from local,and would delete unrelated newer commits (e.g., wiping later `Comments & Chat` work on `main`). Push to feature branches only unless explicitly told otherwise.
+| Task | Read this next |
+|------|---------------|
+| Fix product card / catalog | `docs/ai/PRODUCTS.md` |
+| Fix category selector / tree | `docs/ai/CATEGORIES.md` + `docs/ai/SELLER.md` |
+| Fix login / session | `docs/ai/AUTH.md` |
+| Fix image upload / R2 | `docs/ai/MEDIA.md` |
+| Fix checkout / orders | `docs/ai/CHECKOUT.md` |
+| Fix database / schema | `docs/ai/DATABASE.md` |
+| Fix styling / theme | `docs/ai/DESIGN.md` |
+| Full audit | `docs/ai/ARCHITECTURE.md` then subsystems as needed |
 
+History in `docs/ai/history/` is **reference only** — do not load automatically.
 
+## Rules for Every Task
 
-## Repo conventions
-- Feature branches: `fix/…`,`feat/…`; open PRs only when asked; no PR template in repo (use structured summary manually).
-- `git diff --check` clean before commit; commit style: conventional-ish (`fix(velshop): …`).
+1. **Inspect before editing** — verify the file, function, route, table, and schema exist in the current repo. Previous AI memory may be stale; the repo wins.
+2. **Minimal correct change** — fix the root cause, preserve existing functionality, reuse existing systems. No duplicate tables, APIs, or components.
+3. **Source of truth** — `Neon → Backend API → Frontend`. Frontend never touches Neon or server secrets. No fake data or mock APIs unless explicitly requested.
+4. **Database sync** — any schema change must update **both** `db/schema.sql` and `db/run-sqleditor.sql` (see `docs/ai/DATABASE.md`). Never recreate `db/run-update.sql`.
+5. **Verify** — `git diff --check`, typecheck/build relevant apps, and test the affected flow.
+6. **Handoff** — update `AI_Handoff.md` with current state only (not history).
 
-## Current state (2026-09-07)
-- `fix/velshop-selection-sheet-preview-details-order` @`5ec53b7` — preview fix (name/description into right details column;already merged to `main` via PR #9;`main` since diverged (`40cd36a` Comments & Chat ± layout moved name/description **out** of right column). Opening a PR from that branch now fails (422 "No commits between…").
-- **Dependabot auto-merge GitHub Action** — requested 2026-09-07;implemented in `.github/workflows/dependabot-auto-merge.yml` (runs tests;auto-merges Dependabot PRs with `gh pr merge --auto --squash`). Pushed on the preview-details branch (no PR opened unless asked).
+## Quick Reference
+
+- Install: `bun install` · Dev: `bun run dev:velshop` + `bun run api:dev` · Typecheck: `bun run typecheck` · DB bootstrap: run `db/run-sqleditor.sql` once in Neon SQL Editor
+- Docs: `INSTALLATION.md` (setup), `VELNOX_DESIGN_THEME.md` (design source of truth), `docs/ai/README.md` (full context map)
+- Repo: `https://github.com/EnJirad/velnox-marketplace.git`
+
+## Repo Conventions
+
+- Feature branches: `fix/…`, `feat/…`; open PRs only when asked.
+- Commits: conventional-ish (`fix(velshop): …`, `feat(db): …`). `git diff --check` clean before commit.
+
+## Version-Control Workflow (Freebuff/Vly environments)
+
+When `git push/pull` is blocked by the hosting platform, push via GitHub REST API (Git Data API) using the ambient token — never hardcode or echo tokens. On stale checkouts, push to feature branches only. See `docs/ai/WORKFLOW.md` for the recipe.
