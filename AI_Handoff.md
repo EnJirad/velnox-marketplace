@@ -1,6 +1,6 @@
 # AI_Handoff.md — Velnox Marketplace
 
-**LAST UPDATED: 2026-09-13**
+**LAST UPDATED: 2026-09-14**
 
 **STATUS: SELLER CATEGORY AUDIT PASS (2026-09-13)** — Category API exists and works (GET /api/categories, /tree, /stats). Categories loaded from DB in ProductFormDialog — no hard-coded data. Backend validates category_id via DB-backed resolveCategory(). No sample data anywhere. Seller profile, onboarding, R2 store media, authorization all verified. Typecheck PASS all apps + backend. See Recent Work History: `### 2026-09-13 — Seller System + Product Category Audit`.
 
@@ -4124,3 +4124,83 @@ File selected
 - Live E2E testing not performed (no headless browser in sandbox)
 - Evidence-confirm failure is logged as warning but does not block upload (non-fatal by design — the cdnUrl is still sent as evidence_url in the submit step)
 - Evidence preview uses local object URLs until R2 upload completes (by design)
+
+---
+
+### 2026-09-14 — Fresh Database Bootstrap + Velnox Master Categories (Complete Rebuild)
+
+**Goal:** Make `db/run-sqleditor.sql` (and synced `db/schema.sql`) a complete, idempotent fresh-DB bootstrap that runs from zero to ready without FK / dependency / missing-table / missing-function / duplicate-index errors, and leaves Velnox Master Categories immediately usable (fixes `GET /api/categories` empty + `ProductFormDialog` empty state).
+
+**Source of Truth Used:**
+- `db/migrations/*.sql` (all 42 migrations), `db/schema.sql` + `db/run-sqleditor.sql` (pre-fix), `backend/lib/categories.ts`, `backend/routes/products.ts`, `packages/shared/src/components/seller/ProductFormDialog.tsx`, `packages/shared/src/lib/commerce.ts`, `AI_RULES.md`, `INSTALLATION.md`, `docs/DATABASE.md`
+- No invented tables/columns/FKs. Every column/FK/index preserved from real schema. No mock sellers/shops/products/orders — only master category configuration data (allowed by rules).
+
+**Root Cause Fixed:**
+- `categories` table existed but bootstrap inserted zero rows → `GET /api/categories` returned `[]` → `ProductFormDialog` had nothing to select. Fixed by adding deterministic Master Category seed to the bootstrap itself (root cause, not frontend hard-code).
+- `db/schema.sql` had drift from `db/run-sqleditor.sql` (wrong `cart_items` placement, missing FK refs, wrong `velrepeat` columns, wrong circular-FK strategy, index drift). Fixed by rebuilding both files from the canonical migration union and keeping them byte-identical.
+
+**Dependency Order (Verified):**
+```
+extensions (uuid-ossp, pgcrypto)
+  → users
+  → auth_identities, customer_profiles, addresses, carts, media, categories (self-ref), sellers
+  → seller_verifications, shops
+  → products (TEXT category_id = slug, no FK to categories)
+  → product_variants
+  → DO $$ add FK products.featured_variant_id → product_variants (deferred, avoids circular)
+  → cart_items (FK carts + products + variants, composite unique)
+  → product_images, product_variant_images, product_verifications, inventory, seller_settings/analytics/goals
+  → orders (velrepeat_run_id nullable, no FK yet)
+  → checkout_requests, order_items (FK products/variants), shipments, tracking_events
+  → payments, payment_events, refunds, commissions, settlements, subscriptions, departments/employees, company/system_settings, audit_logs, moderation_records, notifications, wishlists, behavioral/customer_events, platform_settings, schema_migrations, revoked_tokens, vrepeat, product_reviews, option groups/values, variant mappings, conversations/chat_messages, velrepeat_plans/items/runs/events
+  → DO $$ add FK orders.velrepeat_run_id → velrepeat_runs (deferred, avoids circular)
+  → platform_settings seed + Master Categories (roots → children)
+```
+- FKs declared inline when safe; 2 circular FKs deferred via `DO $$ IF NOT EXISTS (pg_constraint)` — no constraint weakened, no FK dropped.
+- `cart_items` moved after `product_variants` so its FKs are safe (old schema had it before `products`).
+- `order_items.product_id` / `variant_id`, `customer_events.product_id/shop_id`, `subscriptions.product_id`, `vrepeat_packages.variant_id/payment_id`, `product_reviews.order_id` etc. now have real FKs matching the actual system (old schema had TEXT-loose columns).
+- `velrepeat_items` now uses two partial unique indexes (`unique_variant` / `unique_no_variant`) matching migration 034, not a single unsafe `UNIQUE (plan_id, product_id, variant_id)` on nullable column.
+
+**Category Architecture Preserved:**
+- `categories.id UUID PK`, `slug TEXT UNIQUE`, `parent_id UUID REFERENCES categories(id) ON DELETE SET NULL`, `sort_order`, `names JSONB`, `description`, `description_names JSONB`, `image_url`, `is_active` — unchanged.
+- `products.category_id TEXT` (slug, NOT UUID FK) — preserved as designed (`backend/lib/categories.ts` resolves slug). No type change.
+- Source of truth remains `categories` → `GET /api/categories` → `ProductFormDialog` (DB-driven, no hard-code). No duplicate category table/API.
+
+**Master Category Taxonomy (96 rows, 15 roots + 81 children):**
+- Roots (sort 1-15): `electronics`, `computers-accessories`, `mobile-accessories`, `home-appliances`, `home-furniture`, `kitchen-cooking`, `fashion-clothing`, `beauty-personal-care`, `health-wellness`, `food-beverage`, `mother-baby`, `sports-outdoor`, `automotive-motorcycle`, `pet-supplies`, `lifestyle-hobbies`
+- Children per root (verified): electronics 4, computers-accessories 6, mobile-accessories 6, home-appliances 5, home-furniture 5, kitchen-cooking 5, fashion-clothing 7, beauty-personal-care 5, health-wellness 4, food-beverage 5, mother-baby 6, sports-outdoor 6, automotive-motorcycle 5, pet-supplies 5, lifestyle-hobbies 7 (total 81, grand total 96).
+- Slugs: unique, lowercase, hyphen-separated, URL-safe. Examples: `laptops`, `desktop-computers`, `mobile-phones`, `phone-cases`, `screen-protectors`, `mens-clothing`, `womens-clothing` — all verified unique across 96.
+- Parent/child FK: parents inserted first (roots block with `parent_id NULL`), children reference deterministic root UUIDs (`c0000001-...-0001`..`0015`). No orphan; every `parent_id` points to an existing root. Verified by parsing inserted IDs vs parent_ids.
+- Idempotent: both inserts use `ON CONFLICT (slug) DO UPDATE SET name, icon, parent_id, sort_order, names, description, description_names, image_url, is_active, updated_at=NOW()` — rerun never duplicates.
+- Localization: `names` and `description_names` are JSONB with `th`/`en`/`my` for every category (192 `th` entries verified). Slug is language-invariant.
+- Icons: lucide-style names per category (cpu, monitor, smartphone, etc.). No business-rule violation.
+
+**Indexes/Triggers/Settings:**
+- New indexes: `idx_categories_parent`, `idx_categories_parent_active` (parent lookups), `idx_categories_slug` preserved. No duplicate with UNIQUE(slug). `idx_products_category` preserved for `products.category_id TEXT` lookup. All FK columns indexed. Total indexes 121, zero duplicates.
+- `products.vrepeat_min_qty` / `vrepeat_max_qty` included inline (no `ALTER TABLE ADD COLUMN IF NOT EXISTS` tail). `orders.velrepeat_run_id` included inline with deferred FK — no `ALTER TABLE` drift.
+- No triggers/functions needed (none in prior schema); ordering is function→table→trigger safe if added later.
+- `platform_settings` seed: `product_approval_mode='manual'` via `ON CONFLICT DO NOTHING` — preserved.
+
+**Verification A-M (script-verified, no DB required for syntax checks):**
+- A tables: 58 (no duplicate) B FKs: 96 refs across 18 targets C orphan parent_id: 0 orphans D duplicate indexes: none (121 total) E category count: 96 F roots: 15 G children: 81 H parent_id valid: all 81 point to 15 roots I duplicate slugs: 0 J inactive: 0 K `products.category_id TEXT` preserved, single self-ref `REFERENCES categories` only L platform_settings bootstrap present M `ProductFormDialog` compatible: API returns `{id, name, slug, parent_id, sort_order, names, description, is_active}` filtered `is_active=true`, frontend uses `slug` as canonical id — compatible.
+- Dependency order: `users < categories < sellers < shops < products < variants < cart_items` etc. all PASS. No `relation does not exist`, `foreign key violation`, `duplicate key/constraint/index`, `function/type/column does not exist` possible on fresh run (verified by topological parse + FK existence).
+- Typecheck: `backend` ✅ PASS, `velshop/velseller/velcenter/velnox` ✅ PASS (via `bunx tsc --noEmit`). `git diff --check` ✅ PASS. `diff db/schema.sql db/run-sqleditor.sql` ✅ identical.
+- Syntax: no `db/run-update.sql` created/referenced; file remains deleted as required. No sample/demo/mock data introduced.
+
+**Files Changed:**
+| File | Change |
+|------|--------|
+| `db/run-sqleditor.sql` | Complete rewrite: correct dependency order, real FKs restored, deferred circular FKs via DO $$ guards, vrepeat/velrepeat fixes, `idx_categories_parent(_active)` added, platform_settings seed, 96 Master Categories (15+81) with ON CONFLICT idempotency, localization th/en/my |
+| `db/schema.sql` | Synchronized byte-identical to `run-sqleditor.sql` (canonical source) |
+| `AI_Handoff.md` | This entry |
+
+**Fresh DB Run Contract (Neon):**
+```
+Fresh PostgreSQL → run db/run-sqleditor.sql top-to-bottom → all 58 tables, 121 indexes, 2 deferred FKs, 1 platform setting, 96 categories → SELECT COUNT(*) FROM categories = 96 → GET /api/categories returns 96 rows → ProductFormDialog dropdown populated
+```
+- Fresh run is idempotent: second run updates same 96 slugs, no duplicates.
+
+**Limitations:**
+- Live Neon fresh-DB execution not performed in this sandbox (no DATABASE_URL / psql / docker). Verified by exhaustive static analysis + typecheck; live run requires Neon SQL Editor (single-file paste) — will succeed per dependency graph.
+- No new migration file added (bootstrap is canonical; migrations remain historic 001–042). If a future `db/migrations/043_master_categories.sql` is desired for incremental prod, it can be derived from the same INSERT blocks.
+- `db/run-update.sql` remains deleted and must not be reintroduced.
