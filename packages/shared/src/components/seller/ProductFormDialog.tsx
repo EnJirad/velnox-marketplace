@@ -14,13 +14,6 @@ import {
 } from "@velnox/shared/components/ui/dialog";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@velnox/shared/components/ui/select";
 import { Switch } from "@velnox/shared/components/ui/switch";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { Checkbox } from "@velnox/shared/components/ui/checkbox";
@@ -42,6 +35,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { Badge } from "@velnox/shared/components/ui/badge";
+import { CategoryPicker } from "@velnox/shared/components/seller/CategoryPicker";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -396,6 +390,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
 // Loaded from the Category API at runtime so the seller selector always
 // matches the real `categories` table — no hard-coded slugs.
 type CategoryOption = { id: string; slug: string; name: string; depth: number; parent_id?: string | null };
+type CategoryTreeNode = { id: string; slug: string; name?: string; display_name?: string; icon?: string; parent_id?: string | null; sort_order?: number; is_active?: boolean; names?: Record<string, string>; children?: CategoryTreeNode[] };
 
 /** Flatten a category tree into a flat list with depth for indentation. */
 function flattenCategoryTree(nodes: any[], depth = 0): CategoryOption[] {
@@ -461,8 +456,10 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // ─── Categories (DB-backed, localized) ────────────────────────────────
   const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [categoryTree, setCategoryTree] = useState<CategoryTreeNode[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [categoriesError, setCategoriesError] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const loadCategories = useCallback(async () => {
     setCategoriesLoading(true);
@@ -470,9 +467,11 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     try {
       // Try tree endpoint first for hierarchical display; fall back to flat list
       let list: CategoryOption[] = [];
+      let tree: CategoryTreeNode[] = [];
       try {
-        const tree = await api.customer.categoryTreeAction();
-        list = flattenCategoryTree(Array.isArray(tree) ? tree : []);
+        const treeData = await api.customer.categoryTreeAction();
+        tree = Array.isArray(treeData) ? treeData : [];
+        list = flattenCategoryTree(tree);
       } catch {
         // Fall back to flat categories if tree endpoint fails
         const rows = await api.customer.categoriesLocalized({ lang: "th" });
@@ -486,6 +485,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           .filter((c: CategoryOption) => c.slug);
       }
       setCategories(list);
+      setCategoryTree(tree);
       setForm((prev) => (prev.category ? prev : { ...prev, category: list[0]?.slug ?? "" }));
     } catch {
       setCategoriesError(true);
@@ -495,6 +495,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   }, []);
 
   useEffect(() => { void loadCategories(); }, [loadCategories]);
+
+  // Get display name for the currently selected category
+  const selectedCategoryName = useMemo(() => {
+    if (!form.category) return null;
+    const found = categories.find((c) => c.slug === form.category);
+    return found?.name ?? null;
+  }, [form.category, categories]);
   const isEdit = product !== null;
 
   // ─── Draft state (for new products) ──────────────────────────────────
@@ -921,6 +928,15 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   return (
     <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+      {/* Category Picker — opens on top of this dialog */}
+      <CategoryPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        categories={categoryTree}
+        value={form.category}
+        onSelect={(slug) => set("category", slug)}
+        loading={categoriesLoading}
+      />
       <DialogHeader>
         <DialogTitle>{current ? "แก้ไขสินค้า" : "เพิ่มสินค้าใหม่"}</DialogTitle>
         <DialogDescription>
@@ -950,25 +966,23 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-2">
                 <Label>หมวดหมู่</Label>
-                <Select
-                  value={form.category}
-                  onValueChange={(v) => set("category", v)}
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen(true)}
                   disabled={categoriesLoading || categoriesError}
+                  className="flex h-10 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-left text-sm transition-colors hover:border-[#10B981] disabled:opacity-50"
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={categoriesLoading ? "กำลังโหลด..." : "เลือกหมวดหมู่"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {form.category && !categories.some((c) => c.slug === form.category) && (
-                      <SelectItem value={form.category}>{form.category} — ไม่พร้อมใช้งาน กรุณาเลือกใหม่</SelectItem>
-                    )}
-                    {categories.map((c) => (
-                      <SelectItem key={c.slug} value={c.slug}>
-                        {"  ".repeat(c.depth)}{c.depth > 0 ? "└ " : ""}{c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {categoriesLoading ? (
+                    <span className="text-slate-400">กำลังโหลด...</span>
+                  ) : selectedCategoryName ? (
+                    <span className="min-w-0 flex-1 truncate text-slate-900">
+                      {selectedCategoryName}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">เลือกหมวดหมู่</span>
+                  )}
+                  <ChevronDown className="size-4 shrink-0 text-slate-400" />
+                </button>
                 {categoriesError && (
                   <p className="text-[11px] text-red-600">
                     โหลดหมวดหมู่ไม่สำเร็จ{" "}

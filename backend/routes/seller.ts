@@ -35,6 +35,11 @@ export function setupSellerRoutes(app: Express): void {
         firstName,
         lastName,
         phone,
+        // Identity verification (optional — stored in seller_settings)
+        idNumber,
+        idCardFrontUrl,
+        idCardBackUrl,
+        selfieUrl,
       } = req.body;
 
       console.log("[seller] application received from user:", userId);
@@ -78,7 +83,7 @@ export function setupSellerRoutes(app: Express): void {
           });
           return;
         }
-        // If rejected or suspended, allow re-application by updating status
+        // If rejected, suspended, or needs_correction, allow re-application by updating status
         await query(
           "UPDATE sellers SET status = 'pending', updated_at = NOW() WHERE user_id = $1",
           [userId]
@@ -144,11 +149,16 @@ export function setupSellerRoutes(app: Express): void {
           ]
         );
 
-        // Create default seller settings with applicant info
+        // Create default seller settings with applicant info and identity verification
         const settings: Record<string, unknown> = { shopName: trimmedShopName };
         if (firstName?.trim()) settings.firstName = firstName.trim().substring(0, 100);
         if (lastName?.trim()) settings.lastName = lastName.trim().substring(0, 100);
         if (phone?.trim()) settings.phone = phone.trim().substring(0, 20);
+        // Identity verification fields (stored as R2 object references, not binary)
+        if (idNumber?.trim()) settings.idNumber = idNumber.trim().substring(0, 20);
+        if (idCardFrontUrl) settings.idCardFrontUrl = idCardFrontUrl;
+        if (idCardBackUrl) settings.idCardBackUrl = idCardBackUrl;
+        if (selfieUrl) settings.selfieUrl = selfieUrl;
         await query(
           "INSERT INTO seller_settings (seller_id, settings) VALUES ($1, $2)",
           [seller.id, JSON.stringify(settings)]
@@ -213,7 +223,15 @@ export function setupSellerRoutes(app: Express): void {
           shopName: row.shop_name || null,
           shopSlug: row.shop_slug || null,
           createdAt: row.created_at,
+          updatedAt: row.updated_at || null,
           rejectionReason: settings.rejectionReason || null,
+          correctionReason: settings.correctionReason || null,
+          applicantInfo: {
+            firstName: settings.firstName || null,
+            lastName: settings.lastName || null,
+            phone: settings.phone || null,
+          },
+          hasIdentityVerification: !!(settings.idCardFrontUrl || settings.selfieUrl),
         },
       });
     } catch (err: any) {
@@ -569,8 +587,8 @@ export function setupSellerRoutes(app: Express): void {
       const sellerId = req.params.id;
       const { status, reason } = req.body;
 
-      // Validate status value — canonical set
-      const validStatuses = ["approved", "rejected", "pending", "suspended"];
+      // Validate status value — canonical set (includes review lifecycle)
+      const validStatuses = ["approved", "rejected", "pending", "under_review", "needs_correction", "suspended"];
       if (!status || !validStatuses.includes(status)) {
         res.status(400).json({
           success: false,
@@ -677,15 +695,32 @@ export function setupSellerRoutes(app: Express): void {
         }
       }
 
-      // On rejection: store rejection reason in seller_settings
-      if (status === "rejected" && reason) {
+      // On rejection or needs_correction: store reason in seller_settings
+      if ((status === "rejected" || status === "needs_correction") && reason) {
+        const key = status === "rejected" ? "rejectionReason" : "correctionReason";
         await client.query(
           `UPDATE seller_settings
-           SET settings = jsonb_set(COALESCE(settings, '{}'), '{rejectionReason}', $1::jsonb),
+           SET settings = jsonb_set(COALESCE(settings, '{}'), '{' || $1 || '}', $2::jsonb),
                updated_at = NOW()
-           WHERE seller_id = $2`,
-          [JSON.stringify(reason), sellerId]
+           WHERE seller_id = $3`,
+          [key, JSON.stringify(reason), sellerId]
         );
+      }
+
+      // On approval: create notification for the seller
+      if (status === "approved" || status === "rejected" || status === "needs_correction") {
+        const notificationTitle = status === "approved" ? "คำขอเปิดร้านค้าได้รับอนุมัติ" : status === "rejected" ? "คำขอเปิดร้านค้าถูกปฏิเสธ" : "คำขอเปิดร้านค้าต้องแก้ไขข้อมูล";
+        const notificationMessage = status === "approved" ? "คุณสามารถเริ่มขายสินค้าได้แล้ว" : status === "rejected" ? `เหตุผล: ${reason || 'ไม่ผ่านเกณฑ์การตรวจสอบ'}` : `กรุณาแก้ไขข้อมูล: ${reason || 'กรุณาตรวจสอบและแก้ไขข้อมูลให้ครบถ้วน'}`;
+        const notificationType = status === "approved" ? "seller_approved" : status === "rejected" ? "seller_rejected" : "seller_needs_correction";
+        try {
+          await client.query(
+            `INSERT INTO notifications (user_id, type, title, message, data)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [seller.user_id, notificationType, notificationTitle, notificationMessage, JSON.stringify({ sellerId, status, reason: reason || null })]
+          );
+        } catch (notifErr: any) {
+          console.warn("[seller] notification write failed (non-fatal):", notifErr?.message);
+        }
       }
 
       // Invalidate cached profile for the target user so /api/auth/me returns fresh role

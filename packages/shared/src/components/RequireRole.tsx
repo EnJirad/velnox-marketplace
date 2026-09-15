@@ -70,7 +70,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   const location = useLocation();
   const { t } = useLanguage();
 
-  const [seller, setSeller] = useState<{ status: string | null; rejectionReason: string | null } | null>(null);
+  const [seller, setSeller] = useState<{ status: string | null; rejectionReason: string | null; correctionReason: string | null } | null>(null);
   const [sellerLoading, setSellerLoading] = useState(true);
   const [sellerLoaded, setSellerLoaded] = useState(false);
   const [sellerError, setSellerError] = useState<string | null>(null);
@@ -123,7 +123,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
       .catch((err) => {
         console.error("[seller] status fetch failed:", err);
         if (alive) {
-          setSeller({ status: null, rejectionReason: null });
+          setSeller({ status: null, rejectionReason: null, correctionReason: null });
           setSellerError("ไม่สามารถตรวจสอบสถานะร้านค้าได้ กรุณาลองใหม่");
           setSellerLoaded(true);
         }
@@ -228,7 +228,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
               if (!r.ok) throw new Error(`HTTP ${r.status}`);
               return r.json();
             })
-            .then((s) => { setSeller(s.data ?? null); setSellerError(null); setSellerLoaded(true); })
+            .then((s) => { const d = s.data; setSeller(d ? { status: d.status, rejectionReason: d.rejectionReason || null, correctionReason: d.correctionReason || null } : null); setSellerError(null); setSellerLoaded(true); })
             .catch(() => { setSellerError("ไม่สามารถตรวจสอบสถานะได้ กรุณาลองใหม่"); setSellerLoaded(true); })
             .finally(() => setSellerLoading(false));
         }}
@@ -242,8 +242,30 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   // seller === null means "authenticated but no seller application" → fall through to registration form below
   if (seller?.status === "approved") return children;
 
-  if (seller?.status === "pending" || seller?.status === "under_review") {
-    return <GateCard icon={Clock} title={t("gate.sellerPendingTitle")} desc={t("gate.sellerPendingDesc")} />;
+  if (seller?.status === "pending") {
+    return <GateCard icon={Clock} title="สมัครร้านค้าแล้ว" desc="ระบบได้รับคำขอของคุณแล้ว รอการตรวจสอบจากทีมงาน Velnox">
+      <div className="mt-4 rounded-[10px] bg-amber-50 px-4 py-3 text-left">
+        <p className="text-sm font-medium text-amber-800">สถานะ: รอการตรวจสอบ</p>
+        <p className="mt-1 text-xs text-amber-600">ทีมงานจะตรวจสอบคำขอของคุณภายใน 1-3 วันทำการ</p>
+      </div>
+    </GateCard>;
+  }
+
+  if (seller?.status === "under_review") {
+    return <GateCard icon={Clock} title="กำลังตรวจสอบคำขอ" desc="ทีมงาน Velnox กำลังตรวจสอบคำขอเปิดร้านค้าของคุณ">
+      <div className="mt-4 rounded-[10px] bg-blue-50 px-4 py-3 text-left">
+        <p className="text-sm font-medium text-blue-800">สถานะ: อยู่ระหว่างการตรวจสอบ</p>
+        <p className="mt-1 text-xs text-blue-600">กรุณารอผลการตรวจสอบ คุณจะได้รับการแจ้งเตือนเมื่อมีผลลัพธ์</p>
+      </div>
+    </GateCard>;
+  }
+
+  if (seller?.status === "needs_correction") {
+    // Allow re-apply: fall through to the registration form below with correction info
+  }
+
+  if (seller?.status === "rejected") {
+    // Allow re-apply: fall through to the registration form below with rejection info
   }
 
   if (seller?.status === "suspended") {
@@ -251,6 +273,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   }
 
   const isRejected = seller?.status === "rejected";
+  const needsCorrection = seller?.status === "needs_correction";
 
   // ── Multi-step seller onboarding ──
 
@@ -296,6 +319,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
           setSeller({
             status: statusData.data.status,
             rejectionReason: statusData.data.rejectionReason || null,
+            correctionReason: statusData.data.correctionReason || null,
           });
         }
       } catch { /* non-fatal — success screen already shown */ }
@@ -315,8 +339,8 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         desc="ระบบได้รับคำขอของคุณแล้ว ทีมงานจะตรวจสอบและอนุมัติภายใน 1-3 วันทำการ"
       >
         <div className="mt-4 rounded-[10px] bg-amber-50 px-4 py-3 text-left">
-          <p className="text-sm font-medium text-amber-800">สถานะ: รอการอนุมัติ</p>
-          <p className="mt-1 text-xs text-amber-600">คุณจะได้รับการแจ้งเตือนเมื่อบัญชีได้รับการอนุมัติ</p>
+          <p className="text-sm font-medium text-amber-800">สถานะ: รอการตรวจสอบ</p>
+          <p className="mt-1 text-xs text-amber-600">คุณจะได้รับการแจ้งเตือนเมื่อบัญชีได้รับการอนุมัติ หรือมีการร้องขอให้แก้ไข</p>
         </div>
         <Button
           className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
@@ -331,13 +355,19 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   return (
     <GateCard
       icon={Store}
-      title={isRejected ? t("gate.sellerRejectedTitle") : "สมัครเป็นพ่อค้า"}
-      desc={isRejected ? t("gate.sellerRejectedDesc") : "กรอกข้อมูลด้านล่างเพื่อสมัครเป็นพ่อค้าบน Velnox"}
+      title={isRejected ? t("gate.sellerRejectedTitle") : needsCorrection ? "แก้ไขคำขอสมัคร" : "สมัครเป็นพ่อค้า"}
+      desc={isRejected ? t("gate.sellerRejectedDesc") : needsCorrection ? "คำขอสมัครของคุณต้องแก้ไขข้อมูลบางส่วน" : "กรอกข้อมูลด้านล่างเพื่อสมัครเป็นพ่อค้าบน Velnox"}
     >
       {isRejected && seller.rejectionReason && (
         <p className="mt-4 rounded-[10px] bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
           {t("gate.sellerRejectedReason", { reason: seller.rejectionReason })}
         </p>
+      )}
+      {needsCorrection && seller.correctionReason && (
+        <div className="mt-4 rounded-[10px] bg-amber-50 px-3 py-2.5">
+          <p className="text-sm font-medium text-amber-800">⚠ ต้องแก้ไขข้อมูล</p>
+          <p className="mt-1 text-xs text-amber-700">{seller.correctionReason}</p>
+        </div>
       )}
 
       {/* Step indicator */}
