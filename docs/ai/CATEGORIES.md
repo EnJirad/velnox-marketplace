@@ -32,6 +32,7 @@ categories (DB) → GET /api/categories|/tree → VelCenter admin / Velseller se
 ## Common Failure Modes
 
 - `c.id::text = p.category_id` JOIN (must be `c.slug = p.category_id`); inserting children before parents; duplicate slugs; orphan `parent_id`; inactive category accepted on product create.
+- Long category names overflowing their container: every grid/flex chain that renders a name needs `min-w-0` on the containers, `shrink-0` on icons and `truncate` on the text node. In VelCenter's Create/Edit dialog the parent-category `<select>` needs `w-full min-w-0 truncate` (its wrapper is a `min-w-0` grid item) or a long `<option>` grows past its column and covers the “ลำดับ” field.
 
 ## Verification
 

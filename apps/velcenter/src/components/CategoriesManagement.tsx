@@ -389,13 +389,13 @@ export default function CategoriesManagement() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-2">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid min-w-0 gap-2">
                 <Label>หมวดหมู่แม่</Label>
                 <select
                   value={form.parent_id}
                   onChange={(e) => setForm((p) => ({ ...p, parent_id: e.target.value }))}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  className="w-full min-w-0 max-w-full truncate rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
                 >
                   <option value="">ไม่มี (หมวดหมู่หลัก)</option>
                   {flatCategories.map((c) => (
@@ -405,12 +405,13 @@ export default function CategoriesManagement() {
                   ))}
                 </select>
               </div>
-              <div className="grid gap-2">
+              <div className="grid min-w-0 gap-2">
                 <Label>ลำดับ</Label>
                 <Input
                   type="number"
                   value={form.sort_order}
                   onChange={(e) => setForm((p) => ({ ...p, sort_order: Number(e.target.value) }))}
+                  className="w-full min-w-0"
                 />
               </div>
             </div>

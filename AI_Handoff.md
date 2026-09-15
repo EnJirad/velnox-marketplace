@@ -241,6 +241,113 @@ intentionally a no-op so a half-made selection cannot be lost.
 - `apps/velseller/src/pages/MyShop.tsx` — desktop product-table text column `min-w-0`/`truncate`.
 - No shared `ui/*` component, i18n key, API, or database object was changed.
 
+## VelCenter Category Edit — overflow fix + verification audit (2026-09-15)
+
+### Root cause — long parent-category name covered the “ลำดับ” field
+
+`apps/velcenter/src/components/CategoriesManagement.tsx`, Create/Edit dialog. The
+parent-category `<select>` and the sort-order field shared a plain
+`grid grid-cols-2 gap-3`. Tailwind columns are `minmax(0, 1fr)`, so the *column*
+was bounded — but each field sat in an inner `div.grid` whose single implicit
+track is `auto`. An `auto` track is floored by its item's **min-content** width,
+and a grid item's default `min-width` is `auto`, so the `<select>` could never
+shrink below the width of its longest `<option>`. `grid` tracks are allowed to
+overflow their container, so the select painted past the column and over the
+“ลำดับ” input on the right. A Thai/English/Myanmar category name has no effective
+word-break opportunity, which is why only long names reproduced it.
+
+**Fix — width constraints at the root, category data untouched:**
+
+- the field grid became `grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2` (one
+  column on narrow screens, so the two controls can never race for space on a
+  phone; unchanged two-column layout from `sm:` up);
+- both field wrappers got `min-w-0`, which resets the automatic minimum size so
+  they can shrink below their content;
+- the `<select>` is now `w-full min-w-0 max-w-full truncate rounded-lg …` — the
+  native control is finally size-constrained and ellipsizes its closed-state
+  label (Chromium) instead of growing;
+- the sort-order `Input` got `className="w-full min-w-0"` so it stays bounded too.
+
+The stored category name is never shortened, truncated in data, or rewritten —
+`<option>` keeps the full string, and the same full name still renders in the
+category tree (`CategoryRow`), which was already `min-w-0 flex-1` and wraps
+safely.
+
+### Similar-pattern audit — no other real occurrences
+
+Searched `<select`, `grid-cols-2`, and the category render surfaces across
+`apps/velcenter`, `apps/velseller`, `packages/shared`:
+
+- Only **two** native `<select>` elements exist in the repo. The other one
+  (`apps/velshop/src/pages/ShopDetail.tsx`, sort dropdown) holds short fixed sort
+  labels in a flex row and has no long-text neighbour — left untouched.
+- The other `grid-cols-2` blocks in `apps/velcenter/src/pages/Center.tsx`
+  (stat tiles, product stock summary, approve/reject button pairs, settings
+  fields) pair inputs/buttons with `min-w-0`-safe shadcn `Input`s or short labels —
+  no intrinsic-width bug.
+- `packages/shared/src/components/seller/CategoryPicker.tsx` (breadcrumbs, rows,
+  search results) and `ProductFormDialog` already carry the full `min-w-0` +
+  `truncate` + `shrink-0` chain from the previous audit. No regression found.
+
+### CategoryPicker close button — re-verified
+
+`CategoryPicker` still passes `showCloseButton={false}` to `DialogContent` and
+renders exactly **one** header X with `aria-label={t("categoryPicker.close")}`
+(TH/EN/MY = 1287/1287/1287, at parity). The shared `ui/dialog.tsx` was not
+touched. Hierarchy navigation, breadcrumbs, search, the isolated scroll region
+(`max-h-[85dvh]`, only the list is `overflow-y-auto`) and selection semantics are
+unchanged.
+
+### Seller identity-verification architecture — confirmed, no change made
+
+Audited against live source (no code change required):
+
+- **One system.** `backend/routes/verification.ts` serves seller/shop identity
+  verification; `GET /api/admin/verifications` still answers `products: []`. No
+  `products.is_v` column and no product verification route/UI exists. V is
+  derived from the seller only — `isProductVerified()` in
+  `packages/shared/src/components/VBadge.tsx` returns
+  `sellerVerification === "verified"` and ignores its product argument.
+- **Two distinct columns.** `sellers.status` = account lifecycle
+  (`pending|under_review|needs_correction|approved|rejected|suspended`);
+  `sellers.verification_status` = trust badge
+  (`unverified|pending|verified|rejected|suspended`).
+- **Evidence security.** Private R2 bucket, keys owner-scoped as
+  `verification/evidence/{sellerId|userId}/{purpose}_{ts}.ext`; upload-intent
+  enforces a mime allow-list, a purpose allow-list and derives the owner segment
+  from the session; confirm requires the `verification/evidence/` prefix **and**
+  `keyOwner ∈ {session userId, session sellerId}`; `GET /api/seller/evidence`
+  filters on `uploaded_by = $1`; the reviewer endpoint is gated by
+  `assertReviewer` (`owner|admin|staff`) and issues **short-lived (300 s) signed
+  GET URLs** only — no identity document is ever exposed as a public URL. The
+  public `GET /api/shops/:shopId/verification` returns only
+  `verificationStatus` + `verifiedAt`.
+- **Submission integrity.** `POST /api/seller/verification` runs in one
+  transaction: requires ≥1 evidence reference, `FOR UPDATE` on the seller row,
+  ownership check against `media.uploaded_by`, upserts the
+  `seller_verifications` row, and only **then** sets
+  `sellers.verification_status='pending'` and writes the `submitted` history
+  row. Any failure rolls back, so a false “pending” cannot be reported.
+- **State machine enforced server-side.** Reviewer role is re-read from the DB
+  (`assertReviewer`); a non-approve action without a valid structured reason code
+  is rejected (`REASON_REQUIRED`); `approve` is refused when `evidence_urls` is
+  empty (`EVIDENCE_REQUIRED`) and when the record is already
+  `rejected`/`suspended` (`INVALID_TRANSITION`). The seller-application route
+  additionally returns `SELF_ACTION_FORBIDDEN` for a user acting on their own
+  seller row, and `VALID_TRANSITIONS` rejects undocumented jumps.
+- **Reasons & history.** 12 canonical codes are mirrored in
+  `packages/shared/src/lib/verification-reasons.ts` and the backend allow-list
+  (a test asserts they match). Applicant-visible reason/code are persisted into
+  `seller_settings.settings`, the reviewer's `note` stays internal, and every
+  submit + decision writes `seller_review_history`.
+- **Seller UX & separation.** Correction/rejection/suspension reasons surface in
+  the onboarding gate (`packages/shared/src/components/RequireRole.tsx`: correction
+  title/desc + “action required”), and resubmission returns the application to
+  `pending` (shop is upserted, never duplicated). Store Profile editing stays a
+  separate flow from the application/identity verification.
+
+**No database change was required for this task.** `Database schema unchanged.`
+
 ## Seller Navigation
 
 `apps/velseller/src/main.tsx` primary tabs: Goals · My Shop · Orders · Income ·
@@ -323,6 +430,23 @@ normalization needed). The VelRepeat plan-status label map in
 | `bun test backend/tests` | 207 pass / 10 fail — every failure is an `(integration)` suite hitting the live Neon DB (e.g. `orders_user_id_fkey` fixture collisions). This change is frontend-only; no backend test touches it, so those failures are pre-existing/environmental |
 | `git diff --check` | CLEAN |
 
+### VelCenter category-edit fix — tests actually performed (2026-09-15)
+
+| Command | Result |
+|---|---|
+| `bun run typecheck` | PASS — velshop, velseller, velcenter, velnox |
+| `bun run i18n:check` | PASS — th=1287 en=1287 my=1287, at parity |
+| `bun test backend/tests` | 206 pass / 11 fail — every failure is an `(integration)` suite needing live Neon (FK fixture violations, `23503`). This change is CSS/class-only inside one VelCenter component; no backend code or test touches it, so the failures are environmental/pre-existing |
+| `git diff --check` | CLEAN |
+| `git diff --stat` | 1 file changed, 5 insertions(+), 4 deletions(-) |
+
+**NOT verified: no browser and no responsive measurement was performed** (no browser is
+available here). The fix is structural (`min-w-0` on the grid items + a constrained
+`<select>` + `truncate`), so it is viewport-independent, but the dialog should still
+be eyeballed once on the deployed build at 320/375/390/768/desktop with a long Thai,
+English and Myanmar parent-category name to confirm the select no longer reaches the
+“ลำดับ” field. There is no component-test harness in the repo, so this stays manual.
+
 **NOT verified: no browser and no visual/responsive measurement was performed** (no
 browser is available in this environment). The layout result is derived from the CSS
 width chain by source inspection. Because the fix is structural (`min-w-0` +
@@ -362,6 +486,13 @@ Tests are static + unit + DB-gated integration. The 26 skipped suites require a
   the queue grows.
 - **The evidence signed URLs expire after 5 minutes.** A reviewer who leaves the
   dialog open longer must reopen it; the dialog says so.
+- **`PATCH /api/admin/verifications/seller/:id` has no self-action guard.** A user
+  whose role is `seller` cannot reach it (`assertReviewer` allows only
+  `owner|admin|staff`), and the seller-application route does return
+  `SELF_ACTION_FORBIDDEN`. But an `owner`/`admin` who also owns the shop being
+  reviewed could approve their own identity verification — the checkout has no
+  equivalent to the application route's `seller.user_id === userId` check. Report
+  only; not changed here.
 
 ## Recommended Next Steps
 
@@ -374,3 +505,8 @@ Tests are static + unit + DB-gated integration. The 26 skipped suites require a
 4. Add pagination to the VelCenter verification queue.
 5. Decide the fate of the legacy `product_verifications` table and the
    `productVerification*` locale keys, then remove them together.
+6. Add the self-action guard (`seller.user_id === reviewer identity`) to
+   `PATCH /api/admin/verifications/seller/:id` for parity with
+   `PATCH /api/admin/sellers/:id`.
+7. Eyeball the VelCenter Create/Edit Category dialog on the deployed build with a
+   very long TH/EN/MY parent-category name at 320/375/390/768/desktop.
