@@ -141,11 +141,11 @@ Skip commit/push and report the exact reason (`NOT PUSHED — <reason>`) when:
 ### Push failures
 
 If `git push` fails (authentication, non-fast-forward, protected branch):
-1. Diagnose the exact failure class.
-2. If the environment provides an authorized GitHub API / Git Data API, use that as the fallback (see `docs/ai/WORKFLOW.md`).
+1. Diagnose the exact Git error.
+2. For authentication failure: report `NOT PUSHED — AUTHENTICATION UNAVAILABLE` with the exact error. Do not attempt GitHub REST API / Git Data API as a push mechanism.
 3. For non-fast-forward: stop, inspect divergence, reconcile safely — never force-push without owner instruction.
 4. Never hardcode, echo, or expose credentials.
-5. Report `NOT PUSHED — <reason>` with exact repo state if no fallback works.
+5. Report `NOT PUSHED — <reason>` with exact repo state.
 
 ### Commit message style
 

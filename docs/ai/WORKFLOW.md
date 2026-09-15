@@ -14,7 +14,7 @@ Every successful repository-changing task MUST end with:
 Implementation complete
 → Validation passed (typecheck / tests / diff --check)
 → Commit created
-→ Commit pushed to GitHub
+→ Commit pushed to GitHub via Git CLI
 → Remote verified (local SHA == remote SHA)
 → AI_Handoff.md updated when required
 → Working tree clean
@@ -63,24 +63,20 @@ git add <files>     # stage only task-related files
 ### 5. Commit
 
 ```bash
-git commit -m "$(cat <<'EOF'
-<type>(<scope>): <description>
-
-🤖 Generated with Codebuff
-Co-Authored-By: Codebuff <noreply@codebuff.com>
-EOF
-)"
+git commit -m "<type>(<scope>): <description>"
 ```
 
 Style: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. No vague messages (`update`, `fix stuff`, `changes`).
 
-### 6. Push
+### 6. Push (Git CLI Only)
 
 ```bash
 git push origin <branch>
 ```
 
 This happens **immediately after commit**. Do not require the user to say "push".
+
+**Push method is always Git CLI.** Never use GitHub REST API, Git Data API, or any other API-based mechanism to create commits or push refs. If Git CLI auth fails, report the failure — do not fabricate an alternative push path.
 
 ### 7. Verify Remote
 
@@ -115,7 +111,7 @@ DONE =
   code completed
 + validation passed
 + commit created
-+ commit pushed
++ commit pushed via git CLI
 + GitHub remote verified
 + handoff synchronized
 + working tree clean
@@ -123,33 +119,16 @@ DONE =
 
 ---
 
-## Git CLI Push (Preferred)
+## Git CLI Push Only
 
-Normal `git push origin <branch>` is the default. The Freebuff/Vly environment injects a short-lived GitHub App credential automatically for each command. Run git normally; do not paste PATs or rewire remotes.
+Normal `git push origin <branch>` is the only push method. The Freebuff/Vly environment injects a short-lived GitHub App credential automatically for each command. Run git normally; do not paste PATs or rewire remotes.
 
----
-
-## GitHub API Fallback
-
-If `git push` fails due to authentication or environment restrictions:
-
-1. Diagnose the exact failure (auth, non-fast-forward, protected branch, network).
-2. Use the GitHub REST API (Git Data API) with the ambient token as a fallback:
-
-```
-GET  /repos/{owner}/{repo}/git/ref/heads/{branch}   → head_sha
-GET  /git/trees/{head_sha}?recursive=1              → remote blob map
-POST /git/blobs  (per changed file)
-POST /git/trees  (base_tree: head_sha + blobs)
-POST /git/commits  (parents: [head_sha])
-PATCH /git/refs/heads/{branch}
-```
-
-3. After API push, re-fetch and verify SHA match.
-4. **Never** hardcode, echo, or expose tokens.
-5. **Never** rebuild `main` from a stale checkout with this recipe (would delete newer commits). Use feature branches.
-
-If no authorized fallback exists, report `NOT PUSHED — AUTHENTICATION UNAVAILABLE`.
+If `git push` fails:
+1. Diagnose the exact Git error (authentication, non-fast-forward, protected branch, network).
+2. For authentication failure: the credential may need refreshing. Report `NOT PUSHED — AUTHENTICATION UNAVAILABLE` with the exact error.
+3. For non-fast-forward: see *Non-Fast-Forward Resolution* below.
+4. **Never** use GitHub REST API, Git Data API, or any other API-based mechanism as a push fallback.
+5. **Never** hardcode, echo, or expose tokens.
 
 ---
 
@@ -200,7 +179,7 @@ Before staging, always inspect `git status` and `git diff` for unrelated modific
 | `PUSH VERIFIED` | Commit pushed, remote SHA matches local SHA, working tree clean. |
 | `NOT PUSHED — USER REQUEST` | User explicitly said not to commit/push. |
 | `NOT PUSHED — VALIDATION FAILED` | Typecheck/tests/diff-check failed; fixes pending. |
-| `NOT PUSHED — AUTHENTICATION UNAVAILABLE` | No Git CLI auth and no authorized API fallback. |
+| `NOT PUSHED — AUTHENTICATION UNAVAILABLE` | Git CLI auth failed; no credential available. Report the exact error. |
 | `NOT PUSHED — REMOTE CONFLICT` | Non-fast-forward; requires manual reconciliation. |
 | `NOT PUSHED — PROTECTED BRANCH` | Branch rejects direct push; PR required. |
 
