@@ -9,7 +9,7 @@ Platform-owned hierarchical taxonomy. Single source of truth for discovery, filt
 - DB: `categories` table in `db/schema.sql` / `db/run-sqleditor.sql`; seeds 15 roots + children via deterministic UUIDs (`c00000xx-...`) and `ON CONFLICT (slug) DO UPDATE` (idempotent, th/en/my in `names`/`description_names` JSONB)
 - Backend: `backend/lib/categories.ts` (`validateCategory`, `resolveCategory`), `backend/routes/products.ts` — public `GET /api/categories`, `GET /api/categories/tree`, `GET /api/categories/stats`; admin `POST/PATCH/DELETE /api/admin/categories` + `GET /api/admin/categories`
 - VelCenter: `apps/velcenter/src/pages/Center.tsx` (Categories tab) + `apps/velcenter/src/components/CategoriesManagement.tsx`
-- Velseller: `packages/shared/src/components/seller/ProductFormDialog.tsx` (`flattenCategoryTree`, loads `/api/categories/tree` with `└` indentation)
+- Velseller: `packages/shared/src/components/seller/CategoryPicker.tsx` — hierarchical picker (search + breadcrumbs, Radix Dialog on top of `ProductFormDialog`, exactly one close X) opened from `packages/shared/src/components/seller/ProductFormDialog.tsx` (`flattenCategoryTree`); both load `/api/categories/tree` and store the canonical slug
 
 ## Data Flow
 
@@ -20,7 +20,7 @@ categories (DB) → GET /api/categories|/tree → VelCenter admin / Velseller se
 
 ## Important Files
 
-`db/schema.sql`, `backend/lib/categories.ts`, `backend/routes/products.ts`, `apps/velcenter/src/components/CategoriesManagement.tsx`, `packages/shared/src/components/seller/ProductFormDialog.tsx`.
+`db/schema.sql`, `backend/lib/categories.ts`, `backend/routes/products.ts`, `apps/velcenter/src/components/CategoriesManagement.tsx`, `packages/shared/src/components/seller/CategoryPicker.tsx`, `packages/shared/src/components/seller/ProductFormDialog.tsx`.
 
 ## Important Rules
 

@@ -731,7 +731,7 @@ export default function MyShop() {
                     return (
                       <TableRow key={product.id} className="hover:bg-slate-50/60">
                         <TableCell className="pl-5">
-                          <div className="flex items-center gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
                             {product.primaryImage ? (
                               <img
                                 src={product.primaryImage.thumbUrl || product.primaryImage.url}
@@ -744,9 +744,9 @@ export default function MyShop() {
                                 <ImageOff className="size-5 text-slate-300" />
                               </span>
                             )}
-                            <div>
-                              <p className="font-medium text-slate-900">{product.name}</p>
-                              <p className="text-xs text-slate-400">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium text-slate-900">{product.name}</p>
+                              <p className="truncate text-xs text-slate-400">
                                 {PRODUCT_CATEGORY_META[(product.categorySlug ?? product.category) as StoreProduct["category"]]?.label
                                   ?? product.categorySlug ?? product.category}
                                 {product.images && product.images.length > 0
@@ -859,7 +859,7 @@ export default function MyShop() {
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-900">{product.name}</p>
-                        <p className="mt-0.5 text-xs text-slate-400">
+                        <p className="mt-0.5 truncate text-xs text-slate-400">
                           {PRODUCT_CATEGORY_META[(product.categorySlug ?? product.category) as StoreProduct["category"]]?.label
                             ?? product.categorySlug ?? product.category}
                           {product.images && product.images.length > 0 ? ` · ${product.images.length} รูป` : " · ยังไม่มีรูป"}

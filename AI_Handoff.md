@@ -167,18 +167,79 @@ dropped** — they are legacy, unreferenced by any route after this change, and 
 kept for historical rows only (per the “do not delete DB structures blindly”
 rule). Nothing writes to them.
 
-## Category Picker
+## Category Picker (UI audit 2026-09-15)
 
 - `packages/shared/src/components/seller/CategoryPicker.tsx` — hierarchical,
-  Radix Dialog on top of `ProductFormDialog`, own scroll context (`max-h-[85dvh]`,
-  only the list scrolls). No scroll bleed, no horizontal overflow.
-- Long names: breadcrumbs `min-w-0 flex-wrap` with `max-w-[8rem] truncate
-  sm:max-w-[14rem]` + `title`; rows `min-w-0 flex-1 truncate` + `title`; the
-  chevron/check stay `shrink-0`. The full name is always reachable via the
-  `title` tooltip.
-- All UI strings use `categoryPicker.*` (TH/EN/MY). The selected category in
-  `ProductFormDialog` truncates (`min-w-0 flex-1 truncate` + `shrink-0` chevron).
-- Data comes from the canonical `/api/categories/tree` — no hard-coded taxonomy.
+  Radix Dialog on top of `ProductFormDialog`, own scroll context (`max-h-[85dvh]`;
+  header / search / breadcrumb / footer are `shrink-0`, only
+  `min-h-0 flex-1 overflow-y-auto` list scrolls). Data comes from the canonical
+  `/api/categories/tree` — no hard-coded taxonomy. All UI strings use
+  `categoryPicker.*` (TH/EN/MY, verified at parity).
+
+### Root cause — two close buttons
+
+`packages/shared/src/components/ui/dialog.tsx` renders its own absolutely
+positioned close button by default (`showCloseButton = true`) and
+`CategoryPicker` also rendered a header X, so both were painted in the same
+top-right corner.
+
+**Fix (localized, shared component untouched):** `CategoryPicker` passes
+`showCloseButton={false}` to `DialogContent` and keeps its own header button —
+it sits in normal flow (cannot overlap the title), carries a localized
+`aria-label` (`categoryPicker.close`) and closes through the same `handleCancel`
+path as the Cancel button. Escape and Radix dismiss/focus behavior are
+unchanged. Exactly one close X remains; the search field's clear “x” only appears
+while a query is typed.
+
+### Root cause — long category names escaped their container
+
+The truncating text sat inside flex/grid chains that were missing an automatic
+minimum-size reset, so a long name (Thai/Burmese names have no word breaks;
+`Consumer Electronics Accessories and Smart Devices`) kept its intrinsic `nowrap`
+width and painted outside the dialog — over the ProductFormDialog field/input
+column behind it:
+
+- `ProductFormDialog` category trigger: the button had `w-full` but no `min-w-0`, the
+  loading/placeholder spans had neither `min-w-0` nor `truncate`, and the two
+  `grid-cols-2` children had no `min-w-0`.
+- `CategoryPicker` header: `justify-between` with no `min-w-0 flex-1` on the title,
+  so a long title (longest is Burmese) could push the close button.
+- `CategoryPicker` breadcrumbs: the wrapping row and the per-crumb `<span>` had no
+  `min-w-0` / `overflow-hidden`.
+- `CategoryPicker` category + search rows: row container had no `w-full min-w-0`,
+  the text wrapper had no `overflow-hidden`, and the secondary line
+  (`N subcategories`, search path) had no `truncate`.
+- `CategoryPicker` list region used `overflow-y-auto` alone, which leaves the other
+  axis `auto`, so an over-wide row scrolled horizontally instead of clipping.
+- `apps/velseller/src/pages/MyShop.tsx` desktop product table: product name + category
+  label sat in a flex row whose text column had no `min-w-0` / `truncate` — the same
+  bug class.
+
+**Fix — width constraints only (no redesign, no font shrinking, no hidden data):**
+
+- every flex/grid container in those chains now has `min-w-0` (plus `w-full` on row
+  containers), every icon is `shrink-0`, and every text node is `truncate` inside a
+  `min-w-0 flex-1 overflow-hidden` wrapper; the list region is `overflow-x-hidden`.
+- breadcrumbs keep the bounded `max-w-[8rem] sm:max-w-[14rem]` + `title` tooltip and
+  still wrap, so one long crumb cannot consume the dialog width.
+- the selected category keeps `title={selectedCategoryName}` so a truncated name stays
+  readable.
+- `overflow-hidden` is deliberately NOT set on the category row container: it would clip
+  that row button's focus outline. The text chain constrains the width without it.
+
+Interaction contract (unchanged): selecting a category only sets form state — it does
+not close `ProductFormDialog`; Cancel and the header X discard the pending selection;
+Escape closes through Radix `onOpenChange` without committing; clicking outside is
+intentionally a no-op so a half-made selection cannot be lost.
+
+### Files changed in this audit
+
+- `packages/shared/src/components/seller/CategoryPicker.tsx` — single close button; header /
+  search / breadcrumb / list / row / footer width constraints.
+- `packages/shared/src/components/seller/ProductFormDialog.tsx` — category trigger
+  (`min-w-0`, `overflow-hidden`, truncating spans, `title`) + `min-w-0` on the grid children.
+- `apps/velseller/src/pages/MyShop.tsx` — desktop product-table text column `min-w-0`/`truncate`.
+- No shared `ui/*` component, i18n key, API, or database object was changed.
 
 ## Seller Navigation
 
@@ -252,6 +313,24 @@ normalization needed). The VelRepeat plan-status label map in
 | `bun run i18n:check` | PASS — th=1287 en=1287 my=1287, at parity |
 | `git diff --check` | CLEAN |
 | `diff db/schema.sql db/run-sqleditor.sql` | identical (also asserted by a test) |
+
+### Category Picker audit — tests actually performed (2026-09-15)
+
+| Command | Result |
+|---|---|
+| `bun run typecheck` | PASS — velshop, velseller, velcenter, velnox |
+| `bun run i18n:check` | PASS — th=1287 en=1287 my=1287, at parity (incl. every `categoryPicker.*` key) |
+| `bun test backend/tests` | 207 pass / 10 fail — every failure is an `(integration)` suite hitting the live Neon DB (e.g. `orders_user_id_fkey` fixture collisions). This change is frontend-only; no backend test touches it, so those failures are pre-existing/environmental |
+| `git diff --check` | CLEAN |
+
+**NOT verified: no browser and no visual/responsive measurement was performed** (no
+browser is available in this environment). The layout result is derived from the CSS
+width chain by source inspection. Because the fix is structural (`min-w-0` +
+`truncate` + `overflow-hidden`, viewport-independent), it should hold at 320–414px and
+on desktop, but it still needs one real-browser pass (open the picker, enter nested
+categories, pick a very long name, search, cancel, X, Escape, count the X buttons).
+Regression coverage for this UI is still manual only — there is no component test
+harness in the repo.
 
 Tests are static + unit + DB-gated integration. The 26 skipped suites require a
 `DATABASE_URL` and a live R2 bucket.

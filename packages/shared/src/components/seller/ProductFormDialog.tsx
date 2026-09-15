@@ -963,23 +963,24 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               <Label htmlFor="p-name">ชื่อสินค้า *</Label>
               <Input id="p-name" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="เช่น แชมพูสมุนไพร ขนาด 300 มล." required />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-2">
+            <div className="grid min-w-0 grid-cols-2 gap-3">
+              <div className="grid min-w-0 gap-2">
                 <Label>หมวดหมู่</Label>
                 <button
                   type="button"
                   onClick={() => setPickerOpen(true)}
                   disabled={categoriesLoading || categoriesError}
-                  className="flex h-10 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-left text-sm transition-colors hover:border-[#10B981] disabled:opacity-50"
+                  title={selectedCategoryName ?? undefined}
+                  className="flex h-10 w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-slate-200 bg-white px-3 text-left text-sm transition-colors hover:border-[#10B981] disabled:opacity-50"
                 >
                   {categoriesLoading ? (
-                    <span className="text-slate-400">กำลังโหลด...</span>
+                    <span className="min-w-0 flex-1 truncate text-slate-400">กำลังโหลด...</span>
                   ) : selectedCategoryName ? (
                     <span className="min-w-0 flex-1 truncate text-slate-900">
                       {selectedCategoryName}
                     </span>
                   ) : (
-                    <span className="text-slate-400">เลือกหมวดหมู่</span>
+                    <span className="min-w-0 flex-1 truncate text-slate-400">เลือกหมวดหมู่</span>
                   )}
                   <ChevronDown className="size-4 shrink-0 text-slate-400" />
                 </button>
@@ -990,7 +991,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                   </p>
                 )}
               </div>
-              <div className="grid gap-2">
+              <div className="grid min-w-0 gap-2">
                 <Label htmlFor="p-unit">หน่วย</Label>
                 <Input id="p-unit" value={form.unit} onChange={(e) => set("unit", e.target.value)} placeholder="ชิ้น, กล่อง, ถุง" />
               </div>

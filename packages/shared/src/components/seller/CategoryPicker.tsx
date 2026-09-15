@@ -176,19 +176,23 @@ export function CategoryPicker({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[85dvh] flex-col overflow-hidden p-0 sm:max-w-lg"
+        // The picker renders its own localized close button in the header (below),
+        // so disable the shared DialogContent close button — otherwise two X
+        // buttons overlap in the top-right corner.
+        showCloseButton={false}
+        className="flex max-h-[85dvh] w-full min-w-0 flex-col overflow-hidden p-0 sm:max-w-lg"
         onPointerDownOutside={(e) => e.preventDefault()}
       >
         {/* ── Header ──────────────────────────────────────────── */}
         <DialogHeader className="shrink-0 border-b border-slate-100 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-base font-semibold text-slate-900">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <DialogTitle className="min-w-0 flex-1 text-base font-semibold text-slate-900">
               {t("categoryPicker.title")}
             </DialogTitle>
             <button
               type="button"
               onClick={handleCancel}
-              className="flex size-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              className="flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
               aria-label={t("categoryPicker.close")}
             >
               <X className="size-4" />
@@ -197,8 +201,8 @@ export function CategoryPicker({
         </DialogHeader>
 
         {/* ── Search Bar ─────────────────────────────────────── */}
-        <div className="shrink-0 px-4 pt-3">
-          <div className="relative">
+        <div className="w-full min-w-0 shrink-0 px-4 pt-3">
+          <div className="relative w-full min-w-0">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
             <Input
               value={searchQuery}
@@ -221,7 +225,7 @@ export function CategoryPicker({
 
         {/* ── Breadcrumbs ────────────────────────────────────── */}
         {navigationStack.length > 0 && !searchQuery && (
-          <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1 px-4 pt-2 text-xs text-slate-500">
+          <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center gap-1 px-4 pt-2 text-xs text-slate-500">
             <button
               type="button"
               onClick={() => handleNavigateToBreadcrumb(0)}
@@ -230,7 +234,7 @@ export function CategoryPicker({
               {t("categoryPicker.all")}
             </button>
             {navigationStack.map((node, idx) => (
-              <span key={node.id} className="flex min-w-0 items-center gap-1">
+              <span key={node.id} className="flex min-w-0 max-w-full items-center gap-1 overflow-hidden">
                 <ChevronRight className="size-3 shrink-0 text-slate-300" />
                 <button
                   type="button"
@@ -250,7 +254,7 @@ export function CategoryPicker({
         )}
 
         {/* ── Category List (ONLY THIS AREA SCROLLS) ─────────── */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        <div className="min-h-0 w-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 py-2">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <div className="size-6 animate-spin rounded-full border-2 border-slate-200 border-t-[#10B981]" />
@@ -274,19 +278,19 @@ export function CategoryPicker({
                     type="button"
                     onClick={() => handleSelect(node.slug)}
                     title={getLocalizedName(node, lang)}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all ${
+                    className={`flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-left transition-all ${
                       pendingSelection === node.slug
                         ? "bg-[#ECFDF5] ring-1 ring-[#10B981] text-[#059669]"
                         : "hover:bg-slate-50 text-slate-700"
                     }`}
                   >
                     <FolderOpen className="size-4 shrink-0 text-slate-400" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <p className="w-full truncate text-sm font-medium">
                         {getLocalizedName(node, lang)}
                       </p>
                       {node.searchPath.length > 1 && (
-                        <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                        <p className="mt-0.5 w-full truncate text-[11px] text-slate-400">
                           {node.searchPath.join(" › ")}
                         </p>
                       )}
@@ -317,7 +321,10 @@ export function CategoryPicker({
                   return (
                     <div
                       key={node.id}
-                      className={`flex items-center gap-1 rounded-xl transition-all ${
+                      // overflow-hidden is intentionally NOT set here: it would clip the
+                      // child button's focus outline. The text chain below constrains
+                      // width with min-w-0 + truncate instead.
+                      className={`flex w-full min-w-0 items-center gap-1 rounded-xl transition-all ${
                         active
                           ? "bg-[#ECFDF5] ring-1 ring-[#10B981]"
                           : "hover:bg-slate-50"
@@ -339,16 +346,16 @@ export function CategoryPicker({
                         ) : (
                           <span className="size-4 shrink-0" />
                         )}
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 overflow-hidden">
                           <p
-                            className={`truncate text-sm font-medium ${
+                            className={`w-full truncate text-sm font-medium ${
                               active ? "text-[#059669]" : "text-slate-700"
                             }`}
                           >
                             {getLocalizedName(node, lang)}
                           </p>
                           {isParent && (
-                            <p className="mt-0.5 text-[11px] text-slate-400">
+                            <p className="mt-0.5 w-full truncate text-[11px] text-slate-400">
                               {t("categoryPicker.subcategories", { count: childCount })}
                             </p>
                           )}
@@ -368,21 +375,21 @@ export function CategoryPicker({
         </div>
 
         {/* ── Footer with actions ────────────────────────────── */}
-        <DialogFooter className="shrink-0 border-t border-slate-100 px-4 py-3">
+        <DialogFooter className="w-full min-w-0 shrink-0 border-t border-slate-100 px-4 py-3">
           {navigationStack.length > 0 && !searchQuery && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={handleNavigateBack}
-              className="gap-1 text-slate-600"
+              className="shrink-0 gap-1 text-slate-600"
             >
-              <ChevronLeft className="size-3.5" />
-              {t("categoryPicker.back")}
+              <ChevronLeft className="size-3.5 shrink-0" />
+              <span className="min-w-0 truncate">{t("categoryPicker.back")}</span>
             </Button>
           )}
           <div className="flex-1" />
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
             <Button
               type="button"
               variant="outline"
