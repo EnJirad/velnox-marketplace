@@ -35,6 +35,13 @@ const root = join(import.meta.dir, "..", "..");
 const productsSrc = readFileSync(join(root, "backend/routes/products.ts"), "utf8");
 const verificationSrc = readFileSync(join(root, "backend/routes/verification.ts"), "utf8");
 const rateLimitSrc = readFileSync(join(root, "backend/middleware/rate-limit.ts"), "utf8");
+const centerSrc = readFileSync(join(root, "apps/velcenter/src/pages/Center.tsx"), "utf8");
+const sellerSrc = readFileSync(join(root, "backend/routes/seller.ts"), "utf8");
+const reviewDialogSrc = readFileSync(join(root, "apps/velcenter/src/components/VerificationReviewDialog.tsx"), "utf8");
+const identityUploaderSrc = readFileSync(join(root, "packages/shared/src/components/seller/IdentityDocumentUploader.tsx"), "utf8");
+const migration043 = readFileSync(join(root, "db/migrations/043_seller_review_lifecycle.sql"), "utf8");
+const reasonsSrc = readFileSync(join(root, "packages/shared/src/lib/verification-reasons.ts"), "utf8");
+const localesSrc = readFileSync(join(root, "packages/shared/src/lib/i18n/locales/index.ts"), "utf8");
 const badgeSrc = readFileSync(join(root, "packages/shared/src/components/VBadge.tsx"), "utf8");
 const migration040 = readFileSync(join(root, "db/migrations/040_verification_and_categories.sql"), "utf8");
 const schemaSql = readFileSync(join(root, "db/schema.sql"), "utf8");
@@ -190,26 +197,44 @@ describe("V eligibility (seller-only)", () => {
     expect(productsSrc).not.toContain("SET verification_status");
     expect(productsSrc).not.toContain("UPDATE products SET verification_status");
     expect(productsSrc).not.toContain("UPDATE sellers SET verification_status");
-    expect(verificationSrc).toContain('UPDATE products SET verification_status = $1');
-    expect(verificationSrc).toContain('UPDATE sellers SET verification_status = $1');
+    expect(verificationSrc).toContain("SET verification_status = $1");
     // seller product create/update payloads never carry verification
     expect(productsSrc).not.toContain("verification_status, status,");
   });
 
-  test("seller verification and product verification are separate tables/queues", () => {
+  test("there is exactly ONE verification system — seller/shop identity", () => {
+    // Seller verification is the only queue the backend serves…
     expect(verificationSrc).toContain("FROM seller_verifications");
-    expect(verificationSrc).toContain("FROM product_verifications");
     expect(verificationSrc).toContain('app.patch("/api/admin/verifications/seller/:verificationId"');
-    expect(verificationSrc).toContain('app.patch("/api/admin/verifications/product/:verificationId"');
+    // …and no product verification route survives, in any verb or shape.
+    expect(verificationSrc).not.toContain('app.patch("/api/admin/verifications/product/');
+    expect(verificationSrc).not.toContain('app.post("/api/seller/products/:productId/verification"');
+    expect(verificationSrc).not.toContain('app.get("/api/seller/products/:productId/verification"');
+    const productWrites = verificationSrc.match(/INSERT INTO product_verifications/g) ?? [];
+    expect(productWrites.length).toBe(0);
+  });
+
+  test("verification no longer produces a product verification queue in VelCenter", () => {
+    // VelCenter must query the same persisted seller source the seller wrote.
+    expect(centerSrc).toContain("api.admin.sellerVerificationAction");
+    expect(centerSrc).not.toContain("productVerificationAction");
+    expect(centerSrc).not.toContain("api.admin.productVerificationAction");
+    expect(centerSrc).not.toContain("reviewDialogKind");
+    // The reviewer workspace reads the seller application detail endpoint.
+    expect(reviewDialogSrc).toContain("api.admin.sellerApplication");
+    // …and VelCenter opens it from the queue row.
+    expect(centerSrc).toContain("setReviewDialogRow(v)");
   });
 
   test("verification decisions are admin-gated", () => {
-    // Admin access is checked via users.role (employees table has no 'status' column)
-    const gates = verificationSrc.match(/SELECT role FROM users WHERE id = \$1/g) ?? [];
-    expect(gates.length).toBe(3);
+    // Admin access is resolved from the authenticated session via users.role
+    // (the employees table has no 'status' column) — never from the request body.
+    expect(verificationSrc).toContain("SELECT role FROM users WHERE id = $1");
+    expect(verificationSrc).toContain("REVIEWER_ROLES = [\"owner\", \"admin\", \"staff\"]");
     expect(verificationSrc).toContain("Admin access required");
-    // Verify the role check includes owner/admin/staff
-    expect(verificationSrc).toContain("'owner', 'admin', 'staff'");
+    // Reviewer identity always comes from req.user, not the payload.
+    expect(verificationSrc).toContain("const reviewerId = userId;");
+    expect(verificationSrc).not.toContain("req.body.reviewerId");
   });
 
   test("private evidence is only returned by admin-gated endpoints", () => {
@@ -337,9 +362,13 @@ describe("variants + cart", () => {
 // ─── Rate limiting for verification submissions ────────────────────────────
 
 describe("verification rate limits", () => {
-  test("seller + product verification submissions are capped at 5/min", () => {
+  test("seller verification + application submissions are capped at 5/min", () => {
     expect(rateLimitSrc).toContain('name: "seller-verification", windowMs: 60_000, max: 5');
-    expect(rateLimitSrc).toContain('name: "product-verification", windowMs: 60_000, max: 5');
+    expect(rateLimitSrc).toContain('name: "seller-apply", windowMs: 60_000, max: 5');
+    // The product verification surface is gone, so its limiter must be gone too.
+    expect(rateLimitSrc).not.toContain('name: "product-verification"');
+    // Evidence presigns are capped per user (spam guard).
+    expect(rateLimitSrc).toContain('name: "seller-evidence"');
   });
 });
 
@@ -578,4 +607,225 @@ describe("product lifecycle (integration)", () => {
     },
     30_000,
   );
+});
+
+// ─── Seller identity evidence: preview + real upload ─────────────────
+
+describe("identity document preview (root-cause regression)", () => {
+  test("the selection handler creates a real object URL preview", () => {
+    // The original bug: the onboarding stored a File in state and rendered only
+    // the filename — no object URL was ever created, so no image could appear.
+    expect(identityUploaderSrc).toContain("URL.createObjectURL(file)");
+  });
+
+  test("the preview is rendered from the actual selected file, not a placeholder", () => {
+    expect(identityUploaderSrc).toContain("const objectUrl = URL.createObjectURL(file);");
+    expect(identityUploaderSrc).toContain("setLocalPreview(objectUrl);");
+    // The image element binds to the local preview first, then the persisted doc.
+    expect(identityUploaderSrc).toContain("const displayUrl = localPreview ??");
+    expect(identityUploaderSrc).toContain("src={displayUrl}");
+  });
+
+  test("object URLs are revoked on replace and on unmount", () => {
+    expect(identityUploaderSrc).toContain("URL.revokeObjectURL");
+    // revoke happens in the remove/replace path…
+    expect(identityUploaderSrc).toContain("const handleRemove = useCallback(() => {\n    revokePreview();");
+    // …and in the unmount cleanup.
+    expect(identityUploaderSrc).toContain("return () => {\n      if (previewRef.current) URL.revokeObjectURL(previewRef.current);\n    };");
+  });
+
+  test("type + size are validated before any preview or upload", () => {
+    const validateIdx = identityUploaderSrc.indexOf("// 1. validate file type");
+    const previewIdx = identityUploaderSrc.indexOf("URL.createObjectURL(file)");
+    const uploadIdx = identityUploaderSrc.indexOf("await upload(file)");
+    expect(validateIdx).toBeGreaterThan(-1);
+    expect(previewIdx).toBeGreaterThan(validateIdx);
+    expect(uploadIdx).toBeGreaterThan(previewIdx);
+  });
+
+  test("the preview never waits for R2 — upload runs after the preview is set", () => {
+    expect(identityUploaderSrc).toContain("// 3./4. Immediately show the real selected image — never wait for R2");
+  });
+
+  test("onboarding uses the uploader for all three identity documents", () => {
+    const requireRoleSrc = readFileSync(join(root, "packages/shared/src/components/RequireRole.tsx"), "utf8");
+    expect(requireRoleSrc).toContain('purpose="id_card"');
+    expect(requireRoleSrc).toContain('purpose="id_card_back"');
+    expect(requireRoleSrc).toContain('purpose="selfie_id"');
+    // No raw <input type="file"> in the onboarding identity step any more.
+    expect(requireRoleSrc).not.toContain('accept="image/*"');
+  });
+});
+
+describe("evidence persistence gates the pending state", () => {
+  test("identity documents are uploaded through the existing R2 evidence API", () => {
+    expect(identityUploaderSrc).toContain("api.seller.evidenceUploadIntent");
+    expect(identityUploaderSrc).toContain("api.seller.evidenceConfirm");
+    // presign → PUT to the signed URL → persist the media row
+    expect(identityUploaderSrc).toContain('method: "PUT"');
+    expect(identityUploaderSrc).toContain("await confirmUpload({");
+  });
+
+  test("the application is rejected without all three required documents", () => {
+    expect(sellerSrc).toContain('const REQUIRED_IDENTITY_PURPOSES = ["id_card", "id_card_back", "selfie_id"];');
+    expect(sellerSrc).toContain("IDENTITY_EVIDENCE_REQUIRED");
+    expect(sellerSrc).toContain("Missing required identity documents");
+  });
+
+  test("seller verification submission refuses an empty evidence list", () => {
+    expect(verificationSrc).toContain('code: "EVIDENCE_REQUIRED"');
+    expect(verificationSrc).toContain("At least one identity document must be uploaded before submitting for verification");
+  });
+
+  test("the application is written in one transaction so pending is never half-set", () => {
+    const applyBlock = sellerSrc.slice(sellerSrc.indexOf('app.post("/api/seller/apply"'));
+    expect(applyBlock).toContain("await client.query(\"BEGIN\")");
+    expect(applyBlock).toContain("await client.query(\"COMMIT\")");
+    // Pending is set AFTER the verification row + evidence exist.
+    const evidencePersist = applyBlock.indexOf("INSERT INTO seller_verifications");
+    const setPending = applyBlock.indexOf("SET verification_status = 'pending'");
+    expect(evidencePersist).toBeGreaterThan(-1);
+    expect(setPending).toBeGreaterThan(evidencePersist);
+    // The frontend only ever reflects what the backend persisted.
+    const statusBeforePersist = applyBlock.indexOf("SET status = 'pending'", 0);
+    expect(statusBeforePersist).toBeLessThan(evidencePersist);
+  });
+
+  test("evidence references must be owned by the authenticated account", () => {
+    expect(sellerSrc).toContain("FROM media WHERE uploaded_by = $1 AND key = ANY($2::text[])");
+    expect(sellerSrc).toContain('code: "FORBIDDEN", message: "Identity documents do not belong to this account"');
+    expect(verificationSrc).toContain("FROM media WHERE uploaded_by = $1 AND key = ANY($2::text[])");
+  });
+});
+
+// ─── Seller review lifecycle: state machine, reasons, history ──────────
+
+describe("seller application state machine", () => {
+  test("backend only allows documented transitions", () => {
+    expect(sellerSrc).toContain("const VALID_TRANSITIONS: Record<string, string[]> = {");
+    expect(sellerSrc).toContain("pending: [\"under_review\", \"rejected\"]");
+    expect(sellerSrc).toContain("under_review: [\"approved\", \"needs_correction\", \"rejected\", \"suspended\"]");
+    expect(sellerSrc).toContain("approved: [\"suspended\"]");
+    expect(sellerSrc).toContain('code: "INVALID_TRANSITION"');
+    // REJECTED → APPROVED and DRAFT → APPROVED are impossible.
+    expect(sellerSrc).not.toMatch(/rejected:\s*\[[^\]]*approved/);
+  });
+
+  test("the DB CHECK constraint accepts exactly the canonical lifecycle", () => {
+    for (const sql of [schemaSql, sqlEditor]) {
+      expect(sql).toContain("CHECK (status IN ('pending', 'under_review', 'needs_correction', 'approved', 'rejected', 'suspended'))");
+    }
+    expect(migration043).toContain("ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check");
+    expect(migration043).toContain("CHECK (status IN ('pending', 'under_review', 'needs_correction', 'approved', 'rejected', 'suspended'))");
+  });
+
+  test("a reviewer cannot approve their own application or an empty submission", () => {
+    expect(sellerSrc).toContain("SELF_ACTION_FORBIDDEN");
+    expect(verificationSrc).toContain("Cannot approve a verification with no evidence");
+    expect(verificationSrc).toContain("Cannot approve a ${previousStatus} verification");
+  });
+});
+
+describe("structured review reasons", () => {
+  test("corrections / rejections / suspensions require a structured code", () => {
+    expect(sellerSrc).toContain('code: "REASON_REQUIRED"');
+    expect(verificationSrc).toContain('code: "REASON_REQUIRED"');
+  });
+
+  test("backend and shared vocabularies stay in sync", () => {
+    const backendCodes = (sellerSrc.match(/"id_card_unclear", "id_card_incomplete"/) ?? []).length;
+    expect(backendCodes).toBe(1);
+    // Both files must list the same 12 codes.
+    for (const code of [
+      "id_card_unclear", "id_card_incomplete", "selfie_unclear", "selfie_missing_id",
+      "document_expired", "applicant_mismatch", "store_incomplete", "contact_incomplete",
+      "address_incomplete", "duplicate_account", "policy_violation", "other",
+    ]) {
+      expect(sellerSrc).toContain(`"${code}"`);
+      expect(verificationSrc).toContain(`"${code}"`);
+      // The shared vocabulary module is the single source the UI renders from.
+      expect(reasonsSrc).toContain(`"${code}"`);
+      expect(localesSrc).toContain(`${code}:`);
+    }
+    // The review UI looks every label up through the shared code list.
+    expect(reviewDialogSrc).toContain("REVIEW_REASON_CODES");
+    expect(reviewDialogSrc).toContain("reviewReason.${");
+  });
+
+  test("internal reviewer notes are stored separately from applicant-visible reasons", () => {
+    expect(verificationSrc).toContain("review_reason_code = $5, review_note = $6");
+    expect(sellerSrc).toContain("review_reason_code = $3, review_note = $4");
+    expect(reviewDialogSrc).toContain('t("review.noteLabel")');
+  });
+
+  test("the wizard is localized in TH / EN / MY", () => {
+    for (const name of ["thGateCopy", "enGateCopy", "myGateCopy", "thIdentityDoc", "enIdentityDoc", "myIdentityDoc", "thReviewReason", "enReviewReason", "myReviewReason", "thReview", "enReview", "myReview"]) {
+      expect(localesSrc).toContain(`const ${name}`);
+    }
+    // Every new section is merged into all three runtime dictionaries.
+    expect(localesSrc).toContain("identityDoc: thIdentityDoc");
+    expect(localesSrc).toContain("identityDoc: enIdentityDoc");
+    expect(localesSrc).toContain("identityDoc: myIdentityDoc");
+    expect(localesSrc).toContain("reviewReason: thReviewReason");
+    expect(localesSrc).toContain("reviewReason: enReviewReason");
+    expect(localesSrc).toContain("reviewReason: myReviewReason");
+    expect(localesSrc).toContain("gate: { ...th.gate, ...thGateCopy }");
+    expect(localesSrc).toContain("gate: { ...en.gate, ...enGateCopy }");
+    expect(localesSrc).toContain("gate: { ...myBase.gate, ...myGateCopy }");
+  });
+});
+
+describe("review history / audit trail", () => {
+  test("the history table exists in the schema, the SQL editor bundle and the migration", () => {
+    for (const sql of [schemaSql, sqlEditor]) {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS seller_review_history");
+      expect(sql).toContain("idx_seller_review_history_seller");
+    }
+    expect(migration043).toContain("CREATE TABLE IF NOT EXISTS seller_review_history");
+  });
+
+  test("every lifecycle step appends a history row", () => {
+    // submitted / resubmitted on the applicant side
+    expect(sellerSrc).toContain("INSERT INTO seller_review_history");
+    expect(sellerSrc).toContain('previousStatus === "none" ? "submitted" : "resubmitted"');
+    // reviewer decisions on the reviewer side
+    expect(verificationSrc).toContain("INSERT INTO seller_review_history");
+    for (const action of ['"approved"', '"rejected"', '"suspended"', '"needs_correction"']) {
+      expect(verificationSrc).toContain(action);
+    }
+  });
+
+  test("the reviewer workspace renders history and structured reasons", () => {
+    expect(reviewDialogSrc).toContain("REVIEW_CHECKLIST");
+    expect(reviewDialogSrc).toContain("REVIEW_REASON_CODES");
+    expect(reviewDialogSrc).toContain('t("review.history")');
+    expect(reviewDialogSrc).toContain("onDecision");
+  });
+});
+
+// ─── Private evidence access ──────────────────────────────────────────
+
+describe("identity evidence stays private", () => {
+  test("reviewer access uses short-lived signed R2 GET URLs", () => {
+    expect(verificationSrc).toContain("GetObjectCommand");
+    expect(verificationSrc).toContain("expiresIn: 300");
+    expect(sellerSrc).toContain("GetObjectCommand");
+    expect(sellerSrc).toContain("expiresIn: 300");
+  });
+
+  test("the applicant's own status payload never leaks evidence URLs", () => {
+    expect(verificationSrc).toContain("evidenceCount: Array.isArray(row.evidence_urls) ? row.evidence_urls.length : 0");
+    expect(sellerSrc).toContain("identityEvidenceCount: Array.isArray(settings.identityEvidence) ? settings.identityEvidence.length : 0");
+  });
+
+  test("the admin list strips evidence locations", () => {
+    expect(verificationSrc).toContain("evidence_urls: undefined");
+  });
+
+  test("the public shop endpoint exposes status only", () => {
+    const publicBlock = verificationSrc.slice(verificationSrc.indexOf('app.get("/api/shops/:shopId/verification"'));
+    expect(publicBlock).not.toContain("evidence_urls");
+    expect(publicBlock).not.toContain("GetObjectCommand");
+    expect(publicBlock).toContain("verificationStatus: result.rows[0].verification_status");
+  });
 });

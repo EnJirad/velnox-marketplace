@@ -1,12 +1,15 @@
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
+import {
+  IdentityDocumentUploader,
+  type IdentityDocumentRef,
+} from "@velnox/shared/components/seller/IdentityDocumentUploader";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { SITE_URLS, apiBaseUrl } from "@velnox/shared/lib/sites";
 import {
   ArrowRight,
-  Camera,
   Clock,
   FileCheck,
   KeyRound,
@@ -41,16 +44,23 @@ function GateCard({
   title,
   desc,
   children,
+  wide = false,
 }: {
   icon: typeof Lock;
   title: string;
   desc: string;
   children?: ReactNode;
+  /** Wider, scroll-safe shell for the multi-step seller application. */
+  wide?: boolean;
 }) {
   const { t } = useLanguage();
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#F8FAFC] px-4 text-center">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#F8FAFC] px-3 py-8 text-center sm:px-4">
+      <div
+        className={`w-full rounded-2xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.06)] ${
+          wide ? "max-w-xl p-5 sm:p-8" : "max-w-md p-6 sm:p-8"
+        }`}
+      >
         <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
           <Icon className="size-7 text-[#10B981]" />
         </span>
@@ -70,7 +80,13 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   const location = useLocation();
   const { t } = useLanguage();
 
-  const [seller, setSeller] = useState<{ status: string | null; rejectionReason: string | null; correctionReason: string | null } | null>(null);
+  const [seller, setSeller] = useState<{
+    status: string | null;
+    rejectionReason: string | null;
+    correctionReason: string | null;
+    rejectionReasonCode?: string | null;
+    correctionReasonCode?: string | null;
+  } | null>(null);
   const [sellerLoading, setSellerLoading] = useState(true);
   const [sellerLoaded, setSellerLoaded] = useState(false);
   const [sellerError, setSellerError] = useState<string | null>(null);
@@ -90,10 +106,10 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   // Step 2 — Identity
   const [sellerIdNumber, setSellerIdNumber] = useState("");
   const [sellerBirthdate, setSellerBirthdate] = useState("");
-  // Step 3 — Documents
-  const [sellerIdFront, setSellerIdFront] = useState<File | null>(null);
-  const [sellerIdBack, setSellerIdBack] = useState<File | null>(null);
-  const [sellerSelfie, setSellerSelfie] = useState<File | null>(null);
+  // Step 3 — Documents (durable R2 references, never browser File objects)
+  const [sellerIdFront, setSellerIdFront] = useState<IdentityDocumentRef | null>(null);
+  const [sellerIdBack, setSellerIdBack] = useState<IdentityDocumentRef | null>(null);
+  const [sellerSelfie, setSellerSelfie] = useState<IdentityDocumentRef | null>(null);
   const [applySuccess, setApplySuccess] = useState(false);
 
   useEffect(() => {
@@ -227,8 +243,18 @@ export function RequireRole({ role, children }: RequireRoleProps) {
             .then((r) => {
               if (!r.ok) throw new Error(`HTTP ${r.status}`);
               return r.json();
-            })
-            .then((s) => { const d = s.data; setSeller(d ? { status: d.status, rejectionReason: d.rejectionReason || null, correctionReason: d.correctionReason || null } : null); setSellerError(null); setSellerLoaded(true); })
+            })              .then((s) => {
+                const d = s.data;
+                setSeller(d ? {
+                  status: d.status,
+                  rejectionReason: d.rejectionReason || null,
+                  correctionReason: d.correctionReason || null,
+                  rejectionReasonCode: d.rejectionReasonCode || null,
+                  correctionReasonCode: d.correctionReasonCode || null,
+                } : null);
+                setSellerError(null);
+                setSellerLoaded(true);
+              })
             .catch(() => { setSellerError("ไม่สามารถตรวจสอบสถานะได้ กรุณาลองใหม่"); setSellerLoaded(true); })
             .finally(() => setSellerLoading(false));
         }}
@@ -243,19 +269,18 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   if (seller?.status === "approved") return children;
 
   if (seller?.status === "pending") {
-    return <GateCard icon={Clock} title="สมัครร้านค้าแล้ว" desc="ระบบได้รับคำขอของคุณแล้ว รอการตรวจสอบจากทีมงาน Velnox">
-      <div className="mt-4 rounded-[10px] bg-amber-50 px-4 py-3 text-left">
-        <p className="text-sm font-medium text-amber-800">สถานะ: รอการตรวจสอบ</p>
-        <p className="mt-1 text-xs text-amber-600">ทีมงานจะตรวจสอบคำขอของคุณภายใน 1-3 วันทำการ</p>
-      </div>
-    </GateCard>;
+    return <GateCard icon={Clock} title={t("gate.sellerPendingTitle")} desc={t("gate.sellerPendingDesc")}>        <div className="mt-4 rounded-[10px] bg-amber-50 px-4 py-3 text-left">
+          <p className="text-sm font-medium text-amber-800">{t("gate.sellerPendingStatus")}</p>
+          <p className="mt-1 text-xs text-amber-600">{t("gate.sellerPendingEta")}</p>
+        </div>
+      </GateCard>;
   }
 
   if (seller?.status === "under_review") {
-    return <GateCard icon={Clock} title="กำลังตรวจสอบคำขอ" desc="ทีมงาน Velnox กำลังตรวจสอบคำขอเปิดร้านค้าของคุณ">
+    return <GateCard icon={Clock} title={t("gate.sellerUnderReviewTitle")} desc={t("gate.sellerUnderReviewDesc")}>
       <div className="mt-4 rounded-[10px] bg-blue-50 px-4 py-3 text-left">
-        <p className="text-sm font-medium text-blue-800">สถานะ: อยู่ระหว่างการตรวจสอบ</p>
-        <p className="mt-1 text-xs text-blue-600">กรุณารอผลการตรวจสอบ คุณจะได้รับการแจ้งเตือนเมื่อมีผลลัพธ์</p>
+        <p className="text-sm font-medium text-blue-800">{t("gate.sellerUnderReviewStatus")}</p>
+        <p className="mt-1 text-xs text-blue-600">{t("gate.sellerUnderReviewHint")}</p>
       </div>
     </GateCard>;
   }
@@ -278,16 +303,31 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   // ── Multi-step seller onboarding ──
 
   const STEPS = [
-    { label: "ข้อมูลร้าน", icon: Store },
-    { label: "ข้อมูลผู้สมัคร", icon: User },
-    { label: "ยืนยันตัวตน", icon: ShieldCheck },
-    { label: "ตรวจสอบ", icon: FileCheck },
+    { label: t("gate.stepStore"), icon: Store },
+    { label: t("gate.stepApplicant"), icon: User },
+    { label: t("gate.stepIdentity"), icon: ShieldCheck },
+    { label: t("gate.stepReview"), icon: FileCheck },
   ];
+  const activeStepLabel = STEPS[onboardingStep]?.label ?? "";
+
+  const identityDocsReady = !!(sellerIdFront && sellerIdBack && sellerSelfie);
 
   const handleApply = async (event: FormEvent) => {
     event.preventDefault();
     if (!shopName.trim()) {
       toast.error(t("gate.sellerShopNameRequired"));
+      return;
+    }
+    if (!sellerFirstName.trim() || !sellerLastName.trim() || !sellerPhone.trim()) {
+      toast.error(t("gate.sellerApplicantRequired"));
+      setOnboardingStep(1);
+      return;
+    }
+    // The backend validates this too — evidence must be persisted before the
+    // application may be submitted.
+    if (!identityDocsReady) {
+      toast.error(t("gate.sellerIdentityRequired"));
+      setOnboardingStep(2);
       return;
     }
     setBusy(true);
@@ -301,9 +341,15 @@ export function RequireRole({ role, children }: RequireRoleProps) {
           shopDescription: shopDescription.trim() || undefined,
           shopCategory: shopCategory.trim() || undefined,
           shopAddress: shopAddress.line1.trim() ? shopAddress : undefined,
-          firstName: sellerFirstName.trim() || undefined,
-          lastName: sellerLastName.trim() || undefined,
-          phone: sellerPhone.trim() || undefined,
+          firstName: sellerFirstName.trim(),
+          lastName: sellerLastName.trim(),
+          phone: sellerPhone.trim(),
+          idNumber: sellerIdNumber.trim() || undefined,
+          // Durable R2 object references only
+          idCardFrontUrl: sellerIdFront?.objectKey,
+          idCardBackUrl: sellerIdBack?.objectKey,
+          selfieUrl: sellerSelfie?.objectKey,
+          identityEvidence: [sellerIdFront?.objectKey, sellerIdBack?.objectKey, sellerSelfie?.objectKey].filter(Boolean),
         }),
       });
       if (!res.ok) {
@@ -320,6 +366,8 @@ export function RequireRole({ role, children }: RequireRoleProps) {
             status: statusData.data.status,
             rejectionReason: statusData.data.rejectionReason || null,
             correctionReason: statusData.data.correctionReason || null,
+            rejectionReasonCode: statusData.data.rejectionReasonCode || null,
+            correctionReasonCode: statusData.data.correctionReasonCode || null,
           });
         }
       } catch { /* non-fatal — success screen already shown */ }
@@ -335,18 +383,18 @@ export function RequireRole({ role, children }: RequireRoleProps) {
     return (
       <GateCard
         icon={Clock}
-        title="สมัครร้านค้าสำเร็จ"
-        desc="ระบบได้รับคำขอของคุณแล้ว ทีมงานจะตรวจสอบและอนุมัติภายใน 1-3 วันทำการ"
+        title={t("gate.sellerSubmittedTitle")}
+        desc={t("gate.sellerSubmittedDesc")}
       >
         <div className="mt-4 rounded-[10px] bg-amber-50 px-4 py-3 text-left">
-          <p className="text-sm font-medium text-amber-800">สถานะ: รอการตรวจสอบ</p>
-          <p className="mt-1 text-xs text-amber-600">คุณจะได้รับการแจ้งเตือนเมื่อบัญชีได้รับการอนุมัติ หรือมีการร้องขอให้แก้ไข</p>
+          <p className="text-sm font-medium text-amber-800">{t("gate.sellerPendingStatus")}</p>
+          <p className="mt-1 text-xs text-amber-600">{t("gate.sellerSubmittedHint")}</p>
         </div>
         <Button
           className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
           asChild
         >
-          <a href="/">กลับไปหน้าหลัก</a>
+          <a href="/">{t("gate.sellerBackToHome")}</a>
         </Button>
       </GateCard>
     );
@@ -354,19 +402,29 @@ export function RequireRole({ role, children }: RequireRoleProps) {
 
   return (
     <GateCard
+      wide
       icon={Store}
-      title={isRejected ? t("gate.sellerRejectedTitle") : needsCorrection ? "แก้ไขคำขอสมัคร" : "สมัครเป็นพ่อค้า"}
-      desc={isRejected ? t("gate.sellerRejectedDesc") : needsCorrection ? "คำขอสมัครของคุณต้องแก้ไขข้อมูลบางส่วน" : "กรอกข้อมูลด้านล่างเพื่อสมัครเป็นพ่อค้าบน Velnox"}
+      title={isRejected ? t("gate.sellerRejectedTitle") : needsCorrection ? t("gate.sellerCorrectionTitle") : t("gate.sellerApplyTitle")}
+      desc={isRejected ? t("gate.sellerRejectedDesc") : needsCorrection ? t("gate.sellerCorrectionDesc") : t("gate.sellerApplyDesc")}
     >
-      {isRejected && seller.rejectionReason && (
-        <p className="mt-4 rounded-[10px] bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
-          {t("gate.sellerRejectedReason", { reason: seller.rejectionReason })}
-        </p>
-      )}
-      {needsCorrection && seller.correctionReason && (
-        <div className="mt-4 rounded-[10px] bg-amber-50 px-3 py-2.5">
-          <p className="text-sm font-medium text-amber-800">⚠ ต้องแก้ไขข้อมูล</p>
-          <p className="mt-1 text-xs text-amber-700">{seller.correctionReason}</p>
+      {isRejected && (seller?.rejectionReason || seller?.rejectionReasonCode) && (
+        <div className="mt-4 rounded-[10px] bg-rose-50 px-3 py-2.5 text-left">
+          {seller?.rejectionReasonCode && (
+            <p className="text-sm font-medium text-rose-700">{t(`reviewReason.${seller.rejectionReasonCode}`)}</p>
+          )}
+          {seller?.rejectionReason && (
+            <p className="mt-1 text-xs text-rose-600">{seller.rejectionReason}</p>
+          )}
+        </div>
+      )}          {needsCorrection && (
+        <div className="mt-4 rounded-[10px] bg-amber-50 px-3 py-2.5 text-left">
+          <p className="text-sm font-medium text-amber-800">⚠ {t("gate.sellerActionRequired")}</p>
+          {seller?.correctionReasonCode && (
+            <p className="mt-1 text-xs font-medium text-amber-700">{t(`reviewReason.${seller.correctionReasonCode}`)}</p>
+          )}
+          {seller?.correctionReason && (
+            <p className="mt-1 text-xs text-amber-700">{seller.correctionReason}</p>
+          )}
         </div>
       )}
 
@@ -391,6 +449,9 @@ export function RequireRole({ role, children }: RequireRoleProps) {
           </div>
         ))}
       </div>
+      <p className="mt-2 text-center text-xs font-medium text-slate-500">
+        {activeStepLabel}
+      </p>
 
       <form onSubmit={handleApply} className="mt-5 grid gap-4 text-left">
         {/* Step 0: Store information */}
@@ -567,38 +628,37 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 disabled={busy}
               />
             </div>
-            <div className="grid gap-2">
-              <Label className="text-xs font-medium text-slate-500">เอกสารยืนยันตัวตน</Label>
+            <div className="grid gap-3">
               <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2">
-                <p className="text-xs text-amber-700">ระบบยืนยันตัวตน — เลือกไฟล์เพื่ออัปโหลด</p>
+                <p className="text-xs text-amber-700">{t("identityDoc.securityNote")}</p>
               </div>
-              {[
-                { label: "บัตรประชาชนด้านหน้า", file: sellerIdFront, set: setSellerIdFront },
-                { label: "บัตรประชาชนด้านหลัง", file: sellerIdBack, set: setSellerIdBack },
-                { label: "Selfie พร้อมบัตรประชาชน", file: sellerSelfie, set: setSellerSelfie },
-              ].map((item) => (
-                <div key={item.label} className="grid gap-2">
-                  <Label className="text-xs font-medium text-slate-500">{item.label}</Label>
-                  <label
-                    className={`flex h-20 cursor-pointer items-center justify-center rounded-[10px] border-2 border-dashed transition-colors ${
-                      item.file ? "border-[#10B981] bg-[#ECFDF5]" : "border-slate-200 hover:border-slate-300"
-                    }`}
-                  >
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => item.set(e.target.files?.[0] ?? null)}
-                      disabled={busy}
-                    />
-                    {item.file ? (
-                      <span className="text-sm font-medium text-[#047857]">✓ {item.file.name}</span>
-                    ) : (
-                      <span className="text-xs text-slate-400">คลิกเพื่อเลือกรูป</span>
-                    )}
-                  </label>
-                </div>
-              ))}
+              <IdentityDocumentUploader
+                purpose="id_card"
+                label={t("identityDoc.idFront")}
+                hint={t("identityDoc.idFrontHint")}
+                required
+                value={sellerIdFront}
+                onChange={setSellerIdFront}
+                disabled={busy}
+              />
+              <IdentityDocumentUploader
+                purpose="id_card_back"
+                label={t("identityDoc.idBack")}
+                hint={t("identityDoc.idBackHint")}
+                required
+                value={sellerIdBack}
+                onChange={setSellerIdBack}
+                disabled={busy}
+              />
+              <IdentityDocumentUploader
+                purpose="selfie_id"
+                label={t("identityDoc.selfie")}
+                hint={t("identityDoc.selfieHint")}
+                required
+                value={sellerSelfie}
+                onChange={setSellerSelfie}
+                disabled={busy}
+              />
             </div>
           </div>
         )}
@@ -629,13 +689,29 @@ export function RequireRole({ role, children }: RequireRoleProps) {
             </div>
             {/* Identity summary */}
             <div className="rounded-[10px] border border-slate-200 p-3">
-              <p className="text-xs font-semibold text-slate-500">การยืนยันตัวตน</p>
-              <div className="mt-1 space-y-1">
-                <p className="text-xs text-slate-600">บัตรประชาชน: {sellerIdFront ? "✓ อัปโหลดแล้ว" : "— ยังไม่ได้อัปโหลด"}</p>
-                <p className="text-xs text-slate-600">Selfie: {sellerSelfie ? "✓ อัปโหลดแล้ว" : "— ยังไม่ได้อัปโหลด"}</p>
+              <p className="text-xs font-semibold text-slate-500">{t("identityDoc.sectionTitle")}</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                {[
+                  { key: "id_card", doc: sellerIdFront, label: t("identityDoc.idFront") },
+                  { key: "id_card_back", doc: sellerIdBack, label: t("identityDoc.idBack") },
+                  { key: "selfie_id", doc: sellerSelfie, label: t("identityDoc.selfie") },
+                ].map((item) => (
+                  <div key={item.key} className="overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50">
+                    {item.doc?.url ? (
+                      <img src={item.doc.url} alt={item.label} className="h-24 w-full object-cover" />
+                    ) : (
+                      <div className="flex h-24 items-center justify-center text-[10px] text-slate-400">
+                        {t("identityDoc.notUploaded")}
+                      </div>
+                    )}
+                    <p className="truncate border-t border-slate-100 bg-white px-2 py-1 text-[10px] font-medium text-slate-500">
+                      {item.label}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
-            <p className="text-xs text-slate-400">ตรวจสอบข้อมูลให้ถูกต้องก่อนกดส่งคำขอสมัคร</p>
+            <p className="text-xs text-slate-400">{t("gate.sellerReviewHint")}</p>
           </div>
         )}
 
@@ -650,21 +726,29 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                   toast.error(t("gate.sellerShopNameRequired"));
                   return;
                 }
+                if (onboardingStep === 1 && (!sellerFirstName.trim() || !sellerLastName.trim() || !sellerPhone.trim())) {
+                  toast.error(t("gate.sellerApplicantRequired"));
+                  return;
+                }
+                if (onboardingStep === 2 && !identityDocsReady) {
+                  toast.error(t("gate.sellerIdentityRequired"));
+                  return;
+                }
                 setOnboardingStep((s) => (s + 1) as 0 | 1 | 2 | 3);
               }}
               disabled={busy}
             >
-              ถัดไป
+              {t("gate.next")}
               <ArrowRight className="size-4" />
             </Button>
           ) : (
             <Button
               type="submit"
               className="gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
-              disabled={busy || !shopName.trim()}
+              disabled={busy || !shopName.trim() || !identityDocsReady}
             >
               {busy && <Loader2 className="size-4 animate-spin" />}
-ส่งใบสมัคร
+              {t("gate.submitApplication")}
               {!busy && <ArrowRight className="size-4" />}
             </Button>
           )}
@@ -676,7 +760,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
               onClick={() => setOnboardingStep((s) => (s - 1) as 0 | 1 | 2 | 3)}
               disabled={busy}
             >
-              ย้อนกลับ
+              {t("gate.back")}
             </Button>
           )}
         </div>

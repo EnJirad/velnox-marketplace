@@ -176,8 +176,12 @@ const RULES: Array<{ match: (req: Request) => boolean; limiter: RequestHandler }
   { match: (req) => (req.method === "PATCH" || req.method === "PUT") && /^\/api\/customer\/notifications/.test(req.path), limiter: createRateLimiter({ name: "notify-read", windowMs: 60_000, max: 120 }) },
 
   // ── Verification submissions (user-keyed — evidence spam guard) ─────────
+  // Velnox has ONE verification system (seller/shop identity). The product
+  // verification surface was removed from the user workflow, so only the
+  // seller endpoints are rate limited.
   { match: (req) => req.method === "POST" && /^\/api\/seller\/verification$/.test(req.path), limiter: createRateLimiter({ name: "seller-verification", windowMs: 60_000, max: 5 }) },
-  { match: (req) => req.method === "POST" && /^\/api\/seller\/products\/[^/]+\/verification$/.test(req.path), limiter: createRateLimiter({ name: "product-verification", windowMs: 60_000, max: 5 }) },
+  { match: (req) => req.method === "POST" && /^\/api\/seller\/apply$/.test(req.path), limiter: createRateLimiter({ name: "seller-apply", windowMs: 60_000, max: 5 }) },
+  { match: (req) => req.method === "POST" && /^\/api\/seller\/evidence\/(upload-intent|confirm)$/.test(req.path), limiter: createRateLimiter({ name: "seller-evidence", windowMs: 60_000, max: 60 }) },
 
   // ── Seller product images (user-keyed — presign generation is the surface) ─
   { match: (req) => req.method === "POST" && /^\/api\/seller\/products\/(draft-upload-intent|image-upload-intent)$/.test(req.path), limiter: createRateLimiter({ name: "seller-upload-intent", windowMs: 60_000, max: 30 }) },

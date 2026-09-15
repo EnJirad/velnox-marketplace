@@ -241,7 +241,7 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.setReorderLevelAction": (a) => apiPatch(`/api/seller/products/${a.productId}/reorder-level`, a),
 
   // Center admin actions
-  "api.centerAdmin.sellerList": () => apiGet("/api/admin/sellers"),
+  "api.centerAdmin.sellerList": (a) => apiGet(`/api/admin/sellers?status=${a?.status ?? "all"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}`),
   "api.centerAdmin.setSellerStatusAction": (a) => apiPatch(`/api/admin/sellers/${a.sellerId}/status`, a),
   "api.centerAdmin.productModerationList": () => apiGet("/api/admin/products/moderation"),
   "api.centerAdmin.setProductModerationStatus": (a) => apiPatch(`/api/admin/products/${a.productId}/moderation`, a),
@@ -318,17 +318,19 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   // Storefront
   "api.storefront.settings": (a) => apiGet(`/api/shops/${a.shopId}/settings`),
 
-  // Verification (dual seller + product)
-  "api.seller.verificationStatus": () => apiGet("/api/seller/verification"),
+  // Verification — ONE system: seller / shop identity verification.
+  // Product verification was removed from the user workflow; no product
+  // verification route is exposed to any frontend.
+  "api.seller.verificationStatus": () => apiGetFresh("/api/seller/verification"),
   "api.seller.submitVerification": (a) => apiPost("/api/seller/verification", a),
-  "api.seller.productVerificationStatus": (a) => apiGet(`/api/seller/products/${a.productId}/verification`),
-  "api.seller.submitProductVerification": (a) => apiPost(`/api/seller/products/${a.productId}/verification`, a),
   "api.seller.evidenceUploadIntent": (a) => apiPost("/api/seller/evidence/upload-intent", a),
   "api.seller.evidenceConfirm": (a) => apiPost("/api/seller/evidence/confirm", a),
   "api.seller.evidenceList": () => apiGetFresh("/api/seller/evidence"),
-  "api.admin.verifications": (a) => apiGet(`/api/admin/verifications${a?.type ? `?type=${a.type}` : ""}${a?.status ? `&status=${a.status}` : ""}`),
+  "api.admin.verifications": (a) => apiGet(`/api/admin/verifications?status=${a?.status ?? "pending"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}`),
   "api.admin.sellerVerificationAction": (a) => apiPatch(`/api/admin/verifications/seller/${a.verificationId}`, a),
-  "api.admin.productVerificationAction": (a) => apiPatch(`/api/admin/verifications/product/${a.verificationId}`, a),
+  "api.admin.sellerVerificationEvidence": (a) => apiGetFresh(`/api/admin/verifications/seller/${a.verificationId}/evidence`),
+  "api.admin.sellerVerificationHistory": (a) => apiGetFresh(`/api/admin/verifications/seller/${a.verificationId}/history`),
+  "api.admin.sellerApplication": (a) => apiGetFresh(`/api/admin/sellers/${a.sellerId}/application`),
   "api.public.shopVerification": (a) => apiGet(`/api/shops/${a.shopId}/verification`),
   // Categories (localized)
   "api.customer.categoriesLocalized": (a) => apiGet(`/api/categories?lang=${a?.lang ?? "th"}`),

@@ -497,6 +497,535 @@ const myNotifyPatch = {
 } satisfies Partial<Dict["notifications"]>;
 
 /**
+ * Seller application gate copy (TH / EN / MY).
+ *
+ * New gate keys for the multi-step seller application introduced by the
+ * seller-application hardening work. Merged with the existing `gate` section
+ * via the same spread-patch mechanism used elsewhere in this file.
+ */
+interface GateCopy {
+  next: string;
+  back: string;
+  submitApplication: string;
+  reviewHint: string;
+  stepStore: string;
+  stepApplicant: string;
+  stepIdentity: string;
+  stepReview: string;
+  sellerApplyTitle: string;
+  sellerApplyDesc: string;
+  sellerCorrectionTitle: string;
+  sellerCorrectionDesc: string;
+  sellerActionRequired: string;
+  sellerApplicantRequired: string;
+  sellerIdentityRequired: string;
+  sellerPendingTitle: string;
+  sellerPendingDesc: string;
+  sellerPendingStatus: string;
+  sellerPendingEta: string;
+  sellerUnderReviewTitle: string;
+  sellerUnderReviewDesc: string;
+  sellerUnderReviewStatus: string;
+  sellerUnderReviewHint: string;
+  sellerSubmittedTitle: string;
+  sellerSubmittedDesc: string;
+  sellerSubmittedHint: string;
+  sellerBackToHome: string;
+}
+
+const thGateCopy: GateCopy = {
+  next: "ถัดไป",
+  back: "ย้อนกลับ",
+  submitApplication: "ส่งใบสมัคร",
+  reviewHint: "ตรวจสอบข้อมูลให้ถูกต้องก่อนกดส่งคำขอสมัคร",
+  stepStore: "ข้อมูลร้าน",
+  stepApplicant: "ข้อมูลผู้สมัคร",
+  stepIdentity: "ยืนยันตัวตน",
+  stepReview: "ตรวจสอบ",
+  sellerApplyTitle: "สมัครเป็นพ่อค้า",
+  sellerApplyDesc: "กรอกข้อมูลด้านล่างเพื่อสมัครเป็นพ่อค้าบน Velnox",
+  sellerCorrectionTitle: "แก้ไขคำขอสมัคร",
+  sellerCorrectionDesc: "คำขอสมัครของคุณต้องแก้ไขข้อมูลบางส่วน",
+  sellerActionRequired: "ต้องแก้ไขข้อมูล",
+  sellerApplicantRequired: "กรุณากรอกชื่อ นามสกุล และเบอร์โทรศัพท์",
+  sellerIdentityRequired: "กรุณาอัปโหลดเอกสารยืนยันตัวตนให้ครบทั้ง 3 รูป",
+  sellerPendingTitle: "สมัครร้านค้าแล้ว",
+  sellerPendingDesc: "ระบบได้รับคำขอของคุณแล้ว รอการตรวจสอบจากทีมงาน Velnox",
+  sellerPendingStatus: "สถานะ: รอการตรวจสอบ",
+  sellerPendingEta: "ทีมงานจะตรวจสอบคำขอของคุณภายใน 1-3 วันทำการ",
+  sellerUnderReviewTitle: "กำลังตรวจสอบคำขอ",
+  sellerUnderReviewDesc: "ทีมงาน Velnox กำลังตรวจสอบคำขอเปิดร้านค้าของคุณ",
+  sellerUnderReviewStatus: "สถานะ: อยู่ระหว่างการตรวจสอบ",
+  sellerUnderReviewHint: "กรุณารอผลการตรวจสอบ คุณจะได้รับการแจ้งเตือนเมื่อมีผลลัพธ์",
+  sellerSubmittedTitle: "สมัครร้านค้าสำเร็จ",
+  sellerSubmittedDesc: "ระบบได้รับคำขอของคุณแล้ว ทีมงานจะตรวจสอบและอนุมัติภายใน 1-3 วันทำการ",
+  sellerSubmittedHint: "คุณจะได้รับการแจ้งเตือนเมื่อบัญชีได้รับการอนุมัติ หรือมีการร้องขอให้แก้ไข",
+  sellerBackToHome: "กลับไปหน้าหลัก",
+};
+
+const enGateCopy: GateCopy = {
+  next: "Next",
+  back: "Back",
+  submitApplication: "Submit application",
+  reviewHint: "Check your information before submitting the application",
+  stepStore: "Store details",
+  stepApplicant: "Applicant details",
+  stepIdentity: "Identity verification",
+  stepReview: "Review",
+  sellerApplyTitle: "Become a seller",
+  sellerApplyDesc: "Fill in the details below to apply to sell on Velnox",
+  sellerCorrectionTitle: "Update your application",
+  sellerCorrectionDesc: "Some parts of your application need correction",
+  sellerActionRequired: "Action required",
+  sellerApplicantRequired: "Please enter your first name, last name and phone number",
+  sellerIdentityRequired: "Please upload all three identity documents",
+  sellerPendingTitle: "Application submitted",
+  sellerPendingDesc: "We have received your application and it is waiting for the Velnox team to review it",
+  sellerPendingStatus: "Status: awaiting review",
+  sellerPendingEta: "The team reviews applications within 1-3 business days",
+  sellerUnderReviewTitle: "Application under review",
+  sellerUnderReviewDesc: "The Velnox team is reviewing your seller application",
+  sellerUnderReviewStatus: "Status: under review",
+  sellerUnderReviewHint: "Please wait for the review result — you will be notified",
+  sellerSubmittedTitle: "Application received",
+  sellerSubmittedDesc: "We have received your application. The team reviews and approves within 1-3 business days",
+  sellerSubmittedHint: "You will be notified when your account is approved or when a correction is requested",
+  sellerBackToHome: "Back to home",
+};
+
+const myGateCopy: GateCopy = {
+  next: "ဆက်လုပ်ရန်",
+  back: "နောက်သို့",
+  submitApplication: "လျှောက်လွှာ တင်သွင်းရန်",
+  reviewHint: "လျှောက်လွှာ မတင်မီ အချက်အလက်များ စစ်ဆေးပါ",
+  stepStore: "ဆိုင်အချက်အလက်",
+  stepApplicant: "လျှောက်ထားသူအချက်အလက်",
+  stepIdentity: "မူလအာခံ အတည်ပြုခြင်း",
+  stepReview: "ပြန်လည်စစ်ဆေးခြင်း",
+  sellerApplyTitle: "ရောင်းချသူ ဖြစ်လာရန်",
+  sellerApplyDesc: "Velnox တွင် ရောင်းချရန် အောက်ပါအချက်အလက်များ ဖြည့်ပါ",
+  sellerCorrectionTitle: "လျှောက်လွှာ ပြင်ဆင်ရန်",
+  sellerCorrectionDesc: "သင့်လျှောက်လွှာ၏ အချို့အပိုင်းများ ပြင်ဆင်ရန် လိုအပ်သည်",
+  sellerActionRequired: "လုပ်ဆောင်ရန် လိုအပ်သည်",
+  sellerApplicantRequired: "အမည်၊ မျိုးရိုးအမည်နှင့် ဖုန်းနံပါတ် ဖြည့်ပါ",
+  sellerIdentityRequired: "မူလအာခံစာရွက်စာတမ်း သုံးခုလုံး တင်ပါ",
+  sellerPendingTitle: "လျှောက်လွှာ တင်ပြီးပါပြီ",
+  sellerPendingDesc: "သင့်လျှောက်လွှာကို လက်ခံပြီးပါပြီ — Velnox အဖွဲ့ စစ်ဆေးရန် စောင့်ဆိုင်းနေသည်",
+  sellerPendingStatus: "အခြေအနေ: စစ်ဆေးရန် စောင့်ဆိုင်းနေသည်",
+  sellerPendingEta: "အဖွဲ့သည် လုပ်ငန်းရက် ၁–၃ ရက်အတွင်း စစ်ဆေးပါမည်",
+  sellerUnderReviewTitle: "လျှောက်လွှာ စစ်ဆေးနေသည်",
+  sellerUnderReviewDesc: "Velnox အဖွဲ့သည် သင့်ရောင်းချသူလျှောက်လွှာကို စစ်ဆေးနေသည်",
+  sellerUnderReviewStatus: "အခြေအနေ: စစ်ဆေးနေသည်",
+  sellerUnderReviewHint: "စစ်ဆေးမှုရလဒ်ကို စောင့်ဆိုင်းပါ — အသိပေးပါမည်",
+  sellerSubmittedTitle: "လျှောက်လွှာ လက်ခံပြီးပါပြီ",
+  sellerSubmittedDesc: "သင့်လျှောက်လွှာကို လက်ခံပြီးပါပြီ — လုပ်ငန်းရက် ၁–၃ ရက်အတွင်း အတည်ပြုပါမည်",
+  sellerSubmittedHint: "အကောင့် အတည်ပြုခံရသည့်အခါ သို့မဟုတ် ပြင်ဆင်ရန် တောင်းဆိုသည့်အခါ အသိပေးပါမည်",
+  sellerBackToHome: "ပင်မစာမျက်နှာသို့",
+};
+
+/**
+ * Identity document uploader copy (TH / EN / MY).
+ * Used by packages/shared/src/components/seller/IdentityDocumentUploader.tsx
+ * and the seller application onboarding.
+ */
+interface IdentityDocCopy {
+  sectionTitle: string;
+  securityNote: string;
+  idFront: string;
+  idFrontHint: string;
+  idBack: string;
+  idBackHint: string;
+  selfie: string;
+  selfieHint: string;
+  choose: string;
+  formats: string;
+  replace: string;
+  remove: string;
+  uploading: string;
+  uploaded: string;
+  failed: string;
+  uploadFailed: string;
+  invalidType: string;
+  tooLarge: string;
+  previewOnly: string;
+  notUploaded: string;
+}
+
+const thIdentityDoc: IdentityDocCopy = {
+  sectionTitle: "เอกสารยืนยันตัวตน",
+  securityNote: "เอกสารของคุณถูกจัดเก็บแบบส่วนตัว เปิดดูได้เฉพาะทีมงานตรวจสอบของ Velnox",
+  idFront: "บัตรประชาชนด้านหน้า",
+  idFrontHint: "ถ่ายให้เห็นเลขบัตรและรูปชัดเจน",
+  idBack: "บัตรประชาชนด้านหลัง",
+  idBackHint: "ถ่ายให้เห็นข้อความด้านหลังครบถ้วน",
+  selfie: "เซลฟี่คู่กับบัตรประชาชน",
+  selfieHint: "ถือบัตรข้างใบหน้า ให้เห็นทั้งใบหน้าและบัตร",
+  choose: "แตะเพื่อเลือกรูป",
+  formats: "JPG · PNG · WebP (สูงสุด 10 MB)",
+  replace: "เปลี่ยนรูป",
+  remove: "ลบ",
+  uploading: "กำลังอัปโหลด...",
+  uploaded: "อัปโหลดแล้ว",
+  failed: "อัปโหลดไม่สำเร็จ",
+  uploadFailed: "อัปโหลดไม่สำเร็จ กรุณาลองใหม่",
+  invalidType: "ไฟล์ต้องเป็นรูปภาพ JPG, PNG หรือ WebP",
+  tooLarge: "ไฟล์ใหญ่เกิน 10 MB",
+  previewOnly: "ตัวอย่างรูปที่เลือก",
+  notUploaded: "ยังไม่ได้อัปโหลด",
+};
+
+const enIdentityDoc: IdentityDocCopy = {
+  sectionTitle: "Identity documents",
+  securityNote: "Your documents are stored privately and are only visible to the Velnox review team",
+  idFront: "ID card — front",
+  idFrontHint: "Make sure the ID number and photo are clearly readable",
+  idBack: "ID card — back",
+  idBackHint: "Capture the full back of the card",
+  selfie: "Selfie holding your ID card",
+  selfieHint: "Hold the card next to your face so both are visible",
+  choose: "Tap to choose a photo",
+  formats: "JPG · PNG · WebP (up to 10 MB)",
+  replace: "Replace",
+  remove: "Remove",
+  uploading: "Uploading...",
+  uploaded: "Uploaded",
+  failed: "Upload failed",
+  uploadFailed: "Upload failed, please try again",
+  invalidType: "The file must be a JPG, PNG or WebP image",
+  tooLarge: "File is larger than 10 MB",
+  previewOnly: "Selected image preview",
+  notUploaded: "Not uploaded yet",
+};
+
+const myIdentityDoc: IdentityDocCopy = {
+  sectionTitle: "မူလအာခံစာရွက်စာတမ်းများ",
+  securityNote: "သင့်စာရွက်စာတမ်းများကို သီးသန့်သိမ်းဆည်းထားပြီး Velnox စစ်ဆေးရေးအဖွဲ့သာ ကြည့်နိုင်သည်",
+  idFront: "မူလအာခံကတ် — အရှေ့",
+  idFrontHint: "ကတ်နံပါတ်နှင့် ဓာတ်ပုံ ရှင်းလင်းစွာမြင်ရပါစေ",
+  idBack: "မူလအာခံကတ် — အနောက်",
+  idBackHint: "ကတ်၏ အနောက်ဘက်အပြည့် ရိုက်ပါ",
+  selfie: "မူလအာခံကတ်နှင့်အတူ ဆယ်လ်ဖီ",
+  selfieHint: "ကတ်ကို မျက်နှာဘေးတွင် ကိုင်ပြီး နှစ်ခုလုံးမြင်ရအောင် ရိုက်ပါ",
+  choose: "ဓာတ်ပုံရွေးရန် နှိပ်ပါ",
+  formats: "JPG · PNG · WebP (အများဆုံး 10 MB)",
+  replace: "ပြောင်းရန်",
+  remove: "ဖျက်ရန်",
+  uploading: "တင်နေသည်...",
+  uploaded: "တင်ပြီးပါပြီ",
+  failed: "တင်မရပါ",
+  uploadFailed: "တင်မရပါ ထပ်ကြိုးစားပါ",
+  invalidType: "ဖိုင်သည် JPG၊ PNG သို့မဟုတ် WebP ဖြစ်ရမည်",
+  tooLarge: "ဖိုင်သည် 10 MB ထက် ကြီးနေသည်",
+  previewOnly: "ရွေးထားသောပုံ နမူနာ",
+  notUploaded: "မတင်ရသေးပါ",
+};
+
+/**
+ * Structured review-reason labels (TH / EN / MY).
+ * Keys mirror packages/shared/src/lib/verification-reasons.ts exactly — the
+ * backend validates the same code list.
+ */
+interface ReviewReasonCopy {
+  id_card_unclear: string;
+  id_card_incomplete: string;
+  selfie_unclear: string;
+  selfie_missing_id: string;
+  document_expired: string;
+  applicant_mismatch: string;
+  store_incomplete: string;
+  contact_incomplete: string;
+  address_incomplete: string;
+  duplicate_account: string;
+  policy_violation: string;
+  other: string;
+}
+
+const thReviewReason: ReviewReasonCopy = {
+  id_card_unclear: "รูปบัตรประชาชนไม่ชัดเจน",
+  id_card_incomplete: "รูปบัตรประชาชนไม่ครบถ้วน",
+  selfie_unclear: "รูปเซลฟี่ไม่ชัดเจน",
+  selfie_missing_id: "รูปเซลฟี่มองไม่เห็นบัตรประชาชน",
+  document_expired: "เอกสารหมดอายุ",
+  applicant_mismatch: "ข้อมูลผู้สมัครไม่ตรงกับเอกสาร",
+  store_incomplete: "ข้อมูลร้านค้าไม่ครบถ้วน",
+  contact_incomplete: "ข้อมูลติดต่อไม่ครบถ้วน",
+  address_incomplete: "ข้อมูลที่อยู่ไม่ครบถ้วน",
+  duplicate_account: "พบการสมัครซ้ำซ้อน",
+  policy_violation: "ไม่เป็นไปตามเกณฑ์ของ Velnox",
+  other: "อื่น ๆ",
+};
+
+const enReviewReason: ReviewReasonCopy = {
+  id_card_unclear: "ID card image is unclear",
+  id_card_incomplete: "ID card image is incomplete",
+  selfie_unclear: "Selfie is unclear",
+  selfie_missing_id: "Selfie does not clearly show the ID card",
+  document_expired: "Document has expired",
+  applicant_mismatch: "Applicant details do not match the documents",
+  store_incomplete: "Store information is incomplete",
+  contact_incomplete: "Contact information is incomplete",
+  address_incomplete: "Address information is incomplete",
+  duplicate_account: "Duplicate account detected",
+  policy_violation: "Does not meet Velnox criteria",
+  other: "Other",
+};
+
+const myReviewReason: ReviewReasonCopy = {
+  id_card_unclear: "မူလအာခံကတ်ပုံ မရှင်းလင်းပါ",
+  id_card_incomplete: "မူလအာခံကတ်ပုံ မပြည့်စုံပါ",
+  selfie_unclear: "ဆယ်လ်ဖီပုံ မရှင်းလင်းပါ",
+  selfie_missing_id: "ဆယ်လ်ဖီတွင် မူလအာခံကတ် မမြင်ရပါ",
+  document_expired: "စာရွက်စာတမ်း သက်တမ်းကုန်နေသည်",
+  applicant_mismatch: "လျှောက်ထားသူအချက်အလက် စာရွက်စာတမ်းနှင့် မကိုက်ညီပါ",
+  store_incomplete: "ဆိုင်အချက်အလက် မပြည့်စုံပါ",
+  contact_incomplete: "ဆက်သွယ်ရန်အချက်အလက် မပြည့်စုံပါ",
+  address_incomplete: "လိပ်စာအချက်အလက် မပြည့်စုံပါ",
+  duplicate_account: "အကောင့် ထပ်နေသည်",
+  policy_violation: "Velnox စံနှုန်းနှင့် မကိုက်ညီပါ",
+  other: "အခြား",
+};
+
+/**
+ * VelCenter seller-application review copy (TH / EN / MY).
+ * Structured reasons + checklist + review history for the review workspace.
+ */
+interface ReviewCopy {
+  title: string;
+  desc: string;
+  applicantInfo: string;
+  storeInfo: string;
+  addressInfo: string;
+  identityDocs: string;
+  checklist: string;
+  checklistIdentity: string;
+  checklistApplication: string;
+  idCardReadable: string;
+  idCardComplete: string;
+  applicantMatches: string;
+  selfieShowsApplicant: string;
+  selfieShowsIdCard: string;
+  imageQuality: string;
+  applicantComplete: string;
+  storeComplete: string;
+  contactComplete: string;
+  addressComplete: string;
+  decision: string;
+  approve: string;
+  reject: string;
+  suspend: string;
+  requestCorrection: string;
+  confirmReject: string;
+  confirmSuspend: string;
+  confirmCorrection: string;
+  reasonLabel: string;
+  reasonPlaceholder: string;
+  noteLabel: string;
+  notePlaceholder: string;
+  history: string;
+  historyEmpty: string;
+  loadingEvidence: string;
+  evidenceFailed: string;
+  evidenceEmpty: string;
+  signedExpiry: string;
+  searchPlaceholder: string;
+  filterAll: string;
+  filterPending: string;
+  filterVerified: string;
+  filterRejected: string;
+  filterSuspended: string;
+  noApplications: string;
+  loading: string;
+  loadFailed: string;
+  retry: string;
+  applicationDetail: string;
+  close: string;
+  actionSubmitted: string;
+  actionResubmitted: string;
+  actionUnderReview: string;
+  actionNeedsCorrection: string;
+  actionApproved: string;
+  actionRejected: string;
+  actionSuspended: string;
+}
+
+const thReview: ReviewCopy = {
+  title: "ตรวจสอบการยืนยันร้านค้า",
+  desc: "ตรวจสอบใบสมัครและหลักฐานยืนยันตัวตนของร้านค้า",
+  applicantInfo: "ข้อมูลผู้สมัคร",
+  storeInfo: "ข้อมูลร้านค้า",
+  addressInfo: "ที่อยู่",
+  identityDocs: "เอกสารยืนยันตัวตน",
+  checklist: "รายการตรวจสอบ",
+  checklistIdentity: "ตัวตน",
+  checklistApplication: "ใบสมัคร",
+  idCardReadable: "รูปบัตรประชาชนอ่านได้ชัดเจน",
+  idCardComplete: "รูปบัตรประชาชนครบถ้วน",
+  applicantMatches: "ข้อมูลผู้สมัครตรงกับเอกสาร",
+  selfieShowsApplicant: "รูปเซลฟี่เห็นผู้สมัครชัดเจน",
+  selfieShowsIdCard: "รูปเซลฟี่เห็นบัตรประชาชนชัดเจน",
+  imageQuality: "คุณภาพรูปยอมรับได้",
+  applicantComplete: "ข้อมูลผู้สมัครครบถ้วน",
+  storeComplete: "ข้อมูลร้านค้าครบถ้วน",
+  contactComplete: "ข้อมูลติดต่อครบถ้วน",
+  addressComplete: "ข้อมูลที่อยู่ครบถ้วน",
+  decision: "ผลการตรวจสอบ",
+  approve: "อนุมัติ",
+  reject: "ปฏิเสธ",
+  suspend: "ระงับ",
+  requestCorrection: "ขอให้แก้ไข",
+  confirmReject: "ยืนยันปฏิเสธ",
+  confirmSuspend: "ยืนยันระงับ",
+  confirmCorrection: "ยืนยันขอให้แก้ไข",
+  reasonLabel: "เหตุผล (จำเป็น)",
+  reasonPlaceholder: "เลือกเหตุผลด้านบน แล้วเพิ่มรายละเอียดเพิ่มเติมได้",
+  noteLabel: "หมายเหตุภายใน (ผู้สมัครไม่เห็น)",
+  notePlaceholder: "บันทึกสำหรับทีมตรวจสอบเท่านั้น",
+  history: "ประวัติการตรวจสอบ",
+  historyEmpty: "ยังไม่มีประวัติการตรวจสอบ",
+  loadingEvidence: "กำลังโหลดหลักฐานอย่างปลอดภัย...",
+  evidenceFailed: "โหลดหลักฐานไม่สำเร็จ",
+  evidenceEmpty: "ไม่มีหลักฐานที่แนบ",
+  signedExpiry: "ลิงก์หลักฐานมีอายุ 5 นาที — ปิดแล้วเปิดใหม่เพื่อรับลิงก์ใหม่",
+  searchPlaceholder: "ค้นหาชื่อร้าน ผู้สมัคร หรืออีเมล",
+  filterAll: "ทั้งหมด",
+  filterPending: "รอการยืนยัน",
+  filterVerified: "ยืนยันแล้ว",
+  filterRejected: "ถูกปฏิเสธ",
+  filterSuspended: "ถูกระงับ",
+  noApplications: "ไม่พบใบสมัคร",
+  loading: "กำลังโหลด...",
+  loadFailed: "โหลดไม่สำเร็จ",
+  retry: "ลองใหม่",
+  applicationDetail: "รายละเอียดใบสมัคร",
+  close: "ปิด",
+  actionSubmitted: "ส่งใบสมัคร",
+  actionResubmitted: "ส่งใบสมัครใหม่",
+  actionUnderReview: "เข้าสู่การตรวจสอบ",
+  actionNeedsCorrection: "ขอให้แก้ไข",
+  actionApproved: "อนุมัติ",
+  actionRejected: "ปฏิเสธ",
+  actionSuspended: "ระงับ",
+};
+
+const enReview: ReviewCopy = {
+  title: "Seller verification review",
+  desc: "Review the application and the submitted identity evidence",
+  applicantInfo: "Applicant information",
+  storeInfo: "Store information",
+  addressInfo: "Address",
+  identityDocs: "Identity documents",
+  checklist: "Review checklist",
+  checklistIdentity: "Identity",
+  checklistApplication: "Application",
+  idCardReadable: "ID card image is readable",
+  idCardComplete: "ID card image is complete",
+  applicantMatches: "Applicant details match the documents",
+  selfieShowsApplicant: "Selfie clearly shows the applicant",
+  selfieShowsIdCard: "Selfie clearly shows the ID card",
+  imageQuality: "Image quality is acceptable",
+  applicantComplete: "Applicant information is complete",
+  storeComplete: "Store information is complete",
+  contactComplete: "Contact information is complete",
+  addressComplete: "Address information is complete",
+  decision: "Decision",
+  approve: "Approve",
+  reject: "Reject",
+  suspend: "Suspend",
+  requestCorrection: "Request correction",
+  confirmReject: "Confirm rejection",
+  confirmSuspend: "Confirm suspension",
+  confirmCorrection: "Confirm correction request",
+  reasonLabel: "Reason (required)",
+  reasonPlaceholder: "Pick a reason above, then add details if needed",
+  noteLabel: "Internal note (not shown to the applicant)",
+  notePlaceholder: "Visible to the review team only",
+  history: "Review history",
+  historyEmpty: "No review history yet",
+  loadingEvidence: "Loading evidence securely...",
+  evidenceFailed: "Failed to load evidence",
+  evidenceEmpty: "No evidence attached",
+  signedExpiry: "Evidence links expire after 5 minutes — reopen to refresh",
+  searchPlaceholder: "Search store, applicant or email",
+  filterAll: "All",
+  filterPending: "Pending verification",
+  filterVerified: "Verified",
+  filterRejected: "Rejected",
+  filterSuspended: "Suspended",
+  noApplications: "No applications found",
+  loading: "Loading...",
+  loadFailed: "Failed to load",
+  retry: "Retry",
+  applicationDetail: "Application detail",
+  close: "Close",
+  actionSubmitted: "Application submitted",
+  actionResubmitted: "Application resubmitted",
+  actionUnderReview: "Moved to review",
+  actionNeedsCorrection: "Correction requested",
+  actionApproved: "Approved",
+  actionRejected: "Rejected",
+  actionSuspended: "Suspended",
+};
+
+const myReview: ReviewCopy = {
+  title: "ဆိုင်အတည်ပြုမှု စစ်ဆေးခြင်း",
+  desc: "လျှောက်လွှာနှင့် တင်သွင်းထားသော မူလအာခံအထောက်အထားများကို စစ်ဆေးပါ",
+  applicantInfo: "လျှောက်ထားသူအချက်အလက်",
+  storeInfo: "ဆိုင်အချက်အလက်",
+  addressInfo: "လိပ်စာ",
+  identityDocs: "မူလအာခံစာရွက်စာတမ်းများ",
+  checklist: "စစ်ဆေးရန်စာရင်း",
+  checklistIdentity: "မူလအာခံ",
+  checklistApplication: "လျှောက်လွှာ",
+  idCardReadable: "မူလအာခံကတ်ပုံ ဖတ်နိုင်သည်",
+  idCardComplete: "မူလအာခံကတ်ပုံ ပြည့်စုံသည်",
+  applicantMatches: "လျှောက်ထားသူအချက်အလက် စာရွက်စာတမ်းနှင့် ကိုက်ညီသည်",
+  selfieShowsApplicant: "ဆယ်လ်ဖီတွင် လျှောက်ထားသူ ရှင်းလင်းစွာမြင်ရသည်",
+  selfieShowsIdCard: "ဆယ်လ်ဖီတွင် မူလအာခံကတ် ရှင်းလင်းစွာမြင်ရသည်",
+  imageQuality: "ပုံအရည်အသွေး လက်ခံနိုင်သည်",
+  applicantComplete: "လျှောက်ထားသူအချက်အလက် ပြည့်စုံသည်",
+  storeComplete: "ဆိုင်အချက်အလက် ပြည့်စုံသည်",
+  contactComplete: "ဆက်သွယ်ရန်အချက်အလက် ပြည့်စုံသည်",
+  addressComplete: "လိပ်စာအချက်အလက် ပြည့်စုံသည်",
+  decision: "ဆုံးဖြတ်ချက်",
+  approve: "အတည်ပြုရန်",
+  reject: "ငြင်းပယ်ရန်",
+  suspend: "ရပ်ဆိုင်းရန်",
+  requestCorrection: "ပြင်ဆင်ရန် တောင်းဆိုရန်",
+  confirmReject: "ငြင်းပယ်မှု အတည်ပြုရန်",
+  confirmSuspend: "ရပ်ဆိုင်းမှု အတည်ပြုရန်",
+  confirmCorrection: "ပြင်ဆင်ရန် တောင်းဆိုမှု အတည်ပြုရန်",
+  reasonLabel: "အကြောင်းရင်း (လိုအပ်သည်)",
+  reasonPlaceholder: "အပေါ်မှ အကြောင်းရင်းရွေးပြီး အသေးစိတ်ထည့်နိုင်သည်",
+  noteLabel: "အတွင်းမှတ်စု (လျှောက်ထားသူ မမြင်ရ)",
+  notePlaceholder: "စစ်ဆေးရေးအဖွဲ့သာ မြင်ရမည်",
+  history: "စစ်ဆေးမှုမှတ်တမ်း",
+  historyEmpty: "စစ်ဆေးမှုမှတ်တမ်း မရှိသေးပါ",
+  loadingEvidence: "အထောက်အထားများကို လုံခြုံစွာ ဖွင့်နေသည်...",
+  evidenceFailed: "အထောက်အထား ဖွင့်၍မရပါ",
+  evidenceEmpty: "အထောက်အထား မပါရှိပါ",
+  signedExpiry: "အထောက်အထားလင့်ခ်များ ၅ မိနစ်အကြာ သက်တမ်းကုန်သည် — ပြန်ဖွင့်ပါ",
+  searchPlaceholder: "ဆိုင်၊ လျှောက်ထားသူ သို့မဟုတ် အီးမေးလ် ရှာရန်",
+  filterAll: "အားလုံး",
+  filterPending: "အတည်ပြုရန် စောင့်ဆိုင်းနေသည်",
+  filterVerified: "အတည်ပြုပြီး",
+  filterRejected: "ငြင်းပယ်ပြီး",
+  filterSuspended: "ရပ်ဆိုင်းပြီး",
+  noApplications: "လျှောက်လွှာ မတွေ့ပါ",
+  loading: "ဖွင့်နေသည်...",
+  loadFailed: "ဖွင့်၍မရပါ",
+  retry: "ထပ်ကြိုးစားရန်",
+  applicationDetail: "လျှောက်လွှာအသေးစိတ်",
+  close: "ပိတ်ရန်",
+  actionSubmitted: "လျှောက်လွှာတင်ပြီး",
+  actionResubmitted: "လျှောက်လွှာ ပြန်တင်ပြီး",
+  actionUnderReview: "စစ်ဆေးမှုသို့ ရောက်ပြီး",
+  actionNeedsCorrection: "ပြင်ဆင်ရန် တောင်းဆိုပြီး",
+  actionApproved: "အတည်ပြုပြီး",
+  actionRejected: "ငြင်းပယ်ပြီး",
+  actionSuspended: "ရပ်ဆိုင်းပြီး",
+};
+
+/**
  * All locale dictionaries keyed by language code. Adding a language means
  * adding a dictionary here (plus an entry in ../config).
  */
@@ -506,12 +1035,20 @@ export const translations: Record<Language, Dict> = {
     verification: { ...th.verification, ...thVerificationCopy },
     categories: { ...th.categories, ...thCategoriesCopy },
     categoryPicker: thCategoryPicker,
+    gate: { ...th.gate, ...thGateCopy },
+    identityDoc: thIdentityDoc,
+    reviewReason: thReviewReason,
+    review: thReview,
   } as Dict,
   en: {
     ...en,
     verification: { ...en.verification, ...enVerificationCopy },
     categories: { ...en.categories, ...enCategoriesCopy },
     categoryPicker: enCategoryPicker,
+    gate: { ...en.gate, ...enGateCopy },
+    identityDoc: enIdentityDoc,
+    reviewReason: enReviewReason,
+    review: enReview,
   } as Dict,
   my: {
     ...myBase,
@@ -537,5 +1074,9 @@ export const translations: Record<Language, Dict> = {
     verification: { ...myBase.verification, ...myVerificationCopy },
     categories: { ...myBase.categories, ...myCategoriesCopy },
     categoryPicker: myCategoryPicker,
+    gate: { ...myBase.gate, ...myGateCopy },
+    identityDoc: myIdentityDoc,
+    reviewReason: myReviewReason,
+    review: myReview,
   } as Dict,
 };

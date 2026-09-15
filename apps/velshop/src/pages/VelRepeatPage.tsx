@@ -140,6 +140,9 @@ const STATUS_LABEL_KEY: Record<string, string> = {
   active: "velrepeat.statusActive",
   paused: "velrepeat.statusPaused",
   out_of_stock: "velrepeat.statusPaused",
+  // The scheduler writes this plan status when an item becomes unusable
+  // (product unpublished/deleted, VelRepeat disabled, variant missing).
+  item_unavailable: "velrepeatPlan.runItemUnavailable",
   completed: "velrepeat.statusCompleted",
   cancelled: "velrepeat.statusCancelled",
   refunded: "velrepeat.statusRefunded",

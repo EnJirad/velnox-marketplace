@@ -135,7 +135,7 @@ CREATE TRIGGER trg_prevent_circular_category_parent
 CREATE TABLE IF NOT EXISTS sellers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'suspended')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'under_review', 'needs_correction', 'approved', 'rejected', 'suspended')),
   verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
   verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -153,11 +153,27 @@ CREATE TABLE IF NOT EXISTS seller_verifications (
   reviewed_by UUID REFERENCES users(id),
   rejection_reason TEXT,
   suspension_reason TEXT,
+  review_reason_code TEXT,
+  review_note TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_seller_verifications_seller ON seller_verifications (seller_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_verifications_pending ON seller_verifications (seller_id) WHERE status = 'pending';
+CREATE TABLE IF NOT EXISTS seller_review_history (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+  application_id UUID,
+  previous_status TEXT,
+  new_status TEXT NOT NULL,
+  action TEXT NOT NULL,
+  reason_code TEXT,
+  reason TEXT,
+  note TEXT,
+  reviewer_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_seller_review_history_seller ON seller_review_history (seller_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS shops (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
@@ -848,6 +864,36 @@ INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, desc
 ('c0000001-0000-0000-0000-000000000014', 'Pet Supplies', 'pet-supplies', 'paw-print', NULL, 14, '{"th":"อุปกรณ์สำหรับสัตว์เลี้ยง","en":"Pet Supplies","my":"အိမ်မွေးတိရစ္ဆာန်ပစ္စည်းများ"}', 'Food, toys and care products for pets', '{"th":"อาหาร ของเล่น และผลิตภัณฑ์ดูแลสัตว์เลี้ยง","en":"Food, toys and care products for pets","my":"အိမ်မွေးတိရစ္ဆာန်အစားအစာ၊ ကစားကွင်းနှင့် ပြုစုစောင့်ရှောက်ရေးပစ္စည်းများ"}', NULL, true),
 ('c0000001-0000-0000-0000-000000000015', 'Lifestyle, Hobbies & Others', 'lifestyle-hobbies', 'palette', NULL, 15, '{"th":"ไลฟ์สไตล์ งานอดิเรก และอื่น ๆ","en":"Lifestyle, Hobbies & Others","my":"နေထိုင်မှုပုံစံ၊ အပန်းဖြေနှင့်အခြား"}', 'Books, toys, crafts, music, collectibles, travel and other products', '{"th":"หนังสือ ของเล่น งานฝีมือ ดนตรี ของสะสม ท่องเที่ยว และสินค้าอื่น ๆ","en":"Books, toys, crafts, music, collectibles, travel and other products","my":"စာအုပ်၊ ကစားကွင်း၊ လက်မှုပညာ၊ တေးဂီတ၊ စုဆောင်းပစ္စည်းများ၊ ခရီးသွားခြင်းနှင့် အခြားထုတ်ကုန်များ"}', NULL, true)
 ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order, names = EXCLUDED.names, description = EXCLUDED.description, description_names = EXCLUDED.description_names, image_url = EXCLUDED.image_url, is_active = EXCLUDED.is_active, updated_at = NOW();
+
+-- ============================================================================
+-- Constraint repairs (idempotent, safe to re-run)
+-- ============================================================================
+-- `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a database
+-- created before the constraint was widened keeps the old CHECK forever. These
+-- statements re-assert the canonical constraint on every bootstrap run.
+--
+-- V0035 (`item_unavailable` on velrepeat_plans.status) was skipped in some
+-- environments because the migration number collided with
+-- 035_checkout_idempotency.sql. Re-asserting it here makes the bootstrap file
+-- self-healing and keeps db/schema.sql the single source of truth.
+
+ALTER TABLE velrepeat_plans DROP CONSTRAINT IF EXISTS velrepeat_plans_status_check;
+ALTER TABLE velrepeat_plans
+  ADD CONSTRAINT velrepeat_plans_status_check
+  CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed',
+                    'out_of_stock', 'item_unavailable', 'price_changed',
+                    'cancelled', 'completed'));
+
+ALTER TABLE velrepeat_plan_runs DROP CONSTRAINT IF EXISTS velrepeat_plan_runs_status_check;
+ALTER TABLE velrepeat_plan_runs
+  ADD CONSTRAINT velrepeat_plan_runs_status_check
+  CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock',
+                    'item_unavailable', 'price_changed', 'failed', 'cancelled'));
+
+ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check;
+ALTER TABLE sellers
+  ADD CONSTRAINT sellers_status_check
+  CHECK (status IN ('pending', 'under_review', 'needs_correction', 'approved', 'rejected', 'suspended'));
 INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, description, description_names, image_url, is_active) VALUES
 ('c1000001-0000-0000-0000-000000000001', 'Headphones & Speakers', 'headphones-speakers', 'headphones', 'c0000001-0000-0000-0000-000000000001', 1, '{"th":"หูฟังและลำโพง","en":"Headphones & Speakers","my":"နားကြပ်နှင့်စပီကာ"}', 'Headphones, earphones and speakers', '{"th":"หูฟัง หูฟังอินเอียร์ และลำโพง","en":"Headphones, earphones and speakers","my":"နားကြပ်၊ နားကြပ်ငယ်နှင့် စပီကာများ"}', NULL, true),
 ('c1000001-0000-0000-0000-000000000002', 'Cameras & Accessories', 'cameras-accessories', 'camera', 'c0000001-0000-0000-0000-000000000001', 2, '{"th":"กล้องและอุปกรณ์เสริม","en":"Cameras & Accessories","my":"ကင်မရာနှင့်ဖြည့်စွက်ပစ္စည်းများ"}', 'Cameras, lenses and accessories', '{"th":"กล้อง เลนส์ และอุปกรณ์เสริม","en":"Cameras, lenses and accessories","my":"ကင်မရာ၊ မှန်ဘီလူးနှင့် ဖြည့်စွက်ပစ္စည်းများ"}', NULL, true),

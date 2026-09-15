@@ -111,7 +111,8 @@ export default function MyShop() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | StoreProductStatus>("all");
-  // Verification submissions (seller-level and product-level are INDEPENDENT)
+  // Seller / shop identity verification — Velnox runs ONE verification system.
+  // There is no product-level verification and no products.is_v.
   const [verifyTarget, setVerifyTarget] = useState<{ kind: "seller" } | null>(null);
   const [verifyNotes, setVerifyNotes] = useState("");
   const [verifyBusy, setVerifyBusy] = useState(false);

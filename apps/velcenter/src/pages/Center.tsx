@@ -2,7 +2,7 @@ import { Logo } from "@velnox/shared/components/Logo";
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
-import { VerificationReviewDialog, type VerificationReviewRow } from "../components/VerificationReviewDialog";
+import { VerificationReviewDialog, type ReviewDecision, type VerificationReviewRow } from "../components/VerificationReviewDialog";
 import CategoriesManagement from "../components/CategoriesManagement";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
@@ -38,6 +38,7 @@ import {
 } from "@velnox/shared/components/ui/table";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { api } from "@velnox/shared/lib/api-routes";
+import { useLanguage } from "@velnox/shared/lib/i18n";
 // Id type replaced with string
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
@@ -87,109 +88,6 @@ import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings";
-
-/** Private verification evidence — rendered only inside the admin review tab. */
-function EvidenceCell({ urls, notes, evidenceFiles }: { urls: string[] | null; notes: string | null; evidenceFiles?: Array<{ url: string; content_type?: string | null; size?: number | null }> }) {
-  const list = Array.isArray(urls) ? urls : [];
-  const files = evidenceFiles || [];
-  const isImage = (ct?: string | null) => ct && ct.startsWith("image/");
-  const formatSize = (bytes?: number | null) => {
-    if (!bytes) return "";
-    return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
-  };
-
-  if (list.length === 0 && files.length === 0 && !notes) {
-    return <span className="text-xs text-slate-400">ไม่แนบหลักฐาน</span>;
-  }
-
-  return (
-    <div className="space-y-2">
-      {notes && <p className="line-clamp-2 text-xs text-slate-500">{notes}</p>}
-      {/* Image thumbnails grid */}
-      {files.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {files.map((file, idx) => (
-            <a
-              key={file.url || idx}
-              href={file.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="group relative block overflow-hidden rounded-lg border border-slate-200 hover:border-[#10B981] transition-colors"
-              title={formatSize(file.size)}
-            >
-              {isImage(file.content_type) ? (
-                <img src={file.url} alt="" className="size-12 object-cover sm:size-16" />
-              ) : (
-                <div className="flex size-12 items-center justify-center bg-slate-50 sm:size-16">
-                  <span className="text-[9px] text-slate-400">DOC</span>
-                </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="text-[8px] text-white">{formatSize(file.size) || "ดู"}</span>
-              </div>
-            </a>
-          ))}
-        </div>
-      )}
-      {/* Fallback: show URLs as links if no evidence_files */}
-      {files.length === 0 && list.map((url) => (
-        <a
-          key={url}
-          href={url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="block truncate text-xs font-medium text-[#10B981] hover:underline"
-        >
-          {url}
-        </a>
-      ))}
-    </div>
-  );
-}
-
-function VerificationActions({
-  row,
-  busy,
-  onApprove,
-  onReason,
-}: {
-  row: { status: string };
-  busy: boolean;
-  onApprove: () => void;
-  onReason: (action: "reject" | "suspend") => void;
-}) {
-  return (
-    <div className="flex items-center justify-end gap-1.5">
-      {row.status === "pending" && (
-        <>
-          <Button size="sm" className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={onApprove} disabled={busy}>
-            อนุมัติ
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1 border-rose-200 text-rose-600 hover:bg-rose-50"
-            onClick={() => onReason("reject")}
-            disabled={busy}
-          >
-            ปฏิเสธ
-          </Button>
-        </>
-      )}
-      {row.status === "verified" && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1 border-orange-200 text-orange-600 hover:bg-orange-50"
-          onClick={() => onReason("suspend")}
-          disabled={busy}
-        >
-          ระงับ
-        </Button>
-      )}
-    </div>
-  );
-}
 
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
@@ -245,6 +143,7 @@ interface MarketInsights {
 export default function Center() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const userRole = user?.role;
   const userDepartment = user?.department;
 
@@ -308,11 +207,11 @@ export default function Center() {
   const setSellerStatusAction = useAction(api.centerAdmin.setSellerStatusAction);
   const productModerationAction = useAction(api.centerAdmin.productModerationList);
   const setModerationAction = useAction(api.centerAdmin.setProductModerationStatus);
-  // Dual verification review — seller verification and product verification are
-  // independent queues (a verified shop never verifies its products).
+  // ONE verification system: SELLER / SHOP identity verification.
+  // Product verification was removed from the user workflow — there is no
+  // product verification queue in VelCenter.
   const verificationsAction = useAction(api.admin.verifications);
   const sellerVerificationAction = useAction(api.admin.sellerVerificationAction);
-  const productVerificationAction = useAction(api.admin.productVerificationAction);
   const [sellerRows, setSellerRows] = useState<SellerRow[] | null>(null);
   const [modProducts, setModProducts] = useState<ModProductRow[] | null>(null);
   const [rejectingSeller, setRejectingSeller] = useState<SellerRow | null>(null);
@@ -320,14 +219,14 @@ export default function Center() {
   const [rejectReason, setRejectReason] = useState("");
   const [modBusy, setModBusy] = useState(false);
   const [verificationRows, setVerificationRows] = useState<{ sellers: VerificationRow[]; products: VerificationRow[] } | null>(null);
-  const [actingVerification, setActingVerification] = useState<{ kind: "seller" | "product"; row: VerificationRow; action: "reject" | "suspend" } | null>(null);
+  const [actingVerification, setActingVerification] = useState<{ kind: "seller"; row: VerificationRow; action: "reject" | "suspend" } | null>(null);
   // Review dialog state
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
-  const [reviewDialogKind, setReviewDialogKind] = useState<"seller" | "product">("seller");
   const [reviewDialogRow, setReviewDialogRow] = useState<VerificationReviewRow | null>(null);
-  // Status filter for verification queues
+  // Status filter for the seller verification queue
   const [sellerVerifFilter, setSellerVerifFilter] = useState<string>("pending");
-  // productVerifFilter removed — product verification no longer in user workflow
+  // Free-text search across store / applicant / email
+  const [sellerVerifSearch, setSellerVerifSearch] = useState("");
 
   interface SellerRow {
     id: string;
@@ -352,19 +251,28 @@ export default function Center() {
     shop_name: string;
     seller_name: string;
   }
-  /** A seller_verifications or product_verifications row (evidence is admin-only). */
+  /** A seller_verifications row. Identity evidence is reviewer-only and is
+   *  fetched separately as short-lived signed URLs. */
   interface VerificationRow {
     id: string;
+    seller_id: string;
     status: string;
     verification_type: string | null;
-    evidence_urls: string[] | null;
-    evidence_notes: string | null;
-    evidence_files?: Array<{ url: string; content_type?: string | null; size?: number | null }>;
+    evidence_count?: number | null;
     submitted_at: string | null;
+    reviewed_at: string | null;
     rejection_reason: string | null;
+    suspension_reason: string | null;
+    review_reason_code: string | null;
+    review_note: string | null;
     shop_name: string | null;
-    product_name: string | null;
-    product_slug: string | null;
+    shop_slug: string | null;
+    owner_name: string | null;
+    owner_email: string | null;
+    seller_status: string | null;
+    verification_status: string | null;
+    created_at: string | null;
+    updated_at: string | null;
   }
 
   const reloadSellers = useCallback(async () => {
@@ -392,9 +300,10 @@ export default function Center() {
         verificationsAction({ status: "rejected" }),
         verificationsAction({ status: "suspended" }),
       ]);
+      // One persisted source — the same seller_verifications rows the seller wrote.
       setVerificationRows({
         sellers: [...(pending?.sellers ?? []), ...(verified?.sellers ?? []), ...(rejected?.sellers ?? []), ...(suspended?.sellers ?? [])],
-        products: [...(pending?.products ?? []), ...(verified?.products ?? []), ...(rejected?.products ?? []), ...(suspended?.products ?? [])],
+        products: [],
       });
     } catch (error) {
       console.error("Verification list error:", error);
@@ -411,8 +320,19 @@ export default function Center() {
   const pendingSellers = (sellerRows ?? []).filter((s) => s.status === "pending").length;
   const pendingProducts = (modProducts ?? []).filter((p) => p.status === "pending_review").length;
   const pendingVerifications =
-    (verificationRows?.sellers ?? []).filter((v) => v.status === "pending").length +
-    (verificationRows?.products ?? []).filter((v) => v.status === "pending").length;
+    (verificationRows?.sellers ?? []).filter((v) => v.status === "pending").length;
+
+  // Filter + search happen client-side over the persisted rows (a single fetch
+  // per status, no N+1). The backend also supports server-side filtering.
+  const filteredVerifications = useMemo(() => {
+    const q = sellerVerifSearch.trim().toLowerCase();
+    return (verificationRows?.sellers ?? []).filter((v) => {
+      if (sellerVerifFilter !== "all" && v.status !== sellerVerifFilter) return false;
+      if (!q) return true;
+      return [v.shop_name, v.owner_name, v.owner_email, v.shop_slug]
+        .some((value) => (value ?? "").toLowerCase().includes(q));
+    });
+  }, [verificationRows, sellerVerifFilter, sellerVerifSearch]);
 
   const handleSellerStatus = async (seller: SellerRow, status: string) => {
     // Frontend guard: cannot approve/reject own seller application
@@ -458,27 +378,32 @@ export default function Center() {
       setModBusy(false);
     }
   };
-  const handleVerificationAction = async (
-    kind: "seller" | "product",
+  const handleVerificationDecision = async (
     row: VerificationRow,
-    action: "approve" | "reject" | "suspend",
-    reason?: string,
+    decision: ReviewDecision,
   ) => {
-    if (action !== "approve" && !reason?.trim()) {
-      toast.error(action === "suspend" ? "กรุณาระบุเหตุผลการระงับ" : "กรุณาระบุเหตุผลการปฏิเสธ");
-      return;
-    }
     setModBusy(true);
     try {
-      const payload = { verificationId: row.id, action, reason: reason?.trim() || undefined };
-      if (kind === "seller") await sellerVerificationAction(payload);
-      else await productVerificationAction(payload);
+      await sellerVerificationAction({
+        verificationId: row.id,
+        action: decision.action,
+        reason: decision.reason,
+        reasonCode: decision.reasonCode,
+        note: decision.note,
+      });
       toast.success(
-        action === "approve" ? "อนุมัติการยืนยันแล้ว ✅" : action === "suspend" ? "ระงับการยืนยันแล้ว" : "ปฏิเสธการยืนยันแล้ว",
+        decision.action === "approve"
+          ? "อนุมัติการยืนยันแล้ว ✅"
+          : decision.action === "suspend"
+            ? "ระงับการยืนยันแล้ว"
+            : decision.action === "needs_correction"
+              ? "ส่งคำขอให้แก้ไขแล้ว"
+              : "ปฏิเสธการยืนยันแล้ว",
       );
+      setReviewDialogOpen(false);
       setActingVerification(null);
       setRejectReason("");
-      await reloadVerifications();
+      await Promise.all([reloadVerifications(), reloadSellers()]);
     } catch (error) {
       console.error("Verification action error:", error);
       toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
@@ -1520,29 +1445,17 @@ export default function Center() {
             </DialogContent>
           </Dialog>
 
-          {/* Verification Review Dialog */}
+          {/* Seller verification review workspace — the reviewer sees the exact
+              persisted submission the seller wrote, with reviewer-only signed
+              access to the private identity documents. */}
           <VerificationReviewDialog
             open={reviewDialogOpen}
             onOpenChange={setReviewDialogOpen}
-            kind={reviewDialogKind}
             row={reviewDialogRow}
             busy={modBusy}
-            onApprove={() => {
+            onDecision={(decision) => {
               if (reviewDialogRow) {
-                void handleVerificationAction(reviewDialogKind, reviewDialogRow as any, "approve");
-                setReviewDialogOpen(false);
-              }
-            }}
-            onReject={(reason) => {
-              if (reviewDialogRow) {
-                void handleVerificationAction(reviewDialogKind, reviewDialogRow as any, "reject", reason);
-                setReviewDialogOpen(false);
-              }
-            }}
-            onSuspend={(reason) => {
-              if (reviewDialogRow) {
-                void handleVerificationAction(reviewDialogKind, reviewDialogRow as any, "suspend", reason);
-                setReviewDialogOpen(false);
+                void handleVerificationDecision(reviewDialogRow as any, decision);
               }
             }}
           />
@@ -1861,53 +1774,74 @@ export default function Center() {
               <TabsContent value="verification">
                 <div className="mb-4 flex items-start gap-2 text-sm text-slate-500">
                   <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#10B981]" />
-                  <p>
-                    การยืนยันร้านค้าตรวจสอบตัวตนของร้าน — สินค้าทั้งหมดของร้านค้าที่ผ่านการยืนยันจะแสดงเครื่องหมาย V
-                    <span className="font-medium text-slate-700"> (ร้านค้าที่ผ่านการยืนยัน)</span>
-                  </p>
+                  <p>{t("review.desc")}</p>
                 </div>
-                {/* Status filter */}
-                <div className="mb-3 flex flex-wrap gap-2">
-                  {["pending", "verified", "rejected", "suspended"].map((s) => {
-                    const count = (verificationRows?.sellers ?? []).filter((v) => v.status === s).length;
-                    return (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setSellerVerifFilter(s)}
-                        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                          sellerVerifFilter === s
-                            ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20"
-                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                        }`}
-                      >
-                        {s === "pending" ? "รอตรวจสอบ" : s === "verified" ? "ผ่านแล้ว" : s === "rejected" ? "ปฏิเสธ" : "ระงับ"}
-                        <span className="rounded-full bg-white/60 px-1.5 text-[10px]">{count}</span>
-                      </button>
-                    );
-                  })}
+                {/* Search + status filters: All / Pending / Verified / Rejected / Suspended */}
+                <div className="mb-3 grid gap-2 sm:flex sm:items-center sm:gap-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      value={sellerVerifSearch}
+                      onChange={(e) => setSellerVerifSearch(e.target.value)}
+                      placeholder={t("review.searchPlaceholder")}
+                      className="h-9 rounded-[10px] border-slate-200 pl-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["all", "pending", "verified", "rejected", "suspended"].map((s) => {
+                      const count = (verificationRows?.sellers ?? []).filter((v) => v.status === s).length;
+                      const label =
+                        s === "all" ? t("review.filterAll")
+                          : s === "pending" ? t("review.filterPending")
+                            : s === "verified" ? t("review.filterVerified")
+                              : s === "rejected" ? t("review.filterRejected")
+                                : t("review.filterSuspended");
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setSellerVerifFilter(s)}
+                          className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                            sellerVerifFilter === s
+                              ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20"
+                              : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                          }`}
+                        >
+                          {label}
+                          <span className="rounded-full bg-white/60 px-1.5 text-[10px]">{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                   <Table className="min-w-[720px]">
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        <TableHead className="pl-5 text-slate-400">ร้านค้า</TableHead>
-                        <TableHead className="text-slate-400">ประเภท</TableHead>
-                        <TableHead className="text-slate-400">สถานะ</TableHead>
-                        <TableHead className="text-slate-400">ส่งเมื่อ</TableHead>
-                        <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
+                        <TableHead className="pl-5 text-slate-400">{t("review.storeInfo")}</TableHead>
+                        <TableHead className="text-slate-400">{t("review.checklistIdentity")}</TableHead>
+                        <TableHead className="text-slate-400">{t("review.filterVerified")}</TableHead>
+                        <TableHead className="text-slate-400">{t("review.applicationDetail")}</TableHead>
+                        <TableHead className="text-slate-400">{t("review.history")}</TableHead>
+                        <TableHead className="pr-5 text-right text-slate-400">{t("review.decision")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(verificationRows?.sellers ?? [])
-                        .filter((v) => sellerVerifFilter === "all" || v.status === sellerVerifFilter)
-                        .map((v) => (
+                      {filteredVerifications.map((v) => (
                         <TableRow key={v.id} className="hover:bg-slate-50/60">
-                          <TableCell className="pl-5 font-medium text-slate-900">{v.shop_name ?? "—"}</TableCell>
+                          <TableCell className="pl-5">
+                            <p className="font-medium text-slate-900">{v.shop_name ?? "—"}</p>
+                            <p className="text-xs text-slate-400">{v.owner_name ?? v.owner_email ?? ""}</p>
+                          </TableCell>
                           <TableCell className="text-sm text-slate-600">{v.verification_type ?? "identity"}</TableCell>
-                          <TableCell><VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} /></TableCell>
+                          <TableCell>
+                            <VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} />
+                          </TableCell>
                           <TableCell className="text-xs text-slate-400">
-                            {v.submitted_at ? new Date(v.submitted_at).toLocaleDateString("th-TH") : "—"}
+                            {v.submitted_at ? new Date(v.submitted_at).toLocaleDateString() : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-slate-400">
+                            {v.updated_at ? new Date(v.updated_at).toLocaleDateString() : "—"}
                           </TableCell>
                           <TableCell className="pr-5">
                             <div className="flex items-center justify-end gap-1.5">
@@ -1916,21 +1850,20 @@ export default function Center() {
                                 variant="outline"
                                 className="gap-1 border-slate-200 text-slate-600"
                                 onClick={() => {
-                                  setReviewDialogKind("seller");
                                   setReviewDialogRow(v);
                                   setReviewDialogOpen(true);
                                 }}
                               >
-                                ตรวจสอบ
+                                {t("review.applicationDetail")}
                               </Button>
                             </div>
                           </TableCell>
                         </TableRow>
                       ))}
-                      {(verificationRows?.sellers ?? []).filter((v) => sellerVerifFilter === "all" || v.status === sellerVerifFilter).length === 0 && (
+                      {filteredVerifications.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-400">
-                            ไม่มีรายการในสถานะนี้
+                          <TableCell colSpan={6} className="py-8 text-center text-sm text-slate-400">
+                            {t("review.noApplications")}
                           </TableCell>
                         </TableRow>
                       )}

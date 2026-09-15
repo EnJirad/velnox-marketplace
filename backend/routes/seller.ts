@@ -18,6 +18,51 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 import { invalidateCachedProfile } from "./auth.js";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+/** Reviewers that may act on seller applications. */
+const REVIEWER_ROLES = ["owner", "admin", "staff"];
+
+/** Structured reason codes — must mirror packages/shared/src/lib/verification-reasons.ts. */
+const REVIEW_REASON_CODES = [
+  "id_card_unclear", "id_card_incomplete", "selfie_unclear", "selfie_missing_id",
+  "document_expired", "applicant_mismatch", "store_incomplete", "contact_incomplete",
+  "address_incomplete", "duplicate_account", "policy_violation", "other",
+];
+
+/** Identity evidence purposes required before an application can be submitted. */
+const REQUIRED_IDENTITY_PURPOSES = ["id_card", "id_card_back", "selfie_id"];
+
+// Private evidence client — identity documents are never served from a public URL.
+const reviewR2 = new S3Client({
+  region: "auto",
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+  },
+});
+const reviewBucket = process.env.R2_BUCKET || "";
+const reviewPublicDomain = (process.env.R2_PUBLIC_DOMAIN || "").replace(/\/+$/, "");
+
+/** Normalize a stored evidence reference (public URL or bare key) to an R2 key. */
+function toObjectKey(ref: string): string {
+  if (!ref) return "";
+  if (reviewPublicDomain && ref.startsWith(reviewPublicDomain)) {
+    return ref.slice(reviewPublicDomain.length).replace(/^\/+/, "");
+  }
+  if (/^https?:\/\//i.test(ref)) {
+    try { return decodeURIComponent(new URL(ref).pathname.replace(/^\/+/, "")); } catch { return ref; }
+  }
+  return ref;
+}
+
+/** Purpose encoded in an evidence filename: {purpose}_{timestamp}.{ext} */
+function purposeOfKey(key: string): string {
+  const filename = key.split("/").pop() || "";
+  return filename.split("_")[0] || "other";
+}
 
 export function setupSellerRoutes(app: Express): void {
   // ── POST /api/seller/apply ─────────────────────────────────────────────
@@ -35,11 +80,13 @@ export function setupSellerRoutes(app: Express): void {
         firstName,
         lastName,
         phone,
-        // Identity verification (optional — stored in seller_settings)
+        // Identity verification — durable R2 object references, never File objects
         idNumber,
         idCardFrontUrl,
         idCardBackUrl,
         selfieUrl,
+        // Optional: full ordered evidence list from the onboarding document uploader
+        identityEvidence,
       } = req.body;
 
       console.log("[seller] application received from user:", userId);
@@ -55,124 +102,255 @@ export function setupSellerRoutes(app: Express): void {
 
       const trimmedShopName = shopName.trim().substring(0, 255);
 
-      // Check if user already has a seller application
-      const existingSeller = await query(
-        "SELECT id, status FROM sellers WHERE user_id = $1",
-        [userId]
-      );
-
-      if (existingSeller.rows.length > 0) {
-        const existing = existingSeller.rows[0];
-        if (existing.status === "pending" || existing.status === "under_review") {
-          res.status(409).json({
-            success: false,
-            error: {
-              code: "ALREADY_APPLIED",
-              message: "You already have a pending seller application",
-            },
-          });
-          return;
+      // ── Backend validation of required identity data (spec §13) ────────
+      // Frontend validation is not sufficient: an application may not be
+      // submitted without the three identity documents persisted through the
+      // secure media/R2 architecture.
+      const evidenceRefs: string[] = [];
+      for (const ref of [idCardFrontUrl, idCardBackUrl, selfieUrl]) {
+        if (typeof ref === "string" && ref.trim()) evidenceRefs.push(toObjectKey(ref.trim()));
+      }
+      if (Array.isArray(identityEvidence)) {
+        for (const ref of identityEvidence) {
+          if (typeof ref === "string" && ref.trim()) {
+            const key = toObjectKey(ref.trim());
+            if (!evidenceRefs.includes(key)) evidenceRefs.push(key);
+          }
         }
-        if (existing.status === "approved") {
-          res.status(409).json({
-            success: false,
-            error: {
-              code: "ALREADY_SELLER",
-              message: "You are already an approved seller",
-            },
-          });
-          return;
-        }
-        // If rejected, suspended, or needs_correction, allow re-application by updating status
-        await query(
-          "UPDATE sellers SET status = 'pending', updated_at = NOW() WHERE user_id = $1",
-          [userId]
-        );
-      } else {
-        // Create new seller record
-        await query(
-          "INSERT INTO sellers (user_id, status) VALUES ($1, 'pending')",
-          [userId]
-        );
       }
 
-      // Get the seller record
-      const sellerResult = await query(
-        "SELECT id, status FROM sellers WHERE user_id = $1",
-        [userId]
+      if (!firstName?.trim() || !lastName?.trim() || !phone?.trim()) {
+        res.status(400).json({
+          success: false,
+          error: { code: "VALIDATION_ERROR", message: "Applicant first name, last name and phone are required" },
+        });
+        return;
+      }
+
+      const purposes = evidenceRefs.map(purposeOfKey);
+      const missing = REQUIRED_IDENTITY_PURPOSES.filter((p) => !purposes.includes(p));
+      if (missing.length > 0) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: "IDENTITY_EVIDENCE_REQUIRED",
+            message: `Missing required identity documents: ${missing.join(", ")}`,
+          },
+        });
+        return;
+      }
+
+      // Ownership — every evidence key must be a persisted media row owned by
+      // this authenticated user. A seller can never attach someone else's file.
+      const ownedRes = await query(
+        "SELECT key FROM media WHERE uploaded_by = $1 AND key = ANY($2::text[])",
+        [userId, evidenceRefs],
       );
-      const seller = sellerResult.rows[0];
+      const ownedKeys = new Set(ownedRes.rows.map((r: { key: string }) => r.key));
+      const foreign = evidenceRefs.filter((k) => !ownedKeys.has(k));
+      if (foreign.length > 0) {
+        console.warn(`[seller] apply rejected — unowned evidence for user ${userId}`);
+        res.status(403).json({
+          success: false,
+          error: { code: "FORBIDDEN", message: "Identity documents do not belong to this account" },
+        });
+        return;
+      }
 
-      // Create shop record if shopName provided
-      if (trimmedShopName) {
-        // Generate a URL-friendly slug from shop name
-        const baseSlug = trimmedShopName
-          .toLowerCase()
-          .replace(/[^a-z0-9\s-]/g, "")
-          .replace(/\s+/g, "-")
-          .replace(/-+/g, "-")
-          .substring(0, 100);
+      // ── Submission integrity (spec §9) ──────────────────────────────
+      // Everything below runs in ONE transaction. The seller is only moved to
+      // `pending` after the evidence references, the verification submission and
+      // the application data are all persisted. Any failure rolls everything
+      // back — there is no half-submitted state and no local-only "pending".
+      const client = await getClient();
+      let sellerId: string | null = null;
+      let previousStatus = "";
+      try {
+        await client.query("BEGIN");
 
-        // Check for slug uniqueness and append suffix if needed
-        let slug = baseSlug;
-        let suffix = 1;
-        while (true) {
-          const slugCheck = await query(
-            "SELECT id FROM shops WHERE slug = $1",
-            [slug]
-          );
-          if (slugCheck.rows.length === 0) break;
-          slug = `${baseSlug}-${suffix}`;
-          suffix++;
-        }
-
-        // Create shop record with full profile data
-        const shopAddr = shopAddress || {};
-        await query(
-          `INSERT INTO shops (seller_id, name, slug, description, category,
-            address_line1, address_line2, subdistrict, district, city, state, postal_code, country, phone, email)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-          [
-            seller.id, trimmedShopName, slug,
-            shopDescription?.trim()?.substring(0, 2000) || null,
-            shopCategory?.trim()?.substring(0, 100) || null,
-            shopAddr.line1?.trim()?.substring(0, 255) || null,
-            shopAddr.line2?.trim()?.substring(0, 255) || null,
-            shopAddr.subdistrict?.trim()?.substring(0, 100) || null,
-            shopAddr.district?.trim()?.substring(0, 100) || null,
-            shopAddr.city?.trim()?.substring(0, 100) || null,
-            shopAddr.state?.trim()?.substring(0, 100) || null,
-            shopAddr.postalCode?.trim()?.substring(0, 10) || null,
-            shopAddr.country?.trim()?.substring(0, 5) || "TH",
-            phone?.trim()?.substring(0, 20) || null,
-            null, // email comes from user account, not settable here
-          ]
+        const existingSeller = await client.query(
+          "SELECT id, status FROM sellers WHERE user_id = $1 FOR UPDATE",
+          [userId]
         );
 
-        // Create default seller settings with applicant info and identity verification
+        if (existingSeller.rows.length > 0) {
+          const existing = existingSeller.rows[0];
+          previousStatus = existing.status;
+          if (existing.status === "pending" || existing.status === "under_review") {
+            await client.query("ROLLBACK");
+            res.status(409).json({
+              success: false,
+              error: { code: "ALREADY_APPLIED", message: "You already have a pending seller application" },
+            });
+            return;
+          }
+          if (existing.status === "approved") {
+            await client.query("ROLLBACK");
+            res.status(409).json({
+              success: false,
+              error: { code: "ALREADY_SELLER", message: "You are already an approved seller" },
+            });
+            return;
+          }
+          // rejected / needs_correction / suspended → resubmission
+          await client.query(
+            "UPDATE sellers SET status = 'pending', updated_at = NOW() WHERE id = $1",
+            [existing.id]
+          );
+          sellerId = existing.id;
+        } else {
+          const created = await client.query(
+            "INSERT INTO sellers (user_id, status) VALUES ($1, 'pending') RETURNING id",
+            [userId]
+          );
+          sellerId = created.rows[0].id;
+          previousStatus = "none";
+        }
+
+        // ── Shop (upsert — a resubmission must not create a duplicate shop) ──
+        const shopAddr = shopAddress || {};
+        const existingShop = await client.query("SELECT id FROM shops WHERE seller_id = $1", [sellerId]);
+        if (existingShop.rows.length > 0) {
+          await client.query(
+            `UPDATE shops SET name = $1, description = $2, category = $3,
+                    address_line1 = $4, address_line2 = $5, subdistrict = $6, district = $7,
+                    city = $8, state = $9, postal_code = $10, country = $11, phone = $12, updated_at = NOW()
+             WHERE id = $13`,
+            [
+              trimmedShopName,
+              shopDescription?.trim()?.substring(0, 2000) || null,
+              shopCategory?.trim()?.substring(0, 100) || null,
+              shopAddr.line1?.trim()?.substring(0, 255) || null,
+              shopAddr.line2?.trim()?.substring(0, 255) || null,
+              shopAddr.subdistrict?.trim()?.substring(0, 100) || null,
+              shopAddr.district?.trim()?.substring(0, 100) || null,
+              shopAddr.city?.trim()?.substring(0, 100) || null,
+              shopAddr.state?.trim()?.substring(0, 100) || null,
+              shopAddr.postalCode?.trim()?.substring(0, 10) || null,
+              shopAddr.country?.trim()?.substring(0, 5) || "TH",
+              phone?.trim()?.substring(0, 20) || null,
+              existingShop.rows[0].id,
+            ]
+          );
+        } else {
+          const baseSlug = trimmedShopName
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, "")
+            .replace(/\s+/g, "-")
+            .replace(/-+/g, "-")
+            .substring(0, 100) || `shop-${Date.now()}`;
+
+          let slug = baseSlug;
+          let suffix = 1;
+          while (true) {
+            const slugCheck = await client.query("SELECT id FROM shops WHERE slug = $1", [slug]);
+            if (slugCheck.rows.length === 0) break;
+            slug = `${baseSlug}-${suffix}`;
+            suffix++;
+          }
+
+          await client.query(
+            `INSERT INTO shops (seller_id, name, slug, description, category,
+              address_line1, address_line2, subdistrict, district, city, state, postal_code, country, phone, email)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+            [
+              sellerId, trimmedShopName, slug,
+              shopDescription?.trim()?.substring(0, 2000) || null,
+              shopCategory?.trim()?.substring(0, 100) || null,
+              shopAddr.line1?.trim()?.substring(0, 255) || null,
+              shopAddr.line2?.trim()?.substring(0, 255) || null,
+              shopAddr.subdistrict?.trim()?.substring(0, 100) || null,
+              shopAddr.district?.trim()?.substring(0, 100) || null,
+              shopAddr.city?.trim()?.substring(0, 100) || null,
+              shopAddr.state?.trim()?.substring(0, 100) || null,
+              shopAddr.postalCode?.trim()?.substring(0, 10) || null,
+              shopAddr.country?.trim()?.substring(0, 5) || "TH",
+              phone?.trim()?.substring(0, 20) || null,
+              null, // email comes from the user account, not settable here
+            ]
+          );
+        }
+
+        // ── Applicant + identity evidence (upsert, stale review state cleared) ──
         const settings: Record<string, unknown> = { shopName: trimmedShopName };
         if (firstName?.trim()) settings.firstName = firstName.trim().substring(0, 100);
         if (lastName?.trim()) settings.lastName = lastName.trim().substring(0, 100);
         if (phone?.trim()) settings.phone = phone.trim().substring(0, 20);
-        // Identity verification fields (stored as R2 object references, not binary)
         if (idNumber?.trim()) settings.idNumber = idNumber.trim().substring(0, 20);
-        if (idCardFrontUrl) settings.idCardFrontUrl = idCardFrontUrl;
-        if (idCardBackUrl) settings.idCardBackUrl = idCardBackUrl;
-        if (selfieUrl) settings.selfieUrl = selfieUrl;
-        await query(
-          "INSERT INTO seller_settings (seller_id, settings) VALUES ($1, $2)",
-          [seller.id, JSON.stringify(settings)]
+        // Durable R2 object references — never File objects or local object URLs
+        if (idCardFrontUrl) settings.idCardFrontUrl = toObjectKey(String(idCardFrontUrl));
+        if (idCardBackUrl) settings.idCardBackUrl = toObjectKey(String(idCardBackUrl));
+        if (selfieUrl) settings.selfieUrl = toObjectKey(String(selfieUrl));
+        settings.identityEvidence = evidenceRefs;
+        settings.submittedAt = new Date().toISOString();
+        // A fresh submission supersedes the previous review decision.
+        delete settings.rejectionReason;
+        delete settings.correctionReason;
+
+        await client.query(
+          `INSERT INTO seller_settings (seller_id, settings) VALUES ($1, $2::jsonb)
+           ON CONFLICT (seller_id)
+           DO UPDATE SET settings = COALESCE(seller_settings.settings, '{}'::jsonb) || $2::jsonb, updated_at = NOW()`,
+          [sellerId, JSON.stringify(settings)]
         );
+
+        // ── Verification submission (evidence persisted first) ──────────
+        await client.query(
+          `INSERT INTO seller_verifications (seller_id, status, verification_type, evidence_urls, submitted_at)
+           VALUES ($1, 'pending', 'identity', $2::jsonb, NOW())
+           ON CONFLICT (seller_id) WHERE status = 'pending'
+           DO UPDATE SET evidence_urls = $2::jsonb, submitted_at = NOW(), updated_at = NOW()`,
+          [sellerId, JSON.stringify(evidenceRefs)]
+        );
+
+        // ── Only now: pending verification ─────────────────────────────
+        await client.query(
+          "UPDATE sellers SET verification_status = 'pending', updated_at = NOW() WHERE id = $1",
+          [sellerId]
+        );
+
+        // ── Review history ─────────────────────────────────────────────
+        await client.query(
+          `INSERT INTO seller_review_history
+             (seller_id, previous_status, new_status, action, reviewer_id)
+           VALUES ($1, $2, 'pending', $3, $4)`,
+          [sellerId, previousStatus, previousStatus === "none" ? "submitted" : "resubmitted", userId]
+        );
+
+        await client.query("COMMIT");
+      } catch (txErr) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
       }
 
-      console.log("[seller] application created:", seller.id);
+      // Notification — non-fatal, after commit
+      try {
+        await query(
+          `INSERT INTO notifications (user_id, type, title, message, data)
+           VALUES ($1, 'seller_application_submitted', $2, $3, $4)`,
+          [
+            userId,
+            "ได้รับใบสมัครเปิดร้านค้าแล้ว",
+            "ทีมงาน Velnox จะตรวจสอบใบสมัครและเอกสารยืนยันตัวตนของคุณ",
+            JSON.stringify({ sellerId, status: "pending" }),
+          ]
+        );
+      } catch (notifErr) {
+        console.warn("[seller] submit notification failed (non-fatal):", notifErr);
+      }
+
+      invalidateCachedProfile(userId);
+      console.log("[seller] application submitted:", sellerId);
 
       res.json({
         success: true,
         data: {
           seller: {
-            id: seller.id,
-            status: seller.status,
+            id: sellerId,
+            status: "pending",
+            evidenceCount: evidenceRefs.length,
           },
         },
       });
@@ -192,9 +370,12 @@ export function setupSellerRoutes(app: Express): void {
       const userId = req.user!.userId;
 
       const result = await query(
-        `SELECT s.id, s.status, s.created_at,
+        `SELECT s.id, s.status, s.verification_status, s.created_at,
                 sh.name as shop_name, sh.slug as shop_slug,
-                ss.settings as seller_settings
+                ss.settings as seller_settings,
+                (SELECT sv.submitted_at FROM seller_verifications sv
+                  WHERE sv.seller_id = s.id
+                  ORDER BY sv.created_at DESC LIMIT 1) AS verification_submitted_at
          FROM sellers s
          LEFT JOIN shops sh ON sh.seller_id = s.id
          LEFT JOIN seller_settings ss ON ss.seller_id = s.id
@@ -215,23 +396,47 @@ export function setupSellerRoutes(app: Express): void {
 
       console.log(`[seller] status for user ${userId}: ${row.status}`);
 
+      // Review history is applicant-visible (their own application only).
+      const history = await query(
+        `SELECT h.action, h.previous_status, h.new_status, h.reason_code, h.reason, h.created_at
+         FROM seller_review_history h
+         WHERE h.seller_id = $1
+         ORDER BY h.created_at DESC
+         LIMIT 20`,
+        [row.id],
+      );
+
       res.json({
         success: true,
         data: {
           id: row.id,
           status: row.status,
+          verificationStatus: row.verification_status ?? null,
           shopName: row.shop_name || null,
           shopSlug: row.shop_slug || null,
           createdAt: row.created_at,
           updatedAt: row.updated_at || null,
+          submittedAt: row.verification_submitted_at || settings.submittedAt || null,
           rejectionReason: settings.rejectionReason || null,
+          rejectionReasonCode: settings.rejectionReasonCode || null,
           correctionReason: settings.correctionReason || null,
+          correctionReasonCode: settings.correctionReasonCode || null,
           applicantInfo: {
             firstName: settings.firstName || null,
             lastName: settings.lastName || null,
             phone: settings.phone || null,
           },
+          // Only the count is exposed — identity documents are private.
+          identityEvidenceCount: Array.isArray(settings.identityEvidence) ? settings.identityEvidence.length : 0,
           hasIdentityVerification: !!(settings.idCardFrontUrl || settings.selfieUrl),
+          reviewHistory: history.rows.map((h: Record<string, unknown>) => ({
+            action: h.action,
+            previousStatus: h.previous_status,
+            newStatus: h.new_status,
+            reasonCode: h.reason_code,
+            reason: h.reason,
+            createdAt: h.created_at,
+          })),
         },
       });
     } catch (err: any) {
@@ -532,18 +737,37 @@ export function setupSellerRoutes(app: Express): void {
         return;
       }
 
+      // Status filter + free-text search (applicant / store). The status set is
+      // the canonical review lifecycle — no invented statuses.
+      const { status, q } = req.query as { status?: string; q?: string };
+      const params: unknown[] = [];
+      const where: string[] = [];
+      if (status && status !== "all") {
+        params.push(status);
+        where.push(`s.status = $${params.length}`);
+      }
+      if (q && q.trim()) {
+        params.push(`%${q.trim()}%`);
+        where.push(`(sh.name ILIKE $${params.length} OR u.name ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
+      }
+
       // Fetch all sellers with user and shop information
       // Returns data matching the frontend SellerRow interface
       const result = await query(
-        `SELECT s.id, s.status, s.created_at, s.updated_at,
+        `SELECT s.id, s.status, s.verification_status, s.created_at, s.updated_at,
                 u.id as user_id, u.name as user_name, u.email as user_email,
                 sh.id as shop_id, sh.name as shop_name, sh.product_count as shop_product_count,
-                ss.settings as seller_settings
+                ss.settings as seller_settings,
+                (SELECT sv.submitted_at FROM seller_verifications sv
+                  WHERE sv.seller_id = s.id ORDER BY sv.created_at DESC LIMIT 1) AS submitted_at,
+                (SELECT COUNT(*) FROM seller_verifications sv2 WHERE sv2.seller_id = s.id) AS application_revision
          FROM sellers s
          JOIN users u ON s.user_id = u.id
          LEFT JOIN shops sh ON sh.seller_id = s.id
          LEFT JOIN seller_settings ss ON ss.seller_id = s.id
-         ORDER BY s.created_at DESC`
+         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+         ORDER BY s.created_at DESC`,
+        params,
       );
 
       // Map to frontend SellerRow interface
@@ -552,9 +776,13 @@ export function setupSellerRoutes(app: Express): void {
         name: row.shop_name || "ร้านค้าใหม่",
         tax_id: null,
         status: row.status,
+        verification_status: row.verification_status,
         business_type: null,
         approved_at: row.status === "approved" ? row.updated_at : null,
         created_at: row.created_at,
+        updated_at: row.updated_at,
+        submitted_at: row.submitted_at,
+        application_revision: Number(row.application_revision || 0),
         owner_id: row.user_id,
         owner_name: row.user_name,
         owner_email: row.user_email,
@@ -585,7 +813,7 @@ export function setupSellerRoutes(app: Express): void {
     try {
       const userId = req.user!.userId;
       const sellerId = req.params.id;
-      const { status, reason } = req.body;
+      const { status, reason, reasonCode, note } = req.body;
 
       // Validate status value — canonical set (includes review lifecycle)
       const validStatuses = ["approved", "rejected", "pending", "under_review", "needs_correction", "suspended"];
@@ -598,6 +826,19 @@ export function setupSellerRoutes(app: Express): void {
           },
         });
         return;
+      }
+
+      // Structured reasons are mandatory for correction / rejection so the
+      // applicant always receives a machine-readable, translatable reason.
+      const code = typeof reasonCode === "string" ? reasonCode.trim() : "";
+      if (status === "rejected" || status === "needs_correction" || status === "suspended") {
+        if (!code || !REVIEW_REASON_CODES.includes(code)) {
+          res.status(400).json({
+            success: false,
+            error: { code: "REASON_REQUIRED", message: "A structured reason code is required" },
+          });
+          return;
+        }
       }
 
       await client.query("BEGIN");
@@ -719,28 +960,83 @@ export function setupSellerRoutes(app: Express): void {
         }
       }
 
-      // On rejection or needs_correction: store reason in seller_settings
-      if ((status === "rejected" || status === "needs_correction") && reason) {
-        const key = status === "rejected" ? "rejectionReason" : "correctionReason";
+      // On rejection / correction / suspension: persist the applicant-visible
+      // structured reason (code + human text) in seller_settings.
+      if (status === "rejected" || status === "needs_correction" || status === "suspended") {
+        const reasonKey = status === "rejected" ? "rejectionReason" : status === "needs_correction" ? "correctionReason" : "suspensionReason";
+        const codeKey = status === "rejected" ? "rejectionReasonCode" : status === "needs_correction" ? "correctionReasonCode" : "suspensionReasonCode";
         await client.query(
           `UPDATE seller_settings
-           SET settings = jsonb_set(COALESCE(settings, '{}'), '{' || $1 || '}', $2::jsonb),
+           SET settings = jsonb_set(
+                 jsonb_set(COALESCE(settings, '{}'), ARRAY[$1], to_jsonb($2::text)),
+                 ARRAY[$3], to_jsonb($4::text)
+               ),
                updated_at = NOW()
-           WHERE seller_id = $3`,
-          [key, JSON.stringify(reason), sellerId]
+           WHERE seller_id = $5`,
+          [reasonKey, reason || "", codeKey, code, sellerId]
+        );
+      }
+      // A correction request / rejection invalidates any standing verification.
+      if (status === "needs_correction" || status === "rejected" || status === "suspended") {
+        await client.query(
+          `UPDATE sellers
+           SET verification_status = CASE WHEN $2 = 'suspended' THEN 'suspended' ELSE 'unverified' END,
+               updated_at = NOW()
+           WHERE id = $1`,
+          [sellerId, status]
+        );
+        // Keep the verification record in sync when one exists.
+        await client.query(
+          `UPDATE seller_verifications
+           SET status = CASE WHEN $2 = 'suspended' THEN 'suspended' ELSE 'rejected' END,
+               review_reason_code = $3, review_note = $4, reviewed_at = NOW(), reviewed_by = $5,
+               rejection_reason = CASE WHEN $2 = 'rejected' THEN $6 ELSE rejection_reason END,
+               suspension_reason = CASE WHEN $2 = 'suspended' THEN $6 ELSE suspension_reason END,
+               updated_at = NOW()
+           WHERE seller_id = $1 AND status IN ('pending','unverified')`,
+          [sellerId, status, code, note || null, userId, reason || null]
         );
       }
 
-      // On approval: create notification for the seller
-      if (status === "approved" || status === "rejected" || status === "needs_correction") {
-        const notificationTitle = status === "approved" ? "คำขอเปิดร้านค้าได้รับอนุมัติ" : status === "rejected" ? "คำขอเปิดร้านค้าถูกปฏิเสธ" : "คำขอเปิดร้านค้าต้องแก้ไขข้อมูล";
-        const notificationMessage = status === "approved" ? "คุณสามารถเริ่มขายสินค้าได้แล้ว" : status === "rejected" ? `เหตุผล: ${reason || 'ไม่ผ่านเกณฑ์การตรวจสอบ'}` : `กรุณาแก้ไขข้อมูล: ${reason || 'กรุณาตรวจสอบและแก้ไขข้อมูลให้ครบถ้วน'}`;
-        const notificationType = status === "approved" ? "seller_approved" : status === "rejected" ? "seller_rejected" : "seller_needs_correction";
+      // ── Review history / audit trail ───────────────────────────────
+      await client.query(
+        `INSERT INTO seller_review_history
+           (seller_id, previous_status, new_status, action, reason_code, reason, note, reviewer_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          sellerId,
+          previousStatus,
+          status,
+          status === "under_review" ? "under_review" : status === "needs_correction" ? "needs_correction" : status,
+          code || null,
+          reason || null,
+          note || null,
+          userId,
+        ]
+      );
+
+      // Notifications for every lifecycle change the applicant cares about
+      if (["approved", "rejected", "needs_correction", "under_review", "suspended"].includes(status)) {
+        const copy: Record<string, { title: string; message: string }> = {
+          approved: { title: "คำขอเปิดร้านค้าได้รับอนุมัติ", message: "คุณสามารถเริ่มขายสินค้าได้แล้ว" },
+          rejected: { title: "คำขอเปิดร้านค้าถูกปฏิเสธ", message: `เหตุผล: ${reason || code}` },
+          needs_correction: { title: "คำขอเปิดร้านค้าต้องแก้ไขข้อมูล", message: `กรุณาแก้ไข: ${reason || code}` },
+          under_review: { title: "ใบสมัครอยู่ระหว่างการตรวจสอบ", message: "ทีมงาน Velnox กำลังตรวจสอบใบสมัครของคุณ" },
+          suspended: { title: "บัญชีร้านค้าถูกระงับ", message: `เหตุผล: ${reason || code}` },
+        };
+        const notificationType = `seller_${status}`;
+        const notificationCopy = copy[status] ?? { title: "อัปเดตสถานะร้านค้า", message: reason || code };
         try {
           await client.query(
             `INSERT INTO notifications (user_id, type, title, message, data)
              VALUES ($1, $2, $3, $4, $5)`,
-            [seller.user_id, notificationType, notificationTitle, notificationMessage, JSON.stringify({ sellerId, status, reason: reason || null })]
+            [
+              seller.user_id,
+              notificationType,
+              notificationCopy.title,
+              notificationCopy.message,
+              JSON.stringify({ sellerId, status, reasonCode: code || null, reason: reason || null }),
+            ]
           );
         } catch (notifErr: any) {
           console.warn("[seller] notification write failed (non-fatal):", notifErr?.message);
@@ -765,6 +1061,7 @@ export function setupSellerRoutes(app: Express): void {
               previousStatus,
               newStatus: status,
               promotedRole,
+              reasonCode: code || null,
               reason: reason || null,
             }),
           ]
@@ -798,6 +1095,144 @@ export function setupSellerRoutes(app: Express): void {
       });
     } finally {
       client.release();
+    }
+  });
+
+  // ── GET /api/admin/sellers/:id/application ────────────────────────────
+  // Reviewer-only full application detail: applicant, store, address and
+  // identity documents. Identity images are returned as SHORT-LIVED SIGNED R2
+  // URLs generated after the authorization check — never public bucket URLs.
+  app.get("/api/admin/sellers/:id/application", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
+      const userRole = userResult.rows[0]?.role as string | undefined;
+      if (!userRole || !REVIEWER_ROLES.includes(userRole)) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const sellerId = req.params.id;
+      const appRes = await query(
+        `SELECT s.id, s.status, s.verification_status, s.verified_at, s.created_at, s.updated_at,
+                u.name AS owner_name, u.email AS owner_email, u.phone AS owner_phone,
+                sh.name AS shop_name, sh.slug AS shop_slug, sh.description AS shop_description,
+                sh.category AS shop_category, sh.logo AS shop_logo, sh.cover AS shop_cover,
+                sh.address_line1, sh.address_line2, sh.subdistrict, sh.district, sh.city,
+                sh.state, sh.postal_code, sh.country, sh.phone AS shop_phone,
+                ss.settings AS seller_settings,
+                sv.id AS verification_id, sv.status AS verification_status_record,
+                sv.verification_type, sv.evidence_urls, sv.submitted_at, sv.reviewed_at,
+                sv.rejection_reason, sv.suspension_reason, sv.review_reason_code, sv.review_note
+         FROM sellers s
+         JOIN users u ON u.id = s.user_id
+         LEFT JOIN shops sh ON sh.seller_id = s.id
+         LEFT JOIN seller_settings ss ON ss.seller_id = s.id
+         LEFT JOIN LATERAL (
+           SELECT * FROM seller_verifications sv2
+           WHERE sv2.seller_id = s.id
+           ORDER BY sv2.created_at DESC LIMIT 1
+         ) sv ON TRUE
+         WHERE s.id = $1`,
+        [sellerId],
+      );
+
+      if (appRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Seller not found" } });
+        return;
+      }
+
+      const row = appRes.rows[0];
+      const settings = row.seller_settings || {};
+      const refs: string[] = Array.isArray(row.evidence_urls) ? row.evidence_urls : [];
+
+      // Reviewer-only signed access to the private identity documents.
+      const documents = await Promise.all(
+        refs.map(async (ref: string) => {
+          const key = toObjectKey(ref);
+          let url: string | null = null;
+          try {
+            url = await getSignedUrl(
+              reviewR2,
+              new GetObjectCommand({ Bucket: reviewBucket, Key: key }),
+              { expiresIn: 300 },
+            );
+          } catch (signErr) {
+            console.warn(`[seller] reviewer evidence sign failed key=${key}`, signErr);
+          }
+          return { key, purpose: purposeOfKey(key), filename: key.split("/").pop() || key, url, expiresIn: 300 };
+        }),
+      );
+
+      const history = await query(
+        `SELECT h.id, h.previous_status, h.new_status, h.action, h.reason_code, h.reason,
+                h.note, h.created_at, u.name AS reviewer_name
+         FROM seller_review_history h
+         LEFT JOIN users u ON u.id = h.reviewer_id
+         WHERE h.seller_id = $1
+         ORDER BY h.created_at DESC
+         LIMIT 100`,
+        [sellerId],
+      );
+
+      res.json({
+        success: true,
+        data: {
+          seller: {
+            id: row.id,
+            status: row.status,
+            verificationStatus: row.verification_status,
+            verifiedAt: row.verified_at,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          },
+          applicant: {
+            name: row.owner_name,
+            email: row.owner_email,
+            phone: settings.phone || row.owner_phone || null,
+            firstName: settings.firstName || null,
+            lastName: settings.lastName || null,
+            // The national ID is reviewer-only data and is never returned to
+            // any customer-facing surface.
+            idNumber: settings.idNumber || null,
+          },
+          store: {
+            name: row.shop_name,
+            slug: row.shop_slug,
+            description: row.shop_description,
+            category: row.shop_category,
+            logo: row.shop_logo,
+            cover: row.shop_cover,
+          },
+          address: {
+            line1: row.address_line1,
+            line2: row.address_line2,
+            subdistrict: row.subdistrict,
+            district: row.district,
+            city: row.city,
+            state: row.state,
+            postalCode: row.postal_code,
+            country: row.country,
+            phone: row.shop_phone,
+          },
+          verification: {
+            id: row.verification_id,
+            type: row.verification_type,
+            status: row.verification_status_record,
+            submittedAt: row.submitted_at,
+            reviewedAt: row.reviewed_at,
+            rejectionReason: row.rejection_reason,
+            suspensionReason: row.suspension_reason,
+            reviewReasonCode: row.review_reason_code,
+            reviewNote: row.review_note,
+          },
+          documents,
+          history: history.rows,
+        },
+      });
+    } catch (err) {
+      console.error("[seller] admin application detail error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch application" } });
     }
   });
 }
