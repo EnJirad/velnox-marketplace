@@ -114,19 +114,51 @@ Verify the relevant tier (see `docs/ai/TESTING.md`):
 - Database: SQL validity + fresh-bootstrap completeness (`db/schema.sql` ↔ `db/run-sqleditor.sql` sync) + dep order + app compatibility
 - Always: `git diff --check`, no new type errors, no secrets committed
 
-## 14. Git / Version Control
+## 14. Git / Version Control — Automatic Commit and Push
 
-- `git status` → `git diff` → `git diff --check` before commit. Review for secrets, debug code, `db/run-update.sql` resurrection, or unsynced DB files.
-- Commit with meaningful message, then `git push`, then verify `git status` is clean. Never `git push --force` without owner instruction.
-- Resolve conflicts by understanding both sides; preserve newer functionality; do not blindly pick `ours/theirs`.
+**This rule is mandatory for every repository-changing task unless the user explicitly says otherwise.**
 
-Detail: `docs/ai/WORKFLOW.md`.
+### Normal completion flow
+
+1. `git status` + `git diff` + `git diff --check` — review staged/unstaged changes; confirm no secrets, no `db/run-update.sql` resurrection, no unsynced DB files, no unrelated changes.
+2. Validate the affected subsystem (typecheck, tests, build, lint as appropriate).
+3. Stage only files belonging to the current task. Prefer `git add <files>` over `git add .`.
+4. `git commit -m "<conventional-style message>"` — meaning only what was changed and why.
+5. `git push origin <branch>` — the push happens immediately after commit, not after a separate user instruction.
+6. Verify remote: `git fetch origin && git rev-parse HEAD && git rev-parse origin/<branch>` — SHAs must match. Report `PUSH VERIFIED` only after this check.
+7. Update `AI_Handoff.md` if the task warrants it, then commit + push the handoff update if needed.
+8. Final state: working tree clean, local HEAD == remote HEAD.
+
+### When the agent must NOT commit/push
+
+Skip commit/push and report the exact reason (`NOT PUSHED — <reason>`) when:
+- The user explicitly says *do not commit* / *do not push* / *keep changes local*.
+- The task is analysis-only with no repository changes.
+- Required validation (typecheck, tests, `diff --check`) fails and the issue is unresolved.
+- A serious security or data-loss risk is discovered.
+- The branch is protected and the repository policy requires a PR.
+
+### Push failures
+
+If `git push` fails (authentication, non-fast-forward, protected branch):
+1. Diagnose the exact failure class.
+2. If the environment provides an authorized GitHub API / Git Data API, use that as the fallback (see `docs/ai/WORKFLOW.md`).
+3. For non-fast-forward: stop, inspect divergence, reconcile safely — never force-push without owner instruction.
+4. Never hardcode, echo, or expose credentials.
+5. Report `NOT PUSHED — <reason>` with exact repo state if no fallback works.
+
+### Commit message style
+
+Conventional-ish: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. No vague messages like `update`, `fix stuff`, `changes`.
+
+**Detail:** `docs/ai/WORKFLOW.md`.
 
 ## 15. Handoff & Documentation
 
 - After significant work, update `AI_Handoff.md` (current state only, not history — see `docs/ai/history/README.md`) and, when needed, `docs/ai/<SUBSYSTEM>.md`, `INSTALLATION.md`, or this file.
 - `AI_Handoff.md` is never more authoritative than source.
-- Every completed task must be committed and pushed.
+- Every completed task must be committed, pushed, and verified (see §14).
+- If the handoff update changes files after the code commit, commit the handoff change and push it too — do not leave the working tree dirty.
 
 ## 16. When Ambiguous
 

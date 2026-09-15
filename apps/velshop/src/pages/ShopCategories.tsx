@@ -149,7 +149,7 @@ export default function ShopCategories() {
             <Link to="/products?verified=true" className="block">
               <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#065f46] via-[#059669] to-[#10B981] px-5">
                 <span className="flex size-12 items-center justify-center rounded-[12px] bg-white/20 backdrop-blur">
-                  <span className="text-lg font-extrabold text-white">V<span className="text-emerald-200">✓</span></span>
+                  <span className="text-lg font-extrabold text-white">V</span>
                 </span>
                 <div className="min-w-0">
                   <h2 className="truncate text-lg font-bold tracking-tight text-white">{t("verification.velshopVerified")}</h2>

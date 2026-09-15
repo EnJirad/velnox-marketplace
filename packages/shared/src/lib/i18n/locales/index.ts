@@ -7,6 +7,145 @@ import { my as myBase } from "./my";
 export type Dict = typeof th;
 
 /**
+ * Seller-identity verification copy (TH / EN / MY).
+ *
+ * Velnox runs ONE verification system: SELLER / SHOP identity verification.
+ * A shop whose verification status is approved shows the single green V on all
+ * of its products. The V never asserts product quality, authenticity, or a
+ * manufacturer warranty. These overrides replace the legacy product-verification
+ * wording and the garbled Thai strings that predate this change.
+ */
+const thVerificationCopy = {
+  sellerVerificationSeparateNote:
+    "การยืนยันร้านค้าตรวจสอบตัวตนของร้านค้า — สินค้าทั้งหมดของร้านจะแสดงเครื่องหมาย V เมื่อร้านผ่านการยืนยัน",
+  productVerificationSeparateNote:
+    "เครื่องหมาย V แสดงว่าร้านค้าผ่านการยืนยันตัวตนตามเกณฑ์ของ Velnox",
+  vInfoTitle: "V — ร้านค้าที่ได้รับการยืนยัน",
+  vInfoDesc: "เครื่องหมาย V แสดงว่าร้านค้านี้ผ่านกระบวนการยืนยันตัวตนตามเกณฑ์ของ Velnox",
+  vInfoCheckSeller: "ร้านค้านี้ผ่านการยืนยันตัวตนโดย Velnox",
+  vInfoDisclaimer:
+    "V หมายถึงร้านค้าผ่านการยืนยันตัวตนตามเกณฑ์ของ Velnox ไม่ได้เป็นการรับประกันคุณภาพ ความแท้จริง หรือการรับประกันจากผู้ผลิตของสินค้าแต่ละชิ้น",
+  vInfoAriaLabel: "ข้อมูลการยืนยันร้านค้า",
+  velshopVerified: "ร้านค้าที่ได้รับการยืนยัน",
+  velshopVerifiedDesc: "ร้านค้าที่ผ่านการยืนยันตัวตนตามเกณฑ์ของ Velnox",
+  velshopVerifiedFilter: "ร้านค้าที่ได้รับการยืนยันเท่านั้น",
+} satisfies Partial<Dict["verification"]>;
+
+const enVerificationCopy = {
+  sellerVerificationSeparateNote:
+    "Seller verification checks the shop's identity — every product of an approved shop shows the single V.",
+  productVerificationSeparateNote:
+    "The V badge means the shop has passed Velnox's identity verification.",
+  vInfoTitle: "V — Verified shop",
+  vInfoDesc:
+    "The V badge means this shop has passed Velnox's identity verification process.",
+  vInfoCheckSeller: "This shop has been identity-verified by Velnox",
+  vInfoDisclaimer:
+    "V means the shop has passed Velnox's identity verification. It is not a guarantee of product quality, authenticity, or a manufacturer warranty for individual products.",
+  vInfoAriaLabel: "Shop verification information",
+  velshopVerified: "Verified shops",
+  velshopVerifiedDesc: "Shops that have passed Velnox identity verification",
+  velshopVerifiedFilter: "Verified shops only",
+} satisfies Partial<Dict["verification"]>;
+
+const myVerificationCopy = {
+  sellerVerificationSeparateNote:
+    "ဆိုင်အတည်ပြုခြင်းသည် ဆိုင်၏ မူလအာခံကို စစ်ဆေးသည် — အတည်ပြုပြီးဆိုင်တစ်ခု၏ ကုန်ပစ္စည်းအားလုံးတွင် V တစ်ခုတည်း ပြသသည်",
+  productVerificationSeparateNote:
+    "V အမှတ်အသားသည် ဆိုင်သည် Velnox ၏ မူလအာခံအတည်ပြုမှုကို ဖြတ်ကျော်ပြီးဖြစ်ကြောင်း ပြသသည်",
+  vInfoTitle: "V — အတည်ပြုပြီးဆိုင်",
+  vInfoDesc:
+    "V အမှတ်အသားသည် ဤဆိုင်သည် Velnox ၏ မူလအာခံအတည်ပြုမှု လုပ်ငန်းစဉ်ကို ဖြတ်ကျော်ပြီးဖြစ်ကြောင်း ပြသသည်",
+  vInfoCheckSeller: "ဤဆိုင်ကို Velnox မှ မူလအာခံအတည်ပြုပြီးဖြစ်သည်",
+  vInfoDisclaimer:
+    "V သည် ဆိုင်သည် Velnox ၏ မူလအာခံအတည်ပြုမှုကို ဖြတ်ကျော်ပြီးဖြစ်ကြောင်း ညွှန်ပြသည်။ ထုတ်ကုန်တစ်ခုချင်းစီ၏ အရည်အသွေး၊ မှန်ကန်မှု သို့မဟုတ် ထုတ်လုပ်သူအာမခံကို အာမခံချက် မဟုတ်ပါ။",
+  vInfoAriaLabel: "ဆိုင်အတည်ပြုမှု အချက်အလက်",
+  velshopVerified: "အတည်ပြုပြီးဆိုင်များ",
+  velshopVerifiedDesc: "Velnox မှ မူလအာခံအတည်ပြုပြီးသော ဆိုင်များ",
+  velshopVerifiedFilter: "အတည်ပြုပြီးဆိုင်များသာ",
+} satisfies Partial<Dict["verification"]>;
+
+const thCategoriesCopy = {
+  velshopVerified: "ร้านค้าที่ได้รับการยืนยัน",
+  velshopVerifiedDesc: "ร้านค้าที่ผ่านการยืนยันตัวตนตามเกณฑ์ของ Velnox",
+} satisfies Partial<Dict["categories"]>;
+
+const enCategoriesCopy = {
+  velshopVerified: "Verified shops",
+  velshopVerifiedDesc: "Shops that have passed Velnox identity verification",
+} satisfies Partial<Dict["categories"]>;
+
+const myCategoriesCopy = {
+  velshopVerified: "အတည်ပြုပြီးဆိုင်များ",
+  velshopVerifiedDesc: "Velnox မှ မူလအာခံအတည်ပြုပြီးသော ဆိုင်များ",
+} satisfies Partial<Dict["categories"]>;
+
+/** Category picker UI copy (TH / EN / MY). */
+interface CategoryPickerCopy {
+  title: string;
+  search: string;
+  all: string;
+  back: string;
+  cancel: string;
+  select: string;
+  close: string;
+  loading: string;
+  noResults: string;
+  noResultsHint: string;
+  empty: string;
+  subcategories: string;
+  selected: string;
+}
+
+const thCategoryPicker: CategoryPickerCopy = {
+  title: "เลือกหมวดหมู่สินค้า",
+  search: "ค้นหาหมวดหมู่...",
+  all: "ทั้งหมด",
+  back: "ย้อนกลับ",
+  cancel: "ยกเลิก",
+  select: "เลือก",
+  close: "ปิด",
+  loading: "กำลังโหลดหมวดหมู่...",
+  noResults: "ไม่พบหมวดหมู่ที่ค้นหา",
+  noResultsHint: "ลองค้นหาด้วยคำอื่น",
+  empty: "ไม่มีหมวดหมู่ย่อย",
+  subcategories: "{count} หมวดย่อย",
+  selected: "เลือกแล้ว",
+};
+
+const enCategoryPicker: CategoryPickerCopy = {
+  title: "Select a category",
+  search: "Search categories...",
+  all: "All",
+  back: "Back",
+  cancel: "Cancel",
+  select: "Select",
+  close: "Close",
+  loading: "Loading categories...",
+  noResults: "No categories found",
+  noResultsHint: "Try a different keyword",
+  empty: "No subcategories",
+  subcategories: "{count} subcategories",
+  selected: "Selected",
+};
+
+const myCategoryPicker: CategoryPickerCopy = {
+  title: "ကုန်ပစ္စည်းအမျိုးအစား ရွေးပါ",
+  search: "အမျိုးအစား ရှာဖွေရန်...",
+  all: "အားလုံး",
+  back: "နောက်သို့",
+  cancel: "မလုပ်တော့ပါ",
+  select: "ရွေးရန်",
+  close: "ပိတ်ရန်",
+  loading: "အမျိုးအစားများ ဖွင့်နေသည်...",
+  noResults: "အမျိုးအစား မတွေ့ပါ",
+  noResultsHint: "အခြားစကားလုံးဖြင့် ရှာကြည့်ပါ",
+  empty: "အမျိုးအစားခွဲ မရှိပါ",
+  subcategories: "အမျိုးအစားခွဲ {count} ခု",
+  selected: "ရွေးပြီး",
+};
+
+/**
  * Burmese auth-flow strings added in the production auth upgrade.
  *
  * `my.ts` is a large append-only translation table; the auth section sits
@@ -362,8 +501,18 @@ const myNotifyPatch = {
  * adding a dictionary here (plus an entry in ../config).
  */
 export const translations: Record<Language, Dict> = {
-  th,
-  en,
+  th: {
+    ...th,
+    verification: { ...th.verification, ...thVerificationCopy },
+    categories: { ...th.categories, ...thCategoriesCopy },
+    categoryPicker: thCategoryPicker,
+  } as Dict,
+  en: {
+    ...en,
+    verification: { ...en.verification, ...enVerificationCopy },
+    categories: { ...en.categories, ...enCategoriesCopy },
+    categoryPicker: enCategoryPicker,
+  } as Dict,
   my: {
     ...myBase,
     ...myOrderPatch,
@@ -385,5 +534,8 @@ export const translations: Record<Language, Dict> = {
     velrepeat: { ...myBase.velrepeat, ...myShopPatch.velrepeat },
     cookies: myShopPatch.cookies,
     auth: { ...myBase.auth, ...myAuthPatch },
+    verification: { ...myBase.verification, ...myVerificationCopy },
+    categories: { ...myBase.categories, ...myCategoriesCopy },
+    categoryPicker: myCategoryPicker,
   } as Dict,
 };

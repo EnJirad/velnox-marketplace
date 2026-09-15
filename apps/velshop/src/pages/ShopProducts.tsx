@@ -347,7 +347,7 @@ export default function ShopProducts() {
               : "border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700"
           }`}
         >
-          <span className="font-extrabold">V</span><span className="text-emerald-600">✓</span>
+          <span className="font-extrabold">V</span>
           <span>{t("verification.velshopVerifiedFilter")}</span>
         </button>
       </div>

@@ -655,6 +655,30 @@ export function setupSellerRoutes(app: Express): void {
         return;
       }
 
+      // ── State-machine validation ────────────────────────────────────
+      // Only documented transitions are permitted. Frontend cannot grant
+      // privileges or skip steps; the backend is the sole authority.
+      const VALID_TRANSITIONS: Record<string, string[]> = {
+        pending: ["under_review", "rejected"],
+        under_review: ["approved", "needs_correction", "rejected", "suspended"],
+        needs_correction: ["under_review", "rejected"],
+        approved: ["suspended"],
+        rejected: ["pending"],   // re-application after rejection
+        suspended: ["pending"],  // re-activation
+      };
+      const allowed = VALID_TRANSITIONS[previousStatus];
+      if (!allowed || !allowed.includes(status)) {
+        await client.query("ROLLBACK");
+        res.status(400).json({
+          success: false,
+          error: {
+            code: "INVALID_TRANSITION",
+            message: `Cannot transition seller from "${previousStatus}" to "${status}"`,
+          },
+        });
+        return;
+      }
+
       // Idempotency: if seller already has the requested status, return success
       if (previousStatus === status) {
         await client.query("COMMIT");

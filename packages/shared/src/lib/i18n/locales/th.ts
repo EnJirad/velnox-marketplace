@@ -299,8 +299,8 @@ export const th = {
     seoDesc: "เลือกหมวดหมู่เพื่อค้นหาสินค้าจากร้านค้าจริงทั่วตลาด Velnox",
     searchPlaceholder: "ค้นหาหมวดหมู่...",
     allCategories: "ทุกหมวดหมู่",
-    velshopVerified: "VelShop Verified",
-    velshopVerifiedDesc: "สินค้าที่ผ่านการตรวจสอบแล้ว",
+    velshopVerified: "ร้านค้าที่ได้รับการยืนยัน",
+    velshopVerifiedDesc: "ร้านค้าที่ผ่านการยืนยันตัวตนตามเกณฑ์ของ Velnox",
     viewAllCategories: "ดูทุกหมวดหมู่",
 },
 

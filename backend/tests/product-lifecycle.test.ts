@@ -7,7 +7,7 @@
  *   • a seller can never publish/reject/suspend their own product,
  *   • an admin can only publish a pending product, or suspend/restore it,
  *   • only `published` products are publicly visible,
- *   • V✓ requires BOTH seller verification AND product verification,
+ *   • V is driven ONLY by seller verification (one verification system),
  *   • catalog / detail / seller / shop queries expose the verification fields
  *     the V✓ badge depends on,
  *   • migration 040 + all schema files agree on the verification tables,
@@ -149,42 +149,39 @@ describe("catalog visibility", () => {
 
 // ─── V✓ eligibility (dual verification) ────────────────────────────────────
 
-describe("V✓ eligibility", () => {
-  test("both verified → V✓", () => {
-    expect(computeIsVerifiedProduct("verified", "verified")).toBe(true);
+describe("V eligibility (seller-only)", () => {
+  test("a verified seller's products qualify for the single green V", () => {
+    expect(computeIsVerifiedProduct(undefined, "verified")).toBe(true);
+    expect(computeIsVerifiedProduct("unverified", "verified")).toBe(true);
+    expect(computeIsVerifiedProduct("pending", "verified")).toBe(true);
   });
 
-  test("seller verified + product unverified → no V✓", () => {
-    expect(computeIsVerifiedProduct("unverified", "verified")).toBe(false);
-    expect(computeIsVerifiedProduct("pending", "verified")).toBe(false);
+  test("an unverified seller's products never show V", () => {
+    for (const status of [undefined, null, "unverified", "pending", "rejected", "suspended"]) {
+      expect(computeIsVerifiedProduct(undefined, status)).toBe(false);
+    }
   });
 
-  test("product verified + seller unverified → no V✓", () => {
+  test("product verification state never affects V eligibility", () => {
     expect(computeIsVerifiedProduct("verified", "unverified")).toBe(false);
-    expect(computeIsVerifiedProduct("verified", "suspended")).toBe(false);
-  });
-
-  test("pending / rejected / suspended never produce V✓", () => {
     expect(computeIsVerifiedProduct("pending", "pending")).toBe(false);
-    expect(computeIsVerifiedProduct("rejected", "verified")).toBe(false);
-    expect(computeIsVerifiedProduct("verified", "rejected")).toBe(false);
-    expect(computeIsVerifiedProduct("suspended", "suspended")).toBe(false);
+    expect(computeIsVerifiedProduct("rejected", "suspended")).toBe(false);
   });
 
-  test("each product verification state is tracked independently", () => {
+  test("each verification state is exposed on the product payload", () => {
     expect(productsSrc).toContain("verificationStatus: row.verification_status || \"unverified\"");
     expect(productsSrc).toContain("sellerVerificationStatus: row.seller_verification_status || \"unverified\"");
     expect(productsSrc).toContain("computeIsVerifiedProduct(");
   });
 
-  test("the badge component uses the same rule and never trusts a boolean prop", () => {
-    expect(badgeSrc).toContain('productVerification === "verified" && sellerVerification === "verified"');
+  test("the badge component derives V from the seller only and never trusts a boolean prop", () => {
+    expect(badgeSrc).toContain('sellerVerification === "verified"');
     expect(badgeSrc).not.toContain("isVerifiedProduct: boolean");
   });
 
-  test("VelShop Verified filtering requires both verifications in SQL", () => {
-    expect(productsSrc).toContain("p.verification_status = 'verified'");
+  test("the VelShop verified filter requires only seller verification in SQL", () => {
     expect(productsSrc).toContain("s.verification_status = 'verified'");
+    expect(productsSrc).not.toContain("p.verification_status = 'verified'");
   });
 
   test("verification is not a seller-writable field", () => {
@@ -258,8 +255,9 @@ describe("verification data reaches every product surface", () => {
 describe("category validation", () => {
   test("validation resolves against the categories table", () => {
     expect(productsSrc).toContain("async function resolveCategory");
-    expect(productsSrc).toContain('SELECT id, is_active FROM categories WHERE id = $1');
-    expect(productsSrc).toContain('SELECT id, is_active FROM categories WHERE slug = $1');
+    expect(productsSrc).toContain("validateCategory(input, lookupCategoryRow)");
+    expect(productsSrc).toContain("SELECT slug, is_active FROM categories WHERE id = $1");
+    expect(productsSrc).toContain("SELECT slug, is_active FROM categories WHERE slug = $1");
     expect(productsSrc).toContain("INVALID_CATEGORY");
   });
 
@@ -275,9 +273,10 @@ describe("category validation", () => {
     expect(update.slice(0, 4000)).toContain("resolveCategory(");
   });
 
-  test("inactive categories are rejected", () => {
-    expect(productsSrc).toContain("is_active");
-    expect(productsSrc).toContain("does not exist or is inactive");
+  test("inactive categories are rejected by the canonical validator", () => {
+    const categoriesLib = readFileSync(join(root, "backend/lib/categories.ts"), "utf8");
+    expect(categoriesLib).toContain("is_active");
+    expect(categoriesLib).toContain("if (!row.is_active) return { ok: false");
   });
 });
 

@@ -298,7 +298,7 @@ export const en: Dict = {
     seoDesc: "Browse categories and shop from real shops across the Velnox marketplace",
     searchPlaceholder: "Search categories...",
     allCategories: "All categories",
-    velshopVerified: "VelShop Verified",
+    velshopVerified: "Verified shops",
     velshopVerifiedDesc: "Products verified by VelShop",
     viewAllCategories: "View all categories",
 },
@@ -1275,7 +1275,7 @@ export const en: Dict = {
     submitForVerification: "Submit for verification",
     resubmitForVerification: "Resubmit for verification",
     // VelShop Verified
-    velshopVerified: "VelShop Verified",
+    velshopVerified: "Verified shops",
     velshopVerifiedDesc: "Products verified by both seller identity and product authenticity checks",
     velshopVerifiedFilter: "VelShop Verified only",
     // Evidence

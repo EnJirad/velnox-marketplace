@@ -99,7 +99,7 @@ export function CategoryPicker({
   onSelect,
   loading = false,
 }: CategoryPickerProps) {
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
   const [searchQuery, setSearchQuery] = useState("");
   const [navigationStack, setNavigationStack] = useState<CategoryNode[]>([]);
   const [pendingSelection, setPendingSelection] = useState<string | null>(
@@ -176,20 +176,20 @@ export function CategoryPicker({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[85vh] flex-col overflow-hidden p-0 sm:max-w-lg"
+        className="flex max-h-[85dvh] flex-col overflow-hidden p-0 sm:max-w-lg"
         onPointerDownOutside={(e) => e.preventDefault()}
       >
         {/* ── Header ──────────────────────────────────────────── */}
         <DialogHeader className="shrink-0 border-b border-slate-100 px-4 py-3">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base font-semibold text-slate-900">
-              เลือกหมวดหมู่สินค้า
+              {t("categoryPicker.title")}
             </DialogTitle>
             <button
               type="button"
               onClick={handleCancel}
               className="flex size-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-              aria-label="ปิด"
+              aria-label={t("categoryPicker.close")}
             >
               <X className="size-4" />
             </button>
@@ -203,7 +203,7 @@ export function CategoryPicker({
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ค้นหาหมวดหมู่..."
+              placeholder={t("categoryPicker.search")}
               className="h-10 rounded-xl border-slate-200 pl-9 pr-8 text-sm"
               autoFocus
             />
@@ -221,21 +221,22 @@ export function CategoryPicker({
 
         {/* ── Breadcrumbs ────────────────────────────────────── */}
         {navigationStack.length > 0 && !searchQuery && (
-          <div className="shrink-0 flex items-center gap-1 px-4 pt-2 text-xs text-slate-500">
+          <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1 px-4 pt-2 text-xs text-slate-500">
             <button
               type="button"
               onClick={() => handleNavigateToBreadcrumb(0)}
-              className="rounded px-1 py-0.5 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-[#10B981]"
+              className="shrink-0 rounded px-1 py-0.5 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-[#10B981]"
             >
-              ทั้งหมด
+              {t("categoryPicker.all")}
             </button>
             {navigationStack.map((node, idx) => (
-              <span key={node.id} className="flex items-center gap-1">
-                <ChevronRight className="size-3 text-slate-300" />
+              <span key={node.id} className="flex min-w-0 items-center gap-1">
+                <ChevronRight className="size-3 shrink-0 text-slate-300" />
                 <button
                   type="button"
                   onClick={() => handleNavigateToBreadcrumb(idx + 1)}
-                  className={`rounded px-1 py-0.5 font-medium transition-colors hover:bg-slate-100 ${
+                  title={getLocalizedName(node, lang)}
+                  className={`min-w-0 max-w-[8rem] truncate rounded px-1 py-0.5 font-medium transition-colors hover:bg-slate-100 sm:max-w-[14rem] ${
                     idx === navigationStack.length - 1
                       ? "text-[#10B981]"
                       : "text-slate-600 hover:text-[#10B981]"
@@ -253,16 +254,16 @@ export function CategoryPicker({
           {loading ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <div className="size-6 animate-spin rounded-full border-2 border-slate-200 border-t-[#10B981]" />
-              <p className="mt-3 text-xs">กำลังโหลดหมวดหมู่...</p>
+              <p className="mt-3 text-xs">{t("categoryPicker.loading")}</p>
             </div>
           ) : searchResults !== null ? (
             // ── Search Results ──
             searchResults.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-slate-400">
                 <Search className="mb-2 size-8 text-slate-200" />
-                <p className="text-sm">ไม่พบหมวดหมู่ที่ค้นหา</p>
+                <p className="text-sm">{t("categoryPicker.noResults")}</p>
                 <p className="mt-1 text-xs text-slate-300">
-                  ลองค้นหาด้วยคำอื่น
+                  {t("categoryPicker.noResultsHint")}
                 </p>
               </div>
             ) : (
@@ -272,6 +273,7 @@ export function CategoryPicker({
                     key={node.id}
                     type="button"
                     onClick={() => handleSelect(node.slug)}
+                    title={getLocalizedName(node, lang)}
                     className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all ${
                       pendingSelection === node.slug
                         ? "bg-[#ECFDF5] ring-1 ring-[#10B981] text-[#059669]"
@@ -299,7 +301,7 @@ export function CategoryPicker({
           ) : currentLevel.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <Folder className="mb-2 size-8 text-slate-200" />
-              <p className="text-sm">ไม่มีหมวดหมู่ย่อย</p>
+              <p className="text-sm">{t("categoryPicker.empty")}</p>
             </div>
           ) : (
             // ── Hierarchical Category List ──
@@ -329,6 +331,7 @@ export function CategoryPicker({
                             ? handleNavigateInto(node)
                             : handleSelect(node.slug)
                         }
+                        title={getLocalizedName(node, lang)}
                         className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
                       >
                         {isParent ? (
@@ -346,7 +349,7 @@ export function CategoryPicker({
                           </p>
                           {isParent && (
                             <p className="mt-0.5 text-[11px] text-slate-400">
-                              {childCount} หมวดย่อย
+                              {t("categoryPicker.subcategories", { count: childCount })}
                             </p>
                           )}
                         </div>
@@ -375,7 +378,7 @@ export function CategoryPicker({
               className="gap-1 text-slate-600"
             >
               <ChevronLeft className="size-3.5" />
-              ย้อนกลับ
+              {t("categoryPicker.back")}
             </Button>
           )}
           <div className="flex-1" />
@@ -387,7 +390,7 @@ export function CategoryPicker({
               onClick={handleCancel}
               className="border-slate-200"
             >
-              ยกเลิก
+              {t("categoryPicker.cancel")}
             </Button>
             <Button
               type="button"
@@ -396,7 +399,7 @@ export function CategoryPicker({
               disabled={!pendingSelection}
               className="bg-[#10B981] text-white hover:bg-[#059669] disabled:opacity-50"
             >
-              เลือก
+              {t("categoryPicker.select")}
             </Button>
           </div>
         </DialogFooter>

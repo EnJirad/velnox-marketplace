@@ -196,7 +196,7 @@ export const my = {
     seoDesc: "Velnox ဈေးကွက်ရှိ အစစ်အမှန်ဆိုင်များမှ အမျိုးအစားအလိုက် ဈေးဝယ်ပါ",
     searchPlaceholder: "အမျိုးအစားရှာဖွေရန်...",
     allCategories: "အမျိုးအစားအားလုံး",
-    velshopVerified: "VelShop Verified",
+    velshopVerified: "အတည်ပြုပြီးဆိုင်များ",
     velshopVerifiedDesc: "VelShop မှ အတည်ပြုထားသော ထုတ်ကုန်များ",
     viewAllCategories: "အမျိုးအစားအားလုံးကြည့်ရန်",
 },

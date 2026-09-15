@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-14
+**Last updated:** 2026-09-15
 **Branch:** `main`
 
 ## Current Project State
@@ -9,7 +9,32 @@ Velnox Marketplace — 4 Vercel frontends (velshop, velseller, velcenter, velnox
 
 ## Recently Completed
 
-### Seller UX, Category Selector & Application Lifecycle Overhaul
+### Single V System — Seller-Only Badge, Category UX & Test Alignment (2026-09-15)
+
+**One verification system.** Customer-facing V is now derived ONLY from `sellers.verification_status === "verified"`. There is no `products.is_v` and no per-product verification state in the V rule.
+
+**V badge UI** — the single green `V`:
+- Removed the `V✓` / `V + checkmark` composites in `apps/velseller/src/pages/MyShop.tsx`, `apps/velshop/src/pages/ShopCategories.tsx` and `apps/velshop/src/pages/ShopProducts.tsx`.
+- `VBadge` / `SellerOnlyBadge` / `isProductVerified()` already resolve V from the seller only; the popover (desktop) and bottom sheet (mobile) copy now matches the spec.
+
+**Verification copy (TH / EN / MY)** — corrected in `packages/shared/src/lib/i18n/locales/index.ts`:
+- Fixed garbled Thai/Burmese strings (`vInfoTitle`, `vInfoDesc`, `vInfoCheckSeller`, `vInfoDisclaimer`, `vInfoAriaLabel`, `sellerVerificationDesc`).
+- Replaced the legacy product-verification wording and the `VelShop Verified` labels with seller-verification copy (`verification.velshopVerified*`, `categories.velshopVerified*`).
+- V popup now reads: `V — ร้านค้าที่ได้รับการยืนยัน` / “เครื่องหมาย V แสดงว่าร้านค้านี้ผ่านกระบวนการยืนยันตัวตนตามเกณฑ์ของ Velnox”, and the disclaimer states V is NOT a product-quality / authenticity / manufacturer-warranty guarantee.
+- Overrides are merged at runtime (`thVerificationCopy` / `enVerificationCopy` / `myVerificationCopy`, `*CategoriesCopy`, `*CategoryPicker`) via the same spread-patch pattern the file already used for `myAuthPatch` / `myShopPatch`.
+
+**Category Picker localization + overflow** (`packages/shared/src/components/seller/CategoryPicker.tsx`):
+- All UI strings now use `categoryPicker.*` (TH/EN/MY): title, search, all, back, cancel, select, close, loading, noResults (+hint), empty, subcategories, selected.
+- Long-name safety: breadcrumbs are `min-w-0 flex-wrap`, each crumb is `max-w-[8rem] truncate sm:max-w-[14rem]` with a `title` tooltip; category rows and search results also expose the full name via `title`. No horizontal overflow, no overlap with the chevron/check.
+- Dialog height uses `max-h-[85dvh]` (mobile-friendly); only the category list scrolls.
+- Selected category display in `ProductFormDialog` already truncates (`min-w-0 flex-1 truncate` + `shrink-0` chevron).
+
+**Tests** (`backend/tests/product-lifecycle.test.ts`):
+- Rewrote the stale dual-verification `V✓ eligibility` suite to the seller-only model and pointed the category tests at the canonical `backend/lib/categories.ts` validator (`validateCategory`).
+- `bun test backend/tests` → **165 pass / 26 skip / 0 fail**.
+- `bun run typecheck` → all 4 apps pass. `bun run i18n:check` → th=1174 en=1174 my=1174, at parity.
+
+### Seller UX, Category Selector & Application Lifecycle Overhaul (2026-09-14)
 
 **CategoryPicker** (`packages/shared/src/components/seller/CategoryPicker.tsx`):
 - New hierarchical category picker component replacing the flat Select dropdown in ProductFormDialog
@@ -81,14 +106,18 @@ Backend /api/categories/tree → CategoryPicker → ProductFormDialog → form.c
 
 ## Known Limitations
 
-- Identity document upload during onboarding collects File objects but actual R2 upload uses EvidenceUploader in MyShop — the onboarding stores file metadata only. Full R2 upload during onboarding requires wiring EvidenceUploader into the RequireRole flow (future enhancement).
-- VelCenter seller application review UI exists as VerificationReviewDialog but full review checklist (structured reasons, checklists) was not implemented in this pass — the existing approve/reject flow was enhanced with new statuses and notifications.
-- Live browser E2E testing not performed in sandbox; verified via static analysis + typecheck.
+- **Product Verification is still present on the backend.** `backend/routes/verification.ts` keeps its product branch, `api.admin.productVerificationAction` still exists, and `apps/velcenter/src/pages/Center.tsx` still loads a product verification queue. It is no longer used for V eligibility, but it has NOT been deleted — deleting it safely needs a check of `product_verifications` rows/queries first. This is the largest remaining task.
+- **Legacy strings remain in-file.** `th.ts` / `my.ts` still contain the old (garbled) `verification.*` and `VelShop Verified` values; they are overridden at runtime by the patches in `locales/index.ts`. Clean them up when those files can be rewritten wholesale.
+- **Identity upload during onboarding is metadata-only.** The RequireRole onboarding stores `idCardFrontUrl` / `idCardBackUrl` / `selfieUrl` in `seller_settings`, but the real R2 presign→PUT→confirm upload runs through `EvidenceUploader` in the MyShop verification dialog. Onboarding does not yet perform R2 upload itself.
+- **VelCenter review is not structured.** `VerificationReviewDialog` uses a free-text reason (with a UI checklist) — no structured reason codes, no persisted review-history table.
+- **No live browser E2E.** All verification was static: typecheck + unit tests + source inspection. Image preview (`URL.createObjectURL` in `EvidenceUploader`) was not exercised in a real browser.
+- **VelRepeat `item_unavailable` issue not investigated.** `velrepeat_plans_status_check` vs the TS status union was deliberately left untouched (task §18).
 
 ## Recommended Next Steps
 
-- Wire EvidenceUploader into RequireRole onboarding step 2 for actual R2 upload during application
-- Build full VelCenter seller application review detail page with structured checklist
-- Add review history table for audit trail of status transitions
-- Remove deprecated `PRODUCT_CATEGORY_META` fallback labels
-- Remove V Verification from MyShop verification dialog (integrated into application lifecycle)
+1. Remove Product Verification end to end: delete the product branch of `backend/routes/verification.ts`, `api.admin.productVerificationAction`, and the products queue in VelCenter — after auditing `product_verifications` references.
+2. Wire the real R2 upload into the RequireRole onboarding identity step (reuse `EvidenceUploader` + `/api/seller/evidence/upload-intent` + `/api/seller/evidence/confirm`).
+3. Add structured correction/rejection reason codes + a review-history table (`seller_review_history`) — DB change requires `db/schema.sql` + `db/run-sqleditor.sql` in sync.
+4. Clean the legacy `verification.*` values out of `th.ts` / `my.ts` and drop the runtime patches.
+5. Investigate the VelRepeat `item_unavailable` CHECK-constraint conflict (task §18).
+6. Run a real browser E2E of the seller → R2 → Neon → VelCenter flow.

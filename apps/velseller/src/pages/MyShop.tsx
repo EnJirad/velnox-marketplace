@@ -589,7 +589,7 @@ export default function MyShop() {
           {/* Seller Verification Card */}
           <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
             <span className="flex size-10 items-center justify-center rounded-[10px] bg-emerald-50">
-              <span className="text-base font-extrabold text-emerald-700">V<span className="text-emerald-500">✓</span></span>
+              <span className="text-base font-extrabold text-emerald-700">V</span>
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-xs text-slate-400">{t("verification.sellerVerificationTitle")}</p>

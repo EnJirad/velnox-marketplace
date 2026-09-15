@@ -40,6 +40,25 @@ History in `docs/ai/history/` is **reference only** — do not load automaticall
 4. **Database sync** — any schema change must update **both** `db/schema.sql` and `db/run-sqleditor.sql` (see `docs/ai/DATABASE.md`). Never recreate `db/run-update.sql`.
 5. **Verify** — `git diff --check`, typecheck/build relevant apps, and test the affected flow.
 6. **Handoff** — update `AI_Handoff.md` with current state only (not history).
+7. **Auto-commit and push** — when a repository-changing task completes successfully, commit the changes and push to GitHub. Do not stop after editing or committing. See *Default Completion State* below and `docs/ai/WORKFLOW.md`.
+
+### Default Completion State
+
+A successful repository-changing task ends with ALL of:
+
+```
+implementation complete
++ validation passed (typecheck / tests / diff --check)
++ commit created
++ commit pushed
++ remote verified (local SHA == remote SHA)
++ AI_Handoff.md updated when required
++ working tree clean
+```
+
+Do not say "done" until every line is true. If any step fails, report the exact failure and state.
+
+If the user explicitly says *do not commit* / *do not push* / *keep changes local*, skip only those steps and report `NOT PUSHED — USER REQUEST`.
 
 ## Quick Reference
 
@@ -49,8 +68,10 @@ History in `docs/ai/history/` is **reference only** — do not load automaticall
 
 ## Repo Conventions
 
-- Feature branches: `fix/…`, `feat/…`; open PRs only when asked.
-- Commits: conventional-ish (`fix(velshop): …`, `feat(db): …`). `git diff --check` clean before commit.
+- Default branch: `main`. Feature branches: `fix/…`, `feat/…`; open PRs only when asked.
+- Commit style: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. Always `git diff --check` clean before commit.
+- Push automatically after commit (see *Default Completion State*). If Git CLI push fails, follow the fallback flow in `docs/ai/WORKFLOW.md`.
+- Never `git push --force` unless owner-instructed and verified safe.
 
 ## Version-Control Workflow (Freebuff/Vly environments)
 

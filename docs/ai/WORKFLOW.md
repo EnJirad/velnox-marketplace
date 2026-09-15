@@ -1,41 +1,271 @@
-# WORKFLOW — Git, Preview, Deploy
+# WORKFLOW — AI Git Lifecycle, Preview, Deploy
 
-## Git
+## Default Branch
 
-- Default branch: `main`. Feature branches: `fix/…`, `feat/…`. Open PRs only when asked; no PR template.
-- Before commit: `git diff --check` clean. Commit style: `fix(velshop): …`, `feat(db): …`, `docs: …`.
-- Never `git push --force` without owner instruction. On conflicts, understand both sides; preserve newer functionality.
-- Every completed task: `git add` → `git commit -m "..."` → `git push` → verify `git status` clean.
+`main`. Feature branches: `fix/…`, `feat/…`. Open PRs only when asked or when the repository policy requires them.
 
-## Freebuff / Vly Managed Push
+---
 
-When `git push/pull` is blocked, Freebuff injects a short-lived GitHub App credential automatically. Do not paste PATs, rewire remotes, or use stale-cache fallbacks. Run git normally; if minting fails, ask user to reconnect the repo / update App permissions.
+## AI Completion Lifecycle (Mandatory)
 
-If you must use REST (only in Vly-style blocked envs):
+Every successful repository-changing task MUST end with:
 
-1. `GET /repos/{owner}/{repo}/git/ref/heads/{branch}` → `head_sha`
-2. `GET /git/trees/{head_sha}?recursive=1` → remote blob map
-3. Walk local tree (skip `node_modules/`, `.git/`, `dist/`, `cache/`, `.env*`, `*.local`); blob SHA = `sha1("blob {len}\\0"+content)`
-4. `POST /git/blobs` per changed file
-5. `POST /git/trees` with `base_tree:head_sha` + all blobs
-6. `POST /git/commits` (parents: [head_sha])
-7. `PATCH /git/refs/heads/{branch}` — force only if clearly needed
+```
+Implementation complete
+→ Validation passed (typecheck / tests / diff --check)
+→ Commit created
+→ Commit pushed to GitHub
+→ Remote verified (local SHA == remote SHA)
+→ AI_Handoff.md updated when required
+→ Working tree clean
+```
 
-Never rebuild `main` from a stale checkout with this recipe (would delete newer commits). Use feature branches.
+This is not optional. See **AGENTS.md** *Default Completion State* and **AI_RULES.md** §14.
+
+---
+
+## Step-by-Step Flow
+
+### 1. Inspect and Scope
+
+```bash
+git branch --show-current   # know the branch
+git remote -v               # know the remote
+git status                  # clean baseline?
+```
+
+### 2. Implement
+
+Make the required code/doc changes. Minimal, correct, no duplicate systems.
+
+### 3. Validate
+
+Run the appropriate checks for the affected subsystem:
+
+- TypeScript: `bun run typecheck` (all apps) or per-app.
+- Backend tests: `cd backend && bun test tests`.
+- Lint: if configured.
+- `git diff --check` — whitespace clean.
+- For database changes: verify `db/schema.sql` ↔ `db/run-sqleditor.sql` sync.
+
+Do not proceed to commit if validation fails. Fix first.
+
+### 4. Stage Targeted Changes
+
+```bash
+git status          # identify which files changed
+git diff            # confirm changes belong to this task ONLY
+git add <files>     # stage only task-related files
+```
+
+**Never use `git add .`** when the working tree contains unrelated changes. Separate them.
+
+### 5. Commit
+
+```bash
+git commit -m "$(cat <<'EOF'
+<type>(<scope>): <description>
+
+🤖 Generated with Codebuff
+Co-Authored-By: Codebuff <noreply@codebuff.com>
+EOF
+)"
+```
+
+Style: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. No vague messages (`update`, `fix stuff`, `changes`).
+
+### 6. Push
+
+```bash
+git push origin <branch>
+```
+
+This happens **immediately after commit**. Do not require the user to say "push".
+
+### 7. Verify Remote
+
+```bash
+git fetch origin
+git rev-parse HEAD           # local SHA
+git rev-parse origin/<branch>  # remote SHA
+```
+
+Both must match. Report `PUSH VERIFIED` only after this check succeeds.
+
+If SHA mismatch persists after fetch, investigate before reporting.
+
+### 8. Update AI_Handoff.md
+
+If the task warrants a handoff update:
+
+1. Edit `AI_Handoff.md`.
+2. `git add AI_Handoff.md`.
+3. Commit with a docs message: `docs(ai): update handoff — <topic>`.
+4. Push.
+5. Verify remote SHA again.
+
+Final state must always be: working tree clean, HEAD == origin/branch.
+
+### 9. Final Report
+
+Report completion only when every item in the lifecycle is confirmed:
+
+```
+DONE =
+  code completed
++ validation passed
++ commit created
++ commit pushed
++ GitHub remote verified
++ handoff synchronized
++ working tree clean
+```
+
+---
+
+## Git CLI Push (Preferred)
+
+Normal `git push origin <branch>` is the default. The Freebuff/Vly environment injects a short-lived GitHub App credential automatically for each command. Run git normally; do not paste PATs or rewire remotes.
+
+---
+
+## GitHub API Fallback
+
+If `git push` fails due to authentication or environment restrictions:
+
+1. Diagnose the exact failure (auth, non-fast-forward, protected branch, network).
+2. Use the GitHub REST API (Git Data API) with the ambient token as a fallback:
+
+```
+GET  /repos/{owner}/{repo}/git/ref/heads/{branch}   → head_sha
+GET  /git/trees/{head_sha}?recursive=1              → remote blob map
+POST /git/blobs  (per changed file)
+POST /git/trees  (base_tree: head_sha + blobs)
+POST /git/commits  (parents: [head_sha])
+PATCH /git/refs/heads/{branch}
+```
+
+3. After API push, re-fetch and verify SHA match.
+4. **Never** hardcode, echo, or expose tokens.
+5. **Never** rebuild `main` from a stale checkout with this recipe (would delete newer commits). Use feature branches.
+
+If no authorized fallback exists, report `NOT PUSHED — AUTHENTICATION UNAVAILABLE`.
+
+---
+
+## Non-Fast-Forward Resolution
+
+If push fails with non-fast-forward:
+
+1. **Do not force-push.**
+2. Stop the automatic push.
+3. `git fetch origin` and compare: `git log HEAD..origin/<branch>`.
+4. If the remote has commits not present locally, merge or rebase:
+   - `git merge origin/<branch>` (preserves history) or
+   - `git rebase origin/<branch>` (linear history, cleaner).
+5. Resolve any conflicts.
+6. Re-run validation.
+7. Push again.
+8. Verify SHA.
+
+If divergence is ambiguous or could overwrite another contributor's work, stop and report `NOT PUSHED — REMOTE CONFLICT` with exact details.
+
+---
+
+## Protected Branch
+
+If the target branch requires pull requests and rejects direct pushes:
+
+1. Commit locally.
+2. Push to a feature branch instead.
+3. Open a PR (only when asked or when repo policy requires it).
+4. Report `NOT PUSHED DIRECTLY — PR REQUIRED`.
+
+---
+
+## Unrelated Changes
+
+Before staging, always inspect `git status` and `git diff` for unrelated modifications.
+
+- Stage only files belonging to the current task.
+- Never use `git add .` when unrelated changes exist.
+- If the user has unrelated changes and the task is complete, do not commit those changes.
+
+---
+
+## Verification Statuses
+
+| Status | Meaning |
+|--------|---------|
+| `PUSH VERIFIED` | Commit pushed, remote SHA matches local SHA, working tree clean. |
+| `NOT PUSHED — USER REQUEST` | User explicitly said not to commit/push. |
+| `NOT PUSHED — VALIDATION FAILED` | Typecheck/tests/diff-check failed; fixes pending. |
+| `NOT PUSHED — AUTHENTICATION UNAVAILABLE` | No Git CLI auth and no authorized API fallback. |
+| `NOT PUSHED — REMOTE CONFLICT` | Non-fast-forward; requires manual reconciliation. |
+| `NOT PUSHED — PROTECTED BRANCH` | Branch rejects direct push; PR required. |
+
+Never report `PUSH VERIFIED` unless the remote SHA was actually confirmed.
+
+Never use vague wording: `git issue`, `push problem`, `probably pushed`.
+
+---
+
+## Branch Policy
+
+- Default branch: `main`.
+- Do not push directly to `main` if the repository requires PRs.
+- Do not create unnecessary feature branches.
+- Do not create a PR unless asked or unless repository policy requires it.
+- Never rewrite shared branch history.
+
+---
+
+## Commit Message Style
+
+Conventional-ish:
+
+```
+fix(velshop): fix product image rendering
+feat(categories): improve category hierarchy
+docs(ai): update agent workflow
+fix(auth): resolve session redirect
+```
+
+No meaningless messages: `update`, `changes`, `fix stuff`, `AI changes`.
+
+Always `git diff --check` clean before commit.
+
+---
+
+## When NOT to Commit/Push
+
+Skip commit/push and report the exact reason when:
+
+1. User explicitly says *do not commit* / *do not push* / *keep changes local*.
+2. Task is analysis-only — no repository changes made.
+3. Required validation fails and is unresolved.
+4. Security or data-loss risk is discovered.
+5. Branch is protected and PR policy applies.
+6. No authenticated push path is available.
+
+---
 
 ## Preview (Freebuff)
 
-- Bind dev servers to `0.0.0.0`; Freebuff injects `PORT`. Save commands with `freebuff-preview set-install "<cmd>"`, `freebuff-preview set "<cmd>" <port>`, `freebuff-preview set-build "<cmd>"`.
-- Start/verify: `freebuff-preview start` (or `restart`); diagnose with `freebuff-preview status` / `logs`. Do not manage `vite`/`bun run dev` manually.
-- Keep install/build scripts minimal and in `package.json`.
+- Bind dev servers to `0.0.0.0`; Freebuff injects `PORT`.
+- Save commands: `freebuff-preview set-install`, `freebuff-preview set`, `freebuff-preview set-build`.
+- Start/verify: `freebuff-preview start` or `restart`. Diagnose: `freebuff-preview status` / `logs`.
+- Do not manage `vite`/`bun run dev` manually.
+
+---
 
 ## Production Deploy (Freebuff-managed hosting)
 
-- Hosting runs install then build on a clean Node image. For Vite, build must emit `dist/` and exit (not start a server). No `uv/pip/python/apt/cargo` in install/build; invoke scripts as `sh ./scripts/foo.sh`.
-- Python in prod belongs in `api/*.py` + `requirements.txt`.
-- Before deploying: `freebuff-deploy check`. After: `freebuff-deploy status` / `logs`; `freebuff-deploy start` for redeploys.
-- Prod env vars are separate: `freebuff-deploy env list` / `env set '{"KEY":"value"}'` / `env unset KEY`. Never read/print secrets; use `freebuff-env set --file .env.local '{"KEY":"value"}'`.
-- Also: Vercel (4 frontends) + Render (backend: `bun run api:start` on `PORT`) + Neon (run `db/run-sqleditor.sql` once).
+- Install then build on a clean Node image. For Vite: build emits `dist/` and exits (no server). No `uv/pip/python/apt/cargo` in install/build.
+- Before deploy: `freebuff-deploy check`. After: `freebuff-deploy status` / `logs`.
+- Prod env vars are separate: `freebuff-deploy env list` / `set` / `unset`. Never read/print secrets.
+
+---
 
 ## Handoff Rule
 
