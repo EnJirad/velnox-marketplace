@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-16 (VelCenter moderation detail 42P10 + VelSeller correction notifications)
+**Last updated:** 2026-09-16 (VelCenter product inspection, staff/customer split, audit logs, company settings)
 **Branch:** `main`
 
 ## Current Project State
@@ -1145,3 +1145,72 @@ Backend API (`/api/categories/stats` and `/api/categories/tree`) already support
 | i18n:check | ✅ th=1289 en=1289 my=1289 |
 | backend tests | ✅ 263 pass / 29 skip / 0 fail |
 | git diff --check | ✅ CLEAN |
+
+---
+
+## VelCenter control-plane upgrade (product inspection · staff/customer · audit logs · company settings)
+
+Scope: VelCenter only. **No database change** — every value used already existed
+(`audit_logs`, `platform_settings`, `users.role`, `seller_verifications`).
+
+### 1. Product inspection workspace (responsive)
+`apps/velcenter/src/components/ProductModerationQueue.tsx`
+- Shell is now a **full-screen sheet on phones** (`h-[100dvh] w-full max-w-none rounded-none`) and a **large 6xl dialog on desktop** (`sm:max-w-6xl sm:max-h-[92dvh]`), with a pinned header (name + shop + status) and a pinned action bar; only the body scrolls.
+- Gallery stage is height-bounded on every breakpoint (`h-[38dvh] max-h-[420px] sm:h-[420px]`) so a tall photo can no longer stretch the dialog; thumbnails scroll horizontally with snap.
+- `optionGroups` were typed in the interface but **never rendered** — they now render (name, display type, required, values) alongside variants (table on desktop, stacked cards on mobile), attributes, inventory, category, seller/shop card and moderation history. Nothing was removed to shrink mobile.
+- Approve / reject moved into the pinned action bar (reject keeps its required reason), so the controls are reachable without scrolling on mobile.
+- A failed detail load now shows a **real error state with retry** instead of an empty dialog.
+
+### 2. V mark = the letter V
+- Removed the `"V ✓"` badge from the shop-group header; VelCenter now renders the shared `VBadge` (`sellerOnly`) which shows the bare letter **V**, matching VelShop.
+- Guarded by tests: no `V ✓` anywhere, and the badge markup contains no check icon.
+
+### 3. Staff / Customer split (permissions enforced server-side)
+- `GET /api/admin/users` now takes `?segment=staff|customer|seller|all` and resolves the segment from **explicit `users.role` values** — a customer is a customer because the role says so, never "everything that is not staff". Unknown roles return `role: null` instead of being defaulted. It also returns per-segment counts.
+- VelCenter's tab is now **ผู้ใช้ & ลูกค้า → [พนักงาน | ลูกค้า]** with count badges, search, real error state + retry, and `isStaff` from the API.
+- Employee management (create / reset / permissions) stays **owner-only through the API** (`isOwner`), and now also owner-only in the UI; owner/admin can read the customer directory. Tab visibility widened to owner+admin is UX only — every endpoint re-checks the role.
+
+### 4. Audit logs for staff actions
+- New shared writer `backend/lib/audit-log.ts`: sanitizes sensitive keys (password/secret/token/hash/api-key/credential/authorization/cookie → `[redacted]`), records the client IP, and is best-effort so an audit failure never breaks the business transaction. `center.ts` now uses it (its private copy was removed).
+- `GET /api/admin/audit-logs` (owner/admin only) now resolves **who** (`actor_name`, `actor_email`, `actor_role`), **what** (`target_label` joined from products/sellers/users/shops/orders), `before`/`after` from the `details` `from`/`to` pair, the `ip_address`, and supports server-side filters `action`, `entityType`, `actorId`, `from`, `to`, `q` plus `limit`/`offset` and a `total` count.
+- Missing events were added: `SETTINGS_UPDATE` (with `from`/`to`), `SELLER_VERIFICATION_*` for every reviewer decision (approve/reject/suspend/needs_correction), and `USER_ACCESS_UPDATE` now stores the previous role/department.
+- `AuditLogTab.tsx` rewritten: readable Thai action labels (with a prettified fallback — never inventing an event), filters, desktop table + mobile cards, expandable detail, "load more", and an error state with retry instead of a silent empty list.
+
+### 5. Shop Settings → Company / System Settings
+- Tab renamed to **ตั้งค่าระบบ** and restructured with a section nav: บริษัท/แพลตฟอร์ม, ตลาด & การอนุมัติ, ค่าธรรมเนียมผู้ขาย, ภาษา & ท้องถิ่น, ไฟล์ & สื่อ, สิทธิ์การเข้าถึง.
+- **Contract bug fixed:** `GET /api/admin/settings` returned a flat key→value map while VelCenter read `res.settings`, so the form had **always loaded empty**. The endpoint now returns `{ settings: [{key,value,description,updatedAt,updatedBy}], meta }` and JSON-encoded values are normalised on read (`unwrapSettingValue`, for DBs where the column is JSONB).
+- Only **changed** values are written, so the audit trail has no noise from re-saving untouched fields.
+- Read-only values come from their real owner, never duplicated: commission (`SELLER_COMMISSION_RATE` / `SELLER_RETURN_COVERAGE` from `backend/lib/seller-stats.ts`), upload limits (`backend/lib/media-config.ts`, now the single source for `MAX_UPLOAD_BYTES` / `ALLOWED_UPLOAD_TYPES` which `routes/upload.ts` imports), and supported languages (shared i18n config).
+- Commission is displayed **read-only** on purpose: the payout engine owns it, so the settings UI cannot create a second source of truth for money.
+- Sections the backend has no configuration for (Notifications, Security, Customer) were **not** invented.
+
+### Files changed
+| File | Change |
+|---|---|
+| `backend/lib/audit-log.ts` | NEW — shared sanitizing audit writer + client-IP helper |
+| `backend/lib/media-config.ts` | NEW — single source for upload limits |
+| `backend/routes/center.ts` | segmented `/api/admin/users`, enriched `/api/admin/audit-logs`, uses shared audit writer |
+| `backend/routes/admin.ts` | settings payload `{settings, meta}`, JSONB-tolerant read, audited writes |
+| `backend/routes/verification.ts` | audits every reviewer decision |
+| `backend/routes/upload.ts` | imports limits from `lib/media-config.ts` |
+| `packages/shared/src/lib/api-routes.ts` | `buildQuery`; audit-log filters + `segment` passthrough |
+| `apps/velcenter/src/pages/Center.tsx` | staff/customer tabs, company settings sections, `canSeeTab("staff")` = owner\|admin |
+| `apps/velcenter/src/components/AuditLogTab.tsx` | rewritten |
+| `apps/velcenter/src/components/ProductModerationQueue.tsx` | responsive inspection workspace + bare V |
+| `backend/tests/center-admin-audit.test.ts` | NEW — 24 regression guards |
+
+### Database
+- **No schema change.** `db/schema.sql` and `db/run-sqleditor.sql` are untouched and stay in sync; `db/run-update.sql` was not created, edited or used.
+
+### Tests
+| Check | Result |
+|---|---|
+| backend tsc | ✅ |
+| velcenter / velshop / velseller / velnox tsc | ✅ all pass |
+| i18n:check | ✅ th=1289 en=1289 my=1289 |
+| backend tests | ✅ 287 pass / 29 skip / 0 fail (incl. 24 new) |
+| git diff --check | ✅ CLEAN |
+
+### Not verified / remaining
+- The 320/375/390/430/768/1024px behaviour is code-inspected (fluid layout, no fixed widths, stacked cards under `md`, pinned bars) but was **not** driven in a real browser from this environment.
+- Section-level settings that need new backend configuration (Notifications, Security, Customer/loyalty) are intentionally absent until the backend owns them.

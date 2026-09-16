@@ -121,6 +121,17 @@ async function apiDelete(path: string): Promise<any> {
 
 // ─── API Route Mapping ──────────────────────────────────────────────────────
 
+/** Build a `?a=b&c=d` query string, skipping empty/undefined values. */
+function buildQuery(params: Record<string, string | number | undefined | null>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
 const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   // Customer actions
   "api.customer.myProfile": () => apiGet("/api/customer/profile"),
@@ -259,7 +270,19 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.centerAdmin.dashboardCounts": () => apiGet("/api/admin/dashboard/counts"),
   "api.centerAdmin.ordersListAction": (a) => apiGet(`/api/admin/orders?limit=${a?.limit ?? 100}`),
   "api.centerAdmin.updateOrderStatusAction": (a) => apiPatch(`/api/admin/orders/${a.orderId}/status`, a),
-  "api.centerAdmin.auditLogs": () => apiGet("/api/admin/audit-logs"),
+  "api.centerAdmin.auditLogs": (a) =>
+    apiGet(
+      `/api/admin/audit-logs${buildQuery({
+        limit: a?.limit ?? 100,
+        offset: a?.offset ?? 0,
+        action: a?.action,
+        entityType: a?.entityType,
+        actorId: a?.actorId,
+        q: a?.q,
+        from: a?.from,
+        to: a?.to,
+      })}`,
+    ),
   "api.centerAdmin.permissionCatalog": () => apiGet("/api/admin/permissions"),
   "api.centerAdmin.setStaffProfileAction": (a) => apiPatch("/api/admin/staff", a),
   "api.centerAdmin.recomputeBalances": () => apiPost("/api/admin/recompute-balances"),
@@ -280,7 +303,7 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
 
   // Users (admin)
   "api.users.currentUser": () => apiGet("/api/auth/me"),
-  "api.users.listUsers": () => apiGet("/api/admin/users"),
+  "api.users.listUsers": (a) => apiGet(`/api/admin/users${buildQuery({ segment: a?.segment ?? "all" })}`),
   "api.users.setUserAccess": (a) => apiPatch(`/api/admin/users/${a.targetUserId}/access`, a),
   "api.users.ownerBootstrapStatus": () => apiGet("/api/admin/bootstrap-status"),
   "api.users.claimOwner": (a) => apiPost("/api/admin/claim-owner", a),

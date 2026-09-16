@@ -15,6 +15,9 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
+import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
+import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "../lib/media-config.js";
+import { SELLER_COMMISSION_RATE, SELLER_RETURN_COVERAGE } from "../lib/seller-stats.js";
 
 const BOOTSTRAP_SECRET = process.env.BOOTSTRAP_OWNER_SECRET;
 
@@ -23,6 +26,27 @@ console.log(
   "[bootstrap] BOOTSTRAP_OWNER_SECRET configured:",
   Boolean(BOOTSTRAP_SECRET),
 );
+
+/**
+ * `platform_settings.value` is TEXT in the canonical schema, but databases
+ * bootstrapped from migration 018 may have it as JSONB and therefore hand back
+ * a JSON-encoded string. Normalize on read so the UI always sees the plain
+ * value (and audit `from`/`to` stay comparable).
+ */
+function unwrapSettingValue(raw: unknown): string {
+  if (raw === null || raw === undefined) return "";
+  if (typeof raw !== "string") return String(raw);
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === "string") return parsed;
+    } catch {
+      /* keep the raw value */
+    }
+  }
+  return raw;
+}
 
 export function setupAdminRoutes(app: Express): void {
   // ── GET /api/admin/bootstrap-status ─────────────────────────────────────
@@ -120,7 +144,10 @@ export function setupAdminRoutes(app: Express): void {
   });
 
   // ── GET /api/admin/settings ────────────────────────────────────────────────
-  // Returns all platform settings. Admin only.
+  // VelCenter "Company / System Settings". Returns the persisted
+  // platform_settings rows plus read-only metadata that is genuinely owned by
+  // the backend (commission policy, upload limits) so the screen never shows
+  // an invented value or a second source of truth for money.
   app.get("/api/admin/settings", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
@@ -129,12 +156,46 @@ export function setupAdminRoutes(app: Express): void {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only owner or admin can access settings" } });
         return;
       }
-      const result = await query("SELECT key, value, description, updated_at FROM platform_settings ORDER BY key ASC");
-      const settings: Record<string, string> = {};
-      for (const row of result.rows) {
-        settings[row.key] = row.value;
-      }
-      res.json({ success: true, data: settings });
+      const result = await query(
+        `SELECT key, value, description, updated_at, updated_by
+         FROM platform_settings
+         ORDER BY key ASC`,
+      );
+      const settings = result.rows.map((row: any) => ({
+        key: row.key as string,
+        value: unwrapSettingValue(row.value),
+        description: (row.description as string | null) ?? null,
+        updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+        updatedBy: (row.updated_by as string | null) ?? null,
+      }));
+      const approvalMode = settings.find((s) => s.key === "product_approval_mode")?.value ?? "manual";
+
+      res.json({
+        success: true,
+        data: {
+          settings,
+          meta: {
+            moderation: {
+              approvalMode,
+              // The single product verification workflow is seller/shop level.
+              productVerificationEnabled: false,
+            },
+            commission: {
+              // Financial policy — owned by lib/seller-stats.ts (the engine that
+              // actually computes payouts). Read-only here on purpose.
+              sellerRate: SELLER_COMMISSION_RATE,
+              returnCoverage: SELLER_RETURN_COVERAGE,
+              currency: "THB",
+              editable: false,
+            },
+            media: {
+              maxUploadBytes: MAX_UPLOAD_BYTES,
+              allowedTypes: [...ALLOWED_UPLOAD_TYPES],
+            },
+            role: userResult.rows[0].role as string,
+          },
+        },
+      });
     } catch (err) {
       console.error("[admin] settings list error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch settings" } });
@@ -161,6 +222,10 @@ export function setupAdminRoutes(app: Express): void {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "product_approval_mode must be 'manual' or 'auto'" } });
         return;
       }
+      // Every platform setting change is audited with its previous value so the
+      // trail answers "who changed what, from what, to what, when".
+      const existing = await query("SELECT value FROM platform_settings WHERE key = $1", [key]);
+      const previousValue = existing.rows[0] ? unwrapSettingValue(existing.rows[0].value) : null;
       await query(
         `INSERT INTO platform_settings (key, value, updated_at, updated_by)
          VALUES ($1, $2, NOW(), $3)
@@ -168,6 +233,14 @@ export function setupAdminRoutes(app: Express): void {
         [key, value, userId]
       );
       console.log(`[admin] setting updated: ${key} = ${value} by ${userId}`);
+      await writeAuditLog(
+        userId,
+        "SETTINGS_UPDATE",
+        "setting",
+        null,
+        { key, from: previousValue, to: value },
+        auditClientIp(req),
+      );
       res.json({ success: true, data: { key, value }      });
     } catch (err) {
       console.error("[admin] settings update error:", err);

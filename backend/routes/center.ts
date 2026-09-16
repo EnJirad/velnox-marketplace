@@ -28,6 +28,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
+import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 
 function param(req: Request, key: string): string {
   const v = req.params[key];
@@ -54,18 +55,6 @@ async function canWriteCenter(userId: string): Promise<boolean> {
 /** Owner only. */
 async function isOwner(userId: string): Promise<boolean> {
   return (await roleOf(userId)) === "owner";
-}
-
-async function writeAuditLog(userId: string, action: string, entityType: string, entityId: string | null, details: Record<string, unknown>): Promise<void> {
-  try {
-    await query(
-      `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details, ip_address)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [userId, action, entityType, entityId, JSON.stringify(details), null],
-    );
-  } catch (err) {
-    console.error("[center] audit log write failed:", err);
-  }
 }
 
 // Order status transitions the center UI offers (mirror of the frontend map).
@@ -447,7 +436,7 @@ export function setupCenterRoutes(app: Express): void {
       }
 
       await query("UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2", [to, orderId]);
-      await writeAuditLog(req.user!.userId, "ORDER_STATUS_UPDATE", "order", orderId, { from, to });
+      await writeAuditLog(req.user!.userId, "ORDER_STATUS_UPDATE", "order", orderId, { from, to }, auditClientIp(req));
       res.json({ success: true, data: { id: orderId, status: to } });
     } catch (err) {
       console.error("[center] order status error:", err);
@@ -456,44 +445,114 @@ export function setupCenterRoutes(app: Express): void {
   });
 
   // ── GET /api/admin/audit-logs ───────────────────────────────────────────
+  // Append-only staff action trail. Returns WHO acted (name/email/role),
+  // WHAT they acted on (resolved target label + id), the before/after values
+  // when the action was a change, and the request IP. Sensitive values are
+  // stripped at write time (see lib/audit-log.ts).
   app.get("/api/admin/audit-logs", requireAuth, async (req: Request, res: Response) => {
     try {
       if (!(await canWriteCenter(req.user!.userId))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Owner or admin access required" } });
         return;
       }
-      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 150, 1), 500);
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 500);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      const where: string[] = [];
+      const params: unknown[] = [];
+      const addParam = (value: unknown): string => {
+        params.push(value);
+        return `$${params.length}`;
+      };
+
+      if (typeof req.query.action === "string" && req.query.action.trim()) {
+        where.push(`al.action = ${addParam(req.query.action.trim())}`);
+      }
+      if (typeof req.query.entityType === "string" && req.query.entityType.trim()) {
+        where.push(`al.entity_type = ${addParam(req.query.entityType.trim())}`);
+      }
+      if (typeof req.query.actorId === "string" && req.query.actorId.trim()) {
+        where.push(`al.user_id = ${addParam(req.query.actorId.trim())}`);
+      }
+      if (typeof req.query.from === "string" && req.query.from.trim()) {
+        const from = new Date(req.query.from);
+        if (!Number.isNaN(from.getTime())) where.push(`al.created_at >= ${addParam(from.toISOString())}`);
+      }
+      if (typeof req.query.to === "string" && req.query.to.trim()) {
+        const to = new Date(req.query.to);
+        if (!Number.isNaN(to.getTime())) where.push(`al.created_at <= ${addParam(to.toISOString())}`);
+      }
+      if (typeof req.query.q === "string" && req.query.q.trim()) {
+        const like = `%${req.query.q.trim()}%`;
+        const p = addParam(like);
+        where.push(`(al.action ILIKE ${p} OR al.entity_type ILIKE ${p} OR u.name ILIKE ${p} OR u.email ILIKE ${p} OR al.details::text ILIKE ${p})`);
+      }
+      const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+
+      const limitParam = addParam(limit);
+      const offsetParam = addParam(offset);
+
       const result = await query(
-        `SELECT al.id, al.user_id, al.action, al.entity_type, al.entity_id, al.details, al.created_at,
-                u.role AS actor_role
+        `SELECT al.id, al.user_id, al.action, al.entity_type, al.entity_id, al.details,
+                al.ip_address, al.created_at,
+                u.role AS actor_role, u.name AS actor_name, u.email AS actor_email,
+                COALESCE(p.name, s.name, su.name, su.email, sh.name, o.order_number) AS target_label
          FROM audit_logs al
          LEFT JOIN users u ON u.id = al.user_id
+         LEFT JOIN products p ON al.entity_type = 'product' AND p.id = al.entity_id
+         LEFT JOIN sellers s ON al.entity_type = 'seller' AND s.id = al.entity_id
+         LEFT JOIN users su ON al.entity_type IN ('employee', 'user') AND su.id = al.entity_id
+         LEFT JOIN shops sh ON al.entity_type = 'shop' AND sh.id = al.entity_id
+         LEFT JOIN orders o ON al.entity_type = 'order' AND o.id = al.entity_id
+         ${whereSql}
          ORDER BY al.created_at DESC
-         LIMIT $1`,
-        [limit],
+         LIMIT ${limitParam} OFFSET ${offsetParam}`,
+        params,
       );
+
+      const totalResult = await query(
+        `SELECT COUNT(*)::int AS total
+         FROM audit_logs al
+         LEFT JOIN users u ON u.id = al.user_id
+         ${whereSql}`,
+        params.slice(0, params.length - 2),
+      );
+
       res.json({
         success: true,
-        data: result.rows.map((r: any) => {
-          let after: Record<string, unknown> | null = null;
-          try {
-            const details = r.details && typeof r.details === "object" ? r.details : JSON.parse(r.details || "{}");
-            after = details && Object.keys(details).length > 0 ? details : null;
-          } catch {
-            after = null;
-          }
-          return {
-            id: r.id,
-            actorId: r.user_id ?? null,
-            actorRole: r.actor_role ?? null,
-            action: r.action,
-            entityType: r.entity_type ?? null,
-            entityId: r.entity_id ?? null,
-            before: null,
-            after,
-            createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-          };
-        }),
+        data: {
+          total: totalResult.rows[0]?.total ?? 0,
+          limit,
+          offset,
+          rows: result.rows.map((r: any) => {
+            let details: Record<string, unknown> = {};
+            try {
+              details = r.details && typeof r.details === "object" ? r.details : JSON.parse(r.details || "{}");
+            } catch {
+              details = {};
+            }
+            const keys = Object.keys(details ?? {});
+            // Change-style events carry `from`/`to`; anything else is context.
+            const before = keys.includes("from") ? (details.from as Record<string, unknown>) : null;
+            const after = keys.includes("to") ? (details.to as Record<string, unknown>) : (keys.length > 0 ? details : null);
+            return {
+              id: r.id,
+              actorId: r.user_id ?? null,
+              actorRole: r.actor_role ?? null,
+              actorName: r.actor_name ?? null,
+              actorEmail: r.actor_email ?? null,
+              action: r.action,
+              entityType: r.entity_type ?? null,
+              entityId: r.entity_id ?? null,
+              targetLabel: r.target_label ?? null,
+              before,
+              after,
+              details: keys.length > 0 ? details : null,
+              ipAddress: r.ip_address ?? null,
+              createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+            };
+          }),
+        },
       });
     } catch (err) {
       console.error("[center] audit logs error:", err);
@@ -516,30 +575,73 @@ export function setupCenterRoutes(app: Express): void {
   });
 
   // ── GET /api/admin/users ────────────────────────────────────────────────
+  // VelCenter shows staff and customers as SEPARATE tabs. The segment is
+  // resolved from `users.role` (the real role model) server-side — never by
+  // fuzzy-matching in the browser: an unknown/absent role is reported as
+  // `other` instead of being silently guessed into one of the two tabs.
   app.get("/api/admin/users", requireAuth, async (req: Request, res: Response) => {
     try {
       if (!(await canReadCenter(req.user!.userId))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
         return;
       }
+      const rawSegment = typeof req.query.segment === "string" ? req.query.segment : "all";
+      if (!["all", "staff", "customer", "seller"].includes(rawSegment)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "segment must be all, staff, customer or seller" } });
+        return;
+      }
+      const conditions: string[] = [];
+      const params: unknown[] = [];
+      if (rawSegment === "staff") {
+        conditions.push("u.role IN ('owner', 'admin', 'staff')");
+      } else if (rawSegment === "customer") {
+        conditions.push("u.role = 'customer'");
+      } else if (rawSegment === "seller") {
+        conditions.push("u.role = 'seller'");
+      }
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
       const result = await query(
         `SELECT u.id, u.email, u.name, u.role, u.department, u.status, u.created_at
          FROM users u
+         ${where}
          ORDER BY u.created_at DESC
          LIMIT 500`,
+        params,
       );
+
+      // Segment counts are computed over the same table so the tabs always
+      // show a real number even when the current segment is empty.
+      const counts = await query(
+        `SELECT
+           COUNT(*) FILTER (WHERE role IN ('owner', 'admin', 'staff')) AS staff,
+           COUNT(*) FILTER (WHERE role = 'customer') AS customer,
+           COUNT(*) FILTER (WHERE role = 'seller') AS seller
+         FROM users`,
+      );
+      const c = counts.rows[0] ?? {};
+
       res.json({
         success: true,
-        data: result.rows.map((r: any) => ({
-          _id: r.id,
-          id: r.id,
-          email: r.email ?? null,
-          name: r.name || null,
-          role: r.role ?? "customer",
-          department: r.department ?? null,
-          status: r.status ?? "active",
-          createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-        })),
+        data: {
+          segment: rawSegment,
+          counts: {
+            staff: parseInt(c.staff ?? "0", 10),
+            customer: parseInt(c.customer ?? "0", 10),
+            seller: parseInt(c.seller ?? "0", 10),
+          },
+          users: result.rows.map((r: any) => ({
+            _id: r.id,
+            id: r.id,
+            email: r.email ?? null,
+            name: r.name || null,
+            role: r.role ?? null,
+            department: r.department ?? null,
+            status: r.status ?? "active",
+            isStaff: ["owner", "admin", "staff"].includes(r.role ?? ""),
+            createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+          })),
+        },
       });
     } catch (err) {
       console.error("[center] users list error:", err);
@@ -569,12 +671,27 @@ export function setupCenterRoutes(app: Express): void {
         res.status(400).json({ success: false, error: { code: "SELF_DEMOTION", message: "You cannot change your own role" } });
         return;
       }
+      const previous = await query("SELECT role, department FROM users WHERE id = $1", [targetUserId]);
+      if (previous.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } });
+        return;
+      }
       await query("UPDATE users SET role = $1, department = $2, updated_at = NOW() WHERE id = $3", [
         role,
         department,
         targetUserId,
       ]);
-      await writeAuditLog(req.user!.userId, "USER_ACCESS_UPDATE", "user", targetUserId, { role, department });
+      await writeAuditLog(
+        req.user!.userId,
+        "USER_ACCESS_UPDATE",
+        "user",
+        targetUserId,
+        {
+          from: { role: previous.rows[0].role ?? null, department: previous.rows[0].department ?? null },
+          to: { role, department },
+        },
+        auditClientIp(req),
+      );
       res.json({ success: true, data: { id: targetUserId, role, department } });
     } catch (err) {
       console.error("[center] user access error:", err);
@@ -674,7 +791,7 @@ export function setupCenterRoutes(app: Express): void {
          VALUES ($1, $2, $3, $4)`,
         [userId, role === "admin" ? "admin" : "staff", employeeId, JSON.stringify(permissions)],
       );
-      await writeAuditLog(req.user!.userId, "EMPLOYEE_CREATE", "employee", userId, { email, role, department });
+      await writeAuditLog(req.user!.userId, "EMPLOYEE_CREATE", "employee", userId, { email, role, department }, auditClientIp(req));
 
       res.json({
         success: true,
@@ -709,7 +826,7 @@ export function setupCenterRoutes(app: Express): void {
         active ? "active" : "suspended",
         targetUserId,
       ]);
-      await writeAuditLog(req.user!.userId, "EMPLOYEE_ACTIVE_UPDATE", "employee", targetUserId, { active });
+      await writeAuditLog(req.user!.userId, "EMPLOYEE_ACTIVE_UPDATE", "employee", targetUserId, { active }, auditClientIp(req));
       res.json({ success: true, data: { id: targetUserId, active } });
     } catch (err) {
       console.error("[center] employee active error:", err);
@@ -744,7 +861,7 @@ export function setupCenterRoutes(app: Express): void {
         JSON.stringify(permissions),
         neonId,
       ]);
-      await writeAuditLog(req.user!.userId, "STAFF_PROFILE_UPDATE", "employee", userId, { department, permissions });
+      await writeAuditLog(req.user!.userId, "STAFF_PROFILE_UPDATE", "employee", userId, { department, permissions }, auditClientIp(req));
       res.json({ success: true, data: { id: neonId, department, permissions } });
     } catch (err) {
       console.error("[center] staff profile error:", err);

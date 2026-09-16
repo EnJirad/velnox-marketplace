@@ -24,6 +24,7 @@
 
 import type { Express, Request, Response } from "express";
 import { query, getClient } from "../db/index.js";
+import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import { broadcast, CHANNELS, sendToUser } from "../realtime/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -713,6 +714,17 @@ export function registerVerificationRoutes(app: Express) {
       );
 
       await client.query("COMMIT");
+
+      // Staff audit trail — non-fatal, after commit. The seller review history
+      // above is applicant-facing; this row is the VelCenter Audit Logs entry.
+      await writeAuditLog(
+        reviewerId,
+        `SELLER_VERIFICATION_${historyAction.toUpperCase()}`,
+        "seller",
+        current.seller_id,
+        { verificationId, from: previousStatus, to: newStatus, reasonCode: code || null, reason: reason || null, note: note || null },
+        auditClientIp(req),
+      );
 
       // Notifications — non-fatal, after commit
       if (["approve", "reject", "suspend", "needs_correction"].includes(action)) {

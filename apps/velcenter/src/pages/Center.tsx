@@ -40,6 +40,7 @@ import {
 } from "@velnox/shared/components/ui/table";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { api } from "@velnox/shared/lib/api-routes";
+import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES } from "@velnox/shared/lib/i18n/config";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 // Id type replaced with string
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -67,10 +68,13 @@ import {
   BadgeCheck,
   Boxes,
   BrainCircuit,
+  Coins,
   Crown,
+  Globe,
   History,
+  Image as ImageIcon,
+  KeyRound,
   Loader2,
-  Megaphone,
   Package,
   RefreshCw,
   Save,
@@ -108,11 +112,28 @@ const DEPARTMENT_LABEL: Record<string, string> = {
 };
 
 /**
+ * Company / system settings sections. Each entry is backed by a REAL source:
+ * `company` and `marketplace` write platform_settings; the rest display values
+ * the backend owns (money policy, upload limits) read-only.
+ */
+const SETTINGS_SECTIONS = [
+  { id: "company", label: "บริษัท / แพลตฟอร์ม", icon: Store },
+  { id: "marketplace", label: "ตลาด & การอนุมัติ", icon: Package },
+  { id: "commission", label: "ค่าธรรมเนียมผู้ขาย", icon: Coins },
+  { id: "localization", label: "ภาษา & ท้องถิ่น", icon: Globe },
+  { id: "media", label: "ไฟล์ & สื่อ", icon: ImageIcon },
+  { id: "access", label: "สิทธิ์การเข้าถึง", icon: KeyRound },
+] as const;
+
+/**
  * velcenter permission model (company-only):
  * - owner:  everything, including managing employees
- * - admin:  business data + manage orders, but NO employee management
+ * - admin:  business data + the customer directory, but NO employee management
  *           (department-scoped in production; e.g. marketing admin)
  * - staff:  view business numbers only (overview / orders / intel / products)
+ *
+ * These rules only decide which tabs are OFFERED. Every endpoint behind them
+ * re-checks the role server-side, so hiding a tab is UX, never authorization.
  */
 function canSeeTab(tab: Tab, role?: string | null, department?: string | null): boolean {
   switch (tab) {
@@ -125,8 +146,10 @@ function canSeeTab(tab: Tab, role?: string | null, department?: string | null): 
 
     case "categories":
       return role === "owner" || role === "admin";
+    // Staff accounts are managed by the owner; the customer directory is
+    // readable by owner and admin. Both endpoints re-check the role.
     case "staff":
-      return role === "owner";
+      return role === "owner" || role === "admin";
     case "audit":
       return role === "owner" || role === "admin";
     case "settings":
@@ -174,8 +197,8 @@ export default function Center() {
     { to: "/?tab=orders", label: "ออเดอร์", icon: ShoppingBag, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "orders" },
     { to: "/?tab=intel", label: "Intelligence", icon: BrainCircuit, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "intel" },
     { to: "/?tab=products", label: "สินค้า", icon: Package, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "products" },
-    ...(isOwner
-      ? [{ to: "/?tab=staff", label: "พนักงาน", icon: Users, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "staff" } as MobileTabItem]
+    ...(canSeeTab("staff", userRole, userDepartment)
+      ? [{ to: "/?tab=staff", label: "ผู้ใช้", icon: Users, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "staff" } as MobileTabItem]
       : []),
     ...(canSeeTab("audit", userRole, userDepartment)
       ? [{ to: "/?tab=audit", label: "Audit", icon: History, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "audit" } as MobileTabItem]
@@ -243,6 +266,25 @@ export default function Center() {
     created_at: string;
     shop_name: string;
     seller_name: string;
+  }
+  /** Read-only platform facts returned alongside the persisted settings. */
+  interface PlatformMeta {
+    moderation?: { approvalMode?: string; productVerificationEnabled?: boolean };
+    commission?: { sellerRate?: number; returnCoverage?: number; currency?: string; editable?: boolean };
+    media?: { maxUploadBytes?: number; allowedTypes?: string[] };
+    role?: string;
+  }
+  /** One row from GET /api/admin/users — `role` is the real DB role. */
+  interface DirectoryUser {
+    _id: string;
+    id: string;
+    email: string | null;
+    name: string | null;
+    role: string | null;
+    department: string | null;
+    status: string;
+    isStaff: boolean;
+    createdAt: number;
   }
   /** A seller_verifications row. Identity evidence is reviewer-only and is
    *  fetched separately as short-lived signed URLs. */
@@ -402,29 +444,84 @@ export default function Center() {
     }
   };
 
-  // Employee list returns [] for non-owners (the staff tab is owner-only anyway).
-  const users = useQuery(api.users.listUsers);
+  // ── People directory (spec §9–§11) ───────────────────────────────────────
+  // Staff and customers are SEPARATE lists, filtered server-side by the real
+  // `users.role` values — never by fuzzy matching in the browser. Role / dept
+  // changes are owner-only and audit-logged server-side.
+  const listUsersAction = useAction(api.users.listUsers);
   const setUserAccess = useMutation(api.users.setUserAccess);
+  const [staffUsers, setStaffUsers] = useState<DirectoryUser[] | null>(null);
+  const [customerUsers, setCustomerUsers] = useState<DirectoryUser[] | null>(null);
+  const [peopleCounts, setPeopleCounts] = useState<{ staff: number; customer: number; seller: number }>({ staff: 0, customer: 0, seller: 0 });
+  const [peopleError, setPeopleError] = useState<string | null>(null);
+  const [peopleSegment, setPeopleSegment] = useState<"staff" | "customer">("staff");
+  const [customerSearch, setCustomerSearch] = useState("");
+
+  const loadPeople = useCallback(async () => {
+    setPeopleError(null);
+    try {
+      const [staffRes, customerRes] = await Promise.all([
+        listUsersAction({ segment: "staff" }),
+        listUsersAction({ segment: "customer" }),
+      ]);
+      setStaffUsers((staffRes?.users ?? []) as DirectoryUser[]);
+      setCustomerUsers((customerRes?.users ?? []) as DirectoryUser[]);
+      const counts = customerRes?.counts ?? staffRes?.counts;
+      if (counts) setPeopleCounts({ staff: counts.staff ?? 0, customer: counts.customer ?? 0, seller: counts.seller ?? 0 });
+    } catch (error) {
+      console.error("Users list error:", error);
+      setPeopleError(error instanceof Error ? error.message : "โหลดรายชื่อผู้ใช้ไม่สำเร็จ");
+      setStaffUsers([]);
+      setCustomerUsers([]);
+    }
+  }, [listUsersAction]);
+
+  useEffect(() => {
+    void loadPeople();
+  }, [loadPeople]);
 
   // Storefront settings now live in Neon platform_settings (spec §15–16) —
   // read/write through the center actions (owner/admin, audit-logged).
+  // Company / system settings live in Neon `platform_settings`. The endpoint
+  // returns the persisted rows PLUS backend-owned read-only meta (commission
+  // policy, upload limits) so nothing here is invented client-side.
   const getPlatformSettingsAction = useAction(api.centerAdmin.getPlatformSettings);
   const updatePlatformSettingAction = useAction(api.centerAdmin.updatePlatformSettingAction);
-  const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
-  useEffect(() => {
-    let alive = true;
-    getPlatformSettingsAction()
-      .then((res) => {
-        if (!alive) return;
-        const map: Record<string, unknown> = {};
-        for (const s of res.settings ?? []) map[s.key] = s.value;
-        setSettings(map);
-      })
-      .catch(() => alive && setSettings(null));
-    return () => {
-      alive = false;
-    };
+  const permissionCatalogAction = useAction(api.centerAdmin.permissionCatalog);
+  const [settings, setSettings] = useState<Record<string, string> | null>(null);
+  const [settingsMeta, setSettingsMeta] = useState<PlatformMeta | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSection, setSettingsSection] = useState<
+    "company" | "marketplace" | "commission" | "localization" | "media" | "access"
+  >("company");
+  const [permissionCatalog, setPermissionCatalog] = useState<{ code: string; label: string; description: string }[]>([]);
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await getPlatformSettingsAction();
+      const map: Record<string, string> = {};
+      for (const s of res?.settings ?? []) map[s.key] = String(s.value ?? "");
+      setSettings(map);
+      setSettingsMeta((res?.meta ?? null) as PlatformMeta | null);
+      setSettingsError(null);
+    } catch (error) {
+      console.error("Platform settings error:", error);
+      setSettings(null);
+      setSettingsMeta(null);
+      setSettingsError(error instanceof Error ? error.message : "โหลดการตั้งค่าไม่สำเร็จ");
+    }
   }, [getPlatformSettingsAction]);
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  useEffect(() => {
+    if (!isOwner) return;
+    void permissionCatalogAction()
+      .then((c) => setPermissionCatalog(Array.isArray(c) ? c : []))
+      .catch(() => setPermissionCatalog([]));
+  }, [isOwner, permissionCatalogAction]);
 
   // Marketplace KPIs + orders come from the Neon commerce core (velcenter used
   // to read tables that checkout never writes → 0/wrong numbers).
@@ -581,6 +678,8 @@ export default function Center() {
           | undefined,
       });
       toast.success("อัปเดตสิทธิ์แล้ว");
+      // Role changes move an account between the staff and customer lists.
+      void loadPeople();
     } catch (error) {
       console.error("Set access error:", error);
       toast.error(error instanceof Error ? error.message : "อัปเดตไม่สำเร็จ");
@@ -603,14 +702,14 @@ export default function Center() {
   useEffect(() => {
     if (settings && !settingsLoaded) {
       setForm({
-        shopName: (settings["store_shop_name"] as string) ?? "",
-        tagline: (settings["store_tagline"] as string) ?? "",
-        phone: (settings["store_phone"] as string) ?? "",
-        address: (settings["store_address"] as string) ?? "",
-        announcement: (settings["store_announcement"] as string) ?? "",
+        shopName: settings["store_shop_name"] ?? "",
+        tagline: settings["store_tagline"] ?? "",
+        phone: settings["store_phone"] ?? "",
+        address: settings["store_address"] ?? "",
+        announcement: settings["store_announcement"] ?? "",
       });
       if (settings["product_approval_mode"]) {
-        setApprovalMode(settings["product_approval_mode"] as string);
+        setApprovalMode(settings["product_approval_mode"]);
       }
       setSettingsLoaded(true);
     }
@@ -634,22 +733,26 @@ export default function Center() {
     event.preventDefault();
     setSavingSettings(true);
     try {
-      // Each save is a separate audited platform-setting update (Neon).
-      await Promise.all(
-        (
-          [
-            ["store_shop_name", form.shopName],
-            ["store_tagline", form.tagline],
-            ["store_phone", form.phone],
-            ["store_address", form.address],
-            ["store_announcement", form.announcement],
-          ] as [string, string][]
-        ).map(([key, value]) => updatePlatformSettingAction({ key, value: value.trim() })),
-      );
-      toast.success("บันทึกตั้งค่าร้านแล้ว");
+      const entries: [string, string][] = [
+        ["store_shop_name", form.shopName],
+        ["store_tagline", form.tagline],
+        ["store_phone", form.phone],
+        ["store_address", form.address],
+        ["store_announcement", form.announcement],
+      ];
+      // Only send what actually changed — one audited write per real change,
+      // no audit noise from re-saving untouched fields.
+      const changed = entries.filter(([key, value]) => (settings?.[key] ?? "") !== value.trim());
+      if (changed.length === 0) {
+        toast.info("ไม่มีการเปลี่ยนแปลง");
+        return;
+      }
+      await Promise.all(changed.map(([key, value]) => updatePlatformSettingAction({ key, value: value.trim() })));
+      toast.success("บันทึกการตั้งค่าระบบแล้ว");
+      await loadSettings();
     } catch (error) {
       console.error("Update settings error:", error);
-      toast.error("บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
+      toast.error(error instanceof Error ? error.message : "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
     } finally {
       setSavingSettings(false);
     }
@@ -669,6 +772,18 @@ export default function Center() {
       { icon: AlertTriangle, label: "ต้องสั่งด่วน", value: o ? String(o.dueReorderCount) : "—", sub: "เลยรอบการสั่ง", accent: "text-rose-600" },
     ];
   }, [overview, marketKpi]);
+
+  // Customer search is local to the already-fetched customer segment.
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    const list = customerUsers ?? [];
+    if (!q) return list;
+    return list.filter(
+      (u) =>
+        (u.name ?? "").toLowerCase().includes(q) ||
+        (u.email ?? "").toLowerCase().includes(q),
+    );
+  }, [customerUsers, customerSearch]);
 
   // Spec §10: an employee who was just created / reset must pick a new
   // password before the company dashboard is usable. `users.currentUser` is
@@ -760,9 +875,9 @@ export default function Center() {
               </TabsTrigger>
             )}
 
-            {isOwner && (
+            {canSeeTab("staff", userRole, userDepartment) && (
               <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
-                <Users className="size-4" /> พนักงาน
+                <Users className="size-4" /> ผู้ใช้ & ลูกค้า
               </TabsTrigger>
             )}
             {canSeeTab("audit", userRole, userDepartment) && (
@@ -772,7 +887,7 @@ export default function Center() {
             )}
             {canSeeTab("settings", userRole, userDepartment) && (
               <TabsTrigger value="settings" className="gap-1.5 rounded-[10px]">
-                <Settings className="size-4" /> ตั้งค่าร้าน
+                <Settings className="size-4" /> ตั้งค่าระบบ
               </TabsTrigger>
             )}
           </TabsList>
@@ -1460,9 +1575,41 @@ export default function Center() {
               <CategoriesManagement />
             </TabsContent>
           )}
-          {/* ============ Staff (owner only) ============ */}
-          {isOwner && (
+          {/* ============ People (spec 9-11, 42) ==========================
+              Staff and customers are TWO separate lists, filtered server-side
+              by the real users.role values (GET /api/admin/users?segment=...).
+              Employee management stays owner-only — the API enforces it; this
+              UI only reflects it. */}
+          {canSeeTab("staff", userRole, userDepartment) && (
             <TabsContent value="staff" className="mt-6">
+              {peopleError && (
+                <div className="mb-4 flex flex-col items-start gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="flex items-center gap-2 text-sm text-red-700">
+                    <AlertTriangle className="size-4 shrink-0" />
+                    โหลดรายชื่อผู้ใช้ไม่สำเร็จ: {peopleError}
+                  </p>
+                  <Button variant="outline" size="sm" className="shrink-0 rounded-[10px]" onClick={() => void loadPeople()}>
+                    ลองใหม่
+                  </Button>
+                </div>
+              )}
+
+              <Tabs value={peopleSegment} onValueChange={(v) => setPeopleSegment(v as "staff" | "customer")}>
+                <TabsList className="w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
+                  <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
+                    <ShieldCheck className="size-4" /> พนักงาน
+                    <span className="rounded-full bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">{peopleCounts.staff}</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="customer" className="gap-1.5 rounded-[10px]">
+                    <ShoppingBag className="size-4" /> ลูกค้า
+                    <span className="rounded-full bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">{peopleCounts.customer}</span>
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* ---------- Staff accounts (owner only) ---------- */}
+                <TabsContent value="staff" className="mt-4">
+                  {isOwner ? (
+                    <>
               <Card className="mb-4 max-w-2xl border-slate-200 shadow-none">
                 <CardContent className="pt-5">
                   <p className="flex items-center gap-2 text-sm text-slate-600">
@@ -1486,7 +1633,7 @@ export default function Center() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(users ?? []).map((u: any) => {
+                    {(staffUsers ?? []).map((u: any) => {
                       const role = u.role ?? "customer";
                       const meta =
                         ROLE_META[role as keyof typeof ROLE_META] ?? ROLE_META.customer;
@@ -1574,7 +1721,7 @@ export default function Center() {
 
               {/* Mobile: app-like staff cards */}
               <div className="space-y-3 md:hidden">
-                {(users ?? []).map((u: any) => {
+                {(staffUsers ?? []).map((u: any) => {
                   const role = u.role ?? "customer";
                   const meta =
                     ROLE_META[role as keyof typeof ROLE_META] ?? ROLE_META.customer;
@@ -1642,117 +1789,460 @@ export default function Center() {
                   );
                 })}
               </div>
-              <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
-                <Users className="size-3.5 text-[#10B981]" />
-                พนักงาน (staff) ดูตัวเลขธุรกิจได้แต่แตะข้อมูลไม่ได้ · ผู้ดูแลฝ่าย (admin) จัดการข้อมูลได้แต่จัดการพนักงานไม่ได้
-              </p>
+                      <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
+                        <Users className="size-3.5 shrink-0 text-[#10B981]" />
+                        พนักงาน (staff) ดูตัวเลขธุรกิจได้แต่แตะข้อมูลไม่ได้ · ผู้ดูแลฝ่าย (admin) จัดการข้อมูลได้แต่จัดการพนักงานไม่ได้
+                      </p>
+                    </>
+                  ) : (
+                    <Card className="border-slate-200 shadow-none">
+                      <CardContent className="pt-5">
+                        <p className="flex items-center gap-2 text-sm text-slate-600">
+                          <Crown className="size-4 shrink-0 text-amber-500" />
+                          การจัดการบัญชีและสิทธิ์พนักงานเป็นสิทธิ์ของเจ้าของบริษัทเท่านั้น
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                {/* ---------- Customers ---------- */}
+                <TabsContent value="customer" className="mt-4">
+                  <Card className="gap-0 border-slate-200 shadow-none">
+                    <CardHeader className="flex-col items-start gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <ShoppingBag className="size-4 text-[#10B981]" />
+                          บัญชีลูกค้า
+                        </CardTitle>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          ลูกค้า {peopleCounts.customer} บัญชี · ผู้ขาย {peopleCounts.seller} บัญชี — แยกตามบทบาทจริงในฐานข้อมูล
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 gap-1.5 rounded-[10px] border-slate-200 text-slate-600"
+                        onClick={() => void loadPeople()}
+                      >
+                        <RefreshCw className={`size-3.5 ${customerUsers === null ? "animate-spin" : ""}`} />
+                        รีเฟรช
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          value={customerSearch}
+                          onChange={(e) => setCustomerSearch(e.target.value)}
+                          placeholder="ค้นหาชื่อหรืออีเมลลูกค้า..."
+                          className="rounded-[10px] pl-9"
+                        />
+                      </div>
+
+                      {customerUsers === null ? (
+                        <div className="space-y-2">
+                          {Array.from({ length: 3 }).map((_, i) => (
+                            <div key={i} className="h-14 animate-pulse rounded-xl border border-slate-200 bg-white" />
+                          ))}
+                        </div>
+                      ) : filteredCustomers.length === 0 ? (
+                        <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+                          <span className="flex size-12 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+                            <ShoppingBag className="size-6 text-[#10B981]" />
+                          </span>
+                          <p className="mt-4 text-sm font-semibold text-slate-900">
+                            {customerSearch ? "ไม่พบลูกค้าที่ค้นหา" : "ยังไม่มีบัญชีลูกค้า"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {customerSearch ? "ลองใช้คำค้นอื่น" : "บัญชีลูกค้าจะปรากฏที่นี่เมื่อมีผู้สมัครใช้งาน velshop"}
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
+                            <Table className="min-w-[620px]">
+                              <TableHeader>
+                                <TableRow className="hover:bg-transparent">
+                                  <TableHead className="pl-4 text-slate-400">ลูกค้า</TableHead>
+                                  <TableHead className="text-slate-400">อีเมล</TableHead>
+                                  <TableHead className="text-slate-400">สมัครเมื่อ</TableHead>
+                                  <TableHead className="pr-4 text-right text-slate-400">สถานะ</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {filteredCustomers.map((c) => (
+                                  <TableRow key={c._id} className="hover:bg-slate-50/60">
+                                    <TableCell className="pl-4">
+                                      <p className="font-medium text-slate-900">{c.name || "ลูกค้าที่ยังไม่ตั้งชื่อ"}</p>
+                                      <p className="text-xs text-slate-400">#{c._id.slice(0, 8)}</p>
+                                    </TableCell>
+                                    <TableCell className="text-sm text-slate-600">{c.email ?? "—"}</TableCell>
+                                    <TableCell className="text-sm text-slate-600">{formatThaiDate(c.createdAt)}</TableCell>
+                                    <TableCell className="pr-4 text-right">
+                                      <Badge className={c.status === "active" ? "rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15" : "rounded-full bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15"}>
+                                        {c.status === "active" ? "ใช้งาน" : c.status}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+
+                          <div className="space-y-2 md:hidden">
+                            {filteredCustomers.map((c) => (
+                              <div key={c._id} className="rounded-xl border border-slate-200 bg-white p-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-900">{c.name || "ลูกค้าที่ยังไม่ตั้งชื่อ"}</p>
+                                    <p className="mt-0.5 truncate text-xs text-slate-400">{c.email ?? "—"}</p>
+                                  </div>
+                                  <Badge className={c.status === "active" ? "shrink-0 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15" : "shrink-0 rounded-full bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15"}>
+                                    {c.status === "active" ? "ใช้งาน" : c.status}
+                                  </Badge>
+                                </div>
+                                <p className="mt-2 text-[11px] text-slate-400">สมัครเมื่อ {formatThaiDate(c.createdAt)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             </TabsContent>
           )}
 
           {/* ============ Audit Logs (spec §44) ============ */}
           <AuditLogTab />
 
-          {/* ============ Settings ============ */}
+          {/* ============ Company / System Settings =========================
+              VelCenter is the company control plane, so this screen configures
+              the platform/company — not one shop. Editable values persist to
+              Neon `platform_settings` and every change is audit-logged
+              server-side. Read-only values come from the backend component that
+              actually owns them (payout policy, upload limits) so there is
+              never a second source of truth for money or media. */}
           {canSeeTab("settings", userRole, userDepartment) && (
             <TabsContent value="settings" className="mt-6">
-              <Card className="max-w-2xl border-slate-200 shadow-none">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Store className="size-4 text-[#10B981]" />
-                    ข้อมูลหน้าร้าน (velshop)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleSaveSettings} className="grid gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="settings-name">ชื่อร้าน</Label>
-                      <Input
-                        id="settings-name"
-                        value={form.shopName}
-                        onChange={(e) => setForm((f) => ({ ...f, shopName: e.target.value }))}
-                        placeholder="เช่น Velnox Marketplace"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="settings-tagline">คำโปรย / tagline</Label>
-                      <Input
-                        id="settings-tagline"
-                        value={form.tagline}
-                        onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))}
-                        placeholder="Commerce that remembers you · จำแทนคุณ"
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div className="grid gap-2">
-                        <Label htmlFor="settings-phone">เบอร์โทรติดต่อ</Label>
-                        <Input
-                          id="settings-phone"
-                          value={form.phone}
-                          onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                          placeholder="081-234-5678"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="settings-announcement">ประกาศ / แบนเนอร์</Label>
-                        <Input
-                          id="settings-announcement"
-                          value={form.announcement}
-                          onChange={(e) => setForm((f) => ({ ...f, announcement: e.target.value }))}
-                          placeholder="เช่น สินค้าใหม่เข้าคลังแล้ว!"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="settings-address">ที่อยู่ร้าน</Label>
-                      <Textarea
-                        id="settings-address"
-                        value={form.address}
-                        onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                        placeholder="ที่อยู่สำหรับรับสินค้า / นัดรับ"
-                        rows={2}
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      className="w-fit gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                      disabled={savingSettings}
-                    >
-                      {savingSettings ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Save className="size-4" />
-                      )}
-                      บันทึกตั้งค่า
-                    </Button>
-                  </form>
-
-                  {/* Product Approval Mode */}
-                  <div className="mt-8 rounded-lg border border-slate-200 bg-slate-50 p-5">
-                    <h3 className="text-sm font-semibold text-slate-900">การอนุมัติสินค้า</h3>
-                    <p className="mt-1 text-xs text-slate-500">กำหนดวิธีการอนุมัติสินค้าที่ผู้ขายส่งเข้ามา</p>
-                    <div className="mt-4 space-y-3">
-                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-emerald-300">
-                        <input type="radio" name="approval-mode" value="manual" checked={approvalMode === "manual"} onChange={() => handleApprovalModeChange("manual")} disabled={savingApproval} className="mt-0.5" />
-                        <div>
-                          <span className="text-sm font-medium text-slate-900">อนุมัติด้วยมือ</span>
-                          <p className="text-xs text-slate-500">สินค้าทุกชิ้นต้องได้รับการตรวจสอบและอนุมัติจากผู้ดูแลก่อนแสดงบน VelShop</p>
-                        </div>
-                      </label>
-                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-emerald-300">
-                        <input type="radio" name="approval-mode" value="auto" checked={approvalMode === "auto"} onChange={() => handleApprovalModeChange("auto")} disabled={savingApproval} className="mt-0.5" />
-                        <div>
-                          <span className="text-sm font-medium text-slate-900">อนุมัติอัตโนมัติ</span>
-                          <p className="text-xs text-slate-500">สินค้าจะได้รับการอนุมัติและแสดงบน VelShop ทันทีหลังผ่านการตรวจสอบข้อมูล</p>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
-                  <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
-                    <Megaphone className="size-3.5 text-[#10B981]" />
-                    ข้อมูลนี้แสดงบนหน้าร้าน velshop ทันทีหลังบันทึก
+              {settingsError && (
+                <div className="mb-4 flex flex-col items-start gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="flex items-center gap-2 text-sm text-red-700">
+                    <AlertTriangle className="size-4 shrink-0" />
+                    โหลดการตั้งค่าไม่สำเร็จ: {settingsError}
                   </p>
-                </CardContent>
-              </Card>
+                  <Button variant="outline" size="sm" className="shrink-0 rounded-[10px]" onClick={() => void loadSettings()}>
+                    ลองใหม่
+                  </Button>
+                </div>
+              )}
+
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
+                {/* Section nav — scrollable strip on mobile, sidebar on desktop */}
+                <nav aria-label="หมวดการตั้งค่า" className="lg:sticky lg:top-24 lg:self-start">
+                  <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
+                    {SETTINGS_SECTIONS.map((section) => {
+                      const Icon = section.icon;
+                      const active = settingsSection === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => setSettingsSection(section.id)}
+                          aria-current={active ? "page" : undefined}
+                          className={`flex shrink-0 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm font-medium transition-colors lg:w-full ${
+                            active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          <Icon className="size-4 shrink-0" />
+                          <span className="whitespace-nowrap">{section.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </nav>
+
+                <div className="min-w-0 space-y-5">
+                  {/* ---------- Company / platform identity ---------- */}
+                  {settingsSection === "company" && (
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Store className="size-4 text-[#10B981]" />
+                          ข้อมูลบริษัท / แพลตฟอร์ม
+                        </CardTitle>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          Identity ของ Velnox Marketplace ที่แสดงบน velshop — บันทึกแล้วมีผลทันที
+                          และทุกการเปลี่ยนแปลงถูกบันทึกใน Audit Logs
+                        </p>
+                      </CardHeader>
+                      <CardContent>
+                        <form onSubmit={handleSaveSettings} className="grid gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="settings-name">ชื่อแพลตฟอร์ม / ร้านค้า</Label>
+                            <Input
+                              id="settings-name"
+                              value={form.shopName}
+                              onChange={(e) => setForm((f) => ({ ...f, shopName: e.target.value }))}
+                              placeholder="เช่น Velnox Marketplace"
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="settings-tagline">คำโปรย / tagline</Label>
+                            <Input
+                              id="settings-tagline"
+                              value={form.tagline}
+                              onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))}
+                              placeholder="Commerce that remembers you · จำแทนคุณ"
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div className="grid gap-2">
+                              <Label htmlFor="settings-phone">เบอร์โทรติดต่อ</Label>
+                              <Input
+                                id="settings-phone"
+                                value={form.phone}
+                                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                                placeholder="081-234-5678"
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="settings-announcement">ประกาศ / แบนเนอร์</Label>
+                              <Input
+                                id="settings-announcement"
+                                value={form.announcement}
+                                onChange={(e) => setForm((f) => ({ ...f, announcement: e.target.value }))}
+                                placeholder="เช่น สินค้าใหม่เข้าคลังแล้ว!"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="settings-address">ที่อยู่บริษัท / ที่อยู่ร้าน</Label>
+                            <Textarea
+                              id="settings-address"
+                              value={form.address}
+                              onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                              placeholder="ที่อยู่สำหรับรับสินค้า / นัดรับ"
+                              rows={2}
+                            />
+                          </div>
+                          <Button
+                            type="submit"
+                            className="w-fit gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                            disabled={savingSettings || settings === null}
+                          >
+                            {savingSettings ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                            บันทึกการตั้งค่า
+                          </Button>
+                        </form>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* ---------- Marketplace behaviour ---------- */}
+                  {settingsSection === "marketplace" && (
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Package className="size-4 text-[#10B981]" />
+                          ตลาด & การอนุมัติสินค้า
+                        </CardTitle>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          ควบคุมว่าสินค้าที่ผู้ขายส่งเข้าตลาดต้องผ่านการอนุมัติหรือไม่
+                        </p>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-3">
+                          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-emerald-300">
+                            <input type="radio" name="approval-mode" value="manual" checked={approvalMode === "manual"} onChange={() => handleApprovalModeChange("manual")} disabled={savingApproval} className="mt-0.5" />
+                            <div>
+                              <span className="text-sm font-medium text-slate-900">อนุมัติด้วยมือ</span>
+                              <p className="text-xs text-slate-500">สินค้าทุกชิ้นต้องได้รับการตรวจสอบและอนุมัติจากผู้ดูแลก่อนแสดงบน VelShop</p>
+                            </div>
+                          </label>
+                          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-emerald-300">
+                            <input type="radio" name="approval-mode" value="auto" checked={approvalMode === "auto"} onChange={() => handleApprovalModeChange("auto")} disabled={savingApproval} className="mt-0.5" />
+                            <div>
+                              <span className="text-sm font-medium text-slate-900">อนุมัติอัตโนมัติ</span>
+                              <p className="text-xs text-slate-500">สินค้าจะได้รับการอนุมัติและแสดงบน VelShop ทันทีหลังผ่านการตรวจสอบข้อมูล</p>
+                            </div>
+                          </label>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+                          ระบบยืนยันตัวตนของ Velnox เป็นแบบเดียว: การยืนยันตัวตนของผู้ขาย/ร้านค้า
+                          {settingsMeta?.moderation?.productVerificationEnabled === false
+                            ? " — ไม่มีระบบยืนยันสินค้าแยกรายชิ้น ป้าย V จึงมาจากสถานะการยืนยันของผู้ขายเท่านั้น"
+                            : ""}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* ---------- Seller commission (read-only, real policy) ---------- */}
+                  {settingsSection === "commission" && (
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Coins className="size-4 text-[#10B981]" />
+                          ค่าธรรมเนียมผู้ขาย (Seller & Commission)
+                        </CardTitle>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          นโยบายการเงินที่ engine คำนวณรายได้ของผู้ขายใช้จริง — แสดงแบบอ่านอย่างเดียว
+                          เพื่อไม่ให้มีแหล่งความจริงซ้อนกัน
+                        </p>
+                      </CardHeader>
+                      <CardContent>
+                        {settingsMeta?.commission ? (
+                          <>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <p className="text-xs text-slate-400">ค่าธรรมเนียมผู้ขาย</p>
+                                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                                  {((settingsMeta.commission.sellerRate ?? 0) * 100).toFixed(1)}%
+                                </p>
+                                <p className="mt-0.5 text-[11px] text-slate-400">หักจากยอดขายแต่ละรายการ</p>
+                              </div>
+                              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <p className="text-xs text-slate-400">ความคุ้มครองการคืนสินค้า</p>
+                                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                                  {((settingsMeta.commission.returnCoverage ?? 0) * 100).toFixed(0)}%
+                                </p>
+                                <p className="mt-0.5 text-[11px] text-slate-400">ของยอดขาย ครอบคลุมด้วยค่าธรรมเนียม</p>
+                              </div>
+                              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <p className="text-xs text-slate-400">สกุลเงิน</p>
+                                <p className="mt-1 text-2xl font-bold text-slate-900">{settingsMeta.commission.currency ?? "THB"}</p>
+                                <p className="mt-0.5 text-[11px] text-slate-400">สกุลเงินที่ระบบใช้คำนวณ</p>
+                              </div>
+                            </div>
+                            <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700">
+                              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                              ค่าธรรมเนียมถูกกำหนดในระดับแพลตฟอร์ม (โค้ด/คอนฟิกของผู้ให้บริการ)
+                              จึงแก้จากหน้านี้ไม่ได้ — ป้องกันไม่ให้ยอดเงินของผู้ขายผิดพลาดจากการตั้งค่าโดยไม่ตั้งใจ
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-slate-400">กำลังโหลดนโยบายค่าธรรมเนียม...</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* ---------- Localization ---------- */}
+                  {settingsSection === "localization" && (
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Globe className="size-4 text-[#10B981]" />
+                          ภาษา & ท้องถิ่น
+                        </CardTitle>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          ภาษาที่แพลตฟอร์มรองรับ (แหล่งความจริงเดียว: shared i18n config)
+                        </p>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {SUPPORTED_LANGUAGES.map((lang) => (
+                            <div key={lang.code} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-slate-900">{lang.label}</p>
+                                <p className="font-mono text-xs uppercase text-slate-400">{lang.code}</p>
+                              </div>
+                              {lang.code === DEFAULT_LANGUAGE && (
+                                <Badge className="shrink-0 gap-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
+                                  <BadgeCheck className="size-3" />
+                                  ค่าเริ่มต้น
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="mt-4 text-xs leading-5 text-slate-400">
+                          ภาษาถูกเก็บเป็นคีย์ในฐานข้อมูล (categories.names, platform_settings) — เพิ่มภาษาใหม่ต้องมี locale file ใน shared i18n
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* ---------- Media ---------- */}
+                  {settingsSection === "media" && (
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <ImageIcon className="size-4 text-[#10B981]" />
+                          ไฟล์ & สื่อ (Media)
+                        </CardTitle>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          ข้อจำกัดการอัปโหลดที่ backend บังคับใช้จริง (Cloudflare R2)
+                        </p>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-xl border border-slate-200 bg-white p-4">
+                            <p className="text-xs text-slate-400">ขนาดไฟล์สูงสุด</p>
+                            <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                              {settingsMeta?.media?.maxUploadBytes
+                                ? `${Math.round(settingsMeta.media.maxUploadBytes / (1024 * 1024))} MB`
+                                : "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white p-4">
+                            <p className="text-xs text-slate-400">ประเภทไฟล์ที่อนุญาต</p>
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {(settingsMeta?.media?.allowedTypes ?? []).map((type) => (
+                                <Badge key={type} className="rounded-full bg-slate-100 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
+                                  {type.replace("image/", "")}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-xs leading-5 text-slate-400">
+                          ไฟล์ถูกเก็บแบบ private บน R2 — หลักฐานการยืนยันตัวตนเข้าถึงได้เฉพาะผู้ตรวจสอบผ่าน signed URL อายุสั้น
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* ---------- Access / permissions ---------- */}
+                  {settingsSection === "access" && (
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <KeyRound className="size-4 text-[#10B981]" />
+                          สิทธิ์การเข้าถึง (Permissions)
+                        </CardTitle>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          แคตตาล็อกสิทธิ์ที่ระบบรู้จัก — การมอบสิทธิ์ทำได้ที่แท็บ “ผู้ใช้ & ลูกค้า” (เจ้าของบริษัทเท่านั้น)
+                        </p>
+                      </CardHeader>
+                      <CardContent>
+                        {isOwner ? (
+                          permissionCatalog.length === 0 ? (
+                            <p className="text-sm text-slate-400">กำลังโหลดรายการสิทธิ์...</p>
+                          ) : (
+                            <ul className="grid gap-2 sm:grid-cols-2">
+                              {permissionCatalog.map((perm) => (
+                                <li key={perm.code} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                                  <p className="text-sm font-medium text-slate-900">{perm.label}</p>
+                                  <p className="mt-0.5 text-xs text-slate-400">{perm.description}</p>
+                                  <p className="mt-1 font-mono text-[10px] text-slate-300">{perm.code}</p>
+                                </li>
+                              ))}
+                            </ul>
+                          )
+                        ) : (
+                          <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+                            การจัดการสิทธิ์พนักงานเป็นสิทธิ์ของเจ้าของบริษัทเท่านั้น
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </div>
             </TabsContent>
           )}
         </Tabs>

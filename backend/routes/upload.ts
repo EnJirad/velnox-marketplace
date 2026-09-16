@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, Lis
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
+import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "../lib/media-config.js";
 import { invalidateCachedProfile } from "./auth.js";
 
 // ─── R2 Client ──────────────────────────────────────────────────────────────
@@ -33,10 +34,10 @@ const R2 = createR2Client();
 const BUCKET = getR2Config().bucket;
 const PUBLIC_DOMAIN = getR2Config().publicDomain;
 
-// ─── Allowed MIME types (must match frontend ProfileImageUpload.tsx) ─────────
+// ─── Allowed MIME types + size limit come from lib/media-config.ts ──────────
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
-const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_TYPES: string[] = [...ALLOWED_UPLOAD_TYPES];
+const MAX_SIZE = MAX_UPLOAD_BYTES;
 
 // ─── Safe logging (no secrets) ──────────────────────────────────────────────
 
