@@ -44,7 +44,7 @@ import { useLanguage } from "@velnox/shared/lib/i18n";
 // Id type replaced with string
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
-  PRODUCT_CATEGORY_META,
+  resolveCategoryMeta,
   STATUS_META,
   DAY_MS,
   effectiveCycleDays,
@@ -1119,7 +1119,7 @@ export default function Center() {
                   </TableHeader>
                   <TableBody>
                     {intelRows.map(({ product, info, cycle, predictedAt, daysLeft }: any) => {
-                      const meta = PRODUCT_CATEGORY_META[product.category];
+                      const meta = resolveCategoryMeta(product.category);
                       const statusMeta = STATUS_META[info.status as keyof typeof STATUS_META];
                       const Icon = meta.icon;
                       return (
@@ -1192,7 +1192,7 @@ export default function Center() {
               {/* Mobile: app-like intelligence cards */}
               <div className="space-y-3 md:hidden">
                 {intelRows.map(({ product, info, cycle, predictedAt, daysLeft }: any) => {
-                  const meta = PRODUCT_CATEGORY_META[product.category];
+                  const meta = resolveCategoryMeta(product.category);
                   const statusMeta = STATUS_META[info.status as keyof typeof STATUS_META];
                   const Icon = meta.icon;
                   return (

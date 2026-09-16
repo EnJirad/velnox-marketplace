@@ -651,3 +651,61 @@ Events are broadcast from:
 - **NOT VERIFIED:** live browser E2E (no seeded seller/admin session, no headless browser). No credentials were fabricated.
 - **Pre-existing, out of scope:** 42 published test artefacts (`so-test-*`, `inv-*`, `P1#6 Product`, `vr-test-*`, `Review Product A/B`) pollute the public catalog. Cleaning them needs a deliberate, reviewed archive step — not done here.
 - **Pre-existing, out of scope:** `backend/lib/product-status.ts` is an untracked, unimported duplicate of the product lifecycle rules (AI_RULES §40). Left untouched because it is not part of the repository; flagged here so the next agent deletes it deliberately.
+
+## VelCenter Runtime Crash Fix — `Cannot read properties of undefined (reading 'icon')` (2026-09-16)
+
+### Problem
+
+VelCenter crashed at runtime with `TypeError: Cannot read properties of undefined (reading 'icon')` on the Intelligence tab. The crash occurred in `Center.tsx` inside `.map()` over `intelRows`.
+
+### Root cause
+
+`PRODUCT_CATEGORY_META` in `packages/shared/src/lib/reorder.ts` is a hardcoded `Record` with only 6 old category keys: `general`, `food`, `daily`, `beauty`, `packaging`, `other`.
+
+After the V0015/V0029 category migration, products now use database-backed category slugs (e.g. `headphones-speakers`, `fashion-clothing`). The catalog API returns `category: row.category_id || "general"`, which maps DB slugs through to the frontend.
+
+When the Intelligence tab renders intel rows it does:
+
+```typescript
+const meta = PRODUCT_CATEGORY_META[product.category];
+const Icon = meta.icon; // CRASH when category is e.g. "headphones-speakers"
+```
+
+Any product whose category slug doesn't match one of the 6 hardcoded keys produces `undefined` → crash.
+
+### Fix
+
+1. **`packages/shared/src/lib/reorder.ts`** — Added `FALLBACK_CATEGORY_META` (generic `Package` icon, slate color) and `resolveCategoryMeta(category)` function that returns the matching entry or the fallback. Exported both.
+
+2. **`apps/velcenter/src/pages/Center.tsx`** — Replaced the two unsafe direct lookups (`PRODUCT_CATEGORY_META[product.category]`) with `resolveCategoryMeta(product.category)`. Changed import from `PRODUCT_CATEGORY_META` to `resolveCategoryMeta`.
+
+### Why this is the correct fix
+
+- The data contract (DB slugs ≠ hardcoded category map) is the real mismatch; adding optional chaining would merely hide the data error.
+- `resolveCategoryMeta` is a single canonical resolver — all `.icon` access in the Intelligence tab now goes through it.
+- Unknown categories still render with a safe `Package` icon + "สินค้า" label instead of crashing.
+- No database changes. No schema changes. No new tables.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `packages/shared/src/lib/reorder.ts` | Added `FALLBACK_CATEGORY_META`, `resolveCategoryMeta()` function |
+| `apps/velcenter/src/pages/Center.tsx` | Replaced 2 unsafe `PRODUCT_CATEGORY_META[x]` lookups with `resolveCategoryMeta(x)` |
+
+### Tests
+
+| Check | Result |
+|---|---|
+| `bun tsc -p apps/velcenter/tsconfig.json --noEmit` | PASS |
+| `bun tsc -p apps/velshop/tsconfig.json --noEmit` | PASS |
+| `bun tsc -p apps/velseller/tsconfig.json --noEmit` | PASS |
+| `cd backend && bun tsc --noEmit` | PASS |
+| `bun run i18n:check` | PASS — th=1287 en=1287 my=1287 |
+| `bun test backend/tests` | 200 pass / 26 skip / 0 fail |
+| `git diff --check` | CLEAN |
+
+### Remaining
+
+- The 6 hardcoded categories in `reorder.ts` are legacy. Eventually the reorder intelligence should resolve category labels/icons from the database-backed `categories` table. That's a separate task.
+- No live browser E2E was run (no browser available).

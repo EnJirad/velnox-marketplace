@@ -13,6 +13,13 @@ export type Product = any;
 export type ProductCategory = Product["category"];
 export type Purchase = any;
 
+export const FALLBACK_CATEGORY_META = {
+  label: "สินค้า",
+  icon: Package,
+  chip: "bg-slate-100 text-slate-700 ring-slate-600/10",
+  iconClass: "text-slate-600",
+} as const;
+
 export const PRODUCT_CATEGORY_META: Record<
   ProductCategory,
   { label: string; icon: LucideIcon; chip: string; iconClass: string }
@@ -126,6 +133,26 @@ export const STATUS_META: Record<
 export function suggestedQty(product: Product): number {
   if (product.lastPurchaseQty && product.lastPurchaseQty > 0) return product.lastPurchaseQty;
   return Math.max(1, Math.ceil((product.reorderLevel ?? 0) * 2));
+}
+
+const _META_ANY = PRODUCT_CATEGORY_META as Record<
+  string,
+  { label: string; icon: LucideIcon; chip: string; iconClass: string }
+>;
+
+/**
+ * Safe category-meta lookup. DB-backed category slugs (e.g. "headphones")
+ * may not exist in the hardcoded PRODUCT_CATEGORY_META. Returns the
+ * matching entry or FALLBACK_CATEGORY_META so callers never crash.
+ */
+export function resolveCategoryMeta(category: string | null | undefined): {
+  label: string;
+  icon: LucideIcon;
+  chip: string;
+  iconClass: string;
+} {
+  if (category && _META_ANY[category]) return _META_ANY[category];
+  return FALLBACK_CATEGORY_META;
 }
 
 export function formatDays(days: number): string {
