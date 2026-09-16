@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-16 (VelCenter moderation detail 42P10 + VelSeller correction notifications)
 **Branch:** `main`
 
 ## Current Project State
@@ -958,3 +958,133 @@ rows it touched were updated by slug, and existing ids were preserved.
   counts, migration names), but it should be gated or removed before public launch.
 - 42 published catalogue entries are test artefacts (`so-test-*`, `inv-*`, `P1#6 Product`, …) —
   data hygiene, out of scope here.
+
+---
+
+## 2026-09-16 — VelCenter moderation detail (42P10) + VelSeller correction notifications
+
+### 1. Product moderation detail — PostgreSQL 42P10
+
+**Problem** (`backend/routes/products.ts`):
+
+```
+[admin] product moderation detail error: error: in an aggregate with DISTINCT,
+ORDER BY expressions must appear in argument list   (code 42P10)
+GET /api/admin/products/:productId/moderation-detail
+```
+
+**Root cause.** The option-group aggregation was
+
+```sql
+json_agg(DISTINCT jsonb_build_object(… 'sort_order', pov.sort_order …)
+         ORDER BY pov.sort_order)
+```
+
+PostgreSQL requires every ORDER BY expression of a **DISTINCT** aggregate to also be
+an aggregate argument, and `pov.sort_order` only appeared *inside* the jsonb payload.
+The statement was therefore rejected and the entire detail request 500'd whenever the
+product had option groups — i.e. almost always.
+
+**Fix.** Drop the `DISTINCT`. It was pointless — the aggregated jsonb includes `id`, so
+it could never merge two rows — and the join is 1:N from a single table, so duplicates
+are structurally impossible. Without DISTINCT the ORDER BY is legal.
+Nothing else changed: option groups still `ORDER BY pog.sort_order`, values still
+`ORDER BY pov.sort_order`, all five fields (`id`/`value`/`label`/`sort_order`/
+`is_enabled`) are still returned, and the LEFT JOIN still returns groups with no values
+(the frontend keeps filtering the null row).
+
+**Runtime verification (production Neon)** — `GET /api/_diag/schema`:
+
+```
+optionAggregation: { productId: 62f6bbe4-57f8-4aa9-86b7-fa8157d44098,
+                     ok: true, groups: 2, values: 6 }
+```
+
+The shipped statement now executes against the live database for the product with the
+most option groups (2 groups / 6 values). Unauthenticated calls to the endpoint return
+**401** (auth precedes the query), so the endpoint itself was verified at the SQL level,
+not through an admin session.
+
+### 2. VelSeller correction notifications
+
+**What already existed — reused, not rebuilt:**
+
+| Piece | Where |
+|---|---|
+| `notifications` table | `db/schema.sql` |
+| `GET /api/customer/notifications`, `PATCH …/:id/read`, `PUT …/read-all` | `backend/routes/chat.ts` — all `requireAuth`, scoped to `req.user!.userId`; mark-read enforces `WHERE id = $1 AND user_id = $2` |
+| `needs_correction` writes `seller_verification_needs_correction` with `data = { verificationId, action, reasonCode, reason }` | `backend/routes/verification.ts` (after COMMIT, non-fatal) |
+| realtime fan-out primitive | `sendToUser(userId, "", CHANNELS.NOTIFICATION_CREATED, …)` in `chat.ts` / `backend/realtime/index.ts` |
+| applicant-visible reason | `correctionReason` + `correctionReasonCode` (`/api/seller/status`), `reviewReasonCode` (`/api/seller/verification`) |
+| VelShop had `NotificationBell`; **VelSeller had no notification UI at all** | `apps/velshop/src/components/shop/NotificationBell.tsx` |
+
+**Root cause of “the seller never sees it”:** the notification row was written but
+**never pushed**, and VelSeller had no surface to read it. The two halves were missing by
+design of the upgrade, not broken code.
+
+**Added:**
+
+1. `backend/routes/verification.ts` — publish the row over the **existing** realtime
+   fan-out (`INSERT … RETURNING id` then `sendToUser(targetUserId, "", CHANNELS.NOTIFICATION_CREATED, …)`).
+   No new channel, no new socket subsystem, no new table.
+2. `packages/shared/src/components/SellerNotificationBell.tsx` (new) — unread badge + panel,
+   mark-one-read / mark-all, reason code rendered through the shared `reviewReason.*`
+   vocabulary (`reasonCodeKey`), relative time, realtime refresh **plus a 60 s polling
+   fallback**, and a deep link.
+3. `packages/shared/src/components/AppHeader.tsx` — mounts the bell next to `UserMenu`, so it
+   appears on every VelSeller page (`AppHeader` is used only by velseller).
+4. `apps/velseller/src/pages/MyShop.tsx` — honours
+   `/seller/shop?verification=<id>[&correction=1]` by opening the verification wizard,
+   then strips the params from the URL.
+5. i18n — `notifications.sellerEmptyDesc`, `notifications.tapToFix` in th/en/my
+   (parity 1289 × 3).
+
+**Destination mapping:** verification → `/seller/shop?verification=<verificationId>`
+(`&correction=1` for a correction request) · order → `/seller/orders` · chat → `/seller/chat`.
+No hard-coded seller/user id — ownership comes from the session cookie server-side. A seller
+gated with `sellers.status = 'needs_correction'` also sees the reason on the existing
+`RequireRole` gate.
+
+**API added:** none. **DB changed:** none.
+
+### Tests
+
+| Command | Result |
+|---|---|
+| `cd backend && bun tsc --noEmit` | PASS |
+| `bun tsc -p apps/{velseller,velshop,velcenter,velnox}/tsconfig.json --noEmit` | PASS ×4 |
+| `bun test backend/tests` | 263 pass / 29 skip / 0 fail |
+| `bun run i18n:check` | th = en = my = 1289 |
+| `git diff --check` | CLEAN |
+
+New `backend/tests/notification-flow.test.ts` guards: no `json_agg(DISTINCT …, ORDER BY x)`
+regression; the route statement and the DB-gated probe statement must stay identical; the
+option query keeps its joins/ordering/fields; the bell reuses the single existing
+notification API (asserted to have exactly one definition); the list route never takes a
+user id from the client; mark-read keeps its ownership clause; the bell maps reason codes
+and deep-links; no second notification table/API exists. DB-dependent cases are the usual
+`skipIf(!DATABASE_URL)` integration block.
+
+### Production evidence (real data)
+
+```
+notifications.byType: [ { velrepeat_order_created: 4 },
+                        { seller_verification_needs_correction: 1 } ]
+notifications.unread: 5
+```
+
+A real, unread `seller_verification_needs_correction` row exists in production, so the
+reviewer → notification half is confirmed with live data and the new bell will surface it.
+
+### Remaining
+
+- End-to-end click-through (VelSeller session → badge → reason → wizard) needs a signed-in
+  seller; the seller-session render path could not be executed here.
+- VelShop keeps its own customer bell: the destinations differ (orders/products vs seller
+  flows). Deliberately not merged, to avoid changing velShop behaviour.
+- `GET /api/_diag/schema` is still unauthenticated (metadata + aggregate counts only).
+  Gate or remove it before launch.
+
+### Commits
+
+`1d3d361` (moderation detail + notification flow) · `eb7c183` (notification count probe).
