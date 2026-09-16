@@ -3551,6 +3551,16 @@ export function setupProductRoutes(app: Express): void {
   // ── GET /api/admin/products/:productId/moderation-detail ────────────────
   // Full product detail for moderation review. Returns variants, attributes,
   // option groups, images, shop info. Admin only.
+  //
+  // PostgreSQL 42P10 note: the option-group aggregation must NOT use
+  // `json_agg(DISTINCT ... ORDER BY pov.sort_order)` — with DISTINCT every ORDER BY
+  // expression has to appear in the aggregate argument list, and `pov.sort_order`
+  // only lived in the jsonb payload, so every moderation-detail request failed with
+  // `in an aggregate with DISTINCT, ORDER BY expressions must appear in argument
+  // list` as soon as the product had option groups. The DISTINCT was pointless
+  // anyway: the aggregated jsonb includes `id`, so it could never merge two rows,
+  // and a 1:N join from a single table cannot produce duplicates. Values stay
+  // ordered by pov.sort_order.
   app.get("/api/admin/products/:productId/moderation-detail", requireAuth, async (req: Request, res: Response) => {
     try {
       if (!(await requireAdmin(req, res))) return;
@@ -3585,7 +3595,7 @@ export function setupProductRoutes(app: Express): void {
         query("SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC", [productId]),
         query("SELECT * FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC", [productId]),
         query(
-          `SELECT pog.*, json_agg(DISTINCT jsonb_build_object('id', pov.id, 'value', pov.value, 'label', pov.label, 'sort_order', pov.sort_order, 'is_enabled', pov.is_enabled) ORDER BY pov.sort_order) as values
+          `SELECT pog.*, json_agg(jsonb_build_object('id', pov.id, 'value', pov.value, 'label', pov.label, 'sort_order', pov.sort_order, 'is_enabled', pov.is_enabled) ORDER BY pov.sort_order) as values
            FROM product_option_groups pog
            LEFT JOIN product_option_values pov ON pov.option_group_id = pog.id
            WHERE pog.product_id = $1

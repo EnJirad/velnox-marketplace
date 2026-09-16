@@ -1,4 +1,5 @@
 import { Logo } from "@velnox/shared/components/Logo";
+import { SellerNotificationBell } from "@velnox/shared/components/SellerNotificationBell";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import { MessageCircle, RefreshCw, ShoppingBag, Store, Target, Wallet } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
@@ -44,7 +45,11 @@ export function AppHeader() {
           </nav>
         </div>
 
-        <UserMenu />
+        <div className="flex items-center gap-1">
+          {/* VelCenter correction requests reach the seller here. */}
+          <SellerNotificationBell />
+          <UserMenu />
+        </div>
       </div>
     </header>
   );

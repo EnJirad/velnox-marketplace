@@ -1,5 +1,6 @@
 import { AppHeader } from "@velnox/shared/components/AppHeader";
 import { SITE_URLS } from "@velnox/shared/lib/sites";
+import { useSearchParams } from "react-router";
 import { ProductFormDialog } from "@velnox/shared/components/seller/ProductFormDialog";
 import { EvidenceUploader, type EvidenceFile } from "@velnox/shared/components/seller/EvidenceUploader";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
@@ -126,6 +127,7 @@ export default function MyShop() {
     address: "",
   });
   const [evidenceHydrated, setEvidenceHydrated] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const shop: StoreShop | null = profile?.shops[0] ?? null;
 
@@ -210,6 +212,22 @@ export default function MyShop() {
       });
     return () => { cancelled = true; };
   }, [profile, evidenceHydrated, fetchEvidence]);
+
+  // Deep link from the seller notification bell. A VelCenter correction request
+  // reaches the seller as /seller/shop?verification=<id>&correction=1, so this
+  // opens the verification wizard on the case that must be fixed. The identifier
+  // only selects the flow — ownership is enforced by the backend when the wizard
+  // loads its evidence, and a seller has exactly one verification case at a time.
+  useEffect(() => {
+    const verificationId = searchParams.get("verification");
+    if (!verificationId) return;
+    setVerifyTarget({ kind: "seller" });
+    if (searchParams.get("correction") === "1") setVerifyStep(1);
+    const next = new URLSearchParams(searchParams);
+    next.delete("verification");
+    next.delete("correction");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const handleOpenShop = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -24,7 +24,7 @@
 
 import type { Express, Request, Response } from "express";
 import { query, getClient } from "../db/index.js";
-import { broadcast, CHANNELS } from "../realtime/index.js";
+import { broadcast, CHANNELS, sendToUser } from "../realtime/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -727,11 +727,24 @@ export function registerVerificationRoutes(app: Express) {
               needs_correction: { type: "seller_verification_needs_correction", title: "ต้องแก้ไขข้อมูลการยืนยัน", message: `กรุณาแก้ไข: ${reason || code}` },
             };
             const n = map[action] ?? { type: "seller_verification_update", title: "อัปเดตการยืนยันร้านค้า", message: reason || code };
-            await query(
+            const notifRes = await query(
               `INSERT INTO notifications (user_id, type, title, message, data)
-               VALUES ($1, $2, $3, $4, $5)`,
+               VALUES ($1, $2, $3, $4, $5)
+               RETURNING id`,
               [targetUserId, n.type, n.title, n.message, JSON.stringify({ verificationId, action, reasonCode: code || null, reason: reason || null })],
             );
+            // Push over the EXISTING realtime channel (`sendToUser` + the same
+            // event the customer bell already listens to) so the seller's
+            // notification bell updates without a refresh. Non-fatal: the row is
+            // already committed and polling in the UI is the fallback.
+            try {
+              sendToUser(targetUserId, "", CHANNELS.NOTIFICATION_CREATED, {
+                id: notifRes.rows[0]?.id ?? null,
+                type: n.type,
+                title: n.title,
+                message: n.message,
+              });
+            } catch { /* non-fatal */ }
           }
         } catch (notifErr) {
           console.warn("[verification] notification write failed (non-fatal):", notifErr);

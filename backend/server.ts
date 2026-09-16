@@ -289,6 +289,46 @@ app.get("/api/_diag/schema", async (_req, res) => {
         results[`media.${col}`] = r.rows.length > 0;
       } catch { results[`media.${col}`] = false; }
     }
+    // Option-group aggregation probe — the exact statement VelCenter's product
+    // moderation detail runs. The shape shipped until now
+    // (`json_agg(DISTINCT … ORDER BY pov.sort_order)`) raised PostgreSQL 42P10
+    // ("in an aggregate with DISTINCT, ORDER BY expressions must appear in
+    // argument list") for every product with option groups, so the reviewer
+    // dialog always failed. This reports whether the shipped shape now executes
+    // against the live database, using the product with the most option groups.
+    // Aggregated counts only — no option names or labels are exposed.
+    const optionAggregation: Record<string, unknown> = {};
+    try {
+      const target = await query(
+        `SELECT pog.product_id, COUNT(*)::int AS groups
+           FROM product_option_groups pog
+          GROUP BY pog.product_id
+          ORDER BY groups DESC
+          LIMIT 1`,
+      );
+      const probeProductId = target.rows[0]?.product_id ?? null;
+      optionAggregation.productId = probeProductId;
+      if (probeProductId) {
+        const agg = await query(
+          `SELECT pog.*, json_agg(jsonb_build_object('id', pov.id, 'value', pov.value, 'label', pov.label, 'sort_order', pov.sort_order, 'is_enabled', pov.is_enabled) ORDER BY pov.sort_order) as values
+             FROM product_option_groups pog
+             LEFT JOIN product_option_values pov ON pov.option_group_id = pog.id
+            WHERE pog.product_id = $1
+            GROUP BY pog.id
+            ORDER BY pog.sort_order ASC`,
+          [probeProductId],
+        );
+        optionAggregation.ok = true;
+        optionAggregation.groups = agg.rows.length;
+        optionAggregation.values = agg.rows.reduce(
+          (n: number, r: any) => n + (Array.isArray(r.values) ? r.values.filter((v: any) => v && v.id).length : 0),
+          0,
+        );
+      }
+    } catch (e: any) {
+      optionAggregation.ok = false;
+      optionAggregation.error = `${e?.code ?? ""} ${e?.message ?? "query failed"}`.trim();
+    }
     // Check migration state
     let migrations: string[] = [];
     try {
@@ -323,7 +363,7 @@ app.get("/api/_diag/schema", async (_req, res) => {
     await countQuery("categoryJoinByUuid", `SELECT COUNT(*)::int AS n FROM products p JOIN categories c ON c.id::text = p.category_id`);
     await countQuery("productsWithoutImages", `SELECT COUNT(*)::int AS n FROM products p WHERE NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id = p.id)`);
 
-    res.json({ tables: results, migrations, productVisibility });
+    res.json({ tables: results, migrations, productVisibility, optionAggregation });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

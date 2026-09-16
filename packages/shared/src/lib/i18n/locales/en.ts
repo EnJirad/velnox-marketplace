@@ -675,6 +675,8 @@ export const en: Dict = {
     markAllFailed: "Couldn't do that — please try again",
     emptyTitle: "No notifications yet",
     emptyDesc: "Order status, shipping and promotions will appear here",
+    sellerEmptyDesc: "Verification requests, orders and shop updates will appear here",
+    tapToFix: "Tap to fix",
     new: "New",
     viewAll: "View all",
     allCaughtUp: "You're all caught up.",
