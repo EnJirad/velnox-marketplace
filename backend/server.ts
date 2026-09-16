@@ -329,6 +329,19 @@ app.get("/api/_diag/schema", async (_req, res) => {
       optionAggregation.ok = false;
       optionAggregation.error = `${e?.code ?? ""} ${e?.message ?? "query failed"}`.trim();
     }
+    // Notification delivery probe — aggregate counts per type only (no user ids,
+    // no titles or messages). VelSeller's correction bell reads these rows via
+    // GET /api/customer/notifications, so this shows whether a VelCenter review
+    // action is actually producing seller-visible notifications.
+    const notifications: Record<string, unknown> = {};
+    try {
+      const byType = await query(`SELECT type, COUNT(*)::int AS n FROM notifications GROUP BY type ORDER BY n DESC`);
+      notifications.byType = byType.rows;
+      const unread = await query(`SELECT COUNT(*)::int AS n FROM notifications WHERE read = FALSE`);
+      notifications.unread = unread.rows[0]?.n ?? 0;
+    } catch (e: any) {
+      notifications.error = `${e?.code ?? ""} ${e?.message ?? "query failed"}`.trim();
+    }
     // Check migration state
     let migrations: string[] = [];
     try {
@@ -363,7 +376,7 @@ app.get("/api/_diag/schema", async (_req, res) => {
     await countQuery("categoryJoinByUuid", `SELECT COUNT(*)::int AS n FROM products p JOIN categories c ON c.id::text = p.category_id`);
     await countQuery("productsWithoutImages", `SELECT COUNT(*)::int AS n FROM products p WHERE NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id = p.id)`);
 
-    res.json({ tables: results, migrations, productVisibility, optionAggregation });
+    res.json({ tables: results, migrations, productVisibility, optionAggregation, notifications });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
