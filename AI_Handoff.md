@@ -830,3 +830,131 @@ No schema changes. No data changes. The fix is purely in the SQL queries.
 - Frontend error handling for Products/Sellers tabs was already improved in commit `3f7b761` (error state + retry button).
 - The `.icon` crash was already fixed in commit `c1b8d31`.
 - All three fixes need a Vercel deploy (frontend) + Render deploy (backend) to reach production.
+
+---
+
+## 2026-09-16 — Production 42703 root cause: the migration runner was blocked at V0040
+
+### Problem
+
+Render production kept raising:
+
+```
+[verification] admin list error:
+error: column sv.review_reason_code does not exist   (code 42703)
+at backend/routes/verification.ts:446
+```
+
+### Root cause (not a code bug)
+
+`review_reason_code` / `review_note` ARE canonical: `db/schema.sql` ≡ `db/run-sqleditor.sql`
+declare them, migration `V0043` adds them, `backend/routes/seller.ts` writes them and
+`backend/routes/verification.ts` reads them. The production **database was simply
+missing them**, because the migration workflow had been aborting one file earlier
+since 2026-09-11 and therefore never applied `040`–`044`:
+
+```
+🔄 Applying: 040_verification_and_categories
+ERROR: insert or update on table "categories" violates foreign key constraint
+       "categories_parent_id_fkey"
+DETAIL: Key (parent_id)=(a0000001-…-0001) is not present in table "categories".
+Stopping. Fix the migration and re-run.
+```
+
+The subcategory seed referenced the hard-coded parent uuids from its own parent seed.
+A database bootstrapped from `db/schema.sql` already holds those parents
+(`electronics`, `food-beverage`, …) under the canonical `c0000001-*` uuids, so the
+parent INSERT took the `ON CONFLICT (slug) DO UPDATE` path, kept the existing row id,
+and the literal uuid pointed at a row that was never created. Because the runner uses
+`--single-transaction` and stops on the first failure, `041`–`044` never ran — and
+`041` and `044` were broken too, each hiding the next one.
+
+### SCHEMA DRIFT REPORT (production vs canonical)
+
+| Item | Finding |
+|---|---|
+| Missing in production | `seller_verifications.review_reason_code`, `review_note`; `seller_review_history`; the widened `sellers_status_check`; `shops` address columns; `idx_media_owner_key`. All were blocked behind V0040. |
+| Extra in production | none found. |
+| Different definitions | **critical** — V0008 renamed every `media` column to `cdn_url` / `object_key` / `mime_type` / `file_size` / `owner_id`, while every backend media statement and both canonical schema files use `url` / `key` / `content_type` / `size` / `uploaded_by`. Nothing in the repo ever used the renamed names. |
+| Different definitions | **critical** — `velrepeat_plan_runs` was referenced by `V0044` and by `db/schema.sql` / `run-sqleditor.sql`, but no migration and no backend query ever created it. The run table is `velrepeat_runs` (V0034). |
+| Safe / unrelated | 43 `published` + 4 `archived` products, all `product_verification = unverified`; 46/47 products have no `media` row (legacy of the broken insert). No orphan product→shop→seller→user rows (all 0). |
+
+### Fix
+
+1. **`db/migrations/040…`** — subcategory seed resolves parents **by slug** at apply time
+   (`(SELECT id FROM categories WHERE slug = '…')`) instead of by seed uuid. Idempotent and
+   immune to seed-id drift; Phase 4 guarantees each parent exists, so it can never be NULL.
+2. **`db/migrations/041…`** — builds `idx_media_owner_key` over whichever owner/key columns
+   the live table has (V0001 layout or V0008 layout) instead of hard-coding `uploaded_by, key`.
+3. **`db/migrations/045_media_column_naming.sql` (new)** — renames the V0008 columns back to the
+   canonical names. Guarded by `information_schema`, metadata-only, idempotent, no DROP/TRUNCATE/DELETE;
+   a no-op on a database bootstrapped from `db/schema.sql`.
+4. **`db/migrations/044…`, `db/schema.sql`, `db/run-sqleditor.sql`** — retarget the run-status CHECK
+   from the phantom `velrepeat_plan_runs` to the real `velrepeat_runs` (same value set V0034 declares).
+
+No `db/run-update.sql` was created or touched (it does not exist in this architecture).
+`db/schema.sql` and `db/run-sqleditor.sql` remain **byte-identical**; no schema *shape* change was
+needed because the canonical files were already correct — production had simply never applied them.
+
+### PRODUCTION VERIFICATION (Neon, via `GET /api/_diag/schema`)
+
+```
+migrations: … 040 041 042 043 044 045            ← runner clean, all applied
+seller_verifications.review_reason_code  true
+seller_verifications.review_note         true
+seller_review_history                    true
+media.url / key / content_type / size / uploaded_by   true
+media.owner_id / object_key / cdn_url / mime_type / file_size   false
+```
+
+`043_seller_review_lifecycle`, `044_velrepeat_plans_status_constraint` and `045_media_column_naming`
+report `applied successfully` in the GitHub Actions run for `988f356`.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `db/migrations/040_verification_and_categories.sql` | subcategory parents resolved by slug |
+| `db/migrations/041_media_cover_lookup_index.sql` | index built for either media naming |
+| `db/migrations/044_velrepeat_plans_status_constraint.sql` | `velrepeat_plan_runs` → `velrepeat_runs` |
+| `db/migrations/045_media_column_naming.sql` | **new** — restores canonical media column names |
+| `db/schema.sql`, `db/run-sqleditor.sql` | phantom-table reference corrected (kept identical) |
+| `backend/server.ts` | `_diag/schema` reports the seller-verification and media columns |
+| `backend/tests/schema-drift.test.ts` | **new** — media-naming / phantom-table / canonical-schema guards |
+| `backend/tests/category-validation.test.ts`, `product-lifecycle.test.ts` | drift guards for V0040 parents and `sv.<column>` vs schema |
+
+### Tests
+
+| Check | Result |
+|---|---|
+| `cd backend && bun tsc --noEmit` | PASS |
+| `bun tsc -p apps/velcenter/tsconfig.json --noEmit` | PASS |
+| `bun run i18n:check` | PASS — th=1287 en=1287 my=1287 |
+| `bun test backend/tests` | 253 pass / 26 skip / 0 fail |
+| `git diff --check` | CLEAN |
+| `diff db/schema.sql db/run-sqleditor.sql` | identical |
+| Migrate Neon workflow | SUCCESS (`35110482872`) |
+
+### Production data
+
+No product, seller, order or verification row was modified. No status was mass-changed.
+V0040 does seed its canonical category taxonomy (that is what the migration is for); the only
+rows it touched were updated by slug, and existing ids were preserved.
+
+### Commits
+
+`7c63734` (V0040 unblock) · `2aaed54` (V0041 + V0045 media naming) · `988f356` (V0044 velrepeat retarget).
+
+### Remaining issues
+
+- **Seller verification is now unblocked but not yet exercised end-to-end.** The DB now has every
+  column the reviewer queue and the applicant flow use; a real submit → approve run should be
+  performed in the UI to confirm.
+- 46 of 47 products still have no `media` row: images uploaded while the media insert was failing
+  were never recorded. New uploads work now; the old ones need re-upload.
+- `product_verifications` still exists for historical data (Velnox runs ONE verification system —
+  seller/shop identity). It is intentionally untouched.
+- `GET /api/_diag/schema` is unauthenticated. It returns metadata only (table/column existence,
+  counts, migration names), but it should be gated or removed before public launch.
+- 42 published catalogue entries are test artefacts (`so-test-*`, `inv-*`, `P1#6 Product`, …) —
+  data hygiene, out of scope here.
