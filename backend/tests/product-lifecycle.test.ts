@@ -807,6 +807,44 @@ describe("review history / audit trail", () => {
   });
 });
 
+// ─── Code / canonical-schema drift ────────────────────────────────────
+
+describe("seller verification code matches the canonical schema", () => {
+  // Two production 42703 failures came from code selecting columns the canonical
+  // schema does not define (`sv.evidence_notes`) and from columns the production
+  // database did not have yet (`sv.review_reason_code`, because migration V0043
+  // was blocked behind the failing V0040).
+  const tableStart = schemaSql.indexOf("CREATE TABLE IF NOT EXISTS seller_verifications");
+  const tableBlock = schemaSql.slice(tableStart, schemaSql.indexOf(");", tableStart));
+  const canonicalColumns = new Set(
+    tableBlock
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/)[0])
+      .filter((name) => /^[a-z_]+$/.test(name)),
+  );
+
+  test("the migration only adds columns the canonical schema declares", () => {
+    for (const column of ["review_reason_code", "review_note"]) {
+      expect(canonicalColumns.has(column)).toBe(true);
+      expect(migration043).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
+    }
+  });
+
+  test("every sv.<column> selected by the backend exists in the schema", () => {
+    const selected = new Set([...verificationSrc.matchAll(/\bsv\.([a-z_]+)\b/g)].map((m) => m[1]));
+    expect(selected.size).toBeGreaterThan(5);
+    for (const column of selected) expect(canonicalColumns.has(column)).toBe(true);
+  });
+
+  test("the canonical schema and the SQL editor bundle declare the same columns", () => {
+    const editorBlock = sqlEditor.slice(
+      sqlEditor.indexOf("CREATE TABLE IF NOT EXISTS seller_verifications"),
+      sqlEditor.indexOf(");", sqlEditor.indexOf("CREATE TABLE IF NOT EXISTS seller_verifications")),
+    );
+    expect(editorBlock).toBe(tableBlock);
+  });
+});
+
 // ─── Private evidence access ──────────────────────────────────────────
 
 describe("identity evidence stays private", () => {

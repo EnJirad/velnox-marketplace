@@ -250,7 +250,7 @@ app.get("/api/_diag/schema", async (_req, res) => {
       "product_variants", "product_option_groups", "product_option_values",
       "product_variant_values", "product_attributes", "customer_wishlist",
       "product_reviews", "cart_items", "categories",
-      "seller_verifications", "product_verifications",
+      "seller_verifications", "product_verifications", "seller_review_history",
     ];
     const results: Record<string, any> = {};
     for (const t of tables) {
@@ -270,6 +270,16 @@ app.get("/api/_diag/schema", async (_req, res) => {
         const r = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'categories' AND column_name = $1`, [col]);
         results[`categories.${col}`] = r.rows.length > 0;
       } catch { results[`categories.${col}`] = false; }
+    }
+    // Seller verification contract (V0043) — the columns the reviewer queue
+    // (GET /api/admin/verifications) selects. Reported as booleans so a schema
+    // drift like `column sv.review_reason_code does not exist` is visible
+    // without a DATABASE_URL in the coding sandbox.
+    for (const col of ["review_reason_code", "review_note", "suspension_reason", "rejection_reason", "verification_type", "evidence_urls", "submitted_at", "reviewed_at"]) {
+      try {
+        const r = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'seller_verifications' AND column_name = $1`, [col]);
+        results[`seller_verifications.${col}`] = r.rows.length > 0;
+      } catch { results[`seller_verifications.${col}`] = false; }
     }
     // Check migration state
     let migrations: string[] = [];

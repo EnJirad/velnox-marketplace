@@ -142,6 +142,21 @@ describe("category schema consistency", () => {
     }
   });
 
+  test("V0040 subcategory seed resolves parents by slug, never by seed uuid", () => {
+    // Regression guard for the production failure that blocked every migration
+    // after V0039: the subcategory INSERT referenced the hard-coded parent uuids
+    // above, but a database bootstrapped from db/schema.sql already holds those
+    // parents (electronics, food-beverage, ...) under DIFFERENT uuids. Phase 4
+    // therefore took the ON CONFLICT (slug) path and kept the existing row id,
+    // so the literal parent reference pointed at a row that was never created
+    // and raised `categories_parent_id_fkey`. The whole --single-transaction
+    // migration rolled back, so 041-044 never applied and
+    // seller_verifications.review_reason_code stayed missing in production.
+    const subcategories = migration.slice(migration.indexOf("Phase 4b"));
+    expect(subcategories).toContain("(SELECT id FROM categories WHERE slug = 'food-beverage')");
+    expect(subcategories).not.toContain("'a0000001-");
+  });
+
 
   test("product counts use the canonical slug stored in products.category_id", () => {
     const products = read("backend/routes/products.ts");

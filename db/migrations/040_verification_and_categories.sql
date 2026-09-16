@@ -260,48 +260,56 @@ ON CONFLICT (slug) DO UPDATE SET
   updated_at = NOW();
 
 -- ── Phase 4b: Seed subcategories ───────────────────────────────────────────
+-- Parent rows are resolved by SLUG at apply time instead of by the hard-coded
+-- seed uuids above. A production database bootstrapped from db/schema.sql
+-- already contains these parents (electronics, food-beverage, ...) under
+-- different uuids, so the Phase 4 INSERT takes the ON CONFLICT (slug) path and
+-- keeps the EXISTING id. A literal uuid parent reference therefore pointed at a
+-- row that was never created, raised `categories_parent_id_fkey` and rolled the
+-- entire migration back — which in turn blocked every later migration.
+-- The subqueries cannot be NULL: Phase 4 guarantees each parent slug exists.
 
 -- Food & Beverage subcategories
 INSERT INTO categories (id, name, slug, parent_id, names, sort_order, is_active) VALUES
-('b0000001-0001-0000-0000-000000000001', 'Coffee', 'coffee', 'a0000001-0000-0000-0000-000000000001',
+('b0000001-0001-0000-0000-000000000001', 'Coffee', 'coffee', (SELECT id FROM categories WHERE slug = 'food-beverage'),
   '{"th":"กาแฟ","en":"Coffee","my":"ကော်ဖီ"}', 1, true),
-('b0000001-0001-0000-0000-000000000002', 'Tea', 'tea', 'a0000001-0000-0000-0000-000000000001',
+('b0000001-0001-0000-0000-000000000002', 'Tea', 'tea', (SELECT id FROM categories WHERE slug = 'food-beverage'),
   '{"th":"ชา","en":"Tea","my":"လက်ဖက်ရည်"}', 2, true),
-('b0000001-0001-0000-0000-000000000003', 'Snacks', 'snacks', 'a0000001-0000-0000-0000-000000000001',
+('b0000001-0001-0000-0000-000000000003', 'Snacks', 'snacks', (SELECT id FROM categories WHERE slug = 'food-beverage'),
   '{"th":"ขนมขบเคี้ยว","en":"Snacks","my":"မုန့်စား"}', 3, true),
-('b0000001-0001-0000-0000-000000000004', 'Beverages', 'beverages', 'a0000001-0000-0000-0000-000000000001',
+('b0000001-0001-0000-0000-000000000004', 'Beverages', 'beverages', (SELECT id FROM categories WHERE slug = 'food-beverage'),
   '{"th":"เครื่องดื่ม","en":"Beverages","my":"ဖျော်ရည်"}', 4, true),
-('b0000001-0001-0000-0000-000000000005', 'Cooking Ingredients', 'cooking-ingredients', 'a0000001-0000-0000-0000-000000000001',
+('b0000001-0001-0000-0000-000000000005', 'Cooking Ingredients', 'cooking-ingredients', (SELECT id FROM categories WHERE slug = 'food-beverage'),
   '{"th":"วัตถุดิบปรุงอาหาร","en":"Cooking Ingredients","my":"ချက်ပြုတ်ပစ္စည်းများ"}', 5, true),
 
 -- Beauty subcategories
-('b0000001-0002-0000-0000-000000000001', 'Skincare', 'skincare', 'a0000001-0000-0000-0000-000000000003',
+('b0000001-0002-0000-0000-000000000001', 'Skincare', 'skincare', (SELECT id FROM categories WHERE slug = 'beauty-personal-care'),
   '{"th":"ดูแลผิว","en":"Skincare","my":"အသားအရေပြုစုခြင်း"}', 1, true),
-('b0000001-0002-0000-0000-000000000002', 'Makeup', 'makeup', 'a0000001-0000-0000-0000-000000000003',
+('b0000001-0002-0000-0000-000000000002', 'Makeup', 'makeup', (SELECT id FROM categories WHERE slug = 'beauty-personal-care'),
   '{"th":"เครื่องสำอาง","en":"Makeup","my":"မိတ်ကပ်"}', 2, true),
-('b0000001-0002-0000-0000-000000000003', 'Haircare', 'haircare', 'a0000001-0000-0000-0000-000000000003',
+('b0000001-0002-0000-0000-000000000003', 'Haircare', 'haircare', (SELECT id FROM categories WHERE slug = 'beauty-personal-care'),
   '{"th":"ดูแลเส้นผม","en":"Haircare","my":"ဆံပင်ပြုစုခြင်း"}', 3, true),
 
 -- Electronics subcategories
-('b0000001-0008-0000-0000-000000000001', 'Audio', 'audio-electronics', 'a0000001-0000-0000-0000-000000000008',
+('b0000001-0008-0000-0000-000000000001', 'Audio', 'audio-electronics', (SELECT id FROM categories WHERE slug = 'electronics'),
   '{"th":"เสียง","en":"Audio","my":"အသံ"}', 1, true),
-('b0000001-0008-0000-0000-000000000002', 'Cameras', 'cameras', 'a0000001-0000-0000-0000-000000000008',
+('b0000001-0008-0000-0000-000000000002', 'Cameras', 'cameras', (SELECT id FROM categories WHERE slug = 'electronics'),
   '{"th":"กล้อง","en":"Cameras","my":"ကင်မရာများ"}', 2, true),
 
 -- Fashion subcategories
-('b0000001-0005-0000-0000-000000000001', 'Men''s Clothing', 'mens-clothing', 'a0000001-0000-0000-0000-000000000005',
+('b0000001-0005-0000-0000-000000000001', 'Men''s Clothing', 'mens-clothing', (SELECT id FROM categories WHERE slug = 'fashion'),
   '{"th":"เสื้อผ้าผู้ชาย","en":"Men''s clothing","my":"အမျိုးသားအဝတ်အထည်"}', 1, true),
-('b0000001-0005-0000-0000-000000000002', 'Women''s Clothing', 'womens-clothing', 'a0000001-0000-0000-0000-000000000005',
+('b0000001-0005-0000-0000-000000000002', 'Women''s Clothing', 'womens-clothing', (SELECT id FROM categories WHERE slug = 'fashion'),
   '{"th":"เสื้อผ้าผู้หญิง","en":"Women''s clothing","my":"အမျိုးသမီးအဝတ်အထည်"}', 2, true),
-('b0000001-0005-0000-0000-000000000003', 'Children''s Clothing', 'childrens-clothing', 'a0000001-0000-0000-0000-000000000005',
+('b0000001-0005-0000-0000-000000000003', 'Children''s Clothing', 'childrens-clothing', (SELECT id FROM categories WHERE slug = 'fashion'),
   '{"th":"เสื้อผ้าเด็ก","en":"Children''s clothing","my":"ကလေးအဝတ်အထည်"}', 3, true),
 
 -- Phones subcategories
-('b0000001-0009-0000-0000-000000000001', 'Smartphones', 'smartphones', 'a0000001-0000-0000-0000-000000000009',
+('b0000001-0009-0000-0000-000000000001', 'Smartphones', 'smartphones', (SELECT id FROM categories WHERE slug = 'phones-accessories'),
   '{"th":"สมาร์ทโฟน","en":"Smartphones","my":"စမတ်ဖုန်းများ"}', 1, true),
-('b0000001-0009-0000-0000-000000000002', 'Cases & Covers', 'cases-covers', 'a0000001-0000-0000-0000-000000000009',
+('b0000001-0009-0000-0000-000000000002', 'Cases & Covers', 'cases-covers', (SELECT id FROM categories WHERE slug = 'phones-accessories'),
   '{"th":"เคสและฝาครอบ","en":"Cases & covers","my":"ဖုန်းအိတ်များ"}', 2, true),
-('b0000001-0009-0000-0000-000000000003', 'Chargers & Cables', 'chargers-cables', 'a0000001-0000-0000-0000-000000000009',
+('b0000001-0009-0000-0000-000000000003', 'Chargers & Cables', 'chargers-cables', (SELECT id FROM categories WHERE slug = 'phones-accessories'),
   '{"th":"ที่ชาร์จและสายไฟ","en":"Chargers & cables","my":"အားသွင်းကိရိယာနှင့်ကြိုးများ"}', 3, true)
 
 ON CONFLICT (slug) DO UPDATE SET
