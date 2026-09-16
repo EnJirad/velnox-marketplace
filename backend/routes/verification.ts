@@ -133,7 +133,7 @@ export function registerVerificationRoutes(app: Express) {
     try {
       const userId = req.user!.userId;
       const result = await query(
-        `SELECT sv.id, sv.status, sv.verification_type, sv.evidence_urls, sv.evidence_notes,
+        `SELECT sv.id, sv.status, sv.verification_type, sv.evidence_urls,
                 sv.submitted_at, sv.reviewed_at, sv.rejection_reason, sv.review_reason_code,
                 sv.suspension_reason,
                 s.verification_status AS seller_verification_status, s.verified_at
@@ -445,7 +445,7 @@ export function registerVerificationRoutes(app: Express) {
 
       const sellerRes = await query(
         `SELECT sv.id, sv.seller_id, sv.status, sv.verification_type, sv.evidence_urls,
-                sv.evidence_notes, sv.submitted_at, sv.reviewed_at, sv.rejection_reason,
+                sv.submitted_at, sv.reviewed_at, sv.rejection_reason,
                 sv.suspension_reason, sv.review_reason_code, sv.review_note, sv.created_at, sv.updated_at,
                 s.status AS seller_status, s.verification_status,
                 u.id AS owner_user_id, u.name AS owner_name, u.email AS owner_email, u.phone AS owner_phone,

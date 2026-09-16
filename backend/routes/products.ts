@@ -3468,7 +3468,7 @@ export function setupProductRoutes(app: Express): void {
         `SELECT p.id, p.name, p.description, p.short_description, p.price, p.compare_at_price,
                 p.currency, p.unit, p.supplier, p.status, p.rejection_reason, p.category_id,
                 p.shop_id, p.created_at, p.updated_at,
-                sh.name as shop_name, sh.slug as shop_slug, sh.status as shop_status,
+                sh.name as shop_name, sh.slug as shop_slug, s.status as shop_status,
                 u.id as seller_user_id, u.name as seller_name, u.email as seller_email,
                 s.verification_status as seller_verification_status,
                 i.quantity as inventory_quantity, i.reserved as inventory_reserved,
@@ -3558,7 +3558,7 @@ export function setupProductRoutes(app: Express): void {
       const productId = param(req, "productId");
 
       const productResult = await query(
-        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.status as shop_status,
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, s.status as shop_status,
                 sh.description as shop_description, sh.logo as shop_logo, sh.cover as shop_cover,
                 sh.phone as shop_phone, sh.email as shop_email, sh.category as shop_category,
                 s.verification_status as seller_verification_status, s.verified_at as seller_verified_at,

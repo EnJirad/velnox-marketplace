@@ -765,3 +765,68 @@ No changes. No products were mass-published. No seller statuses were changed.
 
 - The `.icon` fix (`c1b8d31`) needs a Vercel deploy to reach production. The current production build still has the old code.
 - No live browser E2E was run (no browser available).
+
+## Production SQL Error Fixes — `sh.status` + `sv.evidence_notes` (2026-09-16)
+
+### Problem
+
+Production Render logs showed two SQL errors that caused VelCenter Products and Sellers tabs to return empty data:
+
+```
+[admin] product moderation list error:
+error: column sh.status does not exist
+code: 42703
+hint: Perhaps you meant to reference the column "s.status".
+
+[verification] admin list error:
+error: column sv.evidence_notes does not exist
+code: 42703
+```
+
+### Root cause
+
+1. **`sh.status`** — `backend/routes/products.ts` selected `sh.status as shop_status` where `sh` aliases `shops`. The `shops` table has **no `status` column**. The query failed on every request, returning 500.
+
+2. **`sv.evidence_notes`** — `backend/routes/verification.ts` selected `sv.evidence_notes` from `seller_verifications`. This column **does not exist** in the schema. The schema has `evidence_urls` (JSONB) and `review_note` (TEXT), but no `evidence_notes`.
+
+### Schema (source of truth)
+
+```
+shops:          id, seller_id, name, slug, description, logo, cover, ...  (NO status column)
+sellers:        id, user_id, status, verification_status, verified_at, ...
+seller_verifications: id, seller_id, status, verification_type, evidence_urls,
+                      submitted_at, reviewed_at, reviewed_by, rejection_reason,
+                      suspension_reason, review_reason_code, review_note, ...
+```
+
+### Fix
+
+1. **`backend/routes/products.ts`** — Replaced `sh.status as shop_status` → `s.status as shop_status` (2 occurrences: moderation list + moderation detail). `s` aliases `sellers`, which HAS a `status` column. Frontend contract (`shop_status` field name) preserved.
+
+2. **`backend/routes/verification.ts`** — Removed `sv.evidence_notes` from SELECT (2 occurrences: admin list + seller own verification). Column doesn't exist; not used by frontend.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `backend/routes/products.ts` | `sh.status` → `s.status` (2 occurrences) |
+| `backend/routes/verification.ts` | Removed `sv.evidence_notes` from SELECT (2 occurrences) |
+
+### Tests
+
+| Check | Result |
+|---|---|
+| `cd backend && bun tsc --noEmit` | PASS |
+| `bun tsc -p apps/velcenter/tsconfig.json --noEmit` | PASS |
+| `bun run i18n:check` | PASS — th=1287 en=1287 my=1287 |
+| `bun test backend/tests` | 200 pass / 26 skip / 0 fail |
+
+### Database
+
+No schema changes. No data changes. The fix is purely in the SQL queries.
+
+### Remaining
+
+- Frontend error handling for Products/Sellers tabs was already improved in commit `3f7b761` (error state + retry button).
+- The `.icon` crash was already fixed in commit `c1b8d31`.
+- All three fixes need a Vercel deploy (frontend) + Render deploy (backend) to reach production.
