@@ -6,6 +6,7 @@
  *
  * New code should use api-client.ts directly with REST paths.
  */
+import { useEffect, useRef, useState } from "react";
 import { apiBaseUrl as API_BASE } from "./sites";
 
 // ─── Simple in-memory GET cache (60s TTL) ──────────────────────────────────
@@ -186,6 +187,11 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
     if (a?.minPrice) params.set("minPrice", String(a.minPrice));
     if (a?.maxPrice) params.set("maxPrice", String(a.maxPrice));
     if (a?.inStock) params.set("inStock", "true");
+    // Verification filter: the catalog only returns products whose seller/shop
+    // is verified (Velnox has ONE verification system — the seller/shop
+    // identity check). Forwarding this is required — dropping it here made
+    // `/products?verified=true` render the whole catalog instead.
+    if (a?.verified) params.set("verified", "true");
     if (a?.sortBy) params.set("sortBy", a.sortBy);
     if (a?.limit) params.set("limit", String(a.limit));
     if (a?.offset) params.set("offset", String(a.offset));
@@ -356,13 +362,41 @@ export function useAction(routeKeyOrFn: string | ((...args: any[]) => any)): (..
 }
 
 /**
- * useQuery replacement — returns data from a GET endpoint.
- * Note: This is NOT reactive. Use with useEffect.
+ * useQuery replacement — a real React hook that GETs a read endpoint and
+ * returns the unwrapped payload.
+ *
+ * Accepts either a route key (`"api.center.overview"`) or the mapped action
+ * function itself (`api.center.overview`, which is the stable ACTION_MAP
+ * reference — NOT a new closure, so it is safe as an effect dependency).
+ *
+ * Returns `undefined` while loading and when the request fails; every existing
+ * caller already treats `undefined` as "not loaded yet".
  */
-export function useQuery(routeKey: string): any {
-  const handler = ACTION_MAP[routeKey];
-  if (!handler) return undefined;
-  return undefined;
+export function useQuery(routeKeyOrFn: (() => Promise<any>) | string): any {
+  const [data, setData] = useState<any>(undefined);
+  const loaderRef = useRef<() => Promise<any>>(() => Promise.resolve(undefined));
+  loaderRef.current =
+    typeof routeKeyOrFn === "function"
+      ? (routeKeyOrFn as () => Promise<any>)
+      : (() => apiGet(routeKeyOrFn));
+
+  useEffect(() => {
+    let alive = true;
+    loaderRef
+      .current()
+      .then((value) => {
+        if (alive) setData(value);
+      })
+      .catch((err) => {
+        console.error("[api-routes] useQuery failed:", err);
+        if (alive) setData(undefined);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [routeKeyOrFn]);
+
+  return data;
 }
 
 /**

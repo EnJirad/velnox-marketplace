@@ -278,7 +278,34 @@ app.get("/api/_diag/schema", async (_req, res) => {
       migrations = r.rows.map((r: any) => r.migration_name);
     } catch { migrations = ["schema_migrations table missing"];
     }
-    res.json({ tables: results, migrations });
+
+    // ── Product visibility diagnostics ──────────────────────────────────
+    // Read-only, AGGREGATE-ONLY (no ids, names or PII). This exists because a
+    // coding sandbox has no DATABASE_URL, so the only way to see WHY products
+    // are missing from the catalog is to count them by status here.
+    const productVisibility: Record<string, any> = {};
+    const countQuery = async (key: string, sql: string) => {
+      try {
+        const r = await query(sql);
+        productVisibility[key] = r.rows;
+      } catch (e: any) {
+        productVisibility[key] = `ERROR: ${e?.message ?? "query failed"}`;
+      }
+    };
+    await countQuery("total", `SELECT COUNT(*)::int AS n FROM products`);
+    await countQuery("byStatus", `SELECT status, COUNT(*)::int AS n FROM products GROUP BY status ORDER BY n DESC`);
+    await countQuery("byVerification", `SELECT verification_status, COUNT(*)::int AS n FROM products GROUP BY verification_status ORDER BY n DESC`);
+    // Join integrity — an INNER JOIN on a broken relation silently hides rows.
+    await countQuery("orphanProductsNoShop", `SELECT COUNT(*)::int AS n FROM products p LEFT JOIN shops sh ON sh.id = p.shop_id WHERE sh.id IS NULL`);
+    await countQuery("orphanShopsNoSeller", `SELECT COUNT(*)::int AS n FROM shops sh LEFT JOIN sellers s ON s.id = sh.seller_id WHERE s.id IS NULL`);
+    await countQuery("orphanSellersNoUser", `SELECT COUNT(*)::int AS n FROM sellers s LEFT JOIN users u ON u.id = s.user_id WHERE u.id IS NULL`);
+    // Category key compatibility: products.category_id stores the canonical
+    // SLUG (V0015/V0029) — a uuid-vs-slug join can never match.
+    await countQuery("categoryJoinBySlug", `SELECT COUNT(*)::int AS n FROM products p JOIN categories c ON c.slug = p.category_id`);
+    await countQuery("categoryJoinByUuid", `SELECT COUNT(*)::int AS n FROM products p JOIN categories c ON c.id::text = p.category_id`);
+    await countQuery("productsWithoutImages", `SELECT COUNT(*)::int AS n FROM products p WHERE NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id = p.id)`);
+
+    res.json({ tables: results, migrations, productVisibility });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

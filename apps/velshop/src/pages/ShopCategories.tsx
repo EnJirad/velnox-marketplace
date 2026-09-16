@@ -6,8 +6,7 @@ import { api } from "@velnox/shared/lib/api-routes";
 import { useLanguage } from "@/lib/i18n";
 import { setSeo } from "@/lib/seo";
 import { useAction } from "@velnox/shared/lib/api-routes";
-import { VBadge } from "@velnox/shared/components/VBadge";
-import { ArrowRight, Boxes, ImageOff, LayoutGrid, Package, ShieldCheck } from "lucide-react";
+import { ArrowRight, Boxes, ImageOff, LayoutGrid, Package } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 

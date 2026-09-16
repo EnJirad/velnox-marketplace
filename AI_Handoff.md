@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-15
+**Last updated:** 2026-09-16
 **Branch:** `main`
 
 ## Current Project State
@@ -593,3 +593,61 @@ Events are broadcast from:
    `PATCH /api/admin/sellers/:id`.
 7. Eyeball the VelCenter Create/Edit Category dialog on the deployed build with a
    very long TH/EN/MY parent-category name at 320/375/390/768/desktop.
+
+## Product Visibility Root-Cause Audit — "previously created products are no longer appearing" (2026-09-16)
+
+**Reported problem:** previously created products were not appearing; "not even a single previously created product is visible".
+
+### How this was investigated (no guessing)
+
+- **Sandbox limitation:** this environment has **no `DATABASE_URL`**, so Neon could not be queried directly. `db/schema.sql` / `db/run-sqleditor.sql` were read for the real model, and the **deployed public API** (`https://velnox-api.onrender.com`) was probed read-only, the same method the TASK 2.5 audit used.
+- **Live production evidence (2026-09-16):**
+  - `GET /api/products/catalog?limit=200` → **43 published products**, of which **42 are test artefacts** (`so-test-*`, `inv-*`, `P1#6 Product`, `vr-test-*`, `Review Product A/B`) and **exactly 1 is a real product** (`HTC NE20 AI Translator …`, shop `Eloop`, category `headphones-speakers`).
+  - `GET /api/shops/eloop` → `productCount: 1`, and the shop's published product list contains that single item.
+  - `GET /api/products/4ec0f402-3070-4389-8384-255b1b695596` (the `STAR FRUIT …` product that earlier production logs reported as `status='published'`) → **404**, i.e. it is no longer `published` (that endpoint 404s for every non-published status **and** for a missing row).
+  - `GET /api/categories/tree` → only `headphones-speakers -> 1` has a published count.
+  - `GET /api/_diag/schema` → all V0040 artefacts exist (`seller_verifications`, `product_verifications`, `categories.is_active/names/…` = `true`). `schema_migrations` lists migrations only up to `039_seller_goals_and_center`; the V0040 DDL is applied but its bookkeeping row is absent (applied out-of-band).
+  - **Conclusion:** the catalog endpoint itself is healthy. The real products have left the `published` state (or were archived / never approved) — a **state/data** problem sitting on top of the genuine pipeline defects below.
+
+### Defects fixed in this pass
+
+1. **`useQuery()` was a stub that always returned `undefined`** (`packages/shared/src/lib/api-routes.ts`). It never called anything, so every consumer read nothing: `Center.tsx` (`api.center.overview`, `api.products.listAll`, `api.users.listUsers`) and `SellerGoals.tsx` (`api.goals.list`). The VelCenter **Intelligence tab, Overview goal/low-stock/reorder sub-values and Staff user list were permanently empty** — "products not appearing" inside VelCenter. `useQuery` is now a real React hook (`useState` + `useEffect`) that GETs the mapped endpoint and returns the unwrapped payload; it accepts either a route key or the stable `ACTION_MAP` function, and still returns `undefined` while loading / on failure so existing callers keep working.
+2. **The frontend silently dropped the verification filter.** `ShopProducts.tsx` passes `verified: true` for `/products?verified=true` (linked from the ShopCategories "VelShop Verified" card and the verified filter chip), but `api.commerce.catalogProductsAction` never forwarded it — so the verified surface rendered the **whole** catalog. It now sets `verified=true`.
+
+### Re-verified as already correct upstream (no duplicate change committed)
+
+- The catalog / product-detail / seller-list / shop-detail category join is already `LEFT JOIN categories c ON c.slug = p.category_id` (correct: `products.category_id` stores the canonical slug per V0015/V0029), and `/api/categories/tree|stats` already count on `c.slug`. Verified still correct.
+- The customer-facing badge is already a single `V` with no `✓` in `ShopCategories.tsx` / `VBadge.tsx`. Verified still correct.
+- `products.category_id` remains `TEXT` and there is still **no** `products.is_v` — the V rule stays derived (`## The V Rule` above).
+
+### Diagnostics added (read-only, aggregate only)
+
+`GET /api/_diag/schema` now also returns a `productVisibility` block: product counts by `status`, by `verification_status`, orphan-product / orphan-shop / orphan-seller join-integrity counts, category-join match counts for **slug vs uuid** (proves that bug class), and `productsWithoutImages`. No ids, names, evidence or PII.
+
+**Next step to read the production state (needs one backend deploy):** open `https://velnox-api.onrender.com/api/_diag/schema` and read `productVisibility.byStatus`. If real products show `draft` / `pending_review` / `rejected` / `archived` rather than `published`, the remedy is an operator action in VelCenter (approve) or an explicit, reviewed data correction. **No blind mass-publish migration was written** — a product must not be made public merely to hide the problem, and no status was mass-rewritten.
+
+### Files changed
+
+- `packages/shared/src/lib/api-routes.ts` — real `useQuery` hook; `verified` forwarded in `catalogProductsAction`
+- `backend/server.ts` — aggregate product-visibility diagnostics in `/api/_diag/schema`
+- `backend/tests/product-visibility.test.ts` (NEW) — regression guards for the category key, the published-only catalog/detail contract, the `verified` passthrough, the `useQuery` implementation and the badge
+- `apps/velshop/src/pages/ShopCategories.tsx` — removed two imports that had become unused
+
+**Database changed:** NO migration. No `products.is_v`. No status rewritten. `db/schema.sql` / `db/run-sqleditor.sql` already agree on `products.category_id TEXT` and stay synchronized.
+
+### Tests actually performed
+
+- `cd backend && bun tsc --noEmit` → 0 errors
+- `bun tsc -p apps/{velshop,velseller,velcenter,velnox}/tsconfig.json --noEmit` → 0 errors (all 4)
+- `bun test backend/tests` → **200 pass / 26 skip (DB-gated) / 0 fail** (226 tests, 12 files)
+- `bun test ./tests/product-visibility.test.ts` → 9 pass / 0 fail
+- `bun run i18n:check` → `th=1287 en=1287 my=1287`, parity OK
+- `git diff --check` → clean
+- Live read-only probes against `https://velnox-api.onrender.com` — results recorded above
+
+### Not verified / limitations
+
+- **NOT VERIFIED (blocked):** production row-level state. No `DATABASE_URL` here, so the per-product statuses could not be read; `productVisibility.byStatus` is the instrument and only goes live after the next backend deploy.
+- **NOT VERIFIED:** live browser E2E (no seeded seller/admin session, no headless browser). No credentials were fabricated.
+- **Pre-existing, out of scope:** 42 published test artefacts (`so-test-*`, `inv-*`, `P1#6 Product`, `vr-test-*`, `Review Product A/B`) pollute the public catalog. Cleaning them needs a deliberate, reviewed archive step — not done here.
+- **Pre-existing, out of scope:** `backend/lib/product-status.ts` is an untracked, unimported duplicate of the product lifecycle rules (AI_RULES §40). Left untouched because it is not part of the repository; flagged here so the next agent deletes it deliberately.
