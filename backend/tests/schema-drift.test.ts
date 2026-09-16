@@ -28,6 +28,7 @@ const schemaSql = read("db/schema.sql");
 const sqlEditor = read("db/run-sqleditor.sql");
 const migration008 = read("db/migrations/008_upload_auth_fixes.sql");
 const migration041 = read("db/migrations/041_media_cover_lookup_index.sql");
+const migration044 = read("db/migrations/044_velrepeat_plans_status_constraint.sql");
 const migration045 = read("db/migrations/045_media_column_naming.sql");
 
 const backendMediaSources = [
@@ -109,6 +110,39 @@ describe("media table column naming", () => {
     // apply time and leave the columns half-migrated.
     const pairs = [...migration045.matchAll(/ARRAY\['([a-z_]+)', '([a-z_]+)'\]/g)];
     expect(pairs.map(([, from, to]) => [from, to])).toEqual(RENAME_PAIRS);
+  });
+});
+
+describe("the canonical schema never alters a table it does not create", () => {
+  // The bootstrap file referenced `velrepeat_plan_runs`, which no migration and
+  // no backend query ever created: running db/schema.sql on a fresh database
+  // aborted, and migration V0044 aborted in production with
+  // `relation "velrepeat_plan_runs" does not exist`, blocking V0045.
+  /** Comments legitimately document the phantom name; only statements matter. */
+  const statements = (sql: string) =>
+    sql
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("--"))
+      .join("\n");
+
+  function phantomReferences(sql: string): string[] {
+    const code = statements(sql);
+    const created = new Set([...code.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)/g)].map((m) => m[1]));
+    const missing = new Set<string>();
+    for (const m of code.matchAll(/ALTER TABLE (?:IF EXISTS )?([a-z_]+)/g)) {
+      if (!created.has(m[1])) missing.add(m[1]);
+    }
+    return [...missing];
+  }
+
+  test("db/schema.sql", () => expect(phantomReferences(schemaSql)).toEqual([]));
+  test("db/run-sqleditor.sql", () => expect(phantomReferences(sqlEditor)).toEqual([]));
+
+  test("the velrepeat run constraint targets the table V0034 creates", () => {
+    for (const sql of [schemaSql, sqlEditor, migration044]) {
+      expect(statements(sql)).toContain("ALTER TABLE velrepeat_runs");
+      expect(statements(sql)).not.toContain("velrepeat_plan_runs");
+    }
   });
 });
 

@@ -1,7 +1,7 @@
 -- Migration: V0044
 -- Date: 2026-09-15
 -- Description:
--- Re-assert the velrepeat_plans / velrepeat_plan_runs status CHECK constraints.
+-- Re-assert the velrepeat_plans / velrepeat_runs status CHECK constraints.
 --
 -- Root cause:
 -- The repository state machine is NOT stale. `backend/jobs/velrepeat-scheduler.ts`
@@ -25,9 +25,16 @@
 -- This only WIDENS the allowed set — no existing row can violate the new
 -- constraints, so no data normalization is required.
 --
+-- The run table is `velrepeat_runs` (V0034). An earlier revision of this file
+-- targeted a `velrepeat_plan_runs` table that no migration and no backend query
+-- ever created, so the statement aborted with
+--     ERROR:  relation "velrepeat_plan_runs" does not exist
+-- and again blocked every later migration (V0045). The status set below is
+-- exactly the one V0034 declares inline for velrepeat_runs.status.
+--
 -- Affected:
 --   velrepeat_plans
---   velrepeat_plan_runs
+--   velrepeat_runs
 
 ALTER TABLE velrepeat_plans DROP CONSTRAINT IF EXISTS velrepeat_plans_status_check;
 ALTER TABLE velrepeat_plans
@@ -36,8 +43,8 @@ ALTER TABLE velrepeat_plans
                     'out_of_stock', 'item_unavailable', 'price_changed',
                     'cancelled', 'completed'));
 
-ALTER TABLE velrepeat_plan_runs DROP CONSTRAINT IF EXISTS velrepeat_plan_runs_status_check;
-ALTER TABLE velrepeat_plan_runs
-  ADD CONSTRAINT velrepeat_plan_runs_status_check
+ALTER TABLE velrepeat_runs DROP CONSTRAINT IF EXISTS velrepeat_runs_status_check;
+ALTER TABLE velrepeat_runs
+  ADD CONSTRAINT velrepeat_runs_status_check
   CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock',
                     'item_unavailable', 'price_changed', 'failed', 'cancelled'));

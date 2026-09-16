@@ -884,9 +884,13 @@ ALTER TABLE velrepeat_plans
                     'out_of_stock', 'item_unavailable', 'price_changed',
                     'cancelled', 'completed'));
 
-ALTER TABLE velrepeat_plan_runs DROP CONSTRAINT IF EXISTS velrepeat_plan_runs_status_check;
-ALTER TABLE velrepeat_plan_runs
-  ADD CONSTRAINT velrepeat_plan_runs_status_check
+-- The run table is `velrepeat_runs` (created above). An earlier revision of this
+-- block named a `velrepeat_plan_runs` table that no migration and no backend
+-- query ever created, so running this file on a fresh database aborted with
+-- `relation "velrepeat_plan_runs" does not exist` — and so did migration V0044.
+ALTER TABLE velrepeat_runs DROP CONSTRAINT IF EXISTS velrepeat_runs_status_check;
+ALTER TABLE velrepeat_runs
+  ADD CONSTRAINT velrepeat_runs_status_check
   CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock',
                     'item_unavailable', 'price_changed', 'failed', 'cancelled'));
 
