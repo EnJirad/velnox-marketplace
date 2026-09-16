@@ -170,9 +170,9 @@ function VOverlayBadge({
   }, [open, isMobile]);
 
   const sizeClasses = {
-    sm: "size-6 text-[10px]",
-    md: "size-7 text-[11px]",
-    lg: "size-8 text-xs",
+    sm: "h-5 w-6.5 text-[10px]",
+    md: "h-6 w-8 text-[11px]",
+    lg: "h-7 w-9 text-xs",
   };
 
   const badge = (
@@ -182,10 +182,10 @@ function VOverlayBadge({
       onClick={toggle}
       onKeyDown={handleKeyDown}
       className={cn(
-        "absolute z-10 flex items-center justify-center rounded-full font-extrabold",
-        "bg-emerald-500 text-white shadow-md",
+        "absolute z-10 flex items-center justify-center rounded-lg font-extrabold",
+        "bg-emerald-600/90 text-white shadow-md backdrop-blur-sm",
         "transition-all duration-150 ease-out",
-        "hover:bg-emerald-600 hover:shadow-lg",
+        "hover:bg-emerald-600 hover:shadow-lg hover:scale-105",
         "active:scale-95",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1",
         "select-none",
@@ -264,7 +264,7 @@ function SellerOnlyBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-full font-bold",
+        "inline-flex items-center gap-0.5 rounded-lg font-bold",
         "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15",
         size === "sm" && "px-1.5 py-0.5 text-[9px]",
         size === "md" && "px-2 py-0.5 text-[10px]",

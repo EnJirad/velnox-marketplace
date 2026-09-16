@@ -15,6 +15,8 @@ interface CategoryNode {
   name: string;
   slug: string | null;
   description: string | null;
+  display_name?: string;
+  display_description?: string;
   imageUrl: string | null;
   parentId: string | null;
   level: number;
@@ -24,14 +26,14 @@ interface CategoryNode {
 
 export default function ShopCategories() {
   const categoryStats = useAction(api.customer.categoryStatsAction);
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [tree, setTree] = useState<CategoryNode[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = (await categoryStats()) as unknown as CategoryNode[];
+      const rows = (await categoryStats({ lang: lang })) as unknown as CategoryNode[];
       setTree(rows ?? []);
     } catch (err) {
       console.error("Categories error:", err);
@@ -105,10 +107,10 @@ export default function ShopCategories() {
                         </span>
                       )}
                       <div className="min-w-0">
-                        <h2 className="truncate text-lg font-bold tracking-tight text-white">{root.name}</h2>
+                        <h2 className="truncate text-lg font-bold tracking-tight text-white">{root.display_name ?? root.name}</h2>
                         <p className="text-xs text-emerald-50/90">
                           {t("categories.count", { count: total })}
-                          {root.description ? ` · ${root.description}` : ""}
+                          {(root.display_description ?? root.description) ? ` · ${root.display_description ?? root.description}` : ""}
                         </p>
                       </div>
                     </div>
@@ -122,7 +124,7 @@ export default function ShopCategories() {
                           to={`/products?category=${encodeURIComponent(child.slug ?? child.id)}`}
                           className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-[#10B981]/40 hover:bg-[#ECFDF5] hover:text-emerald-700"
                         >
-                          {child.name} · {child.productCount}
+                          {child.display_name ?? child.name} · {child.productCount}
                         </Link>
                       ))}
                     </div>

@@ -79,8 +79,9 @@ export default function ShopProducts() {
   const [params, setParams] = useSearchParams();
   const catalog = useAction(api.commerce.catalogProductsAction);
   const publicShops = useAction(api.customer.publicShops);
+  const categoryTree = useAction(api.customer.categoryTreeAction);
   const { add } = useCart();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { track } = useTracking();
   const navigate = useNavigate();
 
@@ -184,7 +185,7 @@ export default function ShopProducts() {
 
   useEffect(() => {
     const categoryLabel =
-      category !== "all" ? (PRODUCT_CATEGORY_META[category as StoreProductCategory]?.label ?? category) : null;
+      category !== "all" ? (catNameMap.get(category) ?? PRODUCT_CATEGORY_META[category as StoreProductCategory]?.label ?? category) : null;
     setSeo({
       title: categoryLabel
         ? t("products.seoCatTitle", { cat: categoryLabel })
@@ -242,7 +243,7 @@ export default function ShopProducts() {
     track("CATEGORY_VIEW", {
       entityId: category,
       value: category,
-      context: { label: PRODUCT_CATEGORY_META[category as StoreProductCategory]?.label },
+      context: { label: catNameMap.get(category) ?? PRODUCT_CATEGORY_META[category as StoreProductCategory]?.label },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category]);
@@ -296,13 +297,32 @@ export default function ShopProducts() {
     return pages;
   }, [page, totalPages]);
 
+  // Localized category name map (slug → display_name)
+  const [catNameMap, setCatNameMap] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let alive = true;
+    categoryTree({ lang: lang }).then((tree: any[]) => {
+      if (!alive || !Array.isArray(tree)) return;
+      const m = new Map<string, string>();
+      const walk = (nodes: any[]) => {
+        for (const n of nodes) {
+          if (n.slug) m.set(n.slug, n.display_name ?? n.name);
+          if (n.children?.length) walk(n.children);
+        }
+      };
+      walk(tree);
+      setCatNameMap(m);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [categoryTree, lang]);
+
   const categoryOptions = useMemo(
     () =>
       [
         { id: "all" as const, label: t("common.all") },
         ...Object.entries(PRODUCT_CATEGORY_META).map(([id, meta]) => ({
           id: id as StoreProductCategory,
-          label: meta.label,
+          label: catNameMap.get(id) ?? meta.label,
         })),
       ],
     [t],

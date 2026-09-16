@@ -166,8 +166,8 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.customer.publicShops": () => apiGet("/api/shops"),
   "api.customer.shopDetail": (a) => apiGet(`/api/shops/${a.shopId}`),
   "api.customer.categories": () => apiGet("/api/categories"),
-  "api.customer.categoryTreeAction": () => apiGet("/api/categories/tree"),
-  "api.customer.categoryStatsAction": () => apiGet("/api/categories/stats"),
+  "api.customer.categoryTreeAction": (a?: { lang?: string }) => apiGet(`/api/categories/tree${a?.lang ? `?lang=${encodeURIComponent(a.lang)}` : ""}`),
+  "api.customer.categoryStatsAction": (a?: { lang?: string }) => apiGet(`/api/categories/stats${a?.lang ? `?lang=${encodeURIComponent(a.lang)}` : ""}`),
 
   // Commerce actions (seller)
   "api.commerce.mySellerStatus": () => apiGet("/api/seller/status"),

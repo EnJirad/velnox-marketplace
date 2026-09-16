@@ -1088,3 +1088,60 @@ reviewer → notification half is confirmed with live data and the new bell will
 ### Commits
 
 `1d3d361` (moderation detail + notification flow) · `eb7c183` (notification count probe).
+
+## UX & Localization Round (2026-09-16)
+
+### V Badge Redesign
+**From:** circular green circle with `rounded-full` + `bg-emerald-500`
+**To:** rounded rectangle with `rounded-lg` + `bg-emerald-600/90` + `backdrop-blur-sm`
+
+- `VOverlayBadge`: sizes changed from square (`size-6/7/8`) to rectangular (`h-5 w-6.5`, `h-6 w-8`, `h-7 w-9`)
+- `SellerOnlyBadge`: `rounded-full` → `rounded-lg`
+- Hover: added `hover:scale-105` for interactive feedback
+- V letter shape unchanged — only container styling changed
+
+### Category Localization Fix
+**Root cause:** VelShop displayed category names in the base language (Thai) regardless of
+user-selected locale because:
+1. `categoryStatsAction` and `categoryTreeAction` in `api-routes.ts` didn't accept/pass a `lang` query parameter
+2. `ShopCategories.tsx` used `name` (base field) instead of `display_name` (COALESCE with lang fallback)
+3. `ShopHome.tsx` and `ShopProducts.tsx` used hardcoded `PRODUCT_CATEGORY_META[id].label` instead of database-backed localized names
+
+**Fix:**
+- `packages/shared/src/lib/api-routes.ts`: `categoryTreeAction` and `categoryStatsAction` now accept `{ lang?: string }` and pass it as `?lang=` query param
+- `apps/velshop/src/pages/ShopCategories.tsx`: Uses `display_name ?? name` from API response, passes `lang` from `useLanguage()`
+- `apps/velshop/src/pages/ShopHome.tsx`: Fetches category tree with `lang`, builds `catNameMap` (slug → display_name), uses it for popular category labels
+- `apps/velshop/src/pages/ShopProducts.tsx`: Same pattern — localized category names in filter dropdown, SEO titles, and analytics tracking
+
+Backend API (`/api/categories/stats` and `/api/categories/tree`) already supported `?lang=` via
+`COALESCE(c.names->>$1, c.name)` — the fix is entirely frontend.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/shared/src/components/VBadge.tsx` | Circle → rounded rectangle badge |
+| `packages/shared/src/lib/api-routes.ts` | category actions accept lang param |
+| `apps/velshop/src/pages/ShopCategories.tsx` | Uses `display_name` + lang param |
+| `apps/velshop/src/pages/ShopHome.tsx` | Localized category labels via catNameMap |
+| `apps/velshop/src/pages/ShopProducts.tsx` | Localized category filter + SEO + tracking |
+
+### VelCenter / VelSeller Responsive Audit
+- VelCenter Product Detail dialog: already responsive (`max-h-[92dvh]`, `w-[calc(100vw-1.5rem)]`, `lg:grid-cols-2`, `overflow-y-auto`)
+- VelSeller Income.tsx: already has mobile card view (`md:hidden`) + desktop table (`md:block`)
+- VelSeller SellerOrders.tsx: already has mobile card view + desktop table
+- VelSeller MyShop.tsx: horizontal scroll pattern already present
+- No responsive regressions found
+
+### Database
+- No DB changes
+
+### Tests
+| Check | Result |
+|---|---|
+| velshop tsc | ✅ |
+| velcenter tsc | ✅ |
+| velseller tsc | ✅ |
+| backend tsc | ✅ |
+| i18n:check | ✅ th=1289 en=1289 my=1289 |
+| backend tests | ✅ 263 pass / 29 skip / 0 fail |
+| git diff --check | ✅ CLEAN |

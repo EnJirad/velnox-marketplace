@@ -136,7 +136,7 @@ function useCommerceData<T>(load: () => Promise<T>) {
 
 export default function ShopHome() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { track } = useTracking();
   const navigate = useNavigate();
   const { add } = useCart();
@@ -167,8 +167,28 @@ export default function ShopHome() {
   const [subProduct, setSubProduct] = useState<StoreProduct | null>(null);
   const toggleWishlist = useAction(api.customer.toggleWishlistAction);
   const myWishlist = useAction(api.customer.myWishlist);
+  const categoryTree = useAction(api.customer.categoryTreeAction);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
+
+  // Localized category name map (slug → display_name)
+  const [catNameMap, setCatNameMap] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let alive = true;
+    categoryTree({ lang }).then((tree: any[]) => {
+      if (!alive || !Array.isArray(tree)) return;
+      const m = new Map<string, string>();
+      const walk = (nodes: any[]) => {
+        for (const n of nodes) {
+          if (n.slug) m.set(n.slug, n.display_name ?? n.name);
+          if (n.children?.length) walk(n.children);
+        }
+      };
+      walk(tree);
+      setCatNameMap(m);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [categoryTree, lang]);
 
   // Load wishlist on mount if authenticated
   useEffect(() => {
@@ -206,7 +226,7 @@ export default function ShopHome() {
   }, [query, track]);
 
   const handleCategory = (id: StoreProductCategory) => {
-    track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: PRODUCT_CATEGORY_META[id].label } });
+    track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: catNameMap.get(id) ?? PRODUCT_CATEGORY_META[id]?.label ?? id } });
   };
 
   const handleAdd = (product: StoreProduct, qty = 1) => {
@@ -275,7 +295,7 @@ export default function ShopHome() {
               <Link to="/categories" onClick={() => track("CATEGORY_VIEW", { value: "all", context: { label: "explore" } })} className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("home.viewAllCategories")}<ArrowRight className="size-3.5" /></Link>
             </div>
             <div className="mt-4 flex gap-3 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-6">
-              {popularCategories.map(([id, count]) => { const Icon = (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package; const meta = (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id]; return (<Link key={id} to={`/products?category=${id}`} onClick={() => handleCategory(id as StoreProductCategory)} className="group flex min-w-[110px] flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white p-3.5 text-center transition-colors hover:border-[#10B981]/40 sm:min-w-0"><span className="flex size-11 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#10B981] transition-colors group-hover:bg-[#10B981] group-hover:text-white"><Icon className="size-5" /></span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-900">{meta?.label ?? id}</span><span className="mt-0.5 block text-[11px] text-slate-400">{t("home.categoryCount", { count })}</span></span></Link>); })}
+              {popularCategories.map(([id, count]) => { const Icon = (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package; const meta = (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id]; return (<Link key={id} to={`/products?category=${id}`} onClick={() => handleCategory(id as StoreProductCategory)} className="group flex min-w-[110px] flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white p-3.5 text-center transition-colors hover:border-[#10B981]/40 sm:min-w-0"><span className="flex size-11 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#10B981] transition-colors group-hover:bg-[#10B981] group-hover:text-white"><Icon className="size-5" /></span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-900">{catNameMap.get(id) ?? meta?.label ?? id}</span><span className="mt-0.5 block text-[11px] text-slate-400">{t("home.categoryCount", { count })}</span></span></Link>); })}
             </div>
           </div>
         </section>
