@@ -281,6 +281,14 @@ app.get("/api/_diag/schema", async (_req, res) => {
         results[`seller_verifications.${col}`] = r.rows.length > 0;
       } catch { results[`seller_verifications.${col}`] = false; }
     }
+    // media column naming — V0008 renamed the columns, V0045 renames them back
+    // to the canonical set that every backend media query uses.
+    for (const col of ["url", "key", "content_type", "size", "uploaded_by", "owner_id", "object_key", "cdn_url", "mime_type", "file_size"]) {
+      try {
+        const r = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'media' AND column_name = $1`, [col]);
+        results[`media.${col}`] = r.rows.length > 0;
+      } catch { results[`media.${col}`] = false; }
+    }
     // Check migration state
     let migrations: string[] = [];
     try {
