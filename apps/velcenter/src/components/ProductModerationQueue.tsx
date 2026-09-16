@@ -153,6 +153,7 @@ export default function ProductModerationQueue() {
 
   const [products, setProducts] = useState<ModProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("pending_review");
   const [sortOrder, setSortOrder] = useState("newest");
@@ -168,6 +169,7 @@ export default function ProductModerationQueue() {
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await moderationAction({
         status: statusFilter === "all" ? undefined : statusFilter,
@@ -175,7 +177,9 @@ export default function ProductModerationQueue() {
         sort: sortOrder,
       });
       setProducts(Array.isArray(data) ? data : []);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดข้อมูล";
+      setError(msg);
       setProducts([]);
     } finally {
       setLoading(false);
@@ -312,6 +316,17 @@ export default function ProductModerationQueue() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-20 animate-pulse rounded-xl border border-slate-200 bg-white" />
           ))}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center rounded-2xl border border-dashed border-red-300 bg-red-50/50 px-6 py-16 text-center">
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-red-100">
+            <AlertCircle className="size-7 text-red-500" />
+          </span>
+          <h3 className="mt-5 text-lg font-semibold text-slate-900">เกิดข้อผิดพลาด</h3>
+          <p className="mt-1.5 max-w-sm text-sm text-slate-500">{error}</p>
+          <Button variant="outline" size="sm" onClick={() => void loadProducts()} className="mt-4 rounded-[10px]">
+            ลองใหม่
+          </Button>
         </div>
       ) : shopGroups.length === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">

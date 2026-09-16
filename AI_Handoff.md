@@ -709,3 +709,59 @@ Any product whose category slug doesn't match one of the 6 hardcoded keys produc
 
 - The 6 hardcoded categories in `reorder.ts` are legacy. Eventually the reorder intelligence should resolve category labels/icons from the database-backed `categories` table. That's a separate task.
 - No live browser E2E was run (no browser available).
+
+## VelCenter Products & Sellers "No Data" Diagnosis (2026-09-16)
+
+### Problem reported
+
+- Products tab shows no product data
+- Sellers tab shows no seller data
+- Runtime error: `Cannot read properties of undefined (reading 'icon')`
+
+### Diagnosis
+
+**Products tab** — The default filter is `pending_review`. Live production data:
+- 43 published products
+- 4 archived products
+- **0 pending_review products**
+
+The empty state message ("ไม่มีสินค้ารอตรวจสอบในขณะนี้") is correct. The "All" filter shows all 47 products. The tab is working as designed; there are simply no products awaiting moderation review.
+
+**Sellers tab** — The default filter is `pending`. The verification queue queries `seller_verifications` for each status. If no verifications are in `pending` state, the empty state is shown.
+
+**`.icon` crash** — Already fixed in commit `c1b8d31` (`resolveCategoryMeta` with fallback). The production error came from an older deploy.
+
+**Silent error handling** — Both `ProductModerationQueue` and `SellerVerificationQueue` had `catch { setProducts([]); }` / `catch { setRows([]); }` that silently converted any API failure (401, 403, 500) into an empty array. The user saw "no data" instead of an error.
+
+### Fix
+
+Added `error` state + error UI to both components:
+
+- `ProductModerationQueue.tsx` — `catch` now captures the error message and displays a red error card with a retry button
+- `SellerVerificationQueue.tsx` — same pattern: error message + retry button
+
+API failures (auth, authorization, server error) are now visible instead of silently swallowed.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `apps/velcenter/src/components/ProductModerationQueue.tsx` | Added `error` state, error message in catch, error UI with retry |
+| `apps/velcenter/src/components/SellerVerificationQueue.tsx` | Added `error` state, error message in catch, error UI with retry |
+
+### Database
+
+No changes. No products were mass-published. No seller statuses were changed.
+
+### Tests
+
+| Check | Result |
+|---|---|
+| `bun tsc -p apps/velcenter/tsconfig.json --noEmit` | PASS |
+| `bun run i18n:check` | PASS — th=1287 en=1287 my=1287 |
+| `bun test backend/tests` | 200 pass / 26 skip / 0 fail |
+
+### Remaining
+
+- The `.icon` fix (`c1b8d31`) needs a Vercel deploy to reach production. The current production build still has the old code.
+- No live browser E2E was run (no browser available).

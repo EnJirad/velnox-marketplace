@@ -49,6 +49,7 @@ export default function SellerVerificationQueue() {
 
   const [rows, setRows] = useState<VerificationRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("pending");
   const [search, setSearch] = useState("");
 
@@ -65,6 +66,7 @@ export default function SellerVerificationQueue() {
 
   const loadVerifications = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const statuses = statusFilter === "all"
         ? ["pending", "verified", "rejected", "suspended"]
@@ -75,7 +77,9 @@ export default function SellerVerificationQueue() {
       const all: VerificationRow[] = [];
       for (const r of results) all.push(...(r?.sellers ?? []));
       setRows(all);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดข้อมูล";
+      setError(msg);
       setRows([]);
     } finally {
       setLoading(false);
@@ -189,6 +193,17 @@ export default function SellerVerificationQueue() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-20 animate-pulse rounded-xl border border-slate-200 bg-white" />
           ))}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center rounded-2xl border border-dashed border-red-300 bg-red-50/50 px-6 py-16 text-center">
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-red-100">
+            <AlertTriangle className="size-7 text-red-500" />
+          </span>
+          <h3 className="mt-5 text-lg font-semibold text-slate-900">เกิดข้อผิดพลาด</h3>
+          <p className="mt-1.5 max-w-sm text-sm text-slate-500">{error}</p>
+          <Button variant="outline" size="sm" onClick={() => void loadVerifications()} className="mt-4 rounded-[10px]">
+            ลองใหม่
+          </Button>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
