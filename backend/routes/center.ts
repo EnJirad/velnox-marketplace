@@ -768,4 +768,43 @@ export function setupCenterRoutes(app: Express): void {
       },
     });
   });
+
+  // ── GET /api/admin/dashboard/counts ────────────────────────────────────
+  // Dashboard counters for VelCenter overview. Returns pending counts for
+  // sellers, verifications, and products, plus total shop counts.
+  app.get("/api/admin/dashboard/counts", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await canReadCenter(req.user!.userId))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+        return;
+      }
+
+      const [pendingSellers, underReviewSellers, pendingProducts, totalShops, verifiedShops, suspendedShops, pendingVerifications] = await Promise.all([
+        query("SELECT COUNT(*)::int as count FROM sellers WHERE status = 'pending'"),
+        query("SELECT COUNT(*)::int as count FROM sellers WHERE status = 'under_review'"),
+        query("SELECT COUNT(*)::int as count FROM products WHERE status = 'pending_review'"),
+        query("SELECT COUNT(*)::int as count FROM shops"),
+        query("SELECT COUNT(*)::int as count FROM sellers WHERE verification_status = 'verified'"),
+        query("SELECT COUNT(*)::int as count FROM sellers WHERE status = 'suspended'"),
+        query("SELECT COUNT(*)::int as count FROM seller_verifications WHERE status = 'pending'"),
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          pendingSellers: pendingSellers.rows[0]?.count ?? 0,
+          underReviewSellers: underReviewSellers.rows[0]?.count ?? 0,
+          pendingProducts: pendingProducts.rows[0]?.count ?? 0,
+          totalShops: totalShops.rows[0]?.count ?? 0,
+          verifiedShops: verifiedShops.rows[0]?.count ?? 0,
+          suspendedShops: suspendedShops.rows[0]?.count ?? 0,
+          pendingVerifications: pendingVerifications.rows[0]?.count ?? 0,
+        },
+      });
+    } catch (err) {
+      console.error("[center] dashboard counts error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch dashboard counts" } });
+    }
+  });
+
 }

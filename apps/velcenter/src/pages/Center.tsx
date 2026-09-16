@@ -2,8 +2,10 @@ import { Logo } from "@velnox/shared/components/Logo";
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
-import { VerificationReviewDialog, type ReviewDecision, type VerificationReviewRow } from "../components/VerificationReviewDialog";
+// VerificationReviewDialog is now used inside SellerVerificationQueue component
 import CategoriesManagement from "../components/CategoriesManagement";
+import ProductModerationQueue from "../components/ProductModerationQueue";
+import SellerVerificationQueue from "../components/SellerVerificationQueue";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
 import EmployeeManager from "../components/EmployeeManager";
@@ -211,7 +213,6 @@ export default function Center() {
   // Product verification was removed from the user workflow — there is no
   // product verification queue in VelCenter.
   const verificationsAction = useAction(api.admin.verifications);
-  const sellerVerificationAction = useAction(api.admin.sellerVerificationAction);
   const [sellerRows, setSellerRows] = useState<SellerRow[] | null>(null);
   const [modProducts, setModProducts] = useState<ModProductRow[] | null>(null);
   const [rejectingSeller, setRejectingSeller] = useState<SellerRow | null>(null);
@@ -219,14 +220,6 @@ export default function Center() {
   const [rejectReason, setRejectReason] = useState("");
   const [modBusy, setModBusy] = useState(false);
   const [verificationRows, setVerificationRows] = useState<{ sellers: VerificationRow[]; products: VerificationRow[] } | null>(null);
-  const [actingVerification, setActingVerification] = useState<{ kind: "seller"; row: VerificationRow; action: "reject" | "suspend" } | null>(null);
-  // Review dialog state
-  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
-  const [reviewDialogRow, setReviewDialogRow] = useState<VerificationReviewRow | null>(null);
-  // Status filter for the seller verification queue
-  const [sellerVerifFilter, setSellerVerifFilter] = useState<string>("pending");
-  // Free-text search across store / applicant / email
-  const [sellerVerifSearch, setSellerVerifSearch] = useState("");
 
   interface SellerRow {
     id: string;
@@ -317,6 +310,45 @@ export default function Center() {
     reloadVerifications();
   }, [reloadSellers, reloadProducts, reloadVerifications]);
 
+  // WebSocket realtime subscriptions for VelCenter queues
+  useEffect(() => {
+    const wsUrl = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/^http/, "ws");
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    function connect() {
+      try {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          ws?.send(JSON.stringify({ type: "subscribe", channel: "product:updated" }));
+          ws?.send(JSON.stringify({ type: "subscribe", channel: "seller:updated" }));
+        };
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "product:moderated" || msg.type === "product:updated") {
+              void reloadProducts();
+            }
+            if (msg.type === "seller:status-changed" || msg.type === "verification:status-changed") {
+              void reloadVerifications();
+              void reloadSellers();
+            }
+          } catch { /* ignore */ }
+        };
+        ws.onclose = () => {
+          reconnectTimer = setTimeout(connect, 5000);
+        };
+        ws.onerror = () => { ws?.close(); };
+      } catch { reconnectTimer = setTimeout(connect, 5000); }
+    }
+
+    connect();
+    return () => {
+      clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [reloadProducts, reloadVerifications, reloadSellers]);
+
   const pendingSellers = (sellerRows ?? []).filter((s) => s.status === "pending").length;
   const pendingProducts = (modProducts ?? []).filter((p) => p.status === "pending_review").length;
   const pendingVerifications =
@@ -324,15 +356,6 @@ export default function Center() {
 
   // Filter + search happen client-side over the persisted rows (a single fetch
   // per status, no N+1). The backend also supports server-side filtering.
-  const filteredVerifications = useMemo(() => {
-    const q = sellerVerifSearch.trim().toLowerCase();
-    return (verificationRows?.sellers ?? []).filter((v) => {
-      if (sellerVerifFilter !== "all" && v.status !== sellerVerifFilter) return false;
-      if (!q) return true;
-      return [v.shop_name, v.owner_name, v.owner_email, v.shop_slug]
-        .some((value) => (value ?? "").toLowerCase().includes(q));
-    });
-  }, [verificationRows, sellerVerifFilter, sellerVerifSearch]);
 
   const handleSellerStatus = async (seller: SellerRow, status: string) => {
     // Frontend guard: cannot approve/reject own seller application
@@ -373,39 +396,6 @@ export default function Center() {
       await reloadProducts();
     } catch (error) {
       console.error("Product moderation error:", error);
-      toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
-    } finally {
-      setModBusy(false);
-    }
-  };
-  const handleVerificationDecision = async (
-    row: VerificationRow,
-    decision: ReviewDecision,
-  ) => {
-    setModBusy(true);
-    try {
-      await sellerVerificationAction({
-        verificationId: row.id,
-        action: decision.action,
-        reason: decision.reason,
-        reasonCode: decision.reasonCode,
-        note: decision.note,
-      });
-      toast.success(
-        decision.action === "approve"
-          ? "อนุมัติการยืนยันแล้ว ✅"
-          : decision.action === "suspend"
-            ? "ระงับการยืนยันแล้ว"
-            : decision.action === "needs_correction"
-              ? "ส่งคำขอให้แก้ไขแล้ว"
-              : "ปฏิเสธการยืนยันแล้ว",
-      );
-      setReviewDialogOpen(false);
-      setActingVerification(null);
-      setRejectReason("");
-      await Promise.all([reloadVerifications(), reloadSellers()]);
-    } catch (error) {
-      console.error("Verification action error:", error);
       toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
     } finally {
       setModBusy(false);
@@ -1446,434 +1436,23 @@ export default function Center() {
           </Dialog>
 
           {/* Seller verification review workspace — the reviewer sees the exact
-              persisted submission the seller wrote, with reviewer-only signed
-              access to the private identity documents. */}
-          <VerificationReviewDialog
-            open={reviewDialogOpen}
-            onOpenChange={setReviewDialogOpen}
-            row={reviewDialogRow}
-            busy={modBusy}
-            onDecision={(decision) => {
-              if (reviewDialogRow) {
-                void handleVerificationDecision(reviewDialogRow as any, decision);
-              }
-            }}
-          />
-
           {/* ============ Products — moderation queue (Neon, spec §37) ============ */}
           <TabsContent value="products" className="mt-6">
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
               <Package className="size-4 text-[#10B981]" />
               ตรวจสอบสินค้าที่พ่อค้าส่งมา — อนุมัติแล้วจะแสดงที่หน้าร้าน velshop
             </div>
-            {/* Desktop: table */}
-            <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
-              <Table className="min-w-[760px]">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-5 text-slate-400">สินค้า</TableHead>
-                    <TableHead className="text-slate-400">ร้าน</TableHead>
-                    <TableHead className="text-slate-400">ราคา</TableHead>
-                    <TableHead className="text-slate-400">สถานะ</TableHead>
-                    <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(modProducts ?? []).map((p) => (
-                    <TableRow key={p.id} className="hover:bg-slate-50/60">
-                      <TableCell className="pl-5">
-                        <p className="font-medium text-slate-900">{p.name}</p>
-                        <p className="text-xs text-slate-400">{new Date(p.created_at).toLocaleDateString("th-TH")}</p>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-sm text-slate-600">{p.shop_name}</p>
-                        <p className="text-xs text-slate-400">{p.seller_name}</p>
-                      </TableCell>
-                      <TableCell>
-                        <p className="font-medium tabular-nums text-slate-900">{formatBaht(Number(p.price))}</p>
-                      </TableCell>
-                      <TableCell>
-                        {p.status === "published" ? (
-                          <Badge className="gap-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15">ประกาศขาย</Badge>
-                        ) : p.status === "pending_review" ? (
-                          <Badge className="gap-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15">รอตรวจสอบ</Badge>
-                        ) : p.status === "rejected" ? (
-                          <Badge className="gap-1 rounded-full bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15">ถูกปฏิเสธ</Badge>
-                        ) : p.status === "suspended" ? (
-                          <Badge className="gap-1 rounded-full bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/15">ถูกระงับ</Badge>
-                        ) : (
-                          <Badge className="gap-1 rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10">
-                            {p.status === "draft" ? "ฉบับร่าง" : p.status}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="pr-5">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {p.status === "pending_review" && (
-                            <>
-                              <Button
-                                size="sm"
-                                className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
-                                onClick={() => handleProductModeration(p, "published")}
-                                disabled={modBusy}
-                              >
-                                อนุมัติ
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1 border-rose-200 text-rose-600 hover:bg-rose-50"
-                                onClick={() => {
-                                  setRejectingProduct(p);
-                                  setRejectReason("");
-                                }}
-                                disabled={modBusy}
-                              >
-                                ปฏิเสธ
-                              </Button>
-                            </>
-                          )}
-                          {p.status === "published" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="gap-1 border-slate-200 text-slate-600"
-                              onClick={() => {
-                                setRejectingProduct(p);
-                                setRejectReason("");
-                              }}
-                              disabled={modBusy}
-                            >
-                              ระงับ
-                            </Button>
-                          )}
-                          {p.status === "suspended" && (
-                            <Button
-                              size="sm"
-                              className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
-                              onClick={() => handleProductModeration(p, "published")}
-                              disabled={modBusy}
-                            >
-                              คืนสถานะ
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Mobile: app-like product cards */}
-            <div className="space-y-3 md:hidden">
-              {(modProducts ?? []).map((p) => (
-                <div key={p.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">{p.name}</p>
-                      <p className="mt-0.5 text-xs text-slate-400">{p.shop_name} · {p.seller_name}</p>
-                    </div>
-                    {p.status === "pending_review" ? (
-                      <Badge className="shrink-0 gap-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15">รอตรวจสอบ</Badge>
-                    ) : p.status === "published" ? (
-                      <Badge className="shrink-0 gap-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15">ประกาศขาย</Badge>
-                    ) : p.status === "suspended" ? (
-                      <Badge className="shrink-0 gap-1 rounded-full bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/15">ถูกระงับ</Badge>
-                    ) : (
-                      <Badge className="shrink-0 gap-1 rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10">{p.status}</Badge>
-                    )}
-                  </div>
-                  <div className="mt-3 flex items-center justify-between rounded-[10px] bg-slate-50 px-3 py-2.5 text-xs">
-                    <span className="text-slate-400">
-                      ราคา <span className="font-semibold tabular-nums text-slate-900">{formatBaht(Number(p.price))}</span>
-                    </span>
-                  </div>
-                  {p.status === "pending_review" && (
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <Button size="sm" className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => handleProductModeration(p, "published")} disabled={modBusy}>
-                        อนุมัติ
-                      </Button>
-                      <Button size="sm" variant="outline" className="gap-1 border-rose-200 text-rose-600 hover:bg-rose-50" onClick={() => { setRejectingProduct(p); setRejectReason(""); }} disabled={modBusy}>
-                        ปฏิเสธ
-                      </Button>
-                    </div>
-                  )}
-                  {p.status === "published" && (
-                    <div className="mt-3">
-                      <Button size="sm" variant="outline" className="w-full gap-1 border-slate-200 text-slate-600" onClick={() => { setRejectingProduct(p); setRejectReason(""); }} disabled={modBusy}>
-                        ระงับ
-                      </Button>
-                    </div>
-                  )}
-                  {p.status === "suspended" && (
-                    <div className="mt-3">
-                      <Button size="sm" className="w-full gap-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => handleProductModeration(p, "published")} disabled={modBusy}>
-                        คืนสถานะ
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            <ProductModerationQueue />
           </TabsContent>
 
           {/* ============ Sellers — application review (Neon, spec §36) ============ */}
           <TabsContent value="sellers" className="mt-6">
-            {/* Seller sub-tabs: Applications + Verification */}
-            <Tabs defaultValue="applications" className="w-full">
-              <TabsList className="mb-4 w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
-                <TabsTrigger value="applications" className="gap-1.5 rounded-[10px]">
-                  <Store className="size-4" /> พ่อค้าทั้งหมด
-                </TabsTrigger>
-                <TabsTrigger value="verification" className="gap-1.5 rounded-[10px]">
-                  <ShieldCheck className="size-4" /> การยืนยันร้านค้า
-                  {(verificationRows?.sellers ?? []).filter(v => v.status === "pending").length > 0 && (
-                    <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
-                      {(verificationRows?.sellers ?? []).filter(v => v.status === "pending").length}
-                    </span>
-                  )}
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="applications">
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
               <Store className="size-4 text-[#10B981]" />
-              ตรวจสอบใบสมัครพ่อค้า — อนุมัติแล้วพ่อค้าจะใช้ velseller ได้
+              ตรวจสอบใบสมัครและการยืนยันร้านค้า
             </div>
-            {/* Desktop: table */}
-            <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
-              <Table className="min-w-[820px]">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-5 text-slate-400">พ่อค้า / ร้าน</TableHead>
-                    <TableHead className="text-slate-400">เจ้าของ</TableHead>
-                    <TableHead className="text-slate-400">สินค้า</TableHead>
-                    <TableHead className="text-slate-400">สถานะ</TableHead>
-                    <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(sellerRows ?? []).map((s) => {
-                    const isOwnSeller = s.owner_id != null && s.owner_id === user?._id;
-                    return (
-                    <TableRow key={s.id} className="hover:bg-slate-50/60">
-                      <TableCell className="pl-5">
-                        <p className="font-medium text-slate-900">
-                          {s.name}
-                          {isOwnSeller && <span className="ml-1.5 text-xs text-slate-400">(คุณ)</span>}
-                        </p>
-                        <p className="text-xs text-slate-400">สมัครเมื่อ {new Date(s.created_at).toLocaleDateString("th-TH")}</p>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-sm text-slate-600">{s.owner_name ?? "—"}</p>
-                        <p className="text-xs text-slate-400">{s.owner_email ?? ""}</p>
-                      </TableCell>
-                      <TableCell>
-                        <p className="font-medium tabular-nums text-slate-900">{s.product_count}</p>
-                      </TableCell>
-                      <TableCell>
-                        {s.status === "approved" ? (
-                          <Badge className="gap-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15">อนุมัติแล้ว</Badge>
-                        ) : s.status === "pending" ? (
-                          <Badge className="gap-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15">รอตรวจสอบ</Badge>
-                        ) : s.status === "rejected" ? (
-                          <Badge className="gap-1 rounded-full bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15">ถูกปฏิเสธ</Badge>
-                        ) : (
-                          <Badge className="gap-1 rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10">ระงับ</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="pr-5">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {s.status === "pending" && !isOwnSeller && (
-                            <>
-                              <Button
-                                size="sm"
-                                className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
-                                onClick={() => handleSellerStatus(s, "approved")}
-                                disabled={modBusy}
-                              >
-                                อนุมัติ
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1 border-rose-200 text-rose-600 hover:bg-rose-50"
-                                onClick={() => {
-                                  setRejectingSeller(s);
-                                  setRejectReason("");
-                                }}
-                                disabled={modBusy}
-                              >
-                                ปฏิเสธ
-                              </Button>
-                            </>
-                          )}
-                          {s.status === "pending" && isOwnSeller && (
-                            <span className="text-xs text-slate-400">ไม่สามารถอนุมัติร้านของตัวเอง</span>
-                          )}
-                          {s.status === "approved" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="gap-1 border-slate-200 text-slate-600"
-                              onClick={() => handleSellerStatus(s, "suspended")}
-                              disabled={modBusy}
-                            >
-                              ระงับ
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Mobile: app-like seller cards */}
-            <div className="space-y-3 md:hidden">
-              {(sellerRows ?? []).map((s) => {
-                const isOwnSeller = s.owner_id != null && s.owner_id === user?._id;
-                return (
-                <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">{s.name}</p>
-                      <p className="mt-0.5 truncate text-xs text-slate-400">{s.owner_email ?? s.owner_name ?? ""}</p>
-                    </div>
-                    {s.status === "pending" ? (
-                      <Badge className="shrink-0 gap-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15">รอตรวจสอบ</Badge>
-                    ) : s.status === "approved" ? (
-                      <Badge className="shrink-0 gap-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15">อนุมัติแล้ว</Badge>
-                    ) : (
-                      <Badge className="shrink-0 gap-1 rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10">{s.status}</Badge>
-                    )}
-                  </div>
-                  {s.status === "pending" && !isOwnSeller && (
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <Button size="sm" className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => handleSellerStatus(s, "approved")} disabled={modBusy}>
-                        อนุมัติ
-                      </Button>
-                      <Button size="sm" variant="outline" className="gap-1 border-rose-200 text-rose-600 hover:bg-rose-50" onClick={() => { setRejectingSeller(s); setRejectReason(""); }} disabled={modBusy}>
-                        ปฏิเสธ
-                      </Button>
-                    </div>
-                  )}
-                  {s.status === "pending" && isOwnSeller && (
-                    <p className="mt-3 text-xs text-slate-400">ไม่สามารถอนุมัติร้านของตัวเอง</p>
-                  )}
-                </div>
-                );
-              })}
-            </div>
-              </TabsContent>
-
-              {/* Seller Verification Queue */}
-              <TabsContent value="verification">
-                <div className="mb-4 flex items-start gap-2 text-sm text-slate-500">
-                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#10B981]" />
-                  <p>{t("review.desc")}</p>
-                </div>
-                {/* Search + status filters: All / Pending / Verified / Rejected / Suspended */}
-                <div className="mb-3 grid gap-2 sm:flex sm:items-center sm:gap-3">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      value={sellerVerifSearch}
-                      onChange={(e) => setSellerVerifSearch(e.target.value)}
-                      placeholder={t("review.searchPlaceholder")}
-                      className="h-9 rounded-[10px] border-slate-200 pl-9 text-sm"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["all", "pending", "verified", "rejected", "suspended"].map((s) => {
-                      const count = (verificationRows?.sellers ?? []).filter((v) => v.status === s).length;
-                      const label =
-                        s === "all" ? t("review.filterAll")
-                          : s === "pending" ? t("review.filterPending")
-                            : s === "verified" ? t("review.filterVerified")
-                              : s === "rejected" ? t("review.filterRejected")
-                                : t("review.filterSuspended");
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => setSellerVerifFilter(s)}
-                          className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                            sellerVerifFilter === s
-                              ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20"
-                              : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                          }`}
-                        >
-                          {label}
-                          <span className="rounded-full bg-white/60 px-1.5 text-[10px]">{count}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                  <Table className="min-w-[720px]">
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="pl-5 text-slate-400">{t("review.storeInfo")}</TableHead>
-                        <TableHead className="text-slate-400">{t("review.checklistIdentity")}</TableHead>
-                        <TableHead className="text-slate-400">{t("review.filterVerified")}</TableHead>
-                        <TableHead className="text-slate-400">{t("review.applicationDetail")}</TableHead>
-                        <TableHead className="text-slate-400">{t("review.history")}</TableHead>
-                        <TableHead className="pr-5 text-right text-slate-400">{t("review.decision")}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredVerifications.map((v) => (
-                        <TableRow key={v.id} className="hover:bg-slate-50/60">
-                          <TableCell className="pl-5">
-                            <p className="font-medium text-slate-900">{v.shop_name ?? "—"}</p>
-                            <p className="text-xs text-slate-400">{v.owner_name ?? v.owner_email ?? ""}</p>
-                          </TableCell>
-                          <TableCell className="text-sm text-slate-600">{v.verification_type ?? "identity"}</TableCell>
-                          <TableCell>
-                            <VerificationStatusLabel status={(v.status === "unverified" ? "unverified" : v.status) as never} />
-                          </TableCell>
-                          <TableCell className="text-xs text-slate-400">
-                            {v.submitted_at ? new Date(v.submitted_at).toLocaleDateString() : "—"}
-                          </TableCell>
-                          <TableCell className="text-xs text-slate-400">
-                            {v.updated_at ? new Date(v.updated_at).toLocaleDateString() : "—"}
-                          </TableCell>
-                          <TableCell className="pr-5">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1 border-slate-200 text-slate-600"
-                                onClick={() => {
-                                  setReviewDialogRow(v);
-                                  setReviewDialogOpen(true);
-                                }}
-                              >
-                                {t("review.applicationDetail")}
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {filteredVerifications.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="py-8 text-center text-sm text-slate-400">
-                            {t("review.noApplications")}
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </TabsContent>
-            </Tabs>
+            <SellerVerificationQueue />
           </TabsContent>
-
 
           {/* ============ Categories (admin/owner) ============ */}
           {canSeeTab("categories", userRole, userDepartment) && (

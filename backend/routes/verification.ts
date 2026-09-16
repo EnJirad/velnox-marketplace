@@ -24,6 +24,7 @@
 
 import type { Express, Request, Response } from "express";
 import { query, getClient } from "../db/index.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -615,6 +616,20 @@ export function registerVerificationRoutes(app: Express) {
       const current = currentRes.rows[0];
       const previousStatus = current.status;
       const evidenceCount = Array.isArray(current.evidence_urls) ? current.evidence_urls.length : 0;
+
+      // Self-approval guard: a reviewer who also owns the shop must NOT be able
+      // to approve their own identity verification.
+      if (action === "approve") {
+        const ownerCheck = await client.query(
+          "SELECT s.user_id FROM sellers s WHERE s.id = $1",
+          [current.seller_id],
+        );
+        if (ownerCheck.rows.length > 0 && ownerCheck.rows[0].user_id === userId) {
+          await client.query("ROLLBACK");
+          res.status(403).json({ success: false, error: { code: "SELF_ACTION_FORBIDDEN", message: "You cannot approve your own seller verification" } });
+          return;
+        }
+      }
 
       // State machine — a reviewer cannot approve an empty submission.
       if (action === "approve") {

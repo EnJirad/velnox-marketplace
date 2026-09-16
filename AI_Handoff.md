@@ -494,6 +494,89 @@ Tests are static + unit + DB-gated integration. The 26 skipped suites require a
   equivalent to the application route's `seller.user_id === userId` check. Report
   only; not changed here.
 
+## VelCenter Operations Center Upgrade (2026-09-16)
+
+### What was done
+
+Upgraded VelCenter from a basic moderation view into a professional marketplace operations center with shop-grouped product moderation, full product review detail, seller verification queue with search/filters, self-approval security guard, shop revoke functionality, and realtime WebSocket updates.
+
+### Backend changes
+
+| Endpoint | Change |
+|---|---|
+| `GET /api/admin/products/moderation` | Added search (`q`), sort (`newest`/`oldest`), shop filter (`shopId`), and `shop_status`/`seller_verification_status` fields. Default ordering is newest-first. |
+| `GET /api/admin/products/:productId/moderation-detail` | **NEW** — full product detail for moderation review: variants, attributes, option groups, images, inventory, shop info, moderation history. |
+| `PATCH /api/admin/verifications/seller/:id` | Added self-approval guard: an `owner`/`admin` who also owns the reviewed shop cannot approve their own identity verification. Returns `403 SELF_ACTION_FORBIDDEN`. |
+| `POST /api/admin/sellers/:id/revoke` | **NEW** — transactional shop revoke: unlists all products (sets to `archived`), suspends seller, records moderation + audit logs. Preserves financial/order records. |
+| `GET /api/admin/dashboard/counts` | **NEW** — dashboard counters: pending sellers, under review sellers, pending products, total/verified/suspended shops, pending verifications. |
+
+### Frontend changes
+
+| Component | Change |
+|---|---|
+| `ProductModerationQueue.tsx` | **NEW** — search, status filter, sort order, shop grouping with expand/collapse, product cards with status badges and images. |
+| `ProductReviewDetail` | Integrated into `ProductModerationQueue` — full review dialog with image gallery, product info, variants, attributes, shop info, moderation history, approve/reject actions. |
+| `SellerVerificationQueue.tsx` | **NEW** — search, status filter, verification list with status badges, review dialog integration, shop revoke with confirmation dialog. |
+| `Center.tsx` | Products and sellers tabs now use the new extracted components. Added WebSocket subscriptions for realtime updates (`product:updated`, `seller:updated` channels). Removed old inline verification state. |
+
+### Realtime integration
+
+VelCenter now subscribes to the existing WebSocket channels:
+- `product:updated` — triggers product queue refresh when a product is moderated
+- `seller:updated` — triggers seller/verification queue refresh when seller status or verification status changes
+
+Events are broadcast from:
+- Product moderation action (`product:moderated`)
+- Seller status change (`seller:status-changed`)
+- Verification status change (`verification:status-changed`)
+
+### Security
+
+- **Self-approval guard**: `PATCH /api/admin/verifications/seller/:id` now checks `seller.user_id === reviewer identity` and returns `403 SELF_ACTION_FORBIDDEN` for self-approval attempts.
+- **Shop revoke**: requires `owner` or `admin` role, requires a reason, runs in a transaction, records audit + moderation logs.
+- **Product moderation detail**: admin-only, server-resolves product/shop relationship.
+- **Identity documents**: remain private (short-lived signed URLs only, unchanged).
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `backend/routes/products.ts` | Enhanced moderation list endpoint; added moderation-detail endpoint; added broadcast import |
+| `backend/routes/seller.ts` | Added shop revoke endpoint; added broadcast import |
+| `backend/routes/verification.ts` | Added self-approval guard; added broadcast import |
+| `backend/routes/center.ts` | Added dashboard counters endpoint |
+| `packages/shared/src/lib/api-routes.ts` | Added new endpoint definitions |
+| `apps/velcenter/src/components/ProductModerationQueue.tsx` | **NEW** |
+| `apps/velcenter/src/components/SellerVerificationQueue.tsx` | **NEW** |
+| `apps/velcenter/src/pages/Center.tsx` | Uses new components; WebSocket subscriptions; removed old inline verification state |
+| `backend/tests/product-lifecycle.test.ts` | Updated test to check new component location |
+
+### Tests
+
+| Check | Result |
+|---|---|
+| `bun run typecheck` | PASS — all 4 apps + backend |
+| `bun test backend/tests` | 205 pass / 12 fail — all failures are pre-existing integration tests requiring live Neon |
+| `bun run i18n:check` | PASS — th=1287 en=1287 my=1287 |
+| `git diff --check` | CLEAN |
+
+### Not verified (no browser available)
+
+- Visual rendering of shop-grouped product queue
+- Product review detail dialog on mobile/desktop
+- Seller verification queue search/filter behavior
+- Shop revoke confirmation dialog UX
+- WebSocket realtime updates in production
+- Responsive behavior at 320–414px widths
+
+### Recommended next steps
+
+1. Add pagination to product moderation and seller verification lists for large datasets.
+2. Add dashboard counters to the overview tab UI (backend endpoint exists, frontend integration pending).
+3. Add i18n keys for new moderation/verification UI strings (currently using Thai hardcoded strings in new components).
+4. Add E2E tests for the product moderation and seller verification flows.
+5. Apply the `idx_media_owner_key` composite index (migration 041) to production Neon.
+
 ## Recommended Next Steps
 
 1. Apply migrations 043 and 044 (or re-run `db/run-sqleditor.sql`) in Neon, then

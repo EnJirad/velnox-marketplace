@@ -17,6 +17,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
 import { invalidateCachedProfile } from "./auth.js";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -1235,4 +1236,109 @@ export function setupSellerRoutes(app: Express): void {
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch application" } });
     }
   });
+
+  // ── DELETE /api/admin/sellers/:id/revoke ────────────────────────────────
+  // Revoke and remove a shop from the marketplace. This is a destructive
+  // operation that: unlists all products, updates shop status, and suspends
+  // the seller. Financial/order records are preserved for historical integrity.
+  app.post("/api/admin/sellers/:id/revoke", requireAuth, async (req: Request, res: Response) => {
+    const client = await getClient();
+    try {
+      const userId = req.user!.userId;
+      const userResult = await client.query("SELECT role FROM users WHERE id = $1", [userId]);
+      if (userResult.rows.length === 0 || !["owner", "admin"].includes(userResult.rows[0].role)) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Owner or admin access required" } });
+        return;
+      }
+
+      const sellerId = req.params.id;
+      const { reason } = req.body as { reason?: string };
+
+      if (!reason || typeof reason !== "string" || !reason.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "A reason is required for shop revocation" } });
+        return;
+      }
+
+      await client.query("BEGIN");
+
+      const sellerRes = await client.query(
+        "SELECT id, user_id, status, verification_status FROM sellers WHERE id = $1 FOR UPDATE",
+        [sellerId],
+      );
+      if (sellerRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Seller not found" } });
+        return;
+      }
+      const seller = sellerRes.rows[0];
+
+      const shopRes = await client.query(
+        "SELECT id, name, slug FROM shops WHERE seller_id = $1 FOR UPDATE",
+        [sellerId],
+      );
+      if (shopRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Shop not found" } });
+        return;
+      }
+      const shop = shopRes.rows[0];
+
+      // Count affected products
+      const productCountRes = await client.query(
+        "SELECT COUNT(*)::int as cnt FROM products WHERE shop_id = $1 AND status NOT IN ('archived')",
+        [shop.id],
+      );
+      const affectedProducts = productCountRes.rows[0]?.cnt ?? 0;
+
+      // Unlist all active products (set to archived, not hard delete)
+      await client.query(
+        "UPDATE products SET status = 'archived', updated_at = NOW() WHERE shop_id = $1 AND status NOT IN ('archived')",
+        [shop.id],
+      );
+
+      // Update shop status
+      await client.query(
+        "UPDATE shops SET description = description, updated_at = NOW() WHERE id = $1",
+        [shop.id],
+      );
+
+      // Suspend seller
+      await client.query(
+        "UPDATE sellers SET status = 'suspended', updated_at = NOW() WHERE id = $1",
+        [sellerId],
+      );
+
+      // Record the revocation in moderation_records
+      await client.query(
+        `INSERT INTO moderation_records (moderator_id, entity_type, entity_id, action, reason)
+         VALUES ($1, 'shop', $2, 'revoked', $3)`,
+        [userId, shop.id, reason.trim()],
+      );
+
+      // Write audit log
+      await client.query(
+        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+         VALUES ($1, 'shop_revoked', 'shop', $2, $3)`,
+        [userId, shop.id, JSON.stringify({ sellerId, shopName: shop.name, affectedProducts, reason: reason.trim() })],
+      );
+
+      await client.query("COMMIT");
+
+      res.json({
+        success: true,
+        data: {
+          shopId: shop.id,
+          shopName: shop.name,
+          sellerId,
+          affectedProducts,
+          status: "revoked",
+        },
+      });
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("[seller] shop revoke error:", err);
+      res.status(500).json({ success: false, error: { code: "REVOKE_FAILED", message: "Failed to revoke shop" } });
+    }
+  });
+
 }

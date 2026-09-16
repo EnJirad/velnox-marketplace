@@ -43,6 +43,7 @@ import {
   resolveVariantOptionValueIds,
 } from "../lib/variant-options.js";
 import { CATEGORY_UUID_RE, INVALID_CATEGORY_MESSAGE, validateCategory, type CategoryLookupRow } from "../lib/categories.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
 
 // ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
 
@@ -3439,24 +3440,37 @@ export function setupProductRoutes(app: Express): void {
 
   // ── GET /api/admin/products/moderation ──────────────────────────────────
   // List products for moderation (all statuses). Used by VelCenter.
+  // Supports: status filter, search (q), sort (newest/oldest), shop filter.
   app.get("/api/admin/products/moderation", requireAuth, async (req: Request, res: Response) => {
     try {
       if (!(await requireAdmin(req, res))) return;
 
-      const statusFilter = req.query.status as string | undefined;
-      let where = "";
+      const { status, q, sort, shopId } = req.query as { status?: string; q?: string; sort?: string; shopId?: string };
       const params: any[] = [];
-      if (statusFilter && ["pending_review", "published", "rejected", "draft", "suspended", "archived"].includes(statusFilter)) {
-        where = "WHERE p.status = $1";
-        params.push(statusFilter);
+      const where: string[] = [];
+
+      if (status && ["pending_review", "published", "rejected", "draft", "suspended", "archived"].includes(status)) {
+        params.push(status);
+        where.push(`p.status = $${params.length}`);
       }
+      if (q && q.trim()) {
+        params.push(`%${q.trim()}%`);
+        where.push(`(p.name ILIKE $${params.length} OR p.slug ILIKE $${params.length} OR sh.name ILIKE $${params.length} OR u.name ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
+      }
+      if (shopId) {
+        params.push(shopId);
+        where.push(`p.shop_id = $${params.length}`);
+      }
+
+      const orderBy = sort === "oldest" ? "p.created_at ASC" : "p.created_at DESC";
 
       const result = await query(
         `SELECT p.id, p.name, p.description, p.short_description, p.price, p.compare_at_price,
                 p.currency, p.unit, p.supplier, p.status, p.rejection_reason, p.category_id,
                 p.shop_id, p.created_at, p.updated_at,
-                sh.name as shop_name, sh.slug as shop_slug,
+                sh.name as shop_name, sh.slug as shop_slug, sh.status as shop_status,
                 u.id as seller_user_id, u.name as seller_name, u.email as seller_email,
+                s.verification_status as seller_verification_status,
                 i.quantity as inventory_quantity, i.reserved as inventory_reserved,
                 i.low_stock_threshold as inventory_reorder_level
          FROM products p
@@ -3464,14 +3478,13 @@ export function setupProductRoutes(app: Express): void {
          JOIN sellers s ON sh.seller_id = s.id
          JOIN users u ON s.user_id = u.id
          LEFT JOIN inventory i ON i.product_id = p.id
-         ${where}
-         ORDER BY p.created_at ASC`,
+         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+         ORDER BY ${orderBy}`,
         params
       );
 
       const productIds = result.rows.map((r: any) => r.id);
 
-      // Load images for all products
       let imagesByProduct = new Map<string, any[]>();
       if (productIds.length > 0) {
         const imagesResult = await query(
@@ -3504,8 +3517,10 @@ export function setupProductRoutes(app: Express): void {
           shop_id: row.shop_id,
           shop_name: row.shop_name,
           shop_slug: row.shop_slug,
+          shop_status: row.shop_status,
           seller_name: row.seller_name,
           seller_email: row.seller_email,
+          seller_verification_status: row.seller_verification_status,
           created_at: row.created_at,
           updated_at: row.updated_at,
           inventory_quantity: row.inventory_quantity,
@@ -3530,6 +3545,132 @@ export function setupProductRoutes(app: Express): void {
     } catch (err) {
       console.error("[admin] product moderation list error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list products for moderation" } });
+    }
+  });
+
+  // ── GET /api/admin/products/:productId/moderation-detail ────────────────
+  // Full product detail for moderation review. Returns variants, attributes,
+  // option groups, images, shop info. Admin only.
+  app.get("/api/admin/products/:productId/moderation-detail", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await requireAdmin(req, res))) return;
+
+      const productId = param(req, "productId");
+
+      const productResult = await query(
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.status as shop_status,
+                sh.description as shop_description, sh.logo as shop_logo, sh.cover as shop_cover,
+                sh.phone as shop_phone, sh.email as shop_email, sh.category as shop_category,
+                s.verification_status as seller_verification_status, s.verified_at as seller_verified_at,
+                u.id as seller_user_id, u.name as seller_name, u.email as seller_email,
+                i.quantity as inventory_quantity, i.reserved as inventory_reserved,
+                i.low_stock_threshold as inventory_reorder_level
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         JOIN sellers s ON sh.seller_id = s.id
+         JOIN users u ON s.user_id = u.id
+         LEFT JOIN inventory i ON i.product_id = p.id
+         WHERE p.id = $1`,
+        [productId]
+      );
+
+      if (productResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+
+      const row = productResult.rows[0];
+
+      const [imagesRes, variantsRes, optionGroupsRes, attributesRes, categoryRes, moderationHistoryRes] = await Promise.all([
+        query("SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC", [productId]),
+        query("SELECT * FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC", [productId]),
+        query(
+          `SELECT pog.*, json_agg(DISTINCT jsonb_build_object('id', pov.id, 'value', pov.value, 'label', pov.label, 'sort_order', pov.sort_order, 'is_enabled', pov.is_enabled) ORDER BY pov.sort_order) as values
+           FROM product_option_groups pog
+           LEFT JOIN product_option_values pov ON pov.option_group_id = pog.id
+           WHERE pog.product_id = $1
+           GROUP BY pog.id
+           ORDER BY pog.sort_order ASC`,
+          [productId]
+        ),
+        query("SELECT * FROM product_attributes WHERE product_id = $1 ORDER BY sort_order ASC", [productId]),
+        row.category_id ? query("SELECT slug, name, names FROM categories WHERE slug = $1", [row.category_id]) : Promise.resolve({ rows: [] }),
+        query(
+          `SELECT mr.*, u.name as moderator_name
+           FROM moderation_records mr
+           LEFT JOIN users u ON mr.moderator_id = u.id
+           WHERE mr.entity_type = 'product' AND mr.entity_id = $1
+           ORDER BY mr.created_at DESC LIMIT 20`,
+          [productId]
+        ),
+      ]);
+
+      const images = imagesRes.rows;
+      const primaryImage = images.find((i: any) => i.sort_order === 0) ?? images[0] ?? null;
+
+      const variants = variantsRes.rows;
+      for (const v of variants) {
+        const variantImages = await query(
+          "SELECT * FROM product_variant_images WHERE variant_id = $1 ORDER BY sort_order ASC", [v.id]
+        );
+        v.images = variantImages.rows;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          product: {
+            id: row.id, name: row.name, description: row.description,
+            short_description: row.short_description, price: row.price,
+            compare_at_price: row.compare_at_price, currency: row.currency,
+            unit: row.unit, supplier: row.supplier, status: row.status,
+            rejection_reason: row.rejection_reason, category_id: row.category_id,
+            category_name: categoryRes.rows[0]?.name ?? null,
+            category_names: categoryRes.rows[0]?.names ?? null,
+            created_at: row.created_at, updated_at: row.updated_at,
+          },
+          images: images.map((img: any) => ({
+            id: img.id, url: img.url, alt: img.alt,
+            sort_order: img.sort_order, image_type: img.image_type,
+          })),
+          primaryImage: primaryImage ? { id: primaryImage.id, url: primaryImage.url, alt: primaryImage.alt } : null,
+          variants: variants.map((v: any) => ({
+            id: v.id, name: v.name, sku: v.sku, price: v.price,
+            compare_at_price: v.compare_at_price, stock: v.stock,
+            status: v.status, options: v.options, sort_order: v.sort_order,
+            images: (v.images ?? []).map((img: any) => ({ id: img.id, url: img.url, alt: img.alt })),
+          })),
+          optionGroups: optionGroupsRes.rows.map((g: any) => ({
+            id: g.id, name: g.name, display_type: g.display_type,
+            required: g.required, sort_order: g.sort_order,
+            values: Array.isArray(g.values) ? g.values.filter((v: any) => v.id) : [],
+          })),
+          attributes: attributesRes.rows.map((a: any) => ({
+            id: a.id, name: a.name, value: a.value, sort_order: a.sort_order,
+          })),
+          inventory: {
+            quantity: row.inventory_quantity ?? 0,
+            reserved: row.inventory_reserved ?? 0,
+            reorder_level: row.inventory_reorder_level ?? 0,
+          },
+          shop: {
+            id: row.shop_id, name: row.shop_name, slug: row.shop_slug,
+            status: row.shop_status, description: row.shop_description,
+            logo: row.shop_logo, cover: row.shop_cover,
+            phone: row.shop_phone, email: row.shop_email, category: row.shop_category,
+            seller_name: row.seller_name, seller_email: row.seller_email,
+            seller_verification_status: row.seller_verification_status,
+            seller_verified_at: row.seller_verified_at,
+          },
+          moderationHistory: moderationHistoryRes.rows.map((h: any) => ({
+            id: h.id, action: h.action, reason: h.reason,
+            moderator_name: h.moderator_name, created_at: h.created_at,
+          })),
+        },
+      });
+    } catch (err) {
+      console.error("[admin] product moderation detail error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch product detail" } });
     }
   });
 
@@ -3612,6 +3753,12 @@ export function setupProductRoutes(app: Express): void {
           [userId, productId, status, status === 'rejected' ? (rejectionReason ?? '').trim() : null]
         );
       } catch { /* audit is best-effort */ }
+
+      // Broadcast realtime update for VelCenter queue
+      try {
+        broadcast(CHANNELS.PRODUCT_UPDATED, "product:moderated", { productId, from: currentStatus, to: status });
+      } catch { /* broadcast is best-effort */ }
+
       // Return the full updated product with images
       const updatedResult = await query(
         `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug,

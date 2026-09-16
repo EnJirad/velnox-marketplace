@@ -38,6 +38,7 @@ const rateLimitSrc = readFileSync(join(root, "backend/middleware/rate-limit.ts")
 const centerSrc = readFileSync(join(root, "apps/velcenter/src/pages/Center.tsx"), "utf8");
 const sellerSrc = readFileSync(join(root, "backend/routes/seller.ts"), "utf8");
 const reviewDialogSrc = readFileSync(join(root, "apps/velcenter/src/components/VerificationReviewDialog.tsx"), "utf8");
+const sellerQueueSrc = readFileSync(join(root, "apps/velcenter/src/components/SellerVerificationQueue.tsx"), "utf8");
 const identityUploaderSrc = readFileSync(join(root, "packages/shared/src/components/seller/IdentityDocumentUploader.tsx"), "utf8");
 const migration043 = readFileSync(join(root, "db/migrations/043_seller_review_lifecycle.sql"), "utf8");
 const reasonsSrc = readFileSync(join(root, "packages/shared/src/lib/verification-reasons.ts"), "utf8");
@@ -216,14 +217,17 @@ describe("V eligibility (seller-only)", () => {
 
   test("verification no longer produces a product verification queue in VelCenter", () => {
     // VelCenter must query the same persisted seller source the seller wrote.
-    expect(centerSrc).toContain("api.admin.sellerVerificationAction");
-    expect(centerSrc).not.toContain("productVerificationAction");
-    expect(centerSrc).not.toContain("api.admin.productVerificationAction");
-    expect(centerSrc).not.toContain("reviewDialogKind");
+    // The verification queue was extracted to SellerVerificationQueue component.
+    expect(sellerQueueSrc).toContain("api.admin.sellerVerificationAction");
+    expect(sellerQueueSrc).not.toContain("productVerificationAction");
+    expect(sellerQueueSrc).not.toContain("api.admin.productVerificationAction");
+    expect(sellerQueueSrc).not.toContain("reviewDialogKind");
     // The reviewer workspace reads the seller application detail endpoint.
     expect(reviewDialogSrc).toContain("api.admin.sellerApplication");
-    // …and VelCenter opens it from the queue row.
-    expect(centerSrc).toContain("setReviewDialogRow(v)");
+    // …and the queue opens it from the row.
+    expect(sellerQueueSrc).toContain("openReview(row)");
+    // Center.tsx no longer directly contains verification queue code.
+    expect(centerSrc).toContain("SellerVerificationQueue");
   });
 
   test("verification decisions are admin-gated", () => {
