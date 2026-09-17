@@ -106,6 +106,7 @@ export default function EmployeeManager() {
     employeeId: "",
     department: "general",
     role: "staff",
+    password: "",
   });
   const [newPermissions, setNewPermissions] = useState<string[]>([]);
 
@@ -158,6 +159,7 @@ export default function EmployeeManager() {
         employeeId: newEmployee.employeeId.trim() || undefined,
         department: newEmployee.department,
         role: newEmployee.role,
+        password: newEmployee.password,
         permissions: newPermissions,
       });
       if (result.tempPassword) {
@@ -167,7 +169,7 @@ export default function EmployeeManager() {
         toast.success("สร้างบัญชีพนักงานแล้ว — พนักงานเข้าสู่ระบบด้วย Google ด้วยอีเมลนี้");
       }
       setShowCreate(false);
-      setNewEmployee({ name: "", email: "", employeeId: "", department: "general", role: "staff" });
+      setNewEmployee({ name: "", email: "", employeeId: "", department: "general", role: "staff", password: "" });
       setNewPermissions([]);
       void load();
     } catch (error) {
@@ -494,6 +496,19 @@ export default function EmployeeManager() {
                 value={newEmployee.employeeId}
                 onChange={(e) => setNewEmployee((f) => ({ ...f, employeeId: e.target.value }))}
                 placeholder="เช่น EMP-001"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="emp-password">รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)</Label>
+              <Input
+                id="emp-password"
+                type="password"
+                required
+                minLength={8}
+                value={newEmployee.password}
+                onChange={(e) => setNewEmployee((f) => ({ ...f, password: e.target.value }))}
+                placeholder="รหัสผ่านสำหรับล็อกอิน"
+                autoComplete="new-password"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">

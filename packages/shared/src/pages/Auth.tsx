@@ -111,6 +111,12 @@ function Auth() {
   const [signingIn, setSigningIn] = useState(false); // Google flow in progress
   const [error, setError] = useState<string | null>(null);
   const signingInRef = useRef(false); // double-click / double-start guard
+  // Member login (VelCenter only)
+  const [memberMode, setMemberMode] = useState(false);
+  const [memberIdentifier, setMemberIdentifier] = useState("");
+  const [memberPassword, setMemberPassword] = useState("");
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [memberError, setMemberError] = useState<string | null>(null);
 
   // ---- Redirect after auth session is created -------------
   useEffect(() => {
@@ -186,7 +192,32 @@ function Auth() {
     }
   };
 
-  const busy = signingIn;
+  const handleMemberLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (memberLoading) return;
+    setMemberLoading(true);
+    setMemberError(null);
+    try {
+      const res = await fetch(`${apiUrl}/auth/member-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ identifier: memberIdentifier.trim(), password: memberPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error?.message || "เข้าสู่ระบบไม่สำเร็จ");
+      }
+      // Session cookie is set — reload to pick up auth state
+      window.location.reload();
+    } catch (err) {
+      setMemberError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
+    } finally {
+      setMemberLoading(false);
+    }
+  };
+
+  const busy = signingIn || memberLoading;
 
   // No login-form flash (spec §92–§97, §99–§100): while the session is still
   // loading — or right after authentication resolved but before the redirect
@@ -251,6 +282,60 @@ function Auth() {
                 </>
               )}
             </Button>
+
+            {/* Member login — VelCenter staff only */}
+            {currentSite() === "velcenter" && (
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                {!memberMode ? (
+                  <button
+                    type="button"
+                    onClick={() => setMemberMode(true)}
+                    className="w-full text-center text-sm font-medium text-slate-500 hover:text-slate-700"
+                  >
+                    เข้าสู่ระบบด้วย Member ID
+                  </button>
+                ) : (
+                  <form onSubmit={handleMemberLogin} className="grid gap-2.5">
+                    <input
+                      type="text"
+                      value={memberIdentifier}
+                      onChange={(e) => setMemberIdentifier(e.target.value)}
+                      placeholder="Email หรือ Member ID"
+                      className="h-10 rounded-[10px] border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                      autoComplete="username"
+                      required
+                    />
+                    <input
+                      type="password"
+                      value={memberPassword}
+                      onChange={(e) => setMemberPassword(e.target.value)}
+                      placeholder="รหัสผ่าน"
+                      className="h-10 rounded-[10px] border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                      autoComplete="current-password"
+                      required
+                    />
+                    <Button
+                      type="submit"
+                      className="h-10 w-full rounded-[10px] bg-[#10B981] text-white hover:bg-[#059669]"
+                      disabled={memberLoading || !memberIdentifier.trim() || !memberPassword}
+                    >
+                      {memberLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                      เข้าสู่ระบบ
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => { setMemberMode(false); setMemberError(null); }}
+                      className="text-center text-xs text-slate-400 hover:text-slate-600"
+                    >
+                      ยกเลิก
+                    </button>
+                  </form>
+                )}
+                {memberError && (
+                  <p role="alert" className="mt-2 text-center text-sm text-red-500">{memberError}</p>
+                )}
+              </div>
+            )}
 
             {error && (
               <p role="alert" className="text-center text-sm text-red-500">

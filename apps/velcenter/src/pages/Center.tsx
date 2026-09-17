@@ -1,5 +1,5 @@
 import { Logo } from "@velnox/shared/components/Logo";
-import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+// Mobile navigation removed — VelCenter uses top tab strip on all breakpoints
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
 // VerificationReviewDialog is now used inside SellerVerificationQueue component
@@ -191,24 +191,7 @@ export default function Center() {
     );
   };
 
-  // Mobile bottom nav — same tabs as the desktop strip, filtered by role.
-  const mobileTabs: MobileTabItem[] = [
-    { to: "/?tab=overview", label: "ภาพรวม", icon: TrendingUp, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "overview" },
-    { to: "/?tab=orders", label: "ออเดอร์", icon: ShoppingBag, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "orders" },
-    { to: "/?tab=intel", label: "Intelligence", icon: BrainCircuit, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "intel" },
-    { to: "/?tab=products", label: "สินค้า", icon: Package, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "products" },
-    ...(canSeeTab("staff", userRole, userDepartment)
-      ? [{ to: "/?tab=staff", label: "ผู้ใช้", icon: Users, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "staff" } as MobileTabItem]
-      : []),
-    ...(canSeeTab("audit", userRole, userDepartment)
-      ? [{ to: "/?tab=audit", label: "Audit", icon: History, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "audit" } as MobileTabItem]
-      : []),
-    ...(canSeeTab("settings", userRole, userDepartment)
-      ? [{ to: "/?tab=settings", label: "ตั้งค่า", icon: Settings, activeMatch: (_, search) => new URLSearchParams(search).get("tab") === "settings" } as MobileTabItem]
-      : []),
-  ];
-
-  // CPNS: aggregate marketplace interest (privacy-safe — no personal data).
+// CPNS: aggregate marketplace interest (privacy-safe — no personal data).
   const marketInsightsAction = useAction(api.memory.marketInsights);
   const [market, setMarket] = useState<MarketInsights | null>(null);
   useEffect(() => {
@@ -364,6 +347,8 @@ export default function Center() {
         ws.onopen = () => {
           ws?.send(JSON.stringify({ type: "subscribe", channel: "product:updated" }));
           ws?.send(JSON.stringify({ type: "subscribe", channel: "seller:updated" }));
+          ws?.send(JSON.stringify({ type: "subscribe", channel: "notification:created" }));
+          ws?.send(JSON.stringify({ type: "subscribe", channel: "order:updated" }));
         };
         ws.onmessage = (event) => {
           try {
@@ -374,6 +359,9 @@ export default function Center() {
             if (msg.type === "seller:status-changed" || msg.type === "verification:status-changed") {
               void reloadVerifications();
               void reloadSellers();
+            }
+            if (msg.type === "notification:created" || msg.type === "order:updated") {
+              // People/settings refresh when user navigates to those tabs
             }
           } catch { /* ignore */ }
         };
@@ -2248,8 +2236,7 @@ export default function Center() {
         </Tabs>
       </main>
 
-      {/* App-like bottom nav on mobile (respects role permissions) */}
-      <MobileTabBar items={mobileTabs} />
+{/* Mobile bottom nav removed — VelCenter uses top tab strip */}
     </div>
   );
 }

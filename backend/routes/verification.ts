@@ -771,6 +771,11 @@ export function registerVerificationRoutes(app: Express) {
         if (userRes.rows[0]?.user_id) invalidateCachedProfile(userRes.rows[0].user_id);
       } catch { /* non-fatal */ }
 
+      // Broadcast seller update so VelCenter queues refresh in real-time
+      try {
+        broadcast(CHANNELS.SELLER_UPDATED, "seller:status-changed", { sellerId: current.seller_id, action, newStatus });
+      } catch { /* broadcast is best-effort */ }
+
       res.json({ success: true, data: verRes.rows[0] });
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});

@@ -303,6 +303,8 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
 
   // Users (admin)
   "api.users.currentUser": () => apiGet("/api/auth/me"),
+  "api.auth.memberLogin": (a) => apiPost("/api/auth/member-login", a),
+  "api.auth.changePassword": (a) => apiPost("/api/auth/change-password", a),
   "api.users.listUsers": (a) => apiGet(`/api/admin/users${buildQuery({ segment: a?.segment ?? "all" })}`),
   "api.users.setUserAccess": (a) => apiPatch(`/api/admin/users/${a.targetUserId}/access`, a),
   "api.users.ownerBootstrapStatus": () => apiGet("/api/admin/bootstrap-status"),

@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { query } from "../db/index.js";
 import { revokeToken } from "../middleware/auth.js";
 import { closeUserConnections } from "../realtime/index.js";
+import { verifyPassword, isPasswordHashFormat } from "../lib/password.js";
 
 /**
  * Google OAuth authentication routes.
@@ -247,7 +248,153 @@ function setSessionCookie(res: Response, token: string): void {
 /**
  * Register Google OAuth routes on the Express app.
  */
+
 export function setupGoogleAuth(app: Express): void {
+  /**
+   * POST /api/auth/member-login — Password-based login for VelCenter staff.
+   *
+   * Accepts either an email address or an employee_id (Member ID) as the
+   * identifier. The user must have role owner/admin/staff and a password_hash
+   * set (created via the employee management flow). Returns a JWT session cookie.
+   */
+  app.post("/api/auth/member-login", async (req: Request, res: Response) => {
+    try {
+      const identifier = typeof req.body?.identifier === "string" ? req.body.identifier.trim() : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+      if (!identifier || !password) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Member ID/Email and password are required" } });
+        return;
+      }
+
+      // Find user by email, or by employee_id via employees table
+      let userRow: any = null;
+
+      // Try email match first
+      if (identifier.includes("@")) {
+        const r = await query("SELECT id, email, name, role, status, department, password_hash FROM users WHERE email = $1", [identifier.toLowerCase()]);
+        userRow = r.rows[0] ?? null;
+      }
+
+      // If no email match, try employee_id
+      if (!userRow) {
+        const r = await query(
+          `SELECT u.id, u.email, u.name, u.role, u.status, u.department, u.password_hash
+           FROM users u JOIN employees e ON e.user_id = u.id
+           WHERE e.employee_id = $1`,
+          [identifier],
+        );
+        userRow = r.rows[0] ?? null;
+      }
+
+      if (!userRow) {
+        res.status(401).json({ success: false, error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" } });
+        return;
+      }
+
+      // Account must be active
+      if (userRow.status !== "active") {
+        res.status(403).json({ success: false, error: { code: "ACCOUNT_DISABLED", message: "Account is disabled" } });
+        return;
+      }
+
+      // Must be center staff (owner/admin/staff)
+      if (!["owner", "admin", "staff"].includes(userRow.role)) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Access restricted to staff accounts" } });
+        return;
+      }
+
+      // Must have a password hash (created with password auth)
+      if (!isPasswordHashFormat(userRow.password_hash)) {
+        res.status(401).json({ success: false, error: { code: "PASSWORD_AUTH_UNAVAILABLE", message: "This account does not have password login enabled" } });
+        return;
+      }
+
+      // Verify password (timing-safe)
+      const valid = await verifyPassword(password, userRow.password_hash);
+      if (!valid) {
+        res.status(401).json({ success: false, error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" } });
+        return;
+      }
+
+      // Create session
+      const sessionToken = createSessionToken(userRow.id, userRow.email);
+      setSessionCookie(res, sessionToken);
+
+      console.log(`[auth] member-login success: ${userRow.email} (${userRow.role})`);
+      res.json({
+        success: true,
+        data: {
+          userId: userRow.id,
+          email: userRow.email,
+          name: userRow.name,
+          role: userRow.role,
+          department: userRow.department,
+        },
+      });
+    } catch (err: any) {
+      console.error("[auth] member-login error:", err?.message || err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Login failed" } });
+    }
+  });
+
+  /**
+   * POST /api/auth/change-password -- Authenticated staff can change own password.
+   */
+  app.post("/api/auth/change-password", async (req: Request, res: Response) => {
+    try {
+      const sessionCookie = req.cookies?.velnox_session;
+      if (!sessionCookie) {
+        res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Not authenticated" } });
+        return;
+      }
+      const jwtMod = await import("jsonwebtoken");
+      const secret = process.env.JWT_SECRET || "velnox-dev-secret";
+      let payload: any;
+      try {
+        payload = jwtMod.default.verify(sessionCookie, secret);
+      } catch {
+        res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Invalid session" } });
+        return;
+      }
+
+      const currentPassword = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
+      const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+
+      if (!currentPassword || !newPassword) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Current and new passwords are required" } });
+        return;
+      }
+      if (newPassword.length < 8) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "New password must be at least 8 characters" } });
+        return;
+      }
+
+      const userResult = await query("SELECT password_hash FROM users WHERE id = $1", [payload.userId]);
+      const user = userResult.rows[0];
+      if (!user || !isPasswordHashFormat(user.password_hash)) {
+        res.status(400).json({ success: false, error: { code: "NO_PASSWORD", message: "Account does not have password authentication" } });
+        return;
+      }
+
+      const { verifyPassword: vp, hashPassword: hp } = await import("../lib/password.js");
+      const valid = await vp(currentPassword, user.password_hash);
+      if (!valid) {
+        res.status(401).json({ success: false, error: { code: "INVALID_PASSWORD", message: "Current password is incorrect" } });
+        return;
+      }
+
+      const newHash = await hp(newPassword);
+      await query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2", [newHash, payload.userId]);
+      console.log("[auth] password changed for", payload.userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[auth] change-password error:", err?.message || err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to change password" } });
+    }
+  });
+
+
   // Step 1: Frontend calls this to start Google OAuth flow
   app.get("/auth/google", (req: Request, res: Response) => {
     // Validate required env vars

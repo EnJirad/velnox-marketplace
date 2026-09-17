@@ -428,6 +428,7 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+              <th className="px-3 py-2 font-medium">ภาพ</th>
               <th className="px-3 py-2 font-medium">ชื่อ</th>
               <th className="px-3 py-2 font-medium">SKU</th>
               <th className="px-3 py-2 text-right font-medium">ราคา</th>
@@ -438,6 +439,20 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
           <tbody>
             {variants.map((v) => (
               <tr key={v.id} className="border-b border-slate-50 last:border-0">
+                <td className="px-3 py-2">
+                  {v.images && v.images.length > 0 ? (
+                    <div className="flex -space-x-1">
+                      {v.images.slice(0, 3).map((img) => (
+                        <img key={img.id} src={img.url} alt={img.alt || v.name} className="size-8 rounded-md border border-white object-cover" />
+                      ))}
+                      {v.images.length > 3 && (
+                        <span className="flex size-8 items-center justify-center rounded-md bg-slate-100 text-[10px] text-slate-500">+{v.images.length - 3}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-300">ไม่มีรูป</span>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   <span className="font-medium text-slate-900">{v.name}</span>
                   {Object.keys(v.options ?? {}).length > 0 && (
@@ -458,10 +473,17 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
       <div className="space-y-2 md:hidden">
         {variants.map((v) => (
           <div key={v.id} className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="flex items-start justify-between gap-3">
-              <p className="min-w-0 flex-1 break-words text-sm font-medium text-slate-900">{v.name}</p>
-              <StatusBadge status={v.status} />
-            </div>
+            <div className="flex items-start gap-3">
+              {v.images && v.images.length > 0 ? (
+                <img src={v.images[0].url} alt={v.images[0].alt || v.name} className="size-12 shrink-0 rounded-lg object-cover" />
+              ) : (
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[10px] text-slate-400">ไม่มีรูป</div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 flex-1 break-words text-sm font-medium text-slate-900">{v.name}</p>
+                  <StatusBadge status={v.status} />
+                </div>
             <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
               <div className="min-w-0">
                 <p className="text-slate-400">ราคา</p>
@@ -474,6 +496,8 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
               <div className="min-w-0">
                 <p className="text-slate-400">SKU</p>
                 <p className="mt-0.5 truncate font-mono text-slate-600">{v.sku ?? "—"}</p>
+              </div>
+            </div>
               </div>
             </div>
             {Object.keys(v.options ?? {}).length > 0 && (

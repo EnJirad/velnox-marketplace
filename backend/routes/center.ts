@@ -29,6 +29,8 @@ import type { Express, Request, Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
+import { hashPassword, isPasswordHashFormat } from "../lib/password.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
 
 function param(req: Request, key: string): string {
   const v = req.params[key];
@@ -725,7 +727,7 @@ export function setupCenterRoutes(app: Express): void {
         return;
       }
       const result = await query(
-        `SELECT u.id AS user_id, e.id AS neon_id, e.employee_id, e.permissions,
+        `SELECT u.id AS user_id, u.password_hash, e.id AS neon_id, e.employee_id, e.permissions,
                 u.email, u.name, u.role, u.department, u.status, u.created_at
          FROM users u
          LEFT JOIN employees e ON e.user_id = u.id
@@ -752,7 +754,7 @@ export function setupCenterRoutes(app: Express): void {
             permissions,
             active: r.status === "active",
             mustChangePassword: false,
-            passwordAuth: false,
+            passwordAuth: isPasswordHashFormat(r.password_hash),
             createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
           };
         }),
@@ -782,9 +784,14 @@ export function setupCenterRoutes(app: Express): void {
           : "general";
       const employeeId = typeof req.body?.employeeId === "string" ? req.body.employeeId.trim().slice(0, 50) || null : null;
       const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions.filter((p: unknown) => typeof p === "string").slice(0, 50) : [];
+      const rawPassword = typeof req.body?.password === "string" ? req.body.password : "";
 
       if (!name || !email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "A valid name and email are required" } });
+        return;
+      }
+      if (!rawPassword || rawPassword.length < 8) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Password must be at least 8 characters" } });
         return;
       }
       if (!["admin", "staff"].includes(role)) {
@@ -798,10 +805,11 @@ export function setupCenterRoutes(app: Express): void {
         return;
       }
 
+      const passwordHash = await hashPassword(rawPassword);
       const ins = await query(
-        `INSERT INTO users (email, name, role, department, status)
-         VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
-        [email, name, role, department],
+        `INSERT INTO users (email, name, role, department, status, password_hash)
+         VALUES ($1, $2, $3, $4, 'active', $5) RETURNING id`,
+        [email, name, role, department, passwordHash],
       );
       const userId = ins.rows[0].id as string;
       await query(
@@ -810,14 +818,15 @@ export function setupCenterRoutes(app: Express): void {
         [userId, role === "admin" ? "admin" : "staff", employeeId, JSON.stringify(permissions)],
       );
       await writeAuditLog(req.user!.userId, "EMPLOYEE_CREATE", "employee", userId, { email, role, department }, auditClientIp(req));
+      try { broadcast(CHANNELS.NOTIFICATION_CREATED, "employee:created", { userId, role }); } catch { /* best-effort */ }
 
       res.json({
         success: true,
         data: {
           email,
           name,
-          tempPassword: null, // no password provider — employees sign in with Google
-          mustChangePassword: false,
+          tempPassword: rawPassword, // shown once to admin, never stored in logs
+          mustChangePassword: true,
           userId,
         },
       });
@@ -845,6 +854,7 @@ export function setupCenterRoutes(app: Express): void {
         targetUserId,
       ]);
       await writeAuditLog(req.user!.userId, "EMPLOYEE_ACTIVE_UPDATE", "employee", targetUserId, { active }, auditClientIp(req));
+      try { broadcast(CHANNELS.NOTIFICATION_CREATED, "employee:updated", { targetUserId, active }); } catch { /* best-effort */ }
       res.json({ success: true, data: { id: targetUserId, active } });
     } catch (err) {
       console.error("[center] employee active error:", err);
@@ -880,6 +890,7 @@ export function setupCenterRoutes(app: Express): void {
         neonId,
       ]);
       await writeAuditLog(req.user!.userId, "STAFF_PROFILE_UPDATE", "employee", userId, { department, permissions }, auditClientIp(req));
+      try { broadcast(CHANNELS.NOTIFICATION_CREATED, "employee:updated", { userId, department }); } catch { /* best-effort */ }
       res.json({ success: true, data: { id: neonId, department, permissions } });
     } catch (err) {
       console.error("[center] staff profile error:", err);
@@ -895,13 +906,22 @@ export function setupCenterRoutes(app: Express): void {
       res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Owner access required" } });
       return;
     }
-    res.status(400).json({
-      success: false,
-      error: {
-        code: "PASSWORD_AUTH_UNAVAILABLE",
-        message: "Password login is not enabled — employees sign in with Google using their account email",
-      },
-    });
+    try {
+      const targetUserId = String(req.params.userId);
+      const rawPassword = typeof req.body?.password === "string" ? req.body.password : "";
+      if (!rawPassword || rawPassword.length < 8) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Password must be at least 8 characters" } });
+        return;
+      }
+      const passwordHash = await hashPassword(rawPassword);
+      await query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2", [passwordHash, targetUserId]);
+      console.log(`[center] employee password reset: ${targetUserId} by ${req.user!.userId}`);
+      await writeAuditLog(req.user!.userId, "EMPLOYEE_PASSWORD_RESET", "employee", targetUserId, {}, auditClientIp(req));
+      res.json({ success: true, data: { userId: targetUserId, tempPassword: rawPassword } });
+    } catch (err) {
+      console.error("[center] employee password reset error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to reset password" } });
+    }
   });
 
   // ── GET /api/admin/dashboard/counts ────────────────────────────────────
