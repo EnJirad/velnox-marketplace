@@ -1301,7 +1301,13 @@ No data was removed from any breakpoint and the moderation-detail backend query 
 | `git diff --check` | CLEAN |
 
 ### Production verification
-- `GET https://velnox-api.onrender.com/api/_diag/schema` reports `auditLogs.ok = true` with the audit row count (the previously failing statement now executes against live Neon).
+- `GET https://velnox-api.onrender.com/api/_diag/schema` returned
+  `auditLogs = {"totalRows": 4, "ok": true, "sampled": 4}` one Render deploy after `a94d03b`:
+  the exact exported statement (the one the endpoint runs) now executes against live Neon, and
+  the trail really does contain rows — so the empty VelCenter tab was the 500, not missing data.
+- The `/api/admin/audit-logs` route itself needs an owner/admin session, which this environment does
+  not have; the probe runs the **identical** statement, and `backend/tests/center-admin-audit.test.ts`
+  fails if the route stops using that builder.
 - VelCenter Audit Logs then renders real rows through `GET /api/admin/audit-logs`; a failed request still shows the error + retry state, never "no records".
 
 ### Known Limitations
