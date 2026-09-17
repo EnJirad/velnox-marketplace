@@ -16,6 +16,7 @@ import { VBadge } from "@velnox/shared/components/VBadge";
 import type { VerificationStatus } from "@velnox/shared/lib/commerce";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { formatBaht } from "@velnox/shared/lib/shop";
+import { cn } from "@velnox/shared/lib/utils";
 import {
   AlertCircle,
   ChevronDown,
@@ -103,7 +104,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 function StatusBadge({ status }: { status: string }) {
   const meta = STATUS_LABELS[status] ?? { label: status, color: "bg-slate-100 text-slate-600 ring-slate-600/10" };
   return (
-    <Badge className={`gap-1 rounded-full text-[10px] font-medium ring-1 ring-inset ${meta.color}`}>
+    <Badge className={`shrink-0 gap-1 rounded-full text-[10px] font-medium ring-1 ring-inset ${meta.color}`}>
       {meta.label}
     </Badge>
   );
@@ -121,30 +122,75 @@ function SellerVMark({ status, size = "md" }: { status?: string | null; size?: "
   );
 }
 
-/** Small section wrapper used across the inspection workspace. */
+/**
+ * Section wrapper for the inspection workspace.
+ *
+ * `collapsible` turns the heading into a disclosure on phones only, so a long
+ * inspection stays short on a small screen while the desktop layout keeps every
+ * panel open. The body is always visible from `lg` up (`lg:block`), and the
+ * collapsed state still shows a count, so nothing can be hidden unnoticed.
+ */
 function Section({
   title,
   icon,
   children,
   className = "",
+  collapsible = false,
+  count,
+  defaultOpen = false,
 }: {
   title: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  collapsible?: boolean;
+  count?: number;
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  const heading = (
+    <>
+      {icon}
+      <span className="truncate">{title}</span>
+      {typeof count === "number" && (
+        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+          {count}
+        </span>
+      )}
+      {collapsible && (
+        <ChevronDown
+          className={cn(
+            "ml-auto size-4 shrink-0 text-slate-400 transition-transform lg:hidden",
+            !open && "-rotate-90",
+          )}
+        />
+      )}
+    </>
+  );
+
   return (
     <section className={className}>
-      <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
-        {icon}
-        {title}
-      </h4>
-      {children}
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          aria-expanded={open}
+          className="mb-2 flex w-full items-center gap-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-400 lg:pointer-events-none"
+        >
+          {heading}
+        </button>
+      ) : (
+        <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          {heading}
+        </h4>
+      )}
+      <div className={cn(collapsible && !open && "hidden", "lg:block")}>{children}</div>
     </section>
   );
 }
 
-/** Key/value rows (stacked on mobile, side-aligned from sm up). */
+/** Key/value rows (label left, value right, wrapping on narrow screens). */
 function InfoRows({ rows }: { rows: { label: string; value: React.ReactNode }[] }) {
   return (
     <dl className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -161,9 +207,9 @@ function InfoRows({ rows }: { rows: { label: string; value: React.ReactNode }[] 
 /**
  * Inspection gallery.
  *
- * The stage has a bounded height on every breakpoint so a tall product photo
- * can never push the dialog past the viewport: 38dvh on phones, a fixed
- * 420px stage on desktop. Thumbnails scroll horizontally.
+ * The stage is height-bounded on EVERY breakpoint so a tall photo can never
+ * decide the dialog height: ~30dvh (max 240px) on phones, a fixed 420px stage
+ * from `sm` up. Thumbnails scroll horizontally with snap.
  */
 function ImageGallery({ images, primaryImage }: { images: { id: string; url: string; alt: string }[]; primaryImage?: { id: string; url: string; alt?: string } | null }) {
   const [selected, setSelected] = useState(0);
@@ -173,7 +219,7 @@ function ImageGallery({ images, primaryImage }: { images: { id: string; url: str
 
   if (allImages.length === 0) {
     return (
-      <div className="flex h-[30dvh] max-h-64 items-center justify-center rounded-xl bg-slate-50 sm:h-64">
+      <div className="flex h-[26dvh] max-h-44 min-h-32 items-center justify-center rounded-xl bg-slate-50 sm:h-64 sm:max-h-none">
         <div className="flex flex-col items-center gap-1.5 text-slate-300">
           <ImageOff className="size-8" />
           <span className="text-xs">ไม่มีรูปภาพ</span>
@@ -184,18 +230,19 @@ function ImageGallery({ images, primaryImage }: { images: { id: string; url: str
 
   return (
     <>
-      <div className="flex h-[38dvh] max-h-[420px] items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[420px]">
+      <div className="flex h-[30dvh] max-h-60 min-h-36 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[420px] sm:max-h-none">
         <button type="button" onClick={() => setZoom(true)} className="flex size-full items-center justify-center">
           <img src={active.url} alt={active.alt} className="max-h-full max-w-full object-contain" />
         </button>
       </div>
       {allImages.length > 1 && (
-        <div className="mt-2 flex snap-x gap-1.5 overflow-x-auto pb-1">
+        <div className="mt-2 flex snap-x gap-1.5 overflow-x-auto overscroll-x-contain pb-1">
           {allImages.map((img, i) => (
             <button
               key={img.id}
               type="button"
               onClick={() => setSelected(i)}
+              aria-label={`รูปที่ ${i + 1}`}
               className={`size-14 shrink-0 snap-start overflow-hidden rounded-lg border-2 transition-colors sm:size-16 ${i === selected ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
             >
               <img src={img.url} alt={img.alt} className="size-full object-cover" />
@@ -211,6 +258,236 @@ function ImageGallery({ images, primaryImage }: { images: { id: string; url: str
           <img src={active.url} alt={active.alt} className="max-h-[88dvh] max-w-[92vw] rounded-lg object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
+    </>
+  );
+}
+
+/**
+ * Product identity block — the first thing a reviewer needs on a phone:
+ * name, verification mark, shop, status, price and category, before any long
+ * section. Duplicates nothing: the same fields are also listed as rows below.
+ */
+function ProductSummaryCard({ detail }: { detail: ProductDetail }) {
+  const category = detail.product.category_name ?? detail.product.category_id;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 flex-1 break-words text-base font-semibold leading-6 text-slate-900">
+          {detail.product.name}
+        </p>
+        <StatusBadge status={detail.product.status} />
+      </div>
+      <p className="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
+        <Store className="size-3.5 shrink-0 text-slate-400" />
+        <span className="truncate">{detail.shop.name}</span>
+        <SellerVMark status={detail.shop.seller_verification_status} size="sm" />
+      </p>
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-2 border-t border-slate-100 pt-3">
+        <div className="min-w-0">
+          <p className="text-[11px] text-slate-400">ราคา</p>
+          <p className="text-xl font-bold tabular-nums text-slate-900">
+            {formatBaht(detail.product.price)}
+            <span className="ml-1 text-xs font-normal text-slate-400">/ {detail.product.unit}</span>
+          </p>
+          {detail.product.compare_at_price ? (
+            <p className="text-[11px] text-slate-400 line-through">{formatBaht(detail.product.compare_at_price)}</p>
+          ) : null}
+        </div>
+        <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
+          <Tag className="size-3 shrink-0" />
+          {category ?? "ไม่ระบุหมวดหมู่"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function StockGrid({ inventory }: { inventory: ProductDetail["inventory"] }) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+        <p className="text-[11px] text-slate-400">คงเหลือ</p>
+        <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{inventory.quantity}</p>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+        <p className="text-[11px] text-slate-400">สงวนไว้</p>
+        <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{inventory.reserved}</p>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+        <p className="text-[11px] text-slate-400">จุดสั่งซื้อซ้ำ</p>
+        <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{inventory.reorder_level}</p>
+      </div>
+    </div>
+  );
+}
+
+function ShopCard({ shop }: { shop: ProductDetail["shop"] }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="flex items-start gap-3">
+        {shop.logo ? (
+          <img src={shop.logo} alt={shop.name} className="size-11 shrink-0 rounded-lg object-cover" />
+        ) : (
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+            <Store className="size-5 text-slate-400" />
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+            <span className="truncate">{shop.name}</span>
+            <SellerVMark status={shop.seller_verification_status} size="sm" />
+          </p>
+          <p className="truncate text-xs text-slate-400">/{shop.slug}</p>
+        </div>
+      </div>
+      {shop.description && (
+        <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-500">{shop.description}</p>
+      )}
+      <div className="mt-3 grid gap-1.5 border-t border-slate-100 pt-3 text-xs">
+        <div className="flex justify-between gap-3">
+          <span className="shrink-0 text-slate-400">ผู้ขาย</span>
+          <span className="min-w-0 truncate text-right text-slate-700">{shop.seller_name}</span>
+        </div>
+        <div className="flex justify-between gap-3">
+          <span className="shrink-0 text-slate-400">อีเมล</span>
+          <span className="min-w-0 truncate text-right text-slate-700">{shop.seller_email}</span>
+        </div>
+        <div className="flex justify-between gap-3">
+          <span className="shrink-0 text-slate-400">สถานะร้าน</span>
+          <span className="text-right text-slate-700">{shop.status}</span>
+        </div>
+        <div className="flex justify-between gap-3">
+          <span className="shrink-0 text-slate-400">การยืนยัน</span>
+          <span className="text-right text-slate-700">
+            {shop.seller_verification_status ?? "—"}
+            {shop.seller_verified_at
+              ? ` · ${new Date(shop.seller_verified_at).toLocaleDateString()}`
+              : ""}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModerationHistoryList({ history }: { history: ProductDetail["moderationHistory"] }) {
+  return (
+    <ol className="space-y-1.5">
+      {history.map((h) => (
+        <li key={h.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate text-xs font-medium text-slate-700">{h.action}</span>
+            <span className="shrink-0 text-[10px] text-slate-400">{new Date(h.created_at).toLocaleDateString()}</span>
+          </div>
+          {h.reason && <p className="mt-0.5 break-words text-[11px] text-slate-500">{h.reason}</p>}
+          {h.moderator_name && <p className="mt-0.5 text-[10px] text-slate-400">— {h.moderator_name}</p>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function OptionGroupsList({ groups }: { groups: ProductDetail["optionGroups"] }) {
+  return (
+    <div className="space-y-2">
+      {groups.map((group) => (
+        <div key={group.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="min-w-0 truncate text-sm font-medium text-slate-900">{group.name}</p>
+            <Badge className="rounded-full bg-slate-100 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
+              {group.display_type}
+            </Badge>
+            {group.required && (
+              <Badge className="rounded-full bg-amber-50 text-[10px] text-amber-700 ring-1 ring-inset ring-amber-600/15">
+                จำเป็น
+              </Badge>
+            )}
+          </div>
+          {group.values.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {group.values.map((v) => (
+                <Badge key={v.id} className="rounded-full bg-slate-50 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-200">
+                  {v.label || v.value}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1.5 text-xs text-slate-400">ไม่มีค่าตัวเลือก</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
+  return (
+    <>
+      {/* Desktop: table. Mobile: stacked cards — no horizontal scrolling. */}
+      <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+              <th className="px-3 py-2 font-medium">ชื่อ</th>
+              <th className="px-3 py-2 font-medium">SKU</th>
+              <th className="px-3 py-2 text-right font-medium">ราคา</th>
+              <th className="px-3 py-2 text-right font-medium">สต็อก</th>
+              <th className="px-3 py-2 text-right font-medium">สถานะ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {variants.map((v) => (
+              <tr key={v.id} className="border-b border-slate-50 last:border-0">
+                <td className="px-3 py-2">
+                  <span className="font-medium text-slate-900">{v.name}</span>
+                  {Object.keys(v.options ?? {}).length > 0 && (
+                    <span className="mt-0.5 block text-[11px] text-slate-400">
+                      {Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(" · ")}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 font-mono text-xs text-slate-500">{v.sku ?? "—"}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-slate-700">{formatBaht(v.price)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-slate-700">{v.stock}</td>
+                <td className="px-3 py-2 text-right"><StatusBadge status={v.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-2 md:hidden">
+        {variants.map((v) => (
+          <div key={v.id} className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="flex items-start justify-between gap-3">
+              <p className="min-w-0 flex-1 break-words text-sm font-medium text-slate-900">{v.name}</p>
+              <StatusBadge status={v.status} />
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              <div className="min-w-0">
+                <p className="text-slate-400">ราคา</p>
+                <p className="mt-0.5 truncate font-semibold tabular-nums text-slate-900">{formatBaht(v.price)}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-slate-400">สต็อก</p>
+                <p className="mt-0.5 font-semibold tabular-nums text-slate-900">{v.stock}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-slate-400">SKU</p>
+                <p className="mt-0.5 truncate font-mono text-slate-600">{v.sku ?? "—"}</p>
+              </div>
+            </div>
+            {Object.keys(v.options ?? {}).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {Object.entries(v.options).map(([k, val]) => (
+                  <Badge key={k} className="rounded-full bg-slate-50 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-200">
+                    {k}: {val}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </>
   );
 }
@@ -386,7 +663,7 @@ export default function ProductModerationQueue() {
       {/* Pending count */}
       {statusFilter === "pending_review" && pendingCount > 0 && (
         <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
-          <Package className="size-4" />
+          <Package className="size-4 shrink-0" />
           <span className="font-medium">{pendingCount} สินค้ารอตรวจสอบ</span>
         </div>
       )}
@@ -431,7 +708,7 @@ export default function ProductModerationQueue() {
                 <div className="flex min-w-0 items-center gap-3">
                   <Store className="size-4 shrink-0 text-[#10B981]" />
                   <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-slate-900">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
                       <span className="truncate">{group.shopName}</span>
                       <SellerVMark status={group.sellerVerificationStatus} size="sm" />
                     </p>
@@ -483,26 +760,44 @@ export default function ProductModerationQueue() {
 
       {/* ── Product inspection workspace ────────────────────────────────────
           Full-screen sheet on phones, large two-pane dialog on desktop.
-          Header and action bar stay pinned; only the body scrolls, so the
-          reviewer never loses the product identity or the approve/reject
-          controls. No data is hidden on small screens — only re-flowed. */}
+          Header and action bar stay pinned; only the body scrolls.
+
+          Mobile is a purpose-built order, not a squeezed desktop: compact
+          bounded gallery → identity (name / V / shop / status / price /
+          category) → rejection reason → stock → then the long sections as
+          disclosures. Desktop keeps the two-column workspace via explicit grid
+          placement. No data is hidden on small screens — only re-flowed. */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent
+          showCloseButton={false}
           className="flex h-[100dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-auto sm:max-h-[92dvh] sm:w-[calc(100vw-3rem)] sm:max-w-6xl sm:rounded-2xl sm:border"
         >
-          <DialogHeader className="shrink-0 space-y-1 border-b border-slate-100 px-4 py-3 text-left sm:px-6 sm:py-4">
-            <div className="flex min-w-0 items-center gap-2 pr-8">
-              <Package className="size-4 shrink-0 text-[#10B981]" />
-              <DialogTitle className="min-w-0 flex-1 truncate text-base">
-                {detailProduct?.product.name ?? "ตรวจสอบสินค้า"}
-              </DialogTitle>
-              {detailProduct && <StatusBadge status={detailProduct.product.status} />}
+          <DialogHeader className="shrink-0 gap-1 space-y-0 border-b border-slate-100 px-4 py-3 text-left sm:px-6 sm:py-4">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Package className="size-4 shrink-0 text-[#10B981]" />
+                  <DialogTitle className="min-w-0 flex-1 truncate text-base">
+                    {detailProduct?.product.name ?? "ตรวจสอบสินค้า"}
+                  </DialogTitle>
+                  {detailProduct && <StatusBadge status={detailProduct.product.status} />}
+                </div>
+                <DialogDescription className="mt-1 truncate text-xs">
+                  {detailProduct
+                    ? `${detailProduct.shop.name} · ${detailProduct.shop.seller_name}`
+                    : "ตรวจสอบรายละเอียดสินค้าและดำเนินการตรวจสอบ"}
+                </DialogDescription>
+              </div>
+              {/* Explicit, thumb-sized close control (the default one is 16px). */}
+              <button
+                type="button"
+                onClick={() => setDetailOpen(false)}
+                aria-label="ปิดหน้าตรวจสอบสินค้า"
+                className="-mr-1 -mt-1 flex size-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="size-5" />
+              </button>
             </div>
-            <DialogDescription className="truncate text-xs">
-              {detailProduct
-                ? `${detailProduct.shop.name} · ${detailProduct.shop.seller_name}`
-                : "ตรวจสอบรายละเอียดสินค้าและดำเนินการตรวจสอบ"}
-            </DialogDescription>
           </DialogHeader>
 
           {/* Scrollable body */}
@@ -532,263 +827,142 @@ export default function ProductModerationQueue() {
                 <p className="text-sm text-rose-600">ไม่สามารถโหลดรายละเอียดได้</p>
               </div>
             ) : (
-              <div className="grid gap-5 px-4 py-4 sm:px-6 sm:py-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] lg:gap-6">
-                {/* ── Identity column: gallery, shop, evidence ── */}
-                <div className="space-y-5">
-                  <Section title="รูปภาพสินค้า" icon={<Layers className="size-3.5" />}>
-                    <ImageGallery images={detailProduct.images} primaryImage={detailProduct.primaryImage} />
-                  </Section>
+              <div className="flex flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5 lg:grid lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] lg:items-start lg:gap-x-6 lg:gap-y-5 lg:py-6">
+                <Section
+                  title="รูปภาพสินค้า"
+                  icon={<Layers className="size-3.5" />}
+                  className="order-1 lg:order-none lg:col-start-1 lg:row-start-1"
+                >
+                  <ImageGallery images={detailProduct.images} primaryImage={detailProduct.primaryImage} />
+                </Section>
 
-                  {detailProduct.product.rejection_reason && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5">
-                      <p className="text-xs font-medium text-rose-700">เหตุผลที่ปฏิเสธ:</p>
-                      <p className="mt-1 text-sm text-rose-600">{detailProduct.product.rejection_reason}</p>
-                    </div>
-                  )}
-
-                  <Section title="ร้านค้า / ผู้ขาย" icon={<Store className="size-3.5" />}>
-                    <div className="rounded-xl border border-slate-200 bg-white p-3">
-                      <div className="flex items-start gap-3">
-                        {detailProduct.shop.logo ? (
-                          <img src={detailProduct.shop.logo} alt={detailProduct.shop.name} className="size-11 shrink-0 rounded-lg object-cover" />
-                        ) : (
-                          <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-100">
-                            <Store className="size-5 text-slate-400" />
-                          </span>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-                            <span className="truncate">{detailProduct.shop.name}</span>
-                            <SellerVMark status={detailProduct.shop.seller_verification_status} size="sm" />
-                          </p>
-                          <p className="truncate text-xs text-slate-400">/{detailProduct.shop.slug}</p>
-                        </div>
-                      </div>
-                      {detailProduct.shop.description && (
-                        <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-500">{detailProduct.shop.description}</p>
-                      )}
-                      <div className="mt-3 grid gap-1.5 border-t border-slate-100 pt-3 text-xs">
-                        <div className="flex justify-between gap-3">
-                          <span className="text-slate-400">ผู้ขาย</span>
-                          <span className="min-w-0 truncate text-right text-slate-700">{detailProduct.shop.seller_name}</span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="text-slate-400">อีเมล</span>
-                          <span className="min-w-0 truncate text-right text-slate-700">{detailProduct.shop.seller_email}</span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="text-slate-400">สถานะร้าน</span>
-                          <span className="text-right text-slate-700">{detailProduct.shop.status}</span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="text-slate-400">การยืนยัน</span>
-                          <span className="text-right text-slate-700">
-                            {detailProduct.shop.seller_verification_status ?? "—"}
-                            {detailProduct.shop.seller_verified_at
-                              ? ` · ${new Date(detailProduct.shop.seller_verified_at).toLocaleDateString()}`
-                              : ""}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </Section>
-
-                  {detailProduct.moderationHistory.length > 0 && (
-                    <Section title="ประวัติการตรวจสอบ" icon={<History className="size-3.5" />}>
-                      <ol className="space-y-1.5">
-                        {detailProduct.moderationHistory.map((h) => (
-                          <li key={h.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-medium text-slate-700">{h.action}</span>
-                              <span className="shrink-0 text-[10px] text-slate-400">{new Date(h.created_at).toLocaleDateString()}</span>
-                            </div>
-                            {h.reason && <p className="mt-0.5 break-words text-[11px] text-slate-500">{h.reason}</p>}
-                            {h.moderator_name && <p className="mt-0.5 text-[10px] text-slate-400">— {h.moderator_name}</p>}
-                          </li>
-                        ))}
-                      </ol>
-                    </Section>
-                  )}
-                </div>
-
-                {/* ── Data column ── */}
-                <div className="space-y-5">
-                  <Section title="ข้อมูลสินค้า" icon={<Package className="size-3.5" />}>
+                <Section
+                  title="ข้อมูลสินค้า"
+                  icon={<Package className="size-3.5" />}
+                  className="order-2 lg:order-none lg:col-start-2 lg:row-start-1"
+                >
+                  <div className="space-y-2">
+                    <ProductSummaryCard detail={detailProduct} />
                     <InfoRows
                       rows={[
-                        { label: "ชื่อสินค้า", value: detailProduct.product.name },
                         { label: "รหัสสินค้า", value: <span className="font-mono text-xs">{detailProduct.product.id.slice(0, 8)}</span> },
-                        { label: "ราคา", value: `${formatBaht(detailProduct.product.price)} / ${detailProduct.product.unit}` },
-                        ...(detailProduct.product.compare_at_price
-                          ? [{ label: "ราคาเปรียบเทียบ", value: formatBaht(detailProduct.product.compare_at_price) }]
-                          : []),
                         { label: "สกุลเงิน", value: detailProduct.product.currency },
                         { label: "หมวดหมู่", value: detailProduct.product.category_name ?? detailProduct.product.category_id ?? "—" },
                         { label: "สร้างเมื่อ", value: new Date(detailProduct.product.created_at).toLocaleString() },
                         { label: "อัปเดตล่าสุด", value: new Date(detailProduct.product.updated_at).toLocaleString() },
                       ]}
                     />
-                  </Section>
+                  </div>
+                </Section>
 
-                  {detailProduct.product.description && (
-                    <Section title="รายละเอียดสินค้า">
-                      <div className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-600">
-                        {detailProduct.product.description}
-                      </div>
-                    </Section>
-                  )}
+                {detailProduct.product.rejection_reason && (
+                  <div className="order-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 lg:order-none lg:col-start-1 lg:row-start-2">
+                    <p className="text-xs font-medium text-rose-700">เหตุผลที่ปฏิเสธ:</p>
+                    <p className="mt-1 break-words text-sm text-rose-600">{detailProduct.product.rejection_reason}</p>
+                  </div>
+                )}
 
-                  <Section title="สต็อก" icon={<Truck className="size-3.5" />}>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                        <p className="text-[11px] text-slate-400">คงเหลือ</p>
-                        <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{detailProduct.inventory.quantity}</p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                        <p className="text-[11px] text-slate-400">สงวนไว้</p>
-                        <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{detailProduct.inventory.reserved}</p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                        <p className="text-[11px] text-slate-400">จุดสั่งซื้อซ้ำ</p>
-                        <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{detailProduct.inventory.reorder_level}</p>
-                      </div>
+                <Section
+                  title="สต็อก"
+                  icon={<Truck className="size-3.5" />}
+                  className="order-4 lg:order-none lg:col-start-2 lg:row-start-2"
+                >
+                  <StockGrid inventory={detailProduct.inventory} />
+                </Section>
+
+                {detailProduct.product.description && (
+                  <Section
+                    title="รายละเอียดสินค้า"
+                    collapsible
+                    count={detailProduct.product.description.length}
+                    className="order-5 lg:order-none lg:col-start-2 lg:row-start-3"
+                  >
+                    <div className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-600">
+                      {detailProduct.product.description}
                     </div>
                   </Section>
+                )}
 
-                  {detailProduct.optionGroups.length > 0 && (
-                    <Section title="ตัวเลือกสินค้า (Option groups)" icon={<Tag className="size-3.5" />}>
-                      <div className="space-y-2">
-                        {detailProduct.optionGroups.map((group) => (
-                          <div key={group.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-sm font-medium text-slate-900">{group.name}</p>
-                              <Badge className="rounded-full bg-slate-100 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
-                                {group.display_type}
-                              </Badge>
-                              {group.required && (
-                                <Badge className="rounded-full bg-amber-50 text-[10px] text-amber-700 ring-1 ring-inset ring-amber-600/15">
-                                  จำเป็น
-                                </Badge>
-                              )}
-                            </div>
-                            {group.values.length > 0 ? (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {group.values.map((v) => (
-                                  <Badge key={v.id} className="rounded-full bg-slate-50 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-200">
-                                    {v.label || v.value}
-                                  </Badge>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="mt-1.5 text-xs text-slate-400">ไม่มีค่าตัวเลือก</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </Section>
-                  )}
+                {detailProduct.optionGroups.length > 0 && (
+                  <Section
+                    title="ตัวเลือกสินค้า (Option groups)"
+                    icon={<Tag className="size-3.5" />}
+                    collapsible
+                    count={detailProduct.optionGroups.length}
+                    className="order-6 lg:order-none lg:col-start-2 lg:row-start-4"
+                  >
+                    <OptionGroupsList groups={detailProduct.optionGroups} />
+                  </Section>
+                )}
 
-                  {detailProduct.variants.length > 0 && (
-                    <Section title="ความหลากหลายสินค้า (Variants)" icon={<Layers className="size-3.5" />}>
-                      {/* Desktop: table. Mobile: cards — no horizontal scrolling. */}
-                      <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                              <th className="px-3 py-2 font-medium">ชื่อ</th>
-                              <th className="px-3 py-2 font-medium">SKU</th>
-                              <th className="px-3 py-2 text-right font-medium">ราคา</th>
-                              <th className="px-3 py-2 text-right font-medium">สต็อก</th>
-                              <th className="px-3 py-2 text-right font-medium">สถานะ</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {detailProduct.variants.map((v) => (
-                              <tr key={v.id} className="border-b border-slate-50 last:border-0">
-                                <td className="px-3 py-2">
-                                  <span className="font-medium text-slate-900">{v.name}</span>
-                                  {Object.keys(v.options ?? {}).length > 0 && (
-                                    <span className="mt-0.5 block text-[11px] text-slate-400">
-                                      {Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(" · ")}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 font-mono text-xs text-slate-500">{v.sku ?? "—"}</td>
-                                <td className="px-3 py-2 text-right tabular-nums text-slate-700">{formatBaht(v.price)}</td>
-                                <td className="px-3 py-2 text-right tabular-nums text-slate-700">{v.stock}</td>
-                                <td className="px-3 py-2 text-right"><StatusBadge status={v.status} /></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div className="space-y-2 md:hidden">
-                        {detailProduct.variants.map((v) => (
-                          <div key={v.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{v.name}</p>
-                              <StatusBadge status={v.status} />
-                            </div>
-                            <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                              <div>
-                                <p className="text-slate-400">ราคา</p>
-                                <p className="mt-0.5 font-semibold tabular-nums text-slate-900">{formatBaht(v.price)}</p>
-                              </div>
-                              <div>
-                                <p className="text-slate-400">สต็อก</p>
-                                <p className="mt-0.5 font-semibold tabular-nums text-slate-900">{v.stock}</p>
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-slate-400">SKU</p>
-                                <p className="mt-0.5 truncate font-mono text-slate-600">{v.sku ?? "—"}</p>
-                              </div>
-                            </div>
-                            {Object.keys(v.options ?? {}).length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {Object.entries(v.options).map(([k, val]) => (
-                                  <Badge key={k} className="rounded-full bg-slate-50 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-200">
-                                    {k}: {val}
-                                  </Badge>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </Section>
-                  )}
+                {detailProduct.variants.length > 0 && (
+                  <Section
+                    title="ความหลากหลายสินค้า (Variants)"
+                    icon={<Layers className="size-3.5" />}
+                    collapsible
+                    count={detailProduct.variants.length}
+                    className="order-7 lg:order-none lg:col-start-2 lg:row-start-5"
+                  >
+                    <VariantList variants={detailProduct.variants} />
+                  </Section>
+                )}
 
-                  {detailProduct.attributes.length > 0 && (
-                    <Section title="คุณสมบัติ (Attributes)" icon={<Tag className="size-3.5" />}>
-                      <InfoRows rows={detailProduct.attributes.map((attr) => ({ label: attr.name, value: attr.value }))} />
-                    </Section>
-                  )}
-                </div>
+                {detailProduct.attributes.length > 0 && (
+                  <Section
+                    title="คุณสมบัติ (Attributes)"
+                    icon={<Tag className="size-3.5" />}
+                    collapsible
+                    count={detailProduct.attributes.length}
+                    className="order-8 lg:order-none lg:col-start-2 lg:row-start-6"
+                  >
+                    <InfoRows rows={detailProduct.attributes.map((attr) => ({ label: attr.name, value: attr.value }))} />
+                  </Section>
+                )}
+
+                <Section
+                  title="ร้านค้า / ผู้ขาย"
+                  icon={<Store className="size-3.5" />}
+                  className="order-9 lg:order-none lg:col-start-1 lg:row-start-3"
+                >
+                  <ShopCard shop={detailProduct.shop} />
+                </Section>
+
+                {detailProduct.moderationHistory.length > 0 && (
+                  <Section
+                    title="ประวัติการตรวจสอบ"
+                    icon={<History className="size-3.5" />}
+                    collapsible
+                    count={detailProduct.moderationHistory.length}
+                    className="order-10 lg:order-none lg:col-start-1 lg:row-start-4"
+                  >
+                    <ModerationHistoryList history={detailProduct.moderationHistory} />
+                  </Section>
+                )}
               </div>
             )}
           </div>
 
           {/* Pinned action bar — approve/reject stay reachable on every screen */}
-          <DialogFooter className="shrink-0 flex-col gap-2 border-t border-slate-100 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-6">
+          <DialogFooter className="shrink-0 flex-col gap-2 border-t border-slate-100 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-end sm:px-6 sm:py-3">
             {!isPending || !detailProduct ? (
               <Button variant="outline" className="w-full rounded-[10px] sm:w-auto" onClick={() => setDetailOpen(false)}>
                 ปิด
               </Button>
             ) : moderationChoice === null ? (
               <>
-                <Button variant="ghost" className="rounded-[10px]" onClick={() => setDetailOpen(false)} disabled={acting}>
+                <Button variant="ghost" className="w-full rounded-[10px] sm:w-auto" onClick={() => setDetailOpen(false)} disabled={acting}>
                   ปิด
                 </Button>
                 <Button
                   variant="outline"
-                  className="gap-1.5 rounded-[10px] border-rose-200 text-rose-600 hover:bg-rose-50"
+                  className="w-full gap-1.5 rounded-[10px] border-rose-200 text-rose-600 hover:bg-rose-50 sm:w-auto"
                   onClick={() => setModerationChoice("reject")}
                   disabled={acting}
                 >
                   <X className="size-4" /> ปฏิเสธ
                 </Button>
                 <Button
-                  className="gap-1.5 rounded-[10px] bg-emerald-600 text-white hover:bg-emerald-700"
+                  className="w-full gap-1.5 rounded-[10px] bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
                   onClick={() => setModerationChoice("approve")}
                   disabled={acting}
                 >

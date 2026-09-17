@@ -81,6 +81,40 @@ const PERMISSION_CATALOG: { code: string; label: string; description: string }[]
   { code: "payouts.process", label: "จัดการการจ่ายเงิน", description: "อนุมัติรอบการจ่ายเงิน" },
 ];
 
+/**
+ * The auditor-facing statement behind GET /api/admin/audit-logs.
+ *
+ * Exported so the read-only diagnostics probe runs THE EXACT statement the
+ * endpoint runs — a probe with its own copy could pass while the endpoint still
+ * returned 42703. `whereSql`/`limitParam`/`offsetParam` are pre-built
+ * placeholders (`$n`), never interpolated values.
+ *
+ * The target label resolves per entity type. A seller is NOT labelled from
+ * `sellers`: that table has no `name` column, and `COALESCE(..., s.name, ...)`
+ * used to raise `42703 column s.name does not exist` and fail the whole
+ * endpoint. A seller is labelled by its shop name, then by the owning account.
+ */
+export function auditLogsListSql(whereSql: string, limitParam: string, offsetParam: string): string {
+  return `SELECT al.id, al.user_id, al.action, al.entity_type, al.entity_id, al.details,
+                al.ip_address, al.created_at,
+                u.role AS actor_role, u.name AS actor_name, u.email AS actor_email,
+                COALESCE(p.name, seller_shop.name, seller_user.name, su.name, su.email, sh.name, o.order_number) AS target_label
+         FROM audit_logs al
+         LEFT JOIN users u ON u.id = al.user_id
+         LEFT JOIN products p ON al.entity_type = 'product' AND p.id = al.entity_id
+         LEFT JOIN sellers s ON al.entity_type = 'seller' AND s.id = al.entity_id
+         LEFT JOIN users seller_user ON seller_user.id = s.user_id
+         LEFT JOIN LATERAL (
+           SELECT sh2.name FROM shops sh2 WHERE sh2.seller_id = s.id ORDER BY sh2.created_at LIMIT 1
+         ) seller_shop ON TRUE
+         LEFT JOIN users su ON al.entity_type IN ('employee', 'user') AND su.id = al.entity_id
+         LEFT JOIN shops sh ON al.entity_type = 'shop' AND sh.id = al.entity_id
+         LEFT JOIN orders o ON al.entity_type = 'order' AND o.id = al.entity_id
+         ${whereSql}
+         ORDER BY al.created_at DESC
+         LIMIT ${limitParam} OFFSET ${offsetParam}`;
+}
+
 export function setupCenterRoutes(app: Express): void {
   // ── POST /api/events/track ──────────────────────────────────────────────
   // Fire-and-forget behavioral tracking from the frontends. Anonymous users
@@ -492,23 +526,7 @@ export function setupCenterRoutes(app: Express): void {
       const limitParam = addParam(limit);
       const offsetParam = addParam(offset);
 
-      const result = await query(
-        `SELECT al.id, al.user_id, al.action, al.entity_type, al.entity_id, al.details,
-                al.ip_address, al.created_at,
-                u.role AS actor_role, u.name AS actor_name, u.email AS actor_email,
-                COALESCE(p.name, s.name, su.name, su.email, sh.name, o.order_number) AS target_label
-         FROM audit_logs al
-         LEFT JOIN users u ON u.id = al.user_id
-         LEFT JOIN products p ON al.entity_type = 'product' AND p.id = al.entity_id
-         LEFT JOIN sellers s ON al.entity_type = 'seller' AND s.id = al.entity_id
-         LEFT JOIN users su ON al.entity_type IN ('employee', 'user') AND su.id = al.entity_id
-         LEFT JOIN shops sh ON al.entity_type = 'shop' AND sh.id = al.entity_id
-         LEFT JOIN orders o ON al.entity_type = 'order' AND o.id = al.entity_id
-         ${whereSql}
-         ORDER BY al.created_at DESC
-         LIMIT ${limitParam} OFFSET ${offsetParam}`,
-        params,
-      );
+      const result = await query(auditLogsListSql(whereSql, limitParam, offsetParam), params);
 
       const totalResult = await query(
         `SELECT COUNT(*)::int AS total

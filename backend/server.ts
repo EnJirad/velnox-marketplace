@@ -342,6 +342,27 @@ app.get("/api/_diag/schema", async (_req, res) => {
     } catch (e: any) {
       notifications.error = `${e?.code ?? ""} ${e?.message ?? "query failed"}`.trim();
     }
+    // VelCenter Audit Logs probe — the statement behind GET /api/admin/audit-logs
+    // labelled a seller with `s.name`, but `sellers` has no `name` column, so
+    // PostgreSQL raised 42703 for EVERY request and the Audit Logs tab rendered
+    // empty. This executes the exact exported statement (the very same string the
+    // route runs) and reports only aggregate counts — no actor names, no emails,
+    // no IPs — so schema drift is visible without a DATABASE_URL in the sandbox.
+    const auditLogs: Record<string, unknown> = {};
+    try {
+      const { auditLogsListSql } = await import("./routes/center.js");
+      const total = await query(`SELECT COUNT(*)::int AS n FROM audit_logs`);
+      auditLogs.totalRows = total.rows[0]?.n ?? 0;
+      const probe = await query(
+        `SELECT COUNT(*)::int AS n FROM (${auditLogsListSql("", "$1", "$2")}) t`,
+        [5, 0],
+      );
+      auditLogs.ok = true;
+      auditLogs.sampled = probe.rows[0]?.n ?? 0;
+    } catch (e: any) {
+      auditLogs.ok = false;
+      auditLogs.error = `${e?.code ?? ""} ${e?.message ?? "query failed"}`.trim();
+    }
     // Check migration state
     let migrations: string[] = [];
     try {
@@ -376,7 +397,7 @@ app.get("/api/_diag/schema", async (_req, res) => {
     await countQuery("categoryJoinByUuid", `SELECT COUNT(*)::int AS n FROM products p JOIN categories c ON c.id::text = p.category_id`);
     await countQuery("productsWithoutImages", `SELECT COUNT(*)::int AS n FROM products p WHERE NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id = p.id)`);
 
-    res.json({ tables: results, migrations, productVisibility, optionAggregation, notifications });
+    res.json({ tables: results, migrations, productVisibility, optionAggregation, notifications, auditLogs });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

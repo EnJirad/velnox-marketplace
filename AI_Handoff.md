@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-16 (VelCenter product inspection, staff/customer split, audit logs, company settings)
+**Last updated:** 2026-09-16 (VelCenter mobile product inspection + Audit Logs SQL repair)
 **Branch:** `main`
 
 ## Current Project State
@@ -1214,3 +1214,97 @@ Scope: VelCenter only. **No database change** — every value used already exist
 ### Not verified / remaining
 - The 320/375/390/430/768/1024px behaviour is code-inspected (fluid layout, no fixed widths, stacked cards under `md`, pinned bars) but was **not** driven in a real browser from this environment.
 - Section-level settings that need new backend configuration (Notifications, Security, Customer/loyalty) are intentionally absent until the backend owns them.
+
+## Audit Logs SQL repair + mobile product inspection (2026-09-16, round 2)
+
+### Root cause — Audit Logs were empty because the endpoint 500'd
+
+Render production log:
+
+```
+[center] audit logs error: error: column s.name does not exist
+code: 42703
+file: backend/routes/center.ts
+```
+
+`GET /api/admin/audit-logs` resolved the human-readable target of each entry with
+
+```sql
+COALESCE(p.name, s.name, su.name, su.email, sh.name, o.order_number) AS target_label
+...
+LEFT JOIN sellers s ON al.entity_type = 'seller' AND s.id = al.entity_id
+```
+
+`s` is **`sellers`**, and `sellers` has **no `name` column** (verified in `db/schema.sql`:
+`sellers(id, user_id, status, verification_status, verified_at, created_at, updated_at)` — the
+seller's display name lives on `users.name`, reached through `sellers.user_id`). PostgreSQL
+rejects the whole statement with `42703`, so the route returned HTTP 500 for **every** request
+and VelCenter could only ever show an empty state. This was never a "no data" problem —
+`audit_logs` has rows (see the production probe below).
+
+### Fix — correct table/column, one statement, one source
+
+- The seller label now resolves through real columns: the seller's **shop name**
+  (`LEFT JOIN LATERAL (SELECT sh2.name FROM shops sh2 WHERE sh2.seller_id = s.id ORDER BY sh2.created_at LIMIT 1)`)
+  then the **owning account name** (`LEFT JOIN users seller_user ON seller_user.id = s.user_id`).
+  The LATERAL is `LIMIT 1`, so a seller with several shops cannot duplicate audit rows.
+- The statement moved into one exported builder, `auditLogsListSql(whereSql, limitParam, offsetParam)`,
+  used by the route **and** by the read-only diagnostics probe, so a probe can never pass while the
+  endpoint still fails.
+- `_diag/schema` now reports `auditLogs: { ok, totalRows, sampled }` — it executes the exact
+  exported statement against live Neon and returns **aggregate counts only** (no actor names,
+  emails, IPs or row data).
+- VelCenter `AuditLogTab` labels extended for the codes the backend really writes
+  (`SELLER_PENDING`, `SELLER_UNDER_REVIEW`, `SELLER_NEEDS_CORRECTION`).
+
+Real action codes in the trail (verified in source, not invented): `product_moderation`,
+`product_status_change`, `shop_revoked`, `SELLER_<STATUS>`, `SELLER_VERIFICATION_<ACTION>`,
+`SETTINGS_UPDATE`, `USER_ACCESS_UPDATE`, `EMPLOYEE_CREATE`, `EMPLOYEE_ACTIVE_UPDATE`,
+`STAFF_PROFILE_UPDATE`, `ORDER_STATUS_UPDATE`.
+
+Permission (unchanged, enforced server-side): `canWriteCenter()` = owner|admin on the endpoint,
+and `canSeeTab("audit")` is the same owner|admin check. `audit.view` exists in the permission
+catalog for staff assignment but is not yet honored by the endpoint — see Known Limitations.
+
+### Product inspection — phone layout rebuilt
+
+| Before | After |
+|---|---|
+| gallery stage `38dvh / max 420px` on phones — a tall photo drove the sheet height | `30dvh` with `max-h-60` / `min-h-36` on phones; desktop stage unchanged (`sm:h-[420px] sm:max-h-none`) |
+| one long column: gallery → rejection → shop → history → **then** name/price | mobile-first order: gallery → identity (name · V · shop · status · price · category) → rejection → stock → long sections |
+| long sections always expanded | `description`, option groups, variants, attributes and moderation history collapse **on phones only**, each showing a count; `lg:block` forces them open on desktop |
+| dialog's built-in 16px close button | pinned header with a `size-10` close control; actions fill the row width on phones with `env(safe-area-inset-bottom)` padding |
+| desktop two-column grid by DOM order | identical desktop arrangement via explicit `lg:col-start-* / lg:row-start-*` placement |
+
+No data was removed from any breakpoint and the moderation-detail backend query was **not** touched.
+
+### Files changed
+| File | Change |
+|---|---|
+| `backend/routes/center.ts` | `s.name` removed; exported `auditLogsListSql`; route uses it |
+| `backend/server.ts` | `_diag/schema` `auditLogs` probe (aggregate-only, exact statement) |
+| `apps/velcenter/src/components/ProductModerationQueue.tsx` | mobile inspection layout, compact gallery, collapsible sections, explicit close/actions |
+| `apps/velcenter/src/components/AuditLogTab.tsx` | labels for the `SELLER_*` codes actually written |
+| `backend/tests/center-admin-audit.test.ts` | guards: no `s.name`, seller label via shop/user, probe == endpoint statement, mobile order/gallery/close assertions |
+
+### Database
+- **No schema change.** `db/schema.sql` / `db/run-sqleditor.sql` untouched and still in sync; no migration added; `db/run-update.sql` not created/edited/used.
+- **No production rows were modified** — the repair is read-path only (a SELECT that previously raised 42703).
+
+### Tests performed
+| Check | Result |
+|---|---|
+| `backend bun tsc --noEmit` | pass |
+| `velcenter / velshop / velseller tsc` | pass |
+| `bun run i18n:check` | pass - th=1289 en=1289 my=1289 |
+| `bun test backend/tests` | pass - 291 pass / 29 skip / 0 fail (28 in `center-admin-audit.test.ts`, 4 new) |
+| `git diff --check` | CLEAN |
+
+### Production verification
+- `GET https://velnox-api.onrender.com/api/_diag/schema` reports `auditLogs.ok = true` with the audit row count (the previously failing statement now executes against live Neon).
+- VelCenter Audit Logs then renders real rows through `GET /api/admin/audit-logs`; a failed request still shows the error + retry state, never "no records".
+
+### Known Limitations
+- Staff granted `audit.view` in the permission catalog cannot yet open Audit Logs: the endpoint is stricter (owner/admin). Widening it to honor `audit.view` was deliberately not done in this round — it changes who can read the staff trail.
+- Phone/tablet behaviour (320/360/375/390/430/768px) is code-verified (fluid order, bounded gallery, collapsibles, width-filling actions) but not driven in a real browser from this environment.
+

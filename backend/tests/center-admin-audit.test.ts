@@ -23,6 +23,7 @@ import { join } from "path";
 const root = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
+const serverSrc = read("backend/server.ts");
 const centerSrc = read("backend/routes/center.ts");
 const adminSrc = read("backend/routes/admin.ts");
 const verificationSrc = read("backend/routes/verification.ts");
@@ -128,13 +129,45 @@ describe("staff audit trail", () => {
 
   test("the audit endpoint answers who / what / before / after", () => {
     const route = centerSrc.slice(centerSrc.indexOf('"/api/admin/audit-logs"'));
-    expect(route).toContain("u.name AS actor_name");
-    expect(route).toContain("u.email AS actor_email");
-    expect(route).toContain("target_label");
-    expect(route).toContain("al.ip_address");
+    expect(route).toContain("auditLogsListSql(whereSql, limitParam, offsetParam)");
     expect(route).toContain("before");
     expect(route).toContain("after");
     expect(route).toContain("total:");
+
+    const sql = centerSrc.slice(centerSrc.indexOf("export function auditLogsListSql"));
+    expect(sql).toContain("u.name AS actor_name");
+    expect(sql).toContain("u.email AS actor_email");
+    expect(sql).toContain("target_label");
+    expect(sql).toContain("al.ip_address");
+  });
+
+  test("the audit list statement only reads columns that exist", () => {
+    // The seller label used to be `COALESCE(..., s.name, ...)` with s = sellers.
+    // `sellers` has NO `name` column, so PostgreSQL answered 42703 ("column
+    // s.name does not exist") for EVERY request and the Audit Logs tab rendered
+    // empty — the endpoint 500'd before it returned a single row.
+    const sql = centerSrc.slice(centerSrc.indexOf("export function auditLogsListSql"));
+    expect(sql).not.toContain("s.name");
+    expect(sql).toContain("LEFT JOIN users seller_user ON seller_user.id = s.user_id");
+    expect(sql).toContain("seller_shop.name");
+
+    // The canonical schema really has no sellers.name; the seller's identity
+    // lives on users.name via sellers.user_id, and the shop label on shops.name.
+    const sellersTable = schemaSql.slice(schemaSql.indexOf("CREATE TABLE IF NOT EXISTS sellers"));
+    const sellersBody = sellersTable.slice(0, sellersTable.indexOf("\n);"));
+    expect(sellersBody).not.toContain("name TEXT");
+    expect(sellersBody).toContain("user_id UUID NOT NULL REFERENCES users(id)");
+  });
+
+  test("the endpoint and the production probe run the same statement", () => {
+    // A probe with its own copy of the SQL could pass while the endpoint still
+    // failed, so both call the single exported builder.
+    expect(centerSrc).toContain("await query(auditLogsListSql(whereSql, limitParam, offsetParam), params)");
+    expect(serverSrc).toContain('const { auditLogsListSql } = await import("./routes/center.js")');
+    expect(serverSrc).toContain("auditLogsListSql(\"\", \"$1\", \"$2\")");
+    // the probe stays aggregate-only: counts, never rows/names/IPs
+    expect(serverSrc).toContain("SELECT COUNT(*)::int AS n FROM (");
+    expect(serverSrc).toContain("SELECT COUNT(*)::int AS n FROM audit_logs");
   });
 
   test("VelCenter renders the trail with filters and shows failures honestly", () => {
@@ -224,18 +257,54 @@ describe("product inspection workspace", () => {
       expect(moderationQueue).toContain(section);
     }
     // option groups used to be typed but never shown
-    expect(moderationQueue).toContain("detailProduct.optionGroups.map");
+    expect(moderationQueue).toContain("<OptionGroupsList groups={detailProduct.optionGroups} />");
   });
 
-  test("the gallery is height-bounded and the shell is responsive", () => {
-    // bounded image stage on every breakpoint (no full-viewport photos)
-    expect(moderationQueue).toContain("h-[38dvh]");
+  test("the gallery is height-bounded on phones and unchanged on desktop", () => {
+    // compact image stage on phones — a tall photo must never decide the height
+    // of the whole inspection sheet
+    expect(moderationQueue).toContain("h-[30dvh]");
+    expect(moderationQueue).toContain("max-h-60");
+    expect(moderationQueue).toContain("min-h-36");
+    // desktop stage is untouched
     expect(moderationQueue).toContain("sm:h-[420px]");
+    expect(moderationQueue).toContain("sm:max-h-none");
+    // thumbnails scroll horizontally with snap
+    expect(moderationQueue).toContain("snap-x");
     // full-screen sheet on phones, large dialog on desktop
     expect(moderationQueue).toContain("h-[100dvh]");
     expect(moderationQueue).toContain("sm:max-w-6xl");
     // stacked variants on mobile instead of a wide table
     expect(moderationQueue).toContain("md:hidden");
+  });
+
+  test("the phone layout is a purpose-built order, not a squeezed desktop", () => {
+    // identity (name / V / shop / status / price / category) is first-class
+    expect(moderationQueue).toContain("function ProductSummaryCard");
+    expect(moderationQueue).toContain("ราคา");
+    expect(moderationQueue).toContain("ไม่ระบุหมวดหมู่");
+    // explicit mobile order …
+    for (const order of ["order-1", "order-2", "order-3", "order-9", "order-10"]) {
+      expect(moderationQueue).toContain(order);
+    }
+    // … and explicit desktop placement for the same nodes
+    expect(moderationQueue).toContain("lg:col-start-1 lg:row-start-1");
+    expect(moderationQueue).toContain("lg:col-start-2 lg:row-start-1");
+    expect(moderationQueue).toContain("lg:items-start");
+    // long sections collapse on phones only; desktop forces them open
+    expect(moderationQueue).toContain("collapsible");
+    expect(moderationQueue).toContain('cn(collapsible && !open && "hidden", "lg:block")');
+    expect(moderationQueue).toContain("lg:pointer-events-none");
+  });
+
+  test("the inspection sheet has thumb-sized close controls", () => {
+    // the dialog's built-in close button is 16px — replaced with a 40px one in
+    // the pinned header so it is reachable one-handed
+    expect(moderationQueue).toContain("showCloseButton={false}");
+    expect(moderationQueue).toContain('aria-label="ปิดหน้าตรวจสอบสินค้า"');
+    expect(moderationQueue).toContain('-mr-1 -mt-1 flex size-10 shrink-0 items-center justify-center rounded-full');
+    // action buttons fill the width on phones so they cannot be mis-tapped
+    expect(moderationQueue).toContain("env(safe-area-inset-bottom)");
   });
 
   test("approve/reject stay reachable in a pinned action bar", () => {
