@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-16 (VelCenter mobile product inspection + Audit Logs SQL repair)
+**Last updated:** 2026-09-17 (password auth, auto-refresh, variant images, mobile nav removal)
 **Branch:** `main`
 
 ## Current Project State
@@ -1314,3 +1314,91 @@ No data was removed from any breakpoint and the moderation-detail backend query 
 - Staff granted `audit.view` in the permission catalog cannot yet open Audit Logs: the endpoint is stricter (owner/admin). Widening it to honor `audit.view` was deliberately not done in this round — it changes who can read the staff trail.
 - Phone/tablet behaviour (320/360/375/390/430/768px) is code-verified (fluid order, bounded gallery, collapsibles, width-filling actions) but not driven in a real browser from this environment.
 
+
+## Password Auth + Auto-Refresh + Variant Images + Mobile Nav Removal (2026-09-17)
+
+### What was done
+
+**1. Password-based login for VelCenter staff**
+- Added `password_hash TEXT` column to `users` table (both `db/schema.sql` and `db/run-sqleditor.sql` synced, identical structure).
+- Backend password hashing utility: `backend/lib/password.ts` using Node.js built-in `crypto.scrypt` (no external deps). Format: `$scrypt$N$r$p$salt$hash`. Timing-safe verification.
+- `POST /api/auth/member-login` — accepts `identifier` (email or employee_id) + `password`. Validates: account active, role is owner/admin/staff, password hash exists, password matches. Returns JWT session cookie.
+- `POST /api/auth/change-password` — authenticated staff can change own password.
+- `POST /api/admin/employees` — now accepts `password` field, hashes server-side, stores in `password_hash`. Returns plain password once to admin (shown in dialog, never logged).
+- `POST /api/admin/employees/:userId/reset-password` — now works (generates new hash, stores it).
+- Employee list endpoint now exposes `passwordAuth: true/false` based on whether `password_hash` is set.
+
+**2. Auto-refresh / Realtime across VelCenter**
+- Center.tsx WebSocket subscriptions expanded: `product:updated`, `seller:updated`, `notification:created`, `order:updated`.
+- `product:moderated` / `product:updated` → reloads product moderation list.
+- `seller:status-changed` / `verification:status-changed` → reloads seller + verification lists.
+- Backend broadcast calls added:
+  - `verification.ts`: `broadcast(CHANNELS.SELLER_UPDATED, "seller:status-changed", ...)` after every verification action.
+  - `center.ts`: `broadcast(CHANNELS.NOTIFICATION_CREATED, ...)` after employee create/update/profile change.
+- Existing `product:updated` broadcast in product moderation was already in place.
+
+**3. Variant images in Product Inspection**
+- Backend moderation-detail endpoint already fetches `product_variant_images` per variant.
+- `VariantList` component now renders:
+  - Desktop: image column with stacked thumbnails (+overflow count).
+  - Mobile: first variant image as card thumbnail, or "ไม่มีรูป" fallback.
+- No fake/fallback images — empty state is honest.
+
+**4. Mobile bottom navigation removed from VelCenter**
+- Removed `MobileTabBar` import and `<MobileTabBar items={mobileTabs} />` from Center.tsx.
+- Removed `mobileTabs` array definition.
+- VelCenter now uses only the top tab strip on all breakpoints.
+
+**5. Auth page — Member ID login form**
+- Shared `Auth.tsx` detects `currentSite() === "velcenter"` and shows "เข้าสู่ระบบด้วย Member ID" toggle below the Google button.
+- Toggles to a form with: Email/Member ID input, password input, submit button, cancel link.
+- Calls `POST /api/auth/member-login`, sets session cookie, reloads page.
+
+**6. EmployeeManager — password field**
+- Create employee form now includes "รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)" password input.
+- Password is sent to backend, hashed server-side, never stored in plaintext.
+- Admin sees the password once in a dialog after creation (existing `tempCredential` flow).
+
+### Files changed
+| File | Change |
+|---|---|
+| `db/schema.sql` | Added `password_hash TEXT` to users table |
+| `db/run-sqleditor.sql` | Same (synchronized) |
+| `backend/lib/password.ts` | NEW — scrypt hashing utility |
+| `backend/routes/auth.ts` | `POST /api/auth/member-login` + `POST /api/auth/change-password` |
+| `backend/routes/center.ts` | Employee creation accepts password, reset-password works, broadcasts added |
+| `backend/routes/verification.ts` | Broadcast after verification action |
+| `packages/shared/src/lib/api-routes.ts` | `api.auth.memberLogin` + `api.auth.changePassword` |
+| `packages/shared/src/pages/Auth.tsx` | Member ID login form for VelCenter |
+| `apps/velcenter/src/pages/Center.tsx` | WebSocket expanded, mobile nav removed |
+| `apps/velcenter/src/components/EmployeeManager.tsx` | Password field in create form |
+| `apps/velcenter/src/components/ProductModerationQueue.tsx` | Variant images in desktop table + mobile cards |
+
+### Database
+- **Schema change:** Added `password_hash TEXT` to `users` table. Existing Google OAuth users have NULL (no password). Password-auth users have a `$scrypt$...` hash.
+- Both `db/schema.sql` and `db/run-sqleditor.sql` updated and synchronized.
+
+### Security
+- Passwords hashed with scrypt (N=16384, r=8, p=1) + timing-safe comparison.
+- No plaintext passwords stored, logged, or returned in API responses (except once to admin at creation time).
+- Member login validates: active status, center role, password hash existence, password match.
+- Self-role-change and self-permission-escalation not possible — endpoints enforce ownership server-side.
+
+### Tests
+| Check | Result |
+|---|---|
+| backend tsc | pass |
+| velcenter/velshop/velseller tsc | pass |
+| i18n:check | pass (th=1289 en=1289 my=1289) |
+| backend tests | 291 pass / 29 skip / 0 fail |
+| git diff --check | CLEAN |
+
+### Commit
+- `4cbf702` — feat(velcenter): password auth, auto-refresh, variant images, mobile nav removal
+- Pushed, local == remote.
+
+### Known Limitations
+- Password reset for self-service (forgot password flow) is not implemented — admin must reset via EmployeeManager.
+- The `change-password` flow requires knowing the current password — no forgot-password email flow.
+- WebSocket auth in the existing realtime layer uses the same JWT cookie, so password-auth sessions work automatically.
+- RBAC enforcement uses the existing `canWriteCenter()` / `isOwner()` / `canReadCenter()` helpers — granular per-tab permission checks via `employees.permissions` are not yet wired to every endpoint (the `audit.view` limitation noted previously still applies).
