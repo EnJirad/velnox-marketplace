@@ -2,6 +2,7 @@ import { Logo } from "@velnox/shared/components/Logo";
 // Mobile navigation removed — VelCenter uses top tab strip on all breakpoints
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
+import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 // VerificationReviewDialog is now used inside SellerVerificationQueue component
 import CategoriesManagement from "../components/CategoriesManagement";
 import ProductModerationQueue from "../components/ProductModerationQueue";
@@ -133,9 +134,15 @@ const SETTINGS_SECTIONS = [
  * - staff:  view business numbers only (overview / orders / intel / products)
  *
  * These rules only decide which tabs are OFFERED. Every endpoint behind them
- * re-checks the role server-side, so hiding a tab is UX, never authorization.
+ * re-checks the role AND the permission server-side, so hiding a tab is UX,
+ * never authorization.
  */
-function canSeeTab(tab: Tab, role?: string | null, department?: string | null): boolean {
+function canSeeTab(
+  tab: Tab,
+  role?: string | null,
+  department?: string | null,
+  permissions?: string[] | null,
+): boolean {
   switch (tab) {
     case "overview":
     case "orders":
@@ -150,8 +157,10 @@ function canSeeTab(tab: Tab, role?: string | null, department?: string | null): 
     // readable by owner and admin. Both endpoints re-check the role.
     case "staff":
       return role === "owner" || role === "admin";
+    // owner/admin hold every permission code; a `staff` member needs
+    // `audit.view` granted (the same code GET /api/admin/audit-logs checks).
     case "audit":
-      return role === "owner" || role === "admin";
+      return role === "owner" || role === "admin" || (permissions ?? []).includes("audit.view");
     case "settings":
       return role === "owner" || (role === "admin" && department === "general");
   }
@@ -174,12 +183,17 @@ export default function Center() {
 
   const isOwner = userRole === "owner";
   const canManageOrders = userRole !== "staff";
+  const userPermissions = user?.permissions;
+
+  // Tab visibility, resolved from role + department + the permissions the
+  // backend resolved for this session.
+  const canSee = (target: Tab) => canSeeTab(target, userRole, userDepartment, userPermissions);
 
   // Tabs are URL-driven (?tab=orders) so the mobile bottom nav and the desktop
   // tab strip stay in sync, and every view is shareable/deep-linkable.
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = (searchParams.get("tab") as Tab | null) ?? "overview";
-  const tab: Tab = canSeeTab(urlTab, userRole, userDepartment) ? urlTab : "overview";
+  const tab: Tab = canSee(urlTab) ? urlTab : "overview";
   const setTab = (next: Tab) => {
     setSearchParams(
       (prev) => {
@@ -349,6 +363,7 @@ export default function Center() {
           ws?.send(JSON.stringify({ type: "subscribe", channel: "seller:updated" }));
           ws?.send(JSON.stringify({ type: "subscribe", channel: "notification:created" }));
           ws?.send(JSON.stringify({ type: "subscribe", channel: "order:updated" }));
+          ws?.send(JSON.stringify({ type: "subscribe", channel: "audit:created" }));
         };
         ws.onmessage = (event) => {
           try {
@@ -360,8 +375,31 @@ export default function Center() {
               void reloadVerifications();
               void reloadSellers();
             }
-            if (msg.type === "notification:created" || msg.type === "order:updated") {
-              // People/settings refresh when user navigates to those tabs
+            // Fan out to the tabs that own their own data (the product and
+            // seller queues, orders, audit logs). They refetch from the API —
+            // the event is only a signal that something changed.
+            if (msg.type === "product:moderated" || msg.type === "product:updated") {
+              emitCenterEvent("products");
+            }
+            if (
+              msg.type === "seller:status-changed" ||
+              msg.type === "verification:status-changed"
+            ) {
+              emitCenterEvent("sellers");
+            }
+            if (msg.type === "order:updated" || msg.type === "order:created") {
+              emitCenterEvent("orders");
+            }
+            if (
+              msg.type === "audit:created" ||
+              msg.type === "product:moderated" ||
+              msg.type === "product:updated" ||
+              msg.type === "seller:status-changed" ||
+              msg.type === "verification:status-changed" ||
+              msg.type === "order:updated" ||
+              msg.type === "order:created"
+            ) {
+              emitCenterEvent("audit");
             }
           } catch { /* ignore */ }
         };
@@ -550,6 +588,7 @@ export default function Center() {
   const [marketKpi, setMarketKpi] = useState<MarketOverview | null>(null);
   const [ordersData, setOrdersData] = useState<CenterOrderRow[] | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
 
   // VelRepeat V2 monitoring (recurring commerce)
   const velRepeatOverviewAction = useAction(api.centerAdmin.velRepeatOverview);
@@ -580,10 +619,14 @@ export default function Center() {
 
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
+    setOrdersError(null);
     try {
       setOrdersData(await ordersListAction({ limit: 100 }));
-    } catch {
-      setOrdersData([]);
+    } catch (err) {
+      // A failed request must never render as “no orders”.
+      console.error("Orders list error:", err);
+      setOrdersError(err instanceof Error ? err.message : "ไม่สามารถโหลดออเดอร์ได้");
+      setOrdersData(null);
     } finally {
       setOrdersLoading(false);
     }
@@ -597,6 +640,9 @@ export default function Center() {
   useEffect(() => {
     if (tab === "orders") void loadOrders();
   }, [tab, loadOrders]);
+
+  // Realtime order changes (from any VelCenter tab) refetch the list.
+  useEffect(() => onCenterEvent("orders", () => { void loadOrders(); }), [loadOrders]);
 
   // ---- Intelligence rows (computed from learned cycles) ----
   const intelRows = useMemo(() => {
@@ -857,23 +903,23 @@ export default function Center() {
                 </span>
               )}
             </TabsTrigger>
-            {canSeeTab("categories", userRole, userDepartment) && (
+            {canSee("categories") && (
               <TabsTrigger value="categories" className="gap-1.5 rounded-[10px]">
                 <Tag className="size-4" /> หมวดหมู่
               </TabsTrigger>
             )}
 
-            {canSeeTab("staff", userRole, userDepartment) && (
+            {canSee("staff") && (
               <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
                 <Users className="size-4" /> ผู้ใช้ & ลูกค้า
               </TabsTrigger>
             )}
-            {canSeeTab("audit", userRole, userDepartment) && (
+            {canSee("audit") && (
               <TabsTrigger value="audit" className="gap-1.5 rounded-[10px]">
                 <History className="size-4" /> Audit Logs
               </TabsTrigger>
             )}
-            {canSeeTab("settings", userRole, userDepartment) && (
+            {canSee("settings") && (
               <TabsTrigger value="settings" className="gap-1.5 rounded-[10px]">
                 <Settings className="size-4" /> ตั้งค่าระบบ
               </TabsTrigger>
@@ -1010,7 +1056,15 @@ export default function Center() {
 
           {/* ============ Orders ============ */}
           <TabsContent value="orders" className="mt-6">
-            {ordersLoading || ordersData === null ? (
+            {ordersError ? (
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50/60 px-6 py-12 text-center">
+                <AlertTriangle className="size-6 text-rose-400" />
+                <p className="text-sm text-rose-600">{ordersError}</p>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void loadOrders()}>
+                  <Loader2 className="size-3.5" /> ลองใหม่
+                </Button>
+              </div>
+            ) : ordersLoading || ordersData === null ? (
               <div className="space-y-4">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div
@@ -1558,7 +1612,7 @@ export default function Center() {
           </TabsContent>
 
           {/* ============ Categories (admin/owner) ============ */}
-          {canSeeTab("categories", userRole, userDepartment) && (
+          {canSee("categories") && (
             <TabsContent value="categories" className="mt-6">
               <CategoriesManagement />
             </TabsContent>
@@ -1568,7 +1622,7 @@ export default function Center() {
               by the real users.role values (GET /api/admin/users?segment=...).
               Employee management stays owner-only — the API enforces it; this
               UI only reflects it. */}
-          {canSeeTab("staff", userRole, userDepartment) && (
+          {canSee("staff") && (
             <TabsContent value="staff" className="mt-6">
               {peopleError && (
                 <div className="mb-4 flex flex-col items-start gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1913,7 +1967,7 @@ export default function Center() {
               server-side. Read-only values come from the backend component that
               actually owns them (payout policy, upload limits) so there is
               never a second source of truth for money or media. */}
-          {canSeeTab("settings", userRole, userDepartment) && (
+          {canSee("settings") && (
             <TabsContent value="settings" className="mt-6">
               {settingsError && (
                 <div className="mb-4 flex flex-col items-start gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">

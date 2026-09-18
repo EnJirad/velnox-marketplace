@@ -11,6 +11,7 @@
 
 import type { Request } from "express";
 import { query } from "../db/index.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
 
 /** Detail keys that must never reach the audit trail. */
 const SENSITIVE_KEY = /(password|passwd|secret|token|hash|api[_-]?key|credential|authorization|cookie)/i;
@@ -72,6 +73,13 @@ export async function writeAuditLog(
         ip,
       ],
     );
+    // Tell VelCenter an audit row exists so the Audit Logs tab can refetch
+    // without a browser refresh. `writeAuditLog` is the single choke point for
+    // every audit writer, which is why the broadcast lives here rather than in
+    // each route. The payload carries no details, credentials or tokens.
+    try {
+      broadcast(CHANNELS.AUDIT_CREATED, "audit:created", { action, entityType });
+    } catch { /* realtime is best-effort — never fail the caller */ }
   } catch (err) {
     console.error("[audit] audit log write failed:", err);
   }

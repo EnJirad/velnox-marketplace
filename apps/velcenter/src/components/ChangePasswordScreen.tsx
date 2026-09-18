@@ -1,4 +1,5 @@
 import { api } from "@velnox/shared/lib/api-routes";
+import { refetchCurrentUser } from "@velnox/shared/lib/api-client";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
@@ -36,6 +37,10 @@ export default function ChangePasswordScreen() {
     setBusy(true);
     try {
       await setOwnPasswordAction({ newPassword: password });
+      // The backend has now cleared `must_change_password`, but the shared auth
+      // state is a cached singleton — refetch it so the gate in Center.tsx sees
+      // the new value and unmounts. Without this the employee stays stuck here.
+      await refetchCurrentUser();
       toast.success("ตั้งรหัสผ่านใหม่แล้ว");
     } catch (e) {
       console.error("Change password error:", e);

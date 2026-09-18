@@ -4,6 +4,8 @@ import { query } from "../db/index.js";
 import { revokeToken } from "../middleware/auth.js";
 import { closeUserConnections } from "../realtime/index.js";
 import { verifyPassword, isPasswordHashFormat } from "../lib/password.js";
+import { resolvePermissions } from "../lib/permissions.js";
+import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 
 /**
  * Google OAuth authentication routes.
@@ -361,8 +363,8 @@ export function setupGoogleAuth(app: Express): void {
       const currentPassword = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
       const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
 
-      if (!currentPassword || !newPassword) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Current and new passwords are required" } });
+      if (!newPassword) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "A new password is required" } });
         return;
       }
       if (newPassword.length < 8) {
@@ -370,22 +372,42 @@ export function setupGoogleAuth(app: Express): void {
         return;
       }
 
-      const userResult = await query("SELECT password_hash FROM users WHERE id = $1", [payload.userId]);
+      const userResult = await query(
+        "SELECT password_hash, must_change_password FROM users WHERE id = $1",
+        [payload.userId],
+      );
       const user = userResult.rows[0];
       if (!user || !isPasswordHashFormat(user.password_hash)) {
         res.status(400).json({ success: false, error: { code: "NO_PASSWORD", message: "Account does not have password authentication" } });
         return;
       }
 
-      const { verifyPassword: vp, hashPassword: hp } = await import("../lib/password.js");
-      const valid = await vp(currentPassword, user.password_hash);
-      if (!valid) {
-        res.status(401).json({ success: false, error: { code: "INVALID_PASSWORD", message: "Current password is incorrect" } });
-        return;
+      // First sign-in (the owner handed over a temporary password and set the
+      // force-change flag) may not require the current password — the employee
+      // is being made to replace it. Any other change must prove the old one.
+      const forcedChange = user.must_change_password === true;
+      if (!forcedChange) {
+        if (!currentPassword) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Current password is required" } });
+          return;
+        }
+        const valid = await verifyPassword(currentPassword, user.password_hash);
+        if (!valid) {
+          res.status(401).json({ success: false, error: { code: "INVALID_PASSWORD", message: "Current password is incorrect" } });
+          return;
+        }
       }
 
+      const { hashPassword: hp } = await import("../lib/password.js");
       const newHash = await hp(newPassword);
-      await query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2", [newHash, payload.userId]);
+      await query(
+        "UPDATE users SET password_hash = $1, must_change_password = FALSE, updated_at = NOW() WHERE id = $2",
+        [newHash, payload.userId],
+      );
+      // The cached `/api/auth/me` payload still claims the old flag — drop it so
+      // the gate unmounts on the very next profile read.
+      invalidateCachedProfile(payload.userId);
+      await writeAuditLog(payload.userId, "PASSWORD_CHANGE", "user", payload.userId, { forced: forcedChange }, auditClientIp(req));
       console.log("[auth] password changed for", payload.userId);
       res.json({ success: true });
     } catch (err: any) {
@@ -512,7 +534,7 @@ export function setupGoogleAuth(app: Express): void {
       try {
         // Single optimized query — cover_url is in schema since migration V0009+
         result = await query(
-          "SELECT id, email, name, avatar, cover_url, role, status, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
+          "SELECT id, email, name, avatar, cover_url, role, status, department, must_change_password, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
           [payload.userId]
         );
         coverUrl = result.rows[0]?.cover_url || null;
@@ -520,7 +542,7 @@ export function setupGoogleAuth(app: Express): void {
         // cover_url column may not exist yet (legacy DB) — graceful fallback
         if (queryErr?.code === "42703") {
           result = await query(
-            "SELECT id, email, name, avatar, role, status, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
+            "SELECT id, email, name, avatar, role, status, department, created_at, updated_at FROM users WHERE id = $1 LIMIT 1",
             [payload.userId]
           );
           // Try media table fallback for cover_url (legacy path only)
@@ -550,7 +572,18 @@ export function setupGoogleAuth(app: Express): void {
         avatar: u.avatar,
         coverUrl,
         role: u.role,
+        // Drives `canSeeTab('settings')` (admin + general department).
+        department: u.department ?? null,
         status: u.status,
+        // Drives the VelCenter force-password-change gate (spec §10).
+        mustChangePassword: u.must_change_password === true,
+        // Effective permissions, resolved through the same catalog the API
+        // guards use. owner/admin hold every code; `staff` hold the codes the
+        // owner granted. VelCenter hides what is not held — the endpoints
+        // re-check server-side, so this is UX, never the boundary.
+        // A resolution failure must never log the user out — it degrades to "no
+        // permissions" (owner/admin never query: they hold the whole catalog).
+        permissions: await resolvePermissions(payload.userId, u.role).catch(() => [] as string[]),
         createdAt: u.created_at,
         updatedAt: u.updated_at,
       };

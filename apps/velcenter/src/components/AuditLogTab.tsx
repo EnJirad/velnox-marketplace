@@ -1,4 +1,6 @@
 import { api, useAction } from "@velnox/shared/lib/api-routes";
+import { useAuth } from "@velnox/shared/hooks/use-auth";
+import { userHasPermission } from "@velnox/shared/lib/api-client";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@velnox/shared/components/ui/card";
@@ -23,6 +25,7 @@ import {
   Search,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { onCenterEvent } from "../lib/center-events";
 
 interface AuditRow {
   id: string;
@@ -191,6 +194,11 @@ function TargetCell({ row }: { row: AuditRow }) {
  * rendered as "no records".
  */
 export default function AuditLogTab() {
+  const { user } = useAuth();
+  // owner/admin hold every code; `staff` need `audit.view` granted. This mirrors
+  // the backend guard exactly, so a granted staff member really gets the tab.
+  const canViewAudit = userHasPermission(user, "audit.view");
+
   const auditLogsAction = useAction(api.centerAdmin.auditLogs);
 
   const [rows, setRows] = useState<AuditRow[] | null>(null);
@@ -242,14 +250,29 @@ export default function AuditLogTab() {
   );
 
   useEffect(() => {
+    if (!canViewAudit) return;
     void load(0);
-  }, [load]);
+  }, [canViewAudit, load]);
+
+  // Realtime: the Center page owns the WebSocket and notifies us when any
+  // auditable action lands, so a new record appears without a page refresh.
+  useEffect(() => {
+    if (!canViewAudit) return;
+    return onCenterEvent("audit", () => { void load(0); });
+  }, [canViewAudit, load]);
 
   const actionOptions = useMemo(() => {
     const observed = new Set((rows ?? []).map((r) => r.action));
     for (const code of Object.keys(ACTION_LABELS)) observed.add(code);
     return Array.from(observed).sort();
   }, [rows]);
+
+  // Every hook above must run on EVERY render — `user` is null until the shared
+  // auth state finishes loading, so an early return placed before them would
+  // change the hook count on the next render and crash the tab. Returning null
+  // here (after the hooks) keeps the tab hidden without breaking that rule.
+  // The backend enforces `audit.view`; not fetching avoids a guaranteed 403.
+  if (!canViewAudit) return null;
 
   const hasFilters = search.trim() !== "" || actionFilter !== "all" || entityFilter !== "all" || from !== "" || to !== "";
 

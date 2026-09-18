@@ -1,0 +1,34 @@
+-- Migration: V0046
+-- Date: 2026-09-17
+-- Description:
+-- Add `users.must_change_password` — the flag behind VelCenter's
+-- "set a new password on first sign-in" gate.
+--
+-- Root cause:
+-- VelCenter already ships the whole feature on the frontend:
+--   * `apps/velcenter/src/components/ChangePasswordScreen.tsx`
+--   * the gate in `Center.tsx` (`if (user?.mustChangePassword === true) return <ChangePasswordScreen />;`)
+--   * `POST /api/admin/employees` already answers `mustChangePassword: true`
+-- ...but the column never existed, so:
+--   * the owner's response promised a forced change that could not happen,
+--   * `/api/auth/me` had nothing to report, so the gate was unreachable dead
+--     code, and
+--   * `POST /api/auth/change-password` demanded `currentPassword`, which the
+--     first-login screen does not have (the employee was handed the password by
+--     the owner and is required to replace it).
+--
+-- This migration supplies the missing state. The endpoint change that consumes
+-- it lives in `backend/routes/auth.ts`.
+--
+-- Data safety:
+-- NOT NULL with a FALSE default, so existing rows are untouched and no backfill
+-- is required. Staff created before this migration simply keep their current
+-- password and are not forced to change it.
+--
+-- Idempotent: the same statement is appended to `db/schema.sql` and
+-- `db/run-sqleditor.sql` so a fresh bootstrap also self-heals.
+--
+-- Affected:
+--   users
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;

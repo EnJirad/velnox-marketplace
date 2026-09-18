@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { onCenterEvent } from "../lib/center-events";
 
 interface VerificationRow {
   id: string;
@@ -87,6 +88,10 @@ export default function SellerVerificationQueue() {
   }, [verificationsAction, statusFilter]);
 
   useEffect(() => { void loadVerifications(); }, [loadVerifications]);
+
+  // Realtime: the Center page owns the WebSocket and notifies us when a seller
+  // or verification changed, so a reviewed row leaves the list immediately.
+  useEffect(() => onCenterEvent("sellers", () => { void loadVerifications(); }), [loadVerifications]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

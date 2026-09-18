@@ -26,7 +26,19 @@ export interface ApiUser {
   image?: string | null; // backward compat alias for avatarUrl
   coverUrl: string | null;
   mustChangePassword?: boolean;
+  /**
+   * Effective VelCenter permission codes (`audit.view`, `staff.manage`, …).
+   * owner/admin hold every code in the catalog; `staff` hold what was granted.
+   * Used to hide tabs/actions the backend would reject — hiding is UX, the
+   * endpoint is the boundary.
+   */
+  permissions?: string[];
   createdAt: number;
+}
+
+/** Does this signed-in user hold a VelCenter permission code? */
+export function userHasPermission(user: ApiUser | null | undefined, code: string): boolean {
+  return Array.isArray(user?.permissions) && user.permissions.includes(code);
 }
 
 interface AuthState {
@@ -66,6 +78,12 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
       avatarUrl: raw.avatar ?? raw.avatarUrl ?? null,
       image: raw.avatar ?? raw.avatarUrl ?? null,
       coverUrl: raw.coverUrl ?? null,
+      // Drives VelCenter's force-password-change gate (spec §10).
+      mustChangePassword: raw.mustChangePassword === true,
+      // VelCenter permission codes — see `userHasPermission` below.
+      permissions: Array.isArray(raw.permissions)
+        ? raw.permissions.filter((code: unknown): code is string => typeof code === "string")
+        : [],
       createdAt: raw.created_at ?? raw.createdAt ?? 0,
     };
   } catch {

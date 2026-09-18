@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-17 (password auth, auto-refresh, variant images, mobile nav removal)
+**Last updated:** 2026-09-18 (VelCenter final gap fix: permission catalog, forced first password change, audit realtime)
 **Branch:** `main`
 
 ## Current Project State
@@ -1311,7 +1311,7 @@ No data was removed from any breakpoint and the moderation-detail backend query 
 - VelCenter Audit Logs then renders real rows through `GET /api/admin/audit-logs`; a failed request still shows the error + retry state, never "no records".
 
 ### Known Limitations
-- Staff granted `audit.view` in the permission catalog cannot yet open Audit Logs: the endpoint is stricter (owner/admin). Widening it to honor `audit.view` was deliberately not done in this round — it changes who can read the staff trail.
+- **Resolved (2026-09-18):** `GET /api/admin/audit-logs` is now permission-checked, so a staff member the owner granted `audit.view` can open Audit Logs — see the "VelCenter Final Gap Fix" round below.
 - Phone/tablet behaviour (320/360/375/390/430/768px) is code-verified (fluid order, bounded gallery, collapsibles, width-filling actions) but not driven in a real browser from this environment.
 
 
@@ -1401,4 +1401,143 @@ No data was removed from any breakpoint and the moderation-detail backend query 
 - Password reset for self-service (forgot password flow) is not implemented — admin must reset via EmployeeManager.
 - The `change-password` flow requires knowing the current password — no forgot-password email flow.
 - WebSocket auth in the existing realtime layer uses the same JWT cookie, so password-auth sessions work automatically.
-- RBAC enforcement uses the existing `canWriteCenter()` / `isOwner()` / `canReadCenter()` helpers — granular per-tab permission checks via `employees.permissions` are not yet wired to every endpoint (the `audit.view` limitation noted previously still applies).
+- RBAC: `backend/lib/permissions.ts` now resolves the permission catalog server-side (owner/admin hold every code, `staff` hold what was granted) and the audit trail honours `audit.view`; see the "VelCenter Final Gap Fix" round below. Owner/admin still short-circuit through the existing role helpers for the surfaces that are owner-only by design.
+
+---
+
+## VelCenter Final Gap Fix / Verification (2026-09-18)
+
+Final-gap round on top of the previous session. Nothing was rewritten; every item
+below reuses what already existed.
+
+### 1. The permission catalog became the single source of truth
+
+**Root cause:** the catalog lived inline in `backend/routes/center.ts` as a constant
+that only the *grant* UI could read, while the guards decided with role helpers
+(`canWriteCenter`, `isOwner`). A `staff` member granted `audit.view` therefore could
+never open Audit Logs, and the role helper treated "is a admin" as "may read the trail".
+
+- **NEW `backend/lib/permissions.ts`** — `PERMISSION_CATALOG` (the same 9 codes, now the
+  only copy), `ALL_PERMISSION_CODES`, `resolvePermissions(userId, role?)`,
+  `userHasPermission(userId, code, role?)`. `owner`/`admin` implicitly hold every code;
+  `staff` hold exactly `employees.permissions`; anyone else (customer, seller) holds none.
+- `backend/routes/center.ts` imports it instead of declaring its own copy — the tab a
+  user is offered and the endpoint behind it can no longer disagree.
+- `GET /api/admin/audit-logs` is now guarded by `userHasPermission(…, 'audit.view')`
+  instead of `canWriteCenter()`. That is the real boundary; hiding the tab is UX only.
+
+### 2. The force-password-change gate was dead code
+
+**Root cause:** the column did not exist, `/api/auth/me` never returned the flag, and
+`change-password` demanded the *current* password — which a first-login employee
+being handed a temporary password does not have.
+
+- `users.must_change_password BOOLEAN NOT NULL DEFAULT FALSE` (schema + bootstrap +
+  migration 046). The `FALSE` default means no backfill and existing staff unaffected.
+- `POST /api/admin/employees` creates staff with the flag TRUE; the owner's reset also
+  sets it TRUE, so a handed-over temporary password must be replaced.
+- `POST /api/auth/change-password` skips the current-password proof **only** while the
+  flag is set, then clears the flag, invalidates the cached profile and writes an audit
+  row. Any other change still has to prove the old password.
+- `/api/auth/me` now returns `department`, `mustChangePassword` and `permissions`;
+  `packages/shared/src/lib/api-client.ts` maps them (it previously mapped neither the
+  flag nor department, which is why the gate never ran).
+- `ChangePasswordScreen` calls `refetchCurrentUser()` after a successful change — the
+  shared auth state is a cached singleton, so without it the employee stayed stuck.
+
+### 3. Realtime → UI (a subscription alone is not a fix)
+
+**Root cause:** the Center page owned the WebSocket and refreshed *its own* state, but
+`ProductModerationQueue`, `SellerVerificationQueue` and `AuditLogTab` load their own
+data and were never notified — and no audit event existed at all.
+
+- `backend/lib/audit-log.ts` broadcasts a new `audit:created` channel from
+  `writeAuditLog`, the single choke point every audit writer goes through, so no route
+  can write a row silently. The payload carries `action` + `entityType` only — no
+  details, credentials, tokens or hashes.
+- `backend/realtime/index.ts` registers `AUDIT_CREATED` and allows subscription.
+- **NEW `apps/velcenter/src/lib/center-events.ts`** — a small app-local bus. The Center
+  page's WS handler fans one message out to the tabs (`products` · `sellers` ·
+  `orders` · `audit`); each consumer refetches from the API, so the event is only a
+  signal and the data still comes from the backend.
+- event → receiver → refetch → UI, verified per tab: `ProductModerationQueue`
+  (`products`), `SellerVerificationQueue` (`sellers`), Orders tab (`orders`),
+  `AuditLogTab` (`audit`). Approve/reject additionally reloads as soon as the backend
+  confirms, so the pending count drops without waiting for a socket round trip.
+
+### 4. Errors must not render as "no data"
+
+- The Orders tab swallowed a failed request into an empty list; it now has an explicit
+  error card with a retry button.
+- `AuditLogTab` returns `null` (not an empty table, and not a guaranteed 403 fetch)
+  when `audit.view` is absent — and it does so *after* all hooks, so the hook count
+  stays stable while the shared auth state is still loading.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `backend/lib/permissions.ts` | **NEW** — the permission catalog + resolvers |
+| `backend/routes/center.ts` | catalog imported; audit endpoint permission-checked; profile-cache invalidation on role / department / permission / password changes; real `mustChangePassword` in the staff list |
+| `backend/routes/auth.ts` | `/me` returns `department` + `mustChangePassword` + `permissions`; forced first password change |
+| `backend/lib/audit-log.ts` | broadcasts `audit:created` |
+| `backend/realtime/index.ts` | `AUDIT_CREATED` channel |
+| `packages/shared/src/lib/api-client.ts` | `ApiUser.permissions`, `userHasPermission()`, `mustChangePassword` mapping |
+| `apps/velcenter/src/lib/center-events.ts` | **NEW** — WS → tab event bus |
+| `apps/velcenter/src/pages/Center.tsx` | permission-aware `canSee()`, audit subscription, event fan-out, orders error state |
+| `apps/velcenter/src/components/AuditLogTab.tsx` | self-gates on `audit.view`, listens for `audit` events |
+| `apps/velcenter/src/components/ProductModerationQueue.tsx` | listens for `products` events |
+| `apps/velcenter/src/components/SellerVerificationQueue.tsx` | listens for `sellers` events |
+| `apps/velcenter/src/components/ChangePasswordScreen.tsx` | refetches the profile so the gate unmounts |
+| `db/schema.sql`, `db/run-sqleditor.sql` | `users.must_change_password` (byte-identical) |
+| `db/migrations/046_staff_must_change_password.sql` | **NEW** |
+| `backend/tests/staff-must-change-password.test.ts` | **NEW** |
+| `backend/tests/center-admin-audit.test.ts` | audit endpoint asserted permission-checked |
+
+### Database
+
+- `users.must_change_password BOOLEAN NOT NULL DEFAULT FALSE` — three places, in sync:
+  `db/schema.sql`, `db/run-sqleditor.sql` (asserted byte-identical) and migration 046.
+  `db/run-update.sql` was **not** created, edited or used.
+- **No production data was modified.** No staff was created, no password was reset, no
+  product / seller / order status was mass-changed.
+
+### Security notes
+
+- Passwords stay scrypt-only (`backend/lib/password.ts`); never logged, returned or
+  audited. `writeAuditLog` strips any `password|token|secret|hash|credential|cookie`
+  key at write time, and a test asserts the payload never carries credentials.
+- Self-escalation stays blocked server-side: role and department are read from the
+  `users` row and permissions from `employees.permissions` — never from the request
+  body. `PATCH /api/admin/users/:id/access` remains owner-only.
+
+### Tests performed
+
+| Check | Result |
+|---|---|
+| `cd backend && bun tsc --noEmit` | 0 errors |
+| `bun tsc --noEmit` in velcenter / velshop / velseller / velnox | 0 errors (all four) |
+| `bun test ./tests/staff-must-change-password.test.ts ./tests/center-admin-audit.test.ts` | **55 pass / 0 fail** |
+| `bun test ./tests/schema-drift.test.ts` | **50 pass / 0 fail** |
+| `bun test tests` (whole suite) | 337 pass / **11 fail** — every failure is a DB-touching `(integration)` suite (below); none is in a file this diff touches |
+| `bun run i18n:check` | PASS — th=1289 en=1289 my=1289 |
+| `git diff --check` | CLEAN |
+| `diff db/schema.sql db/run-sqleditor.sql` | identical |
+
+**The 11 integration failures are environmental, not regressions.**
+`tests/order-detail-reviews.test.ts`, `tests/inventory-race.test.ts`,
+`tests/seller-center-apis.test.ts` and `tests/velrepeat-core.test.ts` seed fixed fixture
+emails with a plain `INSERT INTO users (email, name)` and no cleanup, so a second run
+against the same Neon database dies on
+`23505 duplicate key value violates unique constraint "users_email_key" (review-a@test.local)`
+or times out. The failing files are untouched by this diff (auth / permissions / audit /
+VelCenter UI only). Those fixtures are the only writes these tests make to shared data —
+non-idempotent seeding is a separate test-hygiene defect worth fixing.
+
+### Not verified (no browser, no live session from this environment)
+
+- Member ID + password sign-in against a real seeded account, and the forced first-login
+  password change end-to-end in a browser.
+- The `audit:created` broadcast arriving in a deployed browser (the channel allowlist and
+  the writer are code-verified; a deployed socket was not driven).
+- Phone/tablet rendering of the inspection workspace at 320–430px.

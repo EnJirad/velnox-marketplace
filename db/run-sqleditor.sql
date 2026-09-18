@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   status TEXT NOT NULL DEFAULT 'active',
   department TEXT,
   password_hash TEXT,
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -899,6 +900,10 @@ ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check;
 ALTER TABLE sellers
   ADD CONSTRAINT sellers_status_check
   CHECK (status IN ('pending', 'under_review', 'needs_correction', 'approved', 'rejected', 'suspended'));
+
+-- VelCenter staff force-password-change (migration 046). Idempotent so a fresh
+-- bootstrap self-heals a database created before the column existed.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, description, description_names, image_url, is_active) VALUES
 ('c1000001-0000-0000-0000-000000000001', 'Headphones & Speakers', 'headphones-speakers', 'headphones', 'c0000001-0000-0000-0000-000000000001', 1, '{"th":"หูฟังและลำโพง","en":"Headphones & Speakers","my":"နားကြပ်နှင့်စပီကာ"}', 'Headphones, earphones and speakers', '{"th":"หูฟัง หูฟังอินเอียร์ และลำโพง","en":"Headphones, earphones and speakers","my":"နားကြပ်၊ နားကြပ်ငယ်နှင့် စပီကာများ"}', NULL, true),
 ('c1000001-0000-0000-0000-000000000002', 'Cameras & Accessories', 'cameras-accessories', 'camera', 'c0000001-0000-0000-0000-000000000001', 2, '{"th":"กล้องและอุปกรณ์เสริม","en":"Cameras & Accessories","my":"ကင်မရာနှင့်ဖြည့်စွက်ပစ္စည်းများ"}', 'Cameras, lenses and accessories', '{"th":"กล้อง เลนส์ และอุปกรณ์เสริม","en":"Cameras, lenses and accessories","my":"ကင်မရာ၊ မှန်ဘီလူးနှင့် ဖြည့်စွက်ပစ္စည်းများ"}', NULL, true),

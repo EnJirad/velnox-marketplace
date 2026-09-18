@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { onCenterEvent } from "../lib/center-events";
 
 interface ModProduct {
   id: string;
@@ -559,6 +560,10 @@ export default function ProductModerationQueue() {
   }, [moderationAction, statusFilter, search, sortOrder]);
 
   useEffect(() => { void loadProducts(); }, [loadProducts]);
+
+  // Realtime: the Center page owns the WebSocket and notifies us when the
+  // product queue changed, so a reviewed item leaves the list immediately.
+  useEffect(() => onCenterEvent("products", () => { void loadProducts(); }), [loadProducts]);
 
   const shopGroups = useMemo(() => {
     const groups = new Map<string, ShopGroup>();

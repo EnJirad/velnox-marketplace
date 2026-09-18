@@ -30,6 +30,8 @@ import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import { hashPassword, isPasswordHashFormat } from "../lib/password.js";
+import { PERMISSION_CATALOG, userHasPermission } from "../lib/permissions.js";
+import { invalidateCachedProfile } from "./auth.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 
 function param(req: Request, key: string): string {
@@ -70,18 +72,6 @@ const ORDER_NEXT_STATUS: Record<string, string[]> = {
 };
 
 const DEPARTMENTS = ["general", "marketing", "sales", "operations", "finance"];
-
-const PERMISSION_CATALOG: { code: string; label: string; description: string }[] = [
-  { code: "orders.view", label: "ดูออเดอร์", description: "ดูรายการออเดอร์ทั้งหมด" },
-  { code: "orders.manage", label: "จัดการออเดอร์", description: "เปลี่ยนสถานะออเดอร์" },
-  { code: "products.moderate", label: "ตรวจสอบสินค้า", description: "อนุมัติ/ปฏิเสธสินค้าที่รอตรวจสอบ" },
-  { code: "sellers.manage", label: "จัดการผู้ขาย", description: "อนุมัติ/ระงับผู้ขาย" },
-  { code: "users.manage", label: "จัดการบัญชีผู้ใช้", description: "เปลี่ยนบทบาท/สิทธิ์ผู้ใช้" },
-  { code: "staff.manage", label: "จัดการพนักงาน", description: "สร้าง/แก้ไขบัญชีพนักงาน" },
-  { code: "audit.view", label: "ดู Audit Logs", description: "ดูบันทึกการดำเนินการสำคัญ" },
-  { code: "settings.manage", label: "จัดการตั้งค่าระบบ", description: "แก้ไขการตั้งค่าแพลตฟอร์ม" },
-  { code: "payouts.process", label: "จัดการการจ่ายเงิน", description: "อนุมัติรอบการจ่ายเงิน" },
-];
 
 /**
  * The auditor-facing statement behind GET /api/admin/audit-logs.
@@ -487,8 +477,11 @@ export function setupCenterRoutes(app: Express): void {
   // stripped at write time (see lib/audit-log.ts).
   app.get("/api/admin/audit-logs", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await canWriteCenter(req.user!.userId))) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Owner or admin access required" } });
+      // Permission-checked, not role-checked: owner/admin hold every permission,
+      // and `staff` may be granted `audit.view` from the catalog. This is the
+      // real boundary — the VelCenter tab hiding itself is only UX.
+      if (!(await userHasPermission(req.user!.userId, "audit.view"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "audit.view permission required" } });
         return;
       }
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 500);
@@ -701,6 +694,10 @@ export function setupCenterRoutes(app: Express): void {
         department,
         targetUserId,
       ]);
+      // Role/department decide which tabs and permissions are effective, and
+      // `/api/auth/me` caches its payload — drop it so the change is visible at
+      // once instead of up to 30s later.
+      invalidateCachedProfile(targetUserId);
       await writeAuditLog(
         req.user!.userId,
         "USER_ACCESS_UPDATE",
@@ -727,7 +724,8 @@ export function setupCenterRoutes(app: Express): void {
         return;
       }
       const result = await query(
-        `SELECT u.id AS user_id, u.password_hash, e.id AS neon_id, e.employee_id, e.permissions,
+        `SELECT u.id AS user_id, u.password_hash, u.must_change_password,
+                e.id AS neon_id, e.employee_id, e.permissions,
                 u.email, u.name, u.role, u.department, u.status, u.created_at
          FROM users u
          LEFT JOIN employees e ON e.user_id = u.id
@@ -753,7 +751,7 @@ export function setupCenterRoutes(app: Express): void {
             employeeId: r.employee_id ?? null,
             permissions,
             active: r.status === "active",
-            mustChangePassword: false,
+            mustChangePassword: r.must_change_password === true,
             passwordAuth: isPasswordHashFormat(r.password_hash),
             createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
           };
@@ -807,8 +805,8 @@ export function setupCenterRoutes(app: Express): void {
 
       const passwordHash = await hashPassword(rawPassword);
       const ins = await query(
-        `INSERT INTO users (email, name, role, department, status, password_hash)
-         VALUES ($1, $2, $3, $4, 'active', $5) RETURNING id`,
+        `INSERT INTO users (email, name, role, department, status, password_hash, must_change_password)
+         VALUES ($1, $2, $3, $4, 'active', $5, TRUE) RETURNING id`,
         [email, name, role, department, passwordHash],
       );
       const userId = ins.rows[0].id as string;
@@ -889,6 +887,9 @@ export function setupCenterRoutes(app: Express): void {
         JSON.stringify(permissions),
         neonId,
       ]);
+      // Permissions ride on the cached profile too — a granted tab must appear
+      // (and a revoked one disappear) without waiting out the cache TTL.
+      invalidateCachedProfile(userId);
       await writeAuditLog(req.user!.userId, "STAFF_PROFILE_UPDATE", "employee", userId, { department, permissions }, auditClientIp(req));
       try { broadcast(CHANNELS.NOTIFICATION_CREATED, "employee:updated", { userId, department }); } catch { /* best-effort */ }
       res.json({ success: true, data: { id: neonId, department, permissions } });
@@ -914,7 +915,12 @@ export function setupCenterRoutes(app: Express): void {
         return;
       }
       const passwordHash = await hashPassword(rawPassword);
-      await query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2", [passwordHash, targetUserId]);
+      await query(
+        "UPDATE users SET password_hash = $1, must_change_password = TRUE, updated_at = NOW() WHERE id = $2",
+        [passwordHash, targetUserId],
+      );
+      // The cached `/api/auth/me` payload still holds the pre-reset profile.
+      invalidateCachedProfile(targetUserId);
       console.log(`[center] employee password reset: ${targetUserId} by ${req.user!.userId}`);
       await writeAuditLog(req.user!.userId, "EMPLOYEE_PASSWORD_RESET", "employee", targetUserId, {}, auditClientIp(req));
       res.json({ success: true, data: { userId: targetUserId, tempPassword: rawPassword } });

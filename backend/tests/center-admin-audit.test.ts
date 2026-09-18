@@ -118,10 +118,15 @@ describe("staff audit trail", () => {
     }
   });
 
-  test("the audit endpoint is owner/admin only and filters server-side", () => {
+  test("the audit endpoint is permission-checked (owner/admin implicitly) and filters server-side", () => {
     const route = centerSrc.slice(centerSrc.indexOf('"/api/admin/audit-logs"'));
     expect(route).toContain("requireAuth");
-    expect(route).toContain("canWriteCenter(req.user!.userId)");
+    // Permission, not role. owner/admin hold every code in the catalog, and a
+    // `staff` member may be granted `audit.view` — the role check the endpoint
+    // used before made that grant impossible to honour and, worse, treated
+    // "is a admin" as "may read the trail".
+    expect(route).toContain('userHasPermission(req.user!.userId, "audit.view")');
+    expect(route).not.toContain("canWriteCenter(req.user!.userId)");
     for (const filter of ["req.query.action", "req.query.entityType", "req.query.actorId", "req.query.from", "req.query.to", "req.query.q"]) {
       expect(route).toContain(filter);
     }

@@ -130,6 +130,7 @@ export function setupWebSocket(wss: WebSocketServer): void {
             msg.channel === "product:updated" ||
             msg.channel === "inventory:updated" ||
             msg.channel === "seller:updated" ||
+            msg.channel === "audit:created" ||
             msg.channel === "notification:created";
           if (isOwnChannel || isPublicChannel) {
             client.subscriptions.add(msg.channel);
@@ -227,4 +228,5 @@ export const CHANNELS = {
   PROFILE_UPDATED: "profile:updated",
   CHAT_MESSAGE: "chat:message",
   CHAT_READ: "chat:read",
+  AUDIT_CREATED: "audit:created",
 } as const;
