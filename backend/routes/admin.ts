@@ -18,6 +18,7 @@ import { query } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "../lib/media-config.js";
 import { SELLER_COMMISSION_RATE, SELLER_RETURN_COVERAGE } from "../lib/seller-stats.js";
+import { userHasPermission } from "../lib/permissions.js";
 
 const BOOTSTRAP_SECRET = process.env.BOOTSTRAP_OWNER_SECRET;
 
@@ -151,11 +152,11 @@ export function setupAdminRoutes(app: Express): void {
   app.get("/api/admin/settings", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
-      if (userResult.rows.length === 0 || !["owner", "admin"].includes(userResult.rows[0].role)) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only owner or admin can access settings" } });
+      if (!(await userHasPermission(userId, "settings.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "settings.manage permission required" } });
         return;
       }
+      const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
       const result = await query(
         `SELECT key, value, description, updated_at, updated_by
          FROM platform_settings
@@ -207,11 +208,11 @@ export function setupAdminRoutes(app: Express): void {
   app.patch("/api/admin/settings", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
-      if (userResult.rows.length === 0 || !["owner", "admin"].includes(userResult.rows[0].role)) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only owner or admin can update settings" } });
+      if (!(await userHasPermission(userId, "settings.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "settings.manage permission required" } });
         return;
       }
+      const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
       const { key, value } = req.body;
       if (!key || typeof key !== "string" || !value || typeof value !== "string") {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "key and value are required strings" } });

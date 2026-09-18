@@ -358,8 +358,8 @@ export function setupCenterRoutes(app: Express): void {
   // ── GET /api/admin/orders ───────────────────────────────────────────────
   app.get("/api/admin/orders", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await canReadCenter(req.user!.userId))) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+      if (!(await userHasPermission(req.user!.userId, "orders.view"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "orders.view permission required" } });
         return;
       }
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
@@ -436,8 +436,8 @@ export function setupCenterRoutes(app: Express): void {
   // ── PATCH /api/admin/orders/:orderId/status ─────────────────────────────
   app.patch("/api/admin/orders/:orderId/status", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await canWriteCenter(req.user!.userId))) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Owner or admin access required" } });
+      if (!(await userHasPermission(req.user!.userId, "orders.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "orders.manage permission required" } });
         return;
       }
       const orderId = param(req, "orderId");
@@ -594,8 +594,8 @@ export function setupCenterRoutes(app: Express): void {
   // `other` instead of being silently guessed into one of the two tabs.
   app.get("/api/admin/users", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await canReadCenter(req.user!.userId))) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+      if (!(await userHasPermission(req.user!.userId, "users.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "users.manage permission required" } });
         return;
       }
       const rawSegment = typeof req.query.segment === "string" ? req.query.segment : "all";
@@ -719,8 +719,8 @@ export function setupCenterRoutes(app: Express): void {
   // ── GET /api/admin/employees ────────────────────────────────────────────
   app.get("/api/admin/employees", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await canReadCenter(req.user!.userId))) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+      if (!(await userHasPermission(req.user!.userId, "staff.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "staff.manage permission required" } });
         return;
       }
       const result = await query(

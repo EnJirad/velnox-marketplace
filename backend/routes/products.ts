@@ -44,6 +44,7 @@ import {
 } from "../lib/variant-options.js";
 import { CATEGORY_UUID_RE, INVALID_CATEGORY_MESSAGE, validateCategory, type CategoryLookupRow } from "../lib/categories.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
+import { userHasPermission } from "../lib/permissions.js";
 
 // ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
 
@@ -3430,9 +3431,8 @@ export function setupProductRoutes(app: Express): void {
   // Helper: verify user is an authorized admin (owner or admin)
   async function requireAdmin(req: Request, res: Response): Promise<boolean> {
     const userId = req.user!.userId;
-    const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
-    if (userResult.rows.length === 0 || !["owner", "admin"].includes(userResult.rows[0].role)) {
-      res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only owner or admin can moderate products" } });
+    if (!(await userHasPermission(userId, "products.moderate"))) {
+      res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "products.moderate permission required" } });
       return false;
     }
     return true;
