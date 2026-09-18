@@ -57,10 +57,12 @@ describe("staff vs customer directory", () => {
     expect(centerSrc).not.toContain('r.role ?? "customer"');
   });
 
-  test("the query is validated and still requires center membership", () => {
+  test("the query is validated, requires center membership AND users.manage", () => {
     const route = centerSrc.slice(centerSrc.indexOf('"/api/admin/users"'));
     expect(route).toContain("requireAuth");
     expect(route).toContain("canReadCenter");
+    // The directory is personal data: center membership alone is not enough.
+    expect(route).toContain('userHasPermission(req.user!.userId, "users.manage")');
     expect(route).toContain('["all", "staff", "customer", "seller"]');
   });
 
@@ -80,8 +82,11 @@ describe("staff vs customer directory", () => {
     expect(statements(centerPage)).not.toContain("(users ?? [])");
   });
 
-  test("employee management stays owner-only and the directory is owner/admin", () => {
-    expect(centerPage).toContain('case "staff":\n      return role === "owner" || role === "admin";');
+  test("employee management stays owner-only and the directory follows users.manage", () => {
+    // The people tab follows the directory grant (`users.manage`, enforced by
+    // GET /api/admin/users); the employee/permission manager inside it is
+    // rendered for the owner alone, and role changes stay owner-only server-side.
+    expect(centerPage).toContain('case "staff":\n      return holds("users.manage");');
     expect(centerPage).toContain("{isOwner ? (");
     expect(centerSrc).toContain("isOwner(req.user!.userId)");
   });

@@ -36,9 +36,24 @@ export interface ApiUser {
   createdAt: number;
 }
 
+/**
+ * The one VelCenter permission rule, shared by the session helper below and by
+ * the pure tab-policy function in VelCenter: `owner`/`admin` hold every code
+ * implicitly and `staff` hold what was granted — exactly the rule
+ * `backend/lib/permissions.ts` applies. Mirror only; every endpoint re-checks.
+ */
+export function roleHoldsPermission(
+  role: string | null | undefined,
+  permissions: readonly string[] | null | undefined,
+  code: string,
+): boolean {
+  if (role === "owner" || role === "admin") return true;
+  return Array.isArray(permissions) && permissions.includes(code);
+}
+
 /** Does this signed-in user hold a VelCenter permission code? */
 export function userHasPermission(user: ApiUser | null | undefined, code: string): boolean {
-  return Array.isArray(user?.permissions) && user.permissions.includes(code);
+  return roleHoldsPermission(user?.role, user?.permissions, code);
 }
 
 interface AuthState {

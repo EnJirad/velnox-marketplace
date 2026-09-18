@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-18 (VelCenter final gap fix: permission catalog, forced first password change, audit realtime)
+**Last updated:** 2026-09-18 (VelCenter final gap fix + the catalog enforced at every endpoint)
 **Branch:** `main`
 
 ## Current Project State
@@ -1541,3 +1541,80 @@ non-idempotent seeding is a separate test-hygiene defect worth fixing.
 - The `audit:created` broadcast arriving in a deployed browser (the channel allowlist and
   the writer are code-verified; a deployed socket was not driven).
 - Phone/tablet rendering of the inspection workspace at 320–430px.
+
+## Catalog enforced at every endpoint (2026-09-18, follow-up)
+
+The catalog landed as the single resolver, but only `audit.view` was actually
+checked — the other business surfaces still decided by role. That left the
+remaining codes decorative and, in one case, contradictory: a staff account
+granted `orders.manage` could see an order it was allowed to move but no control
+to move it, while every staff account could approve a seller identity document.
+
+### Guards now run on their catalog code
+
+| Surface | Code | File |
+|---|---|---|
+| orders list | `orders.view` | `center.ts` |
+| order status | `orders.manage` | `center.ts` |
+| customer/staff directory | `users.manage` | `center.ts` |
+| employee directory | `staff.manage` | `center.ts` |
+| audit logs | `audit.view` | `center.ts` |
+| product moderation — list · detail · decision | `products.moderate` | `products.ts` |
+| seller administration | `sellers.manage` | `seller.ts` |
+| seller verification decisions | `sellers.manage` | `verification.ts` |
+| company/system settings (read + write) | `settings.manage` | `admin.ts` |
+
+- `canWriteCenter()` is gone: the last role-only write guard (order status) is
+  `orders.manage`. `canReadCenter()` now delegates to `isCenterMember()`.
+- Product moderation requires center membership AND the grant, through ONE
+  `requireModerator()` used by all three entry points.
+- Approval paths resolve the permission BEFORE opening their transaction, so a
+  denied caller never holds one.
+- Role / permission / employee mutations stay owner-only (`isOwner`), and the
+  employee "active" toggle now invalidates the cached profile.
+- `payouts.process` is removed from the catalog: no endpoint, table or screen
+  ever enforced it. The rule is now explicit — a code belongs there only while
+  an endpoint checks it — and `center-rbac.test.ts` asserts it.
+
+### Resolution is deny-by-default
+
+`resolvePermissions()` returns `[]` on a missing employee row, malformed JSON or
+a database error instead of throwing, so an authorization lookup can never fail
+open or surface as a 500 a caller could mistake for a pass.
+
+### VelCenter mirrors the same rule
+
+One client helper (`roleHoldsPermission` in
+`packages/shared/src/lib/api-client.ts`) feeds both the session helper and the
+tab policy, so the screen cannot drift from the endpoints: orders `orders.view`,
+products `products.moderate`, sellers `sellers.manage`, people `users.manage`,
+audit `audit.view`, settings = owner, or a general-department admin, or a staff
+account holding `settings.manage`. `canManageOrders` is `orders.manage`, and the
+directory/settings fetches are skipped without their grant instead of firing a
+403. Tab hiding stays UX only — every endpoint re-checks.
+
+### Files changed (this pass)
+
+`backend/lib/permissions.ts` · `backend/routes/center.ts` · `admin.ts` ·
+`products.ts` · `seller.ts` · `verification.ts` ·
+`apps/velcenter/src/pages/Center.tsx` · `packages/shared/src/lib/api-client.ts` ·
+`backend/tests/center-rbac.test.ts` (new) · `center-admin-audit.test.ts` ·
+`product-lifecycle.test.ts` · `staff-must-change-password.test.ts`.
+
+### Validation
+
+| Check | Result |
+|---|---|
+| backend tsc | pass |
+| velshop / velseller / velcenter / velnox tsc | pass |
+| backend tests | 343 pass / 0 fail (372 total) |
+| i18n:check | pass (th=1289 en=1289 my=1289) |
+| git diff --check | CLEAN |
+
+### Known limitations
+
+- A staff account holding `staff.manage` may call `GET /api/admin/employees`,
+  but the employee manager screen stays owner-only (every mutation it offers is
+  owner-only), so that read grant has no screen of its own yet.
+- No database change in this pass: `employees.permissions` (JSONB) already
+  existed, and `db/schema.sql` ↔ `db/run-sqleditor.sql` remain in sync.

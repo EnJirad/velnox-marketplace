@@ -43,6 +43,7 @@ import {
   resolveVariantOptionValueIds,
 } from "../lib/variant-options.js";
 import { CATEGORY_UUID_RE, INVALID_CATEGORY_MESSAGE, validateCategory, type CategoryLookupRow } from "../lib/categories.js";
+import { isCenterMember, userHasPermission } from "../lib/permissions.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 
 // ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
@@ -3427,12 +3428,23 @@ export function setupProductRoutes(app: Express): void {
 
   // ═════════════════════════════════════════════════════════════════════════
 
-  // Helper: verify user is an authorized admin (owner or admin)
-  async function requireAdmin(req: Request, res: Response): Promise<boolean> {
+  /**
+   * Product moderation gate — `products.moderate` (backend/lib/permissions.ts).
+   *
+   * Center membership is required AND the catalog code must be held: owner and
+   * admin implicitly, a staff account only when VelCenter granted it. Deny by
+   * default. The role-only check that stood here made the `products.moderate`
+   * grant in the staff editor decorative — ticking it changed nothing, so the
+   * checkbox lied to the owner.
+   */
+  async function requireModerator(req: Request, res: Response): Promise<boolean> {
     const userId = req.user!.userId;
-    const userResult = await query("SELECT role FROM users WHERE id = $1", [userId]);
-    if (userResult.rows.length === 0 || !["owner", "admin"].includes(userResult.rows[0].role)) {
-      res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only owner or admin can moderate products" } });
+    if (!(await isCenterMember(userId))) {
+      res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+      return false;
+    }
+    if (!(await userHasPermission(userId, "products.moderate"))) {
+      res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "products.moderate permission required" } });
       return false;
     }
     return true;
@@ -3443,7 +3455,7 @@ export function setupProductRoutes(app: Express): void {
   // Supports: status filter, search (q), sort (newest/oldest), shop filter.
   app.get("/api/admin/products/moderation", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await requireAdmin(req, res))) return;
+      if (!(await requireModerator(req, res))) return;
 
       const { status, q, sort, shopId } = req.query as { status?: string; q?: string; sort?: string; shopId?: string };
       const params: any[] = [];
@@ -3550,7 +3562,7 @@ export function setupProductRoutes(app: Express): void {
 
   // ── GET /api/admin/products/:productId/moderation-detail ────────────────
   // Full product detail for moderation review. Returns variants, attributes,
-  // option groups, images, shop info. Admin only.
+  // option groups, images, shop info. Center members holding `products.moderate`.
   //
   // PostgreSQL 42P10 note: the option-group aggregation must NOT use
   // `json_agg(DISTINCT ... ORDER BY pov.sort_order)` — with DISTINCT every ORDER BY
@@ -3563,7 +3575,7 @@ export function setupProductRoutes(app: Express): void {
   // ordered by pov.sort_order.
   app.get("/api/admin/products/:productId/moderation-detail", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await requireAdmin(req, res))) return;
+      if (!(await requireModerator(req, res))) return;
 
       const productId = param(req, "productId");
 
@@ -3685,10 +3697,10 @@ export function setupProductRoutes(app: Express): void {
   });
 
   // ── PATCH /api/admin/products/:productId/moderation ─────────────────────
-  // Approve or reject a product. Admin only.
+  // Approve or reject a product — center membership + `products.moderate`.
   app.patch("/api/admin/products/:productId/moderation", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await requireAdmin(req, res))) return;
+      if (!(await requireModerator(req, res))) return;
 
       const productId = param(req, "productId");
       const { status, rejectionReason } = req.body;

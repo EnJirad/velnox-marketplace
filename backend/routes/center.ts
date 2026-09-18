@@ -30,7 +30,7 @@ import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import { hashPassword, isPasswordHashFormat } from "../lib/password.js";
-import { PERMISSION_CATALOG, userHasPermission } from "../lib/permissions.js";
+import { PERMISSION_CATALOG, isCenterMember, userHasPermission } from "../lib/permissions.js";
 import { invalidateCachedProfile } from "./auth.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 
@@ -44,16 +44,17 @@ async function roleOf(userId: string): Promise<string | null> {
   return r.rows[0]?.role ?? null;
 }
 
-/** Center read access — owner/admin/staff. */
+/**
+ * Center membership — owner/admin/staff.
+ *
+ * Membership only decides whether an account may reach VelCenter data at all;
+ * WHAT it may do is the catalog (backend/lib/permissions.ts). Every business
+ * route pairs this with the code it requires, so an admin and a staff account
+ * differ only by the codes they hold — never by a second, shadow role rule.
+ * (The last role-only write guard, order status, is `orders.manage` now.)
+ */
 async function canReadCenter(userId: string): Promise<boolean> {
-  const role = await roleOf(userId);
-  return role === "owner" || role === "admin" || role === "staff";
-}
-
-/** Center write access — owner/admin (not staff). */
-async function canWriteCenter(userId: string): Promise<boolean> {
-  const role = await roleOf(userId);
-  return role === "owner" || role === "admin";
+  return isCenterMember(userId);
 }
 
 /** Owner only. */
@@ -362,6 +363,10 @@ export function setupCenterRoutes(app: Express): void {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
         return;
       }
+      if (!(await userHasPermission(req.user!.userId, "orders.view"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "orders.view permission required" } });
+        return;
+      }
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
 
       const orderRes = await query(
@@ -436,8 +441,15 @@ export function setupCenterRoutes(app: Express): void {
   // ── PATCH /api/admin/orders/:orderId/status ─────────────────────────────
   app.patch("/api/admin/orders/:orderId/status", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!(await canWriteCenter(req.user!.userId))) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Owner or admin access required" } });
+      if (!(await canReadCenter(req.user!.userId))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+        return;
+      }
+      // Moving an order is `orders.manage` — a staff account the owner granted
+      // it may do this. The owner/admin-only rule that stood here made the
+      // grant impossible to honour while the catalog still offered it.
+      if (!(await userHasPermission(req.user!.userId, "orders.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "orders.manage permission required" } });
         return;
       }
       const orderId = param(req, "orderId");
@@ -598,6 +610,12 @@ export function setupCenterRoutes(app: Express): void {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
         return;
       }
+      // The directory is personal data: membership is not enough, the account
+      // must hold `users.manage`. Role/permission CHANGES stay owner-only.
+      if (!(await userHasPermission(req.user!.userId, "users.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "users.manage permission required" } });
+        return;
+      }
       const rawSegment = typeof req.query.segment === "string" ? req.query.segment : "all";
       if (!["all", "staff", "customer", "seller"].includes(rawSegment)) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "segment must be all, staff, customer or seller" } });
@@ -721,6 +739,13 @@ export function setupCenterRoutes(app: Express): void {
     try {
       if (!(await canReadCenter(req.user!.userId))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+        return;
+      }
+      // Reading employee accounts is `staff.manage` (the mutations below stay
+      // owner-only). Membership alone would let any staff account enumerate
+      // every colleague's e-mail, role and permission list.
+      if (!(await userHasPermission(req.user!.userId, "staff.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "staff.manage permission required" } });
         return;
       }
       const result = await query(
@@ -851,6 +876,9 @@ export function setupCenterRoutes(app: Express): void {
         active ? "active" : "suspended",
         targetUserId,
       ]);
+      // Suspending an account changes what its session may do — drop the cached
+      // profile so it is in effect on the next request, not up to its TTL later.
+      invalidateCachedProfile(targetUserId);
       await writeAuditLog(req.user!.userId, "EMPLOYEE_ACTIVE_UPDATE", "employee", targetUserId, { active }, auditClientIp(req));
       try { broadcast(CHANNELS.NOTIFICATION_CREATED, "employee:updated", { targetUserId, active }); } catch { /* best-effort */ }
       res.json({ success: true, data: { id: targetUserId, active } });

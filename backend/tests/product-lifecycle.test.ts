@@ -122,9 +122,13 @@ describe("admin moderation transitions", () => {
     expect(moderationRequiresReason("published")).toBe(false);
   });
 
-  test("moderation is admin-gated and requires requireAuth", () => {
+  test("moderation requires requireAuth plus the products.moderate grant", () => {
     expect(productsSrc).toContain('app.patch("/api/admin/products/:productId/moderation", requireAuth');
-    expect(productsSrc).toContain("Only owner or admin can moderate products");
+    // Authorization is the shared catalog gate (backend/lib/permissions.ts),
+    // not an inline role list: owner/admin hold products.moderate implicitly,
+    // staff only when VelCenter granted it.
+    expect(productsSrc).toContain('userHasPermission(userId, "products.moderate")');
+    expect(productsSrc).toContain("isCenterMember(userId)");
     // sellers never get the admin moderation route
     expect(productsSrc).not.toContain('app.patch("/api/seller/products/:productId/moderation"');
   });

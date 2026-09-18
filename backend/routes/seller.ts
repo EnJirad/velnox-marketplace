@@ -17,6 +17,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
+import { userHasPermission } from "../lib/permissions.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { invalidateCachedProfile } from "./auth.js";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -715,25 +716,13 @@ export function setupSellerRoutes(app: Express): void {
     try {
       const userId = req.user!.userId;
 
-      // Verify user has admin permissions
-      const userResult = await query(
-        "SELECT role FROM users WHERE id = $1",
-        [userId]
-      );
-
-      if (userResult.rows.length === 0) {
-        res.status(401).json({
-          success: false,
-          error: { code: "UNAUTHORIZED", message: "User not found" },
-        });
-        return;
-      }
-
-      const userRole = userResult.rows[0].role;
-      if (!["owner", "admin", "staff"].includes(userRole)) {
+      // Seller management is `sellers.manage`: owner/admin hold it implicitly,
+      // a staff account only when VelCenter granted it. A center member who was
+      // not granted it must not read the queue.
+      if (!(await userHasPermission(userId, "sellers.manage"))) {
         res.status(403).json({
           success: false,
-          error: { code: "FORBIDDEN", message: "Insufficient permissions" },
+          error: { code: "FORBIDDEN", message: "sellers.manage permission required" },
         });
         return;
       }
@@ -842,32 +831,18 @@ export function setupSellerRoutes(app: Express): void {
         }
       }
 
-      await client.query("BEGIN");
-
-      // Verify user has admin permissions (within transaction)
-      const userResult = await client.query(
-        "SELECT role FROM users WHERE id = $1",
-        [userId]
-      );
-
-      if (userResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-        res.status(401).json({
-          success: false,
-          error: { code: "UNAUTHORIZED", message: "User not found" },
-        });
-        return;
-      }
-
-      const userRole = userResult.rows[0].role;
-      if (!["owner", "admin"].includes(userRole)) {
-        await client.query("ROLLBACK");
+      // Approving/rejecting a seller is `sellers.manage` (owner/admin hold it
+      // implicitly, a staff account only when granted). Resolved BEFORE the
+      // transaction opens so a denied caller never holds one.
+      if (!(await userHasPermission(userId, "sellers.manage"))) {
         res.status(403).json({
           success: false,
-          error: { code: "FORBIDDEN", message: "Only owner or admin can approve/reject sellers" },
+          error: { code: "FORBIDDEN", message: "sellers.manage permission required" },
         });
         return;
       }
+
+      await client.query("BEGIN");
 
       // Check if seller exists (within transaction, with row lock)
       const sellerResult = await client.query(
@@ -1112,6 +1087,15 @@ export function setupSellerRoutes(app: Express): void {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
         return;
       }
+      // Identity evidence is the most sensitive payload in VelCenter — the
+      // reviewer role is not enough, the account must hold `sellers.manage`.
+      if (!(await userHasPermission(userId, "sellers.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "sellers.manage permission required" } });
+        return;
+      }
+
+
+
 
       const sellerId = req.params.id;
       const appRes = await query(

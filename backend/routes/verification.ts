@@ -25,6 +25,7 @@
 import type { Express, Request, Response } from "express";
 import { query, getClient } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
+import { userHasPermission } from "../lib/permissions.js";
 import { broadcast, CHANNELS, sendToUser } from "../realtime/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -118,10 +119,19 @@ export function registerVerificationRoutes(app: Express) {
     return ref;
   }
 
+  /**
+   * Who may act on a seller verification?
+   *
+   * The reviewer role alone is NOT enough: approving a real-world identity is
+   * `sellers.manage`. owner/admin hold it implicitly, a staff account only when
+   * VelCenter granted it — deny by default. Before this, every staff account
+   * could approve any applicant, granted permission or not.
+   */
   async function assertReviewer(userId: string): Promise<string | null> {
     const userRes = await query("SELECT role FROM users WHERE id = $1", [userId]);
     const role = userRes.rows[0]?.role as string | undefined;
     if (!role || !REVIEWER_ROLES.includes(role)) return null;
+    if (!(await userHasPermission(userId, "sellers.manage"))) return null;
     return role;
   }
 

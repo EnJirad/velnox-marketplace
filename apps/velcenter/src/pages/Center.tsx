@@ -44,6 +44,7 @@ import { api } from "@velnox/shared/lib/api-routes";
 import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES } from "@velnox/shared/lib/i18n/config";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 // Id type replaced with string
+import { roleHoldsPermission } from "@velnox/shared/lib/api-client";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
   resolveCategoryMeta,
@@ -131,7 +132,10 @@ const SETTINGS_SECTIONS = [
  * - owner:  everything, including managing employees
  * - admin:  business data + the customer directory, but NO employee management
  *           (department-scoped in production; e.g. marketing admin)
- * - staff:  view business numbers only (overview / orders / intel / products)
+ * - staff:  overview/intel, plus exactly the business tabs their
+ *           `employees.permissions` grants (orders.view, products.moderate,
+ *           sellers.manage, audit.view, …) — a staff account with no grants
+ *           sees only totals
  *
  * These rules only decide which tabs are OFFERED. Every endpoint behind them
  * re-checks the role AND the permission server-side, so hiding a tab is UX,
@@ -143,26 +147,46 @@ function canSeeTab(
   department?: string | null,
   permissions?: string[] | null,
 ): boolean {
+  // One grant rule for the whole screen (`roleHoldsPermission` mirrors
+  // backend/lib/permissions.ts: owner/admin hold every code implicitly).
+  const holds = (code: string) => roleHoldsPermission(role, permissions, code);
+
   switch (tab) {
+    // Aggregate market numbers only — every center member may look.
     case "overview":
-    case "orders":
     case "intel":
-    case "products":
-    case "sellers":
       return true;
+
+    // Business surfaces map onto the permission catalog: a tab is OFFERED only
+    // when the account holds its code. The endpoint re-checks regardless, so a
+    // hidden tab is UX, never the authorization.
+    case "orders":
+      return holds("orders.view");
+    case "products":
+      return holds("products.moderate");
+    case "sellers":
+      return holds("sellers.manage");
 
     case "categories":
       return role === "owner" || role === "admin";
-    // Staff accounts are managed by the owner; the customer directory is
-    // readable by owner and admin. Both endpoints re-check the role.
+    // This tab merges two surfaces: the staff/customer directory is
+    // `users.manage` (GET /api/admin/users enforces exactly that), while
+    // employee management inside stays owner-only — EmployeeManager renders the
+    // owner-only notice for everyone else, so opening the tab exposes only what
+    // the endpoint already permits.
     case "staff":
-      return role === "owner" || role === "admin";
+      return holds("users.manage");
     // owner/admin hold every permission code; a `staff` member needs
     // `audit.view` granted (the same code GET /api/admin/audit-logs checks).
     case "audit":
-      return role === "owner" || role === "admin" || (permissions ?? []).includes("audit.view");
+      return holds("audit.view");
+    // Company control plane: the owner, an admin in the general department (the
+    // platform's department rule), or a staff account the owner granted
+    // `settings.manage` — the code GET/PATCH /api/admin/settings enforce.
     case "settings":
-      return role === "owner" || (role === "admin" && department === "general");
+      return role === "owner"
+        || (role === "admin" && department === "general")
+        || (role === "staff" && holds("settings.manage"));
   }
 }
 
@@ -182,12 +206,23 @@ export default function Center() {
   const userDepartment = user?.department;
 
   const isOwner = userRole === "owner";
-  const canManageOrders = userRole !== "staff";
-  const userPermissions = user?.permissions;
+  const userPermissions = user?.permissions ?? [];
+
+  /** Mirrors backend/lib/permissions.ts for UI-only decisions. */
+  const holds = (code: string) => roleHoldsPermission(userRole, userPermissions, code);
+
+  // PATCH /api/admin/orders/:orderId/status requires `orders.manage`, so a
+  // staff account granted it must get the controls too — a read-only screen for
+  // a granted write permission is the same lie as a decorative checkbox.
+  const canManageOrders = holds("orders.manage");
 
   // Tab visibility, resolved from role + department + the permissions the
   // backend resolved for this session.
   const canSee = (target: Tab) => canSeeTab(target, userRole, userDepartment, userPermissions);
+
+  // Stable booleans for effect deps (`holds`/`canSee` are re-created per render).
+  const canSeePeople = canSee("staff");
+  const canSeeSettings = canSee("settings");
 
   // Tabs are URL-driven (?tab=orders) so the mobile bottom nav and the desktop
   // tab strip stay in sync, and every view is shareable/deep-linkable.
@@ -503,8 +538,10 @@ export default function Center() {
   }, [listUsersAction]);
 
   useEffect(() => {
+    // Directory reads are `users.manage`; fetching without the grant is a 403.
+    if (!canSeePeople) return;
     void loadPeople();
-  }, [loadPeople]);
+  }, [canSeePeople, loadPeople]);
 
   // Storefront settings now live in Neon platform_settings (spec §15–16) —
   // read/write through the center actions (owner/admin, audit-logged).
@@ -539,8 +576,10 @@ export default function Center() {
   }, [getPlatformSettingsAction]);
 
   useEffect(() => {
+    // Settings are `settings.manage`; the tab uses the same policy.
+    if (!canSeeSettings) return;
     void loadSettings();
-  }, [loadSettings]);
+  }, [canSeeSettings, loadSettings]);
 
   useEffect(() => {
     if (!isOwner) return;

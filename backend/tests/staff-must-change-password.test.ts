@@ -203,9 +203,11 @@ describe("audit log access control", () => {
   test("the client receives the permissions and gates on them", () => {
     expect(apiClient).toContain("export function userHasPermission");
     expect(apiClient).toContain("permissions: Array.isArray(raw.permissions)");
-    // The audit tab is offered on the same code the endpoint checks.
+    // The audit tab is offered on the same code the endpoint checks, through
+    // the one grant rule the screen shares with the rest of the catalog.
     expect(auditTab).toContain('userHasPermission(user, "audit.view")');
-    expect(centerPage).toContain('(permissions ?? []).includes("audit.view")');
+    expect(apiClient).toContain("export function roleHoldsPermission");
+    expect(centerPage).toContain('return holds("audit.view");');
   });
 
   test("the audit tab returns null AFTER its hooks, never before", () => {
