@@ -130,7 +130,8 @@ const SETTINGS_SECTIONS = [
 /**
  * velcenter permission model (company-only):
  * - owner:  everything, including managing employees
- * - admin:  business data + the customer directory, but NO employee management
+ * - admin:  business data + the customer directory + the read-only employee
+ *           roster, but NO employee management (create/reset/permissions)
  *           (department-scoped in production; e.g. marketing admin)
  * - staff:  overview/intel, plus exactly the business tabs their
  *           `employees.permissions` grants (orders.view, products.moderate,
@@ -169,13 +170,14 @@ function canSeeTab(
 
     case "categories":
       return role === "owner" || role === "admin";
-    // This tab merges two surfaces: the staff/customer directory is
-    // `users.manage` (GET /api/admin/users enforces exactly that), while
-    // employee management inside stays owner-only — EmployeeManager renders the
-    // owner-only notice for everyone else, so opening the tab exposes only what
-    // the endpoint already permits.
+    // This tab merges three surfaces, each gated by its own code at the API:
+    // the staff/customer directory is `users.manage` (GET /api/admin/users),
+    // the employee roster is `staff.manage` (GET /api/admin/employees), and
+    // employee MANAGEMENT (create / reset / permissions) is owner-only at the
+    // endpoint — EmployeeManager withholds those controls for everyone else, so
+    // opening the tab exposes only what the endpoints already permit.
     case "staff":
-      return holds("users.manage");
+      return holds("users.manage") || holds("staff.manage");
     // owner/admin hold every permission code; a `staff` member needs
     // `audit.view` granted (the same code GET /api/admin/audit-logs checks).
     case "audit":
@@ -223,6 +225,10 @@ export default function Center() {
   // Stable booleans for effect deps (`holds`/`canSee` are re-created per render).
   const canSeePeople = canSee("staff");
   const canSeeSettings = canSee("settings");
+  // GET /api/admin/users (directory) and GET /api/admin/employees (roster) are
+  // separate grants — an account may hold either one without the other.
+  const canSeeDirectory = holds("users.manage");
+  const canReadEmployees = holds("staff.manage");
 
   // Tabs are URL-driven (?tab=orders) so the mobile bottom nav and the desktop
   // tab strip stay in sync, and every view is shareable/deep-linkable.
@@ -275,6 +281,9 @@ export default function Center() {
   const [rejectReason, setRejectReason] = useState("");
   const [modBusy, setModBusy] = useState(false);
   const [verificationRows, setVerificationRows] = useState<{ sellers: VerificationRow[]; products: VerificationRow[] } | null>(null);
+  // The three queue reads below feed the overview counters and tab badges — a
+  // failure must not silently read as "nothing pending".
+  const [queueError, setQueueError] = useState<string | null>(null);
 
   interface SellerRow {
     id: string;
@@ -347,7 +356,8 @@ export default function Center() {
       setSellerRows(await sellerListAction());
     } catch (error) {
       console.error("Seller list error:", error);
-      setSellerRows([]);
+      // Empty must mean empty: a failed read keeps what we have and says so.
+      setQueueError(error instanceof Error ? error.message : "โหลดตัวเลขคิวงานไม่สำเร็จ");
     }
   }, [sellerListAction]);
   const reloadProducts = useCallback(async () => {
@@ -355,7 +365,7 @@ export default function Center() {
       setModProducts(await productModerationAction({}));
     } catch (error) {
       console.error("Product moderation list error:", error);
-      setModProducts([]);
+      setQueueError(error instanceof Error ? error.message : "โหลดตัวเลขคิวงานไม่สำเร็จ");
     }
   }, [productModerationAction]);
 
@@ -374,9 +384,17 @@ export default function Center() {
       });
     } catch (error) {
       console.error("Verification list error:", error);
-      setVerificationRows({ sellers: [], products: [] });
+      setQueueError(error instanceof Error ? error.message : "โหลดตัวเลขคิวงานไม่สำเร็จ");
     }
   }, [verificationsAction]);
+
+  /** Re-read the three queues behind the overview counters. */
+  const retryQueues = useCallback(() => {
+    setQueueError(null);
+    void reloadSellers();
+    void reloadProducts();
+    void reloadVerifications();
+  }, [reloadSellers, reloadProducts, reloadVerifications]);
 
   useEffect(() => {
     reloadSellers();
@@ -424,6 +442,12 @@ export default function Center() {
             }
             if (msg.type === "order:updated" || msg.type === "order:created") {
               emitCenterEvent("orders");
+            }
+            // `employee:created` / `employee:updated` are broadcast when a center
+            // session creates or changes an account — the roster and the
+            // directory both re-read from the API.
+            if (msg.type === "employee:created" || msg.type === "employee:updated") {
+              emitCenterEvent("staff");
             }
             if (
               msg.type === "audit:created" ||
@@ -539,9 +563,14 @@ export default function Center() {
 
   useEffect(() => {
     // Directory reads are `users.manage`; fetching without the grant is a 403.
-    if (!canSeePeople) return;
+    if (!canSeePeople || !canSeeDirectory) return;
     void loadPeople();
-  }, [canSeePeople, loadPeople]);
+    // Creating / activating / re-permissioning an employee changes the
+    // directory too — the backend's `employee:*` events land here as "staff".
+    return onCenterEvent("staff", () => {
+      void loadPeople();
+    });
+  }, [canSeePeople, canSeeDirectory, loadPeople]);
 
   // Storefront settings now live in Neon platform_settings (spec §15–16) —
   // read/write through the center actions (owner/admin, audit-logged).
@@ -904,6 +933,18 @@ export default function Center() {
             ภาพรวมทั้งบริษัท ออเดอร์ ระบบอัจฉริยะ และสิทธิ์การเข้าถึงตามยศ
           </p>
         </div>
+
+        {queueError && (
+          <div className="mt-6 flex flex-col items-start gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="flex items-center gap-2 text-sm text-red-700">
+              <AlertTriangle className="size-4 shrink-0" />
+              โหลดตัวเลขคิวงานไม่สำเร็จ: {queueError}
+            </p>
+            <Button variant="outline" size="sm" className="shrink-0 rounded-[10px]" onClick={retryQueues}>
+              ลองใหม่
+            </Button>
+          </div>
+        )}
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-7">
           <TabsList className="w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
@@ -1675,6 +1716,7 @@ export default function Center() {
                 </div>
               )}
 
+              {canSeeDirectory ? (
               <Tabs value={peopleSegment} onValueChange={(v) => setPeopleSegment(v as "staff" | "customer")}>
                 <TabsList className="w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
                   <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
@@ -1875,6 +1917,18 @@ export default function Center() {
                         พนักงาน (staff) ดูตัวเลขธุรกิจได้แต่แตะข้อมูลไม่ได้ · ผู้ดูแลฝ่าย (admin) จัดการข้อมูลได้แต่จัดการพนักงานไม่ได้
                       </p>
                     </>
+                  ) : canReadEmployees ? (
+                    <>
+                      <Card className="mb-4 max-w-2xl border-slate-200 shadow-none">
+                        <CardContent className="pt-5">
+                          <p className="flex items-center gap-2 text-sm text-slate-600">
+                            <Crown className="size-4 shrink-0 text-amber-500" />
+                            ดูบัญชีพนักงานได้ตามสิทธิ์ staff.manage — การสร้างบัญชี แก้ไขสิทธิ์ และรีเซ็ตรหัสผ่านเป็นสิทธิ์ของเจ้าของบริษัทเท่านั้น
+                          </p>
+                        </CardContent>
+                      </Card>
+                      <EmployeeManager readOnly />
+                    </>
                   ) : (
                     <Card className="border-slate-200 shadow-none">
                       <CardContent className="pt-5">
@@ -1993,6 +2047,11 @@ export default function Center() {
                   </Card>
                 </TabsContent>
               </Tabs>
+              ) : (
+                /* `staff.manage` without `users.manage`: the employee roster on
+                   its own — the directory endpoint would be a guaranteed 403. */
+                <EmployeeManager readOnly={!isOwner} />
+              )}
             </TabsContent>
           )}
 
@@ -2004,7 +2063,7 @@ export default function Center() {
               the platform/company — not one shop. Editable values persist to
               Neon `platform_settings` and every change is audit-logged
               server-side. Read-only values come from the backend component that
-              actually owns them (payout policy, upload limits) so there is
+              actually owns them (commission policy, upload limits) so there is
               never a second source of truth for money or media. */}
           {canSee("settings") && (
             <TabsContent value="settings" className="mt-6">

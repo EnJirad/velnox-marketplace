@@ -285,11 +285,6 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
     ),
   "api.centerAdmin.permissionCatalog": () => apiGet("/api/admin/permissions"),
   "api.centerAdmin.setStaffProfileAction": (a) => apiPatch("/api/admin/staff", a),
-  "api.centerAdmin.recomputeBalances": () => apiPost("/api/admin/recompute-balances"),
-  "api.centerAdmin.platformRevenue": () => apiGet("/api/admin/revenue"),
-  "api.centerAdmin.payoutList": () => apiGet("/api/admin/payouts"),
-  "api.centerAdmin.processPayoutAction": (a) => apiPost("/api/admin/payouts/process", a),
-  "api.centerAdmin.getBusinessRules": () => apiGet("/api/admin/rules"),
 
 
   // Category admin (owner/admin)
@@ -345,8 +340,6 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.sellerOps.addTrackingEventAction": (a) => apiPost(`/api/seller/shipments/${a.shipmentId}/tracking`, a),
 
   "api.sellerOps.sellerFinancialReportAction": () => apiGet("/api/seller/financial-report"),
-  "api.sellerOps.myPayouts": () => apiGet("/api/seller/payouts"),
-  "api.sellerOps.requestPayoutAction": (a) => apiPost("/api/seller/payouts/request", a),
   "api.sellerOps.updateShopLocation": (a) => apiPatch(`/api/seller/shop/${a.shopId}/location`, a),
 
   // Storefront

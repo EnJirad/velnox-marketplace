@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-18 (VelCenter final gap fix + the catalog enforced at every endpoint)
+**Last updated:** 2026-09-18 (gaps closed: staff.manage read path · realtime dead ends · silent empty states)
 **Branch:** `main`
 
 ## Current Project State
@@ -1613,8 +1613,120 @@ directory/settings fetches are skipped without their grant instead of firing a
 
 ### Known limitations
 
-- A staff account holding `staff.manage` may call `GET /api/admin/employees`,
-  but the employee manager screen stays owner-only (every mutation it offers is
-  owner-only), so that read grant has no screen of its own yet.
+- Resolved in the round below: a staff account holding `staff.manage` now gets
+  the roster read-only. The manager screen (create / reset / permissions) stays
+  owner-only, which is exactly what those endpoints enforce.
 - No database change in this pass: `employees.permissions` (JSONB) already
   existed, and `db/schema.sql` ↔ `db/run-sqleditor.sql` remain in sync.
+
+## Remaining gaps closed — staff.manage read path · realtime dead ends · silent empty states (2026-09-18, round 2)
+
+Starting from `1b7a355`, this pass audited the HEAD itself instead of trusting
+the previous report, and fixed only what the source proved broken.
+
+### Gaps found and closed
+
+**1. `staff.manage` had no screen** (the limitation named in the section above).
+`GET /api/admin/employees` already required the grant, but the roster only
+rendered for the owner: root cause was a tab policy that checked `users.manage`
+alone plus a manager component with no read-only mode.
+
+- `canSeeTab("staff")` is now `users.manage OR staff.manage`.
+- The people tab offers each read on its own code — the directory
+  (`users.manage`, `GET /api/admin/users`) and the roster (`staff.manage`,
+  `GET /api/admin/employees`). An account holding only `staff.manage` gets the
+  roster without the directory, which would be a guaranteed 403.
+- `EmployeeManager` takes `readOnly`: the create button, the reset / activate
+  controls, the permission editor and the owner-only catalog call are withheld;
+  what renders is exactly what the endpoint already served. The mutation
+  boundary is unchanged — create / reset / permissions still require `isOwner`.
+
+**2. Broadcast events the client ignored, and a channel with no publisher.**
+`employee:created` / `employee:updated` were published on every create, activate
+and permission change while the VelCenter socket did nothing with them, so
+another session needed a browser refresh. In the other direction, the client
+subscribed to `order:updated` and wired the fan-out but no route ever published
+it.
+
+- A `staff` event joined `apps/velcenter/src/lib/center-events.ts`; the socket
+  handler maps the two employee events onto it; the roster and the directory
+  both re-read from the API.
+- `PATCH /api/admin/orders/:orderId/status` now publishes `order:updated` on the
+  existing channel, so every open VelCenter session follows the status.
+
+**3. Failures rendered as empty data.** `catch { setSellerRows([]) }`,
+`setModProducts([])`, `setVerificationRows({ sellers: [], products: [] })` in
+`Center.tsx` and `catch { setEmployees([]) }` in `EmployeeManager.tsx` turned a
+500 or a database error into "nothing pending" / "no employees" — and those
+counters drive the overview shortcuts and tab badges, so a failed read read as a
+fact.
+
+- The three queue reads keep their rows and raise `queueError`; the page shows a
+  banner with retry.
+- The roster separates loading / data / empty / error + retry, and keeps its rows
+  on screen with a staleness banner when only a refresh fails.
+
+**4. Dead client routes for the removed payout system.** `api-routes.ts` still
+listed five admin and two seller payout endpoints that no route implements and
+no screen calls. Removed — the catalog already dropped `payouts.process` for the
+same reason.
+
+### Realtime coverage after this pass
+
+| Broadcast | Channel | Consumer |
+|---|---|---|
+| `product:moderated` / `product:updated` | `product:updated` | queues · audit · counters |
+| `seller:status-changed` | `seller:updated` | verification queue · seller list · audit |
+| `audit:created` | `audit:created` | audit tab |
+| `employee:created` / `employee:updated` | `notification:created` | roster · directory (new) |
+| `order:updated` | `order:updated` | orders tab (publisher new) |
+
+Every operator action also refetches its own surface on success (categories,
+settings, orders, moderation decisions), and each tab re-reads from the API — a
+WebSocket event is a signal, never data. No `setTimeout` fake-realtime anywhere.
+
+### Validation
+
+| Check | Result |
+|---|---|
+| backend tsc | pass |
+| velshop / velseller / velcenter / velnox tsc | pass |
+| velcenter `vite build` | pass |
+| backend tests | 351 pass / 0 fail (380 total, 29 pre-existing skips) |
+| i18n:check | pass (th=1289 en=1289 my=1289) |
+| git diff --check | CLEAN |
+
+### Production verification status (honest)
+
+- Verified by source and contract tests: the guards, the tab policy, the realtime
+  wiring, the error states, variant images
+  (`product_variants` → `product_variant_images` → moderation-detail API →
+  `VariantList`, with "ไม่มีรูป" when a variant has no image) and the mobile
+  inspection sheet (full-screen `h-[100dvh]` on phones, 30dvh bounded gallery,
+  snap thumbnails, one internal scroll, pinned action bar).
+- NOT proven: a live browser E2E against production. There is no bundled browser
+  runner here and no safe way to mutate production data to observe the socket
+  round trip, so the WebSocket end-to-end path and the 320/360/390/430px
+  viewports rest on source-level and contract verification only.
+
+### Remaining gaps (open, not closed)
+
+- Ten client mappings still point at paths the backend does not implement
+  (`/api/commerce/regulars`, `/api/memory/my-memory`, `/api/memory/reminders`,
+  `/api/memory/flush`, `/api/seller/shipments` + `/tracking`,
+  `/api/seller/financial-report`). No screen calls them, so nothing is broken
+  today; they are leftovers of features that were never built.
+- Order status is published only from the VelCenter admin route. The buyer
+  cancel (`cart.ts`), seller fulfilment (`seller-orders.ts`) and the Stripe
+  webhook (`stripe.ts`) writers do not publish, so those transitions reach other
+  sessions only through their audit event.
+- Category and settings changes publish no channel of their own: the acting
+  session refetches, other open sessions do not.
+
+### Files changed (this pass)
+
+`apps/velcenter/src/pages/Center.tsx` ·
+`apps/velcenter/src/components/EmployeeManager.tsx` ·
+`apps/velcenter/src/lib/center-events.ts` · `backend/routes/center.ts` ·
+`packages/shared/src/lib/api-routes.ts` · `backend/tests/center-rbac.test.ts` ·
+`backend/tests/center-admin-audit.test.ts`.

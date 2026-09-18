@@ -12,7 +12,8 @@ export type CenterRealtimeEvent =
   | "audit" // a new audit_logs row may exist
   | "products" // product moderation queue changed
   | "sellers" // seller / verification queue changed
-  | "orders"; // order list changed
+  | "orders" // order list changed
+  | "staff"; // an employee account was created or updated
 
 type Listener = () => void;
 
@@ -21,6 +22,7 @@ const listeners: Record<CenterRealtimeEvent, Set<Listener>> = {
   products: new Set(),
   sellers: new Set(),
   orders: new Set(),
+  staff: new Set(),
 };
 
 /** Called by the Center page's WebSocket handler after a realtime event arrives. */

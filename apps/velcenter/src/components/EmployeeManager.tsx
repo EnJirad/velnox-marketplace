@@ -30,6 +30,7 @@ import {
 } from "@velnox/shared/components/ui/table";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
+  AlertCircle,
   BadgeCheck,
   Copy,
   Crown,
@@ -37,11 +38,13 @@ import {
   Loader2,
   LockKeyhole,
   Plus,
+  RefreshCw,
   ShieldCheck,
   UserPlus,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { onCenterEvent } from "../lib/center-events";
 
 interface EmployeeRow {
   userId: string;
@@ -78,14 +81,20 @@ const DEPARTMENT_LABEL: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * VelCenter employee accounts (spec §9–§11, §42) — owner only.
+ * VelCenter employee accounts (spec §9–§11, §42).
+ *
+ * Reading the roster is `staff.manage` (GET /api/admin/employees). Creating,
+ * resetting and permission-editing are OWNER-ONLY at the endpoint, so those
+ * controls render only for the owner: `readOnly` is the honest view for a
+ * non-owner who holds `staff.manage` — the same data the endpoint already
+ * serves them, with every owner-only control withheld.
  *
  * The company can never view an existing password: only the scrypt hash is
  * stored (auth Password provider). Creating or resetting an employee
  * generates a one-time temporary password that is shown EXACTLY ONCE here,
  * and the employee is forced to set a new one on first login.
  */
-export default function EmployeeManager() {
+export default function EmployeeManager({ readOnly = false }: { readOnly?: boolean }) {
   const employeeListAction = useAction(api.employeeAuth.employeeListAction);
   const createEmployeeAction = useAction(api.employeeAuth.createEmployeeAction);
   const resetEmployeePasswordAction = useAction(api.employeeAuth.resetEmployeePasswordAction);
@@ -95,6 +104,7 @@ export default function EmployeeManager() {
 
   const [employees, setEmployees] = useState<EmployeeRow[] | null>(null);
   const [catalog, setCatalog] = useState<PermissionItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Create-employee dialog
@@ -127,17 +137,32 @@ export default function EmployeeManager() {
     try {
       const rows = await employeeListAction();
       setEmployees(rows as unknown as EmployeeRow[]);
-    } catch {
-      setEmployees([]);
+      setError(null);
+    } catch (err) {
+      // A failed read is NOT "no employees". Keep the rows already on screen
+      // and surface the failure with a retry — empty must mean empty.
+      setError(err instanceof Error ? err.message : "โหลดบัญชีพนักงานไม่สำเร็จ");
     }
   }, [employeeListAction]);
 
   useEffect(() => {
     void load();
+    // The backend broadcasts `employee:created` / `employee:updated` whenever a
+    // center session creates or changes an account; the Center page maps those
+    // onto this event, so the roster updates without a browser refresh.
+    return onCenterEvent("staff", () => {
+      void load();
+    });
+  }, [load]);
+
+  useEffect(() => {
+    // The catalog endpoint is owner-only (GET /api/admin/permissions); the
+    // read-only roster never needs it.
+    if (readOnly) return;
     void permissionCatalogAction()
       .then((c) => setCatalog(c as unknown as PermissionItem[]))
       .catch(() => setCatalog([]));
-  }, [load, permissionCatalogAction]);
+  }, [readOnly, permissionCatalogAction]);
 
   const togglePermission = (code: string) =>
     setNewPermissions((list) =>
@@ -249,29 +274,58 @@ export default function EmployeeManager() {
           <ShieldCheck className="size-4 text-[#10B981]" />
           บัญชีพนักงาน (ล็อกอิน velcenter)
         </CardTitle>
-        <Button
-          className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-          size="sm"
-          onClick={() => setShowCreate(true)}
-        >
-          <UserPlus className="size-4" />
-          สร้างพนักงาน
-        </Button>
+        {!readOnly && (
+          <Button
+            className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+            size="sm"
+            onClick={() => setShowCreate(true)}
+          >
+            <UserPlus className="size-4" />
+            สร้างพนักงาน
+          </Button>
+        )}
       </CardHeader>
       <CardContent>
         <p className="mb-4 text-xs leading-5 text-slate-400">
-          รหัสผ่านถูกเก็บเป็น hash เท่านั้น — บริษัทไม่สามารถดูรหัสผ่านเดิมของใครได้ การสร้าง/รีเซ็ตจะให้
-          รหัสชั่วคราว 1 ครั้ง แล้วบังคับให้พนักงานตั้งรหัสใหม่ตอนล็อกอินครั้งแรก
+          {readOnly
+            ? "มุมมองอ่านอย่างเดียว — การสร้างบัญชี แก้ไขสิทธิ์ และรีเซ็ตรหัสผ่านเป็นสิทธิ์ของเจ้าของบริษัทเท่านั้น"
+            : "รหัสผ่านถูกเก็บเป็น hash เท่านั้น — บริษัทไม่สามารถดูรหัสผ่านเดิมของใครได้ การสร้าง/รีเซ็ตจะให้รหัสชั่วคราว 1 ครั้ง แล้วบังคับให้พนักงานตั้งรหัสใหม่ตอนล็อกอินครั้งแรก"}
         </p>
 
-        {employees === null ? (
-          <div className="flex items-center gap-2 py-6 text-sm text-slate-400">
-            <Loader2 className="size-4 animate-spin" />
-            กำลังโหลดพนักงาน...
+        {/* Refresh failure with rows already on screen: keep the table, flag the
+            staleness, offer the retry. */}
+        {employees !== null && error && (
+          <div className="mb-3 flex flex-col items-start gap-2 rounded-[10px] border border-red-200 bg-red-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="flex items-center gap-2 text-xs text-rose-700">
+              <AlertCircle className="size-3.5 shrink-0" />
+              อัปเดตข้อมูลล่าสุดไม่สำเร็จ: {error}
+            </p>
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5 rounded-[10px]" onClick={() => void load()}>
+              <RefreshCw className="size-3.5" />
+              ลองใหม่
+            </Button>
           </div>
+        )}
+
+        {employees === null ? (
+          error ? (
+            <div className="flex flex-col items-center gap-2 rounded-[10px] border border-red-200 bg-red-50/60 px-3 py-6 text-center">
+              <AlertCircle className="size-5 text-rose-500" />
+              <p className="max-w-sm text-sm text-rose-700">โหลดบัญชีพนักงานไม่สำเร็จ: {error}</p>
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-[10px]" onClick={() => void load()}>
+                <RefreshCw className="size-3.5" />
+                ลองใหม่
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 py-6 text-sm text-slate-400">
+              <Loader2 className="size-4 animate-spin" />
+              กำลังโหลดพนักงาน...
+            </div>
+          )
         ) : employees.length === 0 ? (
           <p className="rounded-[10px] bg-slate-50 px-3 py-4 text-center text-sm text-slate-400">
-            ยังไม่มีพนักงาน — กด “สร้างพนักงาน” เพื่อสร้างบัญชีแรก
+            {readOnly ? "ยังไม่มีบัญชีพนักงาน" : "ยังไม่มีพนักงาน — กด “สร้างพนักงาน” เพื่อสร้างบัญชีแรก"}
           </p>
         ) : (
           <>
@@ -284,7 +338,7 @@ export default function EmployeeManager() {
                     <TableHead className="text-slate-400">รหัสพนักงาน</TableHead>
                     <TableHead className="text-slate-400">บทบาท / ฝ่าย</TableHead>
                     <TableHead className="text-slate-400">สถานะ</TableHead>
-                    <TableHead className="pr-4 text-right text-slate-400">จัดการ</TableHead>
+                    {!readOnly && <TableHead className="pr-4 text-right text-slate-400">จัดการ</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -328,43 +382,45 @@ export default function EmployeeManager() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="pr-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1.5 border-slate-200 text-slate-600"
-                            onClick={() => openPermEditor(e)}
-                            disabled={busy === e.userId}
-                          >
-                            <ShieldCheck className="size-3.5" />
-                            สิทธิ์
-                          </Button>
-                          {e.passwordAuth && (
+                      {!readOnly && (
+                        <TableCell className="pr-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
                             <Button
                               variant="outline"
                               size="sm"
                               className="gap-1.5 border-slate-200 text-slate-600"
-                              onClick={() => handleReset(e)}
+                              onClick={() => openPermEditor(e)}
                               disabled={busy === e.userId}
                             >
-                              <KeyRound className="size-3.5" />
-                              รีเซ็ตรหัส
+                              <ShieldCheck className="size-3.5" />
+                              สิทธิ์
                             </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className={`gap-1.5 border-slate-200 ${
-                              e.active ? "text-rose-600" : "text-emerald-600"
-                            }`}
-                            onClick={() => handleToggleActive(e)}
-                            disabled={busy === e.userId}
-                          >
-                            {e.active ? "ปิดการใช้งาน" : "เปิดการใช้งาน"}
-                          </Button>
-                        </div>
-                      </TableCell>
+                            {e.passwordAuth && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 border-slate-200 text-slate-600"
+                                onClick={() => handleReset(e)}
+                                disabled={busy === e.userId}
+                              >
+                                <KeyRound className="size-3.5" />
+                                รีเซ็ตรหัส
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className={`gap-1.5 border-slate-200 ${
+                                e.active ? "text-rose-600" : "text-emerald-600"
+                              }`}
+                              onClick={() => handleToggleActive(e)}
+                              disabled={busy === e.userId}
+                            >
+                              {e.active ? "ปิดการใช้งาน" : "เปิดการใช้งาน"}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -413,41 +469,43 @@ export default function EmployeeManager() {
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 border-slate-200 text-slate-600"
-                      onClick={() => openPermEditor(e)}
-                      disabled={busy === e.userId}
-                    >
-                      <ShieldCheck className="size-3.5" />
-                      สิทธิ์
-                    </Button>
-                    {e.passwordAuth && (
+                  {!readOnly && (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
                       <Button
                         variant="outline"
                         size="sm"
                         className="gap-1.5 border-slate-200 text-slate-600"
-                        onClick={() => handleReset(e)}
+                        onClick={() => openPermEditor(e)}
                         disabled={busy === e.userId}
                       >
-                        <KeyRound className="size-3.5" />
-                        รีเซ็ตรหัส
+                        <ShieldCheck className="size-3.5" />
+                        สิทธิ์
                       </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={`gap-1.5 border-slate-200 ${
-                        e.active ? "text-rose-600" : "text-emerald-600"
-                      }`}
-                      onClick={() => handleToggleActive(e)}
-                      disabled={busy === e.userId}
-                    >
-                      {e.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
-                    </Button>
-                  </div>
+                      {e.passwordAuth && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 border-slate-200 text-slate-600"
+                          onClick={() => handleReset(e)}
+                          disabled={busy === e.userId}
+                        >
+                          <KeyRound className="size-3.5" />
+                          รีเซ็ตรหัส
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`gap-1.5 border-slate-200 ${
+                          e.active ? "text-rose-600" : "text-emerald-600"
+                        }`}
+                        onClick={() => handleToggleActive(e)}
+                        disabled={busy === e.userId}
+                      >
+                        {e.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

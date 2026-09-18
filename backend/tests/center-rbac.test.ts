@@ -34,6 +34,9 @@ const productsSrc = read("backend/routes/products.ts");
 const authSrc = read("backend/routes/auth.ts");
 const apiClientSrc = read("packages/shared/src/lib/api-client.ts");
 const centerPage = read("apps/velcenter/src/pages/Center.tsx");
+const employeeManagerSrc = read("apps/velcenter/src/components/EmployeeManager.tsx");
+const centerEventsSrc = read("apps/velcenter/src/lib/center-events.ts");
+const apiRoutesSrc = read("packages/shared/src/lib/api-routes.ts");
 
 /** Every backend file that must not re-implement authorization itself. */
 const routeSources = {
@@ -193,9 +196,14 @@ describe("the session profile carries what the UI needs", () => {
     // One grant rule for the whole screen, shared with the session helper.
     expect(centerPage).toContain("const holds = (code: string) => roleHoldsPermission(role, permissions, code);");
     expect(apiClientSrc).toContain("export function roleHoldsPermission");
-    for (const code of ["orders.view", "products.moderate", "sellers.manage", "users.manage", "audit.view"]) {
+    for (const code of ["orders.view", "products.moderate", "sellers.manage", "audit.view"]) {
       expect(centerPage).toContain(`return holds("${code}");`);
     }
+    // The people tab merges two independently-granted reads: the directory
+    // (users.manage) and the employee roster (staff.manage).
+    expect(centerPage).toContain('return holds("users.manage") || holds("staff.manage");');
+    expect(centerPage).toContain('const canSeeDirectory = holds("users.manage");');
+    expect(centerPage).toContain('const canReadEmployees = holds("staff.manage");');
     // a granted write permission must also unlock the control it writes with
     expect(centerPage).toContain('holds("settings.manage")');
     expect(centerPage).toContain('const canManageOrders = holds("orders.manage");');
@@ -214,6 +222,94 @@ describe("the session profile carries what the UI needs", () => {
     expect(unenforced).toEqual([]);
     expect(codes).not.toContain("payouts.process");
     expect(codes).toContain("products.moderate");
+  });
+});
+
+describe("the staff read grant is reachable end to end", () => {
+  test("the roster endpoint is the catalog code, mutations stay owner-only", () => {
+    const list = centerSrc.indexOf('app.get("/api/admin/employees"');
+    const route = centerSrc.slice(list, list + 800);
+    // Membership to open VelCenter, then the grant to read the roster — the
+    // same two checks a direct API call goes through when the UI is bypassed.
+    expect(route).toContain("canReadCenter(req.user!.userId)");
+    expect(route).toContain('userHasPermission(req.user!.userId, "staff.manage")');
+  });
+
+  test("a non-owner holder sees the roster, never the owner-only controls", () => {
+    // Without this the grant was decorative: the endpoint served the roster but
+    // the UI only ever rendered the manager for the owner.
+    expect(employeeManagerSrc).toContain("export default function EmployeeManager({ readOnly = false }");
+    expect(centerPage).toContain("<EmployeeManager readOnly />");
+    expect(centerPage).toContain("<EmployeeManager readOnly={!isOwner} />");
+    for (const control of ["setShowCreate", "handleReset", "openPermEditor", "handleToggleActive"]) {
+      expect(employeeManagerSrc).toContain(`${control}`);
+    }
+    expect(employeeManagerSrc).toContain("{!readOnly && (");
+    // The catalog it edits from is owner-only too — a read-only view must not call it.
+    expect(employeeManagerSrc).toContain("if (readOnly) return;");
+  });
+
+  test("a failed roster read is an error state, not an empty list", () => {
+    expect(employeeManagerSrc).not.toContain("setEmployees([])");
+    expect(employeeManagerSrc).toContain("setError(err instanceof Error ? err.message");
+    expect(employeeManagerSrc).toContain("ลองใหม่");
+  });
+
+  test("every employee broadcast reaches the UI", () => {
+    // `employee:created` / `employee:updated` were broadcast while the client
+    // ignored them, so another session's change needed a browser refresh.
+    expect(centerSrc).toContain('"employee:created"');
+    expect(centerSrc).toContain('"employee:updated"');
+    expect(centerPage).toContain('msg.type === "employee:created" || msg.type === "employee:updated"');
+    expect(centerPage).toContain('emitCenterEvent("staff")');
+    expect(centerEventsSrc).toContain('"staff"');
+    // both owners of the data re-read from the API
+    expect(employeeManagerSrc).toContain('onCenterEvent("staff"');
+    expect(centerPage).toContain('onCenterEvent("staff"');
+  });
+})
+
+describe("client API mappings point at real endpoints", () => {
+  test("the removed payout system leaves no client route behind", () => {
+    // The catalog dropped `payouts.process` (no endpoint ever enforced it);
+    // the client mappings promised the same missing API.
+    for (const dead of [
+      "/api/admin/payouts",
+      "/api/admin/revenue",
+      "/api/admin/recompute-balances",
+      "/api/admin/rules",
+      "/api/seller/payouts",
+    ]) {
+      expect(apiRoutesSrc).not.toContain(dead);
+    }
+    expect(apiRoutesSrc).not.toContain("processPayoutAction");
+    expect(apiRoutesSrc).not.toContain("requestPayoutAction");
+  });
+})
+
+describe("a failed read is never rendered as an empty state", () => {
+  // The dangerous pattern is `catch { setRows([]) }`: a 500 or a DB error turns
+  // into "there is no data", which reads as a fact instead of a failure.
+  test("the overview queue counters keep the failure visible", () => {
+    expect(centerPage).not.toContain("setSellerRows([])");
+    expect(centerPage).not.toContain("setModProducts([])");
+    expect(centerPage).not.toContain("setVerificationRows({ sellers: [], products: [] })");
+    expect(centerPage).toContain("const [queueError, setQueueError] = useState<string | null>(null);");
+    expect(centerPage).toContain("โหลดตัวเลขคิวงานไม่สำเร็จ");
+  });
+
+  test("the employee roster does the same", () => {
+    expect(employeeManagerSrc).not.toContain("setEmployees([])");
+  });
+});
+
+describe("realtime wiring has no dead end", () => {
+  test("the orders channel is published to, not only subscribed to", () => {
+    // The client subscribed to `order:updated` and wired the fan-out, but no
+    // route ever published it — the subscription could never fire.
+    expect(centerSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
+    expect(centerPage).toContain('channel: "order:updated"');
+    expect(centerPage).toContain('msg.type === "order:updated" || msg.type === "order:created"');
   });
 });
 

@@ -83,12 +83,16 @@ describe("staff vs customer directory", () => {
   });
 
   test("employee management stays owner-only and the directory follows users.manage", () => {
-    // The people tab follows the directory grant (`users.manage`, enforced by
-    // GET /api/admin/users); the employee/permission manager inside it is
-    // rendered for the owner alone, and role changes stay owner-only server-side.
-    expect(centerPage).toContain('case "staff":\n      return holds("users.manage");');
+    // The people tab merges two reads, each with its own grant: the directory
+    // (`users.manage`, enforced by GET /api/admin/users) and the roster
+    // (`staff.manage`, enforced by GET /api/admin/employees). The write side is
+    // unchanged — the manager's controls render for the owner alone and every
+    // role change stays owner-only server-side.
+    expect(centerPage).toContain('case "staff":\n      return holds("users.manage") || holds("staff.manage");');
     expect(centerPage).toContain("{isOwner ? (");
+    expect(centerPage).toContain("<EmployeeManager readOnly />");
     expect(centerSrc).toContain("isOwner(req.user!.userId)");
+    expect(centerSrc).toContain('userHasPermission(req.user!.userId, "staff.manage")');
   });
 });
 

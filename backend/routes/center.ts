@@ -475,6 +475,9 @@ export function setupCenterRoutes(app: Express): void {
 
       await query("UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2", [to, orderId]);
       await writeAuditLog(req.user!.userId, "ORDER_STATUS_UPDATE", "order", orderId, { from, to }, auditClientIp(req));
+      // The VelCenter orders tab subscribes to `order:updated` — publish it so
+      // every open session follows the status, not only the one that acted.
+      try { broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, from, to }); } catch { /* best-effort */ }
       res.json({ success: true, data: { id: orderId, status: to } });
     } catch (err) {
       console.error("[center] order status error:", err);
