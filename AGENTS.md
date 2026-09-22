@@ -14,7 +14,7 @@ Multi-vendor marketplace. Four Vercel frontends → one Render backend (Express 
 3. docs/ai/PROJECT_MAP.md             ← to locate files
 4. docs/ai/<SUBSYSTEM>.md             ← only the subsystem you touch
 5. Actual source code                 ← authoritative implementation
-6. Verify → update AI_Handoff.md
+6. Verify → update AI_Handoff.md (current state only)
 ```
 
 Do NOT read every doc file. Load the smallest useful set.
@@ -30,7 +30,11 @@ Do NOT read every doc file. Load the smallest useful set.
 | Fix styling / theme | `docs/ai/DESIGN.md` |
 | Full audit | `docs/ai/ARCHITECTURE.md` then subsystems as needed |
 
-History in `docs/ai/history/` is **reference only** — do not load automatically.
+History is **reference only** — do not load it automatically:
+`AI_Handoff_Archive.md` (dated index) → `docs/ai/history/archive/` (full records).
+`AI_Handoff.md` holds current state + remaining gaps only and must stay small —
+this environment's file-edit tools stop matching past roughly 55 KB, so archive
+superseded sections instead of growing it.
 
 ## Rules for Every Task
 

@@ -1,0 +1,73 @@
+# Velnox Handoff Archive
+
+**Reference only — do not load automatically.** Current state lives in
+[`AI_Handoff.md`](./AI_Handoff.md); load that first.
+
+This file is the **index** to completed, superseded and investigated work. The
+long-form narrative for every entry below is kept verbatim (under version control,
+unchanged) in:
+
+| File | What it holds |
+|---|---|
+| [`docs/ai/history/archive/AI_Handoff-2026-09-22-full.md`](./docs/ai/history/archive/AI_Handoff-2026-09-22-full.md) | the complete handoff as it stood at 2026-09-22, before the split (1,594 lines) |
+| [`docs/ai/history/archive/AI_Handoff-2026-09-14.md`](./docs/ai/history/archive/AI_Handoff-2026-09-14.md) | the earlier snapshot it replaced |
+
+**Why the index exists:** this environment's file-edit tools stop matching past
+roughly 55 KB in a file, so the single ~109 KB handoff could no longer be edited.
+Nothing was discarded — the full text moved to the paths above and is durable in
+git history.
+
+Nothing here is guaranteed to describe the current code. The repository is always
+authoritative; treat these entries as "what was done and why", and confirm against
+source before relying on any of it.
+
+---
+
+## Index
+
+Line numbers below point into `AI_Handoff-2026-09-22-full.md`.
+
+### 2026-09-15 — the verification overhaul + category UI
+
+| Lines | Entry | Covers |
+|---|---|---|
+| 15 | Product Verification — removed from the user workflow | the single-verification decision; `product_verifications` / `products.verification_status` retained but unwritten |
+| 32 | Category Picker (UI audit 2026-09-15) | duplicate close button; long category names escaping their container; the `min-w-0` / `truncate` / `overflow-x-hidden` width chain; files changed |
+| 106 | VelCenter Category Edit — overflow fix + verification audit (2026-09-15) | long parent-category name covering the “ลำดับ” field; the `auto`-track min-content root cause; similar-pattern audit; seller-verification architecture confirmed unchanged |
+| 213 | Seller Navigation | the VelSeller tab set; why there is no standalone “V Verification” tab |
+| 222 | Database | `sellers.status` CHECK widening, `review_reason_code` / `review_note`, `seller_review_history`, migrations 043/044 |
+| 235 | VelRepeat `item_unavailable` — investigated and fixed | duplicated migration numbers 029/030/034/035 and the prefix-keyed runner that skipped the repair |
+| 257 | Files Changed | the file-by-file list for the overhaul |
+| 275 | Tests Actually Performed | plus the two per-audit test tables |
+| 324 | Known Limitations | the limitation list as of 2026-09-15 — most items were carried forward into `AI_Handoff.md` §6 |
+
+### 2026-09-16 — production incidents and the control-plane upgrade
+
+| Lines | Entry | Covers |
+|---|---|---|
+| 359 | VelCenter Operations Center Upgrade | the first VelCenter console pass: backend, frontend, realtime, security |
+| 442 | Recommended Next Steps | stale planning list, superseded |
+| 459 | Product Visibility Root-Cause Audit | why previously created products stopped appearing; the read-only diagnostic endpoint |
+| 517 | VelCenter Runtime Crash Fix | `Cannot read properties of undefined (reading 'icon')` |
+| 575 | VelCenter Products & Sellers "No Data" Diagnosis | the "no data" symptom traced to real causes |
+| 631 | Production SQL Error Fixes — `sh.status` + `sv.evidence_notes` | the root cause and the schema fix |
+| 698 | Production 42703 root cause: the migration runner was blocked at V0040 | the schema-drift report and how it was cleared |
+| 826 | VelCenter moderation detail (42P10) + VelSeller correction notifications | the `json_agg(DISTINCT … ORDER BY …)` aggregate failure; correction notifications |
+| 954 | UX & Localization Round | V badge redesign; localized category names; responsive audit |
+| 1013 | VelCenter control-plane upgrade | product inspection workspace, staff/customer split, audit logs, company settings |
+| 1080 | Audit Logs SQL repair + mobile product inspection (round 2) | the empty Audit Logs root cause; the phone inspection layout |
+
+### 2026-09-17 → 2026-09-18 — staff auth and the permission catalog
+
+| Lines | Entry | Covers |
+|---|---|---|
+| 1180 | Password Auth + Auto-Refresh + Variant Images + Mobile Nav Removal | member-ID/password login (`users.password_hash`, scrypt), auto-refresh, variant images, removing the VelCenter bottom nav |
+| 1270 | VelCenter Final Gap Fix / Verification | the permission catalog as the single source of truth; the dead force-password-change gate; realtime → UI; errors must not render as "no data" |
+| 1407 | Catalog enforced at every endpoint (follow-up) | every business surface gated by its catalog code; deny-by-default resolution; `payouts.process` removed |
+| 1484 | Remaining gaps closed (round 2) | the `staff.manage` read path; realtime dead ends; silent empty states |
+
+### Beyond the archive
+
+Work after 2026-09-18 is recorded in `AI_Handoff.md` §5 and in git history. When a
+`AI_Handoff.md` section becomes superseded, append it here as an index row and (if
+it is long) move its full text into `docs/ai/history/archive/`.

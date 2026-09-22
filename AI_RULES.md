@@ -155,7 +155,8 @@ Conventional-ish: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. No vagu
 
 ## 15. Handoff & Documentation
 
-- After significant work, update `AI_Handoff.md` (current state only, not history — see `docs/ai/history/README.md`) and, when needed, `docs/ai/<SUBSYSTEM>.md`, `INSTALLATION.md`, or this file.
+- After significant work, update `AI_Handoff.md` (current state + remaining gaps only — see `docs/ai/history/README.md`) and, when needed, `docs/ai/<SUBSYSTEM>.md`, `INSTALLATION.md`, or this file.
+- `AI_Handoff.md` **must stay small**: this environment's file-edit tools stop matching past roughly 55 KB, after which the file can no longer be edited in place. Do not grow it past ~40 KB — move superseded sections to `AI_Handoff_Archive.md` (dated index) and, when long, to `docs/ai/history/archive/`.
 - `AI_Handoff.md` is never more authoritative than source.
 - Every completed task must be committed, pushed, and verified (see §14).
 - If the handoff update changes files after the code commit, commit the handoff change and push it too — do not leave the working tree dirty.

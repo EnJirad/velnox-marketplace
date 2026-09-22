@@ -94,7 +94,10 @@ If SHA mismatch persists after fetch, investigate before reporting.
 
 If the task warrants a handoff update:
 
-1. Edit `AI_Handoff.md`.
+1. Edit `AI_Handoff.md` — current state + remaining gaps, appended at the bottom.
+   Keep it small: the file-edit tools stop matching past roughly 55 KB, so move
+   superseded sections to `AI_Handoff_Archive.md` (dated index) and long-form text
+   to `docs/ai/history/archive/`. Never let `AI_Handoff.md` approach 40 KB.
 2. `git add AI_Handoff.md`.
 3. Commit with a docs message: `docs(ai): update handoff — <topic>`.
 4. Push.

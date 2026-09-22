@@ -81,7 +81,8 @@ velnox-marketplace/
 │   ├── schema.sql     # Complete database schema
 │   └── migrations/    # Migration files
 ├── docs/              # Documentation
-└── AI_Handoff.md      # AI agent handoff document
+├── AI_Handoff.md      # AI handoff — current state + remaining gaps
+└── AI_Handoff_Archive.md  # AI handoff — dated index of past work
 ```
 
 ## Shared Package
@@ -141,3 +142,4 @@ Each app builds independently with `bun run build:<app>`.
 - [Media](docs/MEDIA.md)
 - [I18N](docs/I18N.md)
 - [AI Handoff](AI_Handoff.md)
+- [AI Handoff Archive](AI_Handoff_Archive.md)

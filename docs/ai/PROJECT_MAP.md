@@ -70,7 +70,7 @@ See `docs/ai/DATABASE.md`.
 
 ## Docs & Config
 
-- Root: `AGENTS.md`, `AI_RULES.md`, `AI_Handoff.md`, `INSTALLATION.md`, `VELNOX_DESIGN_THEME.md`, `package.json` (bun workspaces), `vercel.json`
+- Root: `AGENTS.md`, `AI_RULES.md`, `AI_Handoff.md` (current state + remaining gaps), `AI_Handoff_Archive.md` (dated history index), `INSTALLATION.md`, `VELNOX_DESIGN_THEME.md`, `package.json` (bun workspaces), `vercel.json`
 - `docs/`: `API.md`, `ARCHITECTURE.md`, `AUTHENTICATION.md`, `DATABASE.md`, `DEPLOYMENT.md`, `ENVIRONMENT.md`, `I18N.md`, `MEDIA.md`, `REALTIME.md`, `SECURITY.md`, `STORAGE.md`
 - AI context: `docs/ai/*.md` (this directory)
 
