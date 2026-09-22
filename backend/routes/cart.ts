@@ -20,6 +20,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1266,6 +1267,17 @@ export function setupCartRoutes(app: Express): void {
         // restoration regardless of how many actors call cancel.
         await releaseOrderInventory(client, orderId);
       });
+
+      // Publish the transition on the ONE order channel so every open session
+      // follows it (the VelCenter orders tab and the buyer's other tabs) — the
+      // acting session already refetches. The event is a signal, never data.
+      try {
+        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
+          orderId,
+          from: orderRes.rows[0].status,
+          to: "cancelled",
+        });
+      } catch { /* best-effort — a committed cancel never fails on a socket error */ }
 
       res.json({ success: true, data: { id: orderId, status: "cancelled" } });
     } catch (err) {

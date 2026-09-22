@@ -131,6 +131,7 @@ export function setupWebSocket(wss: WebSocketServer): void {
             msg.channel === "inventory:updated" ||
             msg.channel === "seller:updated" ||
             msg.channel === "audit:created" ||
+            msg.channel === "config:updated" ||
             msg.channel === "notification:created";
           if (isOwnChannel || isPublicChannel) {
             client.subscriptions.add(msg.channel);
@@ -229,4 +230,11 @@ export const CHANNELS = {
   CHAT_MESSAGE: "chat:message",
   CHAT_READ: "chat:read",
   AUDIT_CREATED: "audit:created",
+  /**
+   * Platform configuration changed (categories / platform_settings). Published
+   * so every open VelCenter session re-reads the affected surface instead of
+   * only the session that performed the change. The payload carries the
+   * `scope` ("categories" | "settings") and never any setting value.
+   */
+  CONFIG_UPDATED: "config:updated",
 } as const;

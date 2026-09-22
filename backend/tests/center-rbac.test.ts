@@ -37,6 +37,12 @@ const centerPage = read("apps/velcenter/src/pages/Center.tsx");
 const employeeManagerSrc = read("apps/velcenter/src/components/EmployeeManager.tsx");
 const centerEventsSrc = read("apps/velcenter/src/lib/center-events.ts");
 const apiRoutesSrc = read("packages/shared/src/lib/api-routes.ts");
+const cartSrc = read("backend/routes/cart.ts");
+const sellerOrdersSrc = read("backend/routes/seller-orders.ts");
+const stripeSrc = read("backend/routes/stripe.ts");
+const serverSrc = read("backend/server.ts");
+const realtimeSrc = read("backend/realtime/index.ts");
+const categoriesMgmtSrc = read("apps/velcenter/src/components/CategoriesManagement.tsx");
 
 /** Every backend file that must not re-implement authorization itself. */
 const routeSources = {
@@ -310,6 +316,59 @@ describe("realtime wiring has no dead end", () => {
     expect(centerSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
     expect(centerPage).toContain('channel: "order:updated"');
     expect(centerPage).toContain('msg.type === "order:updated" || msg.type === "order:created"');
+  });
+
+  test("every writer that moves an order publishes on that channel", () => {
+    // These three wrote `orders.status` silently: a transition reached other
+    // sessions only through its audit event, so the orders tab could sit on a
+    // stale status. center.ts already published; these are the rest.
+    expect(cartSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
+    expect(sellerOrdersSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
+    expect(stripeSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
+  });
+
+  test("the config channel is registered, subscribable and published to", () => {
+    // Categories and platform settings had no channel of their own, so another
+    // open VelCenter session kept a stale tree/settings form until a refresh.
+    expect(realtimeSrc).toContain('CONFIG_UPDATED: "config:updated"');
+    // A channel the socket refuses to subscribe to can never be received.
+    expect(realtimeSrc).toContain('msg.channel === "config:updated"');
+    // Both config surfaces publish through the one choke point in server.ts.
+    expect(serverSrc).toContain('broadcast(CHANNELS.CONFIG_UPDATED, "config:updated"');
+    expect(serverSrc).toContain('"/api/admin/categories"');
+    expect(serverSrc).toContain('"/api/admin/settings"');
+    // A read or a rejected mutation must never announce a change.
+    expect(serverSrc).toContain('res.statusCode >= 200 && res.statusCode < 300');
+  });
+
+  test("VelCenter consumes the config event instead of ignoring it", () => {
+    expect(centerPage).toContain('channel: "config:updated"');
+    expect(centerPage).toContain('msg.type === "config:updated"');
+    expect(centerEventsSrc).toContain('"config"');
+    expect(categoriesMgmtSrc).toContain('onCenterEvent("config"');
+  });
+});
+
+describe("no client route mapping without a backend route", () => {
+  test("the never-implemented mappings are gone", () => {
+    // Each of these declared a path no backend route serves and no screen ever
+    // called — dead entries that made the mapping table lie about the API.
+    for (const dead of [
+      '"api.commerce.customerRegulars"',
+      '"api.memory.recommendForCustomer"',
+      '"api.memory.dueReorderReminders"',
+      '"api.memory.myMemory"',
+      '"api.memory.flushToNeon"',
+      '"api.sellerOps.myShipments"',
+      '"api.sellerOps.createShipmentAction"',
+      '"api.sellerOps.addTrackingEventAction"',
+      '"api.sellerOps.sellerFinancialReportAction"',
+      '"api.sellerOps.updateShopLocation"',
+    ]) {
+      expect(apiRoutesSrc).not.toContain(dead);
+    }
+    // The one memory endpoint the backend actually implements stays.
+    expect(apiRoutesSrc).toContain('"api.memory.marketInsights"');
   });
 });
 

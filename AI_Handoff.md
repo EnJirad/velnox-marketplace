@@ -1,7 +1,102 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-18 (gaps closed: staff.manage read path · realtime dead ends · silent empty states)
+**Last updated:** 2026-09-22 (the three previously-open gaps closed: dead client route mappings · order-status publishing from every writer · a config realtime channel)
 **Branch:** `main`
+
+> **Read this first.** The sections below are chronological history. This update
+> sits at the TOP because the tail of `AI_Handoff.md` is past this environment's
+> file-edit limit (~100KB) and cannot be edited in place. In particular the
+> "Remaining gaps (open, not closed)" list near the end of the file describes the
+> state at `d0fccfa` and is **superseded by this section**.
+
+## The three open gaps — CLOSED (2026-09-22)
+
+These are the three items the previous handoff listed as open. Nothing was
+rewritten; each fix reuses the existing realtime/API systems.
+
+### 1. Dead client route mappings removed
+
+`packages/shared/src/lib/api-routes.ts` still declared ten entries whose path **no
+backend route serves** and that **no screen calls**: `api.commerce.customerRegulars`,
+`api.memory.recommendForCustomer` / `dueReorderReminders` / `myMemory` /
+`flushToNeon`, and the whole `api.sellerOps` block — `myShipments`,
+`createShipmentAction`, `addTrackingEventAction`, `sellerFinancialReportAction`,
+and `updateShopLocation` (which PATCHed `/api/seller/shop/:id/location` while the
+backend only implements `PATCH /api/seller/shop`).
+
+- Removal was preceded by a repo-wide audit: every `/api/…` literal in
+  `api-routes.ts` was compared against every path registered in
+  `backend/routes/*.ts`, then each candidate was grepped for callers across
+  `apps/` + `packages/` — there are none.
+- `api.memory.marketInsights` is deliberately **kept**: `/api/memory/insights` is
+  implemented and `Center.tsx` calls it. No screen lost a working call.
+
+### 2. Every writer that moves an order publishes `order:updated`
+
+Only `PATCH /api/admin/orders/:orderId/status` (`center.ts`) published. The buyer
+cancel (`cart.ts`), the seller fulfilment (`seller-orders.ts`) and the Stripe
+webhook (`stripe.ts`: `checkout.session.completed` → paid, `.expired` → cancelled,
+`payment_intent.payment_failed` → payment_failed) wrote `orders.status` silently,
+so a transition reached other sessions only through its audit event and the
+VelCenter orders tab could sit on a stale status.
+
+- `cart.ts` / `seller-orders.ts` broadcast **after** the transaction commits,
+  carrying the real `from` → `to`; `seller-orders.ts` captures the previous
+  status inside the transaction so no second read is needed.
+- `stripe.ts` broadcasts only when the guarded UPDATE actually moved the row
+  (`rowCount`), so a replayed webhook cannot re-announce a transition and the
+  late-failure case (already paid) announces nothing.
+- The event stays a **signal, never data** — consumers always refetch the API.
+
+### 3. Categories and platform settings publish `config:updated`
+
+- New channel `CHANNELS.CONFIG_UPDATED` = `"config:updated"` in
+  `backend/realtime/index.ts`, added to the socket's public-subscribe allowlist
+  (a channel the socket refuses to subscribe to can never be received).
+- Published from ONE choke point in `backend/server.ts`: middleware scoped to
+  `POST/PATCH/DELETE /api/admin/categories[/…]` and `PATCH /api/admin/settings`,
+  firing on `res.on("finish")` **only** for a 2xx. A read, a 4xx or a 5xx
+  announces nothing. The payload carries `scope` alone — never a setting value,
+  never a category name.
+  - *Why centralised rather than a `broadcast()` per handler:* the category CRUD
+    routes live in `backend/routes/products.ts` (3,856 lines) whose offsets are
+    past the same ~100KB file-edit limit, and a single scoped choke point also
+    cannot be forgotten when a new config route is added. It mirrors the shape of
+    `backend/lib/audit-log.ts`, the existing single audit choke point.
+- Consumed in VelCenter: `center-events.ts` gained a `config` event; the Center
+  page subscribes to `config:updated`, fans it out and refetches the settings
+  form; `CategoriesManagement` refetches the tree.
+
+### Validation (2026-09-22)
+
+| Check | Result |
+|---|---|
+| backend `tsc --noEmit` | pass |
+| velshop / velseller / velcenter / velnox `tsc` | pass (all four) |
+| backend tests | **355 pass / 0 fail** (384 total, 29 pre-existing DB-integration skips) |
+| `center-rbac.test.ts` | 36 pass / 0 fail (4 new) |
+| `bun run i18n:check` | pass (th=1289 en=1289 my=1289) |
+| `git diff --check` | CLEAN |
+| `diff db/schema.sql db/run-sqleditor.sql` | identical |
+| `db/run-update.sql` | absent — never created, edited or referenced |
+
+**No database change in this pass** — the config channel is delivery only, so no
+table, column, index, constraint, function or trigger was touched and both
+canonical SQL files stay byte-identical. **No production data was read or
+modified.**
+
+**Not claimed:** a live browser E2E. The new publishes and the channel are source-
+and contract-verified (`center-rbac.test.ts`, 4 new assertions) and typecheck-clean,
+but no deployed socket round trip was driven from this environment.
+
+### Files changed (this pass)
+
+`packages/shared/src/lib/api-routes.ts` · `backend/routes/cart.ts` ·
+`backend/routes/seller-orders.ts` · `backend/routes/stripe.ts` ·
+`backend/realtime/index.ts` · `backend/server.ts` ·
+`apps/velcenter/src/lib/center-events.ts` · `apps/velcenter/src/pages/Center.tsx` ·
+`apps/velcenter/src/components/CategoriesManagement.tsx` ·
+`backend/tests/center-rbac.test.ts` · `AI_Handoff.md`.
 
 ## Current Project State
 

@@ -11,6 +11,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
 import Stripe from "stripe";
 
 // Lazy-initialized Stripe client (only when STRIPE_SECRET_KEY is set)
@@ -232,9 +233,11 @@ export function setupStripeRoutes(app: Express): void {
             break;
           }
 
-          await withTransaction(async (client) => {
-            // Update order status to paid
-            await client.query(
+          const moved = await withTransaction(async (client) => {
+            // Update order status to paid. The status guard makes the write
+            // idempotent; rowCount tells us whether THIS call is the one that
+            // moved the order (a replayed event must not re-announce it).
+            const updated = await client.query(
               `UPDATE orders SET status = 'paid', updated_at = NOW() WHERE id = $1 AND status IN ('pending', 'pending_payment')`,
               [orderId],
             );
@@ -265,7 +268,13 @@ export function setupStripeRoutes(app: Express): void {
             }
 
             console.log(`[stripe webhook] Order ${orderId} marked as paid`);
+            return (updated.rowCount ?? 0) > 0;
           });
+          // Publish on the ONE order channel after COMMIT so every open session
+          // (VelCenter orders tab, the buyer's order list) follows the payment.
+          if (moved) {
+            try { broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" }); } catch { /* best-effort */ }
+          }
           break;
         }
 
@@ -273,9 +282,9 @@ export function setupStripeRoutes(app: Express): void {
           const session = event.data.object as Stripe.Checkout.Session;
           const orderId = session.metadata?.orderId;
           if (orderId) {
-            await withTransaction(async (client) => {
+            const cancelled = await withTransaction(async (client) => {
               // Set terminal status only if still in a pre-payment state.
-              await client.query(
+              const updated = await client.query(
                 `UPDATE orders SET status = 'cancelled', updated_at = NOW()
                  WHERE id = $1 AND status IN ('pending_payment', 'pending')`,
                 [orderId],
@@ -283,7 +292,11 @@ export function setupStripeRoutes(app: Express): void {
               // Release reserved inventory (idempotent via inventory_released flag).
               const released = await releaseOrderInventory(client, orderId);
               console.log(`[stripe webhook] Order ${orderId} checkout expired — status ${released ? 'cancelled, inventory released' : 'already terminal'}`);
+              return (updated.rowCount ?? 0) > 0;
             });
+            if (cancelled) {
+              try { broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "cancelled" }); } catch { /* best-effort */ }
+            }
           }
           break;
         }
@@ -292,7 +305,7 @@ export function setupStripeRoutes(app: Express): void {
           const paymentIntent = event.data.object as Stripe.PaymentIntent;
           const orderId = paymentIntent.metadata?.orderId;
           if (orderId) {
-            await withTransaction(async (client) => {
+            const failed = await withTransaction(async (client) => {
               // Mark payment as failed.
               await client.query(
                 `UPDATE payments SET status = 'failed', updated_at = NOW()
@@ -302,7 +315,7 @@ export function setupStripeRoutes(app: Express): void {
               // Set terminal status only if still in a pre-payment state.
               // A late failure after checkout.session.completed (paid) is
               // ignored — the order is already consumed/sold.
-              await client.query(
+              const updated = await client.query(
                 `UPDATE orders SET status = 'payment_failed', updated_at = NOW()
                  WHERE id = $1 AND status IN ('pending_payment', 'pending')`,
                 [orderId],
@@ -310,7 +323,11 @@ export function setupStripeRoutes(app: Express): void {
               // Release reserved inventory (idempotent via inventory_released flag).
               const released = await releaseOrderInventory(client, orderId);
               console.log(`[stripe webhook] Order ${orderId} payment failed — status ${released ? 'payment_failed, inventory released' : 'already terminal'}`);
+              return (updated.rowCount ?? 0) > 0;
             });
+            if (failed) {
+              try { broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "payment_failed" }); } catch { /* best-effort */ }
+            }
           }
           break;
         }

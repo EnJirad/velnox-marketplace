@@ -417,6 +417,7 @@ export default function Center() {
           ws?.send(JSON.stringify({ type: "subscribe", channel: "notification:created" }));
           ws?.send(JSON.stringify({ type: "subscribe", channel: "order:updated" }));
           ws?.send(JSON.stringify({ type: "subscribe", channel: "audit:created" }));
+          ws?.send(JSON.stringify({ type: "subscribe", channel: "config:updated" }));
         };
         ws.onmessage = (event) => {
           try {
@@ -448,6 +449,11 @@ export default function Center() {
             // directory both re-read from the API.
             if (msg.type === "employee:created" || msg.type === "employee:updated") {
               emitCenterEvent("staff");
+            }
+            // Platform configuration changed in another session — the category
+            // tree and the settings form both re-read from the API.
+            if (msg.type === "config:updated") {
+              emitCenterEvent("config");
             }
             if (
               msg.type === "audit:created" ||
@@ -711,6 +717,10 @@ export default function Center() {
 
   // Realtime order changes (from any VelCenter tab) refetch the list.
   useEffect(() => onCenterEvent("orders", () => { void loadOrders(); }), [loadOrders]);
+
+  // Platform settings changed in another session → re-read them. The category
+  // tree is owned by CategoriesManagement, which listens to the same event.
+  useEffect(() => onCenterEvent("config", () => { void loadSettings(); }), [loadSettings]);
 
   // ---- Intelligence rows (computed from learned cycles) ----
   const intelRows = useMemo(() => {

@@ -242,7 +242,6 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.createVelRepeat": (a) => apiPost("/api/subscriptions/create", a),
   "api.commerce.sellerIncomeReport": () => apiGet("/api/seller/income"),
   "api.commerce.sellerReorderSuggestionsAction": () => apiGet("/api/seller/reorder-suggestions"),
-  "api.commerce.customerRegulars": () => apiGet("/api/commerce/regulars"),
   "api.commerce.setProductStatusAction": (a) => apiPatch(`/api/seller/products/${a.productId}/status`, a),
   "api.commerce.deleteProductAction": (a) => apiDelete(`/api/seller/products/${a.productId}`),
   "api.commerce.createProductAction": (a) => apiPost("/api/seller/products", a),
@@ -319,12 +318,10 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.goals.remove": (a) => apiDelete(`/api/seller/goals/${a.goalId}`),
   "api.goals.addProgress": (a) => apiPost(`/api/seller/goals/${a.goalId}/progress`, a),
 
-  // Memory / Intelligence
-  "api.memory.recommendForCustomer": (a) => apiGet(`/api/memory/recommendations?limit=${a?.limit ?? 8}`),
-  "api.memory.dueReorderReminders": () => apiGet("/api/memory/reminders"),
+  // Memory / Intelligence — the ONE implemented endpoint. The former
+  // recommendations / reminders / my-memory / flush mappings declared paths no
+  // backend route ever served and no screen called, so they are gone.
   "api.memory.marketInsights": () => apiGet("/api/memory/insights"),
-  "api.memory.myMemory": () => apiGet("/api/memory/my-memory"),
-  "api.memory.flushToNeon": () => apiPost("/api/memory/flush"),
 
   // Stripe
   "api.stripe.stripeConfiguredAction": () => apiGet("/api/stripe/configured"),
@@ -333,14 +330,6 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
 
   // Profile image (users)
   "api.users.patchUserImage": (a) => apiPatch("/api/customer/profile-image", a),
-
-  // Seller ops
-  "api.sellerOps.myShipments": () => apiGet("/api/seller/shipments"),
-  "api.sellerOps.createShipmentAction": (a) => apiPost("/api/seller/shipments", a),
-  "api.sellerOps.addTrackingEventAction": (a) => apiPost(`/api/seller/shipments/${a.shipmentId}/tracking`, a),
-
-  "api.sellerOps.sellerFinancialReportAction": () => apiGet("/api/seller/financial-report"),
-  "api.sellerOps.updateShopLocation": (a) => apiPatch(`/api/seller/shop/${a.shopId}/location`, a),
 
   // Storefront
   "api.storefront.settings": (a) => apiGet(`/api/shops/${a.shopId}/settings`),

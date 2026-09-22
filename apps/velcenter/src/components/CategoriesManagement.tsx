@@ -12,6 +12,7 @@
  */
 import { api } from "@velnox/shared/lib/api-routes";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { onCenterEvent } from "../lib/center-events";
 import {
   Plus,
   Pencil,
@@ -125,6 +126,11 @@ export default function CategoriesManagement() {
   useEffect(() => {
     void loadCategories();
   }, [loadCategories]);
+
+  // Another VelCenter session changed the taxonomy (create / edit / delete) —
+  // re-read the tree from the API. The event is only a signal; the data still
+  // comes from the backend.
+  useEffect(() => onCenterEvent("config", () => { void loadCategories(); }), [loadCategories]);
 
   // Filter categories by search
   const filteredCategories = useMemo(() => {

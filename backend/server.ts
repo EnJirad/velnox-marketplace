@@ -24,7 +24,7 @@ import { registerVerificationRoutes } from "./routes/verification.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupChatRoutes } from "./routes/chat.js";
-import { setupWebSocket } from "./realtime/index.js";
+import { broadcast, CHANNELS, setupWebSocket } from "./realtime/index.js";
 
 const app = express();
 const server = createServer(app);
@@ -89,6 +89,42 @@ app.use(createOriginGuard(allOrigins));
 // ─── Rate limiting ─────────────────────────────────────────
 // Differentiated limits per route class (see middleware/rate-limit.ts).
 app.use(rateLimitSecurity);
+
+// ─── Config-change realtime choke point ────────────────────────────────
+// Categories and platform settings are VelCenter's two configuration
+// surfaces. Both must announce a change so every OTHER open VelCenter session
+// re-reads it (the acting session already refetches on its own).
+//
+// The publish lives here, once, instead of inside each handler, because the
+// category CRUD routes sit in the 3.8k-line products route module where a new
+// category route could silently forget its broadcast. Scoped to exactly these
+// two admin paths, and only when the mutation actually succeeded — a rejected
+// or read-only request publishes nothing. The payload carries the scope alone:
+// never a setting value and never a category name.
+const CONFIG_SCOPES: Array<[string, string]> = [
+  ["/api/admin/categories", "categories"],
+  ["/api/admin/settings", "settings"],
+];
+
+app.use((req, res, next) => {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    next();
+    return;
+  }
+  const scope = CONFIG_SCOPES.find(
+    ([prefix]) => req.path === prefix || req.path.startsWith(`${prefix}/`),
+  )?.[1];
+  if (!scope) {
+    next();
+    return;
+  }
+  res.on("finish", () => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      try { broadcast(CHANNELS.CONFIG_UPDATED, "config:updated", { scope }); } catch { /* best-effort */ }
+    }
+  });
+  next();
+});
 
 // ─── Auto-create variant tables if missing (V0028) ─────────────────────
 async function ensureVariantTables(): Promise<void> {

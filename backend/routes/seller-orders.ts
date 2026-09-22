@@ -27,6 +27,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { processPlan } from "../jobs/velrepeat-scheduler.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
 
 function param(req: Request, key: string): string {
   return (req.params as Record<string, string>)[key] ?? "";
@@ -503,6 +504,9 @@ export function setupSellerOrderRoutes(app: Express): void {
         return;
       }
 
+      // Captured inside the transaction so the broadcast after COMMIT can
+      // report the real previous status without a second read.
+      let previousStatus = "";
       try {
         await withTransaction(async (client) => {
           // Lock the order row; re-check ownership inside the transaction.
@@ -531,6 +535,7 @@ export function setupSellerOrderRoutes(app: Express): void {
           // Stripe lifecycle statuses ('paid', 'pending_payment', ...) are
           // judged by their fulfillment meaning, not their raw value.
           const fromStatus = normalizeSellerOrderStatus(order.status);
+          previousStatus = fromStatus;
           if (!canTransitionOrderStatus(fromStatus, status)) {
             throw new HttpError(
               400,
@@ -575,6 +580,17 @@ export function setupSellerOrderRoutes(app: Express): void {
         }
         throw err;
       }
+
+      // Publish the transition on the ONE order channel so every other open
+      // session follows it (VelCenter orders tab, the buyer's order list) —
+      // this route previously reached them only through its audit event.
+      try {
+        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
+          orderId,
+          from: previousStatus,
+          to: status,
+        });
+      } catch { /* best-effort — a committed transition never fails on a socket error */ }
 
       res.json({ success: true, data: { id: orderId, status } });
     } catch (err) {
