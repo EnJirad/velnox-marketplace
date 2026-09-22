@@ -160,10 +160,14 @@ IS the applicant: `403 SELF_ACTION_FORBIDDEN`, rolled back before any write.
   self-action check for `approved` / `rejected`.
 - Ownership is resolved from the DB (`SELECT s.user_id FROM sellers s WHERE s.id
   = $1`), never from the request body; the actor id is always the session's.
-- Tests: `backend/tests/verification-self-approval.test.ts` (12 cases: the rule
-  exhaustively, plus wiring contracts — the guard must run BEFORE the status
-  write, and no route may grant the badge with a literal
-  `SET verification_status = 'verified'`).
+- Tests: `backend/tests/verification-self-approval.test.ts` — 13 always-on cases
+  (the rule exhaustively, wiring contracts that the guard runs BEFORE the status
+  write, and an HTTP round trip proving the harness reaches the real route) plus
+  2 DB-gated cases that drive `PATCH` for real: the owner gets 403 with nothing
+  written, and a different reviewer gets 200 on the same record — the negative
+  control that stops a broken fixture from passing as a fix. The DB cases need
+  `DATABASE_URL` + `JWT_SECRET`, and the database must be bootstrapped with
+  `db/run-sqleditor.sql` first.
 
 ### Verification API surface
 
@@ -256,6 +260,18 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
 ## 6. Remaining gaps / open items
 
 ### Open, actionable
+
+- **The 31 DB-gated tests have never been executed in this workspace.** Every
+  `hasDb ? test : test.skip` gate under `backend/tests/` skips without
+  `DATABASE_URL` — including the two self-approval integration cases, whose 403
+  is therefore written and compiled but not yet observed. Running them needs a
+  database bootstrapped with `db/run-sqleditor.sql` **plus** `JWT_SECRET` (to
+  sign the test session cookie). Use a disposable branch: several older fixtures
+  seed fixed emails with no cleanup (see below).
+- **`backend/tsconfig.json` excludes `tests`**, so `tsc` never validates test
+  files — a syntax error or a bad import in a test surfaces only when `bun test`
+  parses it. After editing a test, run that file; a green `bun run typecheck`
+  says nothing about it.
 
 - ~~**`PATCH /api/admin/verifications/seller/:id` has no self-action guard.**~~
   **CLOSED.** The approval path now refuses a reviewer who owns the shop under

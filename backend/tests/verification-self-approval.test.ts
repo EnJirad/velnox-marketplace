@@ -16,10 +16,17 @@
  *
  * Unit + static assertions only — no database required.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "fs";
+import type { Server } from "http";
+import type { AddressInfo } from "net";
 import { join } from "path";
+import cookieParser from "cookie-parser";
+import express from "express";
+import jwt from "jsonwebtoken";
+import { query } from "../db/index.js";
 import { isSelfApproval } from "../lib/verification-guard.js";
+import { registerVerificationRoutes } from "../routes/verification.js";
 
 const root = join(import.meta.dir, "..", "..");
 const verificationSrc = readFileSync(join(root, "backend/routes/verification.ts"), "utf8");
@@ -136,5 +143,156 @@ describe("the seller verification review endpoint is wired to the guard", () => 
     );
     expect(parameterised).toEqual(["verification.ts"]);
     expect(grantAt).toBeGreaterThan(0);
+  });
+});
+
+// ─── Integration: the real endpoint over HTTP ──────────────────────────────
+//
+// The assertions above prove the guard is *written*; only a live request proves
+// it *fires*. This block boots the real route on a throwaway HTTP listener,
+// signs real session cookies for two VelCenter admins — one of whom owns the
+// shop under review — and drives `PATCH /api/admin/verifications/seller/:id`,
+// so the 403 comes from the same code path production runs, not a copy of it.
+//
+// The fixtures are built so that EVERY other precondition for an approval is
+// satisfied (the reviewer holds `sellers.manage`, the verification is `pending`
+// and carries evidence). A 403 here can therefore only come from the
+// self-approval rule, and the second case is the negative control that proves
+// it: the identical request from a reviewer who does NOT own the shop succeeds.
+//
+// Skipped without DATABASE_URL + JWT_SECRET (no database in the sandbox).
+// Fixtures use a random suffix and are removed in afterAll, so re-running
+// against the same database cannot collide — unlike the fixed-email seeds the
+// handoff lists as a known gap.
+
+const hasDb = Boolean(process.env.DATABASE_URL && process.env.JWT_SECRET);
+const itDb = hasDb ? test : test.skip;
+
+describe("PATCH /api/admin/verifications/seller/:id over HTTP (needs DATABASE_URL + JWT_SECRET)", () => {
+  let server: Server | undefined;
+  let base = "";
+  let ownerId = ""; // admin who ALSO owns the shop under review
+  let otherReviewerId = ""; // admin with no stake in it
+  let sellerId = "";
+  let verificationId = "";
+
+  beforeAll(async () => {
+    // The listener needs no database, so it always starts: that keeps the
+    // harness itself under test here rather than only where a DB exists.
+    const app = express();
+    app.use(cookieParser());
+    app.use(express.json({ limit: "1mb" }));
+    registerVerificationRoutes(app);
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    if (!hasDb) return;
+
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const owner = await query(
+      "INSERT INTO users (email, name, role) VALUES ($1, $2, 'admin') RETURNING id",
+      [`self-approval-owner-${suffix}@test.invalid`, "Owner Reviewer"],
+    );
+    ownerId = owner.rows[0].id;
+    const other = await query(
+      "INSERT INTO users (email, name, role) VALUES ($1, $2, 'admin') RETURNING id",
+      [`self-approval-other-${suffix}@test.invalid`, "Other Reviewer"],
+    );
+    otherReviewerId = other.rows[0].id;
+
+    // `owner` / `admin` hold every code in the catalog, so `sellers.manage` is
+    // satisfied without an `employees` row (see lib/permissions.ts).
+    const seller = await query(
+      "INSERT INTO sellers (user_id, status, verification_status) VALUES ($1, 'under_review', 'pending') RETURNING id",
+      [ownerId],
+    );
+    sellerId = seller.rows[0].id;
+
+    // `pending` is a permitted source state and the evidence list is non-empty,
+    // so the approve path's own state machine is satisfied too.
+    const verification = await query(
+      `INSERT INTO seller_verifications (seller_id, status, evidence_urls, submitted_at)
+       VALUES ($1, 'pending', $2::jsonb, NOW()) RETURNING id`,
+      [sellerId, JSON.stringify([`verification/evidence/${ownerId}/id-card.jpg`])],
+    );
+    verificationId = verification.rows[0].id;
+  });
+
+  afterAll(async () => {
+    if (hasDb && ownerId) {
+      // `users` cascades to sellers → verifications / review history / seller
+      // notifications. audit_logs is ON DELETE SET NULL, so clear it first.
+      await query("DELETE FROM audit_logs WHERE user_id = ANY($1::uuid[])", [[ownerId, otherReviewerId]]);
+      await query("DELETE FROM users WHERE id = ANY($1::uuid[])", [[ownerId, otherReviewerId]]);
+    }
+    if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
+  });
+
+  // No `jti` → `requireAuth` skips the revocation lookup, which would otherwise
+  // need a `revoked_tokens` round trip.
+  function sessionCookie(userId: string): string {
+    const token = jwt.sign({ userId, email: `${userId}@test.invalid` }, process.env.JWT_SECRET!, { expiresIn: "5m" });
+    return `velnox_session=${token}`;
+  }
+
+  function approveAs(userId: string): Promise<Response> {
+    return fetch(`${base}/api/admin/verifications/seller/${verificationId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: sessionCookie(userId) },
+      body: JSON.stringify({ action: "approve" }),
+    });
+  }
+
+  test("reaches the real route: no session cookie is rejected before any review logic", async () => {
+    // Runs without DATABASE_URL. It proves the harness is driving the actual
+    // registered handler — a 401 from `requireAuth` can only come from inside
+    // the route — so the cases below fail for review reasons, not plumbing ones.
+    const res = await fetch(`${base}/api/admin/verifications/seller/${crypto.randomUUID()}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "approve" }),
+    });
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  itDb("returns 403 SELF_ACTION_FORBIDDEN for the admin who owns the shop, and writes nothing", async () => {
+    const res = await approveAs(ownerId);
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("SELF_ACTION_FORBIDDEN");
+
+    // The guard ROLLBACKs before any statement runs, so neither the verification
+    // nor the seller may show a trace of the refused decision.
+    const ver = await query("SELECT status, reviewed_by FROM seller_verifications WHERE id = $1", [verificationId]);
+    expect(ver.rows[0].status).toBe("pending");
+    expect(ver.rows[0].reviewed_by).toBeNull();
+    const seller = await query("SELECT verification_status, verified_at FROM sellers WHERE id = $1", [sellerId]);
+    expect(seller.rows[0].verification_status).toBe("pending");
+    expect(seller.rows[0].verified_at).toBeNull();
+    const history = await query("SELECT id FROM seller_review_history WHERE seller_id = $1", [sellerId]);
+    expect(history.rows.length).toBe(0);
+  });
+
+  itDb("still approves the same verification for a reviewer who does not own it", async () => {
+    // Negative control. Without it, a 403 caused by a broken fixture (a role that
+    // cannot review at all, an empty evidence list) would look like a pass.
+    const res = await approveAs(otherReviewerId);
+    expect(res.status).toBe(200);
+
+    const seller = await query("SELECT verification_status, verified_at FROM sellers WHERE id = $1", [sellerId]);
+    expect(seller.rows[0].verification_status).toBe("verified");
+    expect(seller.rows[0].verified_at).not.toBeNull();
+
+    const ver = await query("SELECT status, reviewed_by FROM seller_verifications WHERE id = $1", [verificationId]);
+    expect(ver.rows[0].status).toBe("verified");
+    expect(ver.rows[0].reviewed_by).toBe(otherReviewerId);
+
+    const history = await query("SELECT action, reviewer_id FROM seller_review_history WHERE seller_id = $1", [sellerId]);
+    expect(history.rows.length).toBe(1);
+    expect(history.rows[0].action).toBe("approved");
+    expect(history.rows[0].reviewer_id).toBe(otherReviewerId);
   });
 });
