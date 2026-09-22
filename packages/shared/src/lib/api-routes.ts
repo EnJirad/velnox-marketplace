@@ -342,7 +342,9 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.seller.evidenceUploadIntent": (a) => apiPost("/api/seller/evidence/upload-intent", a),
   "api.seller.evidenceConfirm": (a) => apiPost("/api/seller/evidence/confirm", a),
   "api.seller.evidenceList": () => apiGetFresh("/api/seller/evidence"),
-  "api.admin.verifications": (a) => apiGet(`/api/admin/verifications?status=${a?.status ?? "pending"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}`),
+  // Paginated: the response carries `pagination` ({page, limit, total, totalPages,
+  // hasMore}). `limit: 1` is the cheapest way to read an exact count.
+  "api.admin.verifications": (a) => apiGet(`/api/admin/verifications?status=${a?.status ?? "pending"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}${a?.page ? `&page=${a.page}` : ""}${a?.limit ? `&limit=${a.limit}` : ""}`),
   "api.admin.sellerVerificationAction": (a) => apiPatch(`/api/admin/verifications/seller/${a.verificationId}`, a),
   "api.admin.sellerVerificationEvidence": (a) => apiGetFresh(`/api/admin/verifications/seller/${a.verificationId}/evidence`),
   "api.admin.sellerVerificationHistory": (a) => apiGetFresh(`/api/admin/verifications/seller/${a.verificationId}/history`),

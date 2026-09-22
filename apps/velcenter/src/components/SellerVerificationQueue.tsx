@@ -9,6 +9,8 @@ import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Loader2,
   Search,
@@ -16,9 +18,20 @@ import {
   Store,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { onCenterEvent } from "../lib/center-events";
+
+/** Rows per page — the queue is bounded; mirrors `backend/lib/pagination.ts`. */
+const PAGE_SIZE = 25;
+
+interface PageMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+}
 
 interface VerificationRow {
   id: string;
@@ -53,6 +66,11 @@ export default function SellerVerificationQueue() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("pending");
   const [search, setSearch] = useState("");
+  // Search runs on the SERVER: the queue is paginated, so filtering the current
+  // page locally would search 25 rows and call the rest "no results".
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PageMeta | null>(null);
 
   // Review dialog
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
@@ -69,38 +87,50 @@ export default function SellerVerificationQueue() {
     setLoading(true);
     setError(null);
     try {
-      const statuses = statusFilter === "all"
-        ? ["pending", "verified", "rejected", "suspended"]
-        : [statusFilter];
-      const results = await Promise.all(
-        statuses.map((s) => verificationsAction({ status: s }))
-      );
-      const all: VerificationRow[] = [];
-      for (const r of results) all.push(...(r?.sellers ?? []));
-      setRows(all);
+      // ONE request. The backend filters (`status=all` included), orders
+      // deterministically and pages — the client no longer merges one list per
+      // status, so the rows and the count always describe the same set.
+      const res = await verificationsAction({
+        status: statusFilter,
+        q: query || undefined,
+        page,
+        limit: PAGE_SIZE,
+      });
+      setRows(res?.sellers ?? []);
+      setPagination(res?.pagination ?? null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดข้อมูล";
       setError(msg);
       setRows([]);
+      setPagination(null);
     } finally {
       setLoading(false);
     }
-  }, [verificationsAction, statusFilter]);
+  }, [verificationsAction, statusFilter, query, page]);
 
   useEffect(() => { void loadVerifications(); }, [loadVerifications]);
+
+  // Debounce the search box into a server query, and return to page 1 whenever
+  // the result set changes — page 3 of the previous filter is meaningless.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setQuery(search.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [search]);
+
+  useEffect(() => { setPage(1); }, [statusFilter]);
+
+  // A reviewed row leaves the queue. If that empties the last page, step back
+  // instead of reporting "no items" over a page that still has rows behind it.
+  useEffect(() => {
+    if (!loading && !error && rows.length === 0 && page > 1) setPage((p) => p - 1);
+  }, [loading, error, rows.length, page]);
 
   // Realtime: the Center page owns the WebSocket and notifies us when a seller
   // or verification changed, so a reviewed row leaves the list immediately.
   useEffect(() => onCenterEvent("sellers", () => { void loadVerifications(); }), [loadVerifications]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((v) => {
-      if (!q) return true;
-      return [v.shop_name, v.owner_name, v.owner_email, v.shop_slug]
-        .some((val) => (val ?? "").toLowerCase().includes(q));
-    });
-  }, [rows, search]);
 
   const openReview = useCallback((row: VerificationRow) => {
     setReviewDialogRow(row);
@@ -154,7 +184,9 @@ export default function SellerVerificationQueue() {
     }
   }, [revokeTarget, revokeReason, revokeShopAction, loadVerifications]);
 
-  const pendingCount = rows.filter((v) => v.status === "pending").length;
+  // Exact for the current filter, not just the current page: the backend returns
+  // the filtered count in `pagination.total`.
+  const pendingCount = statusFilter === "pending" ? (pagination?.total ?? 0) : 0;
 
   return (
     <div className="space-y-4">
@@ -210,7 +242,7 @@ export default function SellerVerificationQueue() {
             ลองใหม่
           </Button>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
             <ShieldCheck className="size-7 text-[#10B981]" />
@@ -221,8 +253,9 @@ export default function SellerVerificationQueue() {
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((row) => (
+        <div className="space-y-3">
+          <div className="space-y-2">
+          {rows.map((row) => (
             <Card key={row.id} className="border-slate-200 shadow-none">
               <CardContent className="px-4 py-3">
                 <div className="flex items-center gap-3">
@@ -251,6 +284,37 @@ export default function SellerVerificationQueue() {
               </CardContent>
             </Card>
           ))}
+          </div>
+
+          {/* Pagination — the reviewer never loads an unbounded seller table. */}
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-3 sm:flex-row">
+            <p className="text-xs text-slate-500">
+              ทั้งหมด {pagination?.total ?? rows.length} รายการ
+              {pagination && pagination.totalPages > 1 && (
+                <span> · หน้า {pagination.page} / {pagination.totalPages}</span>
+              )}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-[10px] text-xs"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+              >
+                <ChevronLeft className="size-3.5 mr-1" /> ก่อนหน้า
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-[10px] text-xs"
+                disabled={!pagination?.hasMore || loading}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                ถัดไป <ChevronRight className="size-3.5 ml-1" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
