@@ -143,6 +143,28 @@ action, reason_code, reason, note, reviewer_id, created_at). Actions: `submitted
   the caller, and every submitted key must exist as a `media` row with
   `uploaded_by = <caller>`.
 
+### Self-action guard (reviewer ≠ applicant)
+
+A VelCenter reviewer (`owner|admin|staff` with `sellers.manage`) may also own a
+shop, and `PATCH /api/admin/verifications/seller/:id` with `approve` is the ONLY
+write in the backend that sets `sellers.verification_status = 'verified'` — i.e.
+the only way to earn the V. That decision is therefore refused when the reviewer
+IS the applicant: `403 SELF_ACTION_FORBIDDEN`, rolled back before any write.
+
+- Rule: `backend/lib/verification-guard.ts` → `isSelfApproval(action, actorUserId,
+  sellerUserId)`. Pure and action-aware; ids are string-compared so a driver type
+  change cannot silently disable it.
+- Scope: **only `approve`**. `reject` / `suspend` / `needs_correction` can only
+  lower the reviewer's own standing, so they stay allowed. The seller-application
+  route (`PATCH /api/admin/seller-applications/:id`) keeps its own broader
+  self-action check for `approved` / `rejected`.
+- Ownership is resolved from the DB (`SELECT s.user_id FROM sellers s WHERE s.id
+  = $1`), never from the request body; the actor id is always the session's.
+- Tests: `backend/tests/verification-self-approval.test.ts` (12 cases: the rule
+  exhaustively, plus wiring contracts — the guard must run BEFORE the status
+  write, and no route may grant the badge with a literal
+  `SET verification_status = 'verified'`).
+
 ### Verification API surface
 
 | Method | Path | Who | Purpose |
@@ -157,7 +179,7 @@ action, reason_code, reason, note, reviewer_id, created_at). Actions: `submitted
 | GET | `/api/admin/verifications?status=&q=` | reviewer | seller queue (`all` supported) |
 | GET | `/api/admin/verifications/seller/:id/evidence` | reviewer | signed evidence |
 | GET | `/api/admin/verifications/seller/:id/history` | reviewer | review history |
-| PATCH | `/api/admin/verifications/seller/:id` | reviewer | approve/reject/suspend/needs_correction |
+| PATCH | `/api/admin/verifications/seller/:id` | reviewer | approve/reject/suspend/needs_correction (self-approval → 403) |
 | GET | `/api/admin/sellers?status=&q=` | reviewer | seller list (search + filter) |
 | GET | `/api/admin/sellers/:id/application` | reviewer | full application + signed docs |
 | PATCH | `/api/admin/sellers/:id/status` | owner/admin | account lifecycle status |
@@ -235,11 +257,16 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
 
 ### Open, actionable
 
-- **`PATCH /api/admin/verifications/seller/:id` has no self-action guard.** A
-  `seller` cannot reach it (`assertReviewer` allows only `owner|admin|staff`) and
-  the application route does return `SELF_ACTION_FORBIDDEN`, but an `owner`/`admin`
-  who also owns the shop under review could approve their own identity
-  verification. Reported, **not fixed**.
+- ~~**`PATCH /api/admin/verifications/seller/:id` has no self-action guard.**~~
+  **CLOSED.** The approval path now refuses a reviewer who owns the shop under
+  review (`403 SELF_ACTION_FORBIDDEN` + `ROLLBACK`, before any write). The rule
+  lives in `backend/lib/verification-guard.ts` (`isSelfApproval`) so it is a pure,
+  exhaustively testable function, and `isSelfApproval` is the ONLY gate on the
+  one write that sets `sellers.verification_status = 'verified'`. Covered by
+  `backend/tests/verification-self-approval.test.ts` — the last two of its 12
+  cases are the interesting ones: the guard must run *before* the status write,
+  and no route may grant the badge with a literal `SET verification_status =
+  'verified'`.
 - **`GET /api/admin/verifications` is unpaginated** (`LIMIT 200`) and VelCenter
   loads it once per status (4 requests). Fine at current volume; paginate before
   the queue grows.

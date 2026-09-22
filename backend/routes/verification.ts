@@ -26,6 +26,7 @@ import type { Express, Request, Response } from "express";
 import { query, getClient } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import { userHasPermission } from "../lib/permissions.js";
+import { isSelfApproval } from "../lib/verification-guard.js";
 import { broadcast, CHANNELS, sendToUser } from "../realtime/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -629,17 +630,17 @@ export function registerVerificationRoutes(app: Express) {
       const evidenceCount = Array.isArray(current.evidence_urls) ? current.evidence_urls.length : 0;
 
       // Self-approval guard: a reviewer who also owns the shop must NOT be able
-      // to approve their own identity verification.
-      if (action === "approve") {
-        const ownerCheck = await client.query(
-          "SELECT s.user_id FROM sellers s WHERE s.id = $1",
-          [current.seller_id],
-        );
-        if (ownerCheck.rows.length > 0 && ownerCheck.rows[0].user_id === userId) {
-          await client.query("ROLLBACK");
-          res.status(403).json({ success: false, error: { code: "SELF_ACTION_FORBIDDEN", message: "You cannot approve your own seller verification" } });
-          return;
-        }
+      // to approve their own identity verification. Ownership is resolved from
+      // the database — never from the request body — and the check runs before
+      // any write below, so a refused decision leaves nothing behind.
+      const ownerRes = await client.query(
+        "SELECT s.user_id FROM sellers s WHERE s.id = $1",
+        [current.seller_id],
+      );
+      if (isSelfApproval(action, userId, ownerRes.rows[0]?.user_id)) {
+        await client.query("ROLLBACK");
+        res.status(403).json({ success: false, error: { code: "SELF_ACTION_FORBIDDEN", message: "You cannot approve your own seller verification" } });
+        return;
       }
 
       // State machine — a reviewer cannot approve an empty submission.
