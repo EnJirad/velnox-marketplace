@@ -269,7 +269,10 @@ Uncommitted-turned-committed work, in risk order:
 Validation for (b): `tsc` clean on backend + all four apps; `bun test
 backend/tests` **405 pass / 0 fail** (35 DB-gated skips); `i18n:check` parity
 (th=en=my=1289); all four apps build; `git diff --check` clean; **no database
-change**.
+change** — this pass touched no schema, so `db/schema.sql` and
+`db/run-sqleditor.sql` are unchanged and stay identical.
+
+**Landed in `96dd2c7`** (2026-09-22), pushed to `main`.
 
 ### 2026-09-22 (a) — the three open gaps closed
 
