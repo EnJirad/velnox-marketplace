@@ -180,7 +180,7 @@ IS the applicant: `403 SELF_ACTION_FORBIDDEN`, rolled back before any write.
 | POST | `/api/seller/evidence/upload-intent` | user | presigned PUT (onboarding-safe) |
 | POST | `/api/seller/evidence/confirm` | user | persist media row |
 | GET | `/api/seller/evidence` | user | own evidence (signed URLs) |
-| GET | `/api/admin/verifications?status=&q=` | reviewer | seller queue (`all` supported) |
+| GET | `/api/admin/verifications?status=&q=&page=&limit=` | reviewer | seller queue (`all` supported; paginated, `pagination.total` is exact) |
 | GET | `/api/admin/verifications/seller/:id/evidence` | reviewer | signed evidence |
 | GET | `/api/admin/verifications/seller/:id/history` | reviewer | review history |
 | PATCH | `/api/admin/verifications/seller/:id` | reviewer | approve/reject/suspend/needs_correction (self-approval → 403) |
@@ -234,7 +234,44 @@ A code belongs in the catalog **only while an endpoint checks it** —
 `center-rbac.test.ts` asserts that. Role / permission / employee mutations stay
 owner-only. Hiding a tab is UX only; every endpoint re-checks.
 
-## 5. Latest pass — 2026-09-22: the three open gaps closed
+## 5. Latest passes
+
+### 2026-09-22 (b) — production-readiness pass
+
+Uncommitted-turned-committed work, in risk order:
+
+1. **`/api/_diag/schema` was publicly reachable.** It exposed the schema shape,
+   the applied migration set, product counts by status and audit-log row counts
+   to any anonymous caller. It is now guarded at the **prefix**
+   (`backend/middleware/diag-guard.ts` → `requireDiagAccess`, owner|admin only,
+   deny-by-default), so a diagnostic route added later is guarded by default
+   rather than by remembering. Covered by `backend/tests/diag-endpoint-auth.test.ts`
+   (pure rule + a real HTTP round trip: anonymous/invalid → 401/403).
+2. **The seller-verification queue is paginated** (`page` 1-based, `limit`
+   clamped 1..100 default 25, deterministic order, `pagination` metadata) via
+   `backend/lib/pagination.ts`. The old `LIMIT 200` also made the VelCenter
+   overview badge wrong at 201 pending rows, because the badge was the length of
+   a truncated page: it now asks for `limit: 1` and reads `pagination.total`
+   (an exact `COUNT(*) OVER()`, not a second endpoint). The queue also searches on
+   the server now (`q`), so a search no longer only covers the current page, and
+   it no longer merges four per-status requests. Tests:
+   `backend/tests/admin-queue-pagination.test.ts`.
+3. **Migration numbering** — the duplicates (029/030/034/035) are safe: the
+   deployed runner keys `schema_migrations.migration_name` on the FULL filename
+   (UNIQUE), so both files are applied and recorded. `AI_Handoff.md` previously
+   blamed a prefix keying; `backend/tests/migration-numbering.test.ts` now pins
+   the real behaviour and fails if a new duplicate prefix appears.
+4. **Overview counters cannot read as a lie.** The queue-based badges already
+   rendered nothing on failure; the people counters rendered a literal `0`.
+   They now hold display text that starts at `—` and only becomes a number when
+   the API answered.
+
+Validation for (b): `tsc` clean on backend + all four apps; `bun test
+backend/tests` **405 pass / 0 fail** (35 DB-gated skips); `i18n:check` parity
+(th=en=my=1289); all four apps build; `git diff --check` clean; **no database
+change**.
+
+### 2026-09-22 (a) — the three open gaps closed
 
 1. **Dead client route mappings removed.** Ten entries in
    `packages/shared/src/lib/api-routes.ts` declared paths no backend route serves
@@ -261,7 +298,7 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
 
 ### Open, actionable
 
-- **The 31 DB-gated tests have never been executed in this workspace.** Every
+- **The 35 DB-gated tests have never been executed in this workspace.** Every
   `hasDb ? test : test.skip` gate under `backend/tests/` skips without
   `DATABASE_URL` — including the two self-approval integration cases, whose 403
   is therefore written and compiled but not yet observed. Running them needs a
@@ -283,9 +320,38 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
   cases are the interesting ones: the guard must run *before* the status write,
   and no route may grant the badge with a literal `SET verification_status =
   'verified'`.
-- **`GET /api/admin/verifications` is unpaginated** (`LIMIT 200`) and VelCenter
-  loads it once per status (4 requests). Fine at current volume; paginate before
-  the queue grows.
+- ~~**`GET /api/admin/verifications` is unpaginated** (`LIMIT 200`).~~ **CLOSED**
+  — see §5 (b) 2. It returns `pagination` ({page, limit, total, totalPages,
+  hasMore}) and the queue has previous/next controls; `limit=1` is the exact-count
+  read.
+- **`GET /api/admin/products/moderation` is fully unbounded** (no `LIMIT` at all)
+  and `ProductModerationQueue.tsx` renders the whole result client-side, so the
+  moderation tab will grow without bound. **BLOCKED by tooling:** the handler is
+  `backend/routes/products.ts:3456`, a 181 KB file this environment's edit tools
+  cannot match past ~55 KB — the same limit that pushed the `config:updated`
+  publish into `server.ts`. Next step: apply the `backend/lib/pagination.ts`
+  helpers to that handler (and add controls to the queue) from a checkout without
+  the size limit.
+- **`GET /api/admin/sellers` is unbounded too** (`backend/routes/seller.ts:715`).
+  Its only consumer is the overview counter in `Center.tsx`, so nothing is broken
+  today, but it loads every seller (with joins) to count them. Paginating it
+  changes the payload from a bare array (`data: [...]`) to an object, and the
+  shared `apiGet` unwraps `data` — so it needs a consumer-side change in the same
+  commit. Left as-is deliberately rather than half-done.
+- **`shops.seller_id` is not UNIQUE** (`idx_shops_seller` is a plain index), so a
+  seller with two shops would make the verification queue list one verification
+  twice — and `COUNT(*) OVER()` would count it twice, consistently. The app
+  upserts a single shop per seller, so this is latent, not observed. A `COUNT(DISTINCT
+  sv.id)` + de-duplicated listing is the fix if multi-shop sellers ever exist.
+- **VelCenter's verification queue labels are hardcoded Thai**, while the review
+  dialog next to it (`VerificationReviewDialog.tsx`, 34 `t()` keys) is localized.
+  Translating the queue is **BLOCKED by tooling**: those keys belong in
+  `review.*`, defined in `packages/shared/src/lib/i18n/locales/index.ts`
+  (`thReview` byte 57,892 / `enReview` 61,929 / `myReview` 64,284) and in
+  `th.ts` (104 KB) / `my.ts` (98 KB) — every one of them past the ~55 KB match
+  window, so the keys cannot be added here without breaking locale parity.
+  Next step: extract the queue's strings to `review.*` with `i18n:check` run in a
+  checkout that can edit those files.
 - **The DB constraint repairs must reach the deployed database.** The append-`ALTER`
   blocks in both bootstrap files (or migrations 043/044) must be applied; a stale
   DB still rejects `under_review` / `needs_correction` on `sellers.status` and
@@ -319,7 +385,7 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
   behaviour at 320–430 px, the object-URL image preview, the R2
   presign→PUT→confirm round trip and the WebSocket round trips rest on source
   inspection plus contract tests.
-- **29 DB-touching `(integration)` suites are skipped** without a live
+- **35 DB-touching `(integration)` tests are skipped** without a live
   `DATABASE_URL`; they need a real Neon database (and R2 for the media paths).
 
 ### Environment constraints (tooling, not product bugs)

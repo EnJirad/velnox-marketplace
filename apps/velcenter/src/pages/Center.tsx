@@ -142,6 +142,23 @@ const SETTINGS_SECTIONS = [
  * re-checks the role AND the permission server-side, so hiding a tab is UX,
  * never authorization.
  */
+/**
+ * Display text for a counter that came from an API read.
+ *
+ * `null` means UNKNOWN — the read failed or has not finished — and renders an
+ * em dash, matching the overview cards. It must never be coerced to 0: a
+ * dashboard that says "0 บัญชีผู้ขาย" when the seller count is merely unknown is
+ * stating a fact it does not have, and an owner reading it concludes the
+ * marketplace is empty rather than that the request failed.
+ *
+ * The counters hold this TEXT rather than a number so that every place they are
+ * shown — the tab badges, the directory header, the account summary sentence —
+ * renders the unknown case identically. They are never used in arithmetic.
+ */
+function counterText(value: number | null | undefined): string {
+  return value === null || value === undefined ? "—" : String(value);
+}
+
 function canSeeTab(
   tab: Tab,
   role?: string | null,
@@ -280,7 +297,10 @@ export default function Center() {
   const [rejectingProduct, setRejectingProduct] = useState<ModProductRow | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [modBusy, setModBusy] = useState(false);
-  const [verificationRows, setVerificationRows] = useState<{ sellers: VerificationRow[]; products: VerificationRow[] } | null>(null);
+  // Exact pending-verification count for the overview badge. The queue itself is
+  // paginated, so the counter asks for `limit: 1` and reads `pagination.total` —
+  // every pending row is counted instead of however many fit on one page.
+  const [pendingVerifications, setPendingVerifications] = useState(0);
   // The three queue reads below feed the overview counters and tab badges — a
   // failure must not silently read as "nothing pending".
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -327,30 +347,6 @@ export default function Center() {
     isStaff: boolean;
     createdAt: number;
   }
-  /** A seller_verifications row. Identity evidence is reviewer-only and is
-   *  fetched separately as short-lived signed URLs. */
-  interface VerificationRow {
-    id: string;
-    seller_id: string;
-    status: string;
-    verification_type: string | null;
-    evidence_count?: number | null;
-    submitted_at: string | null;
-    reviewed_at: string | null;
-    rejection_reason: string | null;
-    suspension_reason: string | null;
-    review_reason_code: string | null;
-    review_note: string | null;
-    shop_name: string | null;
-    shop_slug: string | null;
-    owner_name: string | null;
-    owner_email: string | null;
-    seller_status: string | null;
-    verification_status: string | null;
-    created_at: string | null;
-    updated_at: string | null;
-  }
-
   const reloadSellers = useCallback(async () => {
     try {
       setSellerRows(await sellerListAction());
@@ -371,19 +367,14 @@ export default function Center() {
 
   const reloadVerifications = useCallback(async () => {
     try {
-      const [pending, verified, rejected, suspended] = await Promise.all([
-        verificationsAction({ status: "pending" }),
-        verificationsAction({ status: "verified" }),
-        verificationsAction({ status: "rejected" }),
-        verificationsAction({ status: "suspended" }),
-      ]);
-      // One persisted source — the same seller_verifications rows the seller wrote.
-      setVerificationRows({
-        sellers: [...(pending?.sellers ?? []), ...(verified?.sellers ?? []), ...(rejected?.sellers ?? []), ...(suspended?.sellers ?? [])],
-        products: [],
-      });
+      // One persisted source — the same seller_verifications rows the seller
+      // wrote — read as an exact count. It is a COUNT OVER() on the backend, so
+      // the overview no longer pulls whole queues into the browser to count them.
+      const pending = await verificationsAction({ status: "pending", limit: 1 });
+      setPendingVerifications(Number(pending?.pagination?.total ?? 0));
     } catch (error) {
-      console.error("Verification list error:", error);
+      console.error("Verification count error:", error);
+      // A failed read keeps the last known count and surfaces the error.
       setQueueError(error instanceof Error ? error.message : "โหลดตัวเลขคิวงานไม่สำเร็จ");
     }
   }, [verificationsAction]);
@@ -484,11 +475,9 @@ export default function Center() {
 
   const pendingSellers = (sellerRows ?? []).filter((s) => s.status === "pending").length;
   const pendingProducts = (modProducts ?? []).filter((p) => p.status === "pending_review").length;
-  const pendingVerifications =
-    (verificationRows?.sellers ?? []).filter((v) => v.status === "pending").length;
 
-  // Filter + search happen client-side over the persisted rows (a single fetch
-  // per status, no N+1). The backend also supports server-side filtering.
+  // The verification queue filters, searches and pages on the SERVER (it holds
+  // no rows here any more) — this page only needs the exact pending count.
 
   const handleSellerStatus = async (seller: SellerRow, status: string) => {
     // Frontend guard: cannot approve/reject own seller application
@@ -543,7 +532,7 @@ export default function Center() {
   const setUserAccess = useMutation(api.users.setUserAccess);
   const [staffUsers, setStaffUsers] = useState<DirectoryUser[] | null>(null);
   const [customerUsers, setCustomerUsers] = useState<DirectoryUser[] | null>(null);
-  const [peopleCounts, setPeopleCounts] = useState<{ staff: number; customer: number; seller: number }>({ staff: 0, customer: 0, seller: 0 });
+  const [peopleCounts, setPeopleCounts] = useState<{ staff: string; customer: string; seller: string }>({ staff: "—", customer: "—", seller: "—" });
   const [peopleError, setPeopleError] = useState<string | null>(null);
   const [peopleSegment, setPeopleSegment] = useState<"staff" | "customer">("staff");
   const [customerSearch, setCustomerSearch] = useState("");
@@ -558,10 +547,19 @@ export default function Center() {
       setStaffUsers((staffRes?.users ?? []) as DirectoryUser[]);
       setCustomerUsers((customerRes?.users ?? []) as DirectoryUser[]);
       const counts = customerRes?.counts ?? staffRes?.counts;
-      if (counts) setPeopleCounts({ staff: counts.staff ?? 0, customer: counts.customer ?? 0, seller: counts.seller ?? 0 });
+      if (counts) {
+        setPeopleCounts({
+          staff: counterText(counts.staff),
+          customer: counterText(counts.customer),
+          seller: counterText(counts.seller),
+        });
+      }
     } catch (error) {
       console.error("Users list error:", error);
       setPeopleError(error instanceof Error ? error.message : "โหลดรายชื่อผู้ใช้ไม่สำเร็จ");
+      // Unknown, not zero — the counters below render "—" so a failed read is
+      // never reported as an empty platform.
+      setPeopleCounts({ staff: "—", customer: "—", seller: "—" });
       setStaffUsers([]);
       setCustomerUsers([]);
     }
@@ -875,11 +873,11 @@ export default function Center() {
     const m = marketKpi; // marketplace KPIs (Neon commerce core — real data)
     return [
       { icon: TrendingUp, label: "ยอดขายรวม", value: m ? formatBaht(m.revenue) : "—", sub: "ออเดอร์ที่เสร็จสิ้น", accent: "text-emerald-600" },
-      { icon: ShoppingBag, label: "ออเดอร์ทั้งหมด", value: m ? String(m.orderCount) : "—", sub: `${m?.pendingOrders ?? 0} รอจัดการ`, accent: "text-sky-600" },
+      { icon: ShoppingBag, label: "ออเดอร์ทั้งหมด", value: m ? String(m.orderCount) : "—", sub: m ? `${m.pendingOrders ?? 0} รอจัดการ` : "—", accent: "text-sky-600" },
       { icon: Target, label: "เป้าหมายสำเร็จ", value: o ? `${o.goalsAchieved}/${o.goalsTotal}` : "—", sub: "จากทั้งหมด", accent: "text-slate-700" },
       { icon: Users, label: "ลูกค้า", value: m ? String(m.customerCount) : "—", sub: "บัญชีลูกค้า", accent: "text-amber-600" },
       { icon: Store, label: "ร้านค้าอนุมัติ", value: m ? String(m.sellerCount) : "—", sub: "seller ที่ผ่านอนุมัติ", accent: "text-slate-700" },
-      { icon: Package, label: "สินค้าทั้งหมด", value: m ? String(m.productCount) : "—", sub: `${m?.publishedCount ?? 0} รายการประกาศขาย`, accent: "text-slate-700" },
+      { icon: Package, label: "สินค้าทั้งหมด", value: m ? String(m.productCount) : "—", sub: m ? `${m.publishedCount ?? 0} รายการประกาศขาย` : "—", accent: "text-slate-700" },
       { icon: Boxes, label: "สต็อกต่ำ", value: o ? String(o.lowStockCount) : "—", sub: "ถึงจุดสั่งซื้อซ้ำ", accent: "text-rose-600" },
       { icon: AlertTriangle, label: "ต้องสั่งด่วน", value: o ? String(o.dueReorderCount) : "—", sub: "เลยรอบการสั่ง", accent: "text-rose-600" },
     ];

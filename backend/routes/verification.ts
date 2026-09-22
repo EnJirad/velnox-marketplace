@@ -27,6 +27,7 @@ import { query, getClient } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { isSelfApproval } from "../lib/verification-guard.js";
+import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js";
 import { broadcast, CHANNELS, sendToUser } from "../realtime/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -431,8 +432,15 @@ export function registerVerificationRoutes(app: Express) {
   // VELCENTER — seller verification review
   // ════════════════════════════════════════════════════════════════════════
 
-  // GET /api/admin/verifications?status=pending|verified|rejected|suspended|all
+  // GET /api/admin/verifications?status=pending|verified|rejected|suspended|all&q=&page=1&limit=25
   // Seller verification queue ONLY. Product verification no longer exists.
+  //
+  // Paginated (`page` 1-based, `limit` clamped to 1..100, default 25) with a
+  // fully deterministic order — `submitted_at DESC NULLS LAST, created_at DESC,
+  // id DESC` — so paging can never skip or repeat a row. The exact filtered
+  // count comes back as `pagination.total`, so a caller that only needs the
+  // number (the VelCenter overview counter) can ask for `limit=1` and read it
+  // instead of counting a truncated page.
   app.get("/api/admin/verifications", requireAuth, async (req: Request, res: Response) => {
     try {
       const role = await assertReviewer(req.user!.userId);
@@ -443,6 +451,9 @@ export function registerVerificationRoutes(app: Express) {
 
       const status = (req.query.status as string) || "pending";
       const search = ((req.query.q as string) || "").trim();
+      const limit = parseLimit(req.query.limit);
+      const page = parsePage(req.query.page);
+      const offset = pageOffset(page, limit);
       const where: string[] = [];
       const params: unknown[] = [];
 
@@ -456,7 +467,8 @@ export function registerVerificationRoutes(app: Express) {
       }
 
       const sellerRes = await query(
-        `SELECT sv.id, sv.seller_id, sv.status, sv.verification_type, sv.evidence_urls,
+        `SELECT COUNT(*) OVER() AS total_count,
+                sv.id, sv.seller_id, sv.status, sv.verification_type, sv.evidence_urls,
                 sv.submitted_at, sv.reviewed_at, sv.rejection_reason,
                 sv.suspension_reason, sv.review_reason_code, sv.review_note, sv.created_at, sv.updated_at,
                 s.status AS seller_status, s.verification_status,
@@ -471,19 +483,50 @@ export function registerVerificationRoutes(app: Express) {
          LEFT JOIN shops sh ON sh.seller_id = s.id
          LEFT JOIN seller_settings ss ON ss.seller_id = s.id
          ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-         ORDER BY sv.submitted_at DESC NULLS LAST, sv.created_at DESC
-         LIMIT 200`,
-        params,
+         ORDER BY sv.submitted_at DESC NULLS LAST, sv.created_at DESC, sv.id DESC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset],
       );
 
-      // Never return raw evidence locations to the list — only counts.
-      const sellers = sellerRes.rows.map((row: Record<string, unknown>) => ({
-        ...row,
-        evidence_count: Array.isArray(row.evidence_urls) ? (row.evidence_urls as unknown[]).length : 0,
-        evidence_urls: undefined,
-      }));
+      // `total_count` is the filtered count *before* LIMIT/OFFSET and is the same
+      // on every returned row. A page past the end returns no rows at all, so
+      // fall back to a count query rather than reporting a total of 0.
+      let total = sellerRes.rows.length
+        ? Number((sellerRes.rows[0] as Record<string, unknown>).total_count)
+        : 0;
+      if (!sellerRes.rows.length && page > 1) {
+        const countRes = await query(
+          `SELECT COUNT(*)::int AS total
+           FROM seller_verifications sv
+           JOIN sellers s ON s.id = sv.seller_id
+           JOIN users u ON u.id = s.user_id
+           LEFT JOIN shops sh ON sh.seller_id = s.id
+           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`,
+          params,
+        );
+        total = Number((countRes.rows[0] as Record<string, unknown> | undefined)?.total ?? 0);
+      }
 
-      res.json({ success: true, data: { sellers, products: [] } });
+      // Never return raw evidence locations to the list — only counts. The
+      // window-function column is an implementation detail, not API surface.
+      const sellers = sellerRes.rows.map((row: Record<string, unknown>) => {
+        const clean: Record<string, unknown> = { ...row };
+        delete clean.total_count;
+        return {
+          ...clean,
+          evidence_count: Array.isArray(clean.evidence_urls) ? (clean.evidence_urls as unknown[]).length : 0,
+          evidence_urls: undefined,
+        };
+      });
+
+      res.json({
+        success: true,
+        data: {
+          sellers,
+          products: [],
+          pagination: pageMeta(page, limit, total, sellers.length),
+        },
+      });
     } catch (err) {
       console.error("[verification] admin list error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch verifications" } });

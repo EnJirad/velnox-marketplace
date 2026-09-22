@@ -5,6 +5,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { rateLimitSecurity } from "./middleware/rate-limit.js";
 import { createOriginGuard } from "./middleware/origin-guard.js";
+import { requireDiagAccess } from "./middleware/diag-guard.js";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { setupRoutes } from "./routes/index.js";
@@ -279,6 +280,9 @@ app.get("/api/health", (_req, res) => {
 });
 
 // ─── Schema Diagnostic (temporary — check production tables) ─────────────
+// OWNER/ADMIN ONLY. Applied at the prefix so every future /api/_diag route is
+// guarded by default — this endpoint used to be publicly reachable.
+app.use("/api/_diag", ...requireDiagAccess);
 app.get("/api/_diag/schema", async (_req, res) => {
   try {
     const { query } = await import("./db/index.js");
