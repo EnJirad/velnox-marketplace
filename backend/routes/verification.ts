@@ -27,6 +27,8 @@ import { query, getClient } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { isSelfApproval } from "../lib/verification-guard.js";
+import { isUploadTooLarge } from "../lib/media-config.js";
+import { headR2Object } from "../lib/r2-objects.js";
 import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js";
 import { broadcast, CHANNELS, sendToUser } from "../realtime/index.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -322,9 +324,10 @@ export function registerVerificationRoutes(app: Express) {
   app.post("/api/seller/evidence/confirm", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const { objectKey, publicUrl, filename, contentType, fileSize } = req.body as {
+      // `publicUrl` / `contentType` / `fileSize` from the body are deliberately
+      // NOT trusted: existence, content type and size are read back from R2.
+      const { objectKey, filename, contentType, fileSize } = req.body as {
         objectKey?: string;
-        publicUrl?: string;
         filename?: string;
         contentType?: string;
         fileSize?: number;
@@ -352,14 +355,29 @@ export function registerVerificationRoutes(app: Express) {
         return;
       }
 
-      const storedUrl = publicUrl || (evidencePublicDomain ? `${evidencePublicDomain}/${objectKey}` : objectKey);
+      // The object must actually exist in R2 and respect the size cap — both
+      // are read back from storage, never taken from the request body. Without
+      // this, a confirm after a failed PUT would still mint a media row.
+      const meta = await headR2Object(objectKey);
+      if (!meta.found) {
+        res.status(400).json({ success: false, error: { code: "R2_OBJECT_NOT_FOUND", message: "Upload not found in storage. Please try again." } });
+        return;
+      }
+      if (isUploadTooLarge(meta.size)) {
+        res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: "File exceeds the maximum allowed size" } });
+        return;
+      }
+
+      const storedUrl = evidencePublicDomain ? `${evidencePublicDomain}/${objectKey}` : objectKey;
+      const storedContentType = meta.contentType || contentType || "image/jpeg";
+      const storedSize = meta.size ?? fileSize ?? 0;
 
       const mediaRes = await query(
         `INSERT INTO media (url, key, content_type, size, uploaded_by)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (key) DO UPDATE SET url = $1, content_type = $3, size = $4
          RETURNING id`,
-        [storedUrl, objectKey, contentType || "image/jpeg", fileSize || 0, userId],
+        [storedUrl, objectKey, storedContentType, storedSize, userId],
       );
 
       res.json({
@@ -369,8 +387,8 @@ export function registerVerificationRoutes(app: Express) {
           url: storedUrl,
           objectKey,
           filename: filename || objectKey.split("/").pop(),
-          contentType,
-          fileSize,
+          contentType: storedContentType,
+          fileSize: storedSize,
         },
       });
     } catch (err) {

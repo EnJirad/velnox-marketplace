@@ -1,9 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
-import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "../lib/media-config.js";
+import { ALLOWED_UPLOAD_TYPES, isUploadTooLarge } from "../lib/media-config.js";
+import { headR2Object } from "../lib/r2-objects.js";
 import { invalidateCachedProfile } from "./auth.js";
 
 // ─── R2 Client ──────────────────────────────────────────────────────────────
@@ -37,7 +38,6 @@ const PUBLIC_DOMAIN = getR2Config().publicDomain;
 // ─── Allowed MIME types + size limit come from lib/media-config.ts ──────────
 
 const ALLOWED_TYPES: string[] = [...ALLOWED_UPLOAD_TYPES];
-const MAX_SIZE = MAX_UPLOAD_BYTES;
 
 // ─── Safe logging (no secrets) ──────────────────────────────────────────────
 
@@ -47,17 +47,12 @@ function r2Log(step: string, data: Record<string, unknown>) {
 
 // ─── R2 Object Verification ─────────────────────────────────────────────────
 
-async function verifyR2Object(key: string): Promise<boolean> {
-  try {
-    await R2.send(
-      new HeadObjectCommand({ Bucket: BUCKET, Key: key })
-    );
-    r2Log("verify", { key, status: "found" });
-    return true;
-  } catch {
-    r2Log("verify", { key, status: "not_found" });
-    return false;
-  }
+async function inspectR2Object(key: string) {
+  // Existence, ACTUAL size and content type are read back from R2 — the size
+  // cap is enforced against storage, never against a client-supplied number.
+  const meta = await headR2Object(key);
+  r2Log("verify", { key, status: meta.found ? "found" : "not_found", size: meta.size });
+  return meta;
 }
 
 // ─── R2 Object Deletion ─────────────────────────────────────────────────────
@@ -291,23 +286,44 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      const exists = await verifyR2Object(objectKey);
-      if (!exists) {
+      const obj = await inspectR2Object(objectKey);
+      if (!obj.found) {
         r2Log("confirm", { step: "verify_object", status: "failed", objectKey });
         res.status(400).json({ success: false, error: { code: "R2_OBJECT_NOT_FOUND", message: "Upload not found in storage. Please try again." } });
         return;
+      }
+      if (isUploadTooLarge(obj.size)) {
+        r2Log("confirm", { step: "size_check", status: "rejected", objectKey, size: obj.size });
+        res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: "File exceeds the maximum allowed size" } });
+        return;
+      }
+
+      // Shop uploads: ownership must be proven BEFORE any write below — the
+      // 403 used to land after the media upsert, leaving a written row behind
+      // a refused request.
+      if (purpose === "shop-logo" || purpose === "shop-cover") {
+        const earlyShop = objectKey.split("/")[1] || "";
+        const ownership = await query(
+          `SELECT sh.id FROM shops sh JOIN sellers s ON s.id = sh.seller_id
+           WHERE sh.id = $1 AND s.user_id = $2`,
+          [earlyShop, userId],
+        );
+        if (ownership.rows.length === 0) {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Cannot upload to another seller's shop" } });
+          return;
+        }
       }
 
       const publicUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
 
       try {
-        await query(
-          `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
-           VALUES ($1, $2, 'image/webp', 0, $3, NOW())
+        await query(          `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
+             VALUES ($1, $2, $3, $4, $5, NOW())
            ON CONFLICT (key) DO UPDATE
              SET url = EXCLUDED.url,
-                 content_type = EXCLUDED.content_type`,
-          [publicUrl, objectKey, userId]
+                 content_type = EXCLUDED.content_type,
+                 size = EXCLUDED.size`,
+          [publicUrl, objectKey, obj.contentType || "image/webp", obj.size ?? 0, userId]
         );
       } catch (mediaErr: any) {
         r2Log("confirm", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
@@ -428,14 +444,19 @@ export function setupUploadRoutes(app: Express): void {
       }
       r2Log("save", { step: "verify_ownership", status: "passed", userId, kind });
 
-      const exists = await verifyR2Object(objectKey);
-      if (!exists) {
+      const obj = await inspectR2Object(objectKey);
+      if (!obj.found) {
         r2Log("save", { step: "verify_object", status: "failed", objectKey });
         res.status(400).json({ success: false, error: { code: "R2_OBJECT_NOT_FOUND", message: "Image not found in storage. Please try uploading again." } });
         return;
       }
+      if (isUploadTooLarge(obj.size)) {
+        r2Log("save", { step: "size_check", status: "rejected", objectKey, size: obj.size });
+        res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: "File exceeds the maximum allowed size" } });
+        return;
+      }
 
-      r2Log("save", { step: "save_neon", kind, objectKey, size: bytes || 0 });
+      r2Log("save", { step: "save_neon", kind, objectKey, size: obj.size ?? bytes ?? 0 });
 
       // ── Database save ────────────────────────────────────────────────
 
@@ -449,7 +470,7 @@ export function setupUploadRoutes(app: Express): void {
              SET url = EXCLUDED.url,
                  content_type = EXCLUDED.content_type,
                  size = EXCLUDED.size`,
-          [url, objectKey, `image/${format || "jpeg"}`, bytes || 0, userId]
+          [url, objectKey, obj.contentType || `image/${format || "jpeg"}`, obj.size ?? bytes ?? 0, userId]
         );
         r2Log("save", { step: "media_record", status: "upserted", key: objectKey });
       } catch (mediaErr: any) {
