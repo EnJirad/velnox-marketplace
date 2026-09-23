@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-23 · **Branch:** `main`
+**Last updated:** 2026-09-23 · **Branch:** `main` · **Latest pass:** production Neon read-only verification (§9)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -339,14 +339,17 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
    instead of after. Covered by `backend/tests/upload-security.test.ts`
    (unit + wiring + a real HTTP 401/403/400 round trip needing no R2).
    **Commits `2509aea` → `1be5620` → `d092b4a`.**
-5. **Production Neon itself is still unprobed.**
-   `.github/workflows/diag-neon-schema.yml` is ready: manual, SELECT-only,
-   prints the migration ledger + every structure the code expects (seller
-   verification, moderation, audit, notifications, `idx_media_owner_key`,
-   the 044 `item_unavailable` repair). It could not be dispatched from this
-   workspace — the App token gets `403 Resource not accessible by
-   integration` on workflow dispatches. Owner: run it from the Actions tab
-   (or grant the GitHub App `Actions: read/write`).
+5. **Production Neon — verified read-only from the production database's own
+   output (see §9).** The ledger matches `main` exactly (49 migrations, newest
+   046) and 043/044/045/046 are recorded as applied; the live run logs prove
+   `idx_media_owner_key`, the canonical `media` column names, the
+   `under_review` / `needs_correction` constraint, `seller_review_history` and
+   the `item_unavailable` constraints. What is still open is a fresh catalog
+   read of four low-severity details (§9.4).
+   `.github/workflows/diag-neon-schema.yml` (manual, SELECT-only) still cannot
+   be dispatched from this workspace — `403 Resource not accessible by
+   integration`. Owner: run it from the Actions tab (or grant the GitHub App
+   `Actions: read/write`).
 
 ## 6. Remaining gaps / open items
 
@@ -356,9 +359,11 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
   **CLOSED** — all 35 now run against a disposable Postgres (`452 pass /
   0 fail / 0 skip`, twice consecutively), including the two self-approval HTTP
   cases: the 403 was observed with nothing written, plus the 200 negative
-  control. What is still unverified is **production Neon itself** — run
-  `.github/workflows/diag-neon-schema.yml` from the Actions tab (the App
-  token cannot dispatch it: 403).
+  control. **Production Neon is now verified read-only — see §9:** the ledger
+  matches `main` exactly and the 041–046 repairs are recorded as applied. What
+  remains is a fresh catalog read of four low-severity details (§9.4); the
+  SELECT-only `diag-neon-schema.yml` still cannot be dispatched from a
+  workspace (403).
 - **`backend/tsconfig.json` excludes `tests`**, so `tsc` never validates test
   files — a syntax error or a bad import in a test surfaces only when `bun test`
   parses it. After editing a test, run that file; a green `bun run typecheck`
@@ -406,10 +411,12 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
   window, so the keys cannot be added here without breaking locale parity.
   Next step: extract the queue's strings to `review.*` with `i18n:check` run in a
   checkout that can edit those files.
-- **The DB constraint repairs must reach the deployed database.** The append-`ALTER`
-  blocks in both bootstrap files (or migrations 043/044) must be applied; a stale
-  DB still rejects `under_review` / `needs_correction` on `sellers.status` and
-  `item_unavailable` on `velrepeat_plans.status`.
+- ~~**The DB constraint repairs must reach the deployed database.**~~ **CLOSED
+  (2026-09-23):** production applied 043 (`under_review` / `needs_correction` on
+  `sellers.status`) at 2026-09-16T14:41:27Z and 044 (`item_unavailable` on both
+  `velrepeat_plans.status` and `velrepeat_runs.status`) at 14:43:58Z — both
+  recorded in the production ledger and both observable in the runner log; 045
+  restored the canonical `media` column names in the same window. See §9.
 - **Migration numbering has duplicates** (029, 030, 034, 035). A prefix-keyed
   runner applied only one file per number, which is exactly how the V0035 repair
   was skipped. New migrations must use an unused number; consider renumbering.
@@ -550,3 +557,84 @@ that carries a stop-and-clarify rule.
 `.ai/**` (workspace) · `AGENTS.md` · `README.md` · `AI_RULES.md` (pointer) ·
 `AI_Handoff.md` (pointer) · `docs/ai/**` (moved into `.ai/`) ·
 `AI_Handoff_Archive.md` (moved into `.ai/history/`).
+
+---
+
+## 9. Production Neon — read-only verification (TASK 001, 2026-09-23)
+
+**READ-ONLY.** No source, schema, migration, workflow or data change; nothing
+was connected to from this workspace (no database credentials are readable here,
+by platform design). Every fact below is the **production database's own
+response**, captured from the production migration runner (`migrate-neon.yml`,
+secret `NEON_DATABASE_URL` — documented as the production DB in
+`context/database.md`) — not a filename check, not a local/test database.
+
+### 9.1 Method
+
+```
+gh run list --workflow=migrate-neon.yml        # locate the runs that applied migrations
+gh run view <id> --log | grep -i NOTICE        # live statement responses from production
+gh run view <id> --log ... | diff - <(ls db/migrations/*.sql)   # ledger == main
+gh workflow run diag-neon-schema.yml           # → 403, App lacks Actions write
+```
+
+### 9.2 Migration ledger
+
+- `diff` of the production `schema_migrations` names against
+  `db/migrations/*.sql` on `main` → **identical**: 49 rows, 49 files, none
+  missing, none orphaned, nothing pending. Newest: `046_staff_must_change_password`
+  @ 2026-09-18T00:05:39Z.
+- A recorded row is **transactional proof**, not a list entry: the runner applies
+  each file with `ON_ERROR_STOP=1 --single-transaction` and inserts the row only
+  on exit 0. Observed live on the same database: `044 … ERROR: relation
+  "velrepeat_plan_runs" does not exist` → `❌ FAILED`, and 044 stayed unrecorded
+  until the retargeted file ran at 14:43:58Z.
+- Rows 001–035 all carry one 2026-09-15 15:33–15:35 timestamp with a matching
+  `already exists, skipping` NOTICE: the runner's first pass was a **backfill**
+  over objects that already existed. Treat those timestamps as *not* creation
+  dates — the NOTICEs are the existence evidence.
+
+### 9.3 Verified in the production database (live responses)
+
+| Item | Evidence |
+|---|---|
+| `sellers.status` admits `under_review` / `needs_correction` | 043 @ 2026-09-16T14:41:27Z — `UPDATE 0` + 4×`ALTER TABLE` + `CREATE TABLE` + `CREATE INDEX`, recorded |
+| `seller_verifications.review_reason_code` / `review_note`, `seller_review_history` | same 043 run |
+| `seller_verifications` + `idx_seller_verifications_seller` / `_pending` | NOTICE `already exists` (040) |
+| `item_unavailable` on `velrepeat_plans.status` **and** `velrepeat_runs.status` | 044 @ 14:43:56Z, 4×`ALTER TABLE`, recorded 14:43:58Z |
+| `media` canonical columns `uploaded_by`/`key`/`url`/`content_type`/`size` | 045 @ 14:44:00Z — five `V0045: media.<old> renamed to <new>` NOTICEs |
+| `idx_media_owner_key` | **EXISTS** — NOTICE `relation "idx_media_owner_key" already exists, skipping` (041 @ 14:41:17Z); it indexed the owner/key columns before 045 renamed them, and Postgres carries an index across `RENAME COLUMN` |
+| `notifications` + `body` / `metadata` + `idx_notifications_unread` | NOTICEs (003, 016) |
+| `audit_logs` + `idx_audit_logs_entity` + `idx_audit_logs_created` | NOTICEs (005) |
+| `products`, `shops`, `orders`, `moderation_records`, `platform_settings`, `revoked_tokens`, `product_variants`, `product_variant_images` (+`idx_variant_images_variant`), `product_option_groups`/`_values`, `product_variant_values`, `option_value_images`, `product_attributes`, `product_images.variant_id`/`image_type`, `products.featured_variant_id` | NOTICEs across 001–037 |
+| `users.must_change_password` | 046 @ 2026-09-18T00:05:39Z — `ALTER TABLE` |
+
+### 9.4 Still NOT VERIFIED (needs a fresh catalog read)
+
+1. `notifications.user_id` nullability — canonical is `NOT NULL`, no migration
+   loosens it, and all four writers pass a recipient.
+2. The canonical index **names** `idx_notifications_user` / `idx_notifications_read`
+   — no migration creates them (only the bootstrap files do); the proven
+   functional equivalents are `idx_notifications_user_id` + `idx_notifications_unread`.
+3. `shops.idx_shops_seller` — present only in the bootstrap files and absent from
+   every run log. Low/latent: a plain index, relevant only if a seller ever gets
+   two shops.
+4. The full `audit_logs` column list and its FK to `users` — the app writes 6 of
+   the 7 canonical columns and has been served in production.
+
+### 9.5 Next action
+
+Run `.github/workflows/diag-neon-schema.yml` from **Actions → Velnox Neon Schema
+Diagnostic → Run workflow**. It has **never** been dispatched
+(`gh run list --workflow=diag-neon-schema.yml` is empty) and cannot be dispatched
+from a workspace (`403 Resource not accessible by integration`); granting the
+GitHub App **Actions: read/write** would allow it. Extend the probe with the two
+notification index names if item 2 above is to be closed.
+
+### 9.6 Safety notes from this pass
+
+Never run `bun test backend/tests` in an environment whose `DATABASE_URL` could
+point at production: the DB-gated fixtures **delete** rows
+(`backend/tests/helpers/purge.ts`). No credential, URL, password, token or hash
+was printed in this pass — the workflow references the secret only as
+`psql "$NEON_DATABASE_URL"` and never echoes it.
