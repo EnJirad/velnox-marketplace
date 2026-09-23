@@ -91,8 +91,11 @@ const RELEASABLE_STATUSES = [
  *   • Correct — variant and non-variant items restored with the right
  *     quantities.
  *   • Idempotent — called twice on the same order restores stock at
- *     most once, enforced by the `inventory_released` flag on the order
- *     row (set atomically inside the same transaction).
+ *     most once, enforced by an atomic guarded UPDATE that CLAIMS the
+ *     `inventory_released` flag inside the caller's transaction. A
+ *     read-then-write check is not enough: two concurrent callers (e.g. two
+ *     racing Stripe webhooks) could both read the flag as false and both
+ *     restore the stock.
  *   • Transactional — the flag update and the stock mutations happen
  *     inside the caller's transaction; if the caller rolls back, the
  *     flag is never set and stock is never restored.
@@ -107,33 +110,43 @@ export async function releaseOrderInventory(
   client: pg.PoolClient,
   orderId: string,
 ): Promise<boolean> {
-  // 1. Read order status + current released flag (no lock yet).
-  const orderRes = await client.query(
-    `SELECT status, inventory_released FROM orders WHERE id = $1`,
-    [orderId],
+  // 1. Atomically CLAIM the release: one guarded UPDATE carries the
+  //    already-released check, the status guard, and the flag write.
+  //    Under READ COMMITTED a concurrent caller blocks on the row lock and
+  //    then re-evaluates the WHERE clause against the committed row, where
+  //    `inventory_released = FALSE` no longer matches — so exactly one
+  //    transaction wins and the loser becomes an idempotent no-op. The
+  //    previous read-then-write check let both callers read false and both
+  //    restore the stock.
+  const claim = await client.query(
+    `UPDATE orders
+        SET inventory_released = true, updated_at = NOW()
+      WHERE id = $1
+        AND inventory_released = FALSE
+        AND status = ANY($2::text[])
+      RETURNING id`,
+    [orderId, RELEASABLE_STATUSES],
   );
-  if (orderRes.rows.length === 0) return false;
-  const order = orderRes.rows[0];
 
-  // 2. Already released → idempotent no-op.
-  if (order.inventory_released) {
-    console.log(`[inventory] releaseOrderInventory: order ${orderId} already released — skipping`);
+  if (claim.rows.length === 0) {
+    // The claim lost. Report why for the log (best effort — this read happens
+    // after the deciding UPDATE, so it can never change the outcome).
+    const orderRes = await client.query(
+      `SELECT status, inventory_released FROM orders WHERE id = $1`,
+      [orderId],
+    );
+    const order = orderRes.rows[0];
+    if (!order) return false;
+    if (order.inventory_released) {
+      console.log(`[inventory] releaseOrderInventory: order ${orderId} already released — skipping`);
+    } else {
+      console.log(`[inventory] releaseOrderInventory: order ${orderId} status '${order.status}' not releasable — skipping`);
+    }
     return false;
   }
 
-  // 3. Status guard — must not release for paid/completed orders.
-  if (!RELEASABLE_STATUSES.includes(order.status)) {
-    console.log(`[inventory] releaseOrderInventory: order ${orderId} status '${order.status}' not releasable — skipping`);
-    return false;
-  }
-
-  // 4. Mark as released (atomic with stock updates below).
-  await client.query(
-    `UPDATE orders SET inventory_released = true, updated_at = NOW() WHERE id = $1`,
-    [orderId],
-  );
-
-  // 5. Release stock for every item in the order.
+  // 2. Release stock for every item in the order — only the claim winner
+  //    reaches this point.
   const items = await client.query(
     `SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1`,
     [orderId],

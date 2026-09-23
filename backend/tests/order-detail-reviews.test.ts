@@ -13,6 +13,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
+import { purgeUsers } from "./helpers/purge.js";
 
 // ─── Review input validation (pure, always runs) ───────────────────────────
 
@@ -82,15 +83,18 @@ describe("verifyOrderContainsProduct (integration)", () => {
       const u = await query("INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id", [email, "Review Test"]);
       return u.rows[0].id as string;
     };
-    const userIdA = await mkUser("review-a@test.local");
-    const userIdB = await mkUser("review-b@test.local");
+    // Unique per seed(): fixed emails made the 2nd+ seed() in the same run
+    // (or the next run against the same DB) die on 23505 users_email_key.
+    const tag = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const userIdA = await mkUser(`review-a-${tag}@test.local`);
+    const userIdB = await mkUser(`review-b-${tag}@test.local`);
 
     const seller = await query("INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id", [userIdA]);
     const sellerId = seller.rows[0].id as string;
     const shop = await query("INSERT INTO shops (seller_id, name, slug) VALUES ($1, $2, $3) RETURNING id", [
       sellerId,
       "Review Shop",
-      "review-shop-" + Date.now(),
+      "review-shop-" + tag,
     ]);
     const shopId = shop.rows[0].id as string;
 
@@ -126,21 +130,37 @@ describe("verifyOrderContainsProduct (integration)", () => {
 
   testFn("own order containing the product → verified purchase", async () => {
     const s = await seed();
-    expect(await verifyOrderContainsProduct(s.userIdA, s.productIdA, s.orderIdA)).toBe(true);
+    try {
+      expect(await verifyOrderContainsProduct(s.userIdA, s.productIdA, s.orderIdA)).toBe(true);
+    } finally {
+      await purgeUsers([s.userIdA, s.userIdB]);
+    }
   });
 
   testFn("another user's order → NOT a verified purchase", async () => {
     const s = await seed();
-    expect(await verifyOrderContainsProduct(s.userIdA, s.productIdA, s.orderIdB)).toBe(false);
+    try {
+      expect(await verifyOrderContainsProduct(s.userIdA, s.productIdA, s.orderIdB)).toBe(false);
+    } finally {
+      await purgeUsers([s.userIdA, s.userIdB]);
+    }
   });
 
   testFn("own order without the product → NOT a verified purchase", async () => {
     const s = await seed();
-    expect(await verifyOrderContainsProduct(s.userIdA, s.productIdB, s.orderIdA)).toBe(false);
+    try {
+      expect(await verifyOrderContainsProduct(s.userIdA, s.productIdB, s.orderIdA)).toBe(false);
+    } finally {
+      await purgeUsers([s.userIdA, s.userIdB]);
+    }
   });
 
   testFn("non-existent order → NOT a verified purchase", async () => {
     const s = await seed();
-    expect(await verifyOrderContainsProduct(s.userIdA, s.productIdA, "00000000-0000-4000-8000-000000000000")).toBe(false);
+    try {
+      expect(await verifyOrderContainsProduct(s.userIdA, s.productIdA, "00000000-0000-4000-8000-000000000000")).toBe(false);
+    } finally {
+      await purgeUsers([s.userIdA, s.userIdB]);
+    }
   });
 });

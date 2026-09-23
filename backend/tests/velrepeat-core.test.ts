@@ -14,6 +14,7 @@ import {
   processPlan,
   validatePlanItem,
 } from "../jobs/velrepeat-scheduler.js";
+import { purgeUsers } from "./helpers/purge.js";
 
 // ─── calculateNextRunAt ──────────────────────────────────────────────────────
 
@@ -235,7 +236,9 @@ describe("scheduler idempotency (integration)", () => {
       } finally {
         // ── Cleanup (cascade deletes) ──────────────────────────────────
         await query(`DELETE FROM velrepeat_plans WHERE id = $1`, [planId]);
-        await query(`DELETE FROM users WHERE id = $1`, [userId]);
+        // processPlan created an order for this user (orders.user_id is NO
+        // ACTION), so a bare user delete would throw 23503.
+        await purgeUsers([userId]);
       }
     },
     30_000,

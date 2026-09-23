@@ -16,6 +16,7 @@ import {
   mapPlanStatusToSubscriptionStatus,
   normalizeSellerOrderStatus,
 } from "../routes/seller-orders.js";
+import { purgeUsers } from "./helpers/purge.js";
 
 // ─── Order status state machine ──────────────────────────────────────────────
 
@@ -171,6 +172,7 @@ describe("seller order ownership scoping (integration)", () => {
 
       const sellerA = await mkSeller(sellerAUser, "a");
       const sellerB = await mkSeller(sellerBUser, "b");
+      let otherUser = ""; // created inside the try, purged in finally
 
       try {
         // One order containing items from BOTH sellers' shops.
@@ -197,12 +199,14 @@ describe("seller order ownership scoping (integration)", () => {
         expect(itemsForB[orderId]![0]!.sellerId).toBe(sellerB.sellerId);
 
         // An unrelated seller sees nothing.
-        const otherUser = await mkUser(`${tag}-c@test.local`);
+        otherUser = await mkUser(`${tag}-c@test.local`);
         const other = await mkSeller(otherUser, "c");
         const itemsForC = await fetchSellerItemsForOrders([orderId], other.sellerId);
         expect(itemsForC[orderId] ?? []).toHaveLength(0);
       } finally {
-        await query(`DELETE FROM users WHERE id = ANY($1)`, [[customerId, sellerAUser, sellerBUser]]);
+        // The shared order blocks a bare user delete (orders.user_id is NO
+        // ACTION) — purge removes the order and its children first.
+        await purgeUsers([customerId, sellerAUser, sellerBUser, otherUser]);
       }
     },
     30_000,

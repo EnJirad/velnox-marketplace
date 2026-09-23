@@ -25,6 +25,7 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import jwt from "jsonwebtoken";
 import { query } from "../db/index.js";
+import { purgeUsers } from "./helpers/purge.js";
 import { isSelfApproval } from "../lib/verification-guard.js";
 import { registerVerificationRoutes } from "../routes/verification.js";
 
@@ -221,10 +222,11 @@ describe("PATCH /api/admin/verifications/seller/:id over HTTP (needs DATABASE_UR
 
   afterAll(async () => {
     if (hasDb && ownerId) {
-      // `users` cascades to sellers → verifications / review history / seller
-      // notifications. audit_logs is ON DELETE SET NULL, so clear it first.
-      await query("DELETE FROM audit_logs WHERE user_id = ANY($1::uuid[])", [[ownerId, otherReviewerId]]);
-      await query("DELETE FROM users WHERE id = ANY($1::uuid[])", [[ownerId, otherReviewerId]]);
+      // sellers / shops / review history / notifications cascade from `users`
+      // and audit_logs is ON DELETE SET NULL — but seller_verifications.
+      // reviewed_by is NO ACTION, so the shared purge clears it before the
+      // users go away (the fixture approves once, which sets that column).
+      await purgeUsers([ownerId, otherReviewerId]);
     }
     if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
   });

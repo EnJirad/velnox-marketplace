@@ -20,6 +20,7 @@ import {
   reserveInventoryStock,
   validateCheckoutQuantity,
 } from "../lib/inventory.js";
+import { purgeUsers } from "./helpers/purge.js";
 
 // ─── Server-side quantity validation ─────────────────────────────────────────
 
@@ -127,7 +128,7 @@ describe("non-variant inventory reservation (integration)", () => {
       expect(after.rows[0].quantity).toBe(10);
       expect(after.rows[0].reserved).toBe(1);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await purgeUsers([userId]);
     }
   });
 
@@ -148,7 +149,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await purgeUsers([userId]);
     }
   });
 
@@ -186,7 +187,7 @@ describe("non-variant inventory reservation (integration)", () => {
         expect(after.rows[0].quantity).toBe(1);
         expect(after.rows[0].reserved).toBe(1);
       } finally {
-        await query(`DELETE FROM users WHERE id = $1`, [userId]);
+        await purgeUsers([userId]);
       }
     },
     30_000,
@@ -213,7 +214,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await purgeUsers([userId]);
     }
   });
 
@@ -257,7 +258,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after2.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await purgeUsers([userId]);
     }
   });
 
@@ -295,7 +296,7 @@ describe("non-variant inventory reservation (integration)", () => {
       expect(after.rows[0].quantity).toBe(10);
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await purgeUsers([userId]);
     }
   });
 
@@ -319,7 +320,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await purgeUsers([userId]);
     }
   });
 
@@ -349,7 +350,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await purgeUsers([userId]);
     }
   }, 30_000);
 });

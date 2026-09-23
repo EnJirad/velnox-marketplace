@@ -21,6 +21,7 @@ import {
   round2,
   validateGoalInput,
 } from "../lib/seller-stats.js";
+import { purgeUsers } from "./helpers/purge.js";
 
 // ─── Income math (pure, always runs) ───────────────────────────────────────
 
@@ -180,73 +181,95 @@ describe("seller goals + center queries (integration)", () => {
   }
 
   testFn("goal CRUD round-trip (create → progress → update → delete)", async () => {
-    const { query, sellerId } = await seedSeller();
+    const { query, userId, sellerId } = await seedSeller();
+    try {
+      const created = await query(
+        `INSERT INTO seller_goals (seller_id, title, category, period, unit, target_value, current_value)
+         VALUES ($1, 'ยอดขาย 100k', 'revenue', 'monthly', 'บาท', 100000, 0) RETURNING *`,
+        [sellerId],
+      );
+      const goalId = created.rows[0].id as string;
 
-    const created = await query(
-      `INSERT INTO seller_goals (seller_id, title, category, period, unit, target_value, current_value)
-       VALUES ($1, 'ยอดขาย 100k', 'revenue', 'monthly', 'บาท', 100000, 0) RETURNING *`,
-      [sellerId],
-    );
-    const goalId = created.rows[0].id as string;
+      // progress
+      await query("UPDATE seller_goals SET current_value = current_value + 25000 WHERE id = $1", [goalId]);
+      const after = await query("SELECT current_value FROM seller_goals WHERE id = $1", [goalId]);
+      expect(parseFloat(after.rows[0].current_value)).toBe(25000);
 
-    // progress
-    await query("UPDATE seller_goals SET current_value = current_value + 25000 WHERE id = $1", [goalId]);
-    const after = await query("SELECT current_value FROM seller_goals WHERE id = $1", [goalId]);
-    expect(parseFloat(after.rows[0].current_value)).toBe(25000);
-
-    // owner-scoped delete
-    await query("DELETE FROM seller_goals WHERE id = $1 AND seller_id = $2", [goalId, sellerId]);
-    const gone = await query("SELECT id FROM seller_goals WHERE id = $1", [goalId]);
-    expect(gone.rows).toHaveLength(0);
+      // owner-scoped delete
+      await query("DELETE FROM seller_goals WHERE id = $1 AND seller_id = $2", [goalId, sellerId]);
+      const gone = await query("SELECT id FROM seller_goals WHERE id = $1", [goalId]);
+      expect(gone.rows).toHaveLength(0);
+    } finally {
+      await purgeUsers([userId]);
+    }
   });
 
   testFn("income report math over real orders (completed + cancelled)", async () => {
     const { query, userId, sellerId, shopId } = await seedSeller();
-
-    const mkOrder = async (status: string) => {
-      const o = await query(
-        "INSERT INTO orders (user_id, shop_id, status, total_amount, currency) VALUES ($1, $2, $3, 1000, 'THB') RETURNING id",
-        [userId, shopId, status],
+    try {
+      // order_items.product_id is NOT NULL in the canonical schema (proven
+      // live by 23502 before this fixture was fixed) — production checkout
+      // can never insert an item without a product either.
+      const item = await query(
+        "INSERT INTO products (shop_id, name, slug, price, status) VALUES ($1, 'P1#4 Income Item', $2, 500, 'published') RETURNING id",
+        [shopId, `p14-income-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`],
       );
-      const orderId = o.rows[0].id as string;
-      await query(
-        `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, quantity, price, subtotal)
-         VALUES ($1, NULL, $2, 'Item', 'Item', 2, 500, 1000)`,
-        [orderId, shopId],
-      );
-      return orderId;
-    };
-    const completedOrderId = await mkOrder("completed");
-    await mkOrder("cancelled");
+      const productId = item.rows[0].id as string;
 
-    // Gross aggregate the same way GET /api/seller/income does.
-    const agg = await query(
-      `SELECT o.status, SUM(oi.subtotal) AS seller_subtotal, SUM(oi.quantity)::int AS seller_item_count
-       FROM orders o
-       JOIN order_items oi ON oi.order_id = o.id
-       JOIN shops sh ON oi.shop_id = sh.id
-       WHERE sh.seller_id = $1 AND o.id = ANY($2)
-       GROUP BY o.status`,
-      [sellerId, [completedOrderId]],
-    );
-    expect(agg.rows).toHaveLength(1);
-    expect(parseFloat(agg.rows[0].seller_subtotal)).toBe(1000);
-    expect(agg.rows[0].seller_item_count).toBe(2);
+      const mkOrder = async (status: string) => {
+        const o = await query(
+          "INSERT INTO orders (user_id, shop_id, status, total_amount, currency) VALUES ($1, $2, $3, 1000, 'THB') RETURNING id",
+          [userId, shopId, status],
+        );
+        const orderId = o.rows[0].id as string;
+        await query(
+          `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, quantity, price, subtotal)
+           VALUES ($1, $2, $3, 'Item', 'Item', 2, 500, 1000)`,
+          [orderId, productId, shopId],
+        );
+        return orderId;
+      };
+      const completedOrderId = await mkOrder("completed");
+      await mkOrder("cancelled");
+
+      // Gross aggregate the same way GET /api/seller/income does.
+      const agg = await query(
+        `SELECT o.status, SUM(oi.subtotal) AS seller_subtotal, SUM(oi.quantity)::int AS seller_item_count
+         FROM orders o
+         JOIN order_items oi ON oi.order_id = o.id
+         JOIN shops sh ON oi.shop_id = sh.id
+         WHERE sh.seller_id = $1 AND o.id = ANY($2)
+         GROUP BY o.status`,
+        [sellerId, [completedOrderId]],
+      );
+      expect(agg.rows).toHaveLength(1);
+      expect(parseFloat(agg.rows[0].seller_subtotal)).toBe(1000);
+      expect(agg.rows[0].seller_item_count).toBe(2);
+    } finally {
+      await purgeUsers([userId]);
+    }
   });
 
   testFn("market overview aggregates match seeded data", async () => {
     const { query } = await import("../db/index.js");
     const tag = Date.now() + "-" + Math.random().toString(36).slice(2, 8);
-    await query("INSERT INTO users (email, name, role) VALUES ($1, 'C', 'customer')", [`p14-cust-${tag}@test.local`]);
-    await query("INSERT INTO categories (slug, name) VALUES ($1, 'Test Cat') ON CONFLICT (slug) DO NOTHING", [`cat-${tag}`]);
-
-    const counts = await query(
-      `SELECT (SELECT COUNT(*)::int FROM users WHERE role = 'customer') AS customers,
-              (SELECT COUNT(*)::int FROM sellers WHERE status = 'approved') AS sellers,
-              (SELECT COUNT(*)::int FROM products WHERE status = 'published') AS published`,
-    );
-    expect(counts.rows[0].customers).toBeGreaterThanOrEqual(1);
-    expect(counts.rows[0].sellers).toBeGreaterThanOrEqual(0);
-    expect(counts.rows[0].published).toBeGreaterThanOrEqual(0);
+    const cust = await query("INSERT INTO users (email, name, role) VALUES ($1, 'C', 'customer') RETURNING id", [
+      `p14-cust-${tag}@test.local`,
+    ]);
+    const catSlug = `cat-${tag}`;
+    await query("INSERT INTO categories (slug, name) VALUES ($1, 'Test Cat') ON CONFLICT (slug) DO NOTHING", [catSlug]);
+    try {
+      const counts = await query(
+        `SELECT (SELECT COUNT(*)::int FROM users WHERE role = 'customer') AS customers,
+                (SELECT COUNT(*)::int FROM sellers WHERE status = 'approved') AS sellers,
+                (SELECT COUNT(*)::int FROM products WHERE status = 'published') AS published`,
+      );
+      expect(counts.rows[0].customers).toBeGreaterThanOrEqual(1);
+      expect(counts.rows[0].sellers).toBeGreaterThanOrEqual(0);
+      expect(counts.rows[0].published).toBeGreaterThanOrEqual(0);
+    } finally {
+      await query("DELETE FROM categories WHERE slug = $1", [catSlug]);
+      await purgeUsers([cust.rows[0].id]);
+    }
   });
 });
