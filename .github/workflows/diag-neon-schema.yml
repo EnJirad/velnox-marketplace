@@ -1,0 +1,184 @@
+# Velnox Neon Schema Diagnostic — READ-ONLY
+#
+# Answers "does the deployed Neon database match the canonical schema?"
+# (db/schema.sql / db/run-sqleditor.sql / db/migrations/) without writing
+# anything to the database:
+#
+#   * every statement is a SELECT — no DDL, no DML, no TRUNCATE;
+#   * the connection string comes from the NEON_DATABASE_URL secret, is
+#     referenced only as `psql "$NEON_DATABASE_URL"` and is never echoed;
+#   * a missing table/column/index is reported as the literal text MISSING
+#     (via information_schema / to_regclass / pg_catalog), so probes cannot
+#     fail the job — they only change the reported state.
+#
+# Manual trigger only: Actions -> Velnox Neon Schema Diagnostic -> Run workflow.
+
+name: Velnox Neon Schema Diagnostic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    name: Read-only schema inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate Neon URL secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          if [ -z "$NEON_DATABASE_URL" ]; then
+            echo "❌ NEON_DATABASE_URL secret is not set."
+            echo "   Settings -> Secrets and variables -> Actions -> NEON_DATABASE_URL"
+            exit 1
+          fi
+          echo "✅ NEON_DATABASE_URL is configured (value not printed)."
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Migration ledger
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          SELECT 'server' AS probe, version() AS state;
+          SELECT 'schema_migrations.exists' AS probe,
+                 (to_regclass('public.schema_migrations') IS NOT NULL)::text AS state;
+          SELECT 'schema_migrations.count' AS probe,
+                 CASE WHEN to_regclass('public.schema_migrations') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE (SELECT count(*)::text FROM schema_migrations) END AS state;
+          SELECT 'schema_migrations.list' AS probe,
+                 CASE WHEN to_regclass('public.schema_migrations') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE (SELECT string_agg(migration_name, ' > ' ORDER BY id) FROM schema_migrations) END AS state;
+          SQL
+
+      - name: Schema probes (verification / moderation / audit / notifications / media)
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          -- seller verification -------------------------------------------------
+          SELECT 'users.must_change_password' AS probe,
+                 COALESCE((SELECT data_type FROM information_schema.columns
+                            WHERE table_name = 'users' AND column_name = 'must_change_password'),
+                          'MISSING') AS state;
+          SELECT 'sellers.columns(verification)' AS probe,
+                 COALESCE((SELECT string_agg(column_name, ',' ORDER BY column_name)
+                             FROM information_schema.columns
+                            WHERE table_name = 'sellers'
+                              AND column_name IN ('status','verification_status','verified_at','reviewed_at')),
+                          'MISSING') AS state;
+          SELECT 'sellers.status CHECK' AS probe,
+                 COALESCE((SELECT string_agg(conname || ' = ' || pg_get_constraintdef(oid), '; ')
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('sellers')
+                              AND contype = 'c'
+                              AND pg_get_constraintdef(oid) LIKE '%under_review%'),
+                          'MISSING (under_review not enforced)') AS state;
+          SELECT 'seller_verifications.columns' AS probe,
+                 COALESCE((SELECT string_agg(column_name, ',' ORDER BY column_name)
+                             FROM information_schema.columns
+                            WHERE table_name = 'seller_verifications'),
+                          'MISSING') AS state;
+          -- needs_correction is carried by sellers.status and
+          -- seller_review_history.action; the verification row maps that
+          -- action to 'pending', so its CHECK must contain the 5 row states.
+          SELECT 'seller_verifications.status CHECK' AS probe,
+                 COALESCE((SELECT string_agg(conname || ' = ' || pg_get_constraintdef(oid), '; ')
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('seller_verifications')
+                              AND contype = 'c'
+                              AND pg_get_constraintdef(oid) LIKE '%verified%'),
+                          'MISSING') AS state;
+          SELECT 'seller_review_history' AS probe,
+                 COALESCE((SELECT string_agg(column_name, ',' ORDER BY column_name)
+                             FROM information_schema.columns
+                            WHERE table_name = 'seller_review_history'),
+                          'MISSING') AS state;
+
+          -- product lifecycle / moderation --------------------------------------
+          SELECT 'products.status CHECK' AS probe,
+                 COALESCE((SELECT string_agg(conname || ' = ' || pg_get_constraintdef(oid), '; ')
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('products')
+                              AND contype = 'c'
+                              AND pg_get_constraintdef(oid) LIKE '%draft%'),
+                          'MISSING (no status CHECK in canonical either)') AS state;
+          SELECT 'products.verification_status CHECK' AS probe,
+                 COALESCE((SELECT string_agg(conname || ' = ' || pg_get_constraintdef(oid), '; ')
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('products')
+                              AND contype = 'c'
+                              AND pg_get_constraintdef(oid) LIKE '%verified%'),
+                          'MISSING') AS state;
+          SELECT 'moderation/variant/option tables' AS probe,
+                 COALESCE((SELECT string_agg(e.val, ',' ORDER BY e.val)
+                             FROM unnest(ARRAY['moderation_records','product_variants','product_option_groups','product_option_values']) AS e(val)
+                            WHERE to_regclass('public.' || e.val) IS NOT NULL),
+                          'ALL MISSING') AS state;
+          SELECT 'product_variant_images table' AS probe,
+                 COALESCE((SELECT (to_regclass('public.product_variant_images') IS NOT NULL)::text || ' / ' ||
+                                  COALESCE((SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_variant_images_variant'), 'INDEX MISSING')),
+                          'MISSING') AS state;
+          SELECT 'product_images.variant_id index' AS probe,
+                 COALESCE((SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_product_images_variant'),
+                          'MISSING') AS state;
+
+          -- audit ----------------------------------------------------------------
+          SELECT 'audit_logs.columns' AS probe,
+                 COALESCE((SELECT string_agg(column_name, ',' ORDER BY column_name)
+                             FROM information_schema.columns
+                            WHERE table_name = 'audit_logs'),
+                          'MISSING') AS state;
+          SELECT 'audit_logs.indexes' AS probe,
+                 COALESCE((SELECT string_agg(indexname, ',' ORDER BY indexname)
+                             FROM pg_indexes WHERE tablename = 'audit_logs'),
+                          'MISSING') AS state;
+
+          -- notifications ---------------------------------------------------------
+          SELECT 'notifications.columns' AS probe,
+                 COALESCE((SELECT string_agg(column_name, ',' ORDER BY column_name)
+                             FROM information_schema.columns
+                            WHERE table_name = 'notifications'),
+                          'MISSING') AS state;
+          SELECT 'notifications.user_id nullable' AS probe,
+                 COALESCE((SELECT is_nullable FROM information_schema.columns
+                            WHERE table_name = 'notifications' AND column_name = 'user_id'),
+                          'MISSING') AS state;
+
+          -- media ------------------------------------------------------------------
+          SELECT 'media.columns' AS probe,
+                 COALESCE((SELECT string_agg(column_name, ',' ORDER BY column_name)
+                             FROM information_schema.columns
+                            WHERE table_name = 'media'),
+                          'MISSING') AS state;
+          SELECT 'media.owner index (idx_media_owner_key)' AS probe,
+                 COALESCE((SELECT indexdef FROM pg_indexes
+                            WHERE indexname = 'idx_media_owner_key'),
+                          'MISSING') AS state;
+          SELECT 'media.key unique' AS probe,
+                 COALESCE((SELECT indexdef FROM pg_indexes
+                            WHERE indexname = 'media_key_key'),
+                          'MISSING') AS state;
+
+          -- velrepeat repair (migration 044) ----------------------------------------
+          SELECT 'velrepeat_plans.status CHECK (item_unavailable)' AS probe,
+                 COALESCE((SELECT string_agg(conname || ' = ' || pg_get_constraintdef(oid), '; ')
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('velrepeat_plans')
+                              AND contype = 'c'
+                              AND pg_get_constraintdef(oid) LIKE '%item_unavailable%'),
+                          'MISSING (044 repair not applied)') AS state;
+
+          -- other known drift markers -----------------------------------------------
+          SELECT 'shops.idx_shops_seller uniqueness' AS probe,
+                 COALESCE((SELECT indexdef FROM pg_indexes
+                            WHERE indexname = 'idx_shops_seller'),
+                          'MISSING') AS state;
+          SQL
