@@ -8,43 +8,53 @@ Multi-vendor marketplace. Four Vercel frontends → one Render backend (Express 
 
 ## Progressive Context Loading — START HERE
 
+The canonical agent workspace is **`.ai/`**. Startup protocol, context-loading policy, and task-brief format: `.ai/README.md`.
+
 ```
 1. AGENTS.md                          ← always (this file)
-2. AI_RULES.md                        ← when changing code
-3. docs/ai/PROJECT_MAP.md             ← to locate files
-4. docs/ai/<SUBSYSTEM>.md             ← only the subsystem you touch
-5. Actual source code                 ← authoritative implementation
-6. Verify → update AI_Handoff.md (current state only)
+2. .ai/AI_RULES.md                    ← when changing code
+3. .ai/AI_HANDOFF.md                  ← current state + remaining gaps
+4. .ai/context/project-map.md         ← to locate files
+5. .ai/context/<subsystem>.md         ← only the subsystem you touch
+6. Actual source code                 ← authoritative implementation
+7. Verify → update .ai/AI_HANDOFF.md
 ```
 
 Do NOT read every doc file. Load the smallest useful set.
 
 | Task | Read this next |
 |------|---------------|
-| Fix product card / catalog | `docs/ai/PRODUCTS.md` |
-| Fix category selector / tree | `docs/ai/CATEGORIES.md` + `docs/ai/SELLER.md` |
-| Fix login / session | `docs/ai/AUTH.md` |
-| Fix image upload / R2 | `docs/ai/MEDIA.md` |
-| Fix checkout / orders | `docs/ai/CHECKOUT.md` |
-| Fix database / schema | `docs/ai/DATABASE.md` |
-| Fix styling / theme | `docs/ai/DESIGN.md` |
-| Full audit | `docs/ai/ARCHITECTURE.md` then subsystems as needed |
+| Assigned work brief | `.ai/tasks/active/` |
+| Fix product card / catalog | `.ai/context/products.md` |
+| Fix category selector / tree | `.ai/context/categories.md` + `.ai/context/seller.md` |
+| Fix login / session | `.ai/context/security.md` |
+| Fix image upload / R2 | `.ai/context/media.md` |
+| Fix checkout / orders | `.ai/context/checkout.md` |
+| Fix database / schema | `.ai/context/database.md` |
+| Fix API / backend / authz | `.ai/context/backend.md` |
+| Fix realtime / live updates | `.ai/context/realtime.md` |
+| Fix styling / theme / mobile | `.ai/context/frontend.md` |
+| Full audit | `.ai/context/architecture.md` then subsystems as needed |
 
 History is **reference only** — do not load it automatically:
-`AI_Handoff_Archive.md` (dated index) → `docs/ai/history/archive/` (full records).
-`AI_Handoff.md` holds current state + remaining gaps only and must stay small —
-this environment's file-edit tools stop matching past roughly 55 KB, so archive
-superseded sections instead of growing it.
+`.ai/history/AI_Handoff_Archive.md` (dated index) → `.ai/history/archive/` (full
+records). `.ai/AI_HANDOFF.md` holds current state + remaining gaps only and must
+stay small — this environment's file-edit tools stop matching past roughly 55 KB,
+so archive superseded sections instead of growing it. Policy: `.ai/history/README.md`.
+
+**No duplicate authority:** the rulebook, handoff, and context docs live only under
+`.ai/`. The root `AI_RULES.md` and `AI_Handoff.md` are pointers — never write rules
+or handoff state into them.
 
 ## Rules for Every Task
 
 1. **Inspect before editing** — verify the file, function, route, table, and schema exist in the current repo. Previous AI memory may be stale; the repo wins.
 2. **Minimal correct change** — fix the root cause, preserve existing functionality, reuse existing systems. No duplicate tables, APIs, or components.
 3. **Source of truth** — `Neon → Backend API → Frontend`. Frontend never touches Neon or server secrets. No fake data or mock APIs unless explicitly requested.
-4. **Database sync** — any schema change must update **both** `db/schema.sql` and `db/run-sqleditor.sql` (see `docs/ai/DATABASE.md`). Never recreate `db/run-update.sql`.
+4. **Database sync** — any schema change must update **both** `db/schema.sql` and `db/run-sqleditor.sql` (see `.ai/context/database.md`). Never recreate `db/run-update.sql`.
 5. **Verify** — `git diff --check`, typecheck/build relevant apps, and test the affected flow.
-6. **Handoff** — update `AI_Handoff.md` with current state only (not history).
-7. **Auto-commit and push** — when a repository-changing task completes successfully, commit the changes and push to GitHub via Git CLI. Do not stop after editing or committing. See *Default Completion State* below and `docs/ai/WORKFLOW.md`.
+6. **Handoff** — update `.ai/AI_HANDOFF.md` with current state + remaining gaps only (not history). Keep it small.
+7. **Auto-commit and push** — when a repository-changing task completes successfully, commit the changes and push to GitHub via Git CLI. Do not stop after editing or committing. See *Default Completion State* below and `.ai/context/workflow.md`.
 
 ### Default Completion State
 
@@ -56,7 +66,7 @@ implementation complete
 + commit created
 + commit pushed via git push origin <branch>
 + remote verified (local SHA == remote SHA)
-+ AI_Handoff.md updated when required
++ .ai/AI_HANDOFF.md updated when required
 + working tree clean
 ```
 
@@ -67,7 +77,7 @@ If the user explicitly says *do not commit* / *do not push* / *keep changes loca
 ## Quick Reference
 
 - Install: `bun install` · Dev: `bun run dev:velshop` + `bun run api:dev` · Typecheck: `bun run typecheck` · DB bootstrap: run `db/run-sqleditor.sql` once in Neon SQL Editor
-- Docs: `INSTALLATION.md` (setup), `VELNOX_DESIGN_THEME.md` (design source of truth), `docs/ai/README.md` (full context map)
+- Docs: `INSTALLATION.md` (setup), `VELNOX_DESIGN_THEME.md` (design source of truth), `.ai/README.md` (agent workspace + full context map)
 - Repo: `https://github.com/EnJirad/velnox-marketplace.git`
 
 ## Repo Conventions

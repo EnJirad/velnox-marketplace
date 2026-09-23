@@ -38,4 +38,4 @@ categories (DB) → GET /api/categories|/tree → VelCenter admin / Velseller se
 
 Fresh DB → `SELECT COUNT(*) FROM categories` = 96; `GET /api/categories` + `/tree` return hierarchy; VelCenter CRUD + search; Velseller selector shows indented tree; backend rejects invalid/inactive slug; `diff db/schema.sql db/run-sqleditor.sql` clean.
 
-Related: `docs/ai/DATABASE.md`, `docs/ai/PRODUCTS.md`, `docs/ai/SELLER.md`.
+Related: `database.md`, `products.md`, `seller.md`.

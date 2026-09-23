@@ -33,4 +33,4 @@ Fixed keys: `profile/avatar/{userId}.webp`, `profile/cover/{userId}.webp`, `shop
 
 Test presign → PUT → confirm → Neon `media` row + reference update; check `GET /api/health/r2`, CORS, and prod `R2_PUBLIC_DOMAIN`.
 
-Related: `docs/STORAGE.md`, `docs/ai/DATABASE.md`.
+Related: `docs/STORAGE.md`, `database.md`, `backend.md`.

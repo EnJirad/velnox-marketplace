@@ -23,4 +23,4 @@ Lint/format are placeholders (`echo 'Lint not yet configured'`).
 
 ## Before Declaring Done
 
-`git diff --check` clean, no new type errors, `AI_Handoff.md` updated, `db/*.sql` synced if DB changed, no secrets committed, no `db/run-update.sql` resurrected.
+`git diff --check` clean, no new type errors, `.ai/AI_HANDOFF.md` updated, `db/*.sql` synced if DB changed, no secrets committed, no `db/run-update.sql` resurrected.

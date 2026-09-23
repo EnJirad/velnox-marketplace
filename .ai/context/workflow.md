@@ -16,11 +16,11 @@ Implementation complete
 → Commit created
 → Commit pushed to GitHub via Git CLI
 → Remote verified (local SHA == remote SHA)
-→ AI_Handoff.md updated when required
+→ .ai/AI_HANDOFF.md updated when required
 → Working tree clean
 ```
 
-This is not optional. See **AGENTS.md** *Default Completion State* and **AI_RULES.md** §14.
+This is not optional. See **AGENTS.md** *Default Completion State* and **`.ai/AI_RULES.md`** §14.
 
 ---
 
@@ -90,15 +90,15 @@ Both must match. Report `PUSH VERIFIED` only after this check succeeds.
 
 If SHA mismatch persists after fetch, investigate before reporting.
 
-### 8. Update AI_Handoff.md
+### 8. Update .ai/AI_HANDOFF.md
 
 If the task warrants a handoff update:
 
-1. Edit `AI_Handoff.md` — current state + remaining gaps, appended at the bottom.
+1. Edit `.ai/AI_HANDOFF.md` — current state + remaining gaps, appended at the bottom.
    Keep it small: the file-edit tools stop matching past roughly 55 KB, so move
-   superseded sections to `AI_Handoff_Archive.md` (dated index) and long-form text
-   to `docs/ai/history/archive/`. Never let `AI_Handoff.md` approach 40 KB.
-2. `git add AI_Handoff.md`.
+   superseded sections to `.ai/history/AI_Handoff_Archive.md` (dated index) and
+   long-form text to `.ai/history/archive/`. Never let `AI_HANDOFF.md` approach 40 KB.
+2. `git add .ai/AI_HANDOFF.md`.
 3. Commit with a docs message: `docs(ai): update handoff — <topic>`.
 4. Push.
 5. Verify remote SHA again.

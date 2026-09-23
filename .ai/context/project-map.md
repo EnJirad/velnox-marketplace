@@ -10,7 +10,8 @@ apps/velnox/        Corporate site (Vercel)        — port 5176
 backend/            Express API + WebSocket (Render) — port 3001
 packages/shared/    Single shared package (ui, hooks, lib, pages)
 db/                 Neon schema + migrations
-docs/               Human docs; docs/ai/ is AI context
+docs/               Human docs (API, SECURITY, DEPLOYMENT, …)
+.ai/                AI workspace: context/, tasks/, history/
 ```
 
 ## Frontend Apps (apps/*)
@@ -66,23 +67,23 @@ Route table is centralized in `packages/shared/src/lib/api-routes.ts` and `backe
 - `db/schema.sql` / `db/run-sqleditor.sql` — canonical, byte-identical bootstrap
 - `db/migrations/001_*.sql` … `042_*.sql` — historical migrations (do not rewrite)
 
-See `docs/ai/DATABASE.md`.
+See `.ai/context/database.md`.
 
 ## Docs & Config
 
-- Root: `AGENTS.md`, `AI_RULES.md`, `AI_Handoff.md` (current state + remaining gaps), `AI_Handoff_Archive.md` (dated history index), `INSTALLATION.md`, `VELNOX_DESIGN_THEME.md`, `package.json` (bun workspaces), `vercel.json`
+- Root: `AGENTS.md`, `INSTALLATION.md`, `VELNOX_DESIGN_THEME.md`, `README.md`, `package.json` (bun workspaces), `vercel.json`
 - `docs/`: `API.md`, `ARCHITECTURE.md`, `AUTHENTICATION.md`, `DATABASE.md`, `DEPLOYMENT.md`, `ENVIRONMENT.md`, `I18N.md`, `MEDIA.md`, `REALTIME.md`, `SECURITY.md`, `STORAGE.md`
-- AI context: `docs/ai/*.md` (this directory)
+- AI workspace: `.ai/` — `AI_RULES.md`, `AI_HANDOFF.md` (current state + remaining gaps), `context/*.md`, `tasks/`, `history/` (`AI_Handoff_Archive.md` dated index + `archive/` full records). See `.ai/README.md`
 
 ## Feature → Location Map
 
 | Need | Look at |
 |------|---------|
-| Find a route/component/table | Search symbol → `docs/ai/PROJECT_MAP.md` → subsystem doc → source |
-| Product creation/editing | `docs/ai/PRODUCTS.md` → `backend/routes/products.ts`, `packages/shared/src/components/seller/ProductFormDialog.tsx` |
-| Category tree/selector | `docs/ai/CATEGORIES.md` → `backend/lib/categories.ts`, `apps/velcenter/src/components/CategoriesManagement.tsx` |
-| Seller onboarding/shop | `docs/ai/SELLER.md` → `backend/routes/seller.ts`, `packages/shared/src/components/RequireRole.tsx` |
-| Auth/session | `docs/ai/AUTH.md` → `backend/routes/auth.ts`, `backend/middleware/auth.ts` |
-| Uploads/images | `docs/ai/MEDIA.md` → `backend/routes/upload.ts` |
-| Orders/checkout | `docs/ai/CHECKOUT.md` → `backend/routes/cart.ts`, `backend/routes/stripe.ts` |
-| Styling/theme | `docs/ai/DESIGN.md` → `VELNOX_DESIGN_THEME.md`, `packages/shared/src/index.css` |
+| Find a route/component/table | Search symbol → `.ai/context/project-map.md` → subsystem doc → source |
+| Product creation/editing | `.ai/context/products.md` → `backend/routes/products.ts`, `packages/shared/src/components/seller/ProductFormDialog.tsx` |
+| Category tree/selector | `.ai/context/categories.md` → `backend/lib/categories.ts`, `apps/velcenter/src/components/CategoriesManagement.tsx` |
+| Seller onboarding/shop | `.ai/context/seller.md` → `backend/routes/seller.ts`, `packages/shared/src/components/RequireRole.tsx` |
+| Auth/session | `.ai/context/security.md` → `backend/routes/auth.ts`, `backend/middleware/auth.ts` |
+| Uploads/images | `.ai/context/media.md` → `backend/routes/upload.ts` |
+| Orders/checkout | `.ai/context/checkout.md` → `backend/routes/cart.ts`, `backend/routes/stripe.ts` |
+| Styling/theme | `.ai/context/frontend.md` → `VELNOX_DESIGN_THEME.md`, `packages/shared/src/index.css` |

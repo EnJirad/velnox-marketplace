@@ -35,4 +35,4 @@ GET /api/auth/me → customer profile/address/cart APIs (requireAuth) → Neon
 
 Typecheck `backend` + `velshop`; test profile update, address CRUD, cart add/update/remove, wishlist.
 
-Related: `docs/ai/AUTH.md`, `docs/ai/CHECKOUT.md`, `docs/ai/PRODUCTS.md`.
+Related: `security.md`, `checkout.md`, `products.md`.

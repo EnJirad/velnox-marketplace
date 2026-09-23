@@ -35,4 +35,4 @@ cart_items → POST /api/orders (idempotent via checkout_requests) → orders + 
 
 Typecheck `backend`; test cart → order creation (idempotent), payment, and order retrieval. Check Neon for order/payment consistency.
 
-Related: `docs/ai/CUSTOMER.md`, `docs/ai/DATABASE.md`.
+Related: `customer.md`, `database.md`.

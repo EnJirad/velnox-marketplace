@@ -1,8 +1,8 @@
-# AUTH
+# SECURITY — Auth, Session, Roles
 
 ## Purpose
 
-Google OAuth + JWT httpOnly session cookies. Backend is the gatekeeper.
+Google OAuth + JWT httpOnly session cookies. Backend is the gatekeeper. Password-based staff login uses scrypt (`backend/lib/password.ts`).
 
 ## Source Locations
 
@@ -44,4 +44,4 @@ Identity is never duplicated: lookup `(provider, provider_id)` → else normaliz
 
 Test: login, logout, `GET /api/auth/me` with/without cookie, OAuth state, role-gated routes, CORS. Typecheck backend + affected app.
 
-Related: `docs/ai/SELLER.md`, `docs/SECURITY.md`, `docs/AUTHENTICATION.md`.
+Related: `seller.md`, `backend.md`, `docs/SECURITY.md`, `docs/AUTHENTICATION.md`.

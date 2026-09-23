@@ -46,4 +46,4 @@ Startup must never run DDL (`ALTER TABLE`).
 - Verify: `diff db/schema.sql db/run-sqleditor.sql` is clean (structure), `git diff --check`, dependency order, and that the fresh-DB question is YES: *"Can an empty Neon become the current DB by running `db/run-sqleditor.sql` once?"*
 - Also check `db/run-update.sql` was not resurrected.
 
-Related: `AI_RULES.md` §6, `INSTALLATION.md` §5–6, `docs/DATABASE.md`.
+Related: `.ai/AI_RULES.md` §6, `INSTALLATION.md` §5–6, `docs/DATABASE.md`.

@@ -25,4 +25,4 @@ Neon mutation → backend broadcasts to channel subscribers → clients receive 
 
 Test subscribe/unsubscribe, broadcast on order/product/cart changes, and that refresh re-syncs from `/api/*`.
 
-Related: `docs/REALTIME.md`, `docs/ai/ARCHITECTURE.md`.
+Related: `docs/REALTIME.md`, `architecture.md`, `backend.md`.

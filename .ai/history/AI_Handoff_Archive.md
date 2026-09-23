@@ -1,7 +1,8 @@
 # Velnox Handoff Archive
 
-**Reference only — do not load automatically.** Current state lives in
-[`AI_Handoff.md`](./AI_Handoff.md); load that first.
+**Reference only — do not load automatically.** Moved here from the repository root
+when the agent workspace moved to `.ai/` (2026-09-23). Current state lives in
+[`.ai/AI_HANDOFF.md`](../AI_HANDOFF.md); load that first.
 
 This file is the **index** to completed, superseded and investigated work. The
 long-form narrative for every entry below is kept verbatim (under version control,
@@ -9,8 +10,8 @@ unchanged) in:
 
 | File | What it holds |
 |---|---|
-| [`docs/ai/history/archive/AI_Handoff-2026-09-22-full.md`](./docs/ai/history/archive/AI_Handoff-2026-09-22-full.md) | the complete handoff as it stood at 2026-09-22, before the split (1,594 lines) |
-| [`docs/ai/history/archive/AI_Handoff-2026-09-14.md`](./docs/ai/history/archive/AI_Handoff-2026-09-14.md) | the earlier snapshot it replaced |
+| [`archive/AI_Handoff-2026-09-22-full.md`](./archive/AI_Handoff-2026-09-22-full.md) | the complete handoff as it stood at 2026-09-22, before the split (1,594 lines) |
+| [`archive/AI_Handoff-2026-09-14.md`](./archive/AI_Handoff-2026-09-14.md) | the earlier snapshot it replaced |
 
 **Why the index exists:** this environment's file-edit tools stop matching past
 roughly 55 KB in a file, so the single ~109 KB handoff could no longer be edited.
@@ -68,6 +69,6 @@ Line numbers below point into `AI_Handoff-2026-09-22-full.md`.
 
 ### Beyond the archive
 
-Work after 2026-09-18 is recorded in `AI_Handoff.md` §5 and in git history. When a
-`AI_Handoff.md` section becomes superseded, append it here as an index row and (if
-it is long) move its full text into `docs/ai/history/archive/`.
+Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
+`.ai/AI_HANDOFF.md` section becomes superseded, append it here as an index row and
+(if it is long) move its full text into `.ai/history/archive/`.

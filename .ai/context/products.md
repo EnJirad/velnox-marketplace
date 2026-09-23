@@ -43,4 +43,4 @@ categories (slug) → ProductFormDialog loads GET /api/categories/tree → selle
 
 Typecheck `backend` + `velshop`/`velseller`; test create/edit/list/detail/search/filter with valid/invalid categories and variants.
 
-Related: `docs/ai/CATEGORIES.md`, `docs/ai/SELLER.md`, `docs/ai/MEDIA.md`.
+Related: `categories.md`, `seller.md`, `media.md`, `database.md`.

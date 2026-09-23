@@ -48,4 +48,4 @@ Neon PostgreSQL  +  Cloudflare R2 (S3-compatible)  +  WebSocket delivery
 4. Profile images use fixed R2 keys (`profile/avatar/{userId}.webp`); uploads are presign → PUT → confirm.
 5. `db/schema.sql` and `db/run-sqleditor.sql` are the only canonical schema files and must stay synchronized (see `DATABASE.md`).
 
-Related: `docs/ai/DATABASE.md`, `docs/ai/AUTH.md`, `docs/ai/WORKFLOW.md`, `docs/ARCHITECTURE.md` (human doc).
+Related: `database.md`, `security.md`, `workflow.md`, `backend.md`, `docs/ARCHITECTURE.md` (human doc).

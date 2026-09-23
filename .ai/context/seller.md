@@ -40,4 +40,4 @@ Shop media keys: `shop/{shopId}/logo.webp`, `shop/{shopId}/cover.webp` (ownershi
 
 Typecheck `backend` + `velseller`; test apply → approval → profile/shop update → product create with category → R2 shop media.
 
-Related: `docs/ai/AUTH.md`, `docs/ai/CATEGORIES.md`, `docs/ai/PRODUCTS.md`, `docs/ai/MEDIA.md`.
+Related: `security.md`, `categories.md`, `products.md`, `media.md`.

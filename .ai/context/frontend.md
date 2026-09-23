@@ -1,6 +1,12 @@
-# DESIGN
+# FRONTEND — Design, Theme, Responsive, i18n
 
 Source of truth: `VELNOX_DESIGN_THEME.md` (v2.0). This file is the AI navigation layer.
+
+## Where Frontend Code Lives
+
+- Apps: `apps/velshop|velseller|velcenter|velnox` — `src/main.tsx` (router), `src/pages/`, `src/components/` (app-local only).
+- Shared: `packages/shared/src` via the `@velnox/shared/*` Vite alias — `components/ui/` (shadcn/ui), `hooks/`, `lib/`, `pages/`.
+- Reuse a shared component before writing an app-local one; never stand up a second component or theme system. Full map: `project-map.md`.
 
 ## Principles
 
