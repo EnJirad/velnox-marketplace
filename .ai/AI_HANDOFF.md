@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-23 · **Branch:** `main` · **Latest pass:** production Neon read-only verification (§9)
+**Last updated:** 2026-09-23 · **Branch:** `main` · **Latest pass:** production Neon (§9) + production R2/media (§10) read-only verification
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -447,12 +447,14 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
   behaviour at 320–430 px, the object-URL image preview, the R2
   presign→PUT→confirm round trip and the WebSocket round trips rest on source
   inspection plus contract tests.
-- **No live R2 round trip has ever been executed** (needs real R2
-  credentials). The server-side boundary up to and including HeadObject is
-  tested over HTTP — without credentials HeadObject reports `found: false` and
-  every persistence point correctly refuses — but an actual
-  presign → PUT → confirm against the bucket, object deletion, and the
-  browser-side preview remain source-inspected only.
+- **The presign → PUT → confirm round trip is still not executed against
+  production** (no safe production test account exists in this workspace).
+  What IS now production-verified (§10, 2026-09-23): R2 configured + bucket
+  reachable via `GET /api/health/r2`, `R2_PUBLIC_DOMAIN` serving real objects
+  (200 `image/jpeg`, missing key → 404), and the 401 auth boundary on all four
+  upload endpoints. What remains source-only: the authenticated upload, the
+  media row it would create, the failed-upload path, the 10 MB boundary,
+  replace/delete, and the browser-side preview.
 
 ### Environment constraints (tooling, not product bugs)
 
@@ -571,12 +573,10 @@ secret `NEON_DATABASE_URL` — documented as the production DB in
 
 ### 9.1 Method
 
-```
-gh run list --workflow=migrate-neon.yml        # locate the runs that applied migrations
-gh run view <id> --log | grep -i NOTICE        # live statement responses from production
-gh run view <id> --log ... | diff - <(ls db/migrations/*.sql)   # ledger == main
-gh workflow run diag-neon-schema.yml           # → 403, App lacks Actions write
-```
+Everything came from `gh run view <id> --log` on `.github/workflows/migrate-neon.yml`
+(the production runner, secret `NEON_DATABASE_URL`), grepped for the NOTICEs psql
+returns from production, then `diff` of the ledger names against
+`db/migrations/*.sql`. `gh workflow run diag-neon-schema.yml` → `403`.
 
 ### 9.2 Migration ledger
 
@@ -606,7 +606,7 @@ gh workflow run diag-neon-schema.yml           # → 403, App lacks Actions writ
 | `idx_media_owner_key` | **EXISTS** — NOTICE `relation "idx_media_owner_key" already exists, skipping` (041 @ 14:41:17Z); it indexed the owner/key columns before 045 renamed them, and Postgres carries an index across `RENAME COLUMN` |
 | `notifications` + `body` / `metadata` + `idx_notifications_unread` | NOTICEs (003, 016) |
 | `audit_logs` + `idx_audit_logs_entity` + `idx_audit_logs_created` | NOTICEs (005) |
-| `products`, `shops`, `orders`, `moderation_records`, `platform_settings`, `revoked_tokens`, `product_variants`, `product_variant_images` (+`idx_variant_images_variant`), `product_option_groups`/`_values`, `product_variant_values`, `option_value_images`, `product_attributes`, `product_images.variant_id`/`image_type`, `products.featured_variant_id` | NOTICEs across 001–037 |
+| `products`, `shops`, `orders`, `moderation_records`, `platform_settings`, `revoked_tokens`, `product_images.variant_id`, `product_variant_images` (+indexes) | NOTICEs across 001–037 |
 | `users.must_change_password` | 046 @ 2026-09-18T00:05:39Z — `ALTER TABLE` |
 
 ### 9.4 Still NOT VERIFIED (needs a fresh catalog read)
@@ -633,8 +633,63 @@ notification index names if item 2 above is to be closed.
 
 ### 9.6 Safety notes from this pass
 
-Never run `bun test backend/tests` in an environment whose `DATABASE_URL` could
-point at production: the DB-gated fixtures **delete** rows
-(`backend/tests/helpers/purge.ts`). No credential, URL, password, token or hash
-was printed in this pass — the workflow references the secret only as
-`psql "$NEON_DATABASE_URL"` and never echoes it.
+Never run `bun test backend/tests` where `DATABASE_URL` could point at production:
+the DB-gated fixtures **delete** rows (`backend/tests/helpers/purge.ts`). No
+credential, URL, password, token or hash was printed — the workflow references the
+secret only as `psql "$NEON_DATABASE_URL"` and never echoes it.
+
+---
+
+## 10. Production R2 / media — read-only verification (TASK 002, 2026-09-23)
+
+**READ-ONLY.** No file uploaded, no production row touched, no secret printed
+(public CDN domain + key only). No safe production test account exists here, so
+the authenticated half could not run — see the blocker at the end.
+
+**Production evidence (live, GETs only):**
+
+- `GET /api/health` → 200 on `velnox-api.onrender.com` (the documented
+  production API). `INSTALLATION.md:319/398` still names `velnx-api.onrender.com`
+  — that host returns **404**; the live one is in `docs/DEPLOYMENT.md:16`.
+- `GET /api/health/r2` → `{configured:true, bucket:true, verify:true}` — the
+  handler does a real `ListObjectsV2` against the production bucket.
+- `GET /api/shops` → 200 production rows, `imageUrl` =
+  `https://pub-…r2.dev/<key>` → `R2_PUBLIC_DOMAIN` is set and is what builds
+  stored references.
+- object read: a real `shop/<shopId>/logo.webp` → **200 `image/jpeg`, 998 886 B**;
+  a non-existent key → **404**.
+- auth boundary: `POST /api/upload/presign|confirm`,
+  `/api/customer/profile-image/upload-intent`, `/api/seller/evidence/upload-intent`
+  → **401 UNAUTHORIZED** with no cookie; `GET` on the POST-only confirm → 404.
+- `backend/tests/upload-security.test.ts` run here: **10 pass / 2 skip / 0 fail**
+  — the two skips are the JWT-gated HTTP cases (403 foreign namespace, 400
+  `R2_OBJECT_NOT_FOUND`), which need `JWT_SECRET` this workspace cannot provide.
+
+**Findings — reported, NOT fixed (Task 002 was verification-only):**
+
+1. `PATCH /api/customer/profile-image` writes `users.avatar` straight from
+   `req.body.image` — no URL validation, no HeadObject, bypasses the whole
+   presign→PUT→confirm chain (`backend/routes/upload.ts:546`). Highest-impact
+   finding of this pass.
+2. `purpose` is not allowlisted at presign, so the client chooses the key
+   prefix (`${purpose}/${userId}.webp`); confirm 403s it (no media row), but the
+   signed PUT still lands in an arbitrary bucket namespace (`upload.ts:210`).
+3. Latent dead path: `ImageUpload.tsx` sends `purpose="avatar"|"cover"` →
+   `avatar/<id>.webp`, while `validateObjectKeyOwnership` only accepts
+   `profile/<kind>/<id>.webp` → confirm would always 403 after a successful PUT.
+   No screen renders `<ImageUpload>` today (`ProfileImageUpload` is the live
+   avatar path and its pair is correct).
+4. confirm swallows a failed media INSERT (`media_record status=skipped`) yet
+   still updates `users.avatar` → a reference with no media row.
+5. Keys are forced to `.webp` while the stored object is `image/jpeg`
+   (observed in production); neither `ImageUpload` nor `SellerProfile`
+   converts to WebP, contrary to `context/media.md`.
+6. `deleteR2Object(...)` is not awaited in the product-image delete
+   (`backend/routes/products.ts`) → orphan objects on a silent R2 failure.
+7. Integration-test fixture shops are visible in production via public
+   `/api/shops` (`so-test-*`, `inv-*`, `inv-cancel-*`, `inv-paid-*`).
+
+**Blocker:** no safe production test account → Flows A–F, the failed-upload
+path, the 10 MB boundary, replace/delete and the UI check are **CODE VERIFIED
+only**. Next: provision a dedicated production test account, then re-run Task
+002; fix finding 1 as its own task.
