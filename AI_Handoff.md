@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-24 (TASK 004A: test database isolation — production fixture pollution fixed)
+**Last updated:** 2026-09-24 (TASK 004A + production fixture remediation — isolation enforced, contaminated rows removed)
 **Branch:** `main`
 
 ## Current Project State
@@ -29,8 +29,40 @@ Test process         →  TEST_DATABASE_URL only  (disposable; name must contain
 - CI: `.github/workflows/backend-tests.yml` runs the suite on a throwaway
   `postgres:16` service bootstrapped from `db/run-sqleditor.sql`, with
   `TEST_DATABASE_URL` only.
-- Full record (root cause, files, tests, production read-only check, remaining
-  contaminated rows): `AI_HANDOFF.md`.
+- Already-contaminated rows were removed once by
+  `backend/scripts/test-fixture-cleanup.ts` — see *Production Fixture
+  Remediation* below. Never run the integration suite without
+  `TEST_DATABASE_URL`.
+- Full record (root cause, files, tests, production read-only check):
+  `AI_HANDOFF.md`.
+
+## Production Fixture Remediation (TASK 004A, step 2) — DONE
+
+The rows the pre-isolation test runs had already written were **deleted on
+2026-09-24** with owner authorization, after a read-only dry run. Do not repeat
+this operation — it is a one-off remediation, and the tool is kept for audits.
+
+Tool (read-only by default):
+
+```bash
+cd backend && bun run fixtures:audit                                        # dry run
+cd backend && VELNOX_ALLOW_FIXTURE_CLEANUP=1 bun run fixtures:audit --apply  # deletes
+```
+
+`backend/scripts/test-fixture-cleanup.ts` discovers fixture roots from the
+markers the test sources use (users with a `@test.local` email, plus the shop
+slug prefixes the suites create), walks the **foreign-key closure** through
+`information_schema` to compute an exact delete set, and refuses to delete when
+any row in that set points at an entity outside it (a shared reference = real
+data entangled with a fixture). All deletes run in one transaction and abort on
+the first foreign key that cannot be cleared.
+
+Result: **931 rows** removed — 167 users, 144 sellers, 144 shops, 123 products,
+79 orders, 79 order_items, 88 inventory, 33 product_reviews, 21 notifications,
+11 payments, and their `velrepeat_*` rows. Zero shared references were found
+before deleting. Re-running the audit reports 0 fixture roots, and
+`GET /api/shops` now returns only the legitimate shop. `categories` (platform
+taxonomy) was deliberately not touched; no schema change.
 
 ## The V Rule (single source)
 

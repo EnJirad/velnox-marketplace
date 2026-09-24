@@ -51,6 +51,24 @@ CI: `.github/workflows/backend-tests.yml` runs the suite against a throwaway
 Diagnostics are credential-free (redacted host, port, database name,
 classification). Never print a connection string.
 
+### Legacy fixture audit
+
+Before the isolation guard existed, the integration suites wrote fixtures into
+the application database. `backend/scripts/test-fixture-cleanup.ts` audits and
+(only on explicit opt-in) removes them:
+
+```bash
+cd backend && bun run fixtures:audit                                        # DRY RUN, read-only
+cd backend && VELNOX_ALLOW_FIXTURE_CLEANUP=1 bun run fixtures:audit --apply  # deletes
+```
+
+It finds fixture roots from the markers the test sources use (`@test.local`
+emails and the fixture shop slug prefixes), computes the delete set as the
+foreign-key closure of those roots, and reports rows that reference anything
+outside it (shared references) — those block `--apply`. Never point this at a
+database you are not willing to modify.
+
+
 ## What to Run
 
 - **Frontend change:** typecheck affected app(s) + build if needed; check affected page, responsive, and no raw i18n keys.

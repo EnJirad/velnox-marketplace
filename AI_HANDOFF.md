@@ -81,13 +81,38 @@ filter needed to change. This was a **test/database targeting** bug.
 - CI workflow: **not executed** here (no Docker/GitHub runner in the sandbox); it
   runs on push to `main` / PRs touching `backend/**` or `db/**`.
 
-### Production verification (READ-ONLY, no writes)
+### Production verification — remediation (step 2, owner-authorized)
 
-- `/api/health` and `/api/shops` were inspected with GET only.
-- Existing fixture rows created by earlier runs are **still present** and were
-  deliberately **not** deleted in this task (no DML against production).
-- Remediation of the already-contaminated rows requires a separate, explicitly
-  authorized cleanup task (see Next task).
+The rows the earlier runs had already written were **deleted on 2026-09-24**,
+after a read-only dry run and an explicit owner confirmation.
+
+- Tool: `backend/scripts/test-fixture-cleanup.ts` (`bun run fixtures:audit`).
+  Read-only by default; deletion needs `--apply` **and**
+  `VELNOX_ALLOW_FIXTURE_CLEANUP=1`.
+- Detection is evidence-based, not heuristic: roots are users with a
+  `@test.local` email (the marker every DB-backed suite uses) plus the shop slug
+  prefixes read off the test sources (`inv-`, `so-test-`, `p14-shop-`,
+  `p16-shop-`, `lifecycle-test-`, `vr-test-`, `review-shop-`).
+- The delete set is the **foreign-key closure** of those roots, walked through
+  `information_schema` — no hand-written table list that can rot.
+- Safety gates: a row that references an entity outside the delete set (shared
+  reference) is reported and blocks `--apply`; deletes run in one transaction
+  and abort on the first foreign key that cannot be cleared; the script
+  re-verifies afterwards and exits non-zero if any fixture root survives.
+- **Dry run: 0 shared references.** Nothing real was entangled, so the closure
+  needed no `--allow-shared` override.
+- **Result: 931 rows deleted** in one transaction — users 167, sellers 144,
+  shops 144, products 123, orders 79, order_items 79, inventory 88,
+  product_reviews 33, notifications 21, payments 11, velrepeat_plans 11,
+  velrepeat_items 11, velrepeat_runs 10, velrepeat_events 10. (`sellers`/`shops`
+  reported 0 direct deletes because deleting `users` cascades into them.)
+- Before → after: shops 145 → **1** (only `eloop`), users 170 → 3, products
+  124 → 1, orders 79 → 0, inventory 89 → 1, product_reviews 34 → 1,
+  categories 125 → 125 (untouched, platform taxonomy).
+- Post-checks: audit re-run reports **0 fixture roots**; `GET /api/shops`
+  returns only the legitimate `eloop` shop (`/api/health` 200).
+- **No schema change**, no DML beyond the fixture closure, nothing deleted from
+  `categories`.
 
 ### Database changes
 
@@ -96,11 +121,9 @@ are untouched (still byte-identical) and `db/run-update.sql` was not recreated.
 
 ### Next task
 
-1. **Controlled cleanup task** for the already-contaminated production fixture
-   shops/products (needs owner authorization, a reviewed allowlist of fixture
-   slugs, and a read-only dry-run first).
-2. **TASK 004B** — the separate production R2 upload round-trip, only after this
-   isolation task is verified.
+1. ~~Controlled cleanup of the already-contaminated production fixture
+   shops/products.~~ **DONE** — see *Production verification (step 2)* above.
+2. **TASK 004B** — the separate production R2 upload round-trip.
 
 ---
 
