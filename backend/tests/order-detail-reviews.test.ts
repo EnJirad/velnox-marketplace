@@ -12,6 +12,7 @@
  *   • another user's order must never count as a verified purchase
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
 
 // ─── Review input validation (pure, always runs) ───────────────────────────
@@ -68,8 +69,7 @@ describe("validateReviewInput", () => {
 // ─── Verified-purchase eligibility (needs DATABASE_URL) ────────────────────
 
 describe("verifyOrderContainsProduct (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   /**
    * Seed: userA owns orderA containing productA; userB owns orderB also

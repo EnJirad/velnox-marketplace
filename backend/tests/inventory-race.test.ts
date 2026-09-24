@@ -2,7 +2,7 @@
  * P0 #2 + P1 #1 — Non-variant inventory race condition + idempotent release.
  *
  * Unit tests cover the server-side quantity validation. The integration
- * tests (skipped when no DATABASE_URL is available) verify:
+ * tests (skipped when no TEST_DATABASE_URL is available) verify:
  *
  *  • Atomic reservation guard (P0 #2)
  *  • Idempotent inventory release via releaseOrderInventory (P1 #1)
@@ -14,6 +14,7 @@
  *  • Cancellation restore still works
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import {
   MAX_ORDER_QUANTITY,
   releaseOrderInventory,
@@ -53,8 +54,7 @@ describe("validateCheckoutQuantity", () => {
 // ─── Integration: inventory reservation + release (needs DATABASE_URL) ──────
 
 describe("non-variant inventory reservation (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   /** Seed a user → seller → shop → product → inventory chain; returns ids. */
   async function seedStock(tag: string, quantity: number) {

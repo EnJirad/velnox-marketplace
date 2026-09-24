@@ -17,6 +17,7 @@
  * real INSERT/SELECT path against the database.
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import { readFileSync } from "fs";
 import { join } from "path";
 import {
@@ -124,7 +125,10 @@ describe("admin moderation transitions", () => {
 
   test("moderation is admin-gated and requires requireAuth", () => {
     expect(productsSrc).toContain('app.patch("/api/admin/products/:productId/moderation", requireAuth');
-    expect(productsSrc).toContain("Only owner or admin can moderate products");
+    // Moderation is gated through the shared permission catalog
+    // (`requireAdmin` in products.ts resolves `products.moderate`; owner/admin
+    // implicitly hold every code).
+    expect(productsSrc).toContain('userHasPermission(userId, "products.moderate")');
     // sellers never get the admin moderation route
     expect(productsSrc).not.toContain('app.patch("/api/seller/products/:productId/moderation"');
   });
@@ -420,8 +424,7 @@ describe("migration 040 + schema sync", () => {
 // ─── Integration: real database paths (skipped without DATABASE_URL) ──────
 
 describe("product lifecycle (integration)", () => {
-  const hasDb = Boolean(process.env["DATABASE_URL"]);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   const stamp = Date.now();
   const slugBase = `lifecycle-test-${stamp}`;

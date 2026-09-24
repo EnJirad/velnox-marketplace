@@ -8,6 +8,7 @@
  * order contains products from two different sellers.
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import {
   canTransitionOrderStatus,
   fetchSellerItemsForOrders,
@@ -121,11 +122,10 @@ describe("mapFrequencyType", () => {
   });
 });
 
-// ─── Integration: multi-vendor ownership scoping (needs DATABASE_URL) ────────
+// ─── Integration: multi-vendor ownership scoping (needs TEST_DATABASE_URL) ──
 
 describe("seller order ownership scoping (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   testFn(
     "a seller-scoped item query returns only that seller's items from a shared order",

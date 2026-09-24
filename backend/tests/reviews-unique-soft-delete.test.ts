@@ -14,6 +14,7 @@
  *      published catalog.
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -48,8 +49,7 @@ describe("P1 #6 migration + schema sync", () => {
 // ─── Integration (needs DATABASE_URL) ──────────────────────────────────────
 
 describe("product_reviews uniqueness + soft delete (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   /** Idempotently ensure the migration-038 constraint exists on the test DB. */
   async function ensureUniqueConstraint() {

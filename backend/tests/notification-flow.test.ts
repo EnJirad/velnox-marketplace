@@ -13,6 +13,7 @@
  *      table or component for seller notifications appears.
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -157,8 +158,7 @@ const OPTION_GROUPS_SQL = `SELECT pog.*, json_agg(jsonb_build_object('id', pov.i
            ORDER BY pog.sort_order ASC`;
 
 describe("product moderation detail (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   testFn("executes for a product that has option groups (42P10 regression)", async () => {
     const { query } = await import("../db/index.js");

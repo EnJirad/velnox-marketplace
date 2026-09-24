@@ -11,6 +11,7 @@
  * real queries behind the new endpoints.
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import { readFileSync } from "fs";
 import { join } from "path";
 import {
@@ -157,8 +158,7 @@ describe("P1 #4 migration + schema sync", () => {
 // ─── Integration (needs DATABASE_URL) ──────────────────────────────────────
 
 describe("seller goals + center queries (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   async function seedSeller() {
     const { query } = await import("../db/index.js");

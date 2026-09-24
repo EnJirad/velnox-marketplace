@@ -12,6 +12,7 @@
  * The integration test (skipped without DATABASE_URL) checks the live schema.
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import {
@@ -174,8 +175,7 @@ describe("category schema consistency", () => {
 // ─── Integration (needs DATABASE_URL) ──────────────────────────────────────
 
 describe("categories table (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   testFn("the live schema has the V0040 category columns", async () => {
     const { query } = await import("../db/index.js");

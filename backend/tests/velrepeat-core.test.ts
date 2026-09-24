@@ -8,6 +8,7 @@
  * run row and one order.
  */
 import { describe, expect, test } from "bun:test";
+import { integrationTest } from "./helpers/test-db.js";
 import {
   calculateNextRunAt,
   currentPriceOf,
@@ -145,11 +146,10 @@ describe("currentPriceOf", () => {
   });
 });
 
-// ─── Integration: concurrency + idempotency (needs DATABASE_URL) ────────────
+// ─── Integration: concurrency + idempotency (needs TEST_DATABASE_URL) ──────
 
 describe("scheduler idempotency (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
-  const testFn = hasDb ? test : test.skip;
+  const testFn = integrationTest;
 
   testFn(
     "two concurrent processPlan calls create exactly one run and one order",
