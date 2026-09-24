@@ -102,6 +102,38 @@ describe("upload routes enforce the limits server-side", () => {
     expect(evidenceSrc).not.toContain("publicUrl || (");
     expect(evidenceSrc).toContain("const storedUrl = evidencePublicDomain");
   });
+
+  test("the client-supplied avatar URL route is gone", () => {
+    // PATCH /api/customer/profile-image wrote users.avatar straight from the
+    // body: no presign, no R2 object, no media row. It must not come back as
+    // any method, and no route may write the reference from a raw body value.
+    expect(uploadSrc).not.toContain('app.patch("/api/customer/profile-image"');
+    expect(uploadSrc).not.toContain('app.post("/api/customer/profile-image"');
+    expect(uploadSrc).not.toContain("SET avatar = $1, updated_at = NOW() WHERE id = $2`, [image");
+  });
+
+  test("the presign purpose allowlist can only mint namespaces confirm validates", () => {
+    expect(uploadSrc).toContain('const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover"] as const;');
+    expect(uploadSrc).toContain("if (!isUploadPurpose(purpose))");
+    // avatar/cover land in the `profile/{kind}/{userId}.webp` namespace that
+    // validateObjectKeyOwnership accepts; the old free-text shape is gone.
+    expect(uploadSrc).toContain('objectKey = `profile/${purpose}/${userId}.webp`;');
+    expect(uploadSrc).not.toContain('objectKey = `${purpose}/${userId}.webp`;');
+    // Confirm derives the reference target from the server-minted key, never
+    // from the body.
+    expect(uploadSrc).toContain("const purpose = purposeFromObjectKey(objectKey);");
+    expect(uploadSrc).toContain("const { objectKey } = req.body;");
+  });
+
+  test("profile-image save and upload-intent derive the namespace server-side", () => {
+    expect(uploadSrc).toContain("const kind = profileKindFromObjectKey(objectKey);");
+    expect(uploadSrc).toContain("if (!isProfileImageKind(kind))");
+    // Neither route may take the kind/key prefix from the body any more.
+    expect(uploadSrc).not.toContain('const { kind = "avatar", objectKey, cdnUrl');
+    expect(uploadSrc).not.toContain('const { kind = "avatar", filename, mimeType }');
+    // A body cdnUrl must never be the persisted reference.
+    expect(uploadSrc).not.toContain("const url = cdnUrl ||");
+  });
 });
 
 // ─── Real HTTP: the guards that run before any R2 or DB access ──────────────
@@ -142,8 +174,8 @@ describe("upload confirm authz over HTTP", () => {
     return `velnox_session=${token}`;
   }
 
-  function confirm(body: Record<string, unknown>, cookie?: string): Promise<Response> {
-    return fetch(`${base}/api/upload/confirm`, {
+  function post(path: string, body: Record<string, unknown>, cookie?: string): Promise<Response> {
+    return fetch(`${base}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -151,6 +183,18 @@ describe("upload confirm authz over HTTP", () => {
       },
       body: JSON.stringify(body),
     });
+  }
+
+  function confirm(body: Record<string, unknown>, cookie?: string): Promise<Response> {
+    return post("/api/upload/confirm", body, cookie);
+  }
+
+  function presign(body: Record<string, unknown>, cookie?: string): Promise<Response> {
+    return post("/api/upload/presign", body, cookie);
+  }
+
+  function uploadIntent(body: Record<string, unknown>, cookie?: string): Promise<Response> {
+    return post("/api/customer/profile-image/upload-intent", body, cookie);
   }
 
   test("no session → 401 before any review logic", async () => {
@@ -177,5 +221,77 @@ describe("upload confirm authz over HTTP", () => {
     const res = await confirm({ objectKey, purpose: "avatar", fileSize: 99_999_999 }, sessionCookie());
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("R2_OBJECT_NOT_FOUND");
+  });
+
+  test("presign without a session → 401", async () => {
+    const res = await presign({ filename: "a.webp", contentType: "image/webp", purpose: "avatar" });
+    expect(res.status).toBe(401);
+  });
+
+  itJwt("every allowlisted profile purpose mints the caller's canonical key", async () => {
+    for (const purpose of ["avatar", "cover"] as const) {
+      const res = await presign(
+        { filename: "a.webp", contentType: "image/webp", purpose },
+        sessionCookie(),
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      // Namespace comes from the server allowlist, not from the client string.
+      expect(body.data.objectKey).toBe(`profile/${purpose}/${sessionUserId}.webp`);
+    }
+  });
+
+  itJwt("an unknown or arbitrary purpose is refused before any URL is signed", async () => {
+    const attempts = [
+      "evidence",
+      "verification",
+      "product",
+      "shop",
+      "",
+      "Profile",
+      "avatar/../cover",
+      "profile/avatar",
+      "../../shop/someone-else",
+    ];
+    for (const purpose of attempts) {
+      const res = await presign(
+        { filename: "a.webp", contentType: "image/webp", purpose },
+        sessionCookie(),
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.code).toBe("INVALID_PURPOSE");
+    }
+  });
+
+  itJwt("an arbitrary namespace cannot be selected at confirm either", async () => {
+    for (const objectKey of [
+      "verification/evidence/attacker.webp",
+      "avatar/whatever.webp",
+      "profile/../avatar/x.webp",
+      "shop/other-shop/logo.webp",
+      "unrelated/key.webp",
+    ]) {
+      const res = await confirm({ objectKey }, sessionCookie());
+      // `shop/...` is a known namespace but the caller does not own the shop;
+      // the rest are not namespaces at all. Neither may reach a write.
+      expect([400, 403]).toContain(res.status);
+      expect(["INVALID_PURPOSE", "FORBIDDEN"]).toContain((await res.json()).error.code);
+    }
+  });
+
+  itJwt("upload-intent accepts only the two profile kinds", async () => {
+    const bad = await uploadIntent(
+      { kind: "evil", filename: "a.webp", mimeType: "image/webp" },
+      sessionCookie(),
+    );
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error.code).toBe("INVALID_PURPOSE");
+
+    const good = await uploadIntent(
+      { kind: "cover", filename: "a.webp", mimeType: "image/webp" },
+      sessionCookie(),
+    );
+    expect(good.status).toBe(200);
+    expect((await good.json()).data.objectKey).toBe(`profile/cover/${sessionUserId}.webp`);
   });
 });

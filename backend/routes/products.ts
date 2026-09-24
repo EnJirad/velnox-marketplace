@@ -1764,7 +1764,9 @@ export function setupProductRoutes(app: Express): void {
       const img = imgResult.rows[0];
 
       // Delete from R2
-      if (img.url) deleteR2Object(urlToKey(img.url));
+      // Awaited: the fire-and-forget call answered 200 before storage was
+      // touched, so a failed delete left an orphan nothing could retry.
+      if (img.url) await deleteR2Object(urlToKey(img.url));
 
       // Delete from DB
       await query("DELETE FROM product_images WHERE id = $1", [imageId]);
@@ -2078,7 +2080,7 @@ export function setupProductRoutes(app: Express): void {
       await query("DELETE FROM product_variant_values WHERE variant_id = $1", [variantId]);
       try {
         const ir = await query("SELECT url FROM product_images WHERE variant_id = $1", [variantId]);
-        for (const img of ir.rows) { if (img.url) deleteR2Object(urlToKey(img.url)); }
+        for (const img of ir.rows) { if (img.url) await deleteR2Object(urlToKey(img.url)); }
         await query("DELETE FROM product_images WHERE variant_id = $1", [variantId]);
       } catch { /* product_variant_images may not exist */ }
       await query("DELETE FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);

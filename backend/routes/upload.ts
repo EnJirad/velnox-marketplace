@@ -39,6 +39,66 @@ const PUBLIC_DOMAIN = getR2Config().publicDomain;
 
 const ALLOWED_TYPES: string[] = [...ALLOWED_UPLOAD_TYPES];
 
+// ─── Canonical upload purposes ──────────────────────────────────────────────
+// The purpose decides which bucket namespace a signed PUT may write into, so it
+// is an allowlist and never free text. Every namespace it can produce must be
+// one `validateObjectKeyOwnership` accepts at confirm time — otherwise the PUT
+// succeeds and the confirm can only ever answer 403. An unknown purpose is
+// refused before any URL is signed (same contract as the evidence flow in
+// routes/verification.ts).
+
+const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover"] as const;
+type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
+
+const PROFILE_IMAGE_KINDS = ["avatar", "cover"] as const;
+type ProfileImageKind = (typeof PROFILE_IMAGE_KINDS)[number];
+
+/** The type a fixed `.webp` key holds. Producers convert before uploading. */
+const CANONICAL_IMAGE_TYPE = "image/webp";
+
+function isUploadPurpose(value: unknown): value is UploadPurpose {
+  return typeof value === "string" && (UPLOAD_PURPOSES as readonly string[]).includes(value);
+}
+
+function isProfileImageKind(value: unknown): value is ProfileImageKind {
+  return typeof value === "string" && (PROFILE_IMAGE_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * The purpose implied by the object key the server itself minted at presign.
+ * Server-derived on purpose: a body value must never decide which reference
+ * (avatar / cover / shop logo / shop cover) gets written.
+ */
+function purposeFromObjectKey(objectKey: string): UploadPurpose | null {
+  const parts = objectKey.split("/");
+  if (parts[0] === "profile") {
+    return isProfileImageKind(parts[1]) ? parts[1] : null;
+  }
+  if (parts[0] === "shop") {
+    if (parts[2] === "logo.webp") return "shop-logo";
+    if (parts[2] === "cover.webp") return "shop-cover";
+  }
+  return null;
+}
+
+/** Profile-image kind implied by a key (fixed and legacy key shapes). */
+function profileKindFromObjectKey(objectKey: string): ProfileImageKind | null {
+  const parts = objectKey.split("/");
+  if (parts[0] !== "profile") return null;
+  return isProfileImageKind(parts[1]) ? parts[1] : null;
+}
+
+/**
+ * A stored object is only a valid upload when its ACTUAL content type — read
+ * back from R2, never taken from the body — is one of the allowed image types.
+ * A missing type falls back to the canonical one so a storage quirk cannot
+ * break an otherwise valid image (the key is fixed, so the format is known).
+ */
+function isStoredContentTypeAllowed(contentType: string | null | undefined): boolean {
+  if (!contentType) return true;
+  return ALLOWED_TYPES.includes(contentType);
+}
+
 // ─── Safe logging (no secrets) ──────────────────────────────────────────────
 
 function r2Log(step: string, data: Record<string, unknown>) {
@@ -221,6 +281,12 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
+      if (!isUploadPurpose(purpose)) {
+        r2Log("presign", { step: "purpose", status: "rejected" });
+        res.status(400).json({ success: false, error: { code: "INVALID_PURPOSE", message: `Unknown upload purpose. Allowed: ${UPLOAD_PURPOSES.join(", ")}` } });
+        return;
+      }
+
       const userId = req.user!.userId;
       // Fixed key — R2 PUT overwrites automatically
       let objectKey: string;
@@ -243,7 +309,12 @@ export function setupUploadRoutes(app: Express): void {
         const kind = purpose === "shop-logo" ? "logo" : "cover";
         objectKey = `shop/${shopId}/${kind}.webp`;
       } else {
-        objectKey = `${purpose}/${userId}.webp`;
+        // avatar / cover live in the `profile/{kind}/{userId}.webp` namespace
+        // that validateObjectKeyOwnership verifies. The old
+        // `<purpose>/<userId>.webp` shape let a client invent a bucket
+        // namespace the backend never validates, and no non-shop namespace it
+        // produced could ever pass the confirm step.
+        objectKey = `profile/${purpose}/${userId}.webp`;
       }
 
       r2Log("presign", { step: "presign", purpose, objectKey, mimeType: contentType });
@@ -272,11 +343,20 @@ export function setupUploadRoutes(app: Express): void {
   // ─── Generic confirm endpoint (used by ImageUpload.tsx) ──────────────────
   app.post("/api/upload/confirm", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { objectKey, purpose = "avatar", entityId } = req.body;
+      const { objectKey } = req.body;
       const userId = req.user!.userId;
 
       if (!objectKey) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "objectKey required" } });
+        return;
+      }
+
+      // Derived from the key, not the body: `purpose: "avatar"` with a cover
+      // key used to overwrite users.avatar with the cover URL.
+      const purpose = purposeFromObjectKey(objectKey);
+      if (!purpose) {
+        r2Log("confirm", { step: "purpose", status: "rejected", objectKey });
+        res.status(400).json({ success: false, error: { code: "INVALID_PURPOSE", message: "Object key does not match a known upload namespace" } });
         return;
       }
 
@@ -295,6 +375,11 @@ export function setupUploadRoutes(app: Express): void {
       if (isUploadTooLarge(obj.size)) {
         r2Log("confirm", { step: "size_check", status: "rejected", objectKey, size: obj.size });
         res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: "File exceeds the maximum allowed size" } });
+        return;
+      }
+      if (!isStoredContentTypeAllowed(obj.contentType)) {
+        r2Log("confirm", { step: "mime_check", status: "rejected", objectKey, contentType: obj.contentType });
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "Stored object is not an allowed image type" } });
         return;
       }
 
@@ -323,10 +408,15 @@ export function setupUploadRoutes(app: Express): void {
              SET url = EXCLUDED.url,
                  content_type = EXCLUDED.content_type,
                  size = EXCLUDED.size`,
-          [publicUrl, objectKey, obj.contentType || "image/webp", obj.size ?? 0, userId]
+          [publicUrl, objectKey, obj.contentType || CANONICAL_IMAGE_TYPE, obj.size ?? 0, userId]
         );
       } catch (mediaErr: any) {
-        r2Log("confirm", { step: "media_record", status: "skipped", error: mediaErr?.code || String(mediaErr) });
+        // Media persistence gates the reference write: if the row cannot be
+        // written, no avatar / cover / shop reference may move and the client
+        // must not be told the upload succeeded.
+        r2Log("confirm", { step: "media_record", status: "failed", error: mediaErr?.code || String(mediaErr) });
+        res.status(500).json({ success: false, error: { code: "IMAGE_SAVE_FAILED", message: "Failed to save upload" } });
+        return;
       }
 
       if (purpose === "avatar") {
@@ -337,21 +427,13 @@ export function setupUploadRoutes(app: Express): void {
         } catch (coverErr: any) {
           if (coverErr?.code !== "42703") throw coverErr;
         }
-      } else if (purpose === "shop-logo" || purpose === "shop-cover") {
+      } else {
+        // shop-logo / shop-cover — ownership was proven before the media row
+        // was written, so the reference can move now.
         // Extract shopId from objectKey: shop/{shopId}/logo.webp or shop/{shopId}/cover.webp
         const shopParts = objectKey.split("/");
         const shopId = shopParts[1];
         if (shopId) {
-          // Verify ownership: caller must own this shop
-          const ownership = await query(
-            `SELECT sh.id FROM shops sh JOIN sellers s ON s.id = sh.seller_id
-             WHERE sh.id = $1 AND s.user_id = $2`,
-            [shopId, userId]
-          );
-          if (ownership.rows.length === 0) {
-            res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Cannot upload to another seller's shop" } });
-            return;
-          }
           const col = purpose === "shop-logo" ? "logo" : "cover";
           await query(`UPDATE shops SET ${col} = $1, updated_at = NOW() WHERE id = $2`, [publicUrl, shopId]);
         }
@@ -381,8 +463,17 @@ export function setupUploadRoutes(app: Express): void {
   // ─── Profile image presign (consumed by ProfileImageUpload.tsx) ──────────
   app.post("/api/customer/profile-image/upload-intent", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { kind = "avatar", filename, mimeType } = req.body;
+      // `kind` is required and allowlisted: it selects the key namespace, so
+      // it used to mint `profile/<anything>/<userId>.webp` from a client
+      // string. No default — a missing kind is denied rather than assumed.
+      const { kind, filename, mimeType } = req.body;
       const userId = req.user!.userId;
+
+      if (!isProfileImageKind(kind)) {
+        r2Log("intent", { step: "kind", status: "rejected" });
+        res.status(400).json({ success: false, error: { code: "INVALID_PURPOSE", message: "kind must be avatar or cover" } });
+        return;
+      }
 
       if (!ALLOWED_TYPES.includes(mimeType)) {
         res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed. Allowed: jpeg, png, webp, avif" } });
@@ -427,14 +518,26 @@ export function setupUploadRoutes(app: Express): void {
   // ─── Profile image save (verify R2 + persist to Neon) ───────────────────
   app.post("/api/customer/profile-image/save", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { kind = "avatar", objectKey, cdnUrl, format, bytes } = req.body;
+      const { objectKey } = req.body;
       const userId = req.user!.userId;
-      const url = cdnUrl || (PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey);
 
       if (!objectKey) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "objectKey required" } });
         return;
       }
+
+      // `kind` comes from the key, never the body — `kind: "cover"` with an
+      // avatar key used to write cover_url onto the avatar object. The stored
+      // URL is derived from the configured public domain + the verified key;
+      // a body `cdnUrl` is never persisted.
+      const kind = profileKindFromObjectKey(objectKey);
+      if (!kind) {
+        r2Log("save", { step: "kind", status: "rejected", objectKey });
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "objectKey must be profile/{avatar|cover}/{userId}.webp" } });
+        return;
+      }
+
+      const url = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
 
       r2Log("save", { step: "verify_ownership", userId, kind });
       if (!validateObjectKeyOwnership(objectKey, userId)) {
@@ -455,8 +558,13 @@ export function setupUploadRoutes(app: Express): void {
         res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: "File exceeds the maximum allowed size" } });
         return;
       }
+      if (!isStoredContentTypeAllowed(obj.contentType)) {
+        r2Log("save", { step: "mime_check", status: "rejected", objectKey, contentType: obj.contentType });
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "Stored object is not an allowed image type" } });
+        return;
+      }
 
-      r2Log("save", { step: "save_neon", kind, objectKey, size: obj.size ?? bytes ?? 0 });
+      r2Log("save", { step: "save_neon", kind, objectKey, size: obj.size ?? 0 });
 
       // ── Database save ────────────────────────────────────────────────
 
@@ -470,11 +578,16 @@ export function setupUploadRoutes(app: Express): void {
              SET url = EXCLUDED.url,
                  content_type = EXCLUDED.content_type,
                  size = EXCLUDED.size`,
-          [url, objectKey, obj.contentType || `image/${format || "jpeg"}`, obj.size ?? bytes ?? 0, userId]
+          [url, objectKey, obj.contentType || CANONICAL_IMAGE_TYPE, obj.size ?? 0, userId]
         );
         r2Log("save", { step: "media_record", status: "upserted", key: objectKey });
       } catch (mediaErr: any) {
+        // The user reference may only move once the media row exists —
+        // otherwise users.avatar can point at an object with no canonical
+        // media record while the client is told the save succeeded.
         r2Log("save", { step: "media_record", status: "failed", error: mediaErr?.code || String(mediaErr) });
+        res.status(500).json({ success: false, error: { code: "IMAGE_SAVE_FAILED", message: "Failed to save image metadata" } });
+        return;
       }
 
       // 2. Update user profile reference
@@ -542,25 +655,12 @@ export function setupUploadRoutes(app: Express): void {
     }
   });
 
-  // ─── Profile image patch (direct avatar URL update) ──────────────────────
-  app.patch("/api/customer/profile-image", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { image } = req.body;
-      const userId = req.user!.userId;
-
-      await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [image, userId]);
-      invalidateCachedProfile(userId);
-      try {
-        const { invalidateCustomerProfileCache } = await import("./index.js");
-        invalidateCustomerProfileCache(userId);
-      } catch { /* non-fatal */ }
-
-      res.json({ success: true, data: { avatar: image } });
-    } catch (err) {
-      console.error("[R2 UPLOAD] step=patch status=failed error=", err);
-      res.status(500).json({ success: false, error: { code: "IMAGE_SAVE_FAILED", message: "Failed to update image" } });
-    }
-  });
+  // NOTE: `PATCH /api/customer/profile-image` was removed here. It wrote
+  // `users.avatar` straight from `req.body.image` — an authenticated client
+  // could point the avatar at any URL with no presign, no R2 object and no
+  // media row, i.e. a full bypass of the verified upload flow. The canonical
+  // `POST /api/customer/profile-image/save` already writes that same reference
+  // after the object has been verified in storage, so nothing replaced it.
 
   // ─── R2 Health Check (admin-safe, no credentials exposed) ────────────────
   app.get("/api/health/r2", async (_req: Request, res: Response) => {

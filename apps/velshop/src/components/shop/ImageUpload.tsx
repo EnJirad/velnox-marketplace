@@ -11,6 +11,7 @@
 import { useState, useRef } from "react";
 import { Camera, Loader2, X } from "lucide-react";
 import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
+import { compressImage } from "@velnox/shared/lib/image-optimize";
 
 interface ImageUploadProps {
   currentUrl?: string | null;
@@ -54,35 +55,52 @@ export function ImageUpload({
 
     setUploading(true);
     try {
-      // 1. Get presigned URL
+      // The R2 key is fixed (`profile/{kind}/{userId}.webp`), so the bytes must
+      // really be WebP: convert before signing, and refuse when the browser
+      // cannot encode instead of storing a JPEG under a `.webp` key.
+      const uploadFile = await compressImage(file, purpose, {
+        maxBytes: purpose === "avatar" ? 200_000 : 500_000,
+        quality: purpose === "avatar" ? 0.85 : 0.80,
+      });
+      if (uploadFile.type !== "image/webp") {
+        alert("ไม่สามารถแปลงรูปเป็น WebP ได้ กรุณาใช้ไฟล์ JPEG, PNG หรือ WebP");
+        setPreview(null);
+        return;
+      }
+
+      // 1. Get presigned URL — the server maps `purpose` to the canonical
+      // `profile/{kind}/{userId}.webp` namespace it validates at confirm time.
       const presignRes = await fetch(`${API_BASE}/upload/presign`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type, purpose }),
+        body: JSON.stringify({ filename: uploadFile.name, contentType: uploadFile.type, purpose }),
       });
       if (!presignRes.ok) throw new Error("Failed to get upload URL");
       const { data } = await presignRes.json();
 
-      // 2. Upload directly to R2
+      // 2. Upload directly to R2 — the declared type is the type of the bytes
+      // the presigned PUT was signed for.
       const uploadRes = await fetch(data.uploadUrl, {
         method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
+        headers: { "Content-Type": uploadFile.type },
+        body: uploadFile,
       });
       if (!uploadRes.ok) throw new Error("Upload failed");
 
-      // 3. Confirm upload on backend
+      // 3. Confirm upload on backend — no `purpose` in the body: the server
+      // derives it from the object key it minted, so the client cannot steer
+      // which reference (avatar / cover) gets written.
       const confirmRes = await fetch(`${API_BASE}/upload/confirm`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ objectKey: data.objectKey, purpose }),
+        body: JSON.stringify({ objectKey: data.objectKey }),
       });
       if (!confirmRes.ok) throw new Error("Failed to save upload");
       const { data: saved } = await confirmRes.json();
 
-      onUpload(saved.url);
+      onUpload(saved?.url || data.publicUrl);
       setPreview(null);
     } catch (err) {
       console.error("[upload] failed:", err);

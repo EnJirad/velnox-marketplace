@@ -2,6 +2,7 @@ import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
 import { apiBaseUrl } from "@velnox/shared/lib/sites";
+import { compressImage } from "@velnox/shared/lib/image-optimize";
 import {
   ArrowLeft,
   Camera,
@@ -41,40 +42,61 @@ interface ShopProfile {
   email: string | null;
 }
 
+/**
+ * Upload a shop logo / cover.
+ *
+ * The R2 key is fixed (`shop/{shopId}/logo.webp`), so the bytes must really be
+ * WebP. This used to PUT the picked file with its own MIME (`image/jpeg`) while
+ * the key ended in `.webp` — the MIME/extension mismatch found in production.
+ * Convert first, refuse when the browser cannot, and only report the URL the
+ * server actually confirmed: a failed confirm means no reference was written.
+ */
 async function uploadToR2(
   file: File,
   purpose: "shop-logo" | "shop-cover",
   shopId: string,
-): Promise<string | null> {
+): Promise<string> {
+  const uploadFile = await compressImage(file, purpose === "shop-logo" ? "avatar" : "cover", {
+    maxBytes: purpose === "shop-logo" ? 200_000 : 500_000,
+    quality: purpose === "shop-logo" ? 0.85 : 0.80,
+  });
+  if (uploadFile.type !== "image/webp") {
+    throw new Error("Image could not be converted to WebP");
+  }
+
   const presignRes = await fetch(`${API_BASE}/upload/presign`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      filename: file.name,
-      contentType: file.type,
+      filename: uploadFile.name,
+      contentType: uploadFile.type,
       purpose,
       shopId,
     }),
   });
-  if (!presignRes.ok) return null;
+  if (!presignRes.ok) throw new Error("Failed to get upload URL");
   const { data } = await presignRes.json();
 
   const putRes = await fetch(data.uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": file.type },
-    body: file,
+    headers: { "Content-Type": uploadFile.type },
+    body: uploadFile,
   });
-  if (!putRes.ok) return null;
+  if (!putRes.ok) throw new Error("Upload failed");
 
-  await fetch(`${API_BASE}/upload/confirm`, {
+  // No `purpose` in the body — the server derives it from the object key it
+  // minted at presign, so the client cannot steer which reference is written.
+  const confirmRes = await fetch(`${API_BASE}/upload/confirm`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ objectKey: data.objectKey, purpose, entityId: shopId }),
+    body: JSON.stringify({ objectKey: data.objectKey }),
   });
+  if (!confirmRes.ok) throw new Error("Failed to save upload");
+  const { data: saved } = await confirmRes.json();
 
-  return data.publicUrl || null;
+  return saved?.url || data.publicUrl;
 }
 
 export default function SellerProfile() {

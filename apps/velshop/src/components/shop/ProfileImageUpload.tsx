@@ -1,6 +1,6 @@
 import { api } from "@velnox/shared/lib/api-routes";
 import { compressImage, getOptimizedExtension } from "@velnox/shared/lib/image-optimize";
-import { useAction, useMutation, invalidateProfileCache } from "@velnox/shared/lib/api-routes";
+import { useAction, invalidateProfileCache } from "@velnox/shared/lib/api-routes";
 import { refetchCurrentUser } from "@velnox/shared/lib/api-client";
 import { useLanguage } from "@/lib/i18n";
 import { Loader2 } from "lucide-react";
@@ -97,7 +97,6 @@ export function ProfileImageUpload({
 
   const getUploadIntent = useAction(api.customer.getProfileImageUploadIntent);
   const saveProfileImage = useAction(api.customer.saveProfileImage);
-  const patchUserImage = useMutation(api.users.patchUserImage);
 
   const resetInput = useCallback(() => {
     if (inputRef.current) inputRef.current.value = "";
@@ -131,7 +130,7 @@ export function ProfileImageUpload({
       setUploading(true);
       onUploadingChange?.(true);
 
-      // ── Compress large images before upload ─────────────────────
+      // ── Compress + convert to WebP before upload ────────────────
       let uploadFile: File;
       try {
         r2cLog("compress", { status: "started", originalSize: file.size, kind });
@@ -147,20 +146,25 @@ export function ProfileImageUpload({
           compressed: uploadFile.size < file.size,
         });
       } catch (compressErr) {
-        r2cLog("compress", { status: "fallback", error: String(compressErr) });
-        uploadFile = file;
+        r2cLog("compress", { status: "failed", error: String(compressErr) });
+        toast.error(t("profile.imageUploadFailed"));
+        setUploading(false);
+        onUploadingChange?.(false);
+        resetInput();
+        return;
       }
 
-      // Always force WebP — the fixed R2 key ends with .webp
+      // The R2 key is fixed (`profile/{kind}/{userId}.webp`), so the bytes must
+      // really be WebP. compressImage hands back the untouched original when the
+      // browser cannot decode/encode — refuse then, instead of storing a JPEG
+      // under a `.webp` key (the production MIME/extension mismatch).
       if (uploadFile.type !== "image/webp") {
-        try {
-          uploadFile = await compressImage(uploadFile, kind, {
-            maxBytes: kind === "avatar" ? 200_000 : 500_000,
-            quality: kind === "avatar" ? 0.85 : 0.80,
-          });
-        } catch {
-          // Last resort: rename — R2 will store whatever MIME we send
-        }
+        r2cLog("compress", { status: "rejected", reason: "not_webp", finalType: uploadFile.type });
+        toast.error(t("profile.imageUploadFailed"));
+        setUploading(false);
+        onUploadingChange?.(false);
+        resetInput();
+        return;
       }
 
       try {
@@ -174,8 +178,10 @@ export function ProfileImageUpload({
         } | null = null;
 
         try {
-          // Always send image/webp as mimeType — R2 key is .webp
-          const uploadMimeType = "image/webp";
+          // The declared type is the type of the verified bytes above. The
+          // presign signs this Content-Type, so the object R2 stores carries
+          // metadata that matches both the bytes and the `.webp` key.
+          const uploadMimeType = uploadFile.type;
           r2cLog("intent", { status: "requesting", kind, mimeType: uploadMimeType });
           const intentResult = await getUploadIntent({
             kind,
@@ -209,7 +215,7 @@ export function ProfileImageUpload({
         r2cLog("put", {
           status: "started",
           method: "PUT",
-          contentType: "image/webp",
+          contentType: uploadFile.type,
           bodySize: uploadFile.size,
           credentials: "omit",
         });
@@ -219,7 +225,7 @@ export function ProfileImageUpload({
           uploadRes = await fetch(intentData.uploadUrl, {
             method: "PUT",
             body: uploadFile,
-            headers: { "Content-Type": "image/webp" },
+            headers: { "Content-Type": uploadFile.type },
             credentials: "omit",
           });
         } catch (fetchErr: unknown) {
@@ -295,20 +301,10 @@ export function ProfileImageUpload({
               ? updatedProfile.coverUrl
               : updatedProfile.avatarUrl;
 
-          // Sync user image field so currentUser returns the
-          // correct avatar after logout/login.
-          if (kind === "avatar" && url) {
-            try {
-              await patchUserImage({ image: url });
-              r2cLog("patch", { status: "success", kind });
-            } catch (patchErr) {
-              r2cLog("patch", {
-                status: "failed",
-                error: patchErr instanceof Error ? patchErr.message : String(patchErr),
-              });
-              console.error("[R2 CLIENT] patchUserImage failed (avatar saved to DB):", patchErr);
-            }
-          }
+          // No follow-up `patchUserImage` call: that route (PATCH
+          // /api/customer/profile-image) is gone because it wrote users.avatar
+          // from a client-supplied URL. `saveProfileImage` above already
+          // persisted the verified reference server-side.
 
           if (url) {
             r2cLog("complete", { status: "success", kind, urlLength: url.length });
@@ -347,7 +343,7 @@ export function ProfileImageUpload({
         resetInput();
       }
     },
-    [kind, onUploaded, onUploadingChange, resetInput, t, getUploadIntent, saveProfileImage, patchUserImage],
+    [kind, onUploaded, onUploadingChange, resetInput, t, getUploadIntent, saveProfileImage],
   );
 
   return (

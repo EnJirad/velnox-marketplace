@@ -328,8 +328,10 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.stripe.createStripeCheckoutAction": (a) => apiPost("/api/stripe/checkout", a),
   "api.stripe.stripePaymentStatusAction": (a) => apiGet(`/api/stripe/payment-status/${a.sessionId}`),
 
-  // Profile image (users)
-  "api.users.patchUserImage": (a) => apiPatch("/api/customer/profile-image", a),
+  // NOTE: `api.users.patchUserImage` (PATCH /api/customer/profile-image) is
+  // gone on purpose — that route wrote `users.avatar` from a client-supplied
+  // URL, bypassing the presign → R2 PUT → verified save flow. The canonical
+  // `api.customer.saveProfileImage` already writes the same reference.
 
   // Storefront
   "api.storefront.settings": (a) => apiGet(`/api/shops/${a.shopId}/settings`),

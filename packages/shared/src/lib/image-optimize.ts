@@ -97,8 +97,11 @@ export function coverSrcSet(originalUrl: string): string {
  * - Avatars: resize to max 512×512, WebP quality 85
  * - Covers:  resize to max 1920×1080, WebP quality 80
  *
- * Always outputs WebP. Returns the original file only if canvas/image decoding
- * is not available in the browser.
+ * Outputs real WebP bytes whenever the browser can decode and encode. If it
+ * cannot, the ORIGINAL file is returned untouched — never a file relabelled as
+ * `image/webp` whose bytes are still JPEG. The fixed `.webp` R2 key only stays
+ * truthful while the metadata matches the bytes, so callers must check the
+ * returned type and refuse the upload instead of storing a mislabelled object.
  */
 export async function compressImage(
   file: File,
@@ -137,11 +140,11 @@ export async function compressImage(
     const baseName = file.name.replace(/\.[^.]+$/, "");
     return new File([blob], `${baseName}.webp`, { type: "image/webp" });
   } catch {
-    // Canvas/ImageBitmap not supported or image decode failed.
-    // Return original file wrapped as WebP-typed so the presigned URL
-    // Content-Type (always image/webp) matches what the browser sends.
-    // R2 rejects uploads where the signed Content-Type differs from the request.
-    return new File([file], file.name.replace(/\.[^.]+$/, ".webp"), { type: "image/webp" });
+    // Canvas/ImageBitmap not supported, or the image could not be decoded.
+    // Hand the original back unchanged: relabelling its bytes as image/webp
+    // would persist a JPEG under a `.webp` key and a `image/webp` media row
+    // (the mismatch this was reported as). The caller decides — and refuses.
+    return file;
   }
 }
 
