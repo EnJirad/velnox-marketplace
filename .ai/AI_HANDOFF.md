@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-23 · **Branch:** `main` · **Latest pass:** production Neon (§9) + production R2/media (§10) read-only verification
+**Last updated:** 2026-09-24 · **Branch:** `main` · **Latest pass:** TASK 003 media security fixes (§11)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -665,31 +665,50 @@ the authenticated half could not run — see the blocker at the end.
   — the two skips are the JWT-gated HTTP cases (403 foreign namespace, 400
   `R2_OBJECT_NOT_FOUND`), which need `JWT_SECRET` this workspace cannot provide.
 
-**Findings — reported, NOT fixed (Task 002 was verification-only):**
+**Findings (Task 002 was verification-only) — fixed in §11 except #7:**
 
-1. `PATCH /api/customer/profile-image` writes `users.avatar` straight from
-   `req.body.image` — no URL validation, no HeadObject, bypasses the whole
-   presign→PUT→confirm chain (`backend/routes/upload.ts:546`). Highest-impact
-   finding of this pass.
-2. `purpose` is not allowlisted at presign, so the client chooses the key
-   prefix (`${purpose}/${userId}.webp`); confirm 403s it (no media row), but the
-   signed PUT still lands in an arbitrary bucket namespace (`upload.ts:210`).
-3. Latent dead path: `ImageUpload.tsx` sends `purpose="avatar"|"cover"` →
-   `avatar/<id>.webp`, while `validateObjectKeyOwnership` only accepts
-   `profile/<kind>/<id>.webp` → confirm would always 403 after a successful PUT.
-   No screen renders `<ImageUpload>` today (`ProfileImageUpload` is the live
-   avatar path and its pair is correct).
-4. confirm swallows a failed media INSERT (`media_record status=skipped`) yet
-   still updates `users.avatar` → a reference with no media row.
-5. Keys are forced to `.webp` while the stored object is `image/jpeg`
-   (observed in production); neither `ImageUpload` nor `SellerProfile`
-   converts to WebP, contrary to `context/media.md`.
-6. `deleteR2Object(...)` is not awaited in the product-image delete
-   (`backend/routes/products.ts`) → orphan objects on a silent R2 failure.
-7. Integration-test fixture shops are visible in production via public
-   `/api/shops` (`so-test-*`, `inv-*`, `inv-cancel-*`, `inv-paid-*`).
+1. Unvalidated `PATCH /api/customer/profile-image` wrote `users.avatar` from `req.body.image`.
+2. Open presign `purpose` chose the bucket namespace.
+3. Dead `ImageUpload` namespace mismatch (`avatar/<id>.webp` vs `profile/<kind>/…`).
+4. confirm swallowed a failed media INSERT yet still moved the reference.
+5. JPEG bytes stored under a forced `.webp` key.
+6. `deleteR2Object(...)` unawaited in the product-image delete.
+7. **OPEN** — integration fixture shops visible via public `/api/shops`
+   (`so-test-*`, `inv-*`, `inv-cancel-*`, `inv-paid-*`).
 
 **Blocker:** no safe production test account → Flows A–F, the failed-upload
 path, the 10 MB boundary, replace/delete and the UI check are **CODE VERIFIED
 only**. Next: provision a dedicated production test account, then re-run Task
-002; fix finding 1 as its own task.
+002.
+
+---
+
+## 11. Media security fixes (TASK 003, 2026-09-24)
+
+Every §10 finding is closed except #7; no DB change (`db/` untouched).
+
+| # | Fix |
+|---|---|
+| 1 | `PATCH /api/customer/profile-image` **deleted** — no replacement; the canonical `save` route already writes the same reference after HeadObject + media persistence. `api.users.patchUserImage` and its only caller dropped. |
+| 2 | Presign `purpose` allowlist (`avatar｜cover｜shop-logo｜shop-cover`); unknown → `400 INVALID_PURPOSE` before any URL is signed; avatar/cover mint `profile/{kind}/{userId}.webp`, shop purposes keep the shop-ownership query. |
+| 3 | `ImageUpload.tsx` converts to WebP, presigns with the allowlisted purpose, and confirms with `objectKey` only (server derives the target). Still no screen renders it. |
+| 4 | `confirm` and `save` answer `500 IMAGE_SAVE_FAILED` and return before any `users`/`shops` write when the media row cannot be persisted. |
+| 5 | `compressImage` hands back the original untouched when the browser cannot encode (never relabels bytes); all three uploaders refuse non-WebP; `confirm`/`save` re-check the **stored** content type against the allowlist. |
+| 6 | Both `deleteR2Object` call sites in `backend/routes/products.ts` (product-image delete, variant-image delete) now await. |
+| 7 | **OPEN** — production data cleanup, not a code path. |
+
+Server-derived now: `confirm` reads the reference target from the server-minted key
+(a body `purpose`/`cdnUrl` can no longer steer which reference is written);
+`upload-intent` requires an allowlisted `kind` (no default); `save` derives the
+kind from the key.
+
+**Validation:** backend `tsc` clean; `bun test backend/tests` **419 pass / 41
+skip / 0 fail**; all four apps typecheck clean; `i18n:check` (th=en=my=1289);
+`git diff --check` clean; no DB change. New cases in
+`backend/tests/upload-security.test.ts` cover the removed route, the purpose
+allowlist, arbitrary namespaces at presign/confirm, and the intent `kind`
+allowlist.
+
+**Tooling:** `backend/routes/products.ts` (181 KB) is past the edit tools'
+match window, so finding 6 was applied as a `patch -p1` diff and verified with
+`git diff`.
