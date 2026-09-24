@@ -123,7 +123,14 @@ are untouched (still byte-identical) and `db/run-update.sql` was not recreated.
 
 1. ~~Controlled cleanup of the already-contaminated production fixture
    shops/products.~~ **DONE** — see *Production verification (step 2)* above.
-2. **TASK 004B** — the separate production R2 upload round-trip.
+2. ~~**TASK 004B** — the separate production R2 upload round-trip.~~ **DONE** —
+   `backend/scripts/r2-roundtrip.ts`, 11/11 checks pass; the bucket CORS policy
+   was missing the real corporate origin and all four dev origins and was
+   repaired additively. Recorded in `AI_Handoff.md` and `docs/ai/MEDIA.md`.
+3. Optional follow-up: the bucket CORS still lists `velnox-group.vercel.app`,
+   which returns 404. Removing it is safe but is a separate, deliberate change.
+4. The Neon half of the media contract (`media` row + `users.avatar` / shop
+   `logo`/`cover` reference) still needs an authenticated production check.
 
 ---
 

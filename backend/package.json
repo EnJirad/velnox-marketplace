@@ -9,7 +9,8 @@
     "start": "tsx server.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test tests",
-    "fixtures:audit": "bun scripts/test-fixture-cleanup.ts"
+    "fixtures:audit": "bun scripts/test-fixture-cleanup.ts",
+    "r2:roundtrip": "bun scripts/r2-roundtrip.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",

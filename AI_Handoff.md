@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-24 (TASK 004A + production fixture remediation — isolation enforced, contaminated rows removed)
+**Last updated:** 2026-09-24 (TASK 004A isolation + fixture remediation, TASK 004B production R2 round-trip — bucket CORS repaired)
 **Branch:** `main`
 
 ## Current Project State
@@ -63,6 +63,35 @@ Result: **931 rows** removed — 167 users, 144 sellers, 144 shops, 123 products
 before deleting. Re-running the audit reports 0 fixture roots, and
 `GET /api/shops` now returns only the legitimate shop. `categories` (platform
 taxonomy) was deliberately not touched; no schema change.
+
+## Production R2 Round-Trip (TASK 004B) — VERIFIED, one defect fixed
+
+Tool: `backend/scripts/r2-roundtrip.ts` (`cd backend && bun run r2:roundtrip`).
+It reproduces the real media pipeline — `createR2Client()` + the exact presign
+command from `routes/upload.ts` → PUT the signed URL → `HeadObject` (what
+`/api/upload/confirm` does) → fetch the object over `R2_PUBLIC_DOMAIN` (plain and
+with the `?v=` cache-bust) → read the bucket CORS policy → delete the temporary
+`healthcheck/roundtrip-<uuid>.webp` object. Never prints a credential.
+
+Result: **11/11 checks pass.** Bucket `velnox-storage`, public domain
+`https://pub-01da4cea98c140f98d0c20ec14acb608.r2.dev`. Production
+`/api/health/r2` → `{configured:true,bucket:true,verify:true}`;
+`POST /api/upload/presign` without a session → 401 (correct).
+
+**Defect found and fixed — bucket CORS.** The bucket allowed only
+`velshop|velseller|velcenter.vercel.app` plus `velnox-group.vercel.app`. That
+last origin is **dead** (`velnox-group.vercel.app` → HTTP 404); the real
+corporate origin is `https://velnox.vercel.app` (HTTP 200,
+*"Velnox — Build. Solve. Grow."*), and **all four dev origins were missing**, so
+browser uploads from `localhost:5173-5176` failed their preflight. Fixed with
+`bun run r2:roundtrip --fix-cors`, which is additive — it appended the five
+missing documented origins and kept the existing `PUT/GET/HEAD`, `AllowedHeaders:
+*`, `ExposeHeaders: ETag`, `MaxAgeSeconds: 3600`. Bucket now allows **8/8**
+documented origins; the dead origin was left in place (removing it is a separate
+call).
+
+Not scriptable: the Neon half — `media` row + `users.avatar` / shop `logo`
+reference — needs an authenticated session against the deployed API.
 
 ## The V Rule (single source)
 
