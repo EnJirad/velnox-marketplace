@@ -107,8 +107,13 @@ cp .env.example backend/.env
 Edit `backend/.env`:
 
 ```env
-# Database (Neon PostgreSQL)
+# Database (Neon PostgreSQL) — application database
 DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/velnox?sslmode=require
+
+# Test database — disposable only, used by `bun test` and NEVER by the app.
+# The database name must contain "test". Integration tests skip when this is unset;
+# the test suite never falls back to DATABASE_URL.
+TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/velnox_test
 
 # Google OAuth
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
@@ -301,6 +306,30 @@ Build output goes to `apps/<app>/dist/`.
 
 ---
 
+## Running the Backend Tests
+
+Integration tests create real users/sellers/shops/products, so they run **only**
+against a disposable database supplied through `TEST_DATABASE_URL`. The suite
+refuses to run when that variable is missing (integration tests are skipped) or
+when it points at a production-looking / non-disposable database (the run fails
+closed). `DATABASE_URL` is never used by the test suite.
+
+```bash
+# 1. Point at a throwaway PostgreSQL whose database name contains "test"
+export TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/velnox_test
+
+# 2. Bootstrap it once
+psql "$TEST_DATABASE_URL" -f db/run-sqleditor.sql
+
+# 3. Run the suite
+bun test backend/tests
+```
+
+CI runs the same suite against a throwaway `postgres:16` service container
+(`.github/workflows/backend-tests.yml`).
+
+---
+
 ## Deployment
 
 ### Frontend — Vercel (4 independent projects)
@@ -379,6 +408,7 @@ Backend must allow all four frontend origins:
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `DATABASE_URL` | Neon PostgreSQL connection string | Yes |
+| `TEST_DATABASE_URL` | Disposable PostgreSQL used **only** by the backend test suite (database name must contain `test`). Not used by the running app. | No (tests) |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | Yes |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | Yes |
 | `GOOGLE_REDIRECT_URI` | OAuth callback URL | Yes |

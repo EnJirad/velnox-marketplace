@@ -1,11 +1,36 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-18 (VelCenter final gap fix: permission catalog, forced first password change, audit realtime)
+**Last updated:** 2026-09-24 (TASK 004A: test database isolation — production fixture pollution fixed)
 **Branch:** `main`
 
 ## Current Project State
 
 Velnox Marketplace — 4 Vercel frontends (velshop, velseller, velcenter, velnox) + Render backend (Express + WebSocket) + Neon PostgreSQL + Cloudflare R2. Auth: Google OAuth + JWT `velnox_session` (httpOnly cookie). Velnox has **ONE** verification system: **SELLER / SHOP identity verification**. There is no product verification.
+
+## Test Database Isolation (TASK 004A) — MANDATORY
+
+```
+Application runtime  →  DATABASE_URL            (unchanged)
+Test process         →  TEST_DATABASE_URL only  (disposable; name must contain "test")
+```
+
+- `backend/db/database-guard.ts` resolves the connection and validates the test
+  target: it is refused when it equals the application database (same
+  host+port+database), carries a `prod|production|live|primary` host/database
+  segment, or has a database name without `test`. A refused target **fails the
+  suite closed** — no connection is attempted.
+- `backend/tests/helpers/test-db.ts` is the only test entry point:
+  `const testFn = integrationTest;`. Missing `TEST_DATABASE_URL` → integration
+  tests **skip**; the old `Boolean(process.env.DATABASE_URL)` gate is forbidden
+  and guarded by `backend/tests/test-database-isolation.test.ts`.
+- Why: `bun test` auto-loads `.env`, so the suite used to write fixture shops
+  (`so-test-*`, `inv-*`, `inv-cancel-*`, `inv-paid-*`) into the production Neon
+  database, where `GET /api/shops` (`sellers.status = 'approved'`) exposed them.
+- CI: `.github/workflows/backend-tests.yml` runs the suite on a throwaway
+  `postgres:16` service bootstrapped from `db/run-sqleditor.sql`, with
+  `TEST_DATABASE_URL` only.
+- Full record (root cause, files, tests, production read-only check, remaining
+  contaminated rows): `AI_HANDOFF.md`.
 
 ## The V Rule (single source)
 
