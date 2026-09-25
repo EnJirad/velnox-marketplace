@@ -770,7 +770,11 @@ export const th = {
   },
 
   paymentMethods: {
+    card: "บัตรเครดิต / เดบิต",
+    promptpay: "พร้อมเพย์",
     online: "ชำระเงินออนไลน์",
+    comingSoon: "เร็ว ๆ นี้",
+    unavailable: "ยังไม่พร้อมใช้งานชั่วคราว",
     cod: "เก็บเงินปลายทาง",
   },
 
@@ -780,6 +784,8 @@ export const th = {
     paid: "ชำระแล้ว",
     partially_refunded: "คืนเงินบางส่วน",
     refunded: "คืนเงินแล้ว",
+    requires_action: "รอยืนยันการชำระเงิน",
+    cancelled: "ยกเลิกการชำระเงิน",
     failed: "ชำระไม่สำเร็จ",
   },
 

@@ -402,7 +402,11 @@ const myShopPatch = {
  */
 const myOrderPatch = {
   paymentMethods: {
+    card: "ခရက်ဒစ် / ဒက်ဘစ် ကတ်",
+    promptpay: "ပရော့ပ်ဖေး",
     online: "Online payment",
+    comingSoon: "မကြာမီ လာမည်",
+    unavailable: "ခေတ္တ အသုံးပြုနိုင်ပါ",
     cod: "Cash on delivery",
   } satisfies Partial<Dict["paymentMethods"]>,
 } satisfies Partial<Dict>;

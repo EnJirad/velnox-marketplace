@@ -768,8 +768,12 @@ export const en: Dict = {
   },
 
   paymentMethods: {
+    card: "Credit / debit card",
+    promptpay: "PromptPay",
     online: "Online payment",
     cod: "Cash on delivery",
+    comingSoon: "Coming soon",
+    unavailable: "Temporarily unavailable",
   },
 
   paymentLabels: {
@@ -778,6 +782,8 @@ export const en: Dict = {
     paid: "Paid",
     partially_refunded: "Partially refunded",
     refunded: "Refunded",
+    requires_action: "Awaiting confirmation",
+    cancelled: "Payment cancelled",
     failed: "Payment failed",
   },
 

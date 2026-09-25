@@ -325,8 +325,10 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
 
   // Stripe
   "api.stripe.stripeConfiguredAction": () => apiGet("/api/stripe/configured"),
+  "api.payments.methods": () => apiGet("/api/payments/methods"),
   "api.stripe.createStripeCheckoutAction": (a) => apiPost("/api/stripe/checkout", a),
   "api.stripe.stripePaymentStatusAction": (a) => apiGet(`/api/stripe/payment-status/${a.sessionId}`),
+  "api.payments.refund": (a) => apiPost(`/api/admin/orders/${a.orderId}/refund`, a),
 
   // NOTE: `api.users.patchUserImage` (PATCH /api/customer/profile-image) is
   // gone on purpose — that route wrote `users.avatar` from a client-supplied

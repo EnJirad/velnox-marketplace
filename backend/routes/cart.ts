@@ -21,6 +21,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
+import { normalizePaymentMethod, assertPaymentMethodUsable, PAYMENT_METHOD, type PaymentMethodId } from "../lib/payment-config.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -737,8 +738,29 @@ export function setupCartRoutes(app: Express): void {
       const notes = body.notes as string | undefined;
       const cartItemIds = body.cartItemIds as string[] | undefined;
       const requestId = body.requestId as string | undefined;
-      // Payment method is only a routing hint (cod vs online); it never affects price.
-      const paymentMethodBody = typeof body.paymentMethod === "string" ? body.paymentMethod : "cod";
+      // Payment method is a routing hint; it never affects price. It is
+      // canonicalized and then checked against the platform payment
+      // configuration, so COD cannot be ordered while its feature flag is off:
+      // the storefront hiding the option is only UX, this is the boundary.
+      const rawPaymentMethod = typeof body.paymentMethod === "string" ? body.paymentMethod : "";
+      const paymentMethod: PaymentMethodId | null = rawPaymentMethod.trim()
+        ? normalizePaymentMethod(rawPaymentMethod)
+        : PAYMENT_METHOD.CARD;
+      if (!paymentMethod) {
+        res.status(400).json({
+          success: false,
+          error: { code: "INVALID_PAYMENT_METHOD", message: "Unsupported payment method." },
+        });
+        return;
+      }
+      const methodGate = assertPaymentMethodUsable(paymentMethod);
+      if (!methodGate.ok) {
+        res.status(methodGate.status).json({
+          success: false,
+          error: { code: methodGate.code, message: methodGate.message },
+        });
+        return;
+      }
 
       // Resolve + ownership-check the address BEFORE the transaction so the
       // snapshot is written from the database row, not from client input.
@@ -912,15 +934,18 @@ export function setupCartRoutes(app: Express): void {
         // ON CONFLICT DO NOTHING: a second submit with the same key inserts
         // nothing, so we abort the transaction (rolling back any work) and
         // return the response snapshot of the first successful request.
+        // `scope` keeps checkout requests and payment requests in ONE
+        // idempotency store without letting their keys collide.
         if (requestId && typeof requestId === "string") {
           const claim = await client.query(
-            `INSERT INTO checkout_requests (user_id, request_key) VALUES ($1, $2)
-             ON CONFLICT (user_id, request_key) DO NOTHING RETURNING id`,
+            `INSERT INTO checkout_requests (user_id, scope, request_key) VALUES ($1, 'checkout', $2)
+             ON CONFLICT (user_id, scope, request_key) DO NOTHING RETURNING id`,
             [userId, requestId],
           );
           if (claim.rows.length === 0) {
             const prev = await client.query(
-              `SELECT response FROM checkout_requests WHERE user_id = $1 AND request_key = $2`,
+              `SELECT response FROM checkout_requests
+                WHERE user_id = $1 AND scope = 'checkout' AND request_key = $2`,
               [userId, requestId],
             );
             responseData = prev.rows[0]?.response ?? null;
@@ -1009,9 +1034,11 @@ export function setupCartRoutes(app: Express): void {
           createdOrders.push({ orderId, orderNumber: orderId, shopId, shopName: shopItems[0]?.shop_name ?? '', subtotal: totalAmount, shippingFee: 0, total: totalAmount });
 
           // COD orders get a real payments row (method 'cod', provider 'cod', status 'pending')
-          // so order list/detail can report paymentStatus. Online payments are created
-          // by the Stripe checkout flow instead.
-          if (paymentMethodBody === "cod") {
+          // so order list/detail can report paymentStatus. This branch is only
+          // reachable while the COD feature flag is ON: the guard above rejects a
+          // COD request with 403 PAYMENT_METHOD_DISABLED when it is off, so a
+          // disabled method can never create an order, payment, or shipment.
+          if (paymentMethod === PAYMENT_METHOD.COD) {
             await client.query(
               `INSERT INTO payments (order_id, provider, method, amount, currency, status)
                VALUES ($1, 'cod', 'cod', $2, 'THB', 'pending')`,
@@ -1061,7 +1088,7 @@ export function setupCartRoutes(app: Express): void {
         if (requestId && typeof requestId === "string") {
           await client.query(
             `UPDATE checkout_requests SET order_id = $1, response = $2::jsonb
-             WHERE user_id = $3 AND request_key = $4`,
+             WHERE user_id = $3 AND scope = 'checkout' AND request_key = $4`,
             [responseData.parentOrderId, JSON.stringify(responseData), userId, requestId],
           );
         }

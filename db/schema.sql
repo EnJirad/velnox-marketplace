@@ -388,10 +388,11 @@ CREATE TABLE IF NOT EXISTS checkout_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   request_key TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'checkout',
   order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
   response JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (user_id, request_key)
+  CONSTRAINT checkout_requests_user_scope_key UNIQUE (user_id, scope, request_key)
 );
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_order ON checkout_requests (order_id);
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_user ON checkout_requests (user_id);
@@ -443,6 +444,10 @@ CREATE TABLE IF NOT EXISTS payments (
   provider_payment_id TEXT,
   provider_checkout_session_id TEXT,
   paid_at TIMESTAMPTZ,
+  refunded_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  refund_status TEXT,
+  failure_code TEXT,
+  failure_message TEXT,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -450,14 +455,18 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_session ON payments (provider_checkout_session_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_payment ON payments (provider_payment_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe ON payments (order_id) WHERE provider = 'stripe' AND status IN ('pending', 'requires_action');
 CREATE TABLE IF NOT EXISTS payment_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   provider TEXT NOT NULL,
   event_id TEXT NOT NULL UNIQUE,
   event_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'processed',
+  error TEXT,
   processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   payload JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_payment_events_provider ON payment_events (provider);
 CREATE INDEX IF NOT EXISTS idx_payment_events_type ON payment_events (event_type);
@@ -466,11 +475,20 @@ CREATE TABLE IF NOT EXISTS refunds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),
   payment_id UUID REFERENCES payments(id),
+  provider TEXT NOT NULL DEFAULT 'stripe',
+  provider_refund_id TEXT,
   amount NUMERIC(12, 2) NOT NULL,
   reason TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  requested_by UUID REFERENCES users(id),
+  refunded_at TIMESTAMPTZ,
+  failure_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_refunds_provider_refund ON refunds (provider_refund_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds (order_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_payment ON refunds (payment_id);
 CREATE TABLE IF NOT EXISTS commissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),

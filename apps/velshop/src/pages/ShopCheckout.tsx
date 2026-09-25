@@ -19,9 +19,9 @@ import {
   CheckCircle2,
   ChevronDown,
   CreditCard,
-  Globe,
   Loader2,
   MapPin,
+  QrCode,
   RefreshCw,
   ShieldCheck,
   ShoppingBag,
@@ -73,10 +73,36 @@ interface CheckoutResult {
   items?: CheckoutItemSummary[];
 }
 
-const PAYMENT_METHODS: Array<{ id: string; icon: LucideIcon }> = [
-  { id: "cod", icon: Banknote },
-  { id: "online", icon: Globe },
-];
+/**
+ * Payment methods are DISCOVERED from the backend — never hardcoded here.
+ *
+ * The backend only returns a method it currently accepts (test-mode Stripe
+ * configured for CARD/PROMPTPAY; the COD flag, which is off by default, for
+ * COD), so a method the platform has disabled cannot appear selectable. The
+ * server re-checks every request regardless of what this list shows.
+ */
+type PaymentMethodId = "CARD" | "PROMPTPAY" | "COD";
+
+interface PaymentMethodOption {
+  id: PaymentMethodId;
+  provider: string;
+  /** Selectable right now. A disabled method must never look selectable. */
+  enabled: boolean;
+  stripePaymentMethodType: string | null;
+}
+
+interface PaymentMethodsPayload {
+  paymentMethods: PaymentMethodId[];
+  methods: PaymentMethodOption[];
+  stripe: { configured: boolean; mode: string | null; webhookConfigured: boolean };
+  cod: { enabled: boolean; customerSelectable: boolean };
+}
+
+const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
+  CARD: CreditCard,
+  PROMPTPAY: QrCode,
+  COD: Banknote,
+};
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -87,7 +113,7 @@ function formatAddress(a: AddressRow): string {
 
 function payKey(id: string): string {
   const map: Record<string, string> = { cod: "Cod", promptpay: "Promptpay", transfer: "Transfer", card: "Card", online: "Online" };
-  return `checkout.pay${map[id] ?? "Cod"}`;
+  return `checkout.pay${map[id.toLowerCase()] ?? "Cod"}`;
 }
 
 /** Address picker card used in the desktop layout and address bottom sheet. */
@@ -134,17 +160,17 @@ export default function ShopCheckout() {
   const myAddresses = useAction(api.customer.myAddresses);
   const checkoutAction = useAction(api.customer.checkoutAction);
   const createStripeCheckout = useAction(api.stripe.createStripeCheckoutAction);
-  const stripeConfigured = useAction(api.stripe.stripeConfiguredAction);
+  const fetchPaymentMethods = useAction(api.payments.methods);
   const { track } = useTracking();
 
   const [addresses, setAddresses] = useState<AddressRow[] | null>(null);
   const [addressError, setAddressError] = useState(false);
   const [addressSheetOpen, setAddressSheetOpen] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState("cod");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [methodOptions, setMethodOptions] = useState<PaymentMethodOption[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [stripeReady, setStripeReady] = useState<boolean | null>(null);
   const [result, setResult] = useState<CheckoutResult | null>(null);
   const [vrOpen, setVrOpen] = useState(false);
   const [productsExpanded, setProductsExpanded] = useState(false);
@@ -154,11 +180,26 @@ export default function ShopCheckout() {
     if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
   }, []);
 
+  // Ask the backend which methods are actually usable. The answer also decides
+  // the initial selection, so the form never starts on a disabled method (it
+  // previously defaulted to COD, which the platform does not accept).
   useEffect(() => {
     let cancelled = false;
-    stripeConfigured().then((ok) => !cancelled && setStripeReady(Boolean(ok))).catch(() => !cancelled && setStripeReady(false));
+    fetchPaymentMethods()
+      .then((res: PaymentMethodsPayload) => {
+        if (cancelled) return;
+        const options = Array.isArray(res?.methods) ? res.methods : [];
+        setMethodOptions(options);
+        const firstEnabled = options.find((m) => m.enabled);
+        setPaymentMethod((prev) =>
+          prev && options.some((m) => m.id === prev && m.enabled) ? prev : (firstEnabled?.id ?? ""),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setMethodOptions([]);
+      });
     return () => { cancelled = true; };
-  }, [stripeConfigured]);
+  }, [fetchPaymentMethods]);
 
   const loadAddresses = useCallback(async () => {
     try {
@@ -198,6 +239,10 @@ export default function ShopCheckout() {
   const checkoutTotal = useMemo(() => checkoutLines.reduce((s, l) => s + l.qty * l.price, 0), [checkoutLines]);
   const checkoutCount = useMemo(() => checkoutLines.reduce((s, l) => s + l.qty, 0), [checkoutLines]);
 
+  const enabledMethods = useMemo(() => (methodOptions ?? []).filter((m) => m.enabled), [methodOptions]);
+  const disabledMethods = useMemo(() => (methodOptions ?? []).filter((m) => !m.enabled), [methodOptions]);
+  const isStripeMethod = paymentMethod === "CARD" || paymentMethod === "PROMPTPAY";
+
   const grouped = useMemo(() => {
     const map = new Map<string, typeof checkoutLines>();
     for (const line of checkoutLines) {
@@ -219,6 +264,7 @@ export default function ShopCheckout() {
   const handleSubmit = async () => {
     if (!selectedAddressId) { toast.error(t("checkout.selectAddress")); return; }
     if (!hasGps) { toast.error(t("checkout.gpsRequired")); return; }
+    if (!paymentMethod) { toast.error(t("paymentMethods.unavailable")); return; }
     setSubmitting(true);
     try {
       const checkoutPayload: Record<string, unknown> = {
@@ -248,7 +294,15 @@ export default function ShopCheckout() {
     if (!result) return;
     setPaying(true);
     try {
-      const { url } = (await createStripeCheckout({ orderId: result.parentOrderId, returnPath: `/orders?order=${result.parentOrderId}` })) as unknown as { url: string };
+      const { url } = (await createStripeCheckout({
+        orderId: result.parentOrderId,
+        returnPath: `/orders?order=${result.parentOrderId}`,
+        // The chosen method and the checkout request key both travel to the
+        // server, which re-validates the method and reuses the open session
+        // rather than opening a second one.
+        method: paymentMethod,
+        requestKey: requestIdRef.current ?? undefined,
+      })) as unknown as { url: string };
       if (!url) throw new Error(t("checkout.payNowDesc"));
       window.location.assign(url);
     } catch (err) {
@@ -325,7 +379,7 @@ export default function ShopCheckout() {
           <VelRepeatPlanDialog product={offerProduct} open={vrOpen} onOpenChange={setVrOpen}
             selectedVariant={eligibleItem?.variantId ? { id: eligibleItem.variantId, name: "", price: eligibleItem.price } : null} />
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            {paymentMethod === "online" ? (
+            {isStripeMethod ? (
               <Button className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handlePayOnline} disabled={paying}>
                 {paying ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
                 {t("checkout.payNow")}
@@ -337,7 +391,7 @@ export default function ShopCheckout() {
             <Button variant="outline" className="flex-1 border-slate-200 text-slate-700" asChild><Link to="/">{t("checkout.continueShopping")}</Link></Button>
           </div>
           <p className="mt-4 text-center text-xs text-slate-400">
-            {paymentMethod === "online" ? t("checkout.payNowDesc") : t("checkout.paymentNote", { method: t(payKey(paymentMethod)) })}
+            {isStripeMethod ? t("checkout.payNowDesc") : t("checkout.paymentNote", { method: t(payKey(paymentMethod)) })}
           </p>
         </main>
       </div>
@@ -478,8 +532,9 @@ export default function ShopCheckout() {
           <section className="border-t border-slate-100 bg-white px-4 py-3">
             <p className="text-xs font-semibold text-slate-500">{t("checkout.paymentTitle")}</p>
             <div className="mt-2">
-              {PAYMENT_METHODS.filter((m) => m.id !== "online" || stripeReady !== false).map((m) => {
+              {enabledMethods.map((m) => {
                 const active = paymentMethod === m.id;
+                const Icon = PAYMENT_METHOD_ICONS[m.id] ?? CreditCard;
                 return (
                   <button key={m.id} type="button" onClick={() => setPaymentMethod(m.id)}
                     className={`flex w-full items-center gap-3 py-2.5 text-left transition-colors ${active ? "text-slate-900" : "text-slate-500"}`}
@@ -489,12 +544,27 @@ export default function ShopCheckout() {
                       {active && <span className="size-2 rounded-full bg-[#10B981]" />}
                     </span>
                     <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <Icon className="size-4 shrink-0 text-slate-400" />
                       <span className="text-sm font-medium">{t(payKey(m.id))}</span>
                       <span className="min-w-0 truncate text-xs text-slate-400">{t(`${payKey(m.id)}Desc`)}</span>
                     </span>
                   </button>
                 );
               })}
+              {disabledMethods.map((m) => (
+                <div key={m.id} aria-disabled="true" role="radio" aria-checked={false}
+                  className="flex w-full cursor-not-allowed items-center gap-3 py-2.5 text-slate-300"
+                >
+                  <span className="flex size-4 shrink-0 items-center justify-center rounded-full border-2 border-slate-200" />
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="text-sm font-medium">{t(payKey(m.id))}</span>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
+                  </span>
+                </div>
+              ))}
+              {methodOptions !== null && enabledMethods.length === 0 && (
+                <p className="py-3 text-xs text-slate-400">{t("paymentMethods.unavailable")}</p>
+              )}
             </div>
           </section>
 
@@ -562,8 +632,8 @@ export default function ShopCheckout() {
                 <span className="min-w-0 truncate" style={{ overflowWrap: "anywhere" }}>{t("checkout.paymentTitle")}</span>
               </h2>
               <div className="mt-4 grid min-w-0 gap-2.5 sm:grid-cols-2">
-                {PAYMENT_METHODS.filter((m) => m.id !== "online" || stripeReady !== false).map((m) => {
-                  const Icon = m.icon;
+                {enabledMethods.map((m) => {
+                  const Icon = PAYMENT_METHOD_ICONS[m.id] ?? CreditCard;
                   const active = paymentMethod === m.id;
                   return (
                     <button key={m.id} type="button" onClick={() => setPaymentMethod(m.id)}
@@ -580,7 +650,23 @@ export default function ShopCheckout() {
                     </button>
                   );
                 })}
+                {disabledMethods.map((m) => (
+                  <div key={m.id} aria-disabled="true" aria-pressed={false}
+                    className="flex items-start gap-3 rounded-xl border-2 border-slate-200 border-dashed bg-slate-50 p-4 text-left opacity-70"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-100 text-slate-400">
+                      {(() => { const Icon = PAYMENT_METHOD_ICONS[m.id] ?? Banknote; return <Icon className="size-4" />; })()}
+                    </span>
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-500">{t(payKey(m.id))}</span>
+                      <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
+                    </span>
+                  </div>
+                ))}
               </div>
+              {methodOptions !== null && enabledMethods.length === 0 && (
+                <p className="mt-3 text-xs text-amber-700">{t("paymentMethods.unavailable")}</p>
+              )}
               <p className="mt-3 min-w-0 truncate text-xs text-slate-400" title={user?.email ? t("checkout.confirmAccount", { email: user.email }) : undefined} style={{ overflowWrap: "anywhere" }}>
                 {user?.email ? t("checkout.confirmAccount", { email: user.email }) : t("checkout.confirmAccount", { email: "" })}
               </p>
