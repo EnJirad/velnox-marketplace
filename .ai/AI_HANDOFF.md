@@ -237,66 +237,14 @@ owner-only. Hiding a tab is UX only; every endpoint re-checks.
 
 ## 5. Latest passes
 
-### 2026-09-22 (b) — production-readiness pass
+### 2026-09-22 — two superseded passes
 
-Uncommitted-turned-committed work, in risk order:
-
-1. **`/api/_diag/schema` was publicly reachable.** It exposed the schema shape,
-   the applied migration set, product counts by status and audit-log row counts
-   to any anonymous caller. It is now guarded at the **prefix**
-   (`backend/middleware/diag-guard.ts` → `requireDiagAccess`, owner|admin only,
-   deny-by-default), so a diagnostic route added later is guarded by default
-   rather than by remembering. Covered by `backend/tests/diag-endpoint-auth.test.ts`
-   (pure rule + a real HTTP round trip: anonymous/invalid → 401/403).
-2. **The seller-verification queue is paginated** (`page` 1-based, `limit`
-   clamped 1..100 default 25, deterministic order, `pagination` metadata) via
-   `backend/lib/pagination.ts`. The old `LIMIT 200` also made the VelCenter
-   overview badge wrong at 201 pending rows, because the badge was the length of
-   a truncated page: it now asks for `limit: 1` and reads `pagination.total`
-   (an exact `COUNT(*) OVER()`, not a second endpoint). The queue also searches on
-   the server now (`q`), so a search no longer only covers the current page, and
-   it no longer merges four per-status requests. Tests:
-   `backend/tests/admin-queue-pagination.test.ts`.
-3. **Migration numbering** — the duplicates (029/030/034/035) are safe: the
-   deployed runner keys `schema_migrations.migration_name` on the FULL filename
-   (UNIQUE), so both files are applied and recorded. `AI_Handoff.md` previously
-   blamed a prefix keying; `backend/tests/migration-numbering.test.ts` now pins
-   the real behaviour and fails if a new duplicate prefix appears.
-4. **Overview counters cannot read as a lie.** The queue-based badges already
-   rendered nothing on failure; the people counters rendered a literal `0`.
-   They now hold display text that starts at `—` and only becomes a number when
-   the API answered.
-
-Validation for (b): `tsc` clean on backend + all four apps; `bun test
-backend/tests` **405 pass / 0 fail** (35 DB-gated skips); `i18n:check` parity
-(th=en=my=1289); all four apps build; `git diff --check` clean; **no database
-change** — this pass touched no schema, so `db/schema.sql` and
-`db/run-sqleditor.sql` are unchanged and stay identical.
-
-**Landed in `96dd2c7`** (2026-09-22), pushed to `main`.
-
-### 2026-09-22 (a) — the three open gaps closed
-
-1. **Dead client route mappings removed.** Ten entries in
-   `packages/shared/src/lib/api-routes.ts` declared paths no backend route serves
-   and that no screen called (`customerRegulars`; the `memory`
-   `recommendForCustomer`/`dueReorderReminders`/`myMemory`/`flushToNeon`; the whole
-   `api.sellerOps` block incl. `updateShopLocation`, which PATCHed
-   `/api/seller/shop/:id/location` while only `PATCH /api/seller/shop` exists).
-   `api.memory.marketInsights` stays — `/api/memory/insights` is real and used.
-2. **Every order-status writer publishes `order:updated`.** `cart.ts` (buyer
-   cancel) and `seller-orders.ts` (seller fulfilment) broadcast after COMMIT with
-   the real `from`→`to`; `stripe.ts` broadcasts on paid / expired / payment_failed
-   only when the guarded UPDATE actually moved the row (`rowCount`).
-3. **Categories and platform settings publish `config:updated`.** New channel,
-   added to the subscribe allowlist, published from one scoped choke point in
-   `server.ts` (2xx only, payload carries `scope` alone — never a value or name),
-   consumed by the category tree and the settings form.
-
-Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
-**355 pass / 0 fail** (29 DB-integration skips); `i18n:check` pass
-(th=en=my=1289); `git diff --check` clean; `db/schema.sql` ↔
-`db/run-sqleditor.sql` identical; **no database change**.
+**Archived** (closed records, both pushed at the time) →
+[`history/archive/AI_Handoff-2026-09-22-readiness-passes.md`](history/archive/AI_Handoff-2026-09-22-readiness-passes.md).
+Moved 2026-09-25 to keep this file under the ~55 KB edit limit. Covers the
+`/_diag` prefix guard, seller-verification queue pagination, the 029/030/034/035
+migration-numbering proof, honest overview counters, the dead route mappings removed
+from `api-routes.ts`, `order:updated` from every status writer, and `config:updated`.
 
 ### 2026-09-23 — production verification: DB tests executed, one real bug found, media hardened
 
@@ -851,11 +799,89 @@ disposable PostgreSQL so the DB-gated payment tests actually execute.
 
 ---
 
+## 16. Stripe TEST-mode E2E verification (TASK 006, 2026-09-25) — **BLOCKED**
+
+**Environment — no credential, no database.** `freebuff-env list` → `{"files":{}}`.
+Every key unset: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,
+`STRIPE_WEBHOOK_SECRET`, `STRIPE_MODE`, `COD_ENABLED`, `COD_CUSTOMER_SELECTABLE`,
+`DATABASE_URL`, `TEST_DATABASE_URL`, `JWT_SECRET`. No `postgres`/`initdb`/`psql`
+binary and no docker/podman, so no disposable DB can be provisioned either. **No
+Stripe API call, PaymentIntent, PromptPay QR, webhook delivery or refund has ever
+been executed — not by this pass, not by any prior pass.**
+
+**Executed here** (real HTTP against the real route stack, in an in-process
+listening server; probe deleted, tree left clean):
+
+| Probe | Observed |
+|---|---|
+| `GET /api/stripe/configured` | `configured:false, mode:null, publishableKey:null, reason:STRIPE_NOT_CONFIGURED` — no secret leak |
+| `GET /api/payments/methods` | CARD/PROMPTPAY/COD all `enabled:false`; `cod.customerSelectable:false` |
+| `POST /api/customer/checkout` `COD` / `cod` / `cash_on_delivery` | **403 `PAYMENT_METHOD_DISABLED`** — no DB connection attempted |
+| `POST /api/stripe/checkout` `method=COD` | **403 `PAYMENT_METHOD_DISABLED`** |
+| `POST /api/stripe/checkout` `method=CARD`, unconfigured | **503 `STRIPE_NOT_CONFIGURED`** — no fabricated success |
+| webhook, unconfigured | **503** — refuses rather than acking an unverifiable event |
+| webhook, forged signature | **400 `Invalid signature`** |
+| webhook, correctly signed | passes verification, then fails at the DB → **500** (correctly re-deliverable) |
+
+The configure-shape row (`CARD`/`PROMPTPAY` enabled, `COD` disabled) was also
+observed with placeholder keys, but **placeholders are not credentials**, so it is a
+shape check only — never reported as configuration verification.
+
+**Status / evidence tier.** CODE = source read · AUTO = test really executed here ·
+BLOCKED = could not execute.
+
+| Area | Tier |
+|---|---|
+| Stripe TEST configuration | AUTO (key ordering/refusal) · **BLOCKED** (no credential) |
+| Card / PromptPay TEST E2E | **BLOCKED** |
+| Webhook signature | AUTO (local HMAC, forged rejected **and** valid accepted) |
+| Real webhook delivery / retry / idempotency | **BLOCKED** (DB-gated) |
+| Checkout idempotency, method switching | **BLOCKED** |
+| Price tampering | AUTO (6 cases — charge is the order total) |
+| Stock safety, order↔payment sync, inventory sync | **BLOCKED** (DB-gated) |
+| Full / partial / over-refund | AUTO (arithmetic + route rejection) |
+| Duplicate refund | AUTO (replay path) · **BLOCKED** (provider) |
+| COD disabled | **PASS** (executed) |
+| COD direct API bypass 403 | **PASS** (executed) |
+| No COD order/payment/shipment/settlement | CODE — the guard precedes the transaction and no DB touch occurred |
+| Secret audit | **PASS** |
+| Automated tests | **PASS** |
+| Browser E2E | **BLOCKED** — no framework in any package.json, no test account |
+| Production E2E | **BLOCKED** |
+
+**Secret audit (clean).** No live key anywhere: `sk_live_` / `pk_live_` / `rk_live_`
+appear only as zero-filled placeholders in `backend/tests/payment-foundation.test.ts`
+(used to prove live keys are *refused*). `git log -S` over all 222 commits: only
+`b806be1` ever touched those strings. No hardcoded `Authorization`/`Bearer` token. No
+`console.*` or response body in the payment code references a credential identifier.
+`.env`/`.env.*` are gitignored and untracked; only `.env.example` is tracked and it
+holds placeholders only.
+
+**Full verification run.** backend `tsc --noEmit` exit 0 · `bun run typecheck` 4/4
+exit 0 · `bun test backend/tests` **511 pass / 43 skip / 0 fail** ·
+`payment-foundation.test.ts` **59 pass / 1 skip / 0 fail** · `i18n:check`
+**1295/1295/1295** · `git diff --check` clean · `schema.sql` ≡ `run-sqleditor.sql` ·
+no `run-update.sql`.
+
+**No defect found → no code change.** Verification-only, as the brief requires.
+
+**Unblock.** Add test-mode `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` /
+`STRIPE_WEBHOOK_SECRET` (+ `STRIPE_MODE=test`) in Settings → Environment, and point
+`TEST_DATABASE_URL` at a disposable PostgreSQL (`psql "$TEST_DATABASE_URL" -f
+db/run-sqleditor.sql`). CI (`.github/workflows/test.yml`) already runs every
+DB-gated suite against a throwaway `postgres:16` and references no repo secret.
+
+**Doc gap (recorded, deliberately not fixed).** `STRIPE_*` / `COD_*` are documented
+nowhere outside the code — absent from `.env.example`, `docs/ENVIRONMENT.md`,
+`INSTALLATION.md` and `README.md`. Out of scope for a verification-only pass.
+
+---
+
 **Housekeeping:** superseded §8 (workspace move), §10 (TASK 002) and §9.1–§9.3
 (TASK 001 closed evidence) are in [`history/archive/`](history/archive/) as of
 2026-09-25; the §12 docs-consolidation record was archived the same day when §15
-needed the room. The file is now ~50 KB against a ~40 KB soft ceiling (~55 KB is
-the hard limit where editing stops working). §9 **stays live on purpose** —
-§9.4/§9.5 hold open items. Next split if room is needed: §5's closed pass
-narratives, then §2 once its live content is mirrored into
+needed the room, and §5's closed 2026-09-22 pass narratives were archived when §16
+needed it. The file is now ~50 KB against a ~40 KB soft ceiling (~55 KB is the hard
+limit where editing stops working). §9 **stays live on purpose** — §9.4/§9.5 hold
+open items. Next split if room is needed: §2 once its live content is mirrored into
 `.ai/context/`. Keep §6 (gaps) and the live §9 items.

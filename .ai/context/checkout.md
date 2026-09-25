@@ -71,6 +71,7 @@ Typecheck `backend`; test cart → order creation (idempotent), payment, and ord
 retrieval. `backend/tests/payment-foundation.test.ts` covers config, COD
 fail-closed, webhook signature reject **and accept**, and the COD API bypass.
 Check Neon for order/payment consistency. Full live test-mode Stripe verification
-needs real test keys — see `.ai/AI_HANDOFF.md` §15 for what remains unverified.
+needs real test keys — see `.ai/AI_HANDOFF.md` §15 for the design and §16 for the
+exact per-area evidence tier (CODE / AUTO / BLOCKED) and what remains unverified.
 
 Related: `customer.md`, `database.md`, `security.md`.
