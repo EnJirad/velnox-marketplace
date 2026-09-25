@@ -72,6 +72,7 @@ Line numbers below point into `AI_Handoff-2026-09-22-full.md`.
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-23-r2-media-verification.md`](./archive/AI_Handoff-2026-09-23-r2-media-verification.md) | Production R2 / media — read-only verification (TASK 002) | the live R2/media evidence (health, bucket, object read, 401 boundary) and findings 1–7. Findings 1–6 were fixed in TASK 003; finding #7 (integration fixture shops visible via public `/api/shops`) was root-caused to test/database isolation and closed by TASK 004A (`.ai/AI_HANDOFF.md` §13) |
+| [`archive/AI_Handoff-2026-09-23-neon-readonly-verification.md`](./archive/AI_Handoff-2026-09-23-neon-readonly-verification.md) | Production Neon — closed evidence, read-only verification (TASK 001) | the method (`gh run view --log` on `migrate-neon.yml`), the migration ledger (49 rows / 49 files, none missing or orphaned), and the verified-object table. Split out of `.ai/AI_HANDOFF.md` §9 on 2026-09-25 to keep the live handoff small; §9.4/§9.5 open items stayed live |
 
 Work after 2026-09-18 continues in `.ai/AI_HANDOFF.md`, whose older sections are
 archived by the same rules as above.

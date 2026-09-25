@@ -572,43 +572,12 @@ response**, captured from the production migration runner (`migrate-neon.yml`,
 secret `NEON_DATABASE_URL` — documented as the production DB in
 `context/database.md`) — not a filename check, not a local/test database.
 
-### 9.1 Method
-
-Everything came from `gh run view <id> --log` on `.github/workflows/migrate-neon.yml`
-(the production runner, secret `NEON_DATABASE_URL`), grepped for the NOTICEs psql
-returns from production, then `diff` of the ledger names against
-`db/migrations/*.sql`. `gh workflow run diag-neon-schema.yml` → `403`.
-
-### 9.2 Migration ledger
-
-- `diff` of the production `schema_migrations` names against
-  `db/migrations/*.sql` on `main` → **identical**: 49 rows, 49 files, none
-  missing, none orphaned, nothing pending. Newest: `046_staff_must_change_password`
-  @ 2026-09-18T00:05:39Z.
-- A recorded row is **transactional proof**, not a list entry: the runner applies
-  each file with `ON_ERROR_STOP=1 --single-transaction` and inserts the row only
-  on exit 0. Observed live on the same database: `044 … ERROR: relation
-  "velrepeat_plan_runs" does not exist` → `❌ FAILED`, and 044 stayed unrecorded
-  until the retargeted file ran at 14:43:58Z.
-- Rows 001–035 all carry one 2026-09-15 15:33–15:35 timestamp with a matching
-  `already exists, skipping` NOTICE: the runner's first pass was a **backfill**
-  over objects that already existed. Treat those timestamps as *not* creation
-  dates — the NOTICEs are the existence evidence.
-
-### 9.3 Verified in the production database (live responses)
-
-| Item | Evidence |
-|---|---|
-| `sellers.status` admits `under_review` / `needs_correction` | 043 @ 2026-09-16T14:41:27Z — `UPDATE 0` + 4×`ALTER TABLE` + `CREATE TABLE` + `CREATE INDEX`, recorded |
-| `seller_verifications.review_reason_code` / `review_note`, `seller_review_history` | same 043 run |
-| `seller_verifications` + `idx_seller_verifications_seller` / `_pending` | NOTICE `already exists` (040) |
-| `item_unavailable` on `velrepeat_plans.status` **and** `velrepeat_runs.status` | 044 @ 14:43:56Z, 4×`ALTER TABLE`, recorded 14:43:58Z |
-| `media` canonical columns `uploaded_by`/`key`/`url`/`content_type`/`size` | 045 @ 14:44:00Z — five `V0045: media.<old> renamed to <new>` NOTICEs |
-| `idx_media_owner_key` | **EXISTS** — NOTICE `relation "idx_media_owner_key" already exists, skipping` (041 @ 14:41:17Z); it indexed the owner/key columns before 045 renamed them, and Postgres carries an index across `RENAME COLUMN` |
-| `notifications` + `body` / `metadata` + `idx_notifications_unread` | NOTICEs (003, 016) |
-| `audit_logs` + `idx_audit_logs_entity` + `idx_audit_logs_created` | NOTICEs (005) |
-| `products`, `shops`, `orders`, `moderation_records`, `platform_settings`, `revoked_tokens`, `product_images.variant_id`, `product_variant_images` (+indexes) | NOTICEs across 001–037 |
-| `users.must_change_password` | 046 @ 2026-09-18T00:05:39Z — `ALTER TABLE` |
+**Closed evidence (method, migration ledger, verified-object table) archived** →
+[`history/archive/AI_Handoff-2026-09-23-neon-readonly-verification.md`](history/archive/AI_Handoff-2026-09-23-neon-readonly-verification.md).
+Moved 2026-09-25 to keep this file small. Headline result: the production
+`schema_migrations` ledger matched `db/migrations/*.sql` **exactly** (49 rows /
+49 files, none missing or orphaned), captured from `migrate-neon.yml` logs — no
+credential was ever read or printed, and nothing was written.
 
 ### 9.4 Still NOT VERIFIED (needs a fresh catalog read)
 
@@ -787,9 +756,82 @@ behaviour; set `TEST_DATABASE_URL` to run tests.
 
 ---
 
-**Housekeeping:** superseded §10 (TASK 002) moved to
-[`history/archive/AI_Handoff-2026-09-23-r2-media-verification.md`](history/archive/AI_Handoff-2026-09-23-r2-media-verification.md)
-on 2026-09-25; the file is ~45 KB against a ~40 KB soft ceiling (~55 KB is the
-hard limit where editing stops working). §9 **stays live on purpose** — §9.4/§9.5
-hold open items. Its closed evidence tables (§9.1–§9.3) are the next split if the
-room is needed: archive those, keep the open items.
+## 14. Production R2 authenticated round-trip (TASK 004B, 2026-09-25) — **BLOCKED**
+
+**Overall: BLOCKED at the account hard gate.** Every read-only / unauthenticated /
+code-level check passed; the authenticated production chain (presign → R2 PUT →
+confirm/save → media row → API read → UI → replace → delete → cleanup) **was not
+executed at all** and must not be reported as PASS. No production write of any
+kind was made. No production DB was touched. No credential was read.
+
+**Environment (verified this pass).** API `https://velnox-api.onrender.com`
+(`docs/DEPLOYMENT.md:16`) — `GET /api/health` → `200 {"status":"ok"}`,
+`GET /api/health/r2` → `200 {"configured":true,"bucket":true,"verify":true}`
+(the handler does a real `ListObjectsV2`), `GET /api/shops` → `200`. Responses
+carry `server: cloudflare` + `rndr-id`, so the verified host is the Render
+service. **TASK 003 is live in production:** `PATCH /api/customer/profile-image`
+(with a trusted `Origin`) → **404**, i.e. the removed route is gone; the canonical
+media endpoints are present.
+
+**Auth / CSRF boundary (unauthenticated — no account needed).**
+`POST /api/upload/presign`, `POST /api/upload/confirm`,
+`POST /api/customer/profile-image/upload-intent`,
+`POST /api/customer/profile-image/save`,
+`POST /api/seller/evidence/upload-intent` → **401 UNAUTHORIZED** with no cookie.
+No trusted `Origin` → 401; trusted `Origin` → 401; untrusted `Origin` →
+**403 FORBIDDEN "Untrusted origin"**; unknown route → 404. Re-probed 14× at two
+cadences: identical. Read-only; nothing was written.
+
+**Transient production anomaly (observed, unreproducible, NOT attributable to
+TASK 003).** For a ~4-minute window (from ~16:21Z), **every** POST/PATCH with a
+JSON body returned `500 INTERNAL_ERROR` *including a non-existent route*, while
+GETs on the same host stayed 200. Identical requests returned the correct
+401/404 minutes later, and 8 rapid + 6 spaced repetitions afterwards were all
+correct. A 500 on an unmatched route means an exception in the pre-routing
+middleware chain, not a media-code fault; the likely window is a Render
+cold-start / rollout. Recorded as an **open observation, no root cause proven**
+— production logs are not reachable from this workspace.
+
+**Why BLOCKED.** Stop condition #1/#2/#3 of the task brief: no safe authorized
+production test account exists and none was supplied. This workspace holds **no**
+`DATABASE_URL`, `TEST_DATABASE_URL`, `JWT_SECRET` or R2 credential (verified),
+and the system's only login is Google OAuth in a browser. Minting a production
+user by SQL, reusing a real customer/seller/admin, or fabricating a JWT are all
+forbidden — so steps 9–23 (synthetic image, purpose allowlist *at the endpoint*,
+presign, R2 PUT, confirm/save, media row, API read, UI, replace, delete, cleanup,
+ownership boundary, failure path) are **BLOCKED / NOT TESTED**, not failed.
+
+**Provision to unblock:** an owner-provisioned production test account (a
+dedicated customer, no real orders/payments, no real seller data) plus a live
+browser for the UI half. UI/browser E2E has still **never** been run from this
+environment → `UI NOT VERIFIED`.
+
+**TASK 004A isolation — PASS (re-proved, not assumed).** Fail-closed against the
+real suite: `NODE_ENV=test DATABASE_URL=postgresql://…@*.neon.tech/…`
+`bun test backend/tests` → `REFUSING TEST AGAINST PRODUCTION DATABASE`,
+`code: TEST_DATABASE_REFUSED`, **0 pass / 23 fail**, no test body executed
+(23 files errored at import; Bun exits 2 here — the §13 note says 1). Normal run
+with nothing configured: **451 pass / 42 skip / 0 fail** (493 tests, 23 files).
+
+**Validation actually run (no code change — docs only).** Backend `bunx tsc
+--noEmit` → clean; `bun run typecheck` → 4/4 apps exit 0; `git diff --check` →
+clean; no DB change (`db/` untouched).
+
+**Step 24 regression search — PASS (source).** No `PATCH … profile-image` route
+and no `patchUserImage` caller anywhere; the only hits are the removal NOTE in
+`backend/routes/upload.ts:658`, the guard test, and two comment references. No
+caller sends a `purpose=` that presign does not allowlist. The canonical chain
+stays presign → R2 PUT → confirm/save; no `client image → user.avatar` path.
+
+**10 MB boundary: CODE-ONLY** — never exercised against production, and this
+pass did not change that. **Every other checklist item that says PASS above is
+read-only or code-level; no production E2E claim is made anywhere.**
+
+---
+
+**Housekeeping:** superseded §10 (TASK 002) and §9.1–§9.3 (TASK 001 closed
+evidence) are in [`history/archive/`](history/archive/) as of 2026-09-25; the file
+is ~46 KB against a ~40 KB soft ceiling (~55 KB is the hard limit where editing
+stops working). §9 **stays live on purpose** — §9.4/§9.5 hold open items. Next
+split if room is needed: archive §12 and §5's closed pass narratives, keep §6
+(gaps) and the live §9 items.
