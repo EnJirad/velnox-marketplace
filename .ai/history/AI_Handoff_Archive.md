@@ -67,6 +67,15 @@ Line numbers below point into `AI_Handoff-2026-09-22-full.md`.
 | 1407 | Catalog enforced at every endpoint (follow-up) | every business surface gated by its catalog code; deny-by-default resolution; `payouts.process` removed |
 | 1484 | Remaining gaps closed (round 2) | the `staff.manage` read path; realtime dead ends; silent empty states |
 
+### 2026-09-23 → 2026-09-25 — production verification, and why test data reached production
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-23-r2-media-verification.md`](./archive/AI_Handoff-2026-09-23-r2-media-verification.md) | Production R2 / media — read-only verification (TASK 002) | the live R2/media evidence (health, bucket, object read, 401 boundary) and findings 1–7. Findings 1–6 were fixed in TASK 003; finding #7 (integration fixture shops visible via public `/api/shops`) was root-caused to test/database isolation and closed by TASK 004A (`.ai/AI_HANDOFF.md` §13) |
+
+Work after 2026-09-18 continues in `.ai/AI_HANDOFF.md`, whose older sections are
+archived by the same rules as above.
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

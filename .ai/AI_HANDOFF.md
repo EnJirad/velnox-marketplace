@@ -449,7 +449,8 @@ Validation: backend + all four apps `tsc` clean; `bun test backend/tests`
   inspection plus contract tests.
 - **The presign → PUT → confirm round trip is still not executed against
   production** (no safe production test account exists in this workspace).
-  What IS now production-verified (§10, 2026-09-23): R2 configured + bucket
+  What IS now production-verified (TASK 002, 2026-09-23 — archived under
+  `history/archive/AI_Handoff-2026-09-23-r2-media-verification.md`): R2 configured + bucket
   reachable via `GET /api/health/r2`, `R2_PUBLIC_DOMAIN` serving real objects
   (200 `image/jpeg`, missing key → 404), and the 401 auth boundary on all four
   upload endpoints. What remains source-only: the authenticated upload, the
@@ -642,50 +643,18 @@ secret only as `psql "$NEON_DATABASE_URL"` and never echoes it.
 
 ## 10. Production R2 / media — read-only verification (TASK 002, 2026-09-23)
 
-**READ-ONLY.** No file uploaded, no production row touched, no secret printed
-(public CDN domain + key only). No safe production test account exists here, so
-the authenticated half could not run — see the blocker at the end.
-
-**Production evidence (live, GETs only):**
-
-- `GET /api/health` → 200 on `velnox-api.onrender.com` (the documented
-  production API). `INSTALLATION.md:319/398` still names `velnx-api.onrender.com`
-  — that host returns **404**; the live one is in `docs/DEPLOYMENT.md:16`.
-- `GET /api/health/r2` → `{configured:true, bucket:true, verify:true}` — the
-  handler does a real `ListObjectsV2` against the production bucket.
-- `GET /api/shops` → 200 production rows, `imageUrl` =
-  `https://pub-…r2.dev/<key>` → `R2_PUBLIC_DOMAIN` is set and is what builds
-  stored references.
-- object read: a real `shop/<shopId>/logo.webp` → **200 `image/jpeg`, 998 886 B**;
-  a non-existent key → **404**.
-- auth boundary: `POST /api/upload/presign|confirm`,
-  `/api/customer/profile-image/upload-intent`, `/api/seller/evidence/upload-intent`
-  → **401 UNAUTHORIZED** with no cookie; `GET` on the POST-only confirm → 404.
-- `backend/tests/upload-security.test.ts` run here: **10 pass / 2 skip / 0 fail**
-  — the two skips are the JWT-gated HTTP cases (403 foreign namespace, 400
-  `R2_OBJECT_NOT_FOUND`), which need `JWT_SECRET` this workspace cannot provide.
-
-**Findings (Task 002 was verification-only) — fixed in §11 except #7:**
-
-1. Unvalidated `PATCH /api/customer/profile-image` wrote `users.avatar` from `req.body.image`.
-2. Open presign `purpose` chose the bucket namespace.
-3. Dead `ImageUpload` namespace mismatch (`avatar/<id>.webp` vs `profile/<kind>/…`).
-4. confirm swallowed a failed media INSERT yet still moved the reference.
-5. JPEG bytes stored under a forced `.webp` key.
-6. `deleteR2Object(...)` unawaited in the product-image delete.
-7. **OPEN** — integration fixture shops visible via public `/api/shops`
-   (`so-test-*`, `inv-*`, `inv-cancel-*`, `inv-paid-*`).
-
-**Blocker:** no safe production test account → Flows A–F, the failed-upload
-path, the 10 MB boundary, replace/delete and the UI check are **CODE VERIFIED
-only**. Next: provision a dedicated production test account, then re-run Task
-002.
+**Archived** → [`history/archive/AI_Handoff-2026-09-23-r2-media-verification.md`](history/archive/AI_Handoff-2026-09-23-r2-media-verification.md).
+Moved 2026-09-25 to keep this file small. Its findings were all fixed in §11
+except #7; #7's **root cause** is now closed by §13, and only its production
+*data* cleanup (an owner action needing no code) remains open there.
 
 ---
 
 ## 11. Media security fixes (TASK 003, 2026-09-24)
 
-Every §10 finding is closed except #7; no DB change (`db/` untouched).
+Every Task 002 finding is closed except #7's production data cleanup (archived
+copy: [`history/archive/AI_Handoff-2026-09-23-r2-media-verification.md`](history/archive/AI_Handoff-2026-09-23-r2-media-verification.md));
+its root cause is closed by §13. No DB change (`db/` untouched).
 
 | # | Fix |
 |---|---|
@@ -742,6 +711,85 @@ match window, so finding 6 was applied as a `patch -p1` diff and verified with
 returns no bare root-file reference; `.ai/README.md`, `.ai/AI_RULES.md` and
 `.ai/AI_HANDOFF.md` are the only workspace entry points; `git diff --check` clean.
 
-**Housekeeping:** this file is now ~43 KB (soft ceiling ~40 KB). Nothing here
-changed code or schema, so §9 (TASK 001) and §10 (TASK 002) are the next
-candidates to move into `.ai/history/` when a pass needs the room.
+---
+
+## 13. Test database isolation (TASK 004A, 2026-09-25)
+
+**Root cause.** `backend/db/index.ts` built the one `pg.Pool` from `DATABASE_URL`,
+which in this repository *is* the production Neon connection string
+(`.env.example`); no test-database variable existed. Every DB-gated test opened on
+`Boolean(process.env.DATABASE_URL)` and then wrote real rows — `so-test-*`,
+`inv-*`, `inv-cancel-*`, `inv-paid-*` and the `*@test.local` users → sellers →
+shops → products → orders. A plain `bun test` on any machine carrying the
+production URL therefore seeded production: a silent fallback, no guard, no CI
+test job. Closes the **root cause** of archived finding #7.
+
+**Guard (new).** `backend/db/test-database.ts` — pure metadata, never connects.
+`TEST_DATABASE_URL` is preferred; a hard throw refuses a production env marker
+(`NODE_ENV`/`APP_ENV`/`ENVIRONMENT`/`VERCEL_ENV` = `production`, `RENDER=true`), a
+Neon host (`*.neon.tech`), and the production `DATABASE_URL` endpoint. A Neon
+*branch* needs `TEST_DATABASE_ALLOW_NEON_BRANCH=1` and still may not be the
+production endpoint. `decideTestDatabase()` is **fatal or safe — never a fallback
+to production**; nothing configured means the DB-gated tests skip, as before.
+`resolveConnectionString()` is now the pool factory's only source of a connection
+string; loopback targets keep their own sslmode (a disposable Postgres has no
+TLS). Fail-fast: `backend/tests/setup.ts` via root `bunfig.toml` `[test] preload`
+aborts before any file loads, and `helpers/test-db.ts` asserts the same at import
+so `cd backend && bun test tests` is covered too. No message ever contains a
+credential — host/database only.
+
+**Fixtures.** All 11 DB-gated files gate on `hasTestDatabase()`
+(`backend/tests/helpers/test-db.ts`) instead of the raw check. **No filtering was
+added to `/api/shops` or the frontend** — the fix is at the database boundary.
+`helpers/purge.ts` unchanged.
+
+**Regression test.** `backend/tests/test-database-isolation.test.ts`, 32 cases:
+metadata parsing, production refusal, the no-fallback decision, the pool-factory
+path, sslmode, a real `bun` subprocess proving fail-closed, and source-level
+guards that the old gate cannot return.
+
+**CI (new).** `.github/workflows/test.yml` — disposable `postgres:16` service,
+`TEST_DATABASE_URL` on localhost, `db/run-sqleditor.sql` bootstrapped once, then
+typecheck + `bun test backend/tests`. It references **no secret at all**;
+`NEON_DATABASE_URL` is never a test database. Previously no test job existed.
+`upload-security.test.ts` now gates its 2 bucket-dependent cases on R2 config
+(`itR2`) rather than JWT alone (missing R2 credentials produced a 500, not the
+behaviour under test), and the "arbitrary namespace" confirm case accepts
+`R2_OBJECT_NOT_FOUND` — the storage check legitimately runs before the shop
+ownership query and reaches no write either way.
+
+**Verification (actually run).** Backend `tsc` clean; 4/4 apps typecheck clean.
+Against a disposable local PostgreSQL 14 cluster (created, bootstrapped from
+`db/run-sqleditor.sql` → 59 tables, then dropped and stopped): **491 pass / 2
+skip / 0 fail** (493 tests, 23 files; both skips are the R2-credential cases).
+Guard proof against the **real suite**: with a production-looking `DATABASE_URL`
+it exits **1** with **0 pass / 23 fail** and `REFUSING TEST AGAINST PRODUCTION
+DATABASE` — no test body runs; identical with `RENDER=true`; a disposable target
+exits 0. `git diff --check` clean.
+
+**Production read-only verification (no writes, no credentials read).**
+`GET /api/health` → 200 `{"status":"ok"}`. `GET /api/shops` → 200 with exactly
+one shop (“Eloop”, active); scanning the response for `so-test` / `inv-test` /
+`inv-cancel` / `inv-paid` / `test.local` / `test@` returns **0 matches**. **EXISTING
+PRODUCTION TEST DATA FOUND: none on this surface.** A `SELECT` cannot be run (no
+production credentials here, by design), so rows no public endpoint surfaces are
+unverified; **nothing was deleted or modified**.
+
+**Still open.** (a) Archived finding #7's data half — historical fixture rows
+remain an owner cleanup action. (b) `.env.example` is protected from the agent's
+edit tools, so its `TEST_DATABASE_URL` entry could not be added; the variable is
+documented in `INSTALLATION.md` and `.ai/context/testing.md` — add the line
+manually. (c) A dev machine carrying a production `DATABASE_URL` now fails the
+whole run instead of silently writing to production — the intended fail-closed
+behaviour; set `TEST_DATABASE_URL` to run tests.
+
+**Next task:** TASK 004B — production R2 authenticated round-trip.
+
+---
+
+**Housekeeping:** superseded §10 (TASK 002) moved to
+[`history/archive/AI_Handoff-2026-09-23-r2-media-verification.md`](history/archive/AI_Handoff-2026-09-23-r2-media-verification.md)
+on 2026-09-25; the file is ~45 KB against a ~40 KB soft ceiling (~55 KB is the
+hard limit where editing stops working). §9 **stays live on purpose** — §9.4/§9.5
+hold open items. Its closed evidence tables (§9.1–§9.3) are the next split if the
+room is needed: archive those, keep the open items.
