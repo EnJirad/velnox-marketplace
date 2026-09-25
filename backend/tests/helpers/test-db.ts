@@ -36,29 +36,37 @@ import { resolveTestDatabaseUrl, type DatabaseVerdict } from "../../db/database-
 export async function deleteFixtureUser(userId: string): Promise<void> {
   const { query } = await import("../../db/index.js");
 
-  const ordersOfUser = "SELECT id FROM orders WHERE user_id = $1";
   const sellersOfUser = "SELECT id FROM sellers WHERE user_id = $1";
-  const productsOfUser = `SELECT p.id FROM products p
-                            JOIN shops sh ON sh.id = p.shop_id
-                           WHERE sh.seller_id IN (${sellersOfUser})`;
+  const shopsOfUser = `SELECT id FROM shops WHERE seller_id IN (${sellersOfUser})`;
+  const productsOfUser = `SELECT id FROM products WHERE shop_id IN (${shopsOfUser})`;
+  // Orders the user owns OR that were placed against the user's fixture shops.
+  // `orders.shop_id` has no cascade either, and a *different* user's order can
+  // point at this user's shop (see the shared-order and review tests).
+  const ordersOfUser = `SELECT id FROM orders WHERE user_id = $1 OR shop_id IN (${shopsOfUser})`;
 
   // payments / refunds / order_items reference orders without a cascade.
   await query(`DELETE FROM refunds WHERE order_id IN (${ordersOfUser})`, [userId]);
   await query(`DELETE FROM payments WHERE order_id IN (${ordersOfUser})`, [userId]);
   await query(`DELETE FROM order_items WHERE order_id IN (${ordersOfUser})`, [userId]);
-  await query(`DELETE FROM orders WHERE user_id = $1`, [userId]);
+  await query(`DELETE FROM orders WHERE id IN (${ordersOfUser})`, [userId]);
 
   // order_items elsewhere that point at this user's fixture products.
   await query(`DELETE FROM order_items WHERE product_id IN (${productsOfUser})`, [userId]);
 
-  // Seller- and user-scoped tables with a nullable or absent cascade rule.
+  // Seller-, shop-, product- and user-scoped tables with no cascade rule.
   await query(`DELETE FROM commissions WHERE seller_id IN (${sellersOfUser})`, [userId]);
   await query(`DELETE FROM settlements WHERE seller_id IN (${sellersOfUser})`, [userId]);
-  await query(`DELETE FROM product_reviews WHERE shop_id IN (SELECT id FROM shops WHERE seller_id IN (${sellersOfUser}))`, [
-    userId,
-  ]);
-  await query(`DELETE FROM subscriptions WHERE user_id = $1`, [userId]);
-  await query(`DELETE FROM vrepeat_packages WHERE user_id = $1`, [userId]);
+  await query(`DELETE FROM product_reviews WHERE shop_id IN (${shopsOfUser})`, [userId]);
+  await query(
+    `DELETE FROM subscriptions
+      WHERE user_id = $1 OR seller_id IN (${sellersOfUser}) OR shop_id IN (${shopsOfUser}) OR product_id IN (${productsOfUser})`,
+    [userId],
+  );
+  await query(
+    `DELETE FROM vrepeat_packages
+      WHERE user_id = $1 OR shop_id IN (${shopsOfUser}) OR product_id IN (${productsOfUser})`,
+    [userId],
+  );
   await query(`DELETE FROM behavioral_events WHERE user_id = $1`, [userId]);
   await query(`DELETE FROM media WHERE uploaded_by = $1`, [userId]);
 
