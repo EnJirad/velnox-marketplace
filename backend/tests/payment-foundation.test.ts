@@ -39,7 +39,7 @@ import {
   stripeStatus,
 } from "../lib/payment-config.js";
 import { setupCartRoutes } from "../routes/cart.js";
-import { setupStripeRoutes } from "../routes/stripe.js";
+import { buildCheckoutLineItems, refundableMinorFor, sessionConfirmsPayment, setupStripeRoutes } from "../routes/stripe.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
 
 if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "test-secret-for-unit-tests-only-32chars!!";
@@ -615,7 +615,123 @@ describe("COD bypass is rejected server-side", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 8. Database-gated: webhook idempotency
+// 8. Price / total tampering — the charge is derived, never accepted
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Sum every line item the way Stripe would charge it, in minor units. */
+function lineItemsTotal(lines: ReturnType<typeof buildCheckoutLineItems>): number {
+  return lines.reduce((sum, line) => sum + line.price_data.unit_amount * line.quantity, 0);
+}
+
+describe("the charged amount comes from the order, not the request", () => {
+  const items = [
+    { product_name_snapshot: "Widget", quantity: 2, price: 25.5, image_url_snapshot: null },
+    { product_name_snapshot: "Gadget", quantity: 1, price: 49.0, image_url_snapshot: null },
+  ];
+
+  test("an order whose item lines already sum to the total is charged exactly that", () => {
+    // 2 × 25.50 + 1 × 49.00 = 100.00 from the order's own line prices.
+    const lines = buildCheckoutLineItems(items, 10000, "THB", "VNX-1");
+    expect(lineItemsTotal(lines)).toBe(10000);
+    expect(lines).toHaveLength(2);
+  });
+
+  test("a shipping/fee remainder becomes its own line so the sum still matches", () => {
+    // Items cover 100.00 but the authoritative total is 130.00 (30.00 shipping).
+    const lines = buildCheckoutLineItems(items, 13000, "THB", "VNX-1");
+    expect(lineItemsTotal(lines)).toBe(13000);
+    expect(lines).toHaveLength(3);
+    expect(lines[2].price_data.product_data.name).toBe("Shipping & fees");
+    expect(lines[2].price_data.unit_amount).toBe(3000);
+  });
+
+  test("a discount below the item sum collapses to one line for the authoritative total", () => {
+    // Items would total 100.00, but the order says 80.00 — Stripe must be asked
+    // for 80.00, never 100.00.
+    const lines = buildCheckoutLineItems(items, 8000, "THB", "VNX-1");
+    expect(lineItemsTotal(lines)).toBe(8000);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].price_data.unit_amount).toBe(8000);
+  });
+
+  test("no usable item lines still charges the authoritative total, not zero", () => {
+    const lines = buildCheckoutLineItems([], 15000, "THB", "VNX-9");
+    expect(lineItemsTotal(lines)).toBe(15000);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].price_data.product_data.name).toContain("VNX-9");
+  });
+
+  test("garbage quantity/price values cannot inflate or deflate the charge", () => {
+    const lineItems = [
+      { product_name_snapshot: "X", quantity: 999, price: 999999 }, // absurd but non-negative
+      { product_name_snapshot: "Neg", quantity: -5, price: 100 }, // rejected
+      { product_name_snapshot: "Zero", quantity: 0, price: 100 }, // rejected
+      { product_name_snapshot: "NaN", quantity: 1, price: "abc" }, // rejected
+      { product_name_snapshot: "Frac", quantity: 1.5, price: 100 }, // rejected
+    ];
+    // Only the first line survives; the remainder is reconciled to the total.
+    const lines = buildCheckoutLineItems(lineItems, 5000, "thb", "VNX-2");
+    expect(lineItemsTotal(lines)).toBe(5000);
+    expect(lines.every((l) => l.price_data.currency === "thb")).toBe(true);
+  });
+
+  test("the currency on every line is the order's currency", () => {
+    const lines = buildCheckoutLineItems(items, 12000, "THB", "VNX-3");
+    expect(lines.every((l) => l.price_data.currency === "thb")).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. Refundable amount arithmetic
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("refundableMinorFor", () => {
+  test("an untouched payment is fully refundable", () => {
+    expect(refundableMinorFor(100, 0)).toBe(10000);
+    expect(refundableMinorFor(100, null)).toBe(10000);
+    expect(refundableMinorFor(100, undefined)).toBe(10000);
+  });
+
+  test("a partially refunded payment exposes only the remainder", () => {
+    expect(refundableMinorFor(100, 30)).toBe(7000);
+  });
+
+  test("a fully refunded payment exposes nothing — over-refund is not representable", () => {
+    expect(refundableMinorFor(100, 100)).toBe(0);
+    expect(refundableMinorFor(100, 150)).toBe(0);
+  });
+
+  test("unusable input is zero, never a negative that could invert a comparison", () => {
+    expect(refundableMinorFor("abc", 0)).toBe(0);
+    expect(refundableMinorFor(null, 0)).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 10. PromptPay is delayed-notification — an event is not a payment
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("sessionConfirmsPayment (PromptPay async trap)", () => {
+  test("only an explicitly paid session confirms money was received", () => {
+    expect(sessionConfirmsPayment({ payment_status: "paid" })).toBe(true);
+  });
+
+  test("an unpaid completed session does NOT confirm payment", () => {
+    // This is the exact shape Stripe sends for PromptPay when the customer has
+    // scanned the QR but the bank has not settled: the session is completed,
+    // the money is not there. Marking the order paid here would be fake.
+    expect(sessionConfirmsPayment({ payment_status: "unpaid" })).toBe(false);
+  });
+
+  test("no_payment_required and a missing status never count as paid", () => {
+    expect(sessionConfirmsPayment({ payment_status: "no_payment_required" })).toBe(false);
+    expect(sessionConfirmsPayment({ payment_status: null })).toBe(false);
+    expect(sessionConfirmsPayment({})).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 11. Database-gated: webhook idempotency
 // ═══════════════════════════════════════════════════════════════════════════
 
 const describeDb = hasTestDatabase() ? describe : describe.skip;

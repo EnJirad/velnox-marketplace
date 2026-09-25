@@ -123,6 +123,114 @@ async function orderIdForPaymentIntent(paymentIntent: Stripe.PaymentIntent): Pro
   return row.rows[0]?.order_id ?? null;
 }
 
+// ─── Money reconciliation (pure — exported for tests) ──────────────────────
+
+/**
+ * Does this Checkout Session actually confirm that money was received?
+ *
+ * This is the single most important predicate in the PromptPay path. With
+ * delayed-notification methods (PromptPay), Stripe fires
+ * `checkout.session.completed` while `payment_status` is still `unpaid` — the
+ * customer has not yet paid. Treating the event itself as proof of payment would
+ * fabricate a success, so ONLY an explicitly `paid` session counts; every other
+ * value (`unpaid`, `no_payment_required`, a missing field) must wait for
+ * `checkout.session.async_payment_succeeded` / `payment_intent.succeeded`.
+ */
+export function sessionConfirmsPayment(session: { payment_status?: string | null }): boolean {
+  return session.payment_status === "paid";
+}
+
+/**
+ * Build the Stripe line items for an order such that the charged sum equals
+ * `expectedMinor` EXACTLY.
+ *
+ * `expectedMinor` always comes from `orders.total_amount`, which checkout
+ * computed server-side. The request body is never consulted, so a tampered
+ * `amount` / `total` / `price` / `quantity` in the payload cannot change what
+ * the customer is charged.
+ *
+ * The order's own item prices are used where they can represent the total; a
+ * positive remainder (shipping, fees) becomes its own line item; when the item
+ * lines cannot represent the total (a discount makes the remainder negative, or
+ * there are no usable lines at all) the whole session collapses to a single line
+ * for the authoritative total. Stripe is therefore never asked to charge a sum
+ * the backend did not compute.
+ */
+export function buildCheckoutLineItems(
+  items: ReadonlyArray<{
+    product_name_snapshot?: string | null;
+    product_name?: string | null;
+    image_url_snapshot?: string | null;
+    quantity?: unknown;
+    price?: unknown;
+  }>,
+  expectedMinor: number,
+  currency: string,
+  orderLabel: string,
+): Stripe.Checkout.SessionCreateParams.LineItem[] {
+  const code = currency.toLowerCase();
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+  let lineItemsMinor = 0;
+
+  for (const item of items) {
+    const unitAmount = toMinor(item.price);
+    const quantity = Number(item.quantity);
+    if (!Number.isFinite(unitAmount) || unitAmount <= 0) continue;
+    if (!Number.isInteger(quantity) || quantity <= 0) continue;
+    lineItems.push({
+      price_data: {
+        currency: code,
+        product_data: {
+          name: item.product_name_snapshot || item.product_name || "Product",
+          ...(item.image_url_snapshot ? { images: [item.image_url_snapshot] } : {}),
+        },
+        unit_amount: unitAmount,
+      },
+      quantity,
+    });
+    lineItemsMinor += unitAmount * quantity;
+  }
+
+  const remainder = expectedMinor - lineItemsMinor;
+  if (lineItems.length === 0 || remainder < 0) {
+    return [
+      {
+        price_data: {
+          currency: code,
+          product_data: { name: `Order ${orderLabel}` },
+          unit_amount: expectedMinor,
+        },
+        quantity: 1,
+      },
+    ];
+  }
+  if (remainder > 0) {
+    lineItems.push({
+      price_data: {
+        currency: code,
+        product_data: { name: "Shipping & fees" },
+        unit_amount: remainder,
+      },
+      quantity: 1,
+    });
+  }
+  return lineItems;
+}
+
+/**
+ * The amount still refundable on a payment, in minor units.
+ *
+ * Never negative, so an over-refund cannot be produced by arithmetic on a
+ * already-fully-refunded payment. The caller still compares the REQUESTED
+ * amount against this value and refuses anything larger.
+ */
+export function refundableMinorFor(paidAmount: unknown, alreadyRefunded: unknown): number {
+  const paid = toMinor(paidAmount);
+  const refunded = toMinor(alreadyRefunded ?? 0);
+  if (!Number.isFinite(paid) || !Number.isFinite(refunded)) return 0;
+  return Math.max(0, paid - refunded);
+}
+
 // ─── Payment / order synchronization ────────────────────────────────────────
 //
 // Payment and Order are separate domains with separate lifecycles. These
@@ -369,7 +477,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       // Delayed-notification methods (PromptPay) complete the session while it
       // is still UNPAID. Marking the order paid here would be a fabricated
       // success, so only a `paid` session is authoritative.
-      if (session.payment_status !== "paid") {
+      if (!sessionConfirmsPayment(session)) {
         await query(
           `UPDATE payments SET status = 'requires_action', updated_at = NOW()
             WHERE id = (
@@ -637,54 +745,12 @@ export function setupStripeRoutes(app: Express): void {
         [orderId],
       );
 
-      const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
-      let lineItemsMinor = 0;
-      for (const item of itemsResult.rows) {
-        const unitAmount = toMinor(item.price);
-        const quantity = Number(item.quantity);
-        if (!Number.isFinite(unitAmount) || unitAmount <= 0) continue;
-        if (!Number.isInteger(quantity) || quantity <= 0) continue;
-        const name = item.product_name_snapshot || item.product_name || "Product";
-        lineItems.push({
-          price_data: {
-            currency: currency.toLowerCase(),
-            product_data: {
-              name,
-              ...(item.image_url_snapshot ? { images: [item.image_url_snapshot] } : {}),
-            },
-            unit_amount: unitAmount,
-          },
-          quantity,
-        });
-        lineItemsMinor += unitAmount * quantity;
-      }
-
-      // The charge must equal the order total EXACTLY. A positive remainder
-      // (shipping / fees) becomes its own line item; if the item lines cannot
-      // represent the total (a discount, or no usable items at all) the session
-      // falls back to a single line for the authoritative total. Stripe is
-      // never asked to charge a sum the backend did not compute.
-      const remainder = expectedMinor - lineItemsMinor;
-      if (lineItems.length === 0 || remainder < 0) {
-        lineItems.length = 0;
-        lineItems.push({
-          price_data: {
-            currency: currency.toLowerCase(),
-            product_data: { name: `Order ${order.order_number || orderId}` },
-            unit_amount: expectedMinor,
-          },
-          quantity: 1,
-        });
-      } else if (remainder > 0) {
-        lineItems.push({
-          price_data: {
-            currency: currency.toLowerCase(),
-            product_data: { name: "Shipping & fees" },
-            unit_amount: remainder,
-          },
-          quantity: 1,
-        });
-      }
+      const lineItems = buildCheckoutLineItems(
+        itemsResult.rows,
+        expectedMinor,
+        currency,
+        order.order_number || orderId,
+      );
 
       // ── Idempotency layer 1: the request key ────────────────────────────
       // One durable row per (user, scope, request key). A retry with the same
@@ -765,7 +831,22 @@ export function setupStripeRoutes(app: Express): void {
               res.json({ success: true, data });
               return;
             }
-            reusable = existing.status === "open";
+            // An OPEN session for a DIFFERENT method must never be reused.
+            // Handing back its URL would charge the method the customer did not
+            // choose while the response claimed the one they did — and because
+            // the partial unique index still saw that row as active, the new
+            // session could not be inserted either, so the wrong session won by
+            // default. Abandon it explicitly instead.
+            if (existing.status === "open") {
+              await s.checkout.sessions.expire(existing.id).catch(() => {
+                // Best-effort: even if Stripe refuses to expire it, the row is
+                // marked failed below, so nothing points the customer at it.
+              });
+              console.log(
+                `[stripe] order ${orderId} abandoned an open '${existing.metadata?.method ?? "unknown"}' session in favour of ${method}`,
+              );
+            }
+            reusable = false;
           } catch (err) {
             console.warn(
               `[stripe] could not retrieve session ${activeSessionId} for order ${orderId}:`,
@@ -850,7 +931,14 @@ export function setupStripeRoutes(app: Express): void {
         if (winnerSessionId && winnerSessionId !== session.id) {
           try {
             const winnerSession = await s.checkout.sessions.retrieve(winnerSessionId);
-            if (winnerSession.status === "open" && winnerSession.url) {
+            // Only hand back the winner when it is open AND was opened for the
+            // method this request asked for. Otherwise the customer would be
+            // charged by a rail they did not select.
+            if (
+              winnerSession.status === "open" &&
+              winnerSession.url &&
+              winnerSession.metadata?.method === method
+            ) {
               await s.checkout.sessions.expire(session.id).catch(() => {
                 // Best-effort cleanup; a leftover open session is unusable
                 // because the customer is only ever shown the winner's URL.
@@ -873,10 +961,17 @@ export function setupStripeRoutes(app: Express): void {
               return;
             }
           } catch {
-            /* fall through to the error path below */
+            /* fall through to the conflict below */
           }
         }
-        throw err;
+        // The race winner is unusable for this method or state. Never fabricate
+        // a success: discard our own session and ask the client to retry.
+        await s.checkout.sessions.expire(session.id).catch(() => {
+          /* best-effort cleanup */
+        });
+        console.warn(`[stripe] concurrent checkout for order ${orderId} could not reuse the winning session`);
+        fail(res, 409, "DUPLICATE_PAYMENT_IN_PROGRESS", "Your payment is being prepared. Please try again.");
+        return;
       }
 
       await query(
@@ -1045,7 +1140,7 @@ export function setupStripeRoutes(app: Express): void {
       const body = (req.body ?? {}) as Record<string, unknown>;
 
       const paymentResult = await query(
-        `SELECT id, order_id, status, amount, currency, refunded_amount, provider_payment_id
+        `SELECT id, order_id, status, amount, currency, refunded_amount, refund_status, provider_payment_id
            FROM payments
           WHERE order_id = $1 AND provider = 'stripe'
           ORDER BY created_at DESC LIMIT 1`,
@@ -1067,10 +1162,9 @@ export function setupStripeRoutes(app: Express): void {
         return;
       }
 
-      const paidMinor = toMinor(payment.amount);
       const alreadyRefundedMinor = toMinor(payment.refunded_amount ?? 0);
-      const refundableMinor = paidMinor - alreadyRefundedMinor;
-      if (!Number.isFinite(refundableMinor) || refundableMinor <= 0) {
+      const refundableMinor = refundableMinorFor(payment.amount, payment.refunded_amount ?? 0);
+      if (refundableMinor <= 0) {
         fail(res, 409, "NOTHING_TO_REFUND", "This payment has already been fully refunded.");
         return;
       }
@@ -1086,6 +1180,47 @@ export function setupStripeRoutes(app: Express): void {
       if (requestedMinor > refundableMinor) {
         // Over-refund is rejected before Stripe is called.
         fail(res, 400, "REFUND_EXCEEDS_REFUNDABLE", "The refund amount exceeds the refundable amount.");
+        return;
+      }
+
+      // Duplicate-refund short circuit. A request that exactly matches an
+      // in-flight or already-succeeded refund for this payment REPLAYS the
+      // provider refund instead of issuing another one.
+      //
+      // This matters because `payments.refunded_amount` only counts
+      // `succeeded` rows: while a refund is still pending confirmation, a retry
+      // or a double-click sees the same refundable position and would otherwise
+      // look like a legitimately new refund. Together with the deterministic
+      // Stripe idempotency key below, money can only ever move once per
+      // (payment, cumulative position, amount).
+      const duplicate = await query(
+        `SELECT id, provider_refund_id, status, amount
+           FROM refunds
+          WHERE payment_id = $1 AND amount = $2 AND status IN ('pending', 'succeeded')
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [payment.id, requestedMinor / 100],
+      );
+      if (duplicate.rows.length > 0) {
+        const existing = duplicate.rows[0];
+        res.json({
+          success: true,
+          data: {
+            orderId,
+            paymentId: payment.id,
+            refundId: existing.id,
+            providerRefundId: existing.provider_refund_id,
+            // The provider's last known refund status; our record stays
+            // `pending` until synced refund rows prove the money moved.
+            providerStatus: existing.status === "succeeded" ? "succeeded" : "pending",
+            amount: Number(existing.amount),
+            currency: payment.currency,
+            refundableRemaining: (refundableMinor - requestedMinor) / 100,
+            refundedAmount: Number(payment.refunded_amount ?? 0),
+            refundStatus: payment.refund_status ?? null,
+            duplicate: true,
+          },
+        });
         return;
       }
 
