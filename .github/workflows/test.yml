@@ -89,12 +89,36 @@ jobs:
         run: |
           # A production-looking target must abort instead of writing. The host
           # is a non-existent .neon.tech name — nothing is ever connected to.
-          if NODE_ENV=test \
+          #
+          # `TEST_DATABASE_URL` is a JOB-LEVEL variable (the disposable
+          # container bootstrapped above) and `decideTestDatabase()` deliberately
+          # prefers it over DATABASE_URL — that precedence is pinned by
+          # `backend/tests/test-database-isolation.test.ts`. With it still set,
+          # the production-looking DATABASE_URL below is never consulted, the
+          # guard correctly stays silent, and this check failed for the wrong
+          # reason. Clear it so the probe really is "a test process whose only
+          # configured database is production", which is the shape that must be
+          # refused.
+          if env -u TEST_DATABASE_URL \
+             NODE_ENV=test \
              DATABASE_URL="postgresql://u:p@ep-ci-guard-check.us-east-2.aws.neon.tech/velnox?sslmode=require" \
              bun -e 'await import("./backend/db/index.ts")' 2>&1 | grep -q "REFUSING TEST AGAINST PRODUCTION DATABASE"; then
             echo "✅ Production database refused as expected."
           else
             echo "❌ The guard did not refuse a production database."
+            exit 1
+          fi
+
+          # The other half of the same contract: a disposable test database must
+          # still be ACCEPTED. Asserting only the refusal above would also pass
+          # if the guard had started refusing everything.
+          if out=$(NODE_ENV=test \
+               DATABASE_URL="postgresql://u:p@ep-ci-guard-check.us-east-2.aws.neon.tech/velnox?sslmode=require" \
+               bun -e 'await import("./backend/db/index.ts")' 2>&1); then
+            echo "✅ Disposable test database accepted as expected."
+          else
+            echo "❌ The guard refused the disposable test database."
+            printf '%s\n' "$out"
             exit 1
           fi
 

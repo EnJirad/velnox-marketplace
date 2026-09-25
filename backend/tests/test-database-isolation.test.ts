@@ -282,6 +282,55 @@ describe("test database guard — a real test process fails closed", () => {
     const result = runBunProbe(PROBE, {});
     expect(result.exitCode).toBe(0);
   });
+
+  test("CI-shaped env: safe TEST_DATABASE_URL + production DATABASE_URL → ACCEPTED, no refusal", () => {
+    // The exact shape GitHub Actions runs the guard probe in: the job-level
+    // `env` makes TEST_DATABASE_URL (the disposable container) visible while
+    // DATABASE_URL looks production. `decideTestDatabase()` prefers
+    // TEST_DATABASE_URL **by design**, so this must NOT be refused.
+    //
+    // This pins the root cause of the CI failure: a check that greps for the
+    // refusal message in this shape can never see it, and then wrongly reports
+    // that the guard stopped working.
+    const result = runBunProbe(POOL_PROBE, {
+      TEST_DATABASE_URL: DISPOSABLE,
+      DATABASE_URL: PROD_NEON,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(outputOf(result)).toBe("");
+  });
+
+  test("Neon branch + documented opt-in is ACCEPTED, while the production endpoint stays REFUSED", () => {
+    const optIn = { [ALLOW_NEON_BRANCH_KEY]: "1" };
+
+    // Case D: a non-production Neon branch is allowed only with the opt-in.
+    const branch = runBunProbe(PROBE, {
+      TEST_DATABASE_URL: PROD_NEON_BRANCH,
+      DATABASE_URL: PROD_NEON,
+      ...optIn,
+    });
+    expect(branch.exitCode).toBe(0);
+    expect(outputOf(branch)).toBe("");
+
+    // Case C under the same opt-in: the production endpoint itself is still
+    // refused. The opt-in may never become a way to reach production.
+    const productionEndpoint = runBunProbe(PROBE, {
+      TEST_DATABASE_URL: PROD_NEON,
+      DATABASE_URL: PROD_NEON,
+      ...optIn,
+    });
+    expect(outputOf(productionEndpoint)).toContain("REFUSING TEST AGAINST PRODUCTION DATABASE");
+    expect(productionEndpoint.exitCode).not.toBe(0);
+  });
+
+  test("the same Neon branch without the opt-in is REFUSED", () => {
+    const result = runBunProbe(PROBE, {
+      TEST_DATABASE_URL: PROD_NEON_BRANCH,
+      DATABASE_URL: PROD_NEON,
+    });
+    expect(outputOf(result)).toContain("REFUSING TEST AGAINST PRODUCTION DATABASE");
+    expect(result.exitCode).not.toBe(0);
+  });
 });
 
 // ─── Source level: the old gate must not come back ─────────────────────────
@@ -327,5 +376,36 @@ describe("test database guard — no test may gate on the raw DATABASE_URL check
   test("the gate helper fails fast at import time", () => {
     const source = readFileSync(join(testsDir, "helpers", "test-db.ts"), "utf8");
     expect(source).toContain("assertTestDatabaseIsSafe()");
+  });
+});
+
+// ─── Source level: the CI probe must model the refusal scenario ─────────────
+
+describe("test database guard — the CI workflow actually exercises the refusal", () => {
+  const workflow = readFileSync(join(repoRoot, ".github", "workflows", "test.yml"), "utf8");
+
+  test("the guard step still greps for the documented refusal message", () => {
+    expect(workflow).toContain("REFUSING TEST AGAINST PRODUCTION DATABASE");
+  });
+
+  test("the guard probe unsets the job-level TEST_DATABASE_URL before running", () => {
+    // ROOT CAUSE REGRESSION. `TEST_DATABASE_URL` is a job-level variable, and
+    // `decideTestDatabase()` prefers it over DATABASE_URL. A probe that leaves
+    // it set never consults the production-looking DATABASE_URL, prints no
+    // refusal, and the `grep -q` fails — so CI reports "the guard did not
+    // refuse" when the guard behaved correctly. Clearing it is what makes the
+    // step model "a test process whose only configured database is production".
+    expect(workflow).toContain("env -u TEST_DATABASE_URL");
+  });
+
+  test("the probe uses a reserved non-existent Neon host, never the real production endpoint", () => {
+    // The guard probe must never point at actual production Neon metadata.
+    expect(workflow).toContain("ep-ci-guard-check.us-east-2.aws.neon.tech");
+  });
+
+  test("the step also asserts the disposable target is still accepted", () => {
+    // Asserting only the refusal would also pass if the guard had started
+    // refusing everything, which would green-light a broken guard.
+    expect(workflow).toContain("Disposable test database accepted as expected");
   });
 });
