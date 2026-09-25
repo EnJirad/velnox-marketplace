@@ -92,7 +92,8 @@ const RELEASABLE_STATUSES = [
  *     quantities.
  *   • Idempotent — called twice on the same order restores stock at
  *     most once, enforced by the `inventory_released` flag on the order
- *     row (set atomically inside the same transaction).
+ *     row (claimed with a guarded UPDATE inside the same transaction, so
+ *     concurrent callers serialize instead of both restoring).
  *   • Transactional — the flag update and the stock mutations happen
  *     inside the caller's transaction; if the caller rolls back, the
  *     flag is never set and stock is never restored.
@@ -127,11 +128,25 @@ export async function releaseOrderInventory(
     return false;
   }
 
-  // 4. Mark as released (atomic with stock updates below).
-  await client.query(
-    `UPDATE orders SET inventory_released = true, updated_at = NOW() WHERE id = $1`,
+  // 4. Claim the release atomically (same guarded-UPDATE pattern as
+  //    reserveInventoryStock). The read in step 1/2 is only a fast path —
+  //    two concurrent transactions can both read `false` before either
+  //    writes, so it cannot make the release idempotent on its own. The
+  //    `inventory_released = false` predicate is what serializes them:
+  //    the loser blocks on the row lock, then re-evaluates the predicate
+  //    against the committed row under READ COMMITTED, matches 0 rows and
+  //    must NOT touch stock (the variant branch would otherwise credit the
+  //    same units twice).
+  const claim = await client.query(
+    `UPDATE orders SET inventory_released = true, updated_at = NOW()
+     WHERE id = $1 AND inventory_released = false
+     RETURNING id`,
     [orderId],
   );
+  if (claim.rows.length === 0) {
+    console.log(`[inventory] releaseOrderInventory: order ${orderId} already released — skipping`);
+    return false;
+  }
 
   // 5. Release stock for every item in the order.
   const items = await client.query(
