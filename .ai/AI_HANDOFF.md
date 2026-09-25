@@ -615,73 +615,32 @@ behaviour; set `TEST_DATABASE_URL` to run tests.
 **Overall: BLOCKED at the account hard gate.** Every read-only / unauthenticated /
 code-level check passed; the authenticated production chain (presign → R2 PUT →
 confirm/save → media row → API read → UI → replace → delete → cleanup) **was not
-executed at all** and must not be reported as PASS. No production write of any
-kind was made. No production DB was touched. No credential was read.
+executed at all** and must not be reported as PASS. **Zero production writes**,
+no production DB touched, no credential read.
 
-**Environment + auth/CSRF boundary (verified, read-only).** API
-`https://velnox-api.onrender.com` (`docs/DEPLOYMENT.md:16`) — `/api/health` 200,
-`/api/health/r2` `{configured:true,bucket:true,verify:true}` (a real
-`ListObjectsV2`), `/api/shops` 200; responses carry `server: cloudflare` +
-`rndr-id`, so the host is the Render service. **TASK 003 is live:** removed
-`PATCH /api/customer/profile-image` → **404**. All six canonical media endpoints
-→ **401** without a cookie; untrusted `Origin` → **403**; unknown route → 404.
-Re-probed 14× at two cadences: identical. Nothing was written.
+**Why BLOCKED.** No safe authorized production test account exists; this
+workspace holds **no** `DATABASE_URL`, `TEST_DATABASE_URL`, `JWT_SECRET` or R2
+credential, and the only login is Google OAuth in a browser. Minting a production
+user by SQL, reusing a real account, or fabricating a JWT are forbidden → steps
+9–23 are **BLOCKED / NOT TESTED**, not failed. **UI/browser E2E has still never
+been run from this environment** → `UI NOT VERIFIED`.
 
-**Transient production anomaly (observed, unreproducible, NOT attributable to
-TASK 003).** For a ~4-minute window (from ~16:21Z), **every** POST/PATCH with a
-JSON body returned `500 INTERNAL_ERROR` *including a non-existent route*, while
-GETs on the same host stayed 200. Identical requests returned the correct
-401/404 minutes later, and 8 rapid + 6 spaced repetitions afterwards were all
-correct. A 500 on an unmatched route means an exception in the pre-routing
-middleware chain, not a media-code fault; the likely window is a Render
-cold-start / rollout. Recorded as an **open observation, no root cause proven**
-— production logs are not reachable from this workspace.
+**Still-live observation:** a ~4-minute window on 2026-09-25 where every
+POST/PATCH with a JSON body returned 500 (even on a non-existent route) while
+GETs stayed 200 — never reproduced, **no root cause proven**, likely a Render
+cold-start. Production logs are unreachable from this workspace.
 
-**Why BLOCKED.** Stop condition #1/#2/#3 of the task brief: no safe authorized
-production test account exists and none was supplied. This workspace holds **no**
-`DATABASE_URL`, `TEST_DATABASE_URL`, `JWT_SECRET` or R2 credential (verified),
-and the system's only login is Google OAuth in a browser. Minting a production
-user by SQL, reusing a real customer/seller/admin, or fabricating a JWT are all
-forbidden — so steps 9–23 (synthetic image, purpose allowlist *at the endpoint*,
-presign, R2 PUT, confirm/save, media row, API read, UI, replace, delete, cleanup,
-ownership boundary, failure path) are **BLOCKED / NOT TESTED**, not failed.
+**Verified (read-only):** `/api/health` 200, `/api/health/r2`
+`{configured:true,bucket:true,verify:true}`, `/api/shops` 200; removed
+`PATCH /api/customer/profile-image` → 404; six canonical media endpoints → 401
+without a cookie; untrusted `Origin` → 403.
 
 **Provision to unblock:** an owner-provisioned production test account (a
-dedicated customer, no real orders/payments, no real seller data) plus a live
-browser for the UI half. UI/browser E2E has still **never** been run from this
-environment → `UI NOT VERIFIED`.
+dedicated customer, no real orders/payments) plus a live browser.
 
-**TASK 004A isolation — PASS (re-proved, not assumed).** Fail-closed against the
-real suite: `NODE_ENV=test DATABASE_URL=postgresql://…@*.neon.tech/…`
-`bun test backend/tests` → `REFUSING TEST AGAINST PRODUCTION DATABASE`,
-`code: TEST_DATABASE_REFUSED`, **0 pass / 23 fail**, no test body executed
-(23 files errored at import; Bun exits 2 here — the §13 note says 1). Normal run
-with nothing configured: **451 pass / 42 skip / 0 fail** (493 tests, 23 files).
-
-**Validation actually run (no code change — docs only).** Backend `bunx tsc
---noEmit` → clean; `bun run typecheck` → 4/4 apps exit 0; `git diff --check` →
-clean; no DB change (`db/` untouched).
-
-**Step 24 regression search — PASS (source).** No `PATCH … profile-image` route
-and no `patchUserImage` caller anywhere; the only hits are the removal NOTE in
-`backend/routes/upload.ts:658`, the guard test, and two comment references. No
-caller sends a `purpose=` that presign does not allowlist. The canonical chain
-stays presign → R2 PUT → confirm/save; no `client image → user.avatar` path.
-
-**10 MB boundary: CODE-ONLY** — never exercised against production, and this
-pass did not change that. **Every other checklist item that says PASS above is
-read-only or code-level; no production E2E claim is made anywhere.**
-
-**Completion pass (2026-09-25, second pass) — re-verified, still BLOCKED.**
-Committed `c7e545f`; tree clean, no app/backend/db change since (only `.ai/`
-docs). Hard gate unchanged (no `DATABASE_URL`, `TEST_DATABASE_URL`, `JWT_SECRET`
-or R2 credential here; the only login is Google OAuth in a browser) → the
-authenticated chain remains **BLOCKED / NOT TESTED**, **zero production writes**.
-Re-probed live and still correct (all of the paragraph above) with **no 500s**
-this pass; `/api/health` took **32 s**, consistent with the transient-500 window
-being a Render cold start (still not proven). Isolation re-check fail-closed
-(0 pass / 23 fail, no test body executed); normal suite **451 pass / 42 skip / 0
-fail**; backend + 4-app typecheck clean; `git diff --check` clean.
+**Full evidence narrative (both passes) archived** →
+[`history/archive/AI_Handoff-2026-09-25-t004b-r2-authenticated.md`](history/archive/AI_Handoff-2026-09-25-t004b-r2-authenticated.md)
+— moved 2026-09-25 to stay under the ~55 KB edit limit.
 
 ---
 
@@ -877,11 +836,74 @@ nowhere outside the code — absent from `.env.example`, `docs/ENVIRONMENT.md`,
 
 ---
 
+---
+
+## 17. CI guard fix — "Verify the guard refuses production" (2026-09-25)
+
+**The failure.** `.github/workflows/test.yml` step *Verify the guard refuses
+production* failed on every `main` run since the workflow landed. Real run
+`36172693661` (for `68197ab`), job `Typecheck + tests (disposable PostgreSQL)`,
+step 8 → `❌ The guard did not refuse a production database.` → exit 1. Because
+`bash -e` aborts the job, **steps 9 "Run the test suite" and 10 were SKIPPED** —
+CI had not been running the test suite at all on those commits.
+
+**Root cause — the check contradicted a guard rule that is deliberately pinned.**
+`TEST_DATABASE_URL` is a **job-level `env:`** (the disposable container), so it
+was visible to every step — the run log prints it in the step's own `env:` block.
+`decideTestDatabase()` **prefers `TEST_DATABASE_URL` over `DATABASE_URL` on
+purpose**, and `test-database-isolation.test.ts` already asserts "an explicit
+TEST_DATABASE_URL is preferred and wins over DATABASE_URL". The probe injected a
+production-looking `DATABASE_URL`, but with the job variable still set the guard
+never consulted it, correctly resolved to the disposable target, and printed
+nothing — so `grep -q` matched nothing and the step reported a broken guard. **The
+guard was correct; the CI assertion was wrong.** (GitHub runs `shell:
+/usr/bin/bash -e {0}` — no `pipefail` — so the pipeline was not a factor.)
+
+Reproduced locally: identical command + job env → **empty output, exit 0**.
+Negative control (variable cleared) → `REFUSING TEST AGAINST PRODUCTION DATABASE`,
+exit 1.
+
+**Fix — CI wiring only; `backend/db/test-database.ts` untouched.** The probe now
+clears the job variable with `env -u TEST_DATABASE_URL`, so it really models
+"a test process whose only configured database is production". The step also
+gains the other half of the contract: a second assertion that the disposable
+target is still **ACCEPTED**, so it can no longer pass if the guard simply starts
+refusing everything.
+
+**Files changed (2, both CI-guard).** `.github/workflows/test.yml` (+26/−1) and
+`backend/tests/test-database-isolation.test.ts` (+80). **Payment code untouched**
+— `backend/routes/stripe.ts`, `backend/lib/payment-config.ts`,
+`db/migrations/047_payment_foundation.sql`, `backend/routes/cart.ts` and both
+schema files verified unchanged; no schema change, no `db/run-update.sql`.
+
+**Regression coverage — 7 new tests (39 pass / 0 fail in the file).** Subprocess:
+(CI-shaped env: safe `TEST_DATABASE_URL` + production `DATABASE_URL` → **ACCEPTED**,
+pinning the root cause), (D: Neon branch + `TEST_DATABASE_ALLOW_NEON_BRANCH=1` →
+**ACCEPTED**; same opt-in on the production endpoint → **REFUSED**; branch without
+opt-in → **REFUSED**). Source-level: the workflow must grep the documented refusal,
+must contain `env -u TEST_DATABASE_URL`, must use only the reserved
+`ep-ci-guard-check…neon.tech` host (never real production Neon), and must still
+assert the disposable target is accepted.
+
+**Full verification actually run (no production DB — nothing configured here,
+so DB-gated suites skip as designed).** backend `bunx tsc --noEmit` **exit 0** ·
+`bun run typecheck` **4/4 exit 0** · `bun test backend/tests` **518 pass / 43 skip /
+0 fail** · payment tests **59 pass / 1 skip / 0 fail** · schema-drift +
+migration-numbering + security-hardening **75 pass / 0 fail** · `i18n:check`
+**1295/1295/1295** · `db/schema.sql` ≡ `db/run-sqleditor.sql` · no
+`db/run-update.sql` · `git diff --check` clean · no secrets in the diff.
+
+**Not claimed.** Stripe Test Mode E2E is still **BLOCKED** (no credential) and
+production payment readiness is **NOT claimed** — §16 stands unchanged.
+
+---
+
 **Housekeeping:** superseded §8 (workspace move), §10 (TASK 002) and §9.1–§9.3
 (TASK 001 closed evidence) are in [`history/archive/`](history/archive/) as of
 2026-09-25; the §12 docs-consolidation record was archived the same day when §15
-needed the room, and §5's closed 2026-09-22 pass narratives were archived when §16
-needed it. The file is now ~50 KB against a ~40 KB soft ceiling (~55 KB is the hard
-limit where editing stops working). §9 **stays live on purpose** — §9.4/§9.5 hold
-open items. Next split if room is needed: §2 once its live content is mirrored into
-`.ai/context/`. Keep §6 (gaps) and the live §9 items.
+needed the room, §5's closed 2026-09-22 pass narratives moved when §16 needed it,
+and §14's TASK 004B evidence narrative moved when §17 needed it (its BLOCKED state
+stays live). The file is now ~50 KB against a ~40 KB soft ceiling (~55 KB is the
+hard limit where editing stops working). §9 **stays live on purpose** — §9.4/§9.5
+hold open items. Next split if room is needed: §2 once its live content is mirrored
+into `.ai/context/`. Keep §6 (gaps) and the live §9 items.
