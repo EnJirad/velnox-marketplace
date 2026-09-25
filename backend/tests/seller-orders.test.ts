@@ -8,7 +8,7 @@
  * order contains products from two different sellers.
  */
 import { describe, expect, test } from "bun:test";
-import { integrationTest } from "./helpers/test-db.js";
+import { deleteFixtureUser, integrationTest } from "./helpers/test-db.js";
 import {
   canTransitionOrderStatus,
   fetchSellerItemsForOrders,
@@ -171,6 +171,9 @@ describe("seller order ownership scoping (integration)", () => {
 
       const sellerA = await mkSeller(sellerAUser, "a");
       const sellerB = await mkSeller(sellerBUser, "b");
+      // Created before the assertions so cleanup can always reach every fixture.
+      const otherUser = await mkUser(`${tag}-c@test.local`);
+      const other = await mkSeller(otherUser, "c");
 
       try {
         // One order containing items from BOTH sellers' shops.
@@ -197,12 +200,12 @@ describe("seller order ownership scoping (integration)", () => {
         expect(itemsForB[orderId]![0]!.sellerId).toBe(sellerB.sellerId);
 
         // An unrelated seller sees nothing.
-        const otherUser = await mkUser(`${tag}-c@test.local`);
-        const other = await mkSeller(otherUser, "c");
         const itemsForC = await fetchSellerItemsForOrders([orderId], other.sellerId);
         expect(itemsForC[orderId] ?? []).toHaveLength(0);
       } finally {
-        await query(`DELETE FROM users WHERE id = ANY($1)`, [[customerId, sellerAUser, sellerBUser]]);
+        for (const id of [customerId, sellerAUser, sellerBUser, otherUser]) {
+          await deleteFixtureUser(id);
+        }
       }
     },
     30_000,

@@ -14,7 +14,7 @@
  *  • Cancellation restore still works
  */
 import { describe, expect, test } from "bun:test";
-import { integrationTest } from "./helpers/test-db.js";
+import { deleteFixtureUser, integrationTest } from "./helpers/test-db.js";
 import {
   MAX_ORDER_QUANTITY,
   releaseOrderInventory,
@@ -127,7 +127,7 @@ describe("non-variant inventory reservation (integration)", () => {
       expect(after.rows[0].quantity).toBe(10);
       expect(after.rows[0].reserved).toBe(1);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await deleteFixtureUser(userId);
     }
   });
 
@@ -148,7 +148,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await deleteFixtureUser(userId);
     }
   });
 
@@ -186,7 +186,7 @@ describe("non-variant inventory reservation (integration)", () => {
         expect(after.rows[0].quantity).toBe(1);
         expect(after.rows[0].reserved).toBe(1);
       } finally {
-        await query(`DELETE FROM users WHERE id = $1`, [userId]);
+        await deleteFixtureUser(userId);
       }
     },
     30_000,
@@ -213,7 +213,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await deleteFixtureUser(userId);
     }
   });
 
@@ -257,7 +257,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after2.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await deleteFixtureUser(userId);
     }
   });
 
@@ -295,7 +295,7 @@ describe("non-variant inventory reservation (integration)", () => {
       expect(after.rows[0].quantity).toBe(10);
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await deleteFixtureUser(userId);
     }
   });
 
@@ -319,7 +319,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await deleteFixtureUser(userId);
     }
   });
 
@@ -349,7 +349,7 @@ describe("non-variant inventory reservation (integration)", () => {
       );
       expect(after.rows[0].reserved).toBe(0);
     } finally {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]);
+      await deleteFixtureUser(userId);
     }
   }, 30_000);
 });

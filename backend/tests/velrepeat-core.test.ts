@@ -8,7 +8,7 @@
  * run row and one order.
  */
 import { describe, expect, test } from "bun:test";
-import { integrationTest } from "./helpers/test-db.js";
+import { deleteFixtureUser, integrationTest } from "./helpers/test-db.js";
 import {
   calculateNextRunAt,
   currentPriceOf,
@@ -235,7 +235,9 @@ describe("scheduler idempotency (integration)", () => {
       } finally {
         // ── Cleanup (cascade deletes) ──────────────────────────────────
         await query(`DELETE FROM velrepeat_plans WHERE id = $1`, [planId]);
-        await query(`DELETE FROM users WHERE id = $1`, [userId]);
+        // `orders.user_id` has no cascade, so the user delete alone would throw
+        // as soon as the scheduler created an order.
+        await deleteFixtureUser(userId);
       }
     },
     30_000,

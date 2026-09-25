@@ -10,8 +10,8 @@
  * Integration tests (DB-gated, skipped without DATABASE_URL) verify the
  * real queries behind the new endpoints.
  */
-import { describe, expect, test } from "bun:test";
-import { integrationTest } from "./helpers/test-db.js";
+import { afterEach, describe, expect, test } from "bun:test";
+import { deleteFixtureUser, integrationTest } from "./helpers/test-db.js";
 import { readFileSync } from "fs";
 import { join } from "path";
 import {
@@ -160,6 +160,13 @@ describe("P1 #4 migration + schema sync", () => {
 describe("seller goals + center queries (integration)", () => {
   const testFn = integrationTest;
 
+  // These tests used to leave every seeded user, seller, shop, product and order
+  // behind. Clean them up like every other suite now does.
+  const seeded: string[] = [];
+  afterEach(async () => {
+    for (const id of seeded.splice(0)) await deleteFixtureUser(id);
+  });
+
   async function seedSeller() {
     const { query } = await import("../db/index.js");
     const tag = Date.now() + "-" + Math.random().toString(36).slice(2, 8);
@@ -168,6 +175,7 @@ describe("seller goals + center queries (integration)", () => {
       "P1#4 Seller",
     ]);
     const userId = user.rows[0].id as string;
+    seeded.push(userId);
     const seller = await query("INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id", [userId]);
     const sellerId = seller.rows[0].id as string;
     const shop = await query("INSERT INTO shops (seller_id, name, slug) VALUES ($1, $2, $3) RETURNING id", [
@@ -176,7 +184,14 @@ describe("seller goals + center queries (integration)", () => {
       `p14-shop-${tag}`,
     ]);
     const shopId = shop.rows[0].id as string;
-    return { query, userId, sellerId, shopId };
+    // `order_items.product_id` is NOT NULL and references products, so an order
+    // line always needs a real product behind it.
+    const product = await query(
+      `INSERT INTO products (shop_id, name, slug, price, status) VALUES ($1, $2, $3, 500, 'published') RETURNING id`,
+      [shopId, "P1#4 Product", `p14-product-${tag}`],
+    );
+    const productId = product.rows[0].id as string;
+    return { query, userId, sellerId, shopId, productId };
   }
 
   testFn("goal CRUD round-trip (create → progress → update → delete)", async () => {
@@ -201,7 +216,7 @@ describe("seller goals + center queries (integration)", () => {
   });
 
   testFn("income report math over real orders (completed + cancelled)", async () => {
-    const { query, userId, sellerId, shopId } = await seedSeller();
+    const { query, userId, sellerId, shopId, productId } = await seedSeller();
 
     const mkOrder = async (status: string) => {
       const o = await query(
@@ -211,8 +226,8 @@ describe("seller goals + center queries (integration)", () => {
       const orderId = o.rows[0].id as string;
       await query(
         `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, quantity, price, subtotal)
-         VALUES ($1, NULL, $2, 'Item', 'Item', 2, 500, 1000)`,
-        [orderId, shopId],
+         VALUES ($1, $2, $3, 'Item', 'Item', 2, 500, 1000)`,
+        [orderId, productId, shopId],
       );
       return orderId;
     };
@@ -237,7 +252,11 @@ describe("seller goals + center queries (integration)", () => {
   testFn("market overview aggregates match seeded data", async () => {
     const { query } = await import("../db/index.js");
     const tag = Date.now() + "-" + Math.random().toString(36).slice(2, 8);
-    await query("INSERT INTO users (email, name, role) VALUES ($1, 'C', 'customer')", [`p14-cust-${tag}@test.local`]);
+    const customer = await query(
+      "INSERT INTO users (email, name, role) VALUES ($1, 'C', 'customer') RETURNING id",
+      [`p14-cust-${tag}@test.local`],
+    );
+    seeded.push(customer.rows[0].id as string);
     await query("INSERT INTO categories (slug, name) VALUES ($1, 'Test Cat') ON CONFLICT (slug) DO NOTHING", [`cat-${tag}`]);
 
     const counts = await query(

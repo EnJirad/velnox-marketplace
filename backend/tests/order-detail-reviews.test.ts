@@ -11,8 +11,8 @@
  *     own order AND must contain the reviewed product
  *   • another user's order must never count as a verified purchase
  */
-import { describe, expect, test } from "bun:test";
-import { integrationTest } from "./helpers/test-db.js";
+import { afterEach, describe, expect, test } from "bun:test";
+import { deleteFixtureUser, integrationTest } from "./helpers/test-db.js";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
 
 // ─── Review input validation (pure, always runs) ───────────────────────────
@@ -71,6 +71,13 @@ describe("validateReviewInput", () => {
 describe("verifyOrderContainsProduct (integration)", () => {
   const testFn = integrationTest;
 
+  // Every test seeds its own users and orders; without this the second test in
+  // the file collides on `users_email_key` and the fixtures outlive the run.
+  const seeded: string[] = [];
+  afterEach(async () => {
+    for (const id of seeded.splice(0)) await deleteFixtureUser(id);
+  });
+
   /**
    * Seed: userA owns orderA containing productA; userB owns orderB also
    * containing productA (so "orderB for userA" must NOT verify).
@@ -78,12 +85,16 @@ describe("verifyOrderContainsProduct (integration)", () => {
    */
   async function seed() {
     const { query } = await import("../db/index.js");
+    const tag = Date.now() + "-" + Math.random().toString(36).slice(2, 8);
     const mkUser = async (email: string) => {
       const u = await query("INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id", [email, "Review Test"]);
-      return u.rows[0].id as string;
+      const id = u.rows[0].id as string;
+      seeded.push(id);
+      return id;
     };
-    const userIdA = await mkUser("review-a@test.local");
-    const userIdB = await mkUser("review-b@test.local");
+    // Unique per seed: a fixed address can only ever be inserted once.
+    const userIdA = await mkUser(`review-a-${tag}@test.local`);
+    const userIdB = await mkUser(`review-b-${tag}@test.local`);
 
     const seller = await query("INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id", [userIdA]);
     const sellerId = seller.rows[0].id as string;
