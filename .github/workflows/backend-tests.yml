@@ -16,9 +16,16 @@
 
 name: Backend Tests
 
+# `push` deliberately has NO branch filter: the regression this workflow guards
+# against (the suite writing fixtures into whatever `DATABASE_URL` pointed at)
+# was introduced on a feature branch, and a `branches: [main]` filter meant the
+# job could not run there. The `paths` filter already scopes it to backend/db
+# changes, so every branch that can break the suite gets tested.
+#
+# `workflow_dispatch` only works once this file is on the default branch —
+# GitHub cannot dispatch a workflow that main does not contain yet.
 on:
   push:
-    branches: [main]
     paths:
       - 'backend/**'
       - 'db/**'
