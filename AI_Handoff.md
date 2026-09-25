@@ -1,6 +1,6 @@
 # Velnox AI Handoff
 
-**Last updated:** 2026-09-24 (TASK 004A isolation + fixture remediation, TASK 004B production R2 round-trip — bucket CORS repaired)
+**Last updated:** 2026-09-25 (TASK 004A isolation + fixture remediation + first green disposable-Postgres CI run, TASK 004B production R2 round-trip — bucket CORS repaired)
 **Branch:** `main`
 
 ## Current Project State
@@ -28,7 +28,11 @@ Test process         →  TEST_DATABASE_URL only  (disposable; name must contain
   database, where `GET /api/shops` (`sellers.status = 'approved'`) exposed them.
 - CI: `.github/workflows/backend-tests.yml` runs the suite on a throwaway
   `postgres:16` service bootstrapped from `db/run-sqleditor.sql`, with
-  `TEST_DATABASE_URL` only.
+  `TEST_DATABASE_URL` only. **Green** on commit `9d18c02`: 386 pass / 0 skip /
+  0 fail. Its first real run exposed (and this branch fixed) fixture-cleanup
+  failures and a genuine concurrency bug in `releaseOrderInventory()`, which
+  restored stock twice when two callers raced on one order
+  (`backend/lib/inventory.ts`).
 - Already-contaminated rows were removed once by
   `backend/scripts/test-fixture-cleanup.ts` — see *Production Fixture
   Remediation* below. Never run the integration suite without

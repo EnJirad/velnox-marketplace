@@ -1,7 +1,8 @@
 # AI_Handoff.md — Velnox Marketplace
 
-> Current state as of 2026-09-24.
-> Updated after TASK 004A — production test-fixture pollution fix (test database isolation).
+> Current state as of 2026-09-25.
+> Updated after TASK 004A — production test-fixture pollution fix (test database
+> isolation, first green disposable-Postgres CI run).
 
 ---
 
@@ -63,23 +64,42 @@ filter needed to change. This was a **test/database targeting** bug.
    file reintroduces the old gate, or if `backend/db/index.ts` starts reading the
    application URL directly.
 
-### Tests actually executed (2026-09-24, `bun test backend/tests`)
+### Tests actually executed
+
+Local sandbox (2026-09-24, `bun test backend/tests`) — no PostgreSQL here, so
+DB-backed tests skip by design:
 
 ```
 357 pass · 29 skip · 0 fail · 386 tests across 17 files
 ```
 
-- The 29 skips are the DB-backed integration tests: they **skipped by design**
-  because no disposable database exists in this workspace. They were NOT
-  executed — this sandbox has no PostgreSQL/psql/docker.
+CI, disposable `postgres:16` service container (2026-09-25, commit `9d18c02`,
+run `36078251957`) — every integration test executes:
+
+```
+386 pass · 0 skip · 0 fail · 1449 expect() calls · Ran 386 tests across 17 files
+```
+
+- The 29 local skips are the DB-backed integration tests: they skip **by design**
+  because this sandbox has no PostgreSQL/psql/docker. CI is where they run.
 - `cd backend && bun tsc --noEmit` → **PASS** (tests are excluded from
   `backend/tsconfig.json`, same as before).
 - Fail-closed proof: `TEST_DATABASE_URL=…/neondb bun test …` aborts with
   `[test-db] refusing to run the test suite: … does not contain "test"` and
   `0 pass · 1 fail`, before any connection.
 - `git diff --check` → clean.
-- CI workflow: **not executed** here (no Docker/GitHub runner in the sandbox); it
-  runs on push to `main` / PRs touching `backend/**` or `db/**`.
+- CI workflow: runs on `push` (**every** branch) and PRs touching `backend/**`
+  or `db/**`. Running the suite for real for the first time exposed three layers
+  of pre-existing problems, all fixed on this branch: 10 failures from fixture
+  cleanup deleting users that orders still referenced (`deleteFixtureUser()`),
+  then 5 more from orders/shop cleanup, then **1 genuine concurrency bug** —
+  `releaseOrderInventory()` read `inventory_released` and then updated it
+  unconditionally, so two callers racing on one order (cancel vs expiry webhook)
+  both restored stock. The flag is now claimed with a guarded
+  `UPDATE … WHERE id = $1 AND inventory_released = false` — the same pattern
+  `reserveInventoryStock()` uses — so the loser matches 0 rows under READ
+  COMMITTED and returns `false` without touching inventory
+  (`backend/lib/inventory.ts`).
 
 ### Production verification — remediation (step 2, owner-authorized)
 
@@ -120,6 +140,10 @@ after a read-only dry run and an explicit owner confirmation.
 are untouched (still byte-identical) and `db/run-update.sql` was not recreated.
 
 ### Next task
+
+**TASK 004A is verified complete:** the only database a test run can reach is a
+disposable one, and the whole suite passes there (CI run `36078251957`, commit
+`9d18c02`, 386 pass / 0 skip / 0 fail).
 
 1. ~~Controlled cleanup of the already-contaminated production fixture
    shops/products.~~ **DONE** — see *Production verification (step 2)* above.
