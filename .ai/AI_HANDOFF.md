@@ -795,6 +795,18 @@ same idempotent sync, which **recomputes** `refunded_amount` from succeeded rows
 rather than incrementing. Over-refund is rejected before Stripe is called.
 Authorization is the EXISTING `orders.manage` permission.
 
+**Follow-up hardening (same commit lineage).** The charge is DERIVED, never
+accepted: `buildCheckoutLineItems` builds the Stripe lines from `orders.total_amount`
+so a tampered `amount`/`price`/`quantity` cannot move money (shipping remainder →
+its own line; discount → one line for the authoritative total). An **open session
+for a different method is expired**, never handed back, and a race winner is only
+reused when `metadata.method` matches — otherwise our own session is expired and
+the caller gets **409 `DUPLICATE_PAYMENT_IN_PROGRESS`**, not a fabricated success.
+A refund request matching an existing `pending`/`succeeded` refund **replays** it
+(`duplicate: true`) instead of issuing a second one. `sessionConfirmsPayment`
+(only `payment_status === "paid"`) and `refundableMinorFor` (never negative) are
+exported pure helpers.
+
 **Schema.** `db/migrations/047_payment_foundation.sql` + both canonical files
 (`db/schema.sql` ↔ `db/run-sqleditor.sql` verified byte-identical; the canonical
 files alter no table they do not create). `db/run-update.sql` was **not**
@@ -809,10 +821,11 @@ VelShop renders only backend-enabled methods and shows COD as a non-selectable
 "Coming soon" row. No carrier, no settlement, no fake collection.
 
 **Verified HERE (actually executed).** Backend `bunx tsc --noEmit` clean;
-`bun run typecheck` 4/4 apps exit 0; full suite **498 pass / 43 skip / 0 fail**
-(new `backend/tests/payment-foundation.test.ts`: 46 pass / 1 DB-gated skip —
+`bun run typecheck` 4/4 apps exit 0; full suite **511 pass / 43 skip / 0 fail**
+(new `backend/tests/payment-foundation.test.ts`: 59 pass / 1 DB-gated skip —
 config, live-key refusal, COD fail-closed, webhook signature reject **and
-accept**, COD bypass 403 on both endpoints, secret-leak checks); `i18n:check`
+accept**, COD bypass 403 on both endpoints, line-item total reconciliation,
+refundable arithmetic, PromptPay unpaid-session trap, secret-leak checks); `i18n:check`
 **1295 / 1295 / 1295**; `git diff --check` clean; schema-drift +
 migration-numbering tests pass.
 
