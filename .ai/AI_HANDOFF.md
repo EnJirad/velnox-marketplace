@@ -827,6 +827,22 @@ stays presign → R2 PUT → confirm/save; no `client image → user.avatar` pat
 pass did not change that. **Every other checklist item that says PASS above is
 read-only or code-level; no production E2E claim is made anywhere.**
 
+**Completion pass (2026-09-25, second pass) — re-verified, still BLOCKED.**
+`HEAD == origin/main == 1c9ffa7`, tree clean, and no app/backend/db change since
+(only `.ai/` docs). The hard gate is unchanged: this workspace holds **no**
+`DATABASE_URL`, `TEST_DATABASE_URL`, `JWT_SECRET` or R2 credential, and the only
+login is Google OAuth in a browser → the authenticated chain remains **BLOCKED /
+NOT TESTED**, with **zero production writes**. Re-probed live and correct:
+`/api/health` 200, `/api/health/r2` `{configured,bucket,verify:true}`,
+`/api/shops` 200; all six canonical media endpoints → **401** without a cookie;
+untrusted `Origin` → **403**; removed `PATCH /api/customer/profile-image` →
+**404**; unknown route → 404 — **no 500s this pass**. `/api/health` needed **32 s**
+to answer, which is consistent with the transient-500 window noted above being a
+Render cold start rather than a media-code fault (still not proven). Re-ran the
+isolation check (fail-closed: 0 pass / 23 fail, no test body executed), the
+normal suite (**451 pass / 42 skip / 0 fail**), backend + 4-app typecheck
+(clean), and `git diff --check` (clean).
+
 ---
 
 **Housekeeping:** superseded §10 (TASK 002) and §9.1–§9.3 (TASK 001 closed
