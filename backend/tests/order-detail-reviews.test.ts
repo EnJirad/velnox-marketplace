@@ -5,7 +5,7 @@
  *   • rating must be an integer 1–5
  *   • comment must be 1–2000 characters after trimming
  *
- * Integration tests (DB-gated, skipped without DATABASE_URL) verify the
+ * Integration tests (DB-gated, skipped without a test database) verify the
  * verified-purchase eligibility rule:
  *   • an orderId supplied with a review must be the authenticated user's
  *     own order AND must contain the reviewed product
@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
 import { purgeUsers } from "./helpers/purge.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
 
 // ─── Review input validation (pure, always runs) ───────────────────────────
 
@@ -66,10 +67,10 @@ describe("validateReviewInput", () => {
   });
 });
 
-// ─── Verified-purchase eligibility (needs DATABASE_URL) ────────────────────
+// ─── Verified-purchase eligibility (needs a test database) ─────────────────
 
 describe("verifyOrderContainsProduct (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   /**

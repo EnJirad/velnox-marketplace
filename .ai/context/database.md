@@ -40,6 +40,14 @@ Respect PostgreSQL dependency order (extensions → types → tables → FKs →
 
 Startup must never run DDL (`ALTER TABLE`).
 
+## Test Database
+
+Tests never touch `DATABASE_URL` — that value is production. `TEST_DATABASE_URL`
+names a disposable PostgreSQL the DB-gated integration tests may write to;
+bootstrap it once with `db/run-sqleditor.sql`. The guard is
+`backend/db/test-database.ts`, wired into the pool factory via
+`resolveConnectionString()` in `backend/db/index.ts`. See `testing.md`.
+
 ## Safety & Verification
 
 - Never `DROP DATABASE/SCHEMA/TABLE` or `TRUNCATE` without explicit owner auth.

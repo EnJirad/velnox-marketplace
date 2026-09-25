@@ -15,6 +15,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { hasTestDatabase } from "./helpers/test-db.js";
 
 const root = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
@@ -146,7 +147,7 @@ describe("needs_correction notification reaches the seller", () => {
   });
 });
 
-// ─── Integration (needs DATABASE_URL) ──────────────────────────────────────
+// ─── Integration (needs a test database) ───────────────────────────────────
 
 /** The exact statement `GET /api/admin/products/:productId/moderation-detail` ships. */
 const OPTION_GROUPS_SQL = `SELECT pog.*, json_agg(jsonb_build_object('id', pov.id, 'value', pov.value, 'label', pov.label, 'sort_order', pov.sort_order, 'is_enabled', pov.is_enabled) ORDER BY pov.sort_order) as values
@@ -157,7 +158,7 @@ const OPTION_GROUPS_SQL = `SELECT pog.*, json_agg(jsonb_build_object('id', pov.i
            ORDER BY pog.sort_order ASC`;
 
 describe("product moderation detail (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   testFn("executes for a product that has option groups (42P10 regression)", async () => {

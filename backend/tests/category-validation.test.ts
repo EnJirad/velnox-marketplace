@@ -9,11 +9,12 @@
  * Static tests verify the category schema/source-of-truth wiring, so a query
  * referencing a column the schema does not define (the
  * `column "is_active" does not exist` regression) fails the suite.
- * The integration test (skipped without DATABASE_URL) checks the live schema.
+ * The integration test (skipped without a test database) checks the live schema.
  */
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
+import { hasTestDatabase } from "./helpers/test-db.js";
 import {
   CATEGORY_UUID_RE,
   INVALID_CATEGORY_MESSAGE,
@@ -171,10 +172,10 @@ describe("category schema consistency", () => {
   });
 });
 
-// ─── Integration (needs DATABASE_URL) ──────────────────────────────────────
+// ─── Integration (needs a test database) ───────────────────────────────────
 
 describe("categories table (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   testFn("the live schema has the V0040 category columns", async () => {

@@ -1,0 +1,105 @@
+# Velnox test suite — typecheck + tests against a DISPOSABLE database.
+#
+# Why this job exists (TASK 004A): there was no CI job running `bun test` at
+# all. On a developer machine the DB-gated integration tests opened on a
+# truthiness check of `DATABASE_URL`, which in this repository is the PRODUCTION
+# Neon connection string — so running the suite seeded live fixtures
+# (`so-test-*`, `inv-test-*`, `inv-cancel-*`, `inv-paid-*`).
+#
+# This workflow therefore:
+#   * provisions a throwaway PostgreSQL service container, created empty and
+#     destroyed with the runner;
+#   * points the suite at it with TEST_DATABASE_URL — the only variable the
+#     DB-gated tests accept for a database they are allowed to write to;
+#   * references **no repository secret at all**. In particular
+#     `NEON_DATABASE_URL` is never used here: production must not be a test
+#     database under any circumstance.
+#
+# `backend/db/test-database.ts` is the guard that enforces this, and
+# `backend/tests/test-database-isolation.test.ts` proves it fails closed.
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck + tests (disposable PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: velnox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d velnox_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # Throwaway service container only. No secret is referenced by this job.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/velnox_test?sslmode=disable
+      # CI-only value for the two HTTP integration tests that sign a session
+      # cookie. Public by construction — it is not, and must never become, the
+      # production JWT secret.
+      JWT_SECRET: velnox-ci-only-jwt-secret-not-used-in-production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck apps and backend
+        run: |
+          bun run typecheck
+          bun --filter @velnox/backend typecheck
+
+      - name: Bootstrap the disposable database
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          # The canonical fresh-DB bootstrap, run once against the empty
+          # container. Never run against production.
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/run-sqleditor.sql
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT 1;" >/dev/null
+          echo "✅ Disposable test database bootstrapped."
+
+      - name: Verify the guard refuses production
+        run: |
+          # A production-looking target must abort instead of writing. The host
+          # is a non-existent .neon.tech name — nothing is ever connected to.
+          if NODE_ENV=test \
+             DATABASE_URL="postgresql://u:p@ep-ci-guard-check.us-east-2.aws.neon.tech/velnox?sslmode=require" \
+             bun -e 'await import("./backend/db/index.ts")' 2>&1 | grep -q "REFUSING TEST AGAINST PRODUCTION DATABASE"; then
+            echo "✅ Production database refused as expected."
+          else
+            echo "❌ The guard did not refuse a production database."
+            exit 1
+          fi
+
+      - name: Run the test suite
+        run: bun test backend/tests
+
+      - name: Whitespace hygiene
+        run: git diff --check

@@ -3,7 +3,7 @@
  *
  * Unit tests cover the pure functions (order status state machine,
  * subscription display mapping). The integration test (skipped when no
- * DATABASE_URL is available) verifies the core multi-vendor safety rule:
+ * a test database is available) verifies the core multi-vendor safety rule:
  * a seller-scoped item query returns only that seller's items even when an
  * order contains products from two different sellers.
  */
@@ -17,6 +17,7 @@ import {
   normalizeSellerOrderStatus,
 } from "../routes/seller-orders.js";
 import { purgeUsers } from "./helpers/purge.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
 
 // ─── Order status state machine ──────────────────────────────────────────────
 
@@ -122,10 +123,10 @@ describe("mapFrequencyType", () => {
   });
 });
 
-// ─── Integration: multi-vendor ownership scoping (needs DATABASE_URL) ────────
+// ─── Integration: multi-vendor ownership scoping (needs a test database) ─────
 
 describe("seller order ownership scoping (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   testFn(

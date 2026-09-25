@@ -1,15 +1,17 @@
 import pg from "pg";
+import { resolveConnectionString } from "./test-database.js";
 
-// ─── Fix SSL deprecation warning from pg-connection-string ─────────────────
-// The Neon DATABASE_URL typically includes sslmode=require, which triggers a
-// deprecation warning.  We explicitly set sslmode=verify-full (the secure
-// default) to silence the warning without weakening security.
-let connectionString = process.env.DATABASE_URL ?? "";
-if (connectionString.includes("sslmode=require")) {
-  connectionString = connectionString.replace("sslmode=require", "sslmode=verify-full");
-} else if (!connectionString.includes("sslmode=")) {
-  connectionString += connectionString.includes("?") ? "&sslmode=verify-full" : "?sslmode=verify-full";
-}
+// ─── Connection string resolution ──────────────────────────────────────────
+// `resolveConnectionString()` is the single place that decides which database
+// this process may reach:
+//
+//   * outside a test process it returns `DATABASE_URL` (sslmode normalised from
+//     the deprecation-prone `require` to the secure `verify-full` default);
+//   * inside a test process it returns the validated test database and throws
+//     `TestDatabaseRefusedError` when the configured target is production — so
+//     `bun test` can never seed the live Neon database (see
+//     `backend/db/test-database.ts` for the full root cause).
+const connectionString = resolveConnectionString();
 
 const pool = new pg.Pool({
   connectionString,

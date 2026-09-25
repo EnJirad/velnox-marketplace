@@ -13,7 +13,7 @@
  *   • migration 040 + all schema files agree on the verification tables,
  *   • verification submissions and seller image intents are rate limited.
  *
- * Integration tests (DB-gated, skipped without a DATABASE_URL) exercise the
+ * Integration tests (DB-gated, skipped without a test database) exercise the
  * real INSERT/SELECT path against the database.
  */
 import { describe, expect, test } from "bun:test";
@@ -30,6 +30,7 @@ import {
   resolveCreationStatus,
 } from "../lib/product-lifecycle.js";
 import { query } from "../db/index.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
 
 const root = join(import.meta.dir, "..", "..");
 const productsSrc = readFileSync(join(root, "backend/routes/products.ts"), "utf8");
@@ -421,10 +422,10 @@ describe("migration 040 + schema sync", () => {
   });
 });
 
-// ─── Integration: real database paths (skipped without DATABASE_URL) ──────
+// ─── Integration: real database paths (skipped without a test database) ───
 
 describe("product lifecycle (integration)", () => {
-  const hasDb = Boolean(process.env["DATABASE_URL"]);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   const stamp = Date.now();

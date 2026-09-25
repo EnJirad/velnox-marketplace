@@ -142,6 +142,21 @@ describe("upload confirm authz over HTTP", () => {
   const hasJwt = Boolean(process.env.JWT_SECRET);
   const itJwt = hasJwt ? test : test.skip;
 
+  // Presigning a PUT and verifying a stored object need a real R2 bucket: with
+  // R2_BUCKET / R2 credentials absent the S3 client throws (`No value provided
+  // for input HTTP label: Bucket`) and the route answers 500, which is a
+  // missing-credential artefact rather than a behaviour under test. These cases
+  // therefore run only where R2 is configured. The authorization cases above
+  // deliberately need no R2 and stay on `itJwt`, so they still run in a
+  // disposable-database CI job that has no storage secrets.
+  const hasR2 = Boolean(
+    process.env.R2_ACCOUNT_ID &&
+      process.env.R2_ACCESS_KEY_ID &&
+      process.env.R2_SECRET_ACCESS_KEY &&
+      process.env.R2_BUCKET,
+  );
+  const itR2 = hasJwt && hasR2 ? test : test.skip;
+
   let server: Server | undefined;
   let base = "";
   // Namespace of a DIFFERENT user — must never be writable by the session below.
@@ -228,7 +243,7 @@ describe("upload confirm authz over HTTP", () => {
     expect(res.status).toBe(401);
   });
 
-  itJwt("every allowlisted profile purpose mints the caller's canonical key", async () => {
+  itR2("every allowlisted profile purpose mints the caller's canonical key", async () => {
     for (const purpose of ["avatar", "cover"] as const) {
       const res = await presign(
         { filename: "a.webp", contentType: "image/webp", purpose },
@@ -274,19 +289,29 @@ describe("upload confirm authz over HTTP", () => {
       const res = await confirm({ objectKey }, sessionCookie());
       // `shop/...` is a known namespace but the caller does not own the shop;
       // the rest are not namespaces at all. Neither may reach a write.
+      //
+      // R2_OBJECT_NOT_FOUND is an accepted answer for the `shop/...` key: the
+      // confirm verifies the object in storage before it queries shop
+      // ownership, and nothing is ever stored under another seller's shop, so
+      // the refusal legitimately lands as 400 rather than 403. It is still a
+      // refusal that reaches no write, which is the property under test.
       expect([400, 403]).toContain(res.status);
-      expect(["INVALID_PURPOSE", "FORBIDDEN"]).toContain((await res.json()).error.code);
+      expect(["INVALID_PURPOSE", "FORBIDDEN", "R2_OBJECT_NOT_FOUND"]).toContain(
+        (await res.json()).error.code,
+      );
     }
   });
 
-  itJwt("upload-intent accepts only the two profile kinds", async () => {
+  itJwt("upload-intent rejects a kind outside the two profile kinds", async () => {
     const bad = await uploadIntent(
       { kind: "evil", filename: "a.webp", mimeType: "image/webp" },
       sessionCookie(),
     );
     expect(bad.status).toBe(400);
     expect((await bad.json()).error.code).toBe("INVALID_PURPOSE");
+  });
 
+  itR2("upload-intent mints the caller's canonical key for an allowlisted kind", async () => {
     const good = await uploadIntent(
       { kind: "cover", filename: "a.webp", mimeType: "image/webp" },
       sessionCookie(),

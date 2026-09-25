@@ -1,0 +1,11 @@
+[test]
+# Test-database isolation guard. `backend/tests/setup.ts` aborts the run with
+# "REFUSING TEST AGAINST PRODUCTION DATABASE" when the configured database looks
+# like production, before any test file (and therefore any fixture) is loaded.
+# See backend/db/test-database.ts for the root cause this prevents.
+#
+# `bun test` resolves this path from the working directory, so it covers the
+# documented root command (`bun test backend/tests`). Runs started from
+# `backend/` are covered by the fail-fast assertion in
+# `backend/tests/helpers/test-db.ts`, which every DB-gated test imports.
+preload = ["./backend/tests/setup.ts"]

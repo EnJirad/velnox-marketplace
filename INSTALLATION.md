@@ -107,8 +107,12 @@ cp .env.example backend/.env
 Edit `backend/.env`:
 
 ```env
-# Database (Neon PostgreSQL)
+# Database (Neon PostgreSQL) — this is PRODUCTION data.
 DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/velnox?sslmode=require
+
+# Test database — point this at a DISPOSABLE PostgreSQL, never at DATABASE_URL.
+# Required to run the DB-gated integration tests; leave empty to skip them.
+TEST_DATABASE_URL=
 
 # Google OAuth
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
@@ -298,6 +302,50 @@ bun run build:velnox
 ```
 
 Build output goes to `apps/<app>/dist/`.
+
+### Tests
+
+```bash
+bun test backend/tests      # the whole suite
+```
+
+Most tests are pure unit / contract tests and always run. The **DB-gated
+integration tests** need a database, and the R2 cases need live R2 credentials;
+without them those tests skip rather than fail.
+
+#### The test database is isolated from production
+
+The backend reads one connection string from `DATABASE_URL`, and in this project
+that value is the **production** Neon database. Running the suite against it would
+write real fixture rows (test shops, users, products and orders) into production,
+so the suite is guarded:
+
+1. **`TEST_DATABASE_URL` is the only database a test run may write to.** Create a
+   disposable database and bootstrap it once:
+
+   ```bash
+   createdb velnox_test
+   export TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/velnox_test?sslmode=disable'
+   psql "$TEST_DATABASE_URL" -f db/run-sqleditor.sql
+   bun test backend/tests
+   ```
+
+2. **Production is refused, never used as a fallback.** If the only database the
+   process can see looks like production — a production environment marker
+   (`NODE_ENV`/`APP_ENV`/`ENVIRONMENT`/`VERCEL_ENV` = `production`, `RENDER=true`),
+   a Neon host (`*.neon.tech`), or the production `DATABASE_URL` endpoint — the run
+   aborts with `REFUSING TEST AGAINST PRODUCTION DATABASE` and executes no test.
+   There is no code path from “production detected” to “use it”.
+3. **With nothing configured, the DB-gated tests skip** and the rest of the suite
+   runs normally.
+
+The guard lives in `backend/db/test-database.ts` and is proven by
+`backend/tests/test-database-isolation.test.ts`.
+
+Add `JWT_SECRET` to the environment to also run the two authenticated HTTP cases;
+add the `R2_*` variables to run the presign/confirm cases. CI (`.github/workflows/test.yml`)
+does this against a throwaway PostgreSQL service container and references no
+repository secret.
 
 ---
 

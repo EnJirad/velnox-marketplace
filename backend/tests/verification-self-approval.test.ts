@@ -26,6 +26,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { query } from "../db/index.js";
 import { purgeUsers } from "./helpers/purge.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
 import { isSelfApproval } from "../lib/verification-guard.js";
 import { registerVerificationRoutes } from "../routes/verification.js";
 
@@ -161,15 +162,15 @@ describe("the seller verification review endpoint is wired to the guard", () => 
 // self-approval rule, and the second case is the negative control that proves
 // it: the identical request from a reviewer who does NOT own the shop succeeds.
 //
-// Skipped without DATABASE_URL + JWT_SECRET (no database in the sandbox).
+// Skipped without a test database + JWT_SECRET (no database in the sandbox).
 // Fixtures use a random suffix and are removed in afterAll, so re-running
 // against the same database cannot collide — unlike the fixed-email seeds the
 // handoff lists as a known gap.
 
-const hasDb = Boolean(process.env.DATABASE_URL && process.env.JWT_SECRET);
+const hasDb = hasTestDatabase() && Boolean(process.env.JWT_SECRET);
 const itDb = hasDb ? test : test.skip;
 
-describe("PATCH /api/admin/verifications/seller/:id over HTTP (needs DATABASE_URL + JWT_SECRET)", () => {
+describe("PATCH /api/admin/verifications/seller/:id over HTTP (needs a test database + JWT_SECRET)", () => {
   let server: Server | undefined;
   let base = "";
   let ownerId = ""; // admin who ALSO owns the shop under review
@@ -247,7 +248,7 @@ describe("PATCH /api/admin/verifications/seller/:id over HTTP (needs DATABASE_UR
   }
 
   test("reaches the real route: no session cookie is rejected before any review logic", async () => {
-    // Runs without DATABASE_URL. It proves the harness is driving the actual
+    // Runs without a test database. It proves the harness is driving the actual
     // registered handler — a 401 from `requireAuth` can only come from inside
     // the route — so the cases below fail for review reasons, not plumbing ones.
     const res = await fetch(`${base}/api/admin/verifications/seller/${crypto.randomUUID()}`, {

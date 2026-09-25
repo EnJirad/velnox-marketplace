@@ -3,7 +3,7 @@
  *
  * Unit tests cover the pure functions (next-run calculation, item
  * validation, price policy). The integration test (skipped when no
- * DATABASE_URL is available) verifies the two idempotency guards:
+ * a test database is available) verifies the two idempotency guards:
  * concurrent processPlan calls for the same plan produce exactly one
  * run row and one order.
  */
@@ -15,6 +15,7 @@ import {
   validatePlanItem,
 } from "../jobs/velrepeat-scheduler.js";
 import { purgeUsers } from "./helpers/purge.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
 
 // ─── calculateNextRunAt ──────────────────────────────────────────────────────
 
@@ -146,10 +147,10 @@ describe("currentPriceOf", () => {
   });
 });
 
-// ─── Integration: concurrency + idempotency (needs DATABASE_URL) ────────────
+// ─── Integration: concurrency + idempotency (needs a test database) ─────────
 
 describe("scheduler idempotency (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   testFn(

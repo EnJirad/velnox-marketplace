@@ -2,7 +2,7 @@
  * P0 #2 + P1 #1 — Non-variant inventory race condition + idempotent release.
  *
  * Unit tests cover the server-side quantity validation. The integration
- * tests (skipped when no DATABASE_URL is available) verify:
+ * tests (skipped when no test database is available) verify:
  *
  *  • Atomic reservation guard (P0 #2)
  *  • Idempotent inventory release via releaseOrderInventory (P1 #1)
@@ -21,6 +21,7 @@ import {
   validateCheckoutQuantity,
 } from "../lib/inventory.js";
 import { purgeUsers } from "./helpers/purge.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
 
 // ─── Server-side quantity validation ─────────────────────────────────────────
 
@@ -51,10 +52,10 @@ describe("validateCheckoutQuantity", () => {
   });
 });
 
-// ─── Integration: inventory reservation + release (needs DATABASE_URL) ──────
+// ─── Integration: inventory reservation + release (needs a test database) ──
 
 describe("non-variant inventory reservation (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   /** Seed a user → seller → shop → product → inventory chain; returns ids. */

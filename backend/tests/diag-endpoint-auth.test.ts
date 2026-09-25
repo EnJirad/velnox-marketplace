@@ -11,7 +11,7 @@
  *   1. the decision rule, as a pure function;
  *   2. the composed middleware over a REAL HTTP round trip — anonymous and
  *      invalid sessions (always run, no database) plus customer/seller/staff
- *      refusals and the owner/admin admission (needs DATABASE_URL + JWT_SECRET);
+ *      refusals and the owner/admin admission (needs a test database + JWT_SECRET);
  *   3. the wiring in `server.ts`, which must keep guarding the prefix rather
  *      than the single route, so a diagnostic added later is guarded by default.
  */
@@ -24,6 +24,7 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import jwt from "jsonwebtoken";
 import { query } from "../db/index.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
 import { DIAG_ALLOWED_ROLES, isDiagRoleAllowed, requireDiagAccess } from "../middleware/diag-guard.js";
 
 const root = join(import.meta.dir, "..", "..");
@@ -145,12 +146,12 @@ describe("requireDiagAccess over HTTP", () => {
   });
 });
 
-// ─── Real HTTP: role enforcement (needs DATABASE_URL + JWT_SECRET) ─────────
+// ─── Real HTTP: role enforcement (needs a test database + JWT_SECRET) ──────
 
-const hasDb = Boolean(process.env.DATABASE_URL && process.env.JWT_SECRET);
+const hasDb = hasTestDatabase() && Boolean(process.env.JWT_SECRET);
 const itDb = hasDb ? test : test.skip;
 
-describe("requireDiagAccess role enforcement (needs DATABASE_URL + JWT_SECRET)", () => {
+describe("requireDiagAccess role enforcement (needs a test database + JWT_SECRET)", () => {
   let server: Server | undefined;
   let base = "";
   const createdIds: string[] = [];

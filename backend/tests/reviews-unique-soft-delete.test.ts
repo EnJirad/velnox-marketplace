@@ -5,7 +5,7 @@
  * constraint must be present in the migration file AND in both schema
  * files (schema.sql / run-sqleditor.sql).
  *
- * Integration tests (DB-gated, skipped without DATABASE_URL) verify:
+ * Integration tests (DB-gated, skipped without a test database) verify:
  *   1. The atomic ON CONFLICT upsert collapses concurrent double-submits
  *      into ONE review row per (product, user); the latest rating wins.
  *   2. The UNIQUE(product_id, user_id) constraint rejects a second row.
@@ -16,6 +16,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { hasTestDatabase } from "./helpers/test-db.js";
 
 // ─── Migration / schema sync (pure, always runs) ───────────────────────────
 
@@ -45,10 +46,10 @@ describe("P1 #6 migration + schema sync", () => {
 
 });
 
-// ─── Integration (needs DATABASE_URL) ──────────────────────────────────────
+// ─── Integration (needs a test database) ───────────────────────────────────
 
 describe("product_reviews uniqueness + soft delete (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   /** Idempotently ensure the migration-038 constraint exists on the test DB. */

@@ -7,7 +7,7 @@
  *   • computePurchaseStats / estimatedNextPurchase / reorderConfidence
  *   • migration + schema sync (seller_goals, users.department, employees.*)
  *
- * Integration tests (DB-gated, skipped without DATABASE_URL) verify the
+ * Integration tests (DB-gated, skipped without a test database) verify the
  * real queries behind the new endpoints.
  */
 import { describe, expect, test } from "bun:test";
@@ -22,6 +22,7 @@ import {
   validateGoalInput,
 } from "../lib/seller-stats.js";
 import { purgeUsers } from "./helpers/purge.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
 
 // ─── Income math (pure, always runs) ───────────────────────────────────────
 
@@ -155,10 +156,10 @@ describe("P1 #4 migration + schema sync", () => {
 
 });
 
-// ─── Integration (needs DATABASE_URL) ──────────────────────────────────────
+// ─── Integration (needs a test database) ───────────────────────────────────
 
 describe("seller goals + center queries (integration)", () => {
-  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasDb = hasTestDatabase();
   const testFn = hasDb ? test : test.skip;
 
   async function seedSeller() {
