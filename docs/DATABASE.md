@@ -53,4 +53,4 @@ Neon PostgreSQL is the only source of truth. All business data lives here.
 1. All migrations must be idempotent
 2. Never use DROP TABLE or TRUNCATE
 3. Use CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS
-4. After migration: update schema.sql, run-sqleditor.sql, AI_Handoff.md
+4. After migration: update schema.sql, run-sqleditor.sql, `.ai/AI_HANDOFF.md`

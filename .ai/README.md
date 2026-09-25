@@ -15,18 +15,21 @@ Do NOT treat every document as required context.
 
 Every agent session follows:
 
-1. Read `.ai/AI_RULES.md`
-2. Read `.ai/AI_HANDOFF.md`
-3. Identify the assigned task
-4. Read that task's brief from `.ai/tasks/active/`
-5. Read ONLY the context files listed by the task
-6. Inspect the actual source files required by the task
-7. Make the smallest safe change
-8. Run the task-specific verification (`.ai/context/testing.md`)
-9. Check stop conditions
-10. Update `.ai/AI_HANDOFF.md`
-11. Produce a concise task report
-12. Commit only verified changes (`.ai/context/workflow.md`)
+1. **Synchronize with the GitHub remote** — establish local vs remote state before
+   reading or editing anything (`.ai/AI_RULES.md` §0). The sandbox is temporary and
+   may be stale; it is never the source of truth.
+2. Read `.ai/AI_RULES.md`
+3. Read `.ai/AI_HANDOFF.md`
+4. Identify the assigned task
+5. Read that task's brief from `.ai/tasks/active/`
+6. Read ONLY the context files listed by the task
+7. Inspect the actual source files required by the task
+8. Make the smallest safe change
+9. Run the task-specific verification (`.ai/context/testing.md`)
+10. Check stop conditions
+11. Update `.ai/AI_HANDOFF.md`
+12. Produce a concise task report
+13. Commit only verified changes (`.ai/context/workflow.md`)
 
 `AGENTS.md` at the repo root is the short entry point for tools that look for it; it points here.
 

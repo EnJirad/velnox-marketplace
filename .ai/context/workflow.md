@@ -26,13 +26,25 @@ This is not optional. See **AGENTS.md** *Default Completion State* and **`.ai/AI
 
 ## Step-by-Step Flow
 
-### 1. Inspect and Scope
+### 1. Inspect, Scope, and Synchronize
+
+**The GitHub remote is the source of truth; the local checkout may be stale** —
+see `.ai/AI_RULES.md` §0. Establish the real state *before* editing:
 
 ```bash
-git branch --show-current   # know the branch
-git remote -v               # know the remote
-git status                  # clean baseline?
+git remote -v
+git fetch origin
+git status
+git branch --show-current
+git rev-parse HEAD                    # local SHA
+git rev-parse origin/<branch>         # remote SHA — authoritative
 ```
+
+- **behind** (`git log HEAD..origin/<branch>` non-empty) → synchronize with
+  `git pull --ff-only` before editing
+- **diverged** (`git log --oneline --left-right HEAD...origin/<branch>`) → **STOP**,
+  inspect, never force-push, never discard local work
+- **in sync / ahead** → proceed (push per §6–7)
 
 ### 2. Implement
 

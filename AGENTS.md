@@ -43,11 +43,12 @@ stay small — this environment's file-edit tools stop matching past roughly 55 
 so archive superseded sections instead of growing it. Policy: `.ai/history/README.md`.
 
 **No duplicate authority:** the rulebook, handoff, and context docs live only under
-`.ai/`. The root `AI_RULES.md` and `AI_Handoff.md` are pointers — never write rules
-or handoff state into them.
+`.ai/`. Root-level `AI_RULES.md` / `AI_Handoff.md` were removed (2026-09-25) — do not
+recreate them; write rules and handoff state only under `.ai/`.
 
 ## Rules for Every Task
 
+0. **GitHub remote is the source of truth** — the sandbox is temporary and may be stale. Before editing: `git fetch origin`, then compare `git rev-parse HEAD` with `git rev-parse origin/<branch>`. Behind → synchronize first; diverged → STOP. (`.ai/AI_RULES.md` §0)
 1. **Inspect before editing** — verify the file, function, route, table, and schema exist in the current repo. Previous AI memory may be stale; the repo wins.
 2. **Minimal correct change** — fix the root cause, preserve existing functionality, reuse existing systems. No duplicate tables, APIs, or components.
 3. **Source of truth** — `Neon → Backend API → Frontend`. Frontend never touches Neon or server secrets. No fake data or mock APIs unless explicitly requested.

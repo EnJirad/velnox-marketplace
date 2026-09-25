@@ -6,6 +6,47 @@
 
 ---
 
+## 0. Startup Synchronization — GitHub Remote Is the Source of Truth
+
+> **The AI sandbox / local checkout is temporary and may be stale. The GitHub
+> remote is authoritative.** Files already existing locally is not proof they are
+> current, and not proof the same commit exists remotely.
+
+Before **any** repository-changing task, establish the real remote state:
+
+```bash
+git remote -v
+git fetch origin
+git status
+git branch --show-current
+git rev-parse HEAD                     # local SHA
+git rev-parse origin/<current-branch>  # remote SHA — authoritative
+```
+
+Compare, and name which case holds:
+
+| Case | Condition | Action |
+|---|---|---|
+| in sync | local SHA == remote SHA | proceed |
+| behind | `git log HEAD..origin/<branch>` is non-empty | synchronize **before** editing (`git pull --ff-only`) |
+| ahead | `git log origin/<branch>..HEAD` is non-empty | proceed; push per §14 |
+| diverged | both are non-empty | **STOP** |
+
+```
+GitHub remote  →  AUTHORITATIVE SOURCE OF TRUTH
+AI sandbox     →  TEMPORARY WORKSPACE
+```
+
+- **Behind** → synchronize with the latest remote state before reading or editing.
+- **Diverged** → **STOP**: inspect the divergence
+  (`git log --oneline --left-right HEAD...origin/<branch>`). Do **not** force-push,
+  do **not** automatically discard local work, do **not** overwrite remote history.
+- Confirm the latest remote commit SHA before beginning implementation work.
+- If `git fetch` cannot run, report that blocker. Never treat the sandbox as the
+  source of truth merely because the files already exist there.
+
+---
+
 ## 1. Non-Negotiable Rules
 
 1. **Repo is truth.** Inspect current repo/source before editing. Stale memory, handoff, or conversation is never proof the code still exists.
