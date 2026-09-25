@@ -870,8 +870,9 @@ gains the other half of the contract: a second assertion that the disposable
 target is still **ACCEPTED**, so it can no longer pass if the guard simply starts
 refusing everything.
 
-**Files changed (2, both CI-guard).** `.github/workflows/test.yml` (+26/−1) and
-`backend/tests/test-database-isolation.test.ts` (+80). **Payment code untouched**
+**Files changed (2 code, both CI-guard).** `.github/workflows/test.yml` (+26/−1)
+and `backend/tests/test-database-isolation.test.ts` (+80); plus the handoff and
+archive docs. **Payment code untouched**
 — `backend/routes/stripe.ts`, `backend/lib/payment-config.ts`,
 `db/migrations/047_payment_foundation.sql`, `backend/routes/cart.ts` and both
 schema files verified unchanged; no schema change, no `db/run-update.sql`.
@@ -893,17 +894,31 @@ migration-numbering + security-hardening **75 pass / 0 fail** · `i18n:check`
 **1295/1295/1295** · `db/schema.sql` ≡ `db/run-sqleditor.sql` · no
 `db/run-update.sql` · `git diff --check` clean · no secrets in the diff.
 
+**GitHub Actions rerun — PASS (run `36176830888`, commit `85d2f48`).** Job
+`Typecheck + tests (disposable PostgreSQL)` → **success**. Step 8 *Verify the
+guard refuses production* → **success**, printing both `✅ Production database
+refused as expected.` and `✅ Disposable test database accepted as expected.`
+Step 9 *Run the test suite* → **success** (it had been **skipped** on every
+previous failing run) and step 10 *Whitespace hygiene* → success.
+
+**The suite now actually runs in CI: 559 pass / 2 skip / 0 fail** (561 tests,
+24 files) against the disposable PostgreSQL — versus **518 pass / 43 skip**
+locally where no test database exists. **41 DB-gated integration tests ran in CI
+for the first time** (inventory reservation/concurrency, checkout + webhook
+idempotency, refund/order paths) and all of them pass.
+
+**Push.** `6f365b8 fix(ci): repair production database guard verification` +
+`85d2f48 docs(ai): …` → `git push origin main` → **PUSH VERIFIED**, local
+`85d2f480af036b7942982f1ce2675dc0ad865cf3` == `origin/main`, 0/0, tree clean.
+
 **Not claimed.** Stripe Test Mode E2E is still **BLOCKED** (no credential) and
 production payment readiness is **NOT claimed** — §16 stands unchanged.
 
 ---
 
-**Housekeeping:** superseded §8 (workspace move), §10 (TASK 002) and §9.1–§9.3
-(TASK 001 closed evidence) are in [`history/archive/`](history/archive/) as of
-2026-09-25; the §12 docs-consolidation record was archived the same day when §15
-needed the room, §5's closed 2026-09-22 pass narratives moved when §16 needed it,
-and §14's TASK 004B evidence narrative moved when §17 needed it (its BLOCKED state
-stays live). The file is now ~50 KB against a ~40 KB soft ceiling (~55 KB is the
-hard limit where editing stops working). §9 **stays live on purpose** — §9.4/§9.5
-hold open items. Next split if room is needed: §2 once its live content is mirrored
-into `.ai/context/`. Keep §6 (gaps) and the live §9 items.
+**Housekeeping:** superseded material lives in [`history/archive/`](history/archive/)
+(dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes, §8,
+§10, §12, and §14's TASK 004B narrative (its BLOCKED state stays live in §14).
+This file sits **~54 KB against a ~40 KB soft ceiling; 55 KB is the hard limit
+where editing stops working. NEXT SPLIT: §2**, after its live content is mirrored
+into `.ai/context/`. Keep §6 (gaps), §9.4/§9.5, and the §14 stub.
