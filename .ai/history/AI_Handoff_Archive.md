@@ -78,8 +78,18 @@ Line numbers below point into `AI_Handoff-2026-09-22-full.md`.
 | [`archive/AI_Handoff-2026-09-22-readiness-passes.md`](./archive/AI_Handoff-2026-09-22-readiness-passes.md) | 2026-09-22 production-readiness pass (b) + the three open gaps closed (a) | the `/_diag` prefix guard, seller-verification queue pagination (and the 201-row badge bug), the 029/030/034/035 migration-numbering proof, honest overview counters, the dead `api-routes.ts` mappings, `order:updated` from every status writer, and `config:updated`. Moved out of `.ai/AI_HANDOFF.md` §5 on 2026-09-25 to keep the live handoff under the ~55 KB edit limit; both passes were pushed at the time (`96dd2c7` for (b)) |
 | [`archive/AI_Handoff-2026-09-25-t004b-r2-authenticated.md`](./archive/AI_Handoff-2026-09-25-t004b-r2-authenticated.md) | Production R2 authenticated round-trip (TASK 004B) — **BLOCKED** | the full two-pass evidence narrative: the read-only production probes, the ~4-minute transient 500 window (never reproduced, no root cause), the account hard gate that blocks steps 9–23, the TASK 004A fail-closed re-check, and the step-24 regression search. Moved out of `.ai/AI_HANDOFF.md` §14 on 2026-09-25; §14 keeps a live stub with the BLOCKED state — TASK 004B is **not** closed |
 
+### 2026-09-26 — payment verification round and the §2 split
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-25-verification-system.md`](./archive/AI_Handoff-2026-09-25-verification-system.md) | handoff §2 — "Verification — exactly ONE system" | the single seller/shop V system: the V rule, `sellers.status` vs `sellers.verification_status`, the transactional submission rule, structured review reasons, review history, evidence-URL security, the self-approval guard, and the verification API surface. Moved out of `.ai/AI_HANDOFF.md` §2 on 2026-09-26 (TASK 007) because the handoff had reached ~54 KB against the ~55 KB edit limit; the **live copy is now `.ai/context/verification.md`** and the handoff keeps a pointer stub |
+| [`archive/AI_Handoff-2026-09-25-payment-foundation.md`](./archive/AI_Handoff-2026-09-25-payment-foundation.md) | handoff §15 (payment foundation, TASK 005) + §16 (Stripe TEST-mode E2E, TASK 006 — **BLOCKED**) | the audit-first findings on the pre-existing Stripe code, what the foundation changed, the DB-backed idempotency model, order↔payment lifecycles, webhook-confirmed refunds, the schema/migration, the COD-stays-off rules; then TASK 006's probe table, evidence tiers, secret audit, and unblock steps. Moved out on 2026-09-26 (TASK 007) when the handoff crossed 55 KB; the **live rules are now `.ai/context/payment.md`** and the **live verification status is `.ai/AI_HANDOFF.md` §18**. Contains one corrected claim (TASK 006 wrongly reported no PostgreSQL binary in the sandbox; §18 executed the DB-gated suites) |
+
 Work after 2026-09-18 continues in `.ai/AI_HANDOFF.md`, whose older sections are
 archived by the same rules as above.
+
+**Structural note (2026-09-26).** The V-badge implementation itself is unchanged;
+this was a documentation move only, verified by the full test suite (`.ai/AI_HANDOFF.md` §18).
 
 ### Beyond the archive
 

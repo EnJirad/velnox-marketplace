@@ -39,156 +39,16 @@ WebSocket) → Neon PostgreSQL (source of truth) + Cloudflare R2 (file storage).
 
 ## 2. Verification — exactly ONE system
 
-Velnox has one verification system: **SELLER / SHOP identity verification**. There
-is no product verification.
-
-### The V rule
-
-```
-seller.verification_status = 'verified'
-        ↓
-EVERY product owned by that seller
-        ↓
-the single green V badge
-```
-
-No `products.is_v`, no per-product verification state. `verified` is the canonical
-value (the brief's "approved" maps to it). `sellers.status` (`approved`) is the
-**account** lifecycle; `sellers.verification_status` (`verified`) is the **trust
-badge** — deliberately different columns. The V means only "this shop passed
-Velnox identity verification" — not product quality, authenticity or warranty.
-`VBadge` resolves V from the seller alone; the catalog exposes
-`sellerVerificationStatus` via an `EXISTS (SELECT 1 FROM sellers …)` subquery (no
-N+1).
-
-### Lifecycle
-
-```
-Seller (VelSeller)
-  RequireRole onboarding: Store → Applicant → Identity documents → Review → Submit
-        │  (each document: presign → R2 PUT → evidence confirm → media row in Neon)
-        ↓
-  seller_verifications row (status=pending) + sellers.verification_status='pending'
-        ↓
-VelCenter
-  Sellers → การยืนยันร้านค้า (Verification) tab → All/Pending/Verified/Rejected/Suspended + search
-        ↓
-  VerificationReviewDialog (applicant · store · address · signed docs · checklist · history)
-        ↓
-  Approve | Request correction | Reject | Suspend   (reason code REQUIRED unless approving)
-        ↓
-  notification → applicant sees reason → edit & resubmit → pending again
-```
-
-`sellers.status` state machine (enforced in `backend/routes/seller.ts`):
-
-```
-pending          → under_review, rejected
-under_review     → approved, needs_correction, rejected, suspended
-needs_correction → under_review, rejected
-approved         → suspended
-rejected         → pending      (re-application)
-suspended        → pending      (re-activation)
-```
-
-Anything else → `400 INVALID_TRANSITION`. Self-approval → `403
-SELF_ACTION_FORBIDDEN`. Approval requires a persisted verification record with at
-least one evidence file.
-
-### Submission integrity (hard rule)
-
-`NO SUCCESSFUL EVIDENCE PERSISTENCE = NO PENDING VERIFICATION`
-
-`POST /api/seller/apply` runs in ONE transaction: validate auth → validate seller
-ownership → validate required fields → validate the three identity documents exist
-as `media` rows owned by the caller → upsert shop → upsert `seller_settings`
-(durable R2 **object keys**, never `File` objects or blob URLs) → upsert
-`seller_verifications` (pending, with evidence) → **then** set
-`sellers.verification_status='pending'` → append `seller_review_history` →
-`COMMIT`. Any failure rolls everything back; nothing shows "pending" that the
-backend did not persist.
-
-### Structured review reasons
-
-Canonical vocabulary: `packages/shared/src/lib/verification-reasons.ts` (mirrored
-in the backend; `backend/tests/product-lifecycle.test.ts` asserts parity). Codes:
-`id_card_unclear`, `id_card_incomplete`, `selfie_unclear`, `selfie_missing_id`,
-`document_expired`, `applicant_mismatch`, `store_incomplete`, `contact_incomplete`,
-`address_incomplete`, `duplicate_account`, `policy_violation`, `other`.
-
-Corrections / rejections / suspensions require a valid code or the backend returns
-`400 REASON_REQUIRED`. Internal reviewer notes live in `review_note` and are never
-shown to the applicant; the applicant-visible reason is stored in
-`seller_settings.{rejectionReason,correctionReason}` plus the matching
-`…ReasonCode`.
-
-### Review history
-
-`seller_review_history` (seller_id, application_id, previous_status, new_status,
-action, reason_code, reason, note, reviewer_id, created_at). Actions: `submitted`
-| `resubmitted` | `under_review` | `needs_correction` | `approved` | `rejected` |
-`suspended`. Written on every applicant submission and every reviewer decision.
-
-### Identity evidence security
-
-- Identity documents are never returned as public bucket URLs.
-  - `GET /api/admin/verifications/seller/:id/evidence` and
-    `GET /api/admin/sellers/:id/application` require `owner|admin|staff` and return
-    **5-minute signed R2 GET URLs** generated server-side.
-  - `GET /api/seller/evidence` signs URLs for the caller's own uploads only.
-  - `GET /api/shops/:shopId/verification` is public and returns status +
-    `verifiedAt` only.
-- The applicant's own status payload exposes only an evidence **count**.
-- The admin list strips `evidence_urls`.
-- Ownership is enforced twice: `verification/evidence/{owner}/…` keys must match
-  the caller, and every submitted key must exist as a `media` row with
-  `uploaded_by = <caller>`.
-
-### Self-action guard (reviewer ≠ applicant)
-
-A VelCenter reviewer (`owner|admin|staff` with `sellers.manage`) may also own a
-shop, and `PATCH /api/admin/verifications/seller/:id` with `approve` is the ONLY
-write in the backend that sets `sellers.verification_status = 'verified'` — i.e.
-the only way to earn the V. That decision is therefore refused when the reviewer
-IS the applicant: `403 SELF_ACTION_FORBIDDEN`, rolled back before any write.
-
-- Rule: `backend/lib/verification-guard.ts` → `isSelfApproval(action, actorUserId,
-  sellerUserId)`. Pure and action-aware; ids are string-compared so a driver type
-  change cannot silently disable it.
-- Scope: **only `approve`**. `reject` / `suspend` / `needs_correction` can only
-  lower the reviewer's own standing, so they stay allowed. The seller-application
-  route (`PATCH /api/admin/seller-applications/:id`) keeps its own broader
-  self-action check for `approved` / `rejected`.
-- Ownership is resolved from the DB (`SELECT s.user_id FROM sellers s WHERE s.id
-  = $1`), never from the request body; the actor id is always the session's.
-- Tests: `backend/tests/verification-self-approval.test.ts` — 13 always-on cases
-  (the rule exhaustively, wiring contracts that the guard runs BEFORE the status
-  write, and an HTTP round trip proving the harness reaches the real route) plus
-  2 DB-gated cases that drive `PATCH` for real: the owner gets 403 with nothing
-  written, and a different reviewer gets 200 on the same record — the negative
-  control that stops a broken fixture from passing as a fix. The DB cases need
-  `DATABASE_URL` + `JWT_SECRET`, and the database must be bootstrapped with
-  `db/run-sqleditor.sql` first.
-
-### Verification API surface
-
-| Method | Path | Who | Purpose |
-|---|---|---|---|
-| GET | `/api/seller/verification` | seller | own status (count only, no URLs) |
-| POST | `/api/seller/verification` | seller | submit / resubmit (evidence required) |
-| POST | `/api/seller/apply` | user | seller application (3 identity docs required) |
-| GET | `/api/seller/status` | user | status + reasons + history |
-| POST | `/api/seller/evidence/upload-intent` | user | presigned PUT (onboarding-safe) |
-| POST | `/api/seller/evidence/confirm` | user | persist media row |
-| GET | `/api/seller/evidence` | user | own evidence (signed URLs) |
-| GET | `/api/admin/verifications?status=&q=&page=&limit=` | reviewer | seller queue (`all` supported; paginated, `pagination.total` is exact) |
-| GET | `/api/admin/verifications/seller/:id/evidence` | reviewer | signed evidence |
-| GET | `/api/admin/verifications/seller/:id/history` | reviewer | review history |
-| PATCH | `/api/admin/verifications/seller/:id` | reviewer | approve/reject/suspend/needs_correction (self-approval → 403) |
-| GET | `/api/admin/sellers?status=&q=` | reviewer | seller list (search + filter) |
-| GET | `/api/admin/sellers/:id/application` | reviewer | full application + signed docs |
-| PATCH | `/api/admin/sellers/:id/status` | owner/admin | account lifecycle status |
-| GET | `/api/shops/:shopId/verification` | public | status only |
+**Live content moved to [`.ai/context/verification.md`](context/verification.md)**
+(2026-09-26, TASK 007) to keep this file under the ~55 KB edit limit. Velnox has ONE
+verification system — SELLER/SHOP identity verification, no product verification:
+`seller.verification_status = 'verified'` is what gives every product of that seller
+the single green V badge. The context doc carries the V rule, the `sellers.status`
+state machine, the transactional submission rule (`NO SUCCESSFUL EVIDENCE
+PERSISTENCE = NO PENDING VERIFICATION`), structured review reasons, review history,
+evidence-URL security, the self-approval guard, and the verification API surface.
+Pre-move text (verbatim):
+[`history/archive/AI_Handoff-2026-09-25-verification-system.md`](history/archive/AI_Handoff-2026-09-25-verification-system.md).
 
 ## 3. Realtime
 
@@ -649,192 +509,40 @@ dedicated customer, no real orders/payments) plus a live browser.
 Built ON the Stripe code that already existed (`backend/routes/stripe.ts`, V0023)
 — no second payment system, no duplicate table. **Stripe: TEST MODE ONLY.**
 
-**Audit-first findings (the pre-existing state, re-verified from source).**
-`POST /api/stripe/checkout` set **no `payment_method_types`** (dashboard default,
-no PromptPay) and had **no idempotency boundary** — a double-click opened two
-Checkout Sessions, i.e. two PaymentIntents. The webhook used **sync
-`constructEvent`**, and outside Node the Stripe SDK picks a WebCrypto verifier
-whose sync API **throws for every event, valid or not** — so signature
-verification could never succeed and every webhook was silently dropped. Any
-secret key was accepted, live included. `payment_events` was written **before**
-processing and never updated, so an event whose handler threw was left marked
-seen and Stripe's retry was skipped. **COD was the DEFAULT** on
-`POST /api/customer/checkout` (`body.paymentMethod ?? "cod"`) and was offered as
-a normal VelShop radio option. `refunds` existed as a table with no code.
+**Summary (full pre-move text: [`history/archive/AI_Handoff-2026-09-25-payment-foundation.md`](history/archive/AI_Handoff-2026-09-25-payment-foundation.md); live reference: [`.ai/context/payment.md`](context/payment.md)).**
+The pre-existing Stripe code was audited first and found unsafe: no
+`payment_method_types` (no PromptPay, dashboard default), **no idempotency** (a
+double-click opened two Checkout Sessions = two PaymentIntents), sync
+`constructEvent` (which throws for every event outside Node, so all webhooks were
+silently dropped), any secret key accepted (live included), `payment_events`
+marked seen before processing, **COD as the DEFAULT** on
+`POST /api/customer/checkout`, and `refunds` as a table with no code.
 
-**Implemented.** `backend/lib/payment-config.ts` is the ONE decision point:
-test-mode-only key classification (`sk_/rk_test_`; live **and** unrecognized
-refused), "payment unavailable" instead of any fallback, fail-closed COD flags,
-method normalization, and `assertPaymentMethodUsable` — the guard every payment
-route runs. Routes: `GET /api/payments/methods` (backend-driven discovery; the
-storefront renders THIS list), `POST /api/stripe/checkout` (Card + PromptPay;
-charged amount reconciled to `orders.total_amount` **exactly** — a remainder
-becomes its own line item, never a client-supplied total),
-`POST /api/payments/stripe/webhook`, `GET /api/stripe/payment-status/:id` (now
-ownership-checked — it leaked any session's status before),
-`POST /api/admin/orders/:orderId/refund` (`orders.manage`),
-`GET /api/orders/:orderId` (payment + refunds). The webhook now uses
-`constructEventAsync`.
-
-**Idempotency — DATABASE-BACKED (no in-memory Map).** Two layers.
-`checkout_requests` gained `scope`, so checkout and payment keys share ONE
-idempotency store via `UNIQUE (user_id, scope, request_key)`; and the partial
-unique index `idx_payments_one_active_stripe` allows at most one live Stripe
-attempt per order, so the loser of a concurrent insert is answered with the
-winner's session. Webhook events are claimed with `INSERT … ON CONFLICT DO
-NOTHING`; a duplicate is acknowledged without re-running, a `failed` event is
-**re-armed** so Stripe's retry really re-processes, and a throwing handler
-returns **500** so Stripe redelivers instead of the sync being lost.
-
-**Order↔Payment sync — separate lifecycles.** Payment carries its own state
-(`pending` / `requires_action` / `paid` / `failed` / `cancelled`) plus
-`refunded_amount` + `refund_status`. Only paired transitions are written:
-`paid`→`paid`, `failed`→`payment_failed`, expired/canceled→`cancelled`, full
-refund→`refunded`; each releases reserved stock exactly once. **PromptPay is a
-delayed-notification method**, so `checkout.session.completed` with
-`payment_status != "paid"` does **not** mark an order paid — only
-`async_payment_succeeded` / `payment_intent.succeeded` / a `paid` session do.
-
-**Refunds — webhook-confirmed.** Submit records a `pending` row and calls Stripe
-with a deterministic idempotency key; final state comes from the provider
-response and the webhook (`charge.refunded`, `refund.updated|failed`) running the
-same idempotent sync, which **recomputes** `refunded_amount` from succeeded rows
-rather than incrementing. Over-refund is rejected before Stripe is called.
-Authorization is the EXISTING `orders.manage` permission.
-
-**Follow-up hardening (same commit lineage).** The charge is DERIVED, never
-accepted: `buildCheckoutLineItems` builds the Stripe lines from `orders.total_amount`
-so a tampered `amount`/`price`/`quantity` cannot move money (shipping remainder →
-its own line; discount → one line for the authoritative total). An **open session
-for a different method is expired**, never handed back, and a race winner is only
-reused when `metadata.method` matches — otherwise our own session is expired and
-the caller gets **409 `DUPLICATE_PAYMENT_IN_PROGRESS`**, not a fabricated success.
-A refund request matching an existing `pending`/`succeeded` refund **replays** it
-(`duplicate: true`) instead of issuing a second one. `sessionConfirmsPayment`
-(only `payment_status === "paid"`) and `refundableMinorFor` (never negative) are
-exported pure helpers.
-
-**Schema.** `db/migrations/047_payment_foundation.sql` + both canonical files
-(`db/schema.sql` ↔ `db/run-sqleditor.sql` verified byte-identical; the canonical
-files alter no table they do not create). `db/run-update.sql` was **not**
-created.
-
-**COD: IMPLEMENTED = YES, ENABLED = NO, CUSTOMER_SELECTABLE = NO.**
-`COD_ENABLED` / `COD_CUSTOMER_SELECTABLE` default off and fail closed (only
-literal `true`/`1` counts; `"yes"`, `"'true'"`, empty, misspelled all stay off).
-`method=COD` → **403 `PAYMENT_METHOD_DISABLED`** *before* any
-order/payment/shipment/settlement write and **independently of Stripe's state**.
-VelShop renders only backend-enabled methods and shows COD as a non-selectable
-"Coming soon" row. No carrier, no settlement, no fake collection.
-
-**Verified HERE (actually executed).** Backend `bunx tsc --noEmit` clean;
-`bun run typecheck` 4/4 apps exit 0; full suite **511 pass / 43 skip / 0 fail**
-(new `backend/tests/payment-foundation.test.ts`: 59 pass / 1 DB-gated skip —
-config, live-key refusal, COD fail-closed, webhook signature reject **and
-accept**, COD bypass 403 on both endpoints, line-item total reconciliation,
-refundable arithmetic, PromptPay unpaid-session trap, secret-leak checks); `i18n:check`
-**1295 / 1295 / 1295**; `git diff --check` clean; schema-drift +
-migration-numbering tests pass.
-
-**NOT verified — limitations (do not read these as PASS).** No Stripe credential
-exists in this workspace, so **no live test-mode PaymentIntent, no PromptPay QR,
-no webhook delivery and no Stripe refund was ever executed** → those paths are
-**CODE VERIFIED / BLOCKED**. The DB-gated webhook-idempotency test and every
-DB-gated payment integration test **skip** here (no `TEST_DATABASE_URL`) and run
-only in CI (`postgres:16`). VelShop checkout was typechecked but **never opened
-in a browser** → `UI NOT VERIFIED`. Money is held in 2-decimal minor units.
-
-**Safety — explicit.** Stripe remains **Test Mode**; no live credential, no live
-endpoint, no real card, no real money, **no production payment was enabled** and
-**no real customer funds were processed**; no production payment fixture; no
-secret read, printed, logged or committed — only the **test publishable** key can
-reach a browser. COD remains disabled.
-
-**Next recommended task.** Add test-mode `STRIPE_SECRET_KEY` (test),
-`STRIPE_WEBHOOK_SECRET` (test) and `STRIPE_PUBLISHABLE_KEY` (test) in
-Settings → Environment, then run the live test-mode round trip (Card + PromptPay
-+ `stripe listen` webhook + a refund) and point `TEST_DATABASE_URL` at a
-disposable PostgreSQL so the DB-gated payment tests actually execute.
+Built on that same code — no second payment system, no duplicate table —
+`backend/lib/payment-config.ts` became the ONE decision point (test-mode-only key
+classification, no fallback, fail-closed COD flags, `assertPaymentMethodUsable`),
+with `GET /api/payments/methods` discovery, a Card + PromptPay checkout whose
+charge is DERIVED from `orders.total_amount`, an ownership-checked payment-status
+route, `constructEventAsync` webhook verification, DATABASE-BACKED idempotency
+(`checkout_requests` scope + `idx_payments_one_active_stripe` + atomic
+`payment_events` claim/re-arm), separate order↔payment lifecycles (PromptPay is
+delayed-notification, so an unpaid completed session never marks an order paid),
+and webhook-confirmed refunds capped at the paid amount (`orders.manage`).
+Schema: `db/migrations/047_payment_foundation.sql` + both canonical files;
+`run-update.sql` **not** created. **Stripe is TEST MODE ONLY; COD stays disabled.**
 
 ---
 
 ## 16. Stripe TEST-mode E2E verification (TASK 006, 2026-09-25) — **BLOCKED**
 
-**Environment — no credential, no database.** `freebuff-env list` → `{"files":{}}`.
-Every key unset: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,
-`STRIPE_WEBHOOK_SECRET`, `STRIPE_MODE`, `COD_ENABLED`, `COD_CUSTOMER_SELECTABLE`,
-`DATABASE_URL`, `TEST_DATABASE_URL`, `JWT_SECRET`. No `postgres`/`initdb`/`psql`
-binary and no docker/podman, so no disposable DB can be provisioned either. **No
-Stripe API call, PaymentIntent, PromptPay QR, webhook delivery or refund has ever
-been executed — not by this pass, not by any prior pass.**
-
-**Executed here** (real HTTP against the real route stack, in an in-process
-listening server; probe deleted, tree left clean):
-
-| Probe | Observed |
-|---|---|
-| `GET /api/stripe/configured` | `configured:false, mode:null, publishableKey:null, reason:STRIPE_NOT_CONFIGURED` — no secret leak |
-| `GET /api/payments/methods` | CARD/PROMPTPAY/COD all `enabled:false`; `cod.customerSelectable:false` |
-| `POST /api/customer/checkout` `COD` / `cod` / `cash_on_delivery` | **403 `PAYMENT_METHOD_DISABLED`** — no DB connection attempted |
-| `POST /api/stripe/checkout` `method=COD` | **403 `PAYMENT_METHOD_DISABLED`** |
-| `POST /api/stripe/checkout` `method=CARD`, unconfigured | **503 `STRIPE_NOT_CONFIGURED`** — no fabricated success |
-| webhook, unconfigured | **503** — refuses rather than acking an unverifiable event |
-| webhook, forged signature | **400 `Invalid signature`** |
-| webhook, correctly signed | passes verification, then fails at the DB → **500** (correctly re-deliverable) |
-
-The configure-shape row (`CARD`/`PROMPTPAY` enabled, `COD` disabled) was also
-observed with placeholder keys, but **placeholders are not credentials**, so it is a
-shape check only — never reported as configuration verification.
-
-**Status / evidence tier.** CODE = source read · AUTO = test really executed here ·
-BLOCKED = could not execute.
-
-| Area | Tier |
-|---|---|
-| Stripe TEST configuration | AUTO (key ordering/refusal) · **BLOCKED** (no credential) |
-| Card / PromptPay TEST E2E | **BLOCKED** |
-| Webhook signature | AUTO (local HMAC, forged rejected **and** valid accepted) |
-| Real webhook delivery / retry / idempotency | **BLOCKED** (DB-gated) |
-| Checkout idempotency, method switching | **BLOCKED** |
-| Price tampering | AUTO (6 cases — charge is the order total) |
-| Stock safety, order↔payment sync, inventory sync | **BLOCKED** (DB-gated) |
-| Full / partial / over-refund | AUTO (arithmetic + route rejection) |
-| Duplicate refund | AUTO (replay path) · **BLOCKED** (provider) |
-| COD disabled | **PASS** (executed) |
-| COD direct API bypass 403 | **PASS** (executed) |
-| No COD order/payment/shipment/settlement | CODE — the guard precedes the transaction and no DB touch occurred |
-| Secret audit | **PASS** |
-| Automated tests | **PASS** |
-| Browser E2E | **BLOCKED** — no framework in any package.json, no test account |
-| Production E2E | **BLOCKED** |
-
-**Secret audit (clean).** No live key anywhere: `sk_live_` / `pk_live_` / `rk_live_`
-appear only as zero-filled placeholders in `backend/tests/payment-foundation.test.ts`
-(used to prove live keys are *refused*). `git log -S` over all 222 commits: only
-`b806be1` ever touched those strings. No hardcoded `Authorization`/`Bearer` token. No
-`console.*` or response body in the payment code references a credential identifier.
-`.env`/`.env.*` are gitignored and untracked; only `.env.example` is tracked and it
-holds placeholders only.
-
-**Full verification run.** backend `tsc --noEmit` exit 0 · `bun run typecheck` 4/4
-exit 0 · `bun test backend/tests` **511 pass / 43 skip / 0 fail** ·
-`payment-foundation.test.ts` **59 pass / 1 skip / 0 fail** · `i18n:check`
-**1295/1295/1295** · `git diff --check` clean · `schema.sql` ≡ `run-sqleditor.sql` ·
-no `run-update.sql`.
-
-**No defect found → no code change.** Verification-only, as the brief requires.
-
-**Unblock.** Add test-mode `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` /
-`STRIPE_WEBHOOK_SECRET` (+ `STRIPE_MODE=test`) in Settings → Environment, and point
-`TEST_DATABASE_URL` at a disposable PostgreSQL (`psql "$TEST_DATABASE_URL" -f
-db/run-sqleditor.sql`). CI (`.github/workflows/test.yml`) already runs every
-DB-gated suite against a throwaway `postgres:16` and references no repo secret.
-
-**Doc gap (recorded, deliberately not fixed).** `STRIPE_*` / `COD_*` are documented
-nowhere outside the code — absent from `.env.example`, `docs/ENVIRONMENT.md`,
-`INSTALLATION.md` and `README.md`. Out of scope for a verification-only pass.
-
----
+**Status: BLOCKED — Stripe TEST credentials unavailable** (unchanged). `freebuff-env
+list` → `{"files":{}}`; no Stripe API call, PaymentIntent, PromptPay QR, webhook
+delivery or refund has ever been executed. Pre-move evidence (probe table, tier
+table, secret audit, unblock steps) is archived:
+[`history/archive/AI_Handoff-2026-09-25-payment-foundation.md`](history/archive/AI_Handoff-2026-09-25-payment-foundation.md).
+**Correction:** its claim that this sandbox has no `postgres`/`psql` binary was
+wrong — PostgreSQL 14 IS installed there, and §18 records the DB-gated payment
+tests executing (**560 pass / 2 skip / 0 fail**). Only the credential half stands.
 
 ---
 
@@ -916,9 +624,126 @@ production payment readiness is **NOT claimed** — §16 stands unchanged.
 
 ---
 
+## 18. Stripe TEST-mode E2E — independent re-verification (TASK 007, 2026-09-26)
+
+**Status unchanged where it matters: STRIPE E2E IS STILL BLOCKED.** This pass did
+not (and could not) execute a Stripe API call. What it changed is the *evidence tier*
+of everything that does not need Stripe, plus one new executed test.
+
+**Startup sync.** The sandbox was **stale by 10 commits** (`b31e67b` → `origin/main`
+`42f6ae3`): a prior session had already landed the payment foundation (§15), the
+TASK 006 BLOCKED record (§16), and the CI guard fix (§17). `git pull --ff-only` →
+HEAD == `origin/main` == `42f6ae3d0ca705993e3969db1bd2235fb0efab2e`, tree clean.
+This section re-verifies that state from source rather than trusting it.
+
+**Credential check (no secret read).** `freebuff-env list` → `{"files":{}}` — no
+`STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_MODE`
+/ `COD_*` / `TEST_DATABASE_URL` exists in this workspace → **BLOCKED — Stripe TEST
+credentials unavailable**: no PaymentIntent, no PromptPay QR, no Stripe-hosted
+webhook delivery, no Stripe refund. No mock, stub, or fake Stripe response was
+substituted, and none may be reported as E2E.
+
+**Executed here — the DB-gated half now RUNS (what §16 wrongly called impossible).**
+Disposable local PostgreSQL 14 (`pg_ctlcluster 14 main start` — the sandbox stopped
+the cluster once mid-session; restart it and re-run rather than reading
+`ECONNREFUSED` as a test failure), database `velnox_test` bootstrapped from
+`db/run-sqleditor.sql` (**59 tables**),
+`TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/velnox_test?sslmode=disable`:
+
+| Run | Result |
+|---|---|
+| `bun test backend/tests` **with** disposable DB | **560 pass / 2 skip / 0 fail** (562 tests, 24 files) |
+| `backend/tests/payment-foundation.test.ts` **with** DB | **61 pass / 0 fail** (was 59 pass / 1 skip) |
+| `bun test backend/tests` **no DB** (skip path intact) | **523 pass / 39 skip / 0 fail** |
+| `bun test backend/tests/test-database-isolation.test.ts` | **39 pass / 0 fail** |
+| backend `bunx tsc --noEmit` | exit 0 |
+| `bun run typecheck` (4 apps) | 4/4 exit 0 |
+| `bun run i18n:check` | **th=1295 en=1295 my=1295**, parity |
+| `git diff --check` | clean |
+| `db/schema.sql` vs `db/run-sqleditor.sql` | **identical** |
+| `db/run-update.sql` | absent (stays absent) |
+
+The 2 remaining skips are the R2-credential upload cases, not payment. Provisioning
+the DI cluster needed one local-only step: this sandbox cluster uses SCRAM auth, so
+`ALTER USER postgres PASSWORD 'postgres'` was set on the **throwaway** cluster (the
+same convention as CI's `postgres:16`; no repository secret involved or read).
+
+**New executed test (+59 lines, `backend/tests/payment-foundation.test.ts`).**
+`a refused COD attempt writes nothing (DB-gated)` closes the one gap §16 could only
+mark CODE: the brief requires proof of **no order/payment/shipment/settlement
+write**, which an HTTP status alone cannot show. It fires `method=COD` at BOTH
+checkout endpoints with fresh UUIDs, expects **403 `PAYMENT_METHOD_DISABLED`**
+(rather than 404 `NOT_FOUND` / 403 `ADDRESS_NOT_FOUND`, which is what an order or
+address lookup would answer — so the refusal provably precedes the first DB read),
+then reads the rows back: `orders`, `payments`, `shipments`, `settlements`, and
+`checkout_requests` are all **0** for that caller, order id, and request key.
+**Non-vacuity control:** the identical count expression returns **1** when a matching
+order is inserted, and 0 after cleanup — so the zero is real, not a broken query.
+COD safety is therefore **TEST VERIFIED**, not merely code-read.
+
+**Idempotency — what is actually proven.** Webhook event idempotency is **TEST
+VERIFIED**: a duplicated `event.id` is claimed once (`payment_events` = 1 row,
+`status = processed`) and the second delivery answers `{duplicate: true}` — executed
+against the real DB locally and in CI. The **checkout request-key replay** and the
+`idx_payments_one_active_stripe` single-active-session race are **CODE VERIFIED
+only**: both sit behind `getStripe()`, which answers 503 without a credential, so no
+automated test can drive them here. **BLOCKED for E2E.**
+
+**CI — not concluded from local tests.** GitHub Actions on `42f6ae3`: `Tests`
+**success** (run `36177228483`, 1m15s); the step *Typecheck + tests (disposable
+PostgreSQL)* logged `[test-db] integration tests will use localhost/velnox_test`,
+executed the payment suites (stripe configuration, webhook signature accept **and**
+reject, COD bypass 403, webhook idempotency) and finished **559 pass / 2 skip / 0
+fail**. The two runs before the §17 fix (`68197ab`, `b6d8e5e`) had **failed**, which
+is why "CI is green" must be checked per commit rather than assumed.
+
+**Security audit (read-only).** `sk_live_` / `pk_live_` / `rk_live_` appear only as
+zero-filled placeholders in `payment-foundation.test.ts` (they prove live keys are
+*refused*) and as the classifier regex in `payment-config.ts`. No credential
+identifier is logged in the payment code. Only `.env.example` is tracked; no `.env`.
+This task changed **0 lines** of `backend/routes/stripe.ts`,
+`backend/lib/payment-config.ts`, or `db/migrations/` — the only code delta is the
+new test.
+
+**Tier summary — do not read BLOCKED as PASS.**
+
+| Area | Tier |
+|---|---|
+| Stripe test-mode E2E (Card, PromptPay, refund, webhook delivery) | **BLOCKED** — no credential |
+| Live-key refusal, mode/key ordering, fail-closed COD flags | TEST VERIFIED (executed) |
+| Webhook signature: forged rejected **and** valid accepted | TEST VERIFIED (local HMAC) |
+| Webhook duplicate delivery / `payment_events` claim | **TEST VERIFIED** (real DB, local + CI) |
+| COD disabled + direct-API bypass → 403, **no writes** | **PASS** (executed, DB-backed, with control) |
+| Checkout request-key replay · single-active-session race · method switching | **CODE VERIFIED only → BLOCKED** |
+| Charge derived from `orders.total_amount` (tamper resistance) | TEST VERIFIED (6 cases) |
+| Refund arithmetic + over-refund rejection + duplicate replay | TEST VERIFIED (pure/replay) · provider-side **BLOCKED** |
+| Inventory/stock transitions, order↔payment sync | **BLOCKED** — needs a configured Stripe session |
+| Production payment readiness | **NOT CLAIMED** |
+
+**Docs moved in this pass.** §2 (verification system) was mirrored into the new
+[`.ai/context/verification.md`](context/verification.md) and the handoff now carries
+a stub → file down from ~54 KB to ~47 KB. A new
+[`.ai/context/payment.md`](context/payment.md) records the payment subsystem, its
+non-negotiables, and the exact unblock steps. `AGENTS.md`, `.ai/README.md`, and
+`.ai/context/project-map.md` gained pointer rows for both.
+
+**Unblock (owner action, unchanged from §16).** Add test-mode `STRIPE_SECRET_KEY`,
+`STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` (optionally `STRIPE_MODE=test`) in
+Settings → Environment, plus `TEST_DATABASE_URL` for a disposable PostgreSQL. Note
+`.env.example` still does **not** list `STRIPE_*` / `COD_*` / `TEST_DATABASE_URL`;
+agent tooling cannot edit that file, so add them by hand while you are there.
+
+**Not claimed.** Stripe E2E remains **BLOCKED**; production payment readiness is
+**NOT claimed**. No live key, no real card, no real money, and no production database
+was touched — the only database used was the disposable local one above.
+
+---
+
 **Housekeeping:** superseded material lives in [`history/archive/`](history/archive/)
 (dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes, §8,
-§10, §12, and §14's TASK 004B narrative (its BLOCKED state stays live in §14).
-This file sits **~54 KB against a ~40 KB soft ceiling; 55 KB is the hard limit
-where editing stops working. NEXT SPLIT: §2**, after its live content is mirrored
-into `.ai/context/`. Keep §6 (gaps), §9.4/§9.5, and the §14 stub.
+§10, §12, §14's TASK 004B narrative, and (2026-09-26) §2's verification system →
+`.ai/context/verification.md` plus §15/§16's payment narratives →
+`.ai/context/payment.md` + §18. This file sits **~45 KB against a ~40 KB soft
+ceiling; 55 KB is the hard limit where editing stops working. NEXT SPLIT: §5 and
+§13** once their content is mirrored into `.ai/context/`. Keep §6 (gaps),
+§9.4/§9.5, and the §14 stub — and keep §18's BLOCKED statements.

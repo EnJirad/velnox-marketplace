@@ -773,3 +773,62 @@ describeDb("webhook idempotency (requires TEST_DATABASE_URL)", () => {
     await query("DELETE FROM payment_events WHERE event_id = $1", [eventId]);
   });
 });
+
+describeDb("a refused COD attempt writes nothing (requires TEST_DATABASE_URL)", () => {
+  test("neither checkout endpoint creates an order, payment, shipment, settlement, or request row", async () => {
+    // The strictest configuration on purpose: no Stripe at all AND the COD
+    // rail off. The brief's requirement is not just "the API answers 403" but
+    // "no order/payment/shipment/settlement was written" — an HTTP status alone
+    // cannot show that, so this test reads the resulting rows back.
+    setPaymentEnv();
+    const { query } = await import("../db/index.js");
+    const userId = randomUUID();
+    const orderId = randomUUID();
+    const requestKey = `cod-refusal-${randomUUID()}`;
+
+    await withServer(async (base) => {
+      const headers = { "Content-Type": "application/json", Cookie: `velnox_session=${makeToken(userId)}` };
+
+      // Neither the order nor the address exists. Receiving
+      // 403 PAYMENT_METHOD_DISABLED — rather than 404 NOT_FOUND /
+      // 403 ADDRESS_NOT_FOUND, which is what an order or address lookup would
+      // answer — is itself evidence that the method guard runs BEFORE the first
+      // database read, so there is no window in which a write could happen.
+      const stripeAttempt = await fetch(`${base}/api/stripe/checkout`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ orderId, method: "COD", requestKey }),
+      });
+      expect(stripeAttempt.status).toBe(403);
+      expect((await stripeAttempt.json()).error.code).toBe("PAYMENT_METHOD_DISABLED");
+
+      const customerAttempt = await fetch(`${base}/api/customer/checkout`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ addressId: randomUUID(), paymentMethod: "COD", requestId: requestKey }),
+      });
+      expect(customerAttempt.status).toBe(403);
+      expect((await customerAttempt.json()).error.code).toBe("PAYMENT_METHOD_DISABLED");
+    });
+
+    // Every identifier above is a fresh UUID, so any row this query finds could
+    // only have been written by the refused requests.
+    const rows = (
+      await query(
+        `SELECT
+           (SELECT count(*)::int FROM orders WHERE id = $1 OR user_id = $2) AS orders,
+           (SELECT count(*)::int FROM payments WHERE order_id = $1) AS payments,
+           (SELECT count(*)::int FROM shipments WHERE order_id = $1) AS shipments,
+           (SELECT count(*)::int FROM settlements WHERE seller_id IN (SELECT id FROM sellers WHERE user_id = $2)) AS settlements,
+           (SELECT count(*)::int FROM checkout_requests WHERE user_id = $2 AND request_key = $3) AS checkout_requests`,
+        [orderId, userId, requestKey],
+      )
+    ).rows[0];
+
+    expect(rows.orders).toBe(0);
+    expect(rows.payments).toBe(0);
+    expect(rows.shipments).toBe(0);
+    expect(rows.settlements).toBe(0);
+    expect(rows.checkout_requests).toBe(0);
+  });
+});

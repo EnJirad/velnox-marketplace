@@ -86,4 +86,6 @@ See `.ai/context/database.md`.
 | Auth/session | `.ai/context/security.md` → `backend/routes/auth.ts`, `backend/middleware/auth.ts` |
 | Uploads/images | `.ai/context/media.md` → `backend/routes/upload.ts` |
 | Orders/checkout | `.ai/context/checkout.md` → `backend/routes/cart.ts`, `backend/routes/stripe.ts` |
+| Payments / Stripe / COD flags | `.ai/context/payment.md` → `backend/lib/payment-config.ts`, `backend/routes/stripe.ts` |
+| Seller verification / V badge | `.ai/context/verification.md` → `backend/routes/verification.ts`, `backend/lib/verification-guard.ts` |
 | Styling/theme | `.ai/context/frontend.md` → `VELNOX_DESIGN_THEME.md`, `packages/shared/src/index.css` |

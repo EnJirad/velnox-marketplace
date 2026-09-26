@@ -64,6 +64,8 @@ Subsystem reference docs follow the same rule — only when the task names that 
 | `.ai/context/seller.md` | Seller onboarding, shop, seller APIs |
 | `.ai/context/customer.md` | Customer profile, cart, wishlist, addresses |
 | `.ai/context/checkout.md` | Orders, payments, shipments |
+| `.ai/context/payment.md` | Stripe (test mode only), COD flags, checkout/refund idempotency |
+| `.ai/context/verification.md` | Seller/shop V verification, evidence security, self-approval guard |
 | `.ai/context/media.md` | R2 uploads, images, media |
 | `.ai/context/testing.md` | How to verify (commands that actually exist) |
 | `.ai/context/workflow.md` | Git lifecycle, preview, deploy |

@@ -30,6 +30,8 @@ Do NOT read every doc file. Load the smallest useful set.
 | Fix login / session | `.ai/context/security.md` |
 | Fix image upload / R2 | `.ai/context/media.md` |
 | Fix checkout / orders | `.ai/context/checkout.md` |
+| Fix payment / Stripe / COD flags | `.ai/context/payment.md` |
+| Fix seller verification / V badge | `.ai/context/verification.md` |
 | Fix database / schema | `.ai/context/database.md` |
 | Fix API / backend / authz | `.ai/context/backend.md` |
 | Fix realtime / live updates | `.ai/context/realtime.md` |
