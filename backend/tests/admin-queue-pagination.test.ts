@@ -8,9 +8,10 @@
  *
  * These tests cover:
  *   1. the clamping rules themselves, exhaustively, as pure functions;
- *   2. the wiring that makes them real — the verification queue must page with a
- *      deterministic order, expose the exact filtered count as `pagination.total`,
- *      and the VelCenter counter must read that count instead of measuring a page;
+ *   2. the wiring that makes them real — the verification AND seller queues must
+ *      page with a deterministic order, expose the exact filtered count as
+ *      `pagination.total`, and the VelCenter counters must read an exact count
+ *      instead of measuring a fetched list;
  *   3. that a non-integer/absent/negative page or limit cannot be handed to SQL.
  *
  * Unit + static assertions only — no database required.
@@ -29,6 +30,7 @@ import {
 
 const root = join(import.meta.dir, "..", "..");
 const verificationSrc = readFileSync(join(root, "backend", "routes", "verification.ts"), "utf8");
+const sellerSrc = readFileSync(join(root, "backend", "routes", "seller.ts"), "utf8");
 const apiRoutesSrc = readFileSync(join(root, "packages", "shared", "src", "lib", "api-routes.ts"), "utf8");
 const queueSrc = readFileSync(
   join(root, "apps", "velcenter", "src", "components", "SellerVerificationQueue.tsx"),
@@ -181,5 +183,79 @@ describe("the pagination contract is consumed, not just produced", () => {
     expect(centerSrc).toContain("setPendingVerifications(Number(pending?.pagination?.total ?? 0))");
     // Counting fetched rows is what made the badge wrong past one page.
     expect(centerSrc).not.toContain('.filter((v) => v.status === "pending").length');
+  });
+});
+
+describe("GET /api/admin/sellers is paginated", () => {
+  test("it applies LIMIT/OFFSET from the shared helpers", () => {
+    expect(sellerSrc).toContain('import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js"');
+    expect(sellerSrc).toContain("const limit = parseLimit(req.query.limit)");
+    expect(sellerSrc).toContain("const page = parsePage(req.query.page)");
+    expect(sellerSrc).toContain("const offset = pageOffset(page, limit)");
+    expect(sellerSrc).toContain("LIMIT $${params.length + 1} OFFSET $${params.length + 2}`");
+    expect(sellerSrc).toContain("[...params, limit, offset]");
+  });
+
+  test("the unbounded seller list is gone", () => {
+    // The handler used to end at `ORDER BY s.created_at DESC`, returning every
+    // seller with joins on every dashboard load and every realtime refetch.
+    expect(sellerSrc).not.toContain("ORDER BY s.created_at DESC`,");
+  });
+
+  test("the order is deterministic, so paging cannot skip or repeat a row", () => {
+    expect(sellerSrc).toContain("ORDER BY s.created_at DESC, s.id DESC");
+  });
+
+  test("the exact filtered count is returned as pagination.total", () => {
+    expect(sellerSrc).toContain("COUNT(*) OVER() AS total_count");
+    expect(sellerSrc).toContain("pagination: pageMeta(page, limit, total, sellers.length)");
+    // A page past the end returns no rows, so the count must come from a query.
+    expect(sellerSrc).toContain("if (!result.rows.length && page > 1)");
+  });
+
+  test("the window-function column never leaks into the payload", () => {
+    const from = sellerSrc.indexOf("const sellers = result.rows.map");
+    const to = sellerSrc.indexOf("res.json({", from);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    const mapper = sellerSrc.slice(from, to);
+    // The row mapper builds an explicit object, so `total_count` has no path out.
+    expect(mapper).not.toContain("total_count");
+    expect(mapper).not.toContain("...row");
+  });
+
+  test("the limit/offset parameters cannot be swallowed by the filter params", () => {
+    expect(sellerSrc).toContain("const params: unknown[] = [];");
+    const call = sellerSrc.indexOf("[...params, limit, offset]");
+    const filters = sellerSrc.indexOf("where.push(`(sh.name ILIKE $${params.length}");
+    expect(filters).toBeGreaterThan(-1);
+    expect(call).toBeGreaterThan(filters);
+  });
+});
+
+describe("the seller + product counters read exact counts, not page lengths", () => {
+  test("the seller action forwards page and limit", () => {
+    const line = apiRoutesSrc.split("\n").find((l) => l.includes('"api.centerAdmin.sellerList"')) ?? "";
+    expect(line).toContain("page=${a.page}");
+    expect(line).toContain("limit=${a.limit}");
+  });
+
+  test("the sellers counter asks for limit 1 and reads pagination.total", () => {
+    // Same shape as the verification counter: a bounded page + the exact count.
+    expect(centerSrc).toContain('sellerListAction({ status: "pending", limit: 1 })');
+    expect(centerSrc).toContain("setPendingSellers(Number(pending?.pagination?.total ?? 0))");
+    // Counting fetched rows is what made the badge wrong past one page.
+    expect(centerSrc).not.toContain("(sellerRows ?? []).filter");
+    expect(centerSrc).not.toContain("setSellerRows(");
+  });
+
+  test("the product counter reads the dashboard COUNT, not the unbounded list", () => {
+    // GET /api/admin/products/moderation has no LIMIT yet (its handler lives past
+    // the edit window in products.ts), so the dashboard must not download every
+    // product row into the browser to measure a badge.
+    expect(centerSrc).toContain("setPendingProducts(Number(counts?.pendingProducts ?? 0))");
+    expect(centerSrc).toContain("useAction(api.centerAdmin.dashboardCounts)");
+    expect(centerSrc).not.toContain("(modProducts ?? []).filter");
+    expect(centerSrc).not.toContain("setModProducts(");
   });
 });

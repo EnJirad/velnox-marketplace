@@ -285,14 +285,16 @@ export default function Center() {
   // (spec §36–37). Approve/reject is server-checked + audit-logged.
   const sellerListAction = useAction(api.centerAdmin.sellerList);
   const setSellerStatusAction = useAction(api.centerAdmin.setSellerStatusAction);
-  const productModerationAction = useAction(api.centerAdmin.productModerationList);
   const setModerationAction = useAction(api.centerAdmin.setProductModerationStatus);
+  // Exact counters for the overview badges — never the length of a fetched
+  // queue (see reloadSellers / reloadProducts below).
+  const dashboardCountsAction = useAction(api.centerAdmin.dashboardCounts);
   // ONE verification system: SELLER / SHOP identity verification.
   // Product verification was removed from the user workflow — there is no
   // product verification queue in VelCenter.
   const verificationsAction = useAction(api.admin.verifications);
-  const [sellerRows, setSellerRows] = useState<SellerRow[] | null>(null);
-  const [modProducts, setModProducts] = useState<ModProductRow[] | null>(null);
+  const [pendingSellers, setPendingSellers] = useState(0);
+  const [pendingProducts, setPendingProducts] = useState(0);
   const [rejectingSeller, setRejectingSeller] = useState<SellerRow | null>(null);
   const [rejectingProduct, setRejectingProduct] = useState<ModProductRow | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -349,21 +351,29 @@ export default function Center() {
   }
   const reloadSellers = useCallback(async () => {
     try {
-      setSellerRows(await sellerListAction());
+      // Exact count, not a page length: the seller queue pages on the SERVER, so
+      // `limit: 1` + `pagination.total` counts every pending seller instead of
+      // however many happen to fit on one page.
+      const pending = await sellerListAction({ status: "pending", limit: 1 });
+      setPendingSellers(Number(pending?.pagination?.total ?? 0));
     } catch (error) {
-      console.error("Seller list error:", error);
+      console.error("Seller count error:", error);
       // Empty must mean empty: a failed read keeps what we have and says so.
       setQueueError(error instanceof Error ? error.message : "โหลดตัวเลขคิวงานไม่สำเร็จ");
     }
   }, [sellerListAction]);
   const reloadProducts = useCallback(async () => {
     try {
-      setModProducts(await productModerationAction({}));
+      // The moderation list endpoint is not paginated yet, so this count comes
+      // from the dashboard counter (one COUNT query) rather than from this page
+      // downloading the whole product list just to measure a badge.
+      const counts = await dashboardCountsAction();
+      setPendingProducts(Number(counts?.pendingProducts ?? 0));
     } catch (error) {
-      console.error("Product moderation list error:", error);
+      console.error("Product moderation count error:", error);
       setQueueError(error instanceof Error ? error.message : "โหลดตัวเลขคิวงานไม่สำเร็จ");
     }
-  }, [productModerationAction]);
+  }, [dashboardCountsAction]);
 
   const reloadVerifications = useCallback(async () => {
     try {
@@ -473,8 +483,8 @@ export default function Center() {
     };
   }, [reloadProducts, reloadVerifications, reloadSellers]);
 
-  const pendingSellers = (sellerRows ?? []).filter((s) => s.status === "pending").length;
-  const pendingProducts = (modProducts ?? []).filter((p) => p.status === "pending_review").length;
+  // Both badges are exact counts held in state (reloadSellers / reloadProducts),
+  // not the length of a fetched queue.
 
   // The verification queue filters, searches and pages on the SERVER (it holds
   // no rows here any more) — this page only needs the exact pending count.

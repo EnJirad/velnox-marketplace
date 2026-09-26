@@ -257,7 +257,9 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.setReorderLevelAction": (a) => apiPatch(`/api/seller/products/${a.productId}/reorder-level`, a),
 
   // Center admin actions
-  "api.centerAdmin.sellerList": (a) => apiGet(`/api/admin/sellers?status=${a?.status ?? "all"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}`),
+  // Paginated: the response carries `pagination` ({page, limit, total, totalPages,
+  // hasMore}). `limit: 1` is the cheapest way to read an exact count.
+  "api.centerAdmin.sellerList": (a) => apiGet(`/api/admin/sellers?status=${a?.status ?? "all"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}${a?.page ? `&page=${a.page}` : ""}${a?.limit ? `&limit=${a.limit}` : ""}`),
   "api.centerAdmin.setSellerStatusAction": (a) => apiPatch(`/api/admin/sellers/${a.sellerId}/status`, a),
   "api.centerAdmin.revokeShop": (a) => apiPost(`/api/admin/sellers/${a.sellerId}/revoke`, a),
   "api.centerAdmin.productModerationList": (a) => apiGet(`/api/admin/products/moderation${a?.status ? `?status=${a.status}` : ""}${a?.q ? `${a?.status ? "&" : "?"}q=${encodeURIComponent(a.q)}` : ""}${a?.sort ? `${(a?.status || a?.q) ? "&" : "?"}sort=${a.sort}` : ""}${a?.shopId ? `${(a?.status || a?.q || a?.sort) ? "&" : "?"}shopId=${encodeURIComponent(a.shopId)}` : ""}`),

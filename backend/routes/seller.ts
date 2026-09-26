@@ -5,7 +5,7 @@
  *   POST /api/seller/apply           — Submit seller application (authenticated)
  *   GET  /api/seller/status          — Get current user's seller status (authenticated)
  *   GET  /api/seller/profile         — Get seller profile (authenticated)
- *   GET  /api/admin/sellers          — List all sellers (admin only)
+ *   GET  /api/admin/sellers          — List sellers, paginated (sellers.manage)
  *   PATCH /api/admin/sellers/:id/status — Approve/reject/suspend seller (admin only)
  *
  * Security:
@@ -18,6 +18,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 import { userHasPermission } from "../lib/permissions.js";
+import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { invalidateCachedProfile } from "./auth.js";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -711,7 +712,15 @@ export function setupSellerRoutes(app: Express): void {
   });
 
   // ── GET /api/admin/sellers ────────────────────────────────────────────
-  // List all sellers with user information (admin only)
+  // List sellers with user information. `sellers.manage` only — owner/admin
+  // hold it implicitly, a staff account only when VelCenter granted it.
+  //
+  // Paginated (`page` 1-based, `limit` clamped to 1..100, default 25) with a
+  // deterministic order — `s.created_at DESC, s.id DESC` — so paging can never
+  // skip or repeat a row. The exact filtered count comes back as
+  // `pagination.total`, so a caller that only needs the number (the VelCenter
+  // overview counter) can ask for `limit=1` and read it instead of counting a
+  // truncated page.
   app.get("/api/admin/sellers", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
@@ -730,6 +739,9 @@ export function setupSellerRoutes(app: Express): void {
       // Status filter + free-text search (applicant / store). The status set is
       // the canonical review lifecycle — no invented statuses.
       const { status, q } = req.query as { status?: string; q?: string };
+      const limit = parseLimit(req.query.limit);
+      const page = parsePage(req.query.page);
+      const offset = pageOffset(page, limit);
       const params: unknown[] = [];
       const where: string[] = [];
       if (status && status !== "all") {
@@ -741,10 +753,12 @@ export function setupSellerRoutes(app: Express): void {
         where.push(`(sh.name ILIKE $${params.length} OR u.name ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
       }
 
-      // Fetch all sellers with user and shop information
-      // Returns data matching the frontend SellerRow interface
+      // One bounded page of sellers with user and shop information.
+      // Returns rows matching the frontend SellerRow interface, plus the exact
+      // filtered count as `pagination.total`.
       const result = await query(
-        `SELECT s.id, s.status, s.verification_status, s.created_at, s.updated_at,
+        `SELECT COUNT(*) OVER() AS total_count,
+                s.id, s.status, s.verification_status, s.created_at, s.updated_at,
                 u.id as user_id, u.name as user_name, u.email as user_email,
                 sh.id as shop_id, sh.name as shop_name, sh.product_count as shop_product_count,
                 ss.settings as seller_settings,
@@ -756,9 +770,26 @@ export function setupSellerRoutes(app: Express): void {
          LEFT JOIN shops sh ON sh.seller_id = s.id
          LEFT JOIN seller_settings ss ON ss.seller_id = s.id
          ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-         ORDER BY s.created_at DESC`,
-        params,
+         ORDER BY s.created_at DESC, s.id DESC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset],
       );
+
+      // `total_count` is the filtered count *before* LIMIT/OFFSET and is the same
+      // on every returned row. A page past the end returns no rows at all, so
+      // fall back to a count query rather than reporting a total of 0.
+      let total = result.rows.length ? Number(result.rows[0].total_count) : 0;
+      if (!result.rows.length && page > 1) {
+        const countRes = await query(
+          `SELECT COUNT(*)::int AS total
+           FROM sellers s
+           JOIN users u ON s.user_id = u.id
+           LEFT JOIN shops sh ON sh.seller_id = s.id
+           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`,
+          params,
+        );
+        total = Number(countRes.rows[0]?.total ?? 0);
+      }
 
       // Map to frontend SellerRow interface
       const sellers = result.rows.map((row: Record<string, unknown>) => ({
@@ -782,7 +813,10 @@ export function setupSellerRoutes(app: Express): void {
 
       res.json({
         success: true,
-        data: sellers,
+        data: {
+          sellers,
+          pagination: pageMeta(page, limit, total, sellers.length),
+        },
       });
     } catch (err) {
       console.error("[seller] admin list error:", err);
