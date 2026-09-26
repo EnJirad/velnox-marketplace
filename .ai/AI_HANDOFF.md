@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-25 · **Branch:** `main` · **Latest pass:** startup-sync rule + root AI files removed (§12)
+**Last updated:** 2026-09-26 · **Branch:** `main` · **Latest pass:** production-readiness audit — seller queue bounded, Stripe E2E still BLOCKED (§19)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -191,20 +191,20 @@ from `api-routes.ts`, `order:updated` from every status writer, and `config:upda
   — see §5 (b) 2. It returns `pagination` ({page, limit, total, totalPages,
   hasMore}) and the queue has previous/next controls; `limit=1` is the exact-count
   read.
-- **`GET /api/admin/products/moderation` is fully unbounded** (no `LIMIT` at all)
-  and `ProductModerationQueue.tsx` renders the whole result client-side, so the
-  moderation tab will grow without bound. **BLOCKED by tooling:** the handler is
-  `backend/routes/products.ts:3456`, a 181 KB file this environment's edit tools
-  cannot match past ~55 KB — the same limit that pushed the `config:updated`
-  publish into `server.ts`. Next step: apply the `backend/lib/pagination.ts`
-  helpers to that handler (and add controls to the queue) from a checkout without
-  the size limit.
-- **`GET /api/admin/sellers` is unbounded too** (`backend/routes/seller.ts:715`).
-  Its only consumer is the overview counter in `Center.tsx`, so nothing is broken
-  today, but it loads every seller (with joins) to count them. Paginating it
-  changes the payload from a bare array (`data: [...]`) to an object, and the
-  shared `apiGet` unwraps `data` — so it needs a consumer-side change in the same
-  commit. Left as-is deliberately rather than half-done.
+- **`GET /api/admin/products/moderation` is still fully unbounded** (no `LIMIT`),
+  and `ProductModerationQueue.tsx` still renders the whole result client-side.
+  **BLOCKED by tooling — now measured (2026-09-26, §19):** the handler is
+  `backend/routes/products.ts:3458` at byte **162,487** of a 181 KB file; the edit
+  tool matched at 54,710 B and failed at 68,200 B. Its *dashboard* caller is gone
+  (the counter reads `GET /api/admin/dashboard/counts` — one COUNT query), so the
+  remaining caller is the queue UI itself. Next step: apply
+  `backend/lib/pagination.ts` to that handler + add controls to the queue from a
+  checkout without the size limit.
+- ~~**`GET /api/admin/sellers` is unbounded too.**~~ **CLOSED (2026-09-26, §19).**
+  The endpoint is bounded (default 25 / max 100, exact `pagination.total`, fallback
+  count for a page past the end) and its only consumer — the VelCenter overview
+  counter — reads that count instead of measuring a fetched list. Executed:
+  `backend/tests/admin-sellers-pagination.test.ts` (8 cases, real DB + real HTTP).
 - **`shops.seller_id` is not UNIQUE** (`idx_shops_seller` is a plain index), so a
   seller with two shops would make the verification queue list one verification
   twice — and `COUNT(*) OVER()` would count it twice, consistently. The app
@@ -235,7 +235,18 @@ from `api-routes.ts`, `order:updated` from every status writer, and `config:upda
   failures are gone.
 - **Channels with no publisher.** `cart:updated`, `order:created` and
   `inventory:updated` are in the subscribe allowlist but nothing broadcasts them.
-  Harmless today (no consumer subscribes), but they are dead entries.
+  **Confirmed by measurement (2026-09-26, §19):** 0 `CHANNELS.*` publisher sites
+  each (`order:updated` 14, `product:updated` 1, `seller:updated` 1). Harmless today
+  (no consumer subscribes), but they are dead entries.
+- **The `velnox.com` zone does not resolve** (Google DoH `Status: 2`, "Name servers
+  refused query (lame delegation?)"; `center.velnx.com` is NXDOMAIN). Production is
+  unaffected — every Vercel project sets `VITE_*` overrides, and no deployed bundle
+  references `*.velnox.com` — but the `sites.ts` defaults point at dead hosts.
+  Owner action: fix the NS delegation or stop treating those defaults as live.
+  See §19 finding 1.
+- **One corrupted UI string:** `SellerVerificationQueue.tsx:177`
+  (`toast.success("ระงับและลบrêtailer แล้ว")` — the only `ê` in the repository).
+  Not rewritten: the correct wording is a copy decision. See §19 finding 2.
 
 ### Known-accepted (deliberate, not to "fix" casually)
 
@@ -753,11 +764,57 @@ was touched — the only database used was the disposable local one above.
 
 ---
 
+## 19. Production-readiness audit — risk-ordered (TASK 009, 2026-09-26)
+
+The 13 release gates were walked high-risk → low-risk. **PRODUCTION: NOT READY.**
+Per-gate evidence, the measured tooling window, and every BLOCKED reason:
+[`.ai/tasks/completed/production-readiness-audit-2026-09-26.md`](tasks/completed/production-readiness-audit-2026-09-26.md).
+**PRODUCTION PAYMENT READINESS: NOT CLAIMED.**
+
+**Fixed (code, executed).** `GET /api/admin/sellers` was unbounded *because* its only
+consumer counted a badge from the whole list. It now pages (`lib/pagination.ts` helpers,
+`COUNT(*) OVER()`, `ORDER BY created_at DESC, id DESC`, `LIMIT/OFFSET`, a fallback count
+query, `data: { sellers, pagination }`), the shared action forwards `page`/`limit`, and
+`Center.tsx` reads `pagination.total` for sellers + `GET /api/admin/dashboard/counts`
+for products — so the dashboard no longer downloads either queue to count it.
+Executed: `backend/tests/admin-sellers-pagination.test.ts` **8 pass / 0 fail** (real
+route, real session cookies, disposable DB: 401/403, exact total at `limit=1`, default
+page 25, clamp 100, disjoint pages, page-past-end total, no `total_count` leak) plus 9
+static guards in `admin-queue-pagination.test.ts` (**30 pass**).
+
+**BLOCKED, unchanged.** Stripe TEST E2E — this workspace *and* production answer
+`STRIPE_NOT_CONFIGURED` (`/api/stripe/configured`) with every method disabled
+(`/api/payments/methods`), so no Card / PromptPay / webhook / refund / idempotency
+flow was run and no mock was substituted (§16/§18 stand). Browser E2E, Google OAuth
+E2E and R2 authenticated E2E: no browser and no authorized account. The
+`products/moderation` handler and the locale `review:` blocks are past the edit window
+(162,487 B; 70,035 / 55,934 / 57,528 B).
+
+**Verified this pass (production, read-only, zero writes).** `/api/health` 200 ·
+`/api/health/r2` 200 · four frontends 200 (`velshop|velseller|velcenter.vercel.app`,
+`velnox-theta.vercel.app`) with SPA deep routes 200 · nine protected endpoints → **401
+`UNAUTHORIZED`** · public reads 200 · **0** secret patterns across all four deployed
+bundles (1.27 MB). **New findings (owner actions, no code change):** (1) the `velnox.com`
+zone is unresolvable (lame NS delegation) and `center.velnx.com` is NXDOMAIN —
+production is unaffected because the Vercel projects set `VITE_*` overrides and no
+deployed bundle references `*.velnox.com`; (2) `SellerVerificationQueue.tsx:177`
+carries the repository's only corrupted copy string (`ลบrêtailer`), left for an owner
+wording decision.
+
+**Regression (this tree).** Disposable PostgreSQL + `JWT_SECRET`: **577 pass / 2 skip /
+0 fail** (579 tests, 25 files; both skips are the pre-existing R2-credential cases).
+No database configured: **533 pass / 46 skip / 0 fail**. Backend `tsc` exit 0 · 4/4
+apps exit 0 · i18n 1295/1295/1295 · `db/schema.sql` ≡ `db/run-sqleditor.sql` · no
+`db/run-update.sql` · `git diff --check` clean.
+
+---
+
 **Housekeeping:** superseded material lives in [`history/archive/`](history/archive/)
 (dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes, §8,
 §10, §12, §14's TASK 004B narrative, and (2026-09-26) §2's verification system →
 `.ai/context/verification.md` plus §15/§16's payment narratives →
 `.ai/context/payment.md` + §18. This file sits **~45 KB against a ~40 KB soft
-ceiling; 55 KB is the hard limit where editing stops working. NEXT SPLIT: §5 and
+ceiling; 55 KB is the hard limit where editing stops working — measured 2026-09-26:
+≤54.8 KB edits, ≥68.2 KB does not. NEXT SPLIT: §5 and
 §13** once their content is mirrored into `.ai/context/`. Keep §6 (gaps),
 §9.4/§9.5, and the §14 stub — and keep §18's BLOCKED statements.
