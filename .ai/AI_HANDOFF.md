@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-26 · **Branch:** `main` · **Latest pass:** production-readiness audit — seller queue bounded, Stripe E2E still BLOCKED (§19)
+**Last updated:** 2026-09-26 · **Branch:** `main` · **Latest pass:** moderation queue paginated + verification queue localized (§20); Stripe E2E still BLOCKED (§19)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -191,15 +191,11 @@ from `api-routes.ts`, `order:updated` from every status writer, and `config:upda
   — see §5 (b) 2. It returns `pagination` ({page, limit, total, totalPages,
   hasMore}) and the queue has previous/next controls; `limit=1` is the exact-count
   read.
-- **`GET /api/admin/products/moderation` is still fully unbounded** (no `LIMIT`),
-  and `ProductModerationQueue.tsx` still renders the whole result client-side.
-  **BLOCKED by tooling — now measured (2026-09-26, §19):** the handler is
-  `backend/routes/products.ts:3458` at byte **162,487** of a 181 KB file; the edit
-  tool matched at 54,710 B and failed at 68,200 B. Its *dashboard* caller is gone
-  (the counter reads `GET /api/admin/dashboard/counts` — one COUNT query), so the
-  remaining caller is the queue UI itself. Next step: apply
-  `backend/lib/pagination.ts` to that handler + add controls to the queue from a
-  checkout without the size limit.
+- ~~**`GET /api/admin/products/moderation` is still fully unbounded**~~ **CLOSED
+  (2026-09-26, §20).** Bounded via `backend/lib/pagination.ts` (default 25 / max 100,
+  `p.created_at DESC, p.id DESC`, exact `pagination.total`, fallback count past the
+  end); the queue renders one page with previous/next controls, and the executed
+  evidence (9 real-DB/HTTP cases + 9 static guards) is in §20.
 - ~~**`GET /api/admin/sellers` is unbounded too.**~~ **CLOSED (2026-09-26, §19).**
   The endpoint is bounded (default 25 / max 100, exact `pagination.total`, fallback
   count for a page past the end) and its only consumer — the VelCenter overview
@@ -210,15 +206,11 @@ from `api-routes.ts`, `order:updated` from every status writer, and `config:upda
   twice — and `COUNT(*) OVER()` would count it twice, consistently. The app
   upserts a single shop per seller, so this is latent, not observed. A `COUNT(DISTINCT
   sv.id)` + de-duplicated listing is the fix if multi-shop sellers ever exist.
-- **VelCenter's verification queue labels are hardcoded Thai**, while the review
-  dialog next to it (`VerificationReviewDialog.tsx`, 34 `t()` keys) is localized.
-  Translating the queue is **BLOCKED by tooling**: those keys belong in
-  `review.*`, defined in `packages/shared/src/lib/i18n/locales/index.ts`
-  (`thReview` byte 57,892 / `enReview` 61,929 / `myReview` 64,284) and in
-  `th.ts` (104 KB) / `my.ts` (98 KB) — every one of them past the ~55 KB match
-  window, so the keys cannot be added here without breaking locale parity.
-  Next step: extract the queue's strings to `review.*` with `i18n:check` run in a
-  checkout that can edit those files.
+- ~~**VelCenter's verification queue labels are hardcoded Thai**~~ **CLOSED
+  (2026-09-26, §20).** `SellerVerificationQueue.tsx` now renders every string through
+  the existing `review.*` namespace (24 keys added to `thReview`/`enReview`/`myReview`;
+  `i18n:check` **th=en=my=1319**). `ProductModerationQueue.tsx`'s copy is still
+  hardcoded Thai (pre-existing; §20 added only its pagination bar).
 - ~~**The DB constraint repairs must reach the deployed database.**~~ **CLOSED
   (2026-09-23):** production applied 043 (`under_review` / `needs_correction` on
   `sellers.status`) at 2026-09-16T14:41:27Z and 044 (`item_unavailable` on both
@@ -244,10 +236,10 @@ from `api-routes.ts`, `order:updated` from every status writer, and `config:upda
   references `*.velnox.com` — but the `sites.ts` defaults point at dead hosts.
   Owner action: fix the NS delegation or stop treating those defaults as live.
   See §19 finding 1.
-- **One corrupted UI string:** `SellerVerificationQueue.tsx:177`
-  (`toast.success("ระงับและลบrêtailer แล้ว")` — the only `ê` in the repository).
-  Not rewritten: the correct wording is a copy decision. See §19 finding 2.
-
+- ~~**One corrupted UI string:** `SellerVerificationQueue.tsx:177`~~ **CLOSED
+  (2026-09-26, §20).** Now `review.revokeSuccess` — `ระงับและลบร้านค้าแล้ว`
+  ("Shop suspended and removed"): the revoke action's own copy names the **shop**
+  (`ร้านค้า`), not a transliterated "retailer".
 ### Known-accepted (deliberate, not to "fix" casually)
 
 - **Legacy DB objects retained on purpose:** `product_verifications`,
@@ -282,7 +274,9 @@ from `api-routes.ts`, `order:updated` from every status writer, and `config:upda
   offset, so `backend/routes/products.ts` (3,856 lines) cannot be changed by the
   edit tools at all — a change there currently has to be made another way (that is
   why the `config:updated` publish lives in `server.ts` rather than in each
-  category handler).
+  category handler). **Working recipe (2026-09-26, §20):** a small `bun` script that
+  asserts each anchor occurs exactly once, rewrites the file, and is deleted right
+  after `git diff` + the tests confirm the result.
 - **Very large docs are read-only in practice.**
   `.ai/history/archive/AI_Handoff-2026-09-14.md` (~335 KB) and
   `…-2026-09-22-full.md` (~97 KB) are verbatim records — read them with windows,
@@ -409,75 +403,12 @@ Moved 2026-09-25. The rules are live in `.ai/AI_RULES.md` §0, `AGENTS.md` rule 
 
 ## 13. Test database isolation (TASK 004A, 2026-09-25)
 
-**Root cause.** `backend/db/index.ts` built the one `pg.Pool` from `DATABASE_URL`,
-which in this repository *is* the production Neon connection string
-(`.env.example`); no test-database variable existed. Every DB-gated test opened on
-`Boolean(process.env.DATABASE_URL)` and then wrote real rows — `so-test-*`,
-`inv-*`, `inv-cancel-*`, `inv-paid-*` and the `*@test.local` users → sellers →
-shops → products → orders. A plain `bun test` on any machine carrying the
-production URL therefore seeded production: a silent fallback, no guard, no CI
-test job. Closes the **root cause** of archived finding #7.
-
-**Guard (new).** `backend/db/test-database.ts` — pure metadata, never connects.
-`TEST_DATABASE_URL` is preferred; a hard throw refuses a production env marker
-(`NODE_ENV`/`APP_ENV`/`ENVIRONMENT`/`VERCEL_ENV` = `production`, `RENDER=true`), a
-Neon host (`*.neon.tech`), and the production `DATABASE_URL` endpoint. A Neon
-*branch* needs `TEST_DATABASE_ALLOW_NEON_BRANCH=1` and still may not be the
-production endpoint. `decideTestDatabase()` is **fatal or safe — never a fallback
-to production**; nothing configured means the DB-gated tests skip, as before.
-`resolveConnectionString()` is now the pool factory's only source of a connection
-string; loopback targets keep their own sslmode (a disposable Postgres has no
-TLS). Fail-fast: `backend/tests/setup.ts` via root `bunfig.toml` `[test] preload`
-aborts before any file loads, and `helpers/test-db.ts` asserts the same at import
-so `cd backend && bun test tests` is covered too. No message ever contains a
-credential — host/database only.
-
-**Fixtures.** All 11 DB-gated files gate on `hasTestDatabase()`
-(`backend/tests/helpers/test-db.ts`) instead of the raw check. **No filtering was
-added to `/api/shops` or the frontend** — the fix is at the database boundary.
-`helpers/purge.ts` unchanged.
-
-**Regression test.** `backend/tests/test-database-isolation.test.ts`, 32 cases:
-metadata parsing, production refusal, the no-fallback decision, the pool-factory
-path, sslmode, a real `bun` subprocess proving fail-closed, and source-level
-guards that the old gate cannot return.
-
-**CI (new).** `.github/workflows/test.yml` — disposable `postgres:16` service,
-`TEST_DATABASE_URL` on localhost, `db/run-sqleditor.sql` bootstrapped once, then
-typecheck + `bun test backend/tests`. It references **no secret at all**;
-`NEON_DATABASE_URL` is never a test database. Previously no test job existed.
-`upload-security.test.ts` now gates its 2 bucket-dependent cases on R2 config
-(`itR2`) rather than JWT alone (missing R2 credentials produced a 500, not the
-behaviour under test), and the "arbitrary namespace" confirm case accepts
-`R2_OBJECT_NOT_FOUND` — the storage check legitimately runs before the shop
-ownership query and reaches no write either way.
-
-**Verification (actually run).** Backend `tsc` clean; 4/4 apps typecheck clean.
-Against a disposable local PostgreSQL 14 cluster (created, bootstrapped from
-`db/run-sqleditor.sql` → 59 tables, then dropped and stopped): **491 pass / 2
-skip / 0 fail** (493 tests, 23 files; both skips are the R2-credential cases).
-Guard proof against the **real suite**: with a production-looking `DATABASE_URL`
-it exits **1** with **0 pass / 23 fail** and `REFUSING TEST AGAINST PRODUCTION
-DATABASE` — no test body runs; identical with `RENDER=true`; a disposable target
-exits 0. `git diff --check` clean.
-
-**Production read-only verification (no writes, no credentials read).**
-`GET /api/health` → 200 `{"status":"ok"}`. `GET /api/shops` → 200 with exactly
-one shop (“Eloop”, active); scanning the response for `so-test` / `inv-test` /
-`inv-cancel` / `inv-paid` / `test.local` / `test@` returns **0 matches**. **EXISTING
-PRODUCTION TEST DATA FOUND: none on this surface.** A `SELECT` cannot be run (no
-production credentials here, by design), so rows no public endpoint surfaces are
-unverified; **nothing was deleted or modified**.
-
-**Still open.** (a) Archived finding #7's data half — historical fixture rows
-remain an owner cleanup action. (b) `.env.example` is protected from the agent's
-edit tools, so its `TEST_DATABASE_URL` entry could not be added; the variable is
-documented in `INSTALLATION.md` and `.ai/context/testing.md` — add the line
-manually. (c) A dev machine carrying a production `DATABASE_URL` now fails the
-whole run instead of silently writing to production — the intended fail-closed
-behaviour; set `TEST_DATABASE_URL` to run tests.
-
-**Next task:** TASK 004B — production R2 authenticated round-trip.
+**Archived** (closed structural record) →
+[`history/archive/AI_Handoff-2026-09-25-test-database-isolation.md`](history/archive/AI_Handoff-2026-09-25-test-database-isolation.md).
+Moved 2026-09-26 (§20) to stay under the ~55 KB edit limit. The live rules are
+[`.ai/context/testing.md`](context/testing.md) and `.github/workflows/test.yml`; the
+guard is `backend/db/test-database.ts`. Still-open items stayed in §6 (add
+`TEST_DATABASE_URL` to `.env.example` by hand if it is still missing).
 
 ---
 
@@ -809,12 +740,81 @@ apps exit 0 · i18n 1295/1295/1295 · `db/schema.sql` ≡ `db/run-sqleditor.sql`
 
 ---
 
+## 20. Moderation-queue pagination + verification-queue i18n (2026-09-26)
+
+Closes the three items §6 had recorded as BLOCKED by the ~55 KB edit window. No new
+endpoint, no second i18n system, **no schema change** (`db/` untouched;
+`schema.sql` ≡ `run-sqleditor.sql`).
+
+**1. `GET /api/admin/products/moderation` is bounded — same route, same authz.**
+`backend/routes/products.ts` now uses `parsePage`/`parseLimit`/`pageOffset` from
+`backend/lib/pagination.ts` (default 25, hard max 100), `COUNT(*) OVER() AS
+total_count`, `ORDER BY p.created_at DESC, p.id DESC` (the `id` tie-break is what
+keeps LIMIT/OFFSET from skipping or repeating a row), `LIMIT … OFFSET …`, a fallback
+count query for a page past the end, and `data: { products, pagination }`. The
+response shape moved from a bare array to the same `{ rows, pagination }` envelope
+`/api/admin/sellers` and `/api/admin/verifications` already use; its ONE consumer
+moved with it — `packages/shared/src/lib/api-routes.ts` (forwards `page`/`limit`) and
+`apps/velcenter/src/components/ProductModerationQueue.tsx` (bounded `PAGE_SIZE = 25`,
+previous/next bar, step-back off an emptied last page, and the pending badge reads
+`pagination.total` instead of counting the fetched page). The dashboard counter was
+already on `GET /api/admin/dashboard/counts` (§19 gate 7).
+
+**2. `SellerVerificationQueue.tsx` is localized.** Every user-facing string (toasts,
+filters, search placeholder, empty/error states, row label, pagination bar, revoke
+dialog) now renders through the existing `review.*` namespace: 24 new keys in
+`thReview`/`enReview`/`myReview` (`packages/shared/src/lib/i18n/locales/index.ts`) —
+the rest were pre-existing `review.*` keys the queue had never been wired to. No raw
+Thai remains in the component.
+
+**3. The corrupted string is fixed.** `toast.success("ระงับและลบrêtailer แล้ว")` →
+`t("review.revokeSuccess")` = `ระงับและลบร้านค้าแล้ว` ("Shop suspended and removed").
+The wording is the action's own copy, not a guess: the dialog title, its bullets
+(`ระงับบัญชีผู้ขาย`, `นำสินค้าทั้งหมดออกจากร้าน`) and the `revokeShop` endpoint all
+describe suspending the **shop** (`ร้านค้า`); the transliterated Latin token was the
+corruption (§19 finding 2).
+
+**Verification (actually run).** Disposable local PostgreSQL 14 (`velnox_test`,
+bootstrapped from `db/run-sqleditor.sql` → 59 tables, reached only through
+`TEST_DATABASE_URL`; the guard refuses a production target): **595 pass / 2 skip /
+0 fail** (597 tests, 26 files) vs **577 / 2 / 0** before this pass. No database
+configured: **543 pass / 54 skip / 0 fail** (vs 533 / 46). The new suite
+`backend/tests/product-moderation-pagination.test.ts` (9 cases, real DB + real HTTP)
+proves: 401 without a cookie; 403 for an account without `products.moderate`; the
+exact `pagination.total` under `limit=1`; an absent limit is one default page (25 of
+30 rows); `limit=100000` clamps to 100; pages 1 and 2 (limit 10) are disjoint; three
+pages cover all 30 seeded rows exactly once in `(created_at DESC, id DESC)` order —
+including a deliberate `created_at` tie; `page=99` reports the real total with no
+rows; and the response body never contains `total_count`.
+`backend/tests/admin-queue-pagination.test.ts` gained 9 static guards (39 pass) so the
+unbounded tail cannot return. Backend `tsc` exit 0 · `bun run typecheck` 4/4 exit 0 ·
+`i18n:check` **th=en=my=1319** · `db/schema.sql` ≡ `db/run-sqleditor.sql` · no
+`db/run-update.sql` · `git diff --check` clean.
+
+**Tooling (the escape hatch, now documented).** Both edits sit past the ~55 KB match
+window (the moderation handler at byte 162K of `products.ts`; the `review` blocks at
+bytes 56.7K–69.5K of `locales/index.ts`). Each was applied as a small `bun` script
+that asserts every anchor occurs exactly once, rewrites the file, and is deleted
+immediately; the result was then verified by `git diff`, `tsc`, `i18n:check` and the
+DB-backed suite. Same idea as §11's `patch -p1` — prefer it over moving a handler into
+another file.
+
+**Still open / unchanged.** §19's release blockers stand: Stripe TEST E2E **BLOCKED**
+(no credential), production Browser / Google-OAuth / R2-authenticated E2E **BLOCKED**
+(no test account + no browser), the `velnox.com` NS delegation, §9.4's four
+low-severity catalog reads, and the dead realtime channels.
+`ProductModerationQueue.tsx`'s remaining copy is still hardcoded Thai (pre-existing;
+this pass added only its pagination bar, in that file's language). **PRODUCTION: NOT
+READY** — this pass removes two tooling-blocked defects and one corrupted string; it
+does not change the verdict.
+
 **Housekeeping:** superseded material lives in [`history/archive/`](history/archive/)
 (dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes, §8,
 §10, §12, §14's TASK 004B narrative, and (2026-09-26) §2's verification system →
 `.ai/context/verification.md` plus §15/§16's payment narratives →
-`.ai/context/payment.md` + §18. This file sits **~45 KB against a ~40 KB soft
+`.ai/context/payment.md` + §18. This file sits **~51 KB against a ~40 KB soft
 ceiling; 55 KB is the hard limit where editing stops working — measured 2026-09-26:
-≤54.8 KB edits, ≥68.2 KB does not. NEXT SPLIT: §5 and
-§13** once their content is mirrored into `.ai/context/`. Keep §6 (gaps),
-§9.4/§9.5, and the §14 stub — and keep §18's BLOCKED statements.
+≤54.8 KB edits, ≥68.2 KB does not.
+NEXT SPLIT: §5 (then §19)** once mirrored into `.ai/context/` — archive first when
+this file next crosses ~53 KB. Keep §6 (gaps), §9.4/§9.5, and the §14 stub — and
+keep §18's BLOCKED statements.

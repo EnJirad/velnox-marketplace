@@ -262,7 +262,17 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.centerAdmin.sellerList": (a) => apiGet(`/api/admin/sellers?status=${a?.status ?? "all"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}${a?.page ? `&page=${a.page}` : ""}${a?.limit ? `&limit=${a.limit}` : ""}`),
   "api.centerAdmin.setSellerStatusAction": (a) => apiPatch(`/api/admin/sellers/${a.sellerId}/status`, a),
   "api.centerAdmin.revokeShop": (a) => apiPost(`/api/admin/sellers/${a.sellerId}/revoke`, a),
-  "api.centerAdmin.productModerationList": (a) => apiGet(`/api/admin/products/moderation${a?.status ? `?status=${a.status}` : ""}${a?.q ? `${a?.status ? "&" : "?"}q=${encodeURIComponent(a.q)}` : ""}${a?.sort ? `${(a?.status || a?.q) ? "&" : "?"}sort=${a.sort}` : ""}${a?.shopId ? `${(a?.status || a?.q || a?.sort) ? "&" : "?"}shopId=${encodeURIComponent(a.shopId)}` : ""}`),
+  "api.centerAdmin.productModerationList": (a) =>
+    apiGet(
+      `/api/admin/products/moderation${buildQuery({
+        status: a?.status,
+        q: a?.q,
+        sort: a?.sort,
+        shopId: a?.shopId,
+        page: a?.page,
+        limit: a?.limit,
+      })}`
+    ),
   "api.centerAdmin.productModerationDetail": (a) => apiGet(`/api/admin/products/${a.productId}/moderation-detail`),
   "api.centerAdmin.setProductModerationStatus": (a) => apiPatch(`/api/admin/products/${a.productId}/moderation`, a),
   "api.centerAdmin.getPlatformSettings": () => apiGet("/api/admin/settings"),

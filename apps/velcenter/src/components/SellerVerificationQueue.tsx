@@ -99,14 +99,14 @@ export default function SellerVerificationQueue() {
       setRows(res?.sellers ?? []);
       setPagination(res?.pagination ?? null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดข้อมูล";
+      const msg = err instanceof Error ? err.message : t("review.loadFailed");
       setError(msg);
       setRows([]);
       setPagination(null);
     } finally {
       setLoading(false);
     }
-  }, [verificationsAction, statusFilter, query, page]);
+  }, [verificationsAction, statusFilter, query, page, t]);
 
   useEffect(() => { void loadVerifications(); }, [loadVerifications]);
 
@@ -149,19 +149,19 @@ export default function SellerVerificationQueue() {
         note: decision.note,
       });
       toast.success(
-        decision.action === "approve" ? "อนุมัติแล้ว ✅"
-          : decision.action === "suspend" ? "ระงับแล้ว"
-            : decision.action === "needs_correction" ? "ส่งคำขอแก้ไขแล้ว"
-              : "ปฏิเสธแล้ว"
+        decision.action === "approve" ? t("review.resultApproved")
+          : decision.action === "suspend" ? t("review.resultSuspended")
+            : decision.action === "needs_correction" ? t("review.resultCorrection")
+              : t("review.resultRejected")
       );
       setReviewDialogOpen(false);
       void loadVerifications();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
+      toast.error(error instanceof Error ? error.message : t("review.actionFailed"));
     } finally {
       setActing(false);
     }
-  }, [reviewDialogRow, sellerVerificationAction, loadVerifications]);
+  }, [reviewDialogRow, sellerVerificationAction, loadVerifications, t]);
 
   const openRevoke = useCallback((row: VerificationRow) => {
     setRevokeTarget(row);
@@ -174,15 +174,18 @@ export default function SellerVerificationQueue() {
     setRevoking(true);
     try {
       await revokeShopAction({ sellerId: revokeTarget.seller_id, reason: revokeReason.trim() });
-      toast.success("ระงับและลบrêtailer แล้ว");
+      // "Shop suspended and removed" — the action revokes the SHOP (see the dialog
+      // title + bullets below). The value previously read `ระงับและลบrêtailer แล้ว`,
+      // a corrupted string that had exactly one `ê` in the repository.
+      toast.success(t("review.revokeSuccess"));
       setRevokeOpen(false);
       void loadVerifications();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
+      toast.error(error instanceof Error ? error.message : t("review.actionFailed"));
     } finally {
       setRevoking(false);
     }
-  }, [revokeTarget, revokeReason, revokeShopAction, loadVerifications]);
+  }, [revokeTarget, revokeReason, revokeShopAction, loadVerifications, t]);
 
   // Exact for the current filter, not just the current page: the backend returns
   // the filtered count in `pagination.total`.
@@ -195,7 +198,7 @@ export default function SellerVerificationQueue() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
           <Input
-            placeholder="ค้นหาร้านค้า, ผู้สมัคร, อีเมล..."
+            placeholder={t("review.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 rounded-[10px]"
@@ -207,11 +210,11 @@ export default function SellerVerificationQueue() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="h-9 rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
           >
-            <option value="pending">รอตรวจสอบ</option>
-            <option value="all">ทั้งหมด</option>
-            <option value="verified">ยืนยันแล้ว</option>
-            <option value="rejected">ปฏิเสธ</option>
-            <option value="suspended">ระงับ</option>
+            <option value="pending">{t("review.filterPending")}</option>
+            <option value="all">{t("review.filterAll")}</option>
+            <option value="verified">{t("review.filterVerified")}</option>
+            <option value="rejected">{t("review.filterRejected")}</option>
+            <option value="suspended">{t("review.filterSuspended")}</option>
           </select>
         </div>
       </div>
@@ -220,7 +223,7 @@ export default function SellerVerificationQueue() {
       {statusFilter === "pending" && pendingCount > 0 && (
         <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
           <ShieldCheck className="size-4" />
-          <span className="font-medium">{pendingCount} การยืนยันรอตรวจสอบ</span>
+          <span className="font-medium">{t("review.pendingBanner", { count: pendingCount })}</span>
         </div>
       )}
 
@@ -236,10 +239,10 @@ export default function SellerVerificationQueue() {
           <span className="flex size-14 items-center justify-center rounded-2xl bg-red-100">
             <AlertTriangle className="size-7 text-red-500" />
           </span>
-          <h3 className="mt-5 text-lg font-semibold text-slate-900">เกิดข้อผิดพลาด</h3>
+          <h3 className="mt-5 text-lg font-semibold text-slate-900">{t("review.loadFailed")}</h3>
           <p className="mt-1.5 max-w-sm text-sm text-slate-500">{error}</p>
           <Button variant="outline" size="sm" onClick={() => void loadVerifications()} className="mt-4 rounded-[10px]">
-            ลองใหม่
+            {t("review.retry")}
           </Button>
         </div>
       ) : rows.length === 0 ? (
@@ -247,9 +250,9 @@ export default function SellerVerificationQueue() {
           <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
             <ShieldCheck className="size-7 text-[#10B981]" />
           </span>
-          <h3 className="mt-5 text-lg font-semibold text-slate-900">ไม่มีรายการ</h3>
+          <h3 className="mt-5 text-lg font-semibold text-slate-900">{t("review.noApplications")}</h3>
           <p className="mt-1.5 max-w-sm text-sm text-slate-500">
-            {statusFilter === "pending" ? "ไม่มีการยืนยันรอตรวจสอบในขณะนี้" : "ไม่พบรายการตามเงื่อนไขที่เลือก"}
+            {statusFilter === "pending" ? t("review.noPending") : t("review.noApplications")}
           </p>
         </div>
       ) : (
@@ -267,12 +270,14 @@ export default function SellerVerificationQueue() {
                     </div>
                     <p className="truncate text-xs text-slate-400">
                       {row.owner_name} · {row.owner_email}
-                      {row.submitted_at && <span> · ส่งเมื่อ {new Date(row.submitted_at).toLocaleDateString()}</span>}
+                      {row.submitted_at && (
+                        <span> · {t("review.submittedAt", { date: new Date(row.submitted_at).toLocaleDateString() })}</span>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Button size="sm" variant="outline" className="rounded-[10px] text-xs" onClick={() => openReview(row)}>
-                      <CheckCircle2 className="size-3.5 mr-1" /> ตรวจสอบ
+                      <CheckCircle2 className="size-3.5 mr-1" /> {t("review.reviewAction")}
                     </Button>
                     {row.status === "pending" && (
                       <Button size="sm" variant="outline" className="rounded-[10px] text-xs border-rose-200 text-rose-600 hover:bg-rose-50" onClick={() => openRevoke(row)}>
@@ -289,9 +294,9 @@ export default function SellerVerificationQueue() {
           {/* Pagination — the reviewer never loads an unbounded seller table. */}
           <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-3 sm:flex-row">
             <p className="text-xs text-slate-500">
-              ทั้งหมด {pagination?.total ?? rows.length} รายการ
+              {t("review.totalCount", { total: pagination?.total ?? rows.length })}
               {pagination && pagination.totalPages > 1 && (
-                <span> · หน้า {pagination.page} / {pagination.totalPages}</span>
+                <span> · {t("review.pageOf", { page: pagination.page, totalPages: pagination.totalPages })}</span>
               )}
             </p>
             <div className="flex gap-2">
@@ -302,7 +307,7 @@ export default function SellerVerificationQueue() {
                 disabled={page <= 1 || loading}
                 onClick={() => setPage((p) => Math.max(p - 1, 1))}
               >
-                <ChevronLeft className="size-3.5 mr-1" /> ก่อนหน้า
+                <ChevronLeft className="size-3.5 mr-1" /> {t("review.previous")}
               </Button>
               <Button
                 variant="outline"
@@ -311,7 +316,7 @@ export default function SellerVerificationQueue() {
                 disabled={!pagination?.hasMore || loading}
                 onClick={() => setPage((p) => p + 1)}
               >
-                ถัดไป <ChevronRight className="size-3.5 ml-1" />
+                {t("review.next")} <ChevronRight className="size-3.5 ml-1" />
               </Button>
             </div>
           </div>
@@ -333,31 +338,31 @@ export default function SellerVerificationQueue() {
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 text-rose-600">
               <AlertTriangle className="size-5" />
-              <h3 className="text-lg font-semibold">ระงับและลบร้านค้า</h3>
+              <h3 className="text-lg font-semibold">{t("review.revokeTitle")}</h3>
             </div>
             <div className="mt-4 space-y-3 text-sm text-slate-600">
-              <p>คุณกำลังจะระงับและลบร้านค้า <strong>{revokeTarget.shop_name}</strong> ออกจากระบบ</p>
-              <p className="text-xs text-slate-500">การดำเนินการนี้จะ:</p>
+              <p>{t("review.revokeDesc", { shop: revokeTarget.shop_name ?? "" })}</p>
+              <p className="text-xs text-slate-500">{t("review.revokeEffect")}</p>
               <ul className="list-disc pl-5 text-xs text-slate-500 space-y-1">
-                <li>ระงับบัญชีผู้ขาย</li>
-                <li>นำสินค้าทั้งหมดออกจากร้าน</li>
-                <li>บันทึกประวัติการดำเนินการ</li>
+                <li>{t("review.revokeEffectSeller")}</li>
+                <li>{t("review.revokeEffectProducts")}</li>
+                <li>{t("review.revokeEffectAudit")}</li>
               </ul>
               <div className="grid gap-2">
-                <label className="text-xs font-medium text-slate-500">เหตุผลที่ระงับ *</label>
+                <label className="text-xs font-medium text-slate-500">{t("review.revokeReasonLabel")}</label>
                 <textarea
                   rows={3}
                   value={revokeReason}
                   onChange={(e) => setRevokeReason(e.target.value)}
-                  placeholder="กรุณาระบุเหตุผล..."
+                  placeholder={t("review.revokeReasonPlaceholder")}
                   className="rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40"
                 />
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setRevokeOpen(false)} disabled={revoking}>ยกเลิก</Button>
+              <Button variant="outline" size="sm" onClick={() => setRevokeOpen(false)} disabled={revoking}>{t("review.revokeCancel")}</Button>
               <Button size="sm" className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void handleRevoke()} disabled={revoking || !revokeReason.trim()}>
-                {revoking && <Loader2 className="size-3.5 animate-spin mr-1" />} ยืนยันระงับ
+                {revoking && <Loader2 className="size-3.5 animate-spin mr-1" />} {t("review.revokeConfirm")}
               </Button>
             </div>
           </div>

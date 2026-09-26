@@ -44,6 +44,7 @@ import {
 } from "../lib/variant-options.js";
 import { CATEGORY_UUID_RE, INVALID_CATEGORY_MESSAGE, validateCategory, type CategoryLookupRow } from "../lib/categories.js";
 import { isCenterMember, userHasPermission } from "../lib/permissions.js";
+import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 
 // ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
@@ -3459,6 +3460,14 @@ export function setupProductRoutes(app: Express): void {
     try {
       if (!(await requireModerator(req, res))) return;
 
+      // Bounded page (default 25, hard max 100) with the exact filtered count
+      // returned as `pagination.total` — see backend/lib/pagination.ts. Before
+      // this, every matching product came back with all of its images on every
+      // load and every realtime refetch.
+      const page = parsePage(req.query.page);
+      const limit = parseLimit(req.query.limit);
+      const offset = pageOffset(page, limit);
+
       const { status, q, sort, shopId } = req.query as { status?: string; q?: string; sort?: string; shopId?: string };
       const params: any[] = [];
       const where: string[] = [];
@@ -3476,10 +3485,13 @@ export function setupProductRoutes(app: Express): void {
         where.push(`p.shop_id = $${params.length}`);
       }
 
-      const orderBy = sort === "oldest" ? "p.created_at ASC" : "p.created_at DESC";
+      // `created_at` alone is not unique; the `id` tie-break is what keeps
+      // LIMIT/OFFSET paging from skipping or repeating a row.
+      const orderBy = sort === "oldest" ? "p.created_at ASC, p.id ASC" : "p.created_at DESC, p.id DESC";
 
       const result = await query(
-        `SELECT p.id, p.name, p.description, p.short_description, p.price, p.compare_at_price,
+        `SELECT COUNT(*) OVER() AS total_count,
+                p.id, p.name, p.description, p.short_description, p.price, p.compare_at_price,
                 p.currency, p.unit, p.supplier, p.status, p.rejection_reason, p.category_id,
                 p.shop_id, p.created_at, p.updated_at,
                 sh.name as shop_name, sh.slug as shop_slug, s.status as shop_status,
@@ -3493,9 +3505,28 @@ export function setupProductRoutes(app: Express): void {
          JOIN users u ON s.user_id = u.id
          LEFT JOIN inventory i ON i.product_id = p.id
          ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-         ORDER BY ${orderBy}`,
-        params
+         ORDER BY ${orderBy}
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset]
       );
+
+      // `total_count` is the filtered count BEFORE LIMIT/OFFSET and is identical on
+      // every returned row. A page past the end returns no rows at all, so fall
+      // back to a count query instead of reporting a total of 0. (`inventory` is
+      // UNIQUE on product_id, so dropping its join cannot change the count.)
+      let total = result.rows.length ? Number(result.rows[0].total_count) : 0;
+      if (!result.rows.length && page > 1) {
+        const countRes = await query(
+          `SELECT COUNT(*)::int AS total
+           FROM products p
+           JOIN shops sh ON p.shop_id = sh.id
+           JOIN sellers s ON sh.seller_id = s.id
+           JOIN users u ON s.user_id = u.id
+           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`,
+          params
+        );
+        total = Number(countRes.rows[0]?.total ?? 0);
+      }
 
       const productIds = result.rows.map((r: any) => r.id);
 
@@ -3555,7 +3586,13 @@ export function setupProductRoutes(app: Express): void {
         };
       });
 
-      res.json({ success: true, data: products });
+      res.json({
+        success: true,
+        data: {
+          products,
+          pagination: pageMeta(page, limit, total, products.length),
+        },
+      });
     } catch (err) {
       console.error("[admin] product moderation list error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list products for moderation" } });

@@ -20,6 +20,7 @@ import { cn } from "@velnox/shared/lib/utils";
 import {
   AlertCircle,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Clock,
@@ -37,6 +38,17 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { onCenterEvent } from "../lib/center-events";
+
+/** Rows per page — the queue is bounded; mirrors `backend/lib/pagination.ts`. */
+const PAGE_SIZE = 25;
+
+interface PageMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+}
 
 interface ModProduct {
   id: string;
@@ -529,6 +541,8 @@ export default function ProductModerationQueue() {
   const [statusFilter, setStatusFilter] = useState("pending_review");
   const [sortOrder, setSortOrder] = useState("newest");
   const [expandedShops, setExpandedShops] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PageMeta | null>(null);
 
   // Detail dialog state
   const [detailOpen, setDetailOpen] = useState(false);
@@ -544,22 +558,34 @@ export default function ProductModerationQueue() {
     setLoading(true);
     setError(null);
     try {
+      // ONE bounded page. The backend filters, orders deterministically and
+      // pages; `pagination.total` is the exact count for the current filter.
       const data = await moderationAction({
         status: statusFilter === "all" ? undefined : statusFilter,
         q: search || undefined,
         sort: sortOrder,
+        page,
+        limit: PAGE_SIZE,
       });
-      setProducts(Array.isArray(data) ? data : []);
+      // The endpoint answers `{ products, pagination }`; a bare array (an older
+      // backend during a deploy) still renders, without a page count.
+      const payload = Array.isArray(data) ? { products: data, pagination: null } : data;
+      setProducts(Array.isArray(payload?.products) ? payload.products : []);
+      setPagination(payload?.pagination ?? null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดข้อมูล";
       setError(msg);
       setProducts([]);
+      setPagination(null);
     } finally {
       setLoading(false);
     }
-  }, [moderationAction, statusFilter, search, sortOrder]);
+  }, [moderationAction, statusFilter, search, sortOrder, page]);
 
   useEffect(() => { void loadProducts(); }, [loadProducts]);
+
+  // A new result set starts at page 1 — page 3 of the previous filter is meaningless.
+  useEffect(() => { setPage(1); }, [statusFilter, search, sortOrder]);
 
   // Realtime: the Center page owns the WebSocket and notifies us when the
   // product queue changed, so a reviewed item leaves the list immediately.
@@ -597,6 +623,12 @@ export default function ProductModerationQueue() {
   }, [shopGroups]);
 
   const collapseAll = useCallback(() => { setExpandedShops(new Set()); }, []);
+
+  // A reviewed product leaves the queue. If that empties the last page, step back
+  // instead of reporting "no products" over a page that still has rows behind it.
+  useEffect(() => {
+    if (!loading && !error && shopGroups.length === 0 && page > 1) setPage((p) => p - 1);
+  }, [loading, error, shopGroups.length, page]);
 
   const loadDetail = useCallback(async (productId: string) => {
     setDetailLoading(true);
@@ -641,7 +673,9 @@ export default function ProductModerationQueue() {
     }
   }, [detailProduct, moderationChoice, rejectReason, setModerationStatus, loadProducts]);
 
-  const pendingCount = products.filter(p => p.status === "pending_review").length;
+  // Exact for the current filter, not just the current page: the backend returns
+  // the filtered count in `pagination.total`.
+  const pendingCount = statusFilter === "pending_review" ? (pagination?.total ?? 0) : 0;
   const isPending = detailProduct?.product.status === "pending_review";
 
   return (
@@ -784,6 +818,36 @@ export default function ProductModerationQueue() {
               )}
             </Card>
           ))}
+
+          {/* Pagination — the reviewer never loads an unbounded product table. */}
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-3 sm:flex-row">
+            <p className="text-xs text-slate-500">
+              ทั้งหมด {pagination?.total ?? products.length} รายการ
+              {pagination && pagination.totalPages > 1 && (
+                <span> · หน้า {pagination.page} / {pagination.totalPages}</span>
+              )}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-[10px] text-xs"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+              >
+                <ChevronLeft className="size-3.5 mr-1" /> ก่อนหน้า
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-[10px] text-xs"
+                disabled={!pagination?.hasMore || loading}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                ถัดไป <ChevronRight className="size-3.5 ml-1" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

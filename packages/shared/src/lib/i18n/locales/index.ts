@@ -850,6 +850,30 @@ interface ReviewCopy {
   actionApproved: string;
   actionRejected: string;
   actionSuspended: string;
+  pendingBanner: string;
+  noPending: string;
+  submittedAt: string;
+  reviewAction: string;
+  resultApproved: string;
+  resultRejected: string;
+  resultSuspended: string;
+  resultCorrection: string;
+  actionFailed: string;
+  revokeTitle: string;
+  revokeDesc: string;
+  revokeEffect: string;
+  revokeEffectSeller: string;
+  revokeEffectProducts: string;
+  revokeEffectAudit: string;
+  revokeReasonLabel: string;
+  revokeReasonPlaceholder: string;
+  revokeCancel: string;
+  revokeConfirm: string;
+  revokeSuccess: string;
+  totalCount: string;
+  pageOf: string;
+  previous: string;
+  next: string;
 }
 
 const thReview: ReviewCopy = {
@@ -909,6 +933,30 @@ const thReview: ReviewCopy = {
   actionApproved: "อนุมัติ",
   actionRejected: "ปฏิเสธ",
   actionSuspended: "ระงับ",
+  pendingBanner: "{count} การยืนยันรอตรวจสอบ",
+  noPending: "ไม่มีการยืนยันรอตรวจสอบในขณะนี้",
+  submittedAt: "ส่งเมื่อ {date}",
+  reviewAction: "ตรวจสอบ",
+  resultApproved: "อนุมัติแล้ว ✅",
+  resultRejected: "ปฏิเสธแล้ว",
+  resultSuspended: "ระงับแล้ว",
+  resultCorrection: "ส่งคำขอแก้ไขแล้ว",
+  actionFailed: "ไม่สำเร็จ กรุณาลองอีกครั้ง",
+  revokeTitle: "ระงับและลบร้านค้า",
+  revokeDesc: "คุณกำลังจะระงับและลบร้านค้า {shop} ออกจากระบบ",
+  revokeEffect: "การดำเนินการนี้จะ:",
+  revokeEffectSeller: "ระงับบัญชีผู้ขาย",
+  revokeEffectProducts: "นำสินค้าทั้งหมดออกจากร้าน",
+  revokeEffectAudit: "บันทึกประวัติการดำเนินการ",
+  revokeReasonLabel: "เหตุผลที่ระงับ *",
+  revokeReasonPlaceholder: "กรุณาระบุเหตุผล...",
+  revokeCancel: "ยกเลิก",
+  revokeConfirm: "ยืนยันระงับ",
+  revokeSuccess: "ระงับและลบร้านค้าแล้ว",
+  totalCount: "ทั้งหมด {total} รายการ",
+  pageOf: "หน้า {page} / {totalPages}",
+  previous: "ก่อนหน้า",
+  next: "ถัดไป",
 };
 
 const enReview: ReviewCopy = {
@@ -968,6 +1016,30 @@ const enReview: ReviewCopy = {
   actionApproved: "Approved",
   actionRejected: "Rejected",
   actionSuspended: "Suspended",
+  pendingBanner: "{count} verifications pending review",
+  noPending: "No verifications pending review right now",
+  submittedAt: "Submitted {date}",
+  reviewAction: "Review",
+  resultApproved: "Approved ✅",
+  resultRejected: "Rejected",
+  resultSuspended: "Suspended",
+  resultCorrection: "Correction request sent",
+  actionFailed: "Something went wrong — please try again",
+  revokeTitle: "Suspend and remove shop",
+  revokeDesc: "You are about to suspend and remove {shop} from the system",
+  revokeEffect: "This will:",
+  revokeEffectSeller: "Suspend the seller account",
+  revokeEffectProducts: "Remove all products from the shop",
+  revokeEffectAudit: "Record the action in the audit history",
+  revokeReasonLabel: "Reason for suspension *",
+  revokeReasonPlaceholder: "Please give a reason...",
+  revokeCancel: "Cancel",
+  revokeConfirm: "Confirm suspension",
+  revokeSuccess: "Shop suspended and removed",
+  totalCount: "{total} total",
+  pageOf: "Page {page} / {totalPages}",
+  previous: "Previous",
+  next: "Next",
 };
 
 const myReview: ReviewCopy = {
@@ -1027,6 +1099,30 @@ const myReview: ReviewCopy = {
   actionApproved: "အတည်ပြုပြီး",
   actionRejected: "ငြင်းပယ်ပြီး",
   actionSuspended: "ရပ်ဆိုင်းပြီး",
+  pendingBanner: "{count} ခု အတည်ပြုရန် စောင့်ဆိုင်းနေသည်",
+  noPending: "အတည်ပြုရန် စောင့်ဆိုင်းနေသည့် တစ်ခုမှ မရှိပါ",
+  submittedAt: "{date} တွင် တင်သွင်းခဲ့သည်",
+  reviewAction: "စစ်ဆေးရန်",
+  resultApproved: "အတည်ပြုပြီး ✅",
+  resultRejected: "ငြင်းပယ်ပြီး",
+  resultSuspended: "ရပ်ဆိုင်းပြီး",
+  resultCorrection: "ပြင်ဆင်ရန် တောင်းဆိုမှု ပို့ပြီး",
+  actionFailed: "မအောင်မြင်ပါ — ထပ်ကြိုးစားပါ",
+  revokeTitle: "ဆိုင်ကို ရပ်ဆိုင်းပြီး ဖယ်ရှားရန်",
+  revokeDesc: "သင်သည် {shop} ကို ရပ်ဆိုင်းပြီး စနစ်မှ ဖယ်ရှားတော့မည်",
+  revokeEffect: "ဤလုပ်ဆောင်ချက်သည်:",
+  revokeEffectSeller: "ရောင်းချသူအကောင့်ကို ရပ်ဆိုင်းသည်",
+  revokeEffectProducts: "ဆိုင်မှ ကုန်ပစ္စည်းအားလုံးကို ဖယ်ရှားသည်",
+  revokeEffectAudit: "လုပ်ဆောင်ချက်ကို စစ်ဆေးမှုမှတ်တမ်းတွင် မှတ်တမ်းတင်သည်",
+  revokeReasonLabel: "ရပ်ဆိုင်းရသည့် အကြောင်းရင်း *",
+  revokeReasonPlaceholder: "အကြောင်းရင်း ထည့်ပါ...",
+  revokeCancel: "ပယ်ဖျက်ရန်",
+  revokeConfirm: "ရပ်ဆိုင်းမှု အတည်ပြုရန်",
+  revokeSuccess: "ဆိုင်ကို ရပ်ဆိုင်းပြီး ဖယ်ရှားပြီးပါပြီ",
+  totalCount: "စုစုပေါင်း {total} ခု",
+  pageOf: "စာမျက်နှာ {page} / {totalPages}",
+  previous: "ယခင်",
+  next: "နောက်သို့",
 };
 
 /**

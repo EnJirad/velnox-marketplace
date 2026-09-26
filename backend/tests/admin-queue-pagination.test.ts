@@ -36,6 +36,11 @@ const queueSrc = readFileSync(
   join(root, "apps", "velcenter", "src", "components", "SellerVerificationQueue.tsx"),
   "utf8",
 );
+const productsSrc = readFileSync(join(root, "backend", "routes", "products.ts"), "utf8");
+const moderationQueueSrc = readFileSync(
+  join(root, "apps", "velcenter", "src", "components", "ProductModerationQueue.tsx"),
+  "utf8",
+);
 const centerSrc = readFileSync(join(root, "apps", "velcenter", "src", "pages", "Center.tsx"), "utf8");
 
 describe("page / limit parsing", () => {
@@ -249,13 +254,96 @@ describe("the seller + product counters read exact counts, not page lengths", ()
     expect(centerSrc).not.toContain("setSellerRows(");
   });
 
-  test("the product counter reads the dashboard COUNT, not the unbounded list", () => {
-    // GET /api/admin/products/moderation has no LIMIT yet (its handler lives past
-    // the edit window in products.ts), so the dashboard must not download every
-    // product row into the browser to measure a badge.
+  test("the product counter reads the dashboard COUNT, not a fetched list", () => {
+    // The dashboard reads one COUNT query; it must never download product rows
+    // into the browser to measure a badge. (The moderation queue itself now pages
+    // — see the products/moderation block below.)
     expect(centerSrc).toContain("setPendingProducts(Number(counts?.pendingProducts ?? 0))");
     expect(centerSrc).toContain("useAction(api.centerAdmin.dashboardCounts)");
     expect(centerSrc).not.toContain("(modProducts ?? []).filter");
     expect(centerSrc).not.toContain("setModProducts(");
+  });
+});
+
+describe("GET /api/admin/products/moderation is paginated", () => {
+  test("it applies LIMIT/OFFSET from the shared helpers", () => {
+    expect(productsSrc).toContain('import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js"');
+    expect(productsSrc).toContain("const page = parsePage(req.query.page)");
+    expect(productsSrc).toContain("const limit = parseLimit(req.query.limit)");
+    expect(productsSrc).toContain("const offset = pageOffset(page, limit)");
+    expect(productsSrc).toContain("LIMIT $${params.length + 1} OFFSET $${params.length + 2}`");
+    expect(productsSrc).toContain("[...params, limit, offset]");
+  });
+
+  test("the unbounded moderation list is gone", () => {
+    // The handler used to end at `ORDER BY ${orderBy}`, returning every matching
+    // product with its images on every load and every realtime refetch.
+    expect(productsSrc).not.toContain("ORDER BY ${orderBy}`,");
+  });
+
+  test("the order is deterministic, so paging cannot skip or repeat a row", () => {
+    expect(productsSrc).toContain('"p.created_at DESC, p.id DESC"');
+    expect(productsSrc).toContain('"p.created_at ASC, p.id ASC"');
+  });
+
+  test("the exact filtered count is returned as pagination.total", () => {
+    expect(productsSrc).toContain("COUNT(*) OVER() AS total_count");
+    expect(productsSrc).toContain("pagination: pageMeta(page, limit, total, products.length)");
+    // A page past the end returns no rows, so the count must come from a query.
+    expect(productsSrc).toContain("if (!result.rows.length && page > 1)");
+  });
+
+  test("the window-function column never leaks into the payload", () => {
+    // products.ts has several `const products = result.rows.map` mappers — start
+    // from the moderation handler so this cannot silently test another route.
+    const handler = productsSrc.indexOf('app.get("/api/admin/products/moderation"');
+    const from = productsSrc.indexOf("const products = result.rows.map", handler);
+    const to = productsSrc.indexOf("res.json({", from);
+    expect(handler).toBeGreaterThan(-1);
+    expect(from).toBeGreaterThan(handler);
+    expect(to).toBeGreaterThan(from);
+    const mapper = productsSrc.slice(from, to);
+    // The row mapper builds an explicit object, so `total_count` has no path out.
+    expect(mapper).not.toContain("total_count");
+    expect(mapper).not.toContain("...row");
+  });
+
+  test("the limit/offset parameters cannot be swallowed by the filter params", () => {
+    // products.ts has other paginated handlers, so anchor inside the moderation
+    // handler before comparing the two index families.
+    const handler = productsSrc.indexOf('app.get("/api/admin/products/moderation"');
+    const filters = productsSrc.indexOf("where.push(`p.shop_id = $${params.length}`)", handler);
+    const call = productsSrc.indexOf("[...params, limit, offset]", handler);
+    expect(filters).toBeGreaterThan(handler);
+    expect(call).toBeGreaterThan(filters);
+  });
+});
+
+describe("the product moderation queue consumes the pagination contract", () => {
+  test("the shared action forwards page and limit", () => {
+    // The mapping spans several lines; slice it by its neighbouring route keys.
+    const from = apiRoutesSrc.indexOf('"api.centerAdmin.productModerationList"');
+    const to = apiRoutesSrc.indexOf('"api.centerAdmin.productModerationDetail"', from);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    const mapping = apiRoutesSrc.slice(from, to);
+    expect(mapping).toContain("page: a?.page");
+    expect(mapping).toContain("limit: a?.limit");
+  });
+
+  test("the queue asks for one bounded page and reads pagination.total", () => {
+    expect(moderationQueueSrc).toContain("const PAGE_SIZE = 25");
+    expect(moderationQueueSrc).toContain("page,");
+    expect(moderationQueueSrc).toContain("limit: PAGE_SIZE");
+    expect(moderationQueueSrc).toContain("setPagination(payload?.pagination ?? null)");
+    // The pending badge used to be the length of the fetched page.
+    expect(moderationQueueSrc).not.toContain('products.filter(p => p.status === "pending_review").length');
+  });
+
+  test("the queue renders previous/next controls and an exact total", () => {
+    expect(moderationQueueSrc).toContain("pagination?.hasMore");
+    expect(moderationQueueSrc).toContain("pagination?.total ?? products.length");
+    expect(moderationQueueSrc).toContain("setPage((p) => p + 1)");
+    expect(moderationQueueSrc).toContain("setPage((p) => Math.max(p - 1, 1))");
   });
 });
