@@ -1,4 +1,8 @@
-# Completed Tasks — none
+# Completed Tasks
+
+| Report | Outcome |
+|---|---|
+| [`stripe-test-mode-e2e-gate.md`](./stripe-test-mode-e2e-gate.md) | **BLOCKED — Stripe TEST credentials unavailable.** The Stripe E2E flows were not run; the credential gate, database isolation, the eight required payment properties (with file:line citations), the executed test evidence, and the unblock steps are recorded. Base commit `0712c70` |
 
 Finished task reports land here: what was changed, the verification output, and what remained unproven.
 

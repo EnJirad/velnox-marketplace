@@ -733,6 +733,20 @@ Settings → Environment, plus `TEST_DATABASE_URL` for a disposable PostgreSQL. 
 `.env.example` still does **not** list `STRIPE_*` / `COD_*` / `TEST_DATABASE_URL`;
 agent tooling cannot edit that file, so add them by hand while you are there.
 
+**Re-gate (2026-09-26, TASK 008 — close-out attempt).** Re-verified at `0712c70`
+(= `origin/main`, tree clean): the credential gate is **unchanged** —
+`freebuff-env list` is still empty, and the app's own `stripeStatus()` still reports
+`{"usable":false,"mode":null,"reason":"STRIPE_NOT_CONFIGURED"}` with COD off. So
+**Stripe TEST E2E stays BLOCKED** and flows 1–7 were not run. Phases 2/3/6 were
+re-executed: production-looking `DATABASE_URL` refused (disposable target accepted),
+isolation suite 39 pass, full suite **560 pass / 2 skip / 0 fail**, payment file
+**61 pass / 0 fail**, schema-drift + migration-numbering **57 pass**, backend `tsc`
+exit 0, 4/4 apps exit 0, i18n 1295/1295/1295, schema sync intact, `diff --check`
+clean. All eight required payment properties were located in source with file:line
+citations (nothing needed changing → nothing changed).
+Full flow-by-flow evidence report:
+[`.ai/tasks/completed/stripe-test-mode-e2e-gate.md`](tasks/completed/stripe-test-mode-e2e-gate.md).
+
 **Not claimed.** Stripe E2E remains **BLOCKED**; production payment readiness is
 **NOT claimed**. No live key, no real card, no real money, and no production database
 was touched — the only database used was the disposable local one above.
