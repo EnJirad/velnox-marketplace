@@ -1,9 +1,10 @@
+import { ResumePaymentButton } from "@/components/shop/ResumePaymentButton";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { Button } from "@velnox/shared/components/ui/button";
 import { useLanguage } from "@/lib/i18n";
 import { useCart } from "@/lib/cart";
-import { formatBaht } from "@velnox/shared/lib/commerce";
+import { formatBaht, orderStripePayability } from "@velnox/shared/lib/commerce";
 import { apiUrl } from "@velnox/shared/lib/sites";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
@@ -37,6 +38,7 @@ interface OrderData {
   }>;
   payment: {
     provider: string;
+    method: string;
     status: string;
     paidAt: string | null;
   } | null;
@@ -62,29 +64,29 @@ export default function ShopCheckoutSuccess() {
   const [order, setOrder] = useState<OrderData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const attemptsRef = useRef(0);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cartReloadedRef = useRef(false);
 
-  const fetchOrder = useCallback(async () => {
-    if (!orderId) return;
+  const fetchOrder = useCallback(async (): Promise<OrderData | null> => {
+    if (!orderId) return null;
     try {
       const res = await fetch(`${apiUrl}/api/orders/${orderId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch order");
       const json = await res.json();
-      if (json.success && json.data) {
-        setOrder(json.data);
-        // Reload cart since order was created
-        reloadCart();
-        return true;
-      }
+      if (json.success && json.data) return json.data as OrderData;
       throw new Error(json.error?.message || "Order not found");
     } catch (err) {
       console.error("Fetch order error:", err);
-      return false;
+      return null;
     }
-  }, [orderId, reloadCart]);
+  }, [orderId]);
 
-  // Initial fetch + polling for webhook completion
+  // Initial fetch + polling until the WEBHOOK has settled the payment.
+  //
+  // This page is only ever reached by returning from Stripe Checkout, and the
+  // browser redirect is not evidence of payment: the order is read back from the
+  // database (Stripe's webhook is the only writer of `paid`) and polled while it
+  // is still awaiting confirmation.
   useEffect(() => {
     if (!orderId) {
       setLoading(false);
@@ -92,38 +94,42 @@ export default function ShopCheckoutSuccess() {
       return;
     }
 
+    /** Nothing more can change for these; keep polling only while unsettled. */
+    const TERMINAL_STATUSES = new Set(["paid", "cancelled", "payment_failed", "refunded", "completed"]);
+    const MAX_ATTEMPTS = 30;
+    const INTERVAL_MS = 3000;
     let alive = true;
+    let attempts = 0;
 
     const poll = async () => {
       if (!alive) return;
-      const ok = await fetchOrder();
-      if (ok && alive) {
-        setLoading(false);
-        // If status is still pending/pending_payment, keep polling
-        // (webhook may not have fired yet)
-        if (attemptsRef.current < 30) {
-          const orderData = await fetch(`${apiUrl}/api/orders/${orderId}`, { credentials: "include" })
-            .then((r) => r.json())
-            .catch(() => null);
-          const status = orderData?.data?.status;
-          if (status && ["paid", "cancelled", "payment_failed"].includes(status)) {
-            return; // Terminal state — stop polling
-          }
-          attemptsRef.current++;
-          pollRef.current = setTimeout(poll, 3000);
-        }
-      } else if (alive) {
+      const data = await fetchOrder();
+      if (!alive) return;
+      if (!data) {
         setLoading(false);
         setError(t("checkoutSuccess.orderNotFound"));
+        return;
+      }
+      setOrder(data);
+      setLoading(false);
+      if (!cartReloadedRef.current) {
+        // The order consumed the cart items server-side; refresh the local copy
+        // once, not on every poll.
+        cartReloadedRef.current = true;
+        reloadCart();
+      }
+      if (!TERMINAL_STATUSES.has(data.status) && attempts < MAX_ATTEMPTS) {
+        attempts += 1;
+        pollRef.current = setTimeout(poll, INTERVAL_MS);
       }
     };
 
-    poll();
+    void poll();
     return () => {
       alive = false;
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-  }, [orderId, fetchOrder, t]);
+  }, [orderId, fetchOrder, reloadCart, t]);
 
   if (!orderId) {
     return (
@@ -145,6 +151,16 @@ export default function ShopCheckoutSuccess() {
 
   const meta = order ? STATUS_META[order.status] ?? STATUS_META.pending : null;
   const StatusIcon = meta?.icon ?? Clock;
+  // Still payable ⇒ the webhook has not settled this order yet. The same rule
+  // the backend enforces decides whether the resume button may appear.
+  const payability = orderStripePayability(order);
+
+  /** Translated payment status, falling back to the raw value. */
+  const paymentStatusLabel = (status: string) => {
+    const key = `paymentLabels.${status.toLowerCase()}`;
+    const value = t(key);
+    return value === key ? status : value;
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -196,7 +212,7 @@ export default function ShopCheckoutSuccess() {
                   <p className="text-sm text-slate-500">{t("checkoutSuccess.paymentStatus")}</p>
                   <span className="flex items-center gap-1.5 text-sm font-medium">
                     <CreditCard className="size-3.5 text-[#10B981]" />
-                    {order.payment.status === "paid" ? t("checkoutSuccess.paid") : t("checkoutSuccess.pending")}
+                    {paymentStatusLabel(order.payment.status)}
                   </span>
                 </div>
               )}
@@ -235,11 +251,29 @@ export default function ShopCheckoutSuccess() {
               </Button>
             </div>
 
-            {order.status === "pending" || order.status === "pending_payment" ? (
-              <p className="mt-4 text-center text-xs text-slate-400">
-                {t("checkoutSuccess.polling")}
-              </p>
-            ) : null}
+            {/*
+              Returned from Stripe, not yet confirmed by the webhook: say exactly
+              that, and offer the same rail again so an abandoned payment can be
+              finished without going back to the cart.
+            */}
+            {payability.payable && (
+              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-left">
+                <p className="flex items-center gap-2 text-sm font-semibold text-amber-700">
+                  <Clock className="size-4 shrink-0" />
+                  {t("checkoutSuccess.awaitingWebhook")}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-amber-700/80">{t("checkoutSuccess.resumeHint")}</p>
+                <div className="mt-3">
+                  <ResumePaymentButton
+                    orderId={order.id}
+                    method={payability.method}
+                    returnPath={`/orders/${order.id}`}
+                    onUnknownMethod="ask"
+                  />
+                </div>
+                <p className="mt-3 text-[11px] leading-5 text-amber-700/70">{t("checkoutSuccess.polling")}</p>
+              </div>
+            )}
           </>
         ) : null}
       </main>

@@ -1,3 +1,4 @@
+import { ResumePaymentButton } from "@/components/shop/ResumePaymentButton";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { useLanguage } from "@/lib/i18n";
@@ -25,6 +26,7 @@ import {
   formatIsoDate,
   formatIsoDateTime,
   getOrderStatusMeta,
+  orderStripePayability,
   shortOrderNumber,
   type StoreOrder,
   type StoreSubscription,
@@ -287,6 +289,10 @@ export default function MyOrders() {
               {orders.map((order: StoreOrder) => {
                 const meta = getOrderStatusMeta(order.status);
                 const items = order.items ?? [];
+                // An order that is still payable keeps its "continue payment"
+                // entry point here, so a customer who left Stripe never has to go
+                // back to the cart (which no longer holds the items) to pay.
+                const payability = orderStripePayability(order);
                 return (
                   <div
                     key={order.id}
@@ -355,7 +361,18 @@ export default function MyOrders() {
                         <span className="text-xs font-medium text-[#10B981]">{t("orders.viewDetail")}</span>
                       </div>
                     </Link>
-                    <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                      {payability.payable && (
+                        <ResumePaymentButton
+                          orderId={order.id}
+                          method={payability.method}
+                          returnPath={`/orders/${order.id}`}
+                          // The list only carries the newest payment method. When
+                          // it is not recorded the order page asks the customer
+                          // (it can list the rails) instead of guessing one here.
+                          onUnknownMethod="link"
+                        />
+                      )}
                       <Button
                         variant="outline"
                         size="sm"

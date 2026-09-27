@@ -494,6 +494,7 @@ export const en: Dict = {
     pieces: "{count} items",
     total: "Total",
     viewDetail: "View details →",
+    choosePaymentMethod: "Choose payment method",
   },
 
   addresses: {
@@ -614,6 +615,12 @@ export const en: Dict = {
     total: "Total",
     submit: "Place order · {total}",
     submitting: "Creating your order...",
+    preparingPayment: "Preparing your payment…",
+    payStartFailed: "Could not open the Stripe payment page — your order is safe, please try again.",
+    paymentNotStarted: "Order created — payment not started",
+    paymentNotStartedDesc:
+      "Your order was created, but the Stripe payment page could not be opened. The order is still there and you can continue the payment at any time.",
+    retryPayment: "Try the payment again",
     priceNote:
       "Prices and stock are re-checked by the system before confirming — we'll let you know if anything changes",
     selectAddress: "Please choose a delivery address first",
@@ -646,6 +653,8 @@ export const en: Dict = {
   checkoutSuccess: {
     loading: "Verifying payment status...",
     verifyingPayment: "Verifying payment with Stripe",
+    awaitingWebhook: "Waiting for Stripe to confirm the payment",
+    resumeHint: "If the payment did not go through, you can return to Stripe Checkout right away.",
     polling: "Waiting for Stripe confirmation... This page will update automatically",
     paid: "Payment successful",
     pending: "Awaiting payment",
@@ -710,8 +719,12 @@ export const en: Dict = {
     addressTitle: "Delivery address",
     backToOrders: "All orders",
     buyAgain: "Buy again",
-    payOnlineNow: "Pay online now",
+    payOnlineNow: "Continue payment",
     payOnlinePending: "Payment pending — complete it securely at Stripe (card / PromptPay)",
+    payingNow: "Preparing your payment…",
+    choosePaymentTitle: "Choose a payment method",
+    choosePaymentDesc:
+      "No payment method was recorded for this order. Pick one and we will take you to Stripe Checkout.",
     requestReturn: "Request return",
     cancelOrder: "Cancel order",
     cancelDialogTitle: "Cancel this order?",

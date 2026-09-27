@@ -254,6 +254,12 @@ export interface StoreOrder {
   customerUserId: string;
   status: StoreOrderStatus;
   paymentStatus: StorePaymentStatus;
+  /**
+   * The latest payment row's method (`CARD` / `PROMPTPAY` / `cod` / …), when
+   * the endpoint that returned this order supplies one. The resume-payment
+   * button reads it to re-open the SAME rail the customer chose.
+   */
+  paymentMethod?: string | null;
   shippingStatus: string;
   shippingMethod: string | null;
   trackingNumber: string | null;
@@ -400,6 +406,107 @@ export const NEXT_ORDER_STATUSES: Record<StoreOrderStatus, StoreOrderStatus[]> =
   refunded: [],
   cancelled: [],
 };
+
+// ---------------------------------------------------------------------------
+// payment resume contract (Stripe Checkout)
+// ---------------------------------------------------------------------------
+/**
+ * The order statuses `POST /api/stripe/checkout` accepts a Checkout Session
+ * for. A payment-lifecycle status OUTSIDE this set (`payment_failed`,
+ * `cancelled`, `paid`, …) is terminal for payment: `payment_failed`/`cancelled`
+ * already released their reserved stock, so the backend refuses to re-open a
+ * session for them and the storefront must not offer one either.
+ *
+ * `backend/tests/checkout-payment-flow.test.ts` pins this list against the
+ * literal status list in `backend/routes/stripe.ts`, so the storefront cannot
+ * drift away from what the server accepts.
+ */
+export const PAYABLE_ORDER_STATUSES = ["pending", "pending_payment"] as const;
+export type PayableOrderStatus = (typeof PAYABLE_ORDER_STATUSES)[number];
+
+/**
+ * Payment rails the resume-payment flow can open a Stripe Checkout Session for.
+ * `paymentMethods.*` copy for these ids already exists in every locale.
+ */
+export type StripeResumableMethod = "CARD" | "PROMPTPAY";
+
+/** Is this an order status the backend will still accept a payment for? */
+export function isOrderPayable(status: unknown): boolean {
+  return typeof status === "string" && (PAYABLE_ORDER_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Resolve a stored `payments.method` to the Stripe rail it belongs to.
+ *
+ * `online` is the pre-foundation value for "pay with Stripe" (see
+ * `METHOD_ALIASES` in `backend/lib/payment-config.ts`) and still maps to CARD so
+ * an order created by an older client can be resumed instead of stranded.
+ * Returning `null` means "not a Stripe rail" — and for a method we merely do
+ * not recognise it means the storefront must ASK, never guess.
+ */
+export function stripeMethodForPaymentMethod(method: unknown): StripeResumableMethod | null {
+  if (typeof method !== "string") return null;
+  const normalised = method.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalised === "card" || normalised === "online" || normalised === "credit_card" || normalised === "debit_card") {
+    return "CARD";
+  }
+  if (normalised === "promptpay" || normalised === "qr") return "PROMPTPAY";
+  return null;
+}
+
+/**
+ * Payment methods that deliberately do NOT belong to the Stripe rail.
+ * COD is settled by a carrier, so re-opening a Stripe session for a COD order
+ * would charge the customer for an order they chose to pay on delivery.
+ */
+const NON_STRIPE_PAYMENT_METHODS = new Set(["cod", "cash_on_delivery"]);
+
+/** The smallest order shape the payability decision needs. */
+export interface OrderPayabilityInput {
+  status: unknown;
+  /** `orders` list / detail expose the latest payment status. */
+  paymentStatus?: unknown;
+  /** `orders` list exposes the latest payment method. */
+  paymentMethod?: unknown;
+  /** `orders` detail exposes every payment, newest first. */
+  payments?: Array<{ method?: unknown }> | null;
+}
+
+export interface OrderStripePayability {
+  /** The backend would accept a Checkout Session for this order right now. */
+  payable: boolean;
+  /**
+   * The rail the customer originally chose, or `null` when it is not recorded
+   * (an order whose session creation failed) or not a Stripe rail. A `null`
+   * method on a payable order means: ask the customer, never default to card.
+   */
+  method: StripeResumableMethod | null;
+}
+
+/**
+ * Decide whether a customer may still pay this order through Stripe, and with
+ * which method.
+ *
+ * This is the ONE rule both VelShop surfaces (`MyOrders`, `ShopOrderDetail`)
+ * and the Stripe-return pages read, so the button can never appear where the
+ * backend would answer `INVALID_STATUS`, and can never disappear where the
+ * backend would accept the payment.
+ */
+export function orderStripePayability(order: OrderPayabilityInput | null | undefined): OrderStripePayability {
+  if (!order || !isOrderPayable(order.status)) return { payable: false, method: null };
+  // Belt and braces: a paid payment must never present a pay-again button even
+  // if the order row lags one transition behind the payment row.
+  if (typeof order.paymentStatus === "string" && order.paymentStatus.toLowerCase() === "paid") {
+    return { payable: false, method: null };
+  }
+
+  const latestMethod = order.paymentMethod ?? order.payments?.[0]?.method ?? null;
+  if (typeof latestMethod === "string" && NON_STRIPE_PAYMENT_METHODS.has(latestMethod.trim().toLowerCase())) {
+    return { payable: false, method: null };
+  }
+
+  return { payable: true, method: stripeMethodForPaymentMethod(latestMethod) };
+}
 
 // ---------------------------------------------------------------------------
 // subscriptions (VelRepeat)

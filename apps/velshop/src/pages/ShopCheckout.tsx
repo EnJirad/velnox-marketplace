@@ -170,14 +170,38 @@ export default function ShopCheckout() {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [methodOptions, setMethodOptions] = useState<PaymentMethodOption[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [paying, setPaying] = useState(false);
   const [result, setResult] = useState<CheckoutResult | null>(null);
+  /**
+   * Set when the ORDER exists but its Stripe Checkout Session could not be
+   * opened. It is deliberately not an error-only state: the purchase is intact
+   * and resumable, so the customer gets a retry instead of a dead end.
+   */
+  const [paymentStartError, setPaymentStartError] = useState<{ orderId: string; orderNumber: string; method: string; message: string } | null>(null);
   const [vrOpen, setVrOpen] = useState(false);
   const [productsExpanded, setProductsExpanded] = useState(false);
 
   const requestIdRef = useRef<string | null>(null);
+  /**
+   * First-click-wins guard. `submitting` re-renders the buttons as disabled, but
+   * two clicks in the same tick would both read the pre-update state, so the
+   * synchronous ref is what actually makes one press = one order.
+   */
+  const submitRef = useRef(false);
   useEffect(() => {
     if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
+  }, []);
+
+  // Coming BACK from Stripe (browser Back / bfcache restore) must not leave the
+  // button stuck in "preparing": the ref survives the restore, so it is cleared
+  // on `pageshow`. Re-pressing is safe — the same request id replays the same
+  // order and the same Checkout Session instead of creating new ones.
+  useEffect(() => {
+    const restore = () => {
+      submitRef.current = false;
+      setSubmitting(false);
+    };
+    window.addEventListener("pageshow", restore);
+    return () => window.removeEventListener("pageshow", restore);
   }, []);
 
   // Ask the backend which methods are actually usable. The answer also decides
@@ -261,15 +285,62 @@ export default function ShopCheckout() {
     track("CHECKOUT_START", { value: `${t("checkout.itemsCount", { count: checkoutCount })}`, context: { itemCount: checkoutCount, total: checkoutTotal } });
   }, [checkoutCount]);
 
+  /**
+   * Open (or reuse) the Stripe Checkout Session for an order and return its URL.
+   *
+   * The order id, the customer's OWN method and the idempotency key all travel
+   * to the backend, which re-validates the method server-side and reuses an
+   * already-open session rather than opening a second one. An answer without a
+   * usable URL throws, so a missing URL can never become a navigation to
+   * `undefined`.
+   *
+   * `requestKey` is per attempt: a retry after a failed attempt must use a fresh
+   * key, because the first attempt already claimed the old one in
+   * `checkout_requests` and a replay of an unfinished claim is answered with 409
+   * by design. Duplicate sessions are still impossible — the backend keeps at
+   * most one active Stripe payment per order.
+   */
+  const openStripeSession = async (orderId: string, method: string, requestKey: string): Promise<string> => {
+    const res = (await createStripeCheckout({
+      orderId,
+      method,
+      requestKey,
+      returnPath: `/orders?order=${orderId}`,
+    })) as unknown as { url?: string | null };
+    const url = res?.url;
+    if (typeof url !== "string" || url.trim() === "") {
+      throw new Error(t("checkout.payStartFailed"));
+    }
+    return url;
+  };
+
   const handleSubmit = async () => {
+    // One press = one order. Checked before any await, so a double click in the
+    // same tick cannot reach `checkoutAction()` twice.
+    if (submitRef.current) return;
     if (!selectedAddressId) { toast.error(t("checkout.selectAddress")); return; }
     if (!hasGps) { toast.error(t("checkout.gpsRequired")); return; }
     if (!paymentMethod) { toast.error(t("paymentMethods.unavailable")); return; }
+
+    submitRef.current = true;
     setSubmitting(true);
+    setPaymentStartError(null);
+
+    // Snapshot the rail the customer chose. Nothing below may re-read it: the
+    // method that reached the order and the method sent to Stripe must be the
+    // same one, and PromptPay must never fall back to card.
+    const chosenMethod = paymentMethod;
+    const stripeFlow = chosenMethod === "CARD" || chosenMethod === "PROMPTPAY";
+    const isSelectiveCheckout =
+      (navState.selectedCartItems && navState.selectedCartItems.length > 0) || navState.buyNow;
+
+    let order: CheckoutResult | null = null;
+    let redirectUrl: string | null = null;
+
     try {
       const checkoutPayload: Record<string, unknown> = {
         addressId: selectedAddressId,
-        paymentMethod,
+        paymentMethod: chosenMethod,
         shippingMethod: "standard",
         requestId: requestIdRef.current ?? crypto.randomUUID(),
       };
@@ -278,38 +349,78 @@ export default function ShopCheckout() {
       } else if (navState.buyNow) {
         checkoutPayload.cartItemIds = checkoutLines.map((l) => l.id);
       }
-      const res = (await checkoutAction(checkoutPayload)) as unknown as CheckoutResult;
-      setResult(res);
-      const isSelectiveCheckout = (navState.selectedCartItems && navState.selectedCartItems.length > 0) || navState.buyNow;
+
+      order = (await checkoutAction(checkoutPayload)) as unknown as CheckoutResult;
+
+      // The order consumed its cart items server-side, so refresh the local copy
+      // immediately — the customer must see the true cart whether the payment
+      // step succeeds or fails.
       if (isSelectiveCheckout) { reload(); } else { clear(); }
-      if (res.priceChanged) { toast.warning(t("checkout.priceChanged")); } else { toast.success(t("checkout.success")); }
+
+      if (stripeFlow) {
+        // Order → Checkout Session → THIS tab, with no screen in between. A
+        // "คำสั่งซื้อสำเร็จ" page here would announce a completed purchase before
+        // the payment page was even shown, and would make a second press
+        // necessary to reach Stripe.
+        redirectUrl = await openStripeSession(
+          order.parentOrderId,
+          chosenMethod,
+          requestIdRef.current ?? crypto.randomUUID(),
+        );
+      } else {
+        setResult(order);
+        if (order.priceChanged) { toast.warning(t("checkout.priceChanged")); } else { toast.success(t("checkout.success")); }
+      }
     } catch (err) {
       console.error("Checkout error:", err);
-      toast.error(err instanceof Error ? err.message : t("checkout.failed"));
+      const message = err instanceof Error ? err.message : t("checkout.failed");
+      if (order && stripeFlow) {
+        // The order WAS created: the purchase stands, only the payment page
+        // could not be opened. Surface it as resumable, never as a failed sale.
+        setPaymentStartError({
+          orderId: order.parentOrderId,
+          orderNumber: order.parentOrderNumber,
+          method: chosenMethod,
+          message,
+        });
+      }
+      toast.error(message);
       reload();
-    } finally { setSubmitting(false); }
+    } finally {
+      // Keep the button disabled while the browser navigates away; a failed
+      // attempt must allow another press.
+      if (!redirectUrl) {
+        setSubmitting(false);
+        submitRef.current = false;
+      }
+    }
+
+    // Current-tab navigation: never `window.open`, never a new tab.
+    if (redirectUrl) window.location.assign(redirectUrl);
   };
 
-  const handlePayOnline = async () => {
-    if (!result) return;
-    setPaying(true);
+  /** Retry the payment step for the order this page already created. */
+  const handleRetryPayment = async () => {
+    const pending = paymentStartError;
+    if (!pending || submitRef.current) return;
+    submitRef.current = true;
+    setSubmitting(true);
+    let redirectUrl: string | null = null;
     try {
-      const { url } = (await createStripeCheckout({
-        orderId: result.parentOrderId,
-        returnPath: `/orders?order=${result.parentOrderId}`,
-        // The chosen method and the checkout request key both travel to the
-        // server, which re-validates the method and reuses the open session
-        // rather than opening a second one.
-        method: paymentMethod,
-        requestKey: requestIdRef.current ?? undefined,
-      })) as unknown as { url: string };
-      if (!url) throw new Error(t("checkout.payNowDesc"));
-      window.location.assign(url);
+      // Fresh key (see `openStripeSession`): the previous attempt's claim must
+      // not block the retry, and the backend still allows one active session.
+      redirectUrl = await openStripeSession(pending.orderId, pending.method, crypto.randomUUID());
     } catch (err) {
-      console.error("Stripe checkout error:", err);
-      toast.error(err instanceof Error ? err.message : t("checkout.failed"));
-      setPaying(false);
+      const message = err instanceof Error ? err.message : t("checkout.payStartFailed");
+      setPaymentStartError({ ...pending, message });
+      toast.error(message);
+    } finally {
+      if (!redirectUrl) {
+        setSubmitting(false);
+        submitRef.current = false;
+      }
     }
+    if (redirectUrl) window.location.assign(redirectUrl);
   };
 
   const eligibleItem = useMemo(() => result?.items?.find((i) => i.vrepeatEnabled) ?? null, [result]);
@@ -379,20 +490,58 @@ export default function ShopCheckout() {
           <VelRepeatPlanDialog product={offerProduct} open={vrOpen} onOpenChange={setVrOpen}
             selectedVariant={eligibleItem?.variantId ? { id: eligibleItem.variantId, name: "", price: eligibleItem.price } : null} />
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            {isStripeMethod ? (
-              <Button className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handlePayOnline} disabled={paying}>
-                {paying ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
-                {t("checkout.payNow")}
-              </Button>
-            ) : (
-              <Button className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild><Link to="/orders">{t("checkout.trackOrder")}</Link></Button>
-            )}
+            {/*
+              This screen is only reached by a rail that does not continue into
+              Stripe (e.g. COD). Card / PromptPay hand off to Stripe from the
+              checkout form itself, so there is no "pay again" button here.
+            */}
+            <Button className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild><Link to="/orders">{t("checkout.trackOrder")}</Link></Button>
             <Button variant="outline" className="flex-1 border-slate-200 text-slate-700" asChild><Link to="/orders">{t("checkout.viewOrders")}</Link></Button>
             <Button variant="outline" className="flex-1 border-slate-200 text-slate-700" asChild><Link to="/">{t("checkout.continueShopping")}</Link></Button>
           </div>
           <p className="mt-4 text-center text-xs text-slate-400">
-            {isStripeMethod ? t("checkout.payNowDesc") : t("checkout.paymentNote", { method: t(payKey(paymentMethod)) })}
+            {t("checkout.paymentNote", { method: t(payKey(paymentMethod)) })}
           </p>
+        </main>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Order created, payment page not opened (recoverable)
+  // ═══════════════════════════════════════════════════════════════════════
+  if (paymentStartError) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+        <ShopHeader />
+        <main className="mx-auto w-full max-w-2xl px-4 py-14 sm:px-6">
+          <div className="flex flex-col items-center text-center">
+            <span className="flex size-16 items-center justify-center rounded-full bg-amber-50">
+              <AlertCircle className="size-8 text-amber-500" />
+            </span>
+            <h1 className="mt-5 text-2xl font-bold tracking-tight text-slate-900">{t("checkout.paymentNotStarted")}</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{t("checkout.paymentNotStartedDesc")}</p>
+          </div>
+          <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-slate-500">{t("checkout.orderNo")}</p>
+              <p className="font-mono text-sm font-semibold text-slate-900">{paymentStartError.orderNumber}</p>
+            </div>
+            <div className="mt-3 flex items-center justify-between">
+              <p className="text-sm text-slate-500">{t("checkout.paymentTitle")}</p>
+              <p className="text-sm font-medium text-slate-900">{t(payKey(paymentStartError.method))}</p>
+            </div>
+            <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{paymentStartError.message}</p>
+          </div>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+            <Button className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handleRetryPayment} disabled={submitting} aria-busy={submitting}>
+              {submitting ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+              {submitting ? t("checkout.preparingPayment") : t("checkout.retryPayment")}
+            </Button>
+            <Button variant="outline" className="flex-1 border-slate-200 text-slate-700" asChild>
+              <Link to={`/orders/${paymentStartError.orderId}`}>{t("checkout.viewOrders")}</Link>
+            </Button>
+          </div>
         </main>
       </div>
     );
@@ -401,7 +550,10 @@ export default function ShopCheckout() {
   // ═══════════════════════════════════════════════════════════════════════
   // Empty cart
   // ═══════════════════════════════════════════════════════════════════════
-  if (!syncing && !authLoading && isAuthenticated && checkoutCount === 0) {
+  // `!submitting`: the order consumed the cart before the payment step, so
+  // without this the storefront would flash the empty-cart screen while it is
+  // still preparing the Stripe redirect.
+  if (!syncing && !authLoading && !submitting && isAuthenticated && checkoutCount === 0) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
         <ShopHeader />
@@ -719,7 +871,7 @@ export default function ShopCheckout() {
                 </div>
               </div>
               <Button className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null} aria-busy={submitting}>
-                {submitting ? (<><Loader2 className="size-4 animate-spin" />{t("checkout.submitting")}</>) : (<><ShieldCheck className="size-4" />{t("checkout.submit", { total: formatBaht(checkoutTotal) })}</>)}
+                {submitting ? (<><Loader2 className="size-4 animate-spin" />{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</>) : (<><ShieldCheck className="size-4" />{t("checkout.submit", { total: formatBaht(checkoutTotal) })}</>)}
               </Button>
               <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
             </div>
@@ -736,7 +888,7 @@ export default function ShopCheckout() {
               <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(checkoutTotal)}</p>
             </div>
             <Button className="h-11 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800" style={{ minWidth: 0, flexShrink: 1 }} onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null} aria-busy={submitting}>
-              {submitting ? (<><Loader2 className="size-4 shrink-0 animate-spin" /><span className="min-w-0 truncate">{t("checkout.submitting")}</span></>) : (<><ShieldCheck className="size-4 shrink-0" /><span className="min-w-0 truncate">{t("checkout.submit", { total: formatBaht(checkoutTotal) })}</span></>)}
+              {submitting ? (<><Loader2 className="size-4 shrink-0 animate-spin" /><span className="min-w-0 truncate">{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</span></>) : (<><ShieldCheck className="size-4 shrink-0" /><span className="min-w-0 truncate">{t("checkout.submit", { total: formatBaht(checkoutTotal) })}</span></>)}
             </Button>
           </div>
         </div>

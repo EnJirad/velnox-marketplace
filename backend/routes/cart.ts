@@ -1140,6 +1140,7 @@ export function setupCartRoutes(app: Express): void {
       const result = await query(
         `SELECT o.*, sh.name AS shop_name, sh.slug AS shop_slug,
                 COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                (SELECT method FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS payment_method,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          LEFT JOIN shops sh ON o.shop_id = sh.id
@@ -1160,6 +1161,12 @@ export function setupCartRoutes(app: Express): void {
           customerUserId: r.user_id,
           status: r.status,
           paymentStatus: r.payment_status,
+          // The method of the newest payment row. `null` when the order has no
+          // payment yet (a Stripe session whose creation failed, or a COD order
+          // that was never charged) — the storefront then asks instead of
+          // assuming a rail, so a PromptPay customer is never sent to a card
+          // form by a default.
+          paymentMethod: r.payment_method ?? null,
           shippingStatus: r.shipping_status,
           shippingMethod: null,
           trackingNumber: null,

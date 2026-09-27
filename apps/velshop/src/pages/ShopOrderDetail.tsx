@@ -1,3 +1,4 @@
+import { ResumePaymentButton } from "@/components/shop/ResumePaymentButton";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { useLanguage } from "@/lib/i18n";
@@ -24,7 +25,7 @@ import {
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { api } from "@velnox/shared/lib/api-routes";
-import { formatBaht, formatIsoDateTime, getOrderStatusMeta } from "@velnox/shared/lib/commerce";
+import { formatBaht, formatIsoDateTime, getOrderStatusMeta, orderStripePayability } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   ArrowLeft,
@@ -128,13 +129,10 @@ export default function ShopOrderDetail() {
   const reorder = useAction(api.customer.reorderAction);
   const cancelOrder = useAction(api.commerce.cancelOrderAction);
   const reviewProduct = useAction(api.customer.reviewProduct);
-  const createStripeCheckout = useAction(api.stripe.createStripeCheckoutAction);
-
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [paying, setPaying] = useState(false);
 
   // cancel dialog
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -297,27 +295,18 @@ export default function ShopOrderDetail() {
   const shipments = order.shipments ?? [];
   const stepIndex = order.status === "cancelled" ? -1 : ORDER_STEPS.findIndex((s) => s.key === order.status);
 
-  // Phase 14: a pending Stripe "online" payment offers a hosted pay button.
-  const needsOnlinePayment =
-    order.paymentStatus !== "paid" &&
-    (order.payments ?? []).some((p) => p.method === "online" && p.status === "pending");
-
-  const handlePayOnline = async () => {
-    if (!order) return;
-    setPaying(true);
-    try {
-      const { url } = (await createStripeCheckout({
-        orderId: order.parentOrderId || order.id,
-        returnPath: `/orders/${order.id}`,
-      })) as unknown as { url: string };
-      if (!url) throw new Error(t("orderDetail.payOnlinePending"));
-      window.location.assign(url);
-    } catch (err) {
-      console.error("Stripe checkout error:", err);
-      toast.error(err instanceof Error ? err.message : t("orderDetail.payOnlinePending"));
-      setPaying(false);
-    }
-  };
+  /**
+   * Still-payable order + the rail the customer actually chose.
+   *
+   * The previous version looked for a payment row whose method was the legacy
+   * literal `online` with status `pending`. Real Stripe sessions are recorded as
+   * `CARD`/`PROMPTPAY` with status `requires_action`, and an order whose session
+   * creation failed has no payment row at all — so the button was missing in
+   * exactly the two cases a customer needs it. The rule now comes from the
+   * shared contract (`orderStripePayability`), which mirrors the backend's
+   * payable-status list and never invents a method.
+   */
+  const payability = orderStripePayability(order);
 
   const address = order.addressSnapshot;
   const addressText = address
@@ -356,16 +345,13 @@ export default function ShopOrderDetail() {
               <span className="size-1.5 rounded-full bg-slate-400" />
               {paymentLabel(order.paymentStatus)}
             </Badge>
-            {needsOnlinePayment && (
-              <Button
-                size="sm"
-                className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                onClick={handlePayOnline}
-                disabled={paying}
-              >
-                {paying ? <Loader2 className="size-3.5 animate-spin" /> : <CreditCard className="size-3.5" />}
-                {t("orderDetail.payOnlineNow")}
-              </Button>
+            {payability.payable && (
+              <ResumePaymentButton
+                orderId={order.parentOrderId || order.id}
+                method={payability.method}
+                returnPath={`/orders/${order.id}`}
+                onUnknownMethod="ask"
+              />
             )}
           </div>
         </div>
