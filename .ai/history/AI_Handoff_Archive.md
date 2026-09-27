@@ -127,6 +127,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-27-stripe-sandbox-audit.md`](./archive/AI_Handoff-2026-09-27-stripe-sandbox-audit.md) | handoff §27 - Stripe Sandbox/Test-Mode audit (audit PASS, sandbox E2E BLOCKED) | the full audit: the credential gate (`freebuff-env list` → `{"files":{}}`), the executed-evidence log against the real route stack (an unverifiable webhook **refused with 503** rather than acknowledged, both checkout endpoints **401** without a session cookie) and `payment-foundation.test.ts` (**59 pass / 2 skip**), the CI run `36305688863` on `4bf0002` that executed the two DB-gated payment cases, the env-var documentation change in `INSTALLATION.md` §4 + `docs/ENVIRONMENT.md`, and the Connect finding. Moved out of `.ai/AI_HANDOFF.md` §27 on 2026-09-27 by the §28 pass, which re-probed production and **superseded its headline production claim** — the owner had since completed the configuration (`{configured:true, mode:"test", webhookConfigured:true}`, CARD + PROMPTPAY enabled, no live credential). The BLOCKED and Connect statements stay live in §27's stub, §6, and `.ai/context/payment.md` |
 
+### 2026-09-27 — the §23–§26 split (closed records, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-27-closed-records.md`](./archive/AI_Handoff-2026-09-27-closed-records.md) | handoff §23–§26 — the seller-verification records of 2026-09-27 | §23 the identity-evidence purpose parser (`c12185c`); §24 seller access = an approved application only, across the tab bar, the seller APIs and the revision flow; §25 the verification queue's new-vs-resubmitted counts + realtime state sync; §26 approval as ONE decision (seller access + reviewer badge). Moved out on 2026-09-27 as the documented NEXT SPLIT, together with §24–§26; §6 keeps the open items |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
