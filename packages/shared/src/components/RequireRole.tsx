@@ -20,7 +20,7 @@ import {
   User,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 import { toast } from "sonner";
 
@@ -29,6 +29,46 @@ const API_BASE = apiBaseUrl;
 interface RequireRoleProps {
   role: "seller" | "center";
   children: ReactNode;
+}
+
+/** `data` of `GET /api/seller/status` — the caller's own application. */
+interface SellerApplicationPayload {
+  status: string | null;
+  rejectionReason: string | null;
+  correctionReason: string | null;
+  rejectionReasonCode?: string | null;
+  correctionReasonCode?: string | null;
+  shopName?: string | null;
+  shop?: {
+    name?: string | null;
+    description?: string | null;
+    category?: string | null;
+    address?: {
+      line1?: string | null;
+      line2?: string | null;
+      subdistrict?: string | null;
+      district?: string | null;
+      city?: string | null;
+      state?: string | null;
+      postalCode?: string | null;
+      country?: string | null;
+    } | null;
+  } | null;
+  applicantInfo?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    phone?: string | null;
+    idNumber?: string | null;
+  } | null;
+}
+
+/** One row of `GET /api/seller/evidence` (the caller's own uploads). */
+interface OwnEvidenceRow {
+  key?: string;
+  url?: string | null;
+  content_type?: string | null;
+  size?: number | null;
+  purpose?: string;
 }
 
 function LoadingGate() {
@@ -80,13 +120,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   const location = useLocation();
   const { t } = useLanguage();
 
-  const [seller, setSeller] = useState<{
-    status: string | null;
-    rejectionReason: string | null;
-    correctionReason: string | null;
-    rejectionReasonCode?: string | null;
-    correctionReasonCode?: string | null;
-  } | null>(null);
+  const [seller, setSeller] = useState<SellerApplicationPayload | null>(null);
   const [sellerLoading, setSellerLoading] = useState(true);
   const [sellerLoaded, setSellerLoaded] = useState(false);
   const [sellerError, setSellerError] = useState<string | null>(null);
@@ -112,42 +146,144 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   const [sellerSelfie, setSellerSelfie] = useState<IdentityDocumentRef | null>(null);
   const [applySuccess, setApplySuccess] = useState(false);
 
+  /**
+   * Re-applying (needs_correction / rejected) must not ask for everything
+   * again: prefill the form from the applicant's OWN application. Only fields
+   * that are still empty are filled, so a value the applicant just edited is
+   * never overwritten by a status refetch.
+   */
+  const prefillFromApplication = useCallback((app: SellerApplicationPayload) => {
+    const shop = app.shop ?? null;
+    const address = shop?.address ?? null;
+    const applicant = app.applicantInfo ?? null;
+
+    const shopNameValue = shop?.name || app.shopName || "";
+    if (shopNameValue) setShopName((prev) => prev || shopNameValue);
+    if (shop?.description) {
+      const value = shop.description;
+      setShopDescription((prev) => prev || value);
+    }
+    if (shop?.category) {
+      const value = shop.category;
+      setShopCategory((prev) => prev || value);
+    }
+    if (address) {
+      setShopAddress((prev) => ({
+        line1: prev.line1 || address.line1 || "",
+        line2: prev.line2 || address.line2 || "",
+        subdistrict: prev.subdistrict || address.subdistrict || "",
+        district: prev.district || address.district || "",
+        city: prev.city || address.city || "",
+        state: prev.state || address.state || "",
+        postalCode: prev.postalCode || address.postalCode || "",
+        country: prev.country || address.country || "TH",
+      }));
+    }
+    if (applicant?.firstName) {
+      const value = applicant.firstName;
+      setSellerFirstName((prev) => prev || value);
+    }
+    if (applicant?.lastName) {
+      const value = applicant.lastName;
+      setSellerLastName((prev) => prev || value);
+    }
+    if (applicant?.phone) {
+      const value = applicant.phone;
+      setSellerPhone((prev) => prev || value);
+    }
+    if (applicant?.idNumber) {
+      const value = applicant.idNumber;
+      setSellerIdNumber((prev) => prev || value);
+    }
+  }, []);
+
+  /**
+   * …and hydrate the identity documents that were already uploaded, from the
+   * caller's own evidence list (matched by the purpose in the object key), so a
+   * correction request re-submits the SAME application with the SAME documents.
+   */
+  const hydrateIdentityDocuments = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/seller/evidence`, { credentials: "include" });
+      if (!res.ok) return;
+      const payload = await res.json();
+      const rows: OwnEvidenceRow[] = Array.isArray(payload?.data) ? payload.data : [];
+      const refFor = (purpose: string): IdentityDocumentRef | null => {
+        const row = rows.find((r) => r.purpose === purpose && typeof r.key === "string");
+        const key = row?.key;
+        if (!key) return null;
+        return {
+          objectKey: key,
+          url: row?.url || "",
+          filename: key.split("/").pop() || key,
+          contentType: row?.content_type || "image/jpeg",
+          fileSize: row?.size || 0,
+        };
+      };
+      const front = refFor("id_card");
+      const back = refFor("id_card_back");
+      const selfie = refFor("selfie_id");
+      if (front) setSellerIdFront((prev) => prev ?? front);
+      if (back) setSellerIdBack((prev) => prev ?? back);
+      if (selfie) setSellerSelfie((prev) => prev ?? selfie);
+    } catch (err) {
+      console.warn("[seller] identity document hydration failed:", err);
+    }
+  }, []);
+
+  /**
+   * The caller's OWN application (identity from the session cookie only).
+   * Loaded on mount and refetched on window focus / tab visibility, so an
+   * approval or a correction request lands without a logout/login.
+   */
+  const loadSellerStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/seller/status`, { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = await res.json();
+      // data=null means "authenticated but no seller application" — NOT loading.
+      const app = (payload?.data ?? null) as SellerApplicationPayload | null;
+      setSeller(app);
+      setSellerError(null);
+      setSellerLoaded(true);
+      if (app && (app.status === "needs_correction" || app.status === "rejected")) {
+        prefillFromApplication(app);
+        void hydrateIdentityDocuments();
+      }
+    } catch (err) {
+      console.error("[seller] status fetch failed:", err);
+      setSeller({ status: null, rejectionReason: null, correctionReason: null });
+      setSellerError("ไม่สามารถตรวจสอบสถานะร้านค้าได้ กรุณาลองใหม่");
+      setSellerLoaded(true);
+    } finally {
+      setSellerLoading(false);
+    }
+  }, [prefillFromApplication, hydrateIdentityDocuments]);
+
   useEffect(() => {
     if (!isAuthenticated) return;
-    let alive = true;
     setSellerLoading(true);
 
     if (role === "center") {
       fetch(`${API_BASE}/admin/bootstrap-status`, { credentials: "include" })
         .then((r) => r.json())
-        .then((s) => { if (alive) setOwnerStatus(s.data ?? s); })
-        .catch(() => { if (alive) setOwnerStatus({ ownerExists: false, configured: false }); });
+        .then((s) => setOwnerStatus(s.data ?? s))
+        .catch(() => setOwnerStatus({ ownerExists: false, configured: false }));
     }
 
-    fetch(`${API_BASE}/seller/status`, { credentials: "include" })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((s) => {
-        if (!alive) return;
-        // data=null means "authenticated but no seller application" — this is NOT loading
-        setSeller(s.data ?? null);
-        setSellerError(null);
-        setSellerLoaded(true);
-      })
-      .catch((err) => {
-        console.error("[seller] status fetch failed:", err);
-        if (alive) {
-          setSeller({ status: null, rejectionReason: null, correctionReason: null });
-          setSellerError("ไม่สามารถตรวจสอบสถานะร้านค้าได้ กรุณาลองใหม่");
-          setSellerLoaded(true);
-        }
-      })
-      .finally(() => { if (alive) setSellerLoading(false); });
+    void loadSellerStatus();
 
-    return () => { alive = false; };
-  }, [isAuthenticated, role]);
+    const onRefresh = () => { void loadSellerStatus(); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void loadSellerStatus();
+    };
+    window.addEventListener("focus", onRefresh);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onRefresh);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [isAuthenticated, role, loadSellerStatus]);
 
   if (isLoading) return <LoadingGate />;
 
@@ -239,24 +375,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
           setSellerLoaded(false);
           setSellerError(null);
           setSeller(null);
-          fetch(`${API_BASE}/seller/status`, { credentials: "include" })
-            .then((r) => {
-              if (!r.ok) throw new Error(`HTTP ${r.status}`);
-              return r.json();
-            })              .then((s) => {
-                const d = s.data;
-                setSeller(d ? {
-                  status: d.status,
-                  rejectionReason: d.rejectionReason || null,
-                  correctionReason: d.correctionReason || null,
-                  rejectionReasonCode: d.rejectionReasonCode || null,
-                  correctionReasonCode: d.correctionReasonCode || null,
-                } : null);
-                setSellerError(null);
-                setSellerLoaded(true);
-              })
-            .catch(() => { setSellerError("ไม่สามารถตรวจสอบสถานะได้ กรุณาลองใหม่"); setSellerLoaded(true); })
-            .finally(() => setSellerLoading(false));
+          void loadSellerStatus();
         }}
       >
         ลองใหม่

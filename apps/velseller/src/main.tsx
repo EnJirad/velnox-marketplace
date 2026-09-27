@@ -7,6 +7,8 @@ import {
 } from "@velnox/shared/lib/app-shell";
 import { siteBasename } from "@velnox/shared/lib/sites";
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+import { useSellerApplication } from "@velnox/shared/hooks/use-seller-application";
+import { shouldShowSellerTab } from "@velnox/shared/lib/seller-access";
 import { IdentityMerge } from "@velnox/shared/lib/track";
 import { RefreshCw, ShoppingBag, Store, Target, UserCircle, Wallet } from "lucide-react";
 import { lazy } from "react";
@@ -23,6 +25,25 @@ const SELLER_TABS: MobileTabItem[] = [
   { to: "/seller/income", label: "รายได้", icon: Wallet },
   { to: "/seller/profile", label: "โปรไฟล์", icon: UserCircle },
 ];
+
+/**
+ * The seller tab bar IS a seller surface: it renders only for an approved seller
+ * application. Fail closed — hidden while the status is loading, when the status
+ * API fails, and for every status that is not `approved` (no application,
+ * pending, under_review, needs_correction, rejected, suspended). `users.role` is
+ * deliberately NOT used: it is a cached promotion, not the application's state.
+ *
+ * Meanwhile the gate inside <RequireRole> (which every seller route is wrapped
+ * in) shows the application form / review state — that is the existing entry
+ * point for applying, correcting and resubmitting.
+ */
+function SellerTabBar() {
+  const { sellerAccess, loading, error } = useSellerApplication();
+  // One shared decision: approved only, and never while loading or after an API
+  // error (fail closed — see shouldShowSellerTab).
+  if (!shouldShowSellerTab({ sellerAccess, loading, error })) return null;
+  return <MobileTabBar items={SELLER_TABS} />;
+}
 
 initMonitoring();
 
@@ -105,7 +126,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="*" element={<NotFound />} />
         </Routes>
       </SiteSuspense>
-      <MobileTabBar items={SELLER_TABS} />
+      <SellerTabBar />
       </div>
     </BrowserRouter>
     <Toaster />

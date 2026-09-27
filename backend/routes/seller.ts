@@ -16,6 +16,7 @@
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { requireApprovedSeller } from "../middleware/seller.js";
 import { query, getClient } from "../db/index.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js";
@@ -370,6 +371,10 @@ export function setupSellerRoutes(app: Express): void {
       const result = await query(
         `SELECT s.id, s.status, s.verification_status, s.created_at,
                 sh.name as shop_name, sh.slug as shop_slug,
+                sh.id as shop_id, sh.description as shop_description,
+                sh.category as shop_category, sh.phone as shop_phone,
+                sh.address_line1, sh.address_line2, sh.subdistrict, sh.district,
+                sh.city, sh.state, sh.postal_code, sh.country,
                 ss.settings as seller_settings,
                 (SELECT sv.submitted_at FROM seller_verifications sv
                   WHERE sv.seller_id = s.id
@@ -384,6 +389,7 @@ export function setupSellerRoutes(app: Express): void {
       if (result.rows.length === 0) {
         res.json({
           success: true,
+          sellerAccess: false,
           data: null,
         });
         return;
@@ -391,6 +397,8 @@ export function setupSellerRoutes(app: Express): void {
 
       const row = result.rows[0];
       const settings = row.seller_settings || {};
+      // Server-computed seller access — the ONLY source the UI may gate on.
+      const sellerAccess = row.status === "approved";
 
       console.log(`[seller] status for user ${userId}: ${row.status}`);
 
@@ -406,12 +414,38 @@ export function setupSellerRoutes(app: Express): void {
 
       res.json({
         success: true,
+        // Computed here from `sellers.status`; the client never decides this for
+        // itself and never sends it back. Fail-closed by construction: any
+        // status other than `approved` is false.
+        sellerAccess,
         data: {
           id: row.id,
           status: row.status,
           verificationStatus: row.verification_status ?? null,
           shopName: row.shop_name || null,
           shopSlug: row.shop_slug || null,
+          // Full shop payload so a `needs_correction` resubmission can prefill
+          // what the applicant already entered instead of asking again.
+          shop: row.shop_id
+            ? {
+                id: row.shop_id,
+                name: row.shop_name || null,
+                slug: row.shop_slug || null,
+                description: row.shop_description || null,
+                category: row.shop_category || null,
+                phone: row.shop_phone || null,
+                address: {
+                  line1: row.address_line1 || null,
+                  line2: row.address_line2 || null,
+                  subdistrict: row.subdistrict || null,
+                  district: row.district || null,
+                  city: row.city || null,
+                  state: row.state || null,
+                  postalCode: row.postal_code || null,
+                  country: row.country || "TH",
+                },
+              }
+            : null,
           createdAt: row.created_at,
           updatedAt: row.updated_at || null,
           submittedAt: row.verification_submitted_at || settings.submittedAt || null,
@@ -423,6 +457,7 @@ export function setupSellerRoutes(app: Express): void {
             firstName: settings.firstName || null,
             lastName: settings.lastName || null,
             phone: settings.phone || null,
+            idNumber: settings.idNumber || null,
           },
           // Only the count is exposed — identity documents are private.
           identityEvidenceCount: Array.isArray(settings.identityEvidence) ? settings.identityEvidence.length : 0,
@@ -455,6 +490,7 @@ export function setupSellerRoutes(app: Express): void {
           console.log(`[seller] status (fallback) for user ${userId}: ${row.status}`);
           res.json({
             success: true,
+            sellerAccess: row.status === "approved",
             data: {
               id: row.id,
               status: row.status,
@@ -477,7 +513,7 @@ export function setupSellerRoutes(app: Express): void {
 
   // ── GET /api/seller/profile ───────────────────────────────────────────
   // Get seller profile details
-  app.get("/api/seller/profile", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/seller/profile", requireAuth, requireApprovedSeller, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
 
@@ -560,7 +596,7 @@ export function setupSellerRoutes(app: Express): void {
 
   // ── PATCH /api/seller/shop ────────────────────────────────────────────
   // Update shop profile (ownership verified server-side)
-  app.patch("/api/seller/shop", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/seller/shop", requireAuth, requireApprovedSeller, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
       const {

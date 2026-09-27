@@ -14,6 +14,7 @@
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { requireApprovedSeller } from "../middleware/seller.js";
 import { query, withTransaction } from "../db/index.js";
 
 function param(req: Request, key: string): string {
@@ -438,7 +439,7 @@ export function setupVelRepeatRoutes(app: Express): void {
 
   // ── GET /api/seller/velrepeat/deliveries ────────────────────────────────
   // Seller sees pending deliveries for their shop
-  app.get("/api/seller/velrepeat/deliveries", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/seller/velrepeat/deliveries", requireAuth, requireApprovedSeller, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
       const sellerResult = await query("SELECT id FROM sellers WHERE user_id = $1", [userId]);
@@ -484,7 +485,7 @@ export function setupVelRepeatRoutes(app: Express): void {
 
   // ── PATCH /api/seller/velrepeat/deliveries/:deliveryId ──────────────────
   // Seller updates delivery status
-  app.patch("/api/seller/velrepeat/deliveries/:deliveryId", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/seller/velrepeat/deliveries/:deliveryId", requireAuth, requireApprovedSeller, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
       const deliveryId = param(req, "deliveryId");

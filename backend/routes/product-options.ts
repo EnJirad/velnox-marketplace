@@ -30,8 +30,15 @@ function param(req: Request, key: string): string {
   return val ?? "";
 }
 
+/**
+ * The seller behind this session — APPROVED only. Every caller is a seller
+ * dashboard surface (option groups, values, variants, attributes), so a
+ * pending / needs_correction / rejected / suspended application must resolve to
+ * null and take the existing 403 "Not a seller" path. Ownership of the product
+ * is still checked separately by the callers.
+ */
 async function getSellerForUser(userId: string): Promise<{ id: string; status: string } | null> {
-  const r = await query("SELECT id, status FROM sellers WHERE user_id = $1", [userId]);
+  const r = await query("SELECT id, status FROM sellers WHERE user_id = $1 AND status = 'approved'", [userId]);
   return r.rows[0] ?? null;
 }
 

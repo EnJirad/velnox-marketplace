@@ -85,6 +85,14 @@ export function IdentityDocumentUploader({
     };
   }, []);
 
+  // A persisted document can arrive AFTER mount — the revision flow refetches
+  // the applicant's already-uploaded evidence. That reference is valid for
+  // submission, so it must read as uploaded (with its preview), not as the
+  // empty "choose a file" state the mount-time initialiser produced.
+  useEffect(() => {
+    if (value && status !== "uploading" && status !== "uploaded") setStatus("uploaded");
+  }, [value, status]);
+
   const revokePreview = useCallback(() => {
     if (previewRef.current) {
       URL.revokeObjectURL(previewRef.current);

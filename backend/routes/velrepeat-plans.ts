@@ -18,6 +18,7 @@
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { requireApprovedSeller } from "../middleware/seller.js";
 import { query, withTransaction } from "../db/index.js";
 import { VALID_FREQUENCIES, calculateNextRunAt, processPlan } from "../jobs/velrepeat-scheduler.js";
 import type { FrequencyType } from "../jobs/velrepeat-scheduler.js";
@@ -712,7 +713,7 @@ export function setupVelRepeatPlanRoutes(app: Express): void {
   });
 
   // ── GET /api/seller/velrepeat/overview ────────────────────────────────
-  app.get("/api/seller/velrepeat/overview", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/seller/velrepeat/overview", requireAuth, requireApprovedSeller, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
       const sellerRes = await query("SELECT id FROM sellers WHERE user_id = $1", [userId]);
