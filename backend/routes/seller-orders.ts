@@ -69,9 +69,15 @@ export function canTransitionOrderStatus(from: string, to: string): boolean {
 /**
  * Map a raw orders.status value to the seller-facing status set.
  * The Stripe flow writes its own lifecycle statuses ('pending_payment',
- * 'paid', 'payment_failed') that are NOT part of the fulfillment state
- * machine — without normalization the seller UI would crash on them
- * (ORDER_STATUS_META has no entries for those values).
+ * 'paid', 'payment_failed', 'refunded') that are NOT part of the fulfillment
+ * state machine — the seller UI and `canTransitionOrderStatus()` understand
+ * only the six fulfillment statuses, so a raw value must be translated before
+ * it is displayed or validated.
+ *
+ * `refunded` is grouped with `cancelled`: stripe.ts only marks the order
+ * `refunded` on a FULL refund ("a full refund is terminal for the order"), so
+ * there is nothing left to fulfil — and treating it as `pending` would offer
+ * the seller a transition that silently un-refunds the order's status.
  */
 export function normalizeSellerOrderStatus(dbStatus: string): SellerOrderStatus {
   switch (dbStatus) {
@@ -89,6 +95,7 @@ export function normalizeSellerOrderStatus(dbStatus: string): SellerOrderStatus 
       return "completed";
     case "cancelled":
     case "payment_failed":
+    case "refunded":
       return "cancelled"; // nothing to fulfill
     default:
       return "pending";

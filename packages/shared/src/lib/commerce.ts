@@ -178,12 +178,35 @@ export interface SellerProfile {
 // ---------------------------------------------------------------------------
 // orders
 // ---------------------------------------------------------------------------
+/**
+ * Canonical order lifecycle. It is a SUPERSET of two state machines that both
+ * write `orders.status`:
+ *
+ *  • fulfilment — `pending` → `confirmed` → `shipped` → `delivered` →
+ *    `completed`, plus terminal `cancelled`. Enforced by
+ *    `backend/routes/seller-orders.ts` (SELLER_ORDER_STATUSES) and
+ *    `backend/routes/center.ts` (ORDER_NEXT_STATUS).
+ *  • payment — `pending_payment` → `paid` | `payment_failed`, plus terminal
+ *    `refunded`. Written by `backend/routes/stripe.ts`: `pending_payment` when a
+ *    Checkout Session is created, `paid` on the confirming webhook,
+ *    `payment_failed` on a failed charge, `refunded` after a full refund.
+ *
+ * `orders.status` is free text with no CHECK constraint, so a row can carry
+ * either family — and a future backend release may add another value this build
+ * has never seen. Never index ORDER_STATUS_META directly with an API value; go
+ * through `getOrderStatusMeta()`, which falls back to a neutral "unknown" badge
+ * instead of returning undefined.
+ */
 export type StoreOrderStatus =
   | "pending"
+  | "pending_payment"
+  | "paid"
   | "confirmed"
   | "shipped"
   | "delivered"
   | "completed"
+  | "payment_failed"
+  | "refunded"
   | "cancelled";
 export type StorePaymentStatus =
   | "unpaid"
@@ -268,10 +291,13 @@ export interface StoreOrder {
   itemCount?: number;
 }
 
-export const ORDER_STATUS_META: Record<
-  StoreOrderStatus,
-  { label: string; badge: string; dot: string }
-> = {
+export interface OrderStatusMeta {
+  label: string;
+  badge: string;
+  dot: string;
+}
+
+export const ORDER_STATUS_META: Record<StoreOrderStatus, OrderStatusMeta> = {
   pending: {
     label: "รอตรวจสอบ",
     badge: "bg-amber-50 text-amber-700 ring-amber-600/15 hover:bg-amber-50",
@@ -302,15 +328,76 @@ export const ORDER_STATUS_META: Record<
     badge: "bg-slate-100 text-slate-500 ring-slate-600/10 hover:bg-slate-100",
     dot: "bg-slate-400",
   },
+  // Payment-lifecycle statuses (written by the Stripe routes).
+  pending_payment: {
+    label: "รอชำระเงิน",
+    badge: "bg-orange-50 text-orange-700 ring-orange-600/15 hover:bg-orange-50",
+    dot: "bg-orange-500",
+  },
+  paid: {
+    label: "ชำระเงินแล้ว",
+    badge: "bg-cyan-50 text-cyan-700 ring-cyan-600/15 hover:bg-cyan-50",
+    dot: "bg-cyan-500",
+  },
+  payment_failed: {
+    label: "ชำระเงินไม่สำเร็จ",
+    badge: "bg-rose-50 text-rose-700 ring-rose-600/15 hover:bg-rose-50",
+    dot: "bg-rose-500",
+  },
+  refunded: {
+    label: "คืนเงินแล้ว",
+    badge: "bg-violet-50 text-violet-700 ring-violet-600/15 hover:bg-violet-50",
+    dot: "bg-violet-500",
+  },
 };
 
-/** Allowed next statuses per the order state machine (backend enforces too). */
+/**
+ * Neutral metadata for a status this build does not recognise: a grey badge that
+ * says so, rather than a crash (`meta.badge` on `undefined`) or a silent lie
+ * (showing an unknown order as "pending").
+ */
+export const UNKNOWN_ORDER_STATUS_META: OrderStatusMeta = {
+  label: "ไม่ทราบสถานะ",
+  badge: "bg-slate-100 text-slate-500 ring-slate-600/10 hover:bg-slate-100",
+  dot: "bg-slate-400",
+};
+
+/**
+ * Resolve display metadata for any status the API may return — a known status,
+ * a value added by a newer backend, or null/undefined. Always returns a complete
+ * `{ label, badge, dot }`, so callers can render `meta.badge` unconditionally.
+ *
+ * This is presentation only: it never rewrites `order.status` and cannot change
+ * any business state (the backend remains the authority).
+ */
+export function getOrderStatusMeta(status: unknown): OrderStatusMeta {
+  if (
+    typeof status === "string" &&
+    Object.prototype.hasOwnProperty.call(ORDER_STATUS_META, status)
+  ) {
+    return ORDER_STATUS_META[status as StoreOrderStatus];
+  }
+  return UNKNOWN_ORDER_STATUS_META;
+}
+
+/**
+ * Allowed next statuses per the order state machine (backend enforces too).
+ *
+ * The payment-lifecycle keys mirror `normalizeSellerOrderStatus()`
+ * (`backend/routes/seller-orders.ts`), which judges such an order by its
+ * fulfilment meaning: `pending_payment`/`paid` count as `pending`,
+ * `payment_failed` and `refunded` as terminal. Keep the two in step.
+ */
 export const NEXT_ORDER_STATUSES: Record<StoreOrderStatus, StoreOrderStatus[]> = {
   pending: ["confirmed", "cancelled"],
+  pending_payment: ["confirmed", "cancelled"],
+  paid: ["confirmed", "cancelled"],
   confirmed: ["shipped", "cancelled"],
   shipped: ["delivered"],
   delivered: ["completed"],
   completed: [],
+  payment_failed: [],
+  refunded: [],
   cancelled: [],
 };
 

@@ -24,7 +24,7 @@ import {
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { api } from "@velnox/shared/lib/api-routes";
-import { ORDER_STATUS_META, formatBaht, formatIsoDateTime } from "@velnox/shared/lib/commerce";
+import { formatBaht, formatIsoDateTime, getOrderStatusMeta } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   ArrowLeft,
@@ -292,7 +292,7 @@ export default function ShopOrderDetail() {
     );
   }
 
-  const meta = ORDER_STATUS_META[order.status as keyof typeof ORDER_STATUS_META] ?? ORDER_STATUS_META.pending;
+  const meta = getOrderStatusMeta(order.status);
   const items = order.items ?? [];
   const shipments = order.shipments ?? [];
   const stepIndex = order.status === "cancelled" ? -1 : ORDER_STEPS.findIndex((s) => s.key === order.status);

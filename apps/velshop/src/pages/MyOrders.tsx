@@ -21,10 +21,10 @@ import {
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
-  ORDER_STATUS_META,
   formatBaht,
   formatIsoDate,
   formatIsoDateTime,
+  getOrderStatusMeta,
   shortOrderNumber,
   type StoreOrder,
   type StoreSubscription,
@@ -285,7 +285,7 @@ export default function MyOrders() {
           ) : (
             <div className="mt-3 space-y-4">
               {orders.map((order: StoreOrder) => {
-                const meta = ORDER_STATUS_META[order.status];
+                const meta = getOrderStatusMeta(order.status);
                 const items = order.items ?? [];
                 return (
                   <div

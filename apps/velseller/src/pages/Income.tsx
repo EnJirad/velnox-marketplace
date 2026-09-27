@@ -11,9 +11,9 @@ import {
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
-  ORDER_STATUS_META,
   formatBaht,
   formatIsoDate,
+  getOrderStatusMeta,
   shortOrderNumber,
   type StoreOrder,
   type StoreOrderItem,
@@ -204,7 +204,7 @@ export default function Income() {
                     </TableHeader>
                     <TableBody>
                       {report.transactions.map(({ order, items, subtotal, pending }) => {
-                        const meta = ORDER_STATUS_META[order.status];
+                        const meta = getOrderStatusMeta(order.status);
                         const fee = Math.round(subtotal * 0.03 * 100) / 100;
                         return (
                           <TableRow key={order.id} className="hover:bg-slate-50/60">
@@ -251,7 +251,7 @@ export default function Income() {
                 {/* Mobile: app-like transaction cards */}
                 <div className="mt-3 space-y-3 md:hidden">
                   {report.transactions.map(({ order, items, subtotal, pending }) => {
-                    const meta = ORDER_STATUS_META[order.status];
+                    const meta = getOrderStatusMeta(order.status);
                     const fee = Math.round(subtotal * 0.03 * 100) / 100;
                     return (
                       <div
