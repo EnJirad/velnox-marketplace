@@ -129,6 +129,24 @@ R2_SECRET_ACCESS_KEY=your-r2-secret-key
 R2_BUCKET=your-bucket-name
 R2_PUBLIC_DOMAIN=https://pub-xxx.r2.dev
 
+# Stripe — TEST MODE ONLY (sandbox). backend/lib/payment-config.ts refuses any
+# key that is not sk_test_/rk_test_ (a live key is refused, never used) and
+# treats a missing webhook secret as "payment unavailable" — there is no fallback.
+# Sandbox keys: https://dashboard.stripe.com/test/apikeys
+STRIPE_SECRET_KEY=sk_test_your-test-secret-key
+STRIPE_PUBLISHABLE_KEY=pk_test_your-test-publishable-key
+# Endpoint secret of the sandbox webhook (add one at dashboard.stripe.com/test/webhooks)
+# pointing at POST /api/payments/stripe/webhook
+STRIPE_WEBHOOK_SECRET=whsec_your-test-webhook-secret
+# Optional; when set it must agree with the key ("test").
+STRIPE_MODE=test
+
+# Cash on delivery — IMPLEMENTED but DISABLED. Both default OFF and fail closed
+# (only the literal true/1 turns them on). Leave unset until a carrier and a
+# settlement model exist.
+COD_ENABLED=false
+COD_CUSTOMER_SELECTABLE=false
+
 # Server
 PORT=3001
 CORS_ORIGINS=http://localhost:5173,http://localhost:5174,http://localhost:5175
@@ -438,6 +456,13 @@ Backend must allow all four frontend origins:
 | `R2_PUBLIC_DOMAIN` | R2 public URL | Yes |
 | `CORS_ORIGINS` | Comma-separated allowed origins | Yes |
 | `PORT` | Server port (default: 3001) | No |
+| `TEST_DATABASE_URL` | Disposable PostgreSQL for the DB-gated tests — never production | No |
+| `STRIPE_SECRET_KEY` | Stripe **test-mode** secret key (`sk_test_…`); a live key is refused | No — required for Card/PromptPay |
+| `STRIPE_PUBLISHABLE_KEY` | Stripe test publishable key (`pk_test_…`), also returned to the browser | No |
+| `STRIPE_WEBHOOK_SECRET` | Sandbox webhook signing secret (`whsec_…`); without it payments are unavailable | No |
+| `STRIPE_MODE` | Must agree with the key (`test`) or the configuration is refused | No |
+| `COD_ENABLED` | Cash-on-delivery rail (default OFF, fails closed) | No |
+| `COD_CUSTOMER_SELECTABLE` | Offer COD in the storefront (default OFF) | No |
 
 ### Frontend (ALL PUBLIC — type Config in Vercel)
 
