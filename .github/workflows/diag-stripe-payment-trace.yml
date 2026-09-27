@@ -1,0 +1,112 @@
+# Velnox Stripe Payment Trace — READ-ONLY
+#
+# Answers "did Stripe's delayed-payment (PromptPay) confirmation actually reach
+# the database, and where did the settlement chain stop?" without writing
+# anything:
+#
+#   * every statement is a SELECT — no DDL, no DML;
+#   * the connection string comes from the NEON_DATABASE_URL secret, is
+#     referenced only as `psql "$NEON_DATABASE_URL"` and is never echoed;
+#   * THIS REPOSITORY IS PUBLIC: the output is AGGREGATES ONLY (counts by
+#     rail/status/event type, truncated handler error strings, timestamps).
+#     Never print an order id, payment id, session id, event id, email,
+#     address or any other identifier here;
+#   * `payment_events` only ever contains events that were DELIVERED to
+#     POST /api/payments/stripe/webhook (the endpoint claims every verified
+#     event before handling it), so its event_type counts double as a
+#     webhook-delivery record;
+#   * triggers on push of this file because workflow_dispatch is refused for
+#     app tokens without Actions:write — edit the probes and push to re-run.
+#
+# Companion to diag-neon-schema.yml (schema) — this one traces payment state.
+
+name: Velnox Stripe Payment Trace
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diag-stripe-payment-trace.yml
+
+jobs:
+  trace:
+    name: Read-only payment & webhook aggregates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate Neon URL secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          if [ -z "$NEON_DATABASE_URL" ]; then
+            echo "❌ NEON_DATABASE_URL secret is not set."
+            echo "   Settings -> Secrets and variables -> Actions -> NEON_DATABASE_URL"
+            exit 1
+          fi
+          echo "✅ NEON_DATABASE_URL is configured (value not printed)."
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Payment rail & status aggregates (all time + 30d)
+        continue-on-error: true
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          SELECT 'payments ' || provider || '/' || COALESCE(method, '-') || ' ' || status || ' n=' || count(*)::text
+            FROM payments GROUP BY provider, method, status ORDER BY 1;
+          SELECT 'payments30d ' || provider || '/' || COALESCE(method, '-') || ' ' || status
+                 || ' n=' || count(*)::text || ' last=' || COALESCE(max(created_at)::text, '-')
+            FROM payments WHERE created_at > NOW() - INTERVAL '30 days'
+           GROUP BY provider, method, status ORDER BY 1;
+          SQL
+
+      - name: Webhook delivery record (payment_events aggregates)
+        continue-on-error: true
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          SELECT 'events ' || event_type || ' ' || status || ' n=' || count(*)::text
+            FROM payment_events GROUP BY event_type, status ORDER BY 1;
+          SELECT 'events30d ' || event_type || ' ' || status
+                 || ' n=' || count(*)::text || ' last=' || COALESCE(max(created_at)::text, '-')
+            FROM payment_events WHERE created_at > NOW() - INTERVAL '30 days'
+           GROUP BY event_type, status ORDER BY 1;
+          SELECT 'completed-session payment_status=' || COALESCE(payload ->> 'payment_status', 'absent')
+                 || ' n=' || count(*)::text
+            FROM payment_events
+           WHERE event_type = 'checkout.session.completed'
+           GROUP BY payload ->> 'payment_status' ORDER BY 1;
+          SELECT 'failed-event ' || event_type || ' n=' || count(*)::text
+                 || ' last=' || COALESCE(max(updated_at)::text, '-')
+                 || ' err=' || COALESCE(left(max(error), 90), '-')
+            FROM payment_events WHERE status = 'failed'
+           GROUP BY event_type ORDER BY 1;
+          SQL
+
+      - name: Order settlement aggregates (no identifiers)
+        continue-on-error: true
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          SELECT 'orders90d ' || status || ' n=' || count(*)::text
+            FROM orders WHERE created_at > NOW() - INTERVAL '90 days'
+           GROUP BY status ORDER BY 1;
+          SELECT 'orders30d ' || status || ' n=' || count(*)::text || ' last=' || COALESCE(max(created_at)::text, '-')
+            FROM orders WHERE created_at > NOW() - INTERVAL '30 days'
+           GROUP BY status ORDER BY 1;
+          SELECT 'mismatch paid-payment-with-unpaid-order n=' || count(*)::text
+            FROM payments p JOIN orders o ON o.id = p.order_id
+           WHERE p.status = 'paid' AND o.status NOT IN ('paid', 'refunded');
+          SELECT 'mismatch unpaid-payment-with-paid-order n=' || count(*)::text
+            FROM payments p JOIN orders o ON o.id = p.order_id
+           WHERE p.status <> 'paid' AND o.status = 'paid';
+          SELECT 'checkout-requests ' || scope || ' n=' || count(*)::text
+            FROM checkout_requests GROUP BY scope ORDER BY 1;
+          SQL
