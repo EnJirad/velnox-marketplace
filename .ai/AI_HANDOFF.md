@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-27 · **Branch:** `main` · **Latest pass:** order-status contract — the velShop MyOrders crash is fixed at the source and proven in the deployed bundle (§28)
+**Last updated:** 2026-09-27 · **Branch:** `main` · **Latest pass:** VelShop cart — marketplace selection by `shop_id` + sticky summary bar and shop-grouped order sheet (§29)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -780,3 +780,46 @@ valid+unknown+null list rendering end to end, seller invariants. Full backend su
 
 **Still open:** the **browser** E2E on production `/orders` (needs a signed-in customer — Google
 OAuth only, no credentials in this workspace) and the Vercel redeploy that carries the fix.
+
+---
+
+## 29. VelShop cart — marketplace selection + sticky summary (2026-09-27)
+
+**Goal:** `/cart` reads like a marketplace cart without a second cart system — no new
+API, table, cart store or payment code (Stripe untouched, `db/` untouched).
+
+**What changed**
+- **Grouping is by `shop_id`, not the display name.** `GET /api/customer/cart` now returns
+  `shopId` (`p.shop_id AS shop_id` added to `CART_ITEMS_QUERY_FULL`/`_BASIC` + one field in
+  `formatCartRow`) — the same key `POST /api/customer/checkout` groups orders by, so the
+  groups shown are literally how the orders split. Additive field on existing endpoints.
+- **One `Set` of cart-item ids is the only stored selection state.** Item / per-shop /
+  select-all checkboxes are all *derived* (`selectionState`), so ticking one item flips its
+  shop and the global box automatically and the three can never disagree. Checkbox uses
+  Radix `checked="indeterminate"` — the previous `ref.indeterminate = …` on a `<button>`
+  was a no-op (that property exists only on `input`), so partial state never rendered.
+- **The big in-content summary box is gone.** A sticky bottom bar is the only summary
+  surface (now on every breakpoint; `md:bottom-[calc(1rem+…)]` because `MobileTabBar` is
+  `md:hidden`), showing selected count, subtotal, discount, shipping, total — **all derived
+  from the current selection**, never the whole cart. Tapping it **only** opens the
+  shop-grouped order sheet (name / variant / qty / unit price / line total per shop + the
+  four totals). Checkout buttons keep the existing `navigate("/checkout", { state:
+  { selectedCartItems } })` flow.
+- **Discount and shipping are genuinely 0**, not invented: checkout inserts orders with
+  `total_amount` only (so `orders.discount`/`shipping_fee` keep their 0 defaults), the
+  order payload reports `shippingFee: 0`, and the UI reuses `checkout.shippingFree`.
+  `packages/shared/src/lib/cart-selection.ts` is pure (no I/O, no React) and holds this.
+
+**Selection cannot touch data** — it calls no API at all (only the qty stepper `setQty`,
+the trash `remove` and `handleCheckout` do), and a test deep-compares the line fixtures
+before/after to prove the helpers mutate nothing: no quantity, stock, order or payment path.
+
+**Verified:** new `backend/tests/cart-selection.test.ts` **40 pass / 0 fail** (item/shop/all
+selection, partial, multi-shop, empty cart, variant lines, no-mutation, summary arithmetic,
+per-shop totals summing to the grand total; no mock API — pure functions over the real line
+shape) · full backend suite **629 pass / 87 skip / 0 fail** (was 589/87/676) · backend `tsc`
+0 · `bun run typecheck` 4/4 exit 0 · `i18n:check` th=en=my=**1320** (new `cart.discount`) ·
+`bun run build:velshop` exit 0 · `git diff --check` clean.
+
+**Still open:** browser verification of `/cart` (selection taps, sheet, one-handed mobile
+layout) — no signed-in session exists in this workspace.
