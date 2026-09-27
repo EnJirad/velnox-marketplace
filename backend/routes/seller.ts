@@ -19,6 +19,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js";
+import { evidencePurposeFromKey } from "../lib/evidence-purpose.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { invalidateCachedProfile } from "./auth.js";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -59,12 +60,6 @@ function toObjectKey(ref: string): string {
     try { return decodeURIComponent(new URL(ref).pathname.replace(/^\/+/, "")); } catch { return ref; }
   }
   return ref;
-}
-
-/** Purpose encoded in an evidence filename: {purpose}_{timestamp}.{ext} */
-function purposeOfKey(key: string): string {
-  const filename = key.split("/").pop() || "";
-  return filename.split("_")[0] || "other";
 }
 
 export function setupSellerRoutes(app: Express): void {
@@ -130,7 +125,7 @@ export function setupSellerRoutes(app: Express): void {
         return;
       }
 
-      const purposes = evidenceRefs.map(purposeOfKey);
+      const purposes = evidenceRefs.map(evidencePurposeFromKey);
       const missing = REQUIRED_IDENTITY_PURPOSES.filter((p) => !purposes.includes(p));
       if (missing.length > 0) {
         res.status(400).json({
@@ -1179,7 +1174,7 @@ export function setupSellerRoutes(app: Express): void {
           } catch (signErr) {
             console.warn(`[seller] reviewer evidence sign failed key=${key}`, signErr);
           }
-          return { key, purpose: purposeOfKey(key), filename: key.split("/").pop() || key, url, expiresIn: 300 };
+          return { key, purpose: evidencePurposeFromKey(key), filename: key.split("/").pop() || key, url, expiresIn: 300 };
         }),
       );
 

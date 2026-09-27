@@ -30,6 +30,7 @@ import { isSelfApproval } from "../lib/verification-guard.js";
 import { isUploadTooLarge } from "../lib/media-config.js";
 import { headR2Object } from "../lib/r2-objects.js";
 import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js";
+import { evidencePurposeFromKey } from "../lib/evidence-purpose.js";
 import { broadcast, CHANNELS, sendToUser } from "../realtime/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -290,7 +291,7 @@ export function registerVerificationRoutes(app: Express) {
       const rows = await Promise.all(
         result.rows.map(async (r: { id: string; key: string; content_type: string | null; size: number | null; created_at: string }) => {
           const filename = String(r.key).split("/").pop() || "";
-          const purpose = filename.split("_")[0] || "other";
+          const purpose = evidencePurposeFromKey(r.key);
           let signedUrl: string | null = null;
           try {
             signedUrl = await getSignedUrl(
@@ -587,7 +588,7 @@ export function registerVerificationRoutes(app: Express) {
             console.warn(`[verification] evidence sign failed key=${key}`, signErr);
           }
           const filename = key.split("/").pop() || key;
-          const purpose = filename.split("_")[0] || "other";
+          const purpose = evidencePurposeFromKey(key);
           return {
             key,
             filename,
