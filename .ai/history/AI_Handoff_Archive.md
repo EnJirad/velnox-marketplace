@@ -109,6 +109,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-27-postgres-53000.md`](./archive/AI_Handoff-2026-09-27-postgres-53000.md) | handoff §21 - production PostgreSQL 53000: provider quota (BLOCKED evidence) + the one real pool leak fixed | the first pass: 53000 = a provider-side Neon consumption quota, the read-only production evidence (`/api/shops`, `/api/categories` 500 while `/api/health` 200), the measured single-`pg.Pool` analysis, the `POST /api/admin/sellers/:id/revoke` connection leak fixed with `finally { client.release(); }`, the safe DB failure logging, and the executed proof (`db-client-release.test.ts`). Moved out on 2026-09-27 after §22 re-verified and classified the same incident; the code fix + logging stay live in §21's stub and §22 |
 
+### 2026-09-27 - the §20 and §21 splits (edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-26-moderation-pagination-i18n.md`](./archive/AI_Handoff-2026-09-26-moderation-pagination-i18n.md) | handoff §20 - moderation-queue pagination + verification-queue i18n | the bounded `GET /api/admin/products/moderation` (pagination envelope, one consumer moved), the `review.*` localization of `SellerVerificationQueue.tsx` (24 keys in th/en/my), the corrupted `ระงับและลบrêtailer แล้ว` string fix, the executed 9-case pagination suite, and the single-use `bun` anchor-asserting tooling escape hatch. Moved out on 2026-09-27 as the documented NEXT SPLIT; the live bullets or blockers stay in §20's stub, §19 and §6 |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
