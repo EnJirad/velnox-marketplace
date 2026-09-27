@@ -762,3 +762,56 @@ broadcast/event-bus/refetch wiring contracts and “one socket per app”). Full
 **No new system:** no endpoint, no channel, no table, no schema change (`db/` untouched), no mock data.
 **Still not verified:** no browser/preview run and no paid-provider E2E — Stripe TEST + DNS blockers
 (§6) are unchanged.
+
+## 26. Approval = ONE decision: seller access + reviewer badge (2026-09-27)
+
+**Root cause of both reported symptoms (a single cause).** The two VelCenter Approve
+buttons each wrote HALF of the same decision:
+
+- `PATCH /api/admin/verifications/seller/:id` (`action=approve`) set
+  `seller_verifications.status='verified'` + `sellers.verification_status='verified'`
+  and left **`sellers.status='pending'`** — the authoritative field
+  (`GET /api/seller/status` → `data.status`; `sellerAccess = status==='approved'`;
+  `RequireRole` gates on it). An approved applicant therefore still got `pending`: the
+  "รอตรวจสอบ 1–3 วัน" screen (VelSeller workspace blocked) and a seller the badge kept
+  counting.
+- `PATCH /api/admin/sellers/:id/status` → `approved` left the verification record
+  `pending`, so the verification queue/badge kept a row a reviewer had decided.
+
+Copy, JWT claims, in-memory auth state and Next/React caches were NOT the bug — the
+database said `pending`.
+
+**Fix (state, not text).** (1) the verification-queue approve now writes BOTH sides in
+one transaction — `sellers.status='approved'`, `verification_status='verified'`,
+`verified_at`, plus the same `users.role='seller'` promotion the account path does —
+and refuses to approve a `rejected`/`suspended` ACCOUNT (400 `INVALID_TRANSITION`)
+before any write. (2) the account approve resolves the verification record
+(`status='verified'`), gated on `status IN ('pending','unverified')` AND
+`jsonb_array_length(evidence_urls) > 0` (no V without proof) and parameterised, so the
+"no literal grant" guard still holds. (3) The sidebar badge is the reviewer-work
+COUNT: `pendingReviewSellers = COUNT(*) WHERE status IN ('pending','under_review')`,
+added to the EXISTING `/api/admin/dashboard/counts`; `approved` is excluded by the
+query itself and the page reads that field instead of a fetched list — no frontend
+decrement, no new endpoint. (4) The queue raises the existing center-events "sellers"
+signal after a confirmed decision and the Center page re-reads its counters, so the
+badge drops immediately in the acting tab as well as in other tabs (`seller:updated`).
+
+**Tests (executed; disposable PostgreSQL + real routes).** New
+`backend/tests/seller-approval-access.test.ts` (10 cases): pending → `sellerAccess:false`
++ 403 `SELLER_NOT_APPROVED`; verification-queue approve → DB both-sides approved +
+`role='seller'`, `sellerAccess:true`, `GET /api/seller/profile` **200**, reviewer-work
+count −1, queue row gone; `needs_correction`/`rejected` → 403; suspended account
+unapprovable (400, nothing written); account approve resolves the verification record;
+the count excludes approved/rejected/needs_correction and equals the DB's
+`IN ('pending','under_review')` count; badge wiring guards. Updated:
+`verification-self-approval.test.ts` (two guarded, evidence-gated badge paths, still no
+literal grant), `admin-queue-pagination.test.ts`,
+`center-seller-state-sync.test.ts`. Full suite **658 pass / 2 skip / 0 fail** (660 tests,
+32 files; was 647/2/0) · backend `tsc` exit 0 · `bun run typecheck` 4/4 ·
+`build:apps` 4/4 · `i18n:check` th=en=my=1319 · `git diff --check` clean · no schema
+change, no new endpoint/table/socket.
+
+**Notes.** No browser run here (no browser/test account), so the UI change is verified
+at typecheck + build + the executed API/DB layer, not visually. Applicants approved by
+the OLD code still have `sellers.status='pending'` (their verification record is
+`verified`): re-approving once — from either button — converges the state.
