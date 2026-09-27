@@ -237,6 +237,7 @@ const CART_ITEMS_QUERY_FULL = `
     p.unit AS unit,
     COALESCE(pv.stock, i.quantity, 0) AS available_stock,
     sh.name AS shop_name,
+    p.shop_id AS shop_id,
     (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
     pv.name AS variant_name,
     pv.sku AS variant_sku,
@@ -271,6 +272,7 @@ const CART_ITEMS_QUERY_BASIC = `
     p.unit AS unit,
     COALESCE(pv.stock, i.quantity, 0) AS available_stock,
     sh.name AS shop_name,
+    p.shop_id AS shop_id,
     (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
     (SELECT pov.image_url
      FROM product_variant_values pvv
@@ -312,6 +314,7 @@ function formatCartRow(r: any) {
     quantity: r.quantity,
     priceSnapshot: parseFloat(r.price),
     availableStock: r.available_stock ?? 0,
+    shopId: r.shop_id ?? null,
     shopName: r.shop_name,
     productImageUrl: r.variant_option_image_url || r.product_image_url,
     addedAt: r.added_at,

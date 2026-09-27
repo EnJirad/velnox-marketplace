@@ -27,6 +27,8 @@ export interface CartLine {
   price: number;
   qty: number;
   stock: number;
+  /** products.shop_id — how orders are grouped and created (one order per shop) */
+  shopId?: string | null;
   shopName?: string;
   imageUrl?: string;
 }
@@ -69,6 +71,7 @@ function toLine(item: {
   productName?: string;
   unit?: string;
   availableStock?: number;
+  shopId?: string | null;
   shopName?: string;
   productImageUrl?: string;
 }): CartLine {
@@ -86,6 +89,7 @@ function toLine(item: {
     // Use availableStock from backend. Only fall back to quantity if backend didn't provide stock info at all.
     // When availableStock is explicitly 0 or null, treat as out-of-stock (don't use qty as stock).
     stock: item.availableStock != null ? item.availableStock : 9999,
+    shopId: item.shopId ?? null,
     shopName: item.shopName,
     imageUrl: item.productImageUrl,
   };

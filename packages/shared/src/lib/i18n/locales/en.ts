@@ -143,6 +143,7 @@ export const en: Dict = {
     emptyCta: "Start shopping",
     checkout: "Checkout",
     subtotal: "Subtotal",
+    discount: "Discount",
     shipping: "Shipping",
     total: "Total",
     quantity: "Quantity",

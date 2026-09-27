@@ -82,6 +82,7 @@ export const my = {
     emptyCta: "ဈေးဝယ်သွားမည်",
     checkout: "ငွေရှင်းမည်",
     subtotal: "ကုန်ပစ္စည်းစုစုပေါင်း",
+    discount: "လျှော့စျေး",
     shipping: "ပို့ဆောင်ခ",
     total: "စုစုပေါင်း",
     quantity: "အရေအတွက်",

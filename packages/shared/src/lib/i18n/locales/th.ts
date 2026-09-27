@@ -144,6 +144,7 @@ export const th = {
     emptyCta: "ไปเลือกซื้อสินค้า",
     checkout: "ชำระเงิน",
     subtotal: "ยอดรวมสินค้า",
+    discount: "ส่วนลด",
     shipping: "ค่าจัดส่ง",
     total: "ยอดรวมทั้งหมด",
     quantity: "จำนวน",
