@@ -447,81 +447,12 @@ tests executing (**560 pass / 2 skip / 0 fail**). Only the credential half stand
 
 ## 17. CI guard fix — "Verify the guard refuses production" (2026-09-25)
 
-**The failure.** `.github/workflows/test.yml` step *Verify the guard refuses
-production* failed on every `main` run since the workflow landed. Real run
-`36172693661` (for `68197ab`), job `Typecheck + tests (disposable PostgreSQL)`,
-step 8 → `❌ The guard did not refuse a production database.` → exit 1. Because
-`bash -e` aborts the job, **steps 9 "Run the test suite" and 10 were SKIPPED** —
-CI had not been running the test suite at all on those commits.
-
-**Root cause — the check contradicted a guard rule that is deliberately pinned.**
-`TEST_DATABASE_URL` is a **job-level `env:`** (the disposable container), so it
-was visible to every step — the run log prints it in the step's own `env:` block.
-`decideTestDatabase()` **prefers `TEST_DATABASE_URL` over `DATABASE_URL` on
-purpose**, and `test-database-isolation.test.ts` already asserts "an explicit
-TEST_DATABASE_URL is preferred and wins over DATABASE_URL". The probe injected a
-production-looking `DATABASE_URL`, but with the job variable still set the guard
-never consulted it, correctly resolved to the disposable target, and printed
-nothing — so `grep -q` matched nothing and the step reported a broken guard. **The
-guard was correct; the CI assertion was wrong.** (GitHub runs `shell:
-/usr/bin/bash -e {0}` — no `pipefail` — so the pipeline was not a factor.)
-
-Reproduced locally: identical command + job env → **empty output, exit 0**.
-Negative control (variable cleared) → `REFUSING TEST AGAINST PRODUCTION DATABASE`,
-exit 1.
-
-**Fix — CI wiring only; `backend/db/test-database.ts` untouched.** The probe now
-clears the job variable with `env -u TEST_DATABASE_URL`, so it really models
-"a test process whose only configured database is production". The step also
-gains the other half of the contract: a second assertion that the disposable
-target is still **ACCEPTED**, so it can no longer pass if the guard simply starts
-refusing everything.
-
-**Files changed (2 code, both CI-guard).** `.github/workflows/test.yml` (+26/−1)
-and `backend/tests/test-database-isolation.test.ts` (+80); plus the handoff and
-archive docs. **Payment code untouched**
-— `backend/routes/stripe.ts`, `backend/lib/payment-config.ts`,
-`db/migrations/047_payment_foundation.sql`, `backend/routes/cart.ts` and both
-schema files verified unchanged; no schema change, no `db/run-update.sql`.
-
-**Regression coverage — 7 new tests (39 pass / 0 fail in the file).** Subprocess:
-(CI-shaped env: safe `TEST_DATABASE_URL` + production `DATABASE_URL` → **ACCEPTED**,
-pinning the root cause), (D: Neon branch + `TEST_DATABASE_ALLOW_NEON_BRANCH=1` →
-**ACCEPTED**; same opt-in on the production endpoint → **REFUSED**; branch without
-opt-in → **REFUSED**). Source-level: the workflow must grep the documented refusal,
-must contain `env -u TEST_DATABASE_URL`, must use only the reserved
-`ep-ci-guard-check…neon.tech` host (never real production Neon), and must still
-assert the disposable target is accepted.
-
-**Full verification actually run (no production DB — nothing configured here,
-so DB-gated suites skip as designed).** backend `bunx tsc --noEmit` **exit 0** ·
-`bun run typecheck` **4/4 exit 0** · `bun test backend/tests` **518 pass / 43 skip /
-0 fail** · payment tests **59 pass / 1 skip / 0 fail** · schema-drift +
-migration-numbering + security-hardening **75 pass / 0 fail** · `i18n:check`
-**1295/1295/1295** · `db/schema.sql` ≡ `db/run-sqleditor.sql` · no
-`db/run-update.sql` · `git diff --check` clean · no secrets in the diff.
-
-**GitHub Actions rerun — PASS (run `36176830888`, commit `85d2f48`).** Job
-`Typecheck + tests (disposable PostgreSQL)` → **success**. Step 8 *Verify the
-guard refuses production* → **success**, printing both `✅ Production database
-refused as expected.` and `✅ Disposable test database accepted as expected.`
-Step 9 *Run the test suite* → **success** (it had been **skipped** on every
-previous failing run) and step 10 *Whitespace hygiene* → success.
-
-**The suite now actually runs in CI: 559 pass / 2 skip / 0 fail** (561 tests,
-24 files) against the disposable PostgreSQL — versus **518 pass / 43 skip**
-locally where no test database exists. **41 DB-gated integration tests ran in CI
-for the first time** (inventory reservation/concurrency, checkout + webhook
-idempotency, refund/order paths) and all of them pass.
-
-**Push.** `6f365b8 fix(ci): repair production database guard verification` +
-`85d2f48 docs(ai): …` → `git push origin main` → **PUSH VERIFIED**, local
-`85d2f480af036b7942982f1ce2675dc0ad865cf3` == `origin/main`, 0/0, tree clean.
-
-**Not claimed.** Stripe Test Mode E2E is still **BLOCKED** (no credential) and
-production payment readiness is **NOT claimed** — §16 stands unchanged.
-
----
+**Archived** (closed record, pushed at the time) →
+[`history/archive/AI_Handoff-2026-09-25-ci-guard-fix.md`](history/archive/AI_Handoff-2026-09-25-ci-guard-fix.md).
+Moved 2026-09-27 to make room for §22. The fix is live in
+`.github/workflows/test.yml` (`env -u TEST_DATABASE_URL` plus the
+accepted-target assertion) and CI has been green on every push since, including
+`c2d3639` (run 36283775266). Live rules: [`.ai/context/testing.md`](context/testing.md).
 
 ## 18. Stripe TEST-mode E2E — independent re-verification (TASK 007, 2026-09-26)
 
@@ -654,48 +585,13 @@ was touched — the only database used was the disposable local one above.
 
 ## 19. Production-readiness audit — risk-ordered (TASK 009, 2026-09-26)
 
-The 13 release gates were walked high-risk → low-risk. **PRODUCTION: NOT READY.**
-Per-gate evidence, the measured tooling window, and every BLOCKED reason:
-[`.ai/tasks/completed/production-readiness-audit-2026-09-26.md`](tasks/completed/production-readiness-audit-2026-09-26.md).
-**PRODUCTION PAYMENT READINESS: NOT CLAIMED.**
-
-**Fixed (code, executed).** `GET /api/admin/sellers` was unbounded *because* its only
-consumer counted a badge from the whole list. It now pages (`lib/pagination.ts` helpers,
-`COUNT(*) OVER()`, `ORDER BY created_at DESC, id DESC`, `LIMIT/OFFSET`, a fallback count
-query, `data: { sellers, pagination }`), the shared action forwards `page`/`limit`, and
-`Center.tsx` reads `pagination.total` for sellers + `GET /api/admin/dashboard/counts`
-for products — so the dashboard no longer downloads either queue to count it.
-Executed: `backend/tests/admin-sellers-pagination.test.ts` **8 pass / 0 fail** (real
-route, real session cookies, disposable DB: 401/403, exact total at `limit=1`, default
-page 25, clamp 100, disjoint pages, page-past-end total, no `total_count` leak) plus 9
-static guards in `admin-queue-pagination.test.ts` (**30 pass**).
-
-**BLOCKED, unchanged.** Stripe TEST E2E — this workspace *and* production answer
-`STRIPE_NOT_CONFIGURED` (`/api/stripe/configured`) with every method disabled
-(`/api/payments/methods`), so no Card / PromptPay / webhook / refund / idempotency
-flow was run and no mock was substituted (§16/§18 stand). Browser E2E, Google OAuth
-E2E and R2 authenticated E2E: no browser and no authorized account. The
-`products/moderation` handler and the locale `review:` blocks are past the edit window
-(162,487 B; 70,035 / 55,934 / 57,528 B).
-
-**Verified this pass (production, read-only, zero writes).** `/api/health` 200 ·
-`/api/health/r2` 200 · four frontends 200 (`velshop|velseller|velcenter.vercel.app`,
-`velnox-theta.vercel.app`) with SPA deep routes 200 · nine protected endpoints → **401
-`UNAUTHORIZED`** · public reads 200 · **0** secret patterns across all four deployed
-bundles (1.27 MB). **New findings (owner actions, no code change):** (1) the `velnox.com`
-zone is unresolvable (lame NS delegation) and `center.velnx.com` is NXDOMAIN —
-production is unaffected because the Vercel projects set `VITE_*` overrides and no
-deployed bundle references `*.velnox.com`; (2) `SellerVerificationQueue.tsx:177`
-carries the repository's only corrupted copy string (`ลบrêtailer`), left for an owner
-wording decision.
-
-**Regression (this tree).** Disposable PostgreSQL + `JWT_SECRET`: **577 pass / 2 skip /
-0 fail** (579 tests, 25 files; both skips are the pre-existing R2-credential cases).
-No database configured: **533 pass / 46 skip / 0 fail**. Backend `tsc` exit 0 · 4/4
-apps exit 0 · i18n 1295/1295/1295 · `db/schema.sql` ≡ `db/run-sqleditor.sql` · no
-`db/run-update.sql` · `git diff --check` clean.
-
----
+**Archived** (closed record) →
+[`history/archive/AI_Handoff-2026-09-26-production-readiness-audit.md`](history/archive/AI_Handoff-2026-09-26-production-readiness-audit.md).
+Moved 2026-09-27 to make room for §22. **PRODUCTION: NOT READY** and **PRODUCTION
+PAYMENT READINESS: NOT CLAIMED** still stand; per-gate evidence is in
+[`.ai/tasks/completed/production-readiness-audit-2026-09-26.md`](tasks/completed/production-readiness-audit-2026-09-26.md);
+Stripe TEST E2E and production Browser / Google-OAuth / R2-authenticated E2E stay
+**BLOCKED** (§6, §18).
 
 ## 20. Moderation-queue pagination + verification-queue i18n (2026-09-26)
 
@@ -846,15 +742,83 @@ Render logs). Clearing the 53000 needs the provider quota raised/reset — not a
 deploy. **Not claimed:** the quota is not fixed and OAuth was not verified in
 production.
 
+## 22. PostgreSQL 53000 — provider-side quota classified; provider action required (2026-09-27)
+
+**New production evidence (with §21's safe logging deployed as `c2d3639`).** Render
+logs now show `53000` on BOTH paths: `operation: connect` from
+`backend/db/index.ts:70` (the `getClient()` failure logger) called by
+`backend/routes/auth.ts:133` (`const poolClient = await getClient();` inside
+`resolveUser()`), AND `operation: query` / `statement: SELECT`; the VelRepeat
+scheduler fails the same way. ⇒ new connections are refused AND existing
+connections are dropped. No OAuth code was touched.
+
+**Classification — (B)+(E): a provider consumption quota was exhausted and Neon
+suspended the project's compute. Not (A) connection limit, not (C) storage, not
+(F) provider-wide.**
+- Neon FAQ *"What are the limits and quotas for Neon's Free plan?"*
+  (`neon.com/faqs/free-plan-limits-and-quotas`): *"CU-hours or network transfer
+  used up: the project's compute is suspended until the next billing period or
+  until you upgrade. **Existing connections drop and new ones can't open.**"* —
+  a verbatim match to the two observed operations. Free-plan budget: **100 CU-hours
+  per project per month** and **5 GB per project per month public network
+  transfer**; computes scale to zero only after **5 minutes** of inactivity.
+- **(A) excluded:** Postgres connection exhaustion is `53300` *"remaining
+  connection slots are reserved for non-replication superuser connections"* —
+  a different code and message (Neon's own support write-up uses `53300` for
+  connection limits); the pool is 20 connections in one process (§21).
+- **(C) excluded:** per the same FAQ, storage above 0.5 GB fails *inserts, updates
+  and deletes that would increase storage* — connections and SELECTs keep working.
+  A refused connect plus a refused SELECT contradict it.
+- **(F) excluded:** the message is account/project-scoped.
+- **Which of the two Free-plan metrics tripped is BLOCKED:** it needs Neon Console
+  → project → Usage (or the Neon API). No credential exists in this workspace
+  (`freebuff-env list` → `{}`), and the SELECT-only diagnostic workflow still cannot
+  be dispatched — `gh workflow run diag-neon-schema.yml` → **HTTP 403 Resource not
+  accessible by integration** (re-confirmed 2026-09-27; Actions *read* works —
+  `gh run list` — Actions *write* does not). Last *proven* production-DB workflow
+  connection: `migrate-neon.yml` run `36167403209` success at
+  **2026-09-25T17:29:05Z**.
+
+**Contributing factor (arithmetic, not a guess).** `startVelRepeatScheduler()`
+(`server.ts:521`) polls with the default **60 s** interval
+(`VELREPEAT_SCHEDULER_INTERVAL_MS`, floor 10 s) and every tick runs at least one
+SELECT (`processDuePlans(25)`), forever. Neon's Free plan scales a compute to zero
+only after **5 minutes** of inactivity, so a 60-second poll never allows an idle
+window: the compute stays active 24/7 ≈ 0.25 CU × ~730 h ≈ **~182 CU-hours/month** —
+~1.8× the 100 CU-hour allowance, enough to suspend the project ~16–17 days into a
+monthly window with zero customer traffic. (Conditional on the project being on the
+Free plan, which this workspace cannot read.) **No scheduler change was made:** the
+root cause is a provider quota, and the brief forbids application-code changes that
+hide that; the cadence is an owner decision.
+
+**Connection findings (re-verified, unchanged).** Still exactly one `pg.Pool`
+(`max: 20`, idle 30 s, connect timeout 5 s); THE one real leak (shop revoke) was
+fixed in §21; every other lease releases in `finally`; the scheduler has no
+overlapping ticks, no unbounded batches, no long-running transactions.
+
+**Production verification (read-only, 2026-09-27).** `/api/health` 200 (it does not
+touch the DB) · `/api/shops` → 500 `DB_ERROR` · `/api/categories` → 500 `DB_ERROR` ·
+`/api/products` → 500 `DB_ERROR`. **DB CONNECT: FAIL** (provider-suspended) ·
+**DB QUERY: FAIL** · **Google OAuth: BLOCKED** (downstream symptom; no authorized
+test account) · **Scheduler: BLOCKED** (needs Render logs; same 53000 in the
+reported logs).
+
+**Owner action (PROVIDER ACTION REQUIRED).** Neon Console → project → **Usage**:
+read CU-hours and public network transfer against the plan allowance (100 CU-hours /
+5 GB on Free), then either upgrade to Launch or wait for the monthly reset —
+compute resumes automatically and no data is lost. If the project came from the
+Vercel Neon integration, the same limits are adjustable from Vercel → Integrations
+→ Neon → manage → settings.
+
 **Housekeeping:** superseded material lives in [`history/archive/`](history/archive/)
 (dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes and 2026-09-23
 production-verification pass, §8,
-§10, §12, §14's TASK 004B narrative, and (2026-09-26) §2's verification system →
+§10, §12, §14's TASK 004B narrative, §17 and §19 (moved 2026-09-27), and (2026-09-26)
+§2's verification system →
 `.ai/context/verification.md` plus §15/§16's payment narratives →
-`.ai/context/payment.md` + §18. This file sits **~53 KB against a ~40 KB soft
+`.ai/context/payment.md` + §18. This file sits **~51 KB against a ~40 KB soft
 ceiling; 55 KB is the hard limit where editing stops working — measured 2026-09-26:
 ≤54.8 KB edits, ≥68.2 KB does not.
-NEXT SPLIT: §19 (then §17)** once mirrored into `.ai/context/` — this file is
-already past ~53 KB, so archive §19 before the next content edit (text edits are
-measured safe to ≤54.8 KB; ≥68 KB fails). Keep §6 (gaps), §9.4/§9.5, and the §14
+NEXT SPLIT: §18** — only after its BLOCKED statements are mirrored into
+`.ai/context/payment.md`. Text edits are measured safe to ≤54.8 KB; ≥68 KB fails. Keep §6 (gaps), §9.4/§9.5, and the §14
 stub — and keep §18's BLOCKED statements.
