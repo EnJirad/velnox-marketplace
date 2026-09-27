@@ -185,3 +185,26 @@ change, no new endpoint/table/socket.
 at typecheck + build + the executed API/DB layer, not visually. Applicants approved by
 the OLD code still have `sellers.status='pending'` (their verification record is
 `verified`): re-approving once — from either button — converges the state.
+
+---
+
+## 27 (archived verbatim 2026-09-27 by §31)
+
+## 27. Stripe Sandbox/Test-Mode audit (2026-09-27) — archived; configuration since COMPLETED
+
+**Archived verbatim** → [`history/archive/AI_Handoff-2026-09-27-stripe-sandbox-audit.md`](history/archive/AI_Handoff-2026-09-27-stripe-sandbox-audit.md)
+(the audit table, credential-gate proof, executed-evidence log incl. CI run `36305688863`, the
+env-var documentation change, and the Connect finding). Moved 2026-09-27 by §28 to keep this
+file under the edit-tool ceiling.
+
+- **Outcome of that pass: audit PASS, no code changed, sandbox E2E BLOCKED.**
+- **Configuration is now DONE (owner).** §28 re-probed production read-only:
+  `{configured:true, mode:"test", webhookConfigured:true}`, `/api/payments/methods` →
+  **CARD + PROMPTPAY enabled**, COD disabled. Still **no live credential anywhere**.
+- **Still BLOCKED:** no agent-driven sandbox round trip (PaymentIntent / PromptPay QR /
+  webhook delivery / refund) has ever run, from here or anywhere else.
+- **Stripe Connect: MISSING** — `CHECKOUT READY` must never be read as `MARKETPLACE PAYOUT READY`.
+- `INSTALLATION.md` §4, `docs/ENVIRONMENT.md`: env names documented. **`.env.example` still
+  lacks them** — protected from agent edits, so it stays an owner edit.
+
+---
