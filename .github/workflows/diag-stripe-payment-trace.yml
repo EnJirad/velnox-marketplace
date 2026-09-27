@@ -87,6 +87,17 @@ jobs:
                  || ' err=' || COALESCE(left(max(error), 90), '-')
             FROM payment_events WHERE status = 'failed'
            GROUP BY event_type ORDER BY 1;
+          -- Recency of VERIFIED deliveries. A row only exists here AFTER a
+          -- delivery passed signature verification and claimed its event, so an
+          -- empty result proves no delivery has ever verified while a `last=`
+          -- far behind the latest attempt points at the signature boundary (a
+          -- wrong/stale STRIPE_WEBHOOK_SECRET) rather than at the handler.
+          SELECT 'verified-newest ' || event_type || ' last=' || COALESCE(max(created_at)::text, '-')
+            FROM payment_events WHERE status = 'processed' GROUP BY event_type ORDER BY 1;
+          SELECT 'verified-total n=' || count(*)::text || ' last=' || COALESCE(max(created_at)::text, '-')
+            FROM payment_events WHERE status = 'processed';
+          SELECT 'stuck-processing n=' || count(*)::text || ' oldest=' || COALESCE(min(created_at)::text, '-')
+            FROM payment_events WHERE status = 'processing';
           SQL
 
       - name: Order settlement aggregates (no identifiers)
