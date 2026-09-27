@@ -108,56 +108,13 @@ from `api-routes.ts`, `order:updated` from every status writer, and `config:upda
 
 ### 2026-09-23 — production verification: DB tests executed, one real bug found, media hardened
 
-1. **All 35 DB-gated tests now actually run.** Recipe: a disposable
-   PostgreSQL 14 bootstrapped with `db/run-sqleditor.sql` (the fresh-DB
-   contract is proven — the bootstrap completes under `ON_ERROR_STOP`), a
-   test `DATABASE_URL` with an **explicit `?sslmode=disable`** (the pool only
-   appends `sslmode=verify-full` when the URL has none, so production URLs are
-   unaffected), plus `JWT_SECRET`. Result: **452 pass / 0 fail / 0 skip**,
-   twice consecutively on the same database; without a database the suite
-   stays green (415 pass / 37 skip / 0 fail). The self-approval guard was
-   observed over real HTTP: owner → `403 SELF_ACTION_FORBIDDEN` with nothing
-   written, different reviewer → `200` on the same record (negative control).
-2. **Fixture defects fixed at the root** (they caused all 11 first-run
-   failures — every one was 23503/23505, not an assertion):
-   `backend/tests/helpers/purge.ts` removes the only two `ON DELETE NO ACTION`
-   blockers (`orders`, `seller_verifications.reviewed_by`) in FK order before
-   the user — every other FK back to `users` cascades or sets null (verified
-   live against `pg_constraint`); `order-detail-reviews` seeds unique emails
-   and purges per test (it used fixed `review-a@…`, colliding on its own 2nd
-   seed); the income fixture seeds a real product because
-   `order_items.product_id` is `NOT NULL` in the canonical schema.
-3. **Real product bug found by those tests: `releaseOrderInventory` could
-   double-release.** The `inventory_released` flag was read-then-write (the
-   old code literally said "no lock yet"), so two concurrent callers — e.g.
-   racing Stripe webhooks — both saw `false` and both restored stock
-   (overselling). It is now claimed by ONE guarded UPDATE; under READ
-   COMMITTED the loser re-evaluates, matches 0 rows, and is the idempotent
-   no-op the docstring promised. `backend/lib/inventory.ts`.
-4. **R2/media enforcement moved server-side.** `MAX_UPLOAD_BYTES` was
-   imported but never checked — the 10 MB cap existed only in the frontend —
-   and `POST /api/seller/evidence/confirm` never talked to R2 at all (it
-   trusted client `publicUrl`/`contentType`/`fileSize` and upserted a media
-   row even when the object did not exist). Every persistence point now
-   HeadObjects via `backend/lib/r2-objects.ts`: missing object → `400
-   R2_OBJECT_NOT_FOUND`, actual stored size >10 MB → `400 FILE_TOO_LARGE`,
-   media rows record the stored object's type/size, the evidence URL is built
-   from the configured domain + key (client URL ignored), and the
-   shop-ownership 403 in `/api/upload/confirm` now runs BEFORE the upsert
-   instead of after. Covered by `backend/tests/upload-security.test.ts`
-   (unit + wiring + a real HTTP 401/403/400 round trip needing no R2).
-   **Commits `2509aea` → `1be5620` → `d092b4a`.**
-5. **Production Neon — verified read-only from the production database's own
-   output (see §9).** The ledger matches `main` exactly (49 migrations, newest
-   046) and 043/044/045/046 are recorded as applied; the live run logs prove
-   `idx_media_owner_key`, the canonical `media` column names, the
-   `under_review` / `needs_correction` constraint, `seller_review_history` and
-   the `item_unavailable` constraints. What is still open is a fresh catalog
-   read of four low-severity details (§9.4).
-   `.github/workflows/diag-neon-schema.yml` (manual, SELECT-only) still cannot
-   be dispatched from this workspace — `403 Resource not accessible by
-   integration`. Owner: run it from the Actions tab (or grant the GitHub App
-   `Actions: read/write`).
+**Archived** (closed record, pushed at the time) →
+[`history/archive/AI_Handoff-2026-09-23-production-verification.md`](history/archive/AI_Handoff-2026-09-23-production-verification.md).
+Moved 2026-09-27 to keep this file under the ~55 KB edit limit. Headline: all 35
+DB-gated tests executed for the first time on a disposable PostgreSQL (`452 pass /
+0 fail / 0 skip`), the `releaseOrderInventory` double-release was found and fixed by
+one guarded UPDATE, and R2/media enforcement moved server-side (10 MB cap + HeadObject
+at every persistence point). The still-open catalog read stayed in §9.4.
 
 ## 6. Remaining gaps / open items
 
@@ -808,13 +765,96 @@ this pass added only its pagination bar, in that file's language). **PRODUCTION:
 READY** — this pass removes two tooling-blocked defects and one corrupted string; it
 does not change the verdict.
 
+## 21. Production PostgreSQL 53000 — provider quota (BLOCKED evidence); one real pool leak found and fixed (2026-09-27)
+
+**Report.** Render logs: `code: '53000'` — *"Your account or project has exceeded
+the quota. Upgrade your plan to increase limits."* — at `backend/routes/auth.ts:133`
+(`resolveUser()`) and `backend/jobs/velrepeat-scheduler.ts:445` (`processDuePlans()`),
+both through `backend/db/index.ts` (pg-pool). Google OAuth callbacks failed after
+reaching the backend.
+
+**1. `53000` = a provider-side Neon quota, not this codebase.** `53000` is PostgreSQL
+`insufficient_resources` (class 53, generic). That exact message is Neon's quota
+rejection: `neon.com/docs/guides/consumption-limits` — when any configured/plan
+consumption metric (`active_time_seconds`, `compute_time_seconds`,
+`written_data_bytes`, `data_transfer_bytes`, or the account/project cap) is met,
+Neon suspends every compute of the project, and the suspension persists until the
+next billing period unless the quota is raised. In the wild the same code + message
+appears for the data-transfer variant (`Code: 53000 … Your project has exceeded the
+data transfer quota`) and through the driver as HTTP 402. **Which quota** cannot be
+read from this workspace — `freebuff-env list` is empty (no `DATABASE_URL`, no Neon
+key) → **BLOCKED — provider quota/usage evidence unavailable**; the owner must read
+Neon Console → project → Usage/Billing (or the Neon API `Get project` metrics). No
+code change can lift a suspended compute, and none was attempted.
+
+**Live production evidence (read-only, 2026-09-27).** `/api/health` 200 (it does not
+touch the DB); `/api/health/r2` 200; **`/api/shops` → 500 `DB_ERROR`** and
+**`/api/categories` → 500 `DB_ERROR`** — the DB path is failing *now*, consistent
+with a persistent suspension. Render logs are not reachable from this workspace.
+
+**2. The code did not exhaust that quota (measured, not assumed).** Exactly ONE
+`pg.Pool` (`backend/db/index.ts:16`; repo-wide grep finds no second pool or client);
+`max: 20`, `idleTimeoutMillis: 30000`, `connectionTimeoutMillis: 5000`. HTTP +
+WebSocket + the VelRepeat scheduler share it in one process (`server.ts` starts
+`startVelRepeatScheduler()` at `server.ts:521`). The repo has no `render.yaml`; docs
+describe a single Render web service (`docs/DEPLOYMENT.md:21`) — the live instance
+count is dashboard-only → BLOCKED. Scheduler: an in-process `running` mutex, a
+bounded `LIMIT 25` batch processed sequentially, cross-instance safety via
+`FOR UPDATE` + `UNIQUE (plan_id, scheduled_for)`; no overlapping ticks, no unbounded
+batch. A connection-limit problem would surface as `53300` `too_many_connections` or
+a node-postgres pool timeout — not `53000`.
+
+**3. One real connection leak existed — found and fixed (proven by source, then by
+executed test).** `POST /api/admin/sellers/:id/revoke` (`backend/routes/seller.ts`,
+lease at :1263) was `try/catch` with **no `finally`**: every call — 403, 400, 404,
+success and error — permanently consumed one of the pool's 20 connections until the
+process restarted. It was the only unreleased lease (the other ten `getClient()`
+sites release in `finally`; `withTransaction` always did). A real latent service-wide
+outage trigger (it would eventually starve auth too), but **NOT** the 53000: it
+produces pool timeouts, not a provider quota error, and it is unrelated to the OAuth
+callback path. Fixed with `finally { client.release(); }`; pool `max` unchanged.
+`pool.on("error") → process.exit(-1)` (`db/index.ts:23`) is left as the documented
+upstream pattern, flagged here: during a provider suspension that kills idle
+connections it converts the outage into process restarts.
+
+**4. Safe failure logging.** `backend/db/index.ts` now logs every failed
+query/connect with `operation`, the statement keyword, and PostgreSQL
+`code`/`severity`/`message` only — never the connection string, credentials,
+cookies, or parameters (which may carry PII). The next 53000 is classifiable
+straight from Render logs. No behavior change.
+
+**Changes.** `backend/routes/seller.ts` (+5), `backend/db/index.ts` (+31/−3), new
+`backend/tests/db-client-release.test.ts` (7 cases). No schema change (`db/`
+untouched).
+
+**Tests (executed).** Disposable PostgreSQL 14 `velnox_test` (59 tables) +
+`JWT_SECRET`: full suite **602 pass / 2 skip / 0 fail** (604 tests, 27 files) — 7 of
+them new; the 2 skips are the pre-existing R2-credential cases. The static guard is
+proven non-vacuous: against the committed pre-fix `seller.ts` it reports
+`{leases:[168,836,1263], releases:[328,1107], guardWouldPass:false}`. Runtime proof:
+the revoke returns 200 + `sellers.status='suspended'` and `pool.idleCount` returns to
+baseline; the 403 path does too; the negative control shows the probe detects a
+deliberately unreleased client (idleCount one lower) and recovers after `release()`.
+Backend `tsc` exit 0 · `bun run typecheck` 4/4 exit 0 · `i18n:check` th=en=my=1319 ·
+`db/schema.sql` ≡ `db/run-sqleditor.sql` · no `db/run-update.sql` · `git diff --check`
+clean.
+
+**Production tiers.** DB HEALTH **FAIL** (two DB-backed GETs 500 while `/api/health`
+stays 200) · AUTH DB PATH **BLOCKED** (same suspension; no authorized account) ·
+GOOGLE OAUTH **BLOCKED** (no test account + no deploy) · SCHEDULER **BLOCKED** (needs
+Render logs). Clearing the 53000 needs the provider quota raised/reset — not a code
+deploy. **Not claimed:** the quota is not fixed and OAuth was not verified in
+production.
+
 **Housekeeping:** superseded material lives in [`history/archive/`](history/archive/)
-(dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes, §8,
+(dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes and 2026-09-23
+production-verification pass, §8,
 §10, §12, §14's TASK 004B narrative, and (2026-09-26) §2's verification system →
 `.ai/context/verification.md` plus §15/§16's payment narratives →
-`.ai/context/payment.md` + §18. This file sits **~51 KB against a ~40 KB soft
+`.ai/context/payment.md` + §18. This file sits **~53 KB against a ~40 KB soft
 ceiling; 55 KB is the hard limit where editing stops working — measured 2026-09-26:
 ≤54.8 KB edits, ≥68.2 KB does not.
-NEXT SPLIT: §5 (then §19)** once mirrored into `.ai/context/` — archive first when
-this file next crosses ~53 KB. Keep §6 (gaps), §9.4/§9.5, and the §14 stub — and
-keep §18's BLOCKED statements.
+NEXT SPLIT: §19 (then §17)** once mirrored into `.ai/context/` — this file is
+already past ~53 KB, so archive §19 before the next content edit (text edits are
+measured safe to ≤54.8 KB; ≥68 KB fails). Keep §6 (gaps), §9.4/§9.5, and the §14
+stub — and keep §18's BLOCKED statements.

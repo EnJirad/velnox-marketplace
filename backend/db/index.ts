@@ -25,11 +25,32 @@ pool.on("error", (err) => {
   process.exit(-1);
 });
 
+// ─── Safe database failure logging ─────────────────────────────────────────
+// Diagnosis aid only. Logs the operation, the statement's leading keyword, and
+// the PostgreSQL error code/severity/message — never the connection string,
+// credentials, cookies, or query parameters (which may carry PII).
+function logDbFailure(operation: string, sql: string | null, err: unknown): void {
+  const pgErr = err as { code?: string; severity?: string; message?: string } | null;
+  console.error("[DB] operation failed:", {
+    operation,
+    statement: sql ? sql.trim().split(/\s+/)[0] : null,
+    code: pgErr?.code ?? null,
+    severity: pgErr?.severity ?? null,
+    message: pgErr?.message ?? (err instanceof Error ? err.message : String(err)),
+  });
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function query(text: string, params?: unknown[]): Promise<pg.QueryResult<any>> {
   // Track pool wait time (time spent waiting for a connection from the pool)
   const poolWaitStart = Date.now();
-  const result = await pool.query(text, params);
+  let result: pg.QueryResult<any>;
+  try {
+    result = await pool.query(text, params);
+  } catch (err) {
+    logDbFailure("query", text, err);
+    throw err;
+  }
   const totalMs = Date.now() - poolWaitStart;
 
   // The pg library does not expose pool wait vs execution separately.
@@ -45,7 +66,14 @@ export async function query(text: string, params?: unknown[]): Promise<pg.QueryR
 }
 
 export async function getClient(): Promise<pg.PoolClient> {
-  return pool.connect();
+  try {
+    return await pool.connect();
+  } catch (err) {
+    // A refused connection (quota, suspension, network) is logged here with the
+    // same safe fields as a failed query.
+    logDbFailure("connect", null, err);
+    throw err;
+  }
 }
 
 /**
@@ -53,7 +81,7 @@ export async function getClient(): Promise<pg.PoolClient> {
  * The client is automatically released (rolled back on error, committed on success).
  */
 export async function withTransaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     await client.query("BEGIN");
     const result = await fn(client);

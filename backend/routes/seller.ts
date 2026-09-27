@@ -1356,6 +1356,11 @@ export function setupSellerRoutes(app: Express): void {
       await client.query("ROLLBACK").catch(() => {});
       console.error("[seller] shop revoke error:", err);
       res.status(500).json({ success: false, error: { code: "REVOKE_FAILED", message: "Failed to revoke shop" } });
+    } finally {
+      // Every path above — 403, 400, 404, success, and error — leases this
+      // client; without the release each call permanently consumed one of
+      // the pool's 20 connections until the process restarted.
+      client.release();
     }
   });
 
