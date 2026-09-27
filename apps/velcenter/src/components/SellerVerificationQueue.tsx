@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { onCenterEvent } from "../lib/center-events";
+import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 
 /** Rows per page — the queue is bounded; mirrors `backend/lib/pagination.ts`. */
 const PAGE_SIZE = 25;
@@ -133,7 +133,9 @@ export default function SellerVerificationQueue() {
   }, [loading, error, rows.length, page]);
 
   // Realtime: the Center page owns the WebSocket and notifies us when a seller
-  // or verification changed, so a reviewed row leaves the list immediately.
+  // or verification changed, so a reviewed row leaves the list immediately. The
+  // same subscription serves this component's OWN decisions (it emits "sellers"
+  // after a confirmed review), keeping one refetch per signal.
   useEffect(() => onCenterEvent("sellers", () => { void loadVerifications(); }), [loadVerifications]);
 
   const openReview = useCallback((row: VerificationRow) => {
@@ -159,7 +161,11 @@ export default function SellerVerificationQueue() {
               : t("review.resultRejected")
       );
       setReviewDialogOpen(false);
-      void loadVerifications();
+      // One signal for every consumer of "a seller decision happened": this queue
+      // refetches through its own subscription below, and the Center page reloads
+      // its databases counters (the sidebar badge) from the same event — so the
+      // badge can never keep counting a seller the reviewer just approved.
+      emitCenterEvent("sellers");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("review.actionFailed"));
     } finally {
@@ -183,7 +189,7 @@ export default function SellerVerificationQueue() {
       // a corrupted string that had exactly one `ê` in the repository.
       toast.success(t("review.revokeSuccess"));
       setRevokeOpen(false);
-      void loadVerifications();
+      emitCenterEvent("sellers");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("review.actionFailed"));
     } finally {

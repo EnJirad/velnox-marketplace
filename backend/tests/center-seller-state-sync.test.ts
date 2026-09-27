@@ -170,16 +170,22 @@ describe("the cache layer invalidates on every mutation helper", () => {
 
 describe("review + config mutations refetch authoritative data", () => {
   test("the review queue refetches after a decision and after a revoke", () => {
+    // One signal per confirmed decision: the queue emits "sellers", and it is a
+    // consumer of that same event (its subscription re-reads the queue), so the
+    // list, the page counters and any other open tab all follow the API.
     expect(queueSrc).toContain('onCenterEvent("sellers"');
+    expect(queueSrc).toContain('emitCenterEvent("sellers")');
     for (const handler of ["handleDecision", "handleRevoke"]) {
       const start = queueSrc.indexOf(`const ${handler} = useCallback(`);
       expect(start).toBeGreaterThan(-1);
       const body = queueSrc.slice(start, start + 1500);
-      expect(body).toContain("void loadVerifications()");
-      // Refetch only after the API confirmed — the await comes first.
-      expect(body.indexOf("await ")).toBeLessThan(body.indexOf("void loadVerifications()"));
-      // …and a rejected mutation lands in the catch, never in the success path.
-      expect(body).toContain("toast.error");
+      expect(body).toContain('emitCenterEvent("sellers")');
+      // The event is raised only after the API confirmed — the await comes first.
+      expect(body.indexOf("await ")).toBeLessThan(body.indexOf('emitCenterEvent("sellers")'));
+      // …and a rejected mutation lands in the catch: no event, no success toast.
+      const catchBody = body.slice(body.indexOf("catch"));
+      expect(catchBody).toContain("toast.error");
+      expect(catchBody).not.toContain('emitCenterEvent("sellers")');
     }
   });
 
@@ -235,12 +241,23 @@ describe("VelCenter keeps ONE socket and fans events out to refetches", () => {
   test("the Center page owns the socket and maps events to queue refetches", () => {
     expect(centerSrc).toContain('ws?.send(JSON.stringify({ type: "subscribe", channel: "seller:updated" }))');
     expect(centerSrc).toContain('ws?.send(JSON.stringify({ type: "subscribe", channel: "config:updated" }))');
-    expect(centerSrc).toContain('msg.type === "seller:status-changed" || msg.type === "verification:status-changed"');
+    // Both seller/verification message types are handled (the source wraps the
+    // condition across lines, so it is matched as a pair).
+    expect(centerSrc).toContain('msg.type === "seller:status-changed" ||');
+    expect(centerSrc).toContain('msg.type === "verification:status-changed"');
     expect(centerSrc).toContain('emitCenterEvent("sellers")');
     expect(centerSrc).toContain('emitCenterEvent("config")');
     // The event is a signal: the page re-reads, it does not render the payload.
     expect(centerSrc).toContain("void reloadVerifications();");
     expect(centerSrc).toContain("void reloadSellers();");
+  });
+
+  test("the Center page turns the seller signal into authoritative counter reads", () => {
+    // The badge is never decremented locally: the page re-reads the counters
+    // whenever "sellers" is raised (socket event or a reviewer decision).
+    expect(centerSrc).toContain('onCenterEvent("sellers"');
+    expect(centerSrc).toContain("counts?.pendingReviewSellers");
+    expect(centerSrc).not.toContain("setPendingSellers((prev");
   });
 
   test("VelCenter opens exactly one WebSocket, in the Center page", () => {

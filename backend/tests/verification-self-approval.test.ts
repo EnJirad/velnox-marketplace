@@ -93,7 +93,9 @@ describe("isSelfApproval", () => {
 
 describe("the seller verification review endpoint is wired to the guard", () => {
   const routeAt = verificationSrc.indexOf('app.patch("/api/admin/verifications/seller/:verificationId"');
-  const guardCall = "isSelfApproval(action, userId, ownerRes.rows[0]?.user_id)";
+  // Ownership is resolved into named locals (the same DB read also carries the
+  // account status the approve decision must respect) — never from the body.
+  const guardCall = "isSelfApproval(action, userId, sellerUserId)";
   const guardAt = verificationSrc.indexOf(guardCall);
   const grantAt = verificationSrc.indexOf("SET verification_status = $1");
 
@@ -109,7 +111,8 @@ describe("the seller verification review endpoint is wired to the guard", () => 
   });
 
   test("ownership is resolved from the database, never from the request body", () => {
-    expect(verificationSrc).toContain("SELECT s.user_id FROM sellers s WHERE s.id = $1");
+    expect(verificationSrc).toContain("SELECT s.user_id, s.status FROM sellers s WHERE s.id = $1");
+    expect(verificationSrc).toContain("const sellerUserId = ownerRes.rows[0]?.user_id");
     // The actor id is the session's — a reviewer cannot name themselves.
     expect(verificationSrc).toContain("const userId = req.user!.userId;");
     expect(verificationSrc).not.toContain("req.body.userId");
@@ -130,20 +133,34 @@ describe("the seller verification review endpoint is wired to the guard", () => 
     expect(guardBlock).toContain("return;");
   });
 
-  test("the badge is granted from exactly one place, behind that guard", () => {
+  test("the badge has no literal grant and exactly two guarded, evidence-gated paths", () => {
     // A literal grant would bypass the parameterised, guarded update.
     const literalGrant = /SET\s+verification_status\s*=\s*'verified'/;
     const routes = readdirSync(join(root, "backend", "routes")).filter((f) => f.endsWith(".ts"));
     const grantingFiles = routes.filter((f) => literalGrant.test(readFileSync(join(root, "backend/routes", f), "utf8")));
     expect(grantingFiles).toEqual([]);
 
-    // The parameterised setter exists only in the guarded route. (`products.ts`
-    // reading `s.verification_status = 'verified'` inside an EXISTS subquery is
-    // a read, and `product-lifecycle.test.ts` already pins that split.)
+    // Approval is ONE decision with two VelCenter entry points: the verification
+    // review route (badge + account, guarded by `isSelfApproval`) and the seller
+    // account route (account + badge, state machine + permission). Both write the
+    // parameterised setter; `products.ts` reading
+    // `s.verification_status = 'verified'` inside an EXISTS subquery is a read,
+    // and `product-lifecycle.test.ts` already pins that split.
     const parameterised = routes.filter((f) =>
       readFileSync(join(root, "backend/routes", f), "utf8").includes("SET verification_status = $1"),
     );
-    expect(parameterised).toEqual(["verification.ts"]);
+    expect([...parameterised].sort()).toEqual(["seller.ts", "verification.ts"]);
+
+    // Neither path may grant the badge without proof: the review route refuses an
+    // empty submission, the account route only resolves a record that has at
+    // least one stored evidence file.
+    expect(verificationSrc).toContain("EVIDENCE_REQUIRED");
+    const sellerSrc = readFileSync(join(root, "backend/routes/seller.ts"), "utf8");
+    expect(sellerSrc).toContain("jsonb_array_length(COALESCE(evidence_urls, '[]'::jsonb)) > 0");
+    expect(sellerSrc).toContain("status IN ('pending','unverified')");
+    // …and both require `sellers.manage`, not just a center session.
+    expect(sellerSrc).toContain('userHasPermission(userId, "sellers.manage")');
+    expect(verificationSrc).toContain("userHasPermission(userId, \"sellers.manage\")");
     expect(grantAt).toBeGreaterThan(0);
   });
 });

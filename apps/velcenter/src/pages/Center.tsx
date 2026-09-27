@@ -283,7 +283,6 @@ export default function Center() {
 
   // Seller applications + product moderation — the real Neon catalog
   // (spec §36–37). Approve/reject is server-checked + audit-logged.
-  const sellerListAction = useAction(api.centerAdmin.sellerList);
   const setSellerStatusAction = useAction(api.centerAdmin.setSellerStatusAction);
   const setModerationAction = useAction(api.centerAdmin.setProductModerationStatus);
   // Exact counters for the overview badges — never the length of a fetched
@@ -351,17 +350,19 @@ export default function Center() {
   }
   const reloadSellers = useCallback(async () => {
     try {
-      // Exact count, not a page length: the seller queue pages on the SERVER, so
-      // `limit: 1` + `pagination.total` counts every pending seller instead of
-      // however many happen to fit on one page.
-      const pending = await sellerListAction({ status: "pending", limit: 1 });
-      setPendingSellers(Number(pending?.pagination?.total ?? 0));
+      // REVIEWER WORK, counted in the database. `pendingReviewSellers` is an exact
+      // COUNT of applications that still need a VelCenter decision (`pending` or
+      // `under_review`); an APPROVED seller is excluded by definition, so the
+      // badge cannot stay at 1 after an approval. Same endpoint the product badge
+      // already reads — never a frontend decrement (which a refresh would undo).
+      const counts = await dashboardCountsAction();
+      setPendingSellers(Number(counts?.pendingReviewSellers ?? 0));
     } catch (error) {
       console.error("Seller count error:", error);
       // Empty must mean empty: a failed read keeps what we have and says so.
       setQueueError(error instanceof Error ? error.message : "โหลดตัวเลขคิวงานไม่สำเร็จ");
     }
-  }, [sellerListAction]);
+  }, [dashboardCountsAction]);
   const reloadProducts = useCallback(async () => {
     try {
       // The moderation list endpoint is not paginated yet, so this count comes
@@ -403,6 +404,19 @@ export default function Center() {
     reloadVerifications();
   }, [reloadSellers, reloadProducts, reloadVerifications]);
 
+  // One realtime signal, one refetch per consumer. Whichever source raises
+  // "sellers" — the WebSocket handler above, or the verification queue right
+  // after a reviewer decision — this page re-reads the authoritative counters,
+  // so the badge follows the database instead of a local guess.
+  useEffect(
+    () =>
+      onCenterEvent("sellers", () => {
+        void reloadSellers();
+        void reloadVerifications();
+      }),
+    [reloadSellers, reloadVerifications],
+  );
+
   // WebSocket realtime subscriptions for VelCenter queues
   useEffect(() => {
     const wsUrl = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/^http/, "ws");
@@ -425,10 +439,6 @@ export default function Center() {
             const msg = JSON.parse(event.data);
             if (msg.type === "product:moderated" || msg.type === "product:updated") {
               void reloadProducts();
-            }
-            if (msg.type === "seller:status-changed" || msg.type === "verification:status-changed") {
-              void reloadVerifications();
-              void reloadSellers();
             }
             // Fan out to the tabs that own their own data (the product and
             // seller queues, orders, audit logs). They refetch from the API —

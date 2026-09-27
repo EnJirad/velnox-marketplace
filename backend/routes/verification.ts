@@ -732,10 +732,12 @@ export function registerVerificationRoutes(app: Express) {
       // the database — never from the request body — and the check runs before
       // any write below, so a refused decision leaves nothing behind.
       const ownerRes = await client.query(
-        "SELECT s.user_id FROM sellers s WHERE s.id = $1",
+        "SELECT s.user_id, s.status FROM sellers s WHERE s.id = $1",
         [current.seller_id],
       );
-      if (isSelfApproval(action, userId, ownerRes.rows[0]?.user_id)) {
+      const sellerUserId = ownerRes.rows[0]?.user_id as string | undefined;
+      const sellerAccountStatus = ownerRes.rows[0]?.status as string | undefined;
+      if (isSelfApproval(action, userId, sellerUserId)) {
         await client.query("ROLLBACK");
         res.status(403).json({ success: false, error: { code: "SELF_ACTION_FORBIDDEN", message: "You cannot approve your own seller verification" } });
         return;
@@ -751,6 +753,13 @@ export function registerVerificationRoutes(app: Express) {
         if (["rejected", "suspended"].includes(previousStatus)) {
           await client.query("ROLLBACK");
           res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot approve a ${previousStatus} verification` } });
+          return;
+        }
+        // The account must not be able to earn the badge while it is rejected or
+        // suspended — that state is reversed by an explicit account decision.
+        if (sellerAccountStatus && ["rejected", "suspended"].includes(sellerAccountStatus)) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot approve a ${sellerAccountStatus} seller` } });
           return;
         }
       }
@@ -773,16 +782,38 @@ export function registerVerificationRoutes(app: Express) {
         ],
       );
 
-      // Seller verification_status follows the verification record.
+      // Seller verification_status follows the verification record — and an
+      // APPROVAL also approves the ACCOUNT.
+      //
+      // This route reviews the seller's application: the sellers row, its
+      // verification record and the identity documents come from one submission
+      // (`POST /api/seller/apply`). Approval therefore has to write BOTH sides:
+      // `verification_status` alone leaves `sellers.status = 'pending'`, so
+      // `GET /api/seller/status` kept reporting `pending` / `sellerAccess:false`
+      // (the seller still saw the 1-3 business day screen) and the reviewer
+      // badge kept counting a seller who had already been decided.
+      const approving = action === "approve";
       const sellerVerificationStatus = action === "needs_correction" ? "unverified" : newStatus;
       await client.query(
         `UPDATE sellers
          SET verification_status = $1,
+             status = CASE WHEN $3 THEN 'approved' ELSE status END,
              verified_at = CASE WHEN $1 = 'verified' THEN NOW() ELSE verified_at END,
              updated_at = NOW()
          WHERE id = $2`,
-        [sellerVerificationStatus, current.seller_id],
+        [sellerVerificationStatus, current.seller_id, approving],
       );
+
+      // Same account promotion the seller-status approve path performs, so the DB
+      // is identical no matter which VelCenter button the reviewer used. Role is
+      // NOT the access check (seller access reads `sellers.status`); it stays
+      // truthful for the rest of the app.
+      if (approving && sellerUserId) {
+        const targetRole = (await client.query("SELECT role FROM users WHERE id = $1", [sellerUserId])).rows[0]?.role;
+        if (targetRole && !["owner", "admin", "staff", "seller"].includes(targetRole)) {
+          await client.query("UPDATE users SET role = 'seller', updated_at = NOW() WHERE id = $1", [sellerUserId]);
+        }
+      }
 
       // Rejection / correction reasons are applicant-visible.
       if (action === "reject" || action === "needs_correction") {

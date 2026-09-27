@@ -1013,6 +1013,36 @@ export function setupSellerRoutes(app: Express): void {
         }
       }
 
+      // Approval is ONE decision. The application, its verification record and the
+      // identity documents all come from one submission (`POST /api/seller/apply`),
+      // so approving the account must also resolve that verification record —
+      // otherwise the verification queue (and its badge) keeps a `pending` row for
+      // a seller a reviewer already decided, and the V badge is never granted.
+      //
+      // Gated exactly like the review route: an unresolved record and AT LEAST ONE
+      // persisted evidence file — an account approved with no documents stays
+      // unverified, so the badge is never granted without proof.
+      if (status === "approved") {
+        const verified = await client.query(
+          `UPDATE seller_verifications
+           SET status = 'verified', reviewed_at = NOW(), reviewed_by = $2, updated_at = NOW()
+           WHERE seller_id = $1 AND status IN ('pending','unverified')
+             AND jsonb_array_length(COALESCE(evidence_urls, '[]'::jsonb)) > 0
+           RETURNING id`,
+          [sellerId, userId]
+        );
+        if (verified.rows.length > 0) {
+          // Parameterised on purpose: the badge has no literal grant anywhere
+          // (see backend/tests/verification-self-approval.test.ts).
+          await client.query(
+            `UPDATE sellers
+             SET verification_status = $1, verified_at = NOW(), updated_at = NOW()
+             WHERE id = $2`,
+            ["verified", sellerId]
+          );
+        }
+      }
+
       // On rejection / correction / suspension: persist the applicant-visible
       // structured reason (code + human text) in seller_settings.
       if (status === "rejected" || status === "needs_correction" || status === "suspended") {

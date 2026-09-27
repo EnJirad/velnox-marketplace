@@ -971,9 +971,15 @@ export function setupCenterRoutes(app: Express): void {
         return;
       }
 
-      const [pendingSellers, underReviewSellers, pendingProducts, totalShops, verifiedShops, suspendedShops, pendingVerifications] = await Promise.all([
+      const [pendingSellers, underReviewSellers, pendingReviewSellers, pendingProducts, totalShops, verifiedShops, suspendedShops, pendingVerifications] = await Promise.all([
         query("SELECT COUNT(*)::int as count FROM sellers WHERE status = 'pending'"),
         query("SELECT COUNT(*)::int as count FROM sellers WHERE status = 'under_review'"),
+        // The REVIEWER WORK count: an application still needs a VelCenter decision
+        // while it is `pending` or `under_review`. `approved` (and `rejected` /
+        // `suspended`, and `needs_correction`, which waits on the applicant) is
+        // NOT reviewer work — this is the number the sidebar badge shows, so an
+        // approved seller can never keep it above zero.
+        query("SELECT COUNT(*)::int as count FROM sellers WHERE status IN ('pending','under_review')"),
         query("SELECT COUNT(*)::int as count FROM products WHERE status = 'pending_review'"),
         query("SELECT COUNT(*)::int as count FROM shops"),
         query("SELECT COUNT(*)::int as count FROM sellers WHERE verification_status = 'verified'"),
@@ -986,6 +992,7 @@ export function setupCenterRoutes(app: Express): void {
         data: {
           pendingSellers: pendingSellers.rows[0]?.count ?? 0,
           underReviewSellers: underReviewSellers.rows[0]?.count ?? 0,
+          pendingReviewSellers: pendingReviewSellers.rows[0]?.count ?? 0,
           pendingProducts: pendingProducts.rows[0]?.count ?? 0,
           totalShops: totalShops.rows[0]?.count ?? 0,
           verifiedShops: verifiedShops.rows[0]?.count ?? 0,

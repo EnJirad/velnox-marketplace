@@ -245,10 +245,19 @@ describe("the seller + product counters read exact counts, not page lengths", ()
     expect(line).toContain("limit=${a.limit}");
   });
 
-  test("the sellers counter asks for limit 1 and reads pagination.total", () => {
-    // Same shape as the verification counter: a bounded page + the exact count.
-    expect(centerSrc).toContain('sellerListAction({ status: "pending", limit: 1 })');
-    expect(centerSrc).toContain("setPendingSellers(Number(pending?.pagination?.total ?? 0))");
+  test("the sellers counter reads the reviewer-work COUNT from the database", () => {
+    // The badge means "applications a reviewer still has to decide", so it counts
+    // `pending` + `under_review` in ONE server query and can never include an
+    // APPROVED seller (nor depend on which page happened to be fetched).
+    expect(centerSrc).toContain("setPendingSellers(Number(counts?.pendingReviewSellers ?? 0))");
+    expect(centerSrc).toContain("useAction(api.centerAdmin.dashboardCounts)");
+    // The counter query itself lives in the existing counts endpoint.
+    const countsSrc = readFileSync(join(root, "backend", "routes", "center.ts"), "utf8");
+    expect(countsSrc).toContain("FROM sellers WHERE status IN ('pending','under_review')");
+    expect(countsSrc).toContain("pendingReviewSellers: pendingReviewSellers.rows[0]?.count ?? 0");
+    // A local decrement would be undone by the next refresh — never used.
+    expect(centerSrc).not.toContain("count--");
+    expect(centerSrc).not.toContain("setPendingSellers((prev");
     // Counting fetched rows is what made the badge wrong past one page.
     expect(centerSrc).not.toContain("(sellerRows ?? []).filter");
     expect(centerSrc).not.toContain("setSellerRows(");
