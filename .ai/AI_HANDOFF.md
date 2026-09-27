@@ -802,3 +802,40 @@ Stripe-hosted test page — only that authorization completes the payment.
 route**; the real backend — confirmed from the deployed `velshop.vercel.app` bundle — is
 `https://velnox-api.onrender.com`. A Stripe webhook pointed at the `velnx` host would
 deliver nothing.
+
+---
+
+## 32. Stripe webhook never answers in production — unbounded DB waits (2026-09-27)
+
+**Reported.** A REAL signed event forwarded to `POST /api/payments/stripe/webhook`
+(`velnox-api.onrender.com`) times out — *"context deadline exceeded (Client.Timeout exceeded
+while awaiting headers)"* — while `GET /api/stripe/configured`, `/api/payments/methods` and the
+DB read `/api/shops` all answer 200.
+
+**Measured (read-only; `freebuff-env list` → `{}`).** The Stripe CLI aborts a forwarded
+delivery after **30s** (stripe-cli#710). Production answers every pre-DB path fast (no/forged
+signature → 400, chunked → 400, 300 KB body → 500, all ≤0.3s), so routing, the raw-body
+branch and `constructEventAsync` are healthy. The stall is the only work between the
+signature check and `res.json()`: the `payment_events` claim, `handleStripeEvent`, and the
+payment/order writes.
+
+**Root cause.** `backend/db/index.ts` bounded only ACQUIRING a connection
+(`connectionTimeoutMillis`); node-postgres applies no per-query deadline, so a statement the
+server never finishes (Neon compute scaled to zero, pooler restart, blocked row lock) left the
+webhook pending until the CALLER gave up. Second cause: `pool.on("error")` called
+`process.exit(-1)`, so a routine Neon idle-close restarted the service mid-request.
+
+**Fix.** `query_timeout: 15000` (in-process; NOT `statement_timeout`/`lock_timeout`/
+`idle_in_transaction_session_timeout` — startup parameters PgBouncer on Neon rejects). Pool
+error handler logs safe fields and keeps the pool alive; the webhook logs secret-free stage
+timings. No schema change, `db/` untouched, no payment state altered.
+
+**Verified.** `webhook-resilience.test.ts` 10 pass/0 fail · backend suite 676 pass/91 skip/0
+fail · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1331 · `diff
+--check` clean. **NOT production-verified** (no credential/DB here). Owner: after redeploy,
+`stripe trigger payment_intent.succeeded` via `stripe listen --forward-to …/api/payments/
+stripe/webhook` must return 2xx with no timeout and log the stage lines; never copy the CLI
+signing secret into `STRIPE_WEBHOOK_SECRET`.
+
+**Open:** a `payment_events` row left `processing` is re-armed only on a `failed` retry (§31).
+This handoff is ~53 KB, close to the ~55 KB edit-tool limit: archive §§28–§30 next pass.
