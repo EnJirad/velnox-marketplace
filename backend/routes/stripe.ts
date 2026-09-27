@@ -1010,6 +1010,17 @@ export function setupStripeRoutes(app: Express): void {
   // NOTE: raw body is wired in server.ts BEFORE express.json, which signature
   // verification requires. Never move this route behind the JSON parser.
   app.post("/api/payments/stripe/webhook", async (req: Request, res: Response) => {
+    // ── Stage timing ───────────────────────────────────────────────────
+    // Every stage of this handler (signature, idempotency claim, event
+    // dispatch, state writes) runs BEFORE the response is written, so a stall
+    // is otherwise invisible: the caller only ever reports a timeout. These
+    // lines name the last stage that COMPLETED and its elapsed time, which is
+    // what identifies where a request stopped. Deliberately minimal and
+    // secret-free — an event id/type and milliseconds only. Never the payload,
+    // the signature, a secret key, the signing secret, a client secret, an
+    // access token, a cookie, or any customer/payment field.
+    const startedAt = Date.now();
+    const elapsed = () => Date.now() - startedAt;
     try {
       const s = getStripe();
       const webhookSecret = stripeWebhookSecret();
@@ -1043,6 +1054,7 @@ export function setupStripeRoutes(app: Express): void {
         res.status(400).json({ error: "Invalid signature" });
         return;
       }
+      console.log(`[stripe webhook] ${event.type} (${event.id}) signature verified (+${elapsed()}ms)`);
 
       // ── Idempotency: claim the event atomically ────────────────────────
       // A UNIQUE event_id plus INSERT ... ON CONFLICT DO NOTHING means two
@@ -1088,17 +1100,19 @@ export function setupStripeRoutes(app: Express): void {
         }
       }
 
+      console.log(`[stripe webhook] ${event.type} (${event.id}) claimed — dispatching (+${elapsed()}ms)`);
+
       try {
         await handleStripeEvent(event);
         await query(
           `UPDATE payment_events SET status = 'processed', updated_at = NOW() WHERE event_id = $1`,
           [event.id],
         );
-        console.log(`[stripe webhook] processed ${event.type} (${event.id})`);
+        console.log(`[stripe webhook] processed ${event.type} (${event.id}) (+${elapsed()}ms)`);
         res.status(200).json({ received: true });
       } catch (err) {
         const message = err instanceof Error ? err.message.slice(0, 500) : "unknown error";
-        console.error(`[stripe webhook] failed processing ${event.type} (${event.id}):`, message);
+        console.error(`[stripe webhook] failed processing ${event.type} (${event.id}) (+${elapsed()}ms):`, message);
         await query(
           `UPDATE payment_events SET status = 'failed', error = $2, updated_at = NOW() WHERE event_id = $1`,
           [event.id, message],
@@ -1111,7 +1125,7 @@ export function setupStripeRoutes(app: Express): void {
       }
       return;
     } catch (err) {
-      console.error("[stripe webhook] error:", err instanceof Error ? err.message : "unknown error");
+      console.error(`[stripe webhook] error (+${elapsed()}ms):`, err instanceof Error ? err.message : "unknown error");
       res.status(500).json({ error: "Webhook error" });
       return;
     }
