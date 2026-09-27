@@ -827,6 +827,9 @@ after the redeploy carrying this commit: (1) `GET /api/stripe/configured` contai
 `signature verified`/`processed` line in Render's log; (4) the DB row changes. **Step (3) is the
 only authoritative E2E — a CLI forward is not**, by definition.
 
+**DB read verdict:** CI's only URL is quota-refused while production's own DB read serves — see
+`.ai/context/payment.md`. Still no `payment_events`/`payments`/`orders` row reachable here.
+
 **DB perf (that brief's §12) — investigated, no change made.** The `velrepeat_plans` due-query is
 covered by the matching partial index `idx_velrepeat_plans_due (status, next_run_at) WHERE status
 = 'active'` in **both** `db/schema.sql` and migration `034`, and it is the FIRST query of every

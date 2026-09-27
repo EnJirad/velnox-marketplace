@@ -140,6 +140,16 @@ expected signature for payload"). Separate them in this order:
    `500 "Webhook body was not preserved for signature verification"` — never the
    misleading 400 — when the body is not raw.
 
+**DB read verdict (2026-09-27).** `payment_events` is the delivery record — a row exists only
+*after* a delivery passed verification — so it is the one place that settles whether the
+signature boundary is the problem. It cannot be read from the sandbox or from CI: the only URL
+available there (`NEON_DATABASE_URL`) is refused with `ERROR: Your account or project has
+exceeded the quota` on **3/3** psql steps (Actions run `36336902638`), **while production's own
+DB-backed read `GET /api/shops` answers 200 with rows at the same moment**. That secret therefore
+does not point at the database Render uses (§22/§31); re-pointing it at the project Render owns
+(and restoring its quota) is an owner action, and until then the DB half of any Stripe
+investigation stays unverified.
+
 Checks that prove things about the **deployment**, in the order they become available:
 
 * `GET /api/stripe/configured` returning `webhookSecretHealth` proves the host is
