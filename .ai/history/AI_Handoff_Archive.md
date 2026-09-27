@@ -96,6 +96,13 @@ archived by the same rules as above.
 **Structural note (2026-09-26).** The V-badge implementation itself is unchanged;
 this was a documentation move only, verified by the full test suite (`.ai/AI_HANDOFF.md` §18).
 
+### 2026-09-27 — the §19 and §18 splits (edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-26-production-readiness-audit.md`](./archive/AI_Handoff-2026-09-26-production-readiness-audit.md) | handoff §19 — production-readiness audit (TASK 009) | the 13-gate risk-ordered audit narrative. Moved out of `.ai/AI_HANDOFF.md` §19 on 2026-09-27; the verdict (**PRODUCTION: NOT READY**; Stripe TEST E2E and browser / OAuth / R2-authenticated E2E **BLOCKED**) stayed live in §19's stub, §6, and the evidence report [`.ai/tasks/completed/production-readiness-audit-2026-09-26.md`](../tasks/completed/production-readiness-audit-2026-09-26.md) |
+| [`archive/AI_Handoff-2026-09-26-stripe-e2e-tasks.md`](./archive/AI_Handoff-2026-09-26-stripe-e2e-tasks.md) | handoff §18 — Stripe TEST-mode E2E (TASK 007) + TASK 008 re-gate — **BLOCKED** | the credential gate (`freebuff-env list` → `{"files":{}}`, `stripeStatus()` → `STRIPE_NOT_CONFIGURED`, COD off), the executed tier (live-key refusal, webhook signature reject/accept, webhook idempotency, DB-gated *refused COD writes nothing*), the CODE-VERIFIED-only tier (request-key replay, single-active-session race), CI run ids, and the unblock steps. Moved out of `.ai/AI_HANDOFF.md` §18 on 2026-09-27 to keep the live handoff under the ~55 KB edit limit; the **BLOCKED statements are mirrored in `.ai/context/payment.md`** and §18 keeps a stub |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

@@ -81,8 +81,21 @@ ONLY** — a live-looking secret key is refused, never used.
   nothing) that need `TEST_DATABASE_URL` (`.ai/context/testing.md`).
 - CI `.github/workflows/test.yml` runs them against a disposable `postgres:16`.
 - **Stripe E2E (real PaymentIntent / PromptPay QR / webhook delivery / refund) is
-  BLOCKED in any workspace without test credentials** — see `.ai/AI_HANDOFF.md` §16/§18.
-  Never report it as passed without an executed round trip.
+  BLOCKED in any workspace without test credentials.** Never report it as passed
+  without an executed round trip. TASK 006/007/008 records (2026-09-25/26): the
+  credential gate (`freebuff-env list` → `{"files":{}}`) is unchanged, and the app's
+  own `stripeStatus()` still reports
+  `{"usable":false,"mode":null,"reason":"STRIPE_NOT_CONFIGURED"}` with COD off —
+  **no PaymentIntent, PromptPay QR, webhook delivery or refund has ever been
+  executed**. Executed and passing instead: live-key refusal, fail-closed COD flags,
+  webhook signature reject **and** accept, webhook duplicate delivery
+  (`payment_events` claim), and the DB-gated *a refused COD attempt writes nothing*.
+  Still **CODE VERIFIED only → BLOCKED**: checkout request-key replay, the
+  `idx_payments_one_active_stripe` single-active-session race, method switching,
+  inventory/stock transitions, and order↔payment sync. **Production payment
+  readiness: NOT CLAIMED.** Full records:
+  [`.ai/history/archive/AI_Handoff-2026-09-26-stripe-e2e-tasks.md`](../history/archive/AI_Handoff-2026-09-26-stripe-e2e-tasks.md)
+  (handoff §18 stub).
 
 ## Unblock (owner actions)
 
