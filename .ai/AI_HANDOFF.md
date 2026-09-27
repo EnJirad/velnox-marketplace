@@ -746,9 +746,16 @@ placeholders in `payment-foundation.test.ts` and regexes in `payment-config.ts`,
   **both** checkout endpoints, unknown method → 400, webhook signature reject **and accept**
   (`constructEventAsync`), the PromptPay unpaid-session trap, refundable arithmetic, and
   line-item reconciliation against `orders.total_amount`.
-- Full suite **573 pass / 87 skip / 0 fail** (660 tests, 32 files; the 87 skips are DB-gated —
-  CI runs them on a disposable `postgres:16`) · backend `tsc` exit 0 · `bun run typecheck`
+- Full suite **573 pass / 87 skip / 0 fail** locally (660 tests, 32 files; the 87 skips are
+  DB-gated — this workspace has no PostgreSQL) · backend `tsc` exit 0 · `bun run typecheck`
   4/4 exit 0 · `i18n:check` th=en=my=**1319** · `git diff --check` clean.
+- **CI run `36305688863` on `4bf0002` — success (1m09s), disposable `postgres:16`: 658 pass /
+  2 skip / 0 fail.** The two DB-gated payment cases that skip here **passed there**: *webhook
+  idempotency — a duplicated event id is processed once and acknowledged twice*, and *a refused
+  COD attempt writes nothing — neither checkout endpoint creates an order, payment, shipment,
+  settlement, or request row*. The guard step printed **✅ Production database refused** and
+  **✅ Disposable test database accepted**. ⇒ webhook idempotency and the COD-no-write proof are
+  **AUTOMATED TEST VERIFIED** (CI, disposable database), not merely code-verified.
 - **Production, read-only:** `/api/health` 200 · `/api/shops` **200 with real rows** ⇒ §22's
   provider suspension is **over** (the database serves again) · `/api/stripe/configured` 200
   `{"configured":false,…,reason:"STRIPE_NOT_CONFIGURED"}` · `/api/payments/methods` → all
