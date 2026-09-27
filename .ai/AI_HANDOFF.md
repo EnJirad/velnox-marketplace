@@ -821,5 +821,12 @@ shape) · full backend suite **629 pass / 87 skip / 0 fail** (was 589/87/676) ·
 0 · `bun run typecheck` 4/4 exit 0 · `i18n:check` th=en=my=**1320** (new `cart.discount`) ·
 `bun run build:velshop` exit 0 · `git diff --check` clean.
 
+**Responsive / mobile-first:** the bar clears the `MobileTabBar` on phones
+(`bottom-[calc(5rem+env(safe-area-inset-bottom))]`, that bar is `md:hidden`) and drops to
+`md:bottom-[calc(1rem+…)]` on larger screens; the page carries `pb-44 md:pb-32` so no content
+sits behind it, and the sheet pads with `env(safe-area-inset-bottom)`. All three checkboxes are
+a 20px box with a transparent 12px halo (`after:absolute after:-inset-3`) = a **44px** touch
+target — confirmed present in the emitted `index-*.css`, not just written in the source.
+
 **Still open:** browser verification of `/cart` (selection taps, sheet, one-handed mobile
 layout) — no signed-in session exists in this workspace.
