@@ -233,6 +233,15 @@ export function registerVerificationRoutes(app: Express) {
         return;
       }
 
+      // Is this the applicant's first submission, or another attempt after a
+      // correction/rejection? The review queue counts `resubmitted` rows in
+      // seller_review_history, so the record must say which it was.
+      const priorRes = await client.query(
+        `SELECT EXISTS (SELECT 1 FROM seller_review_history WHERE seller_id = $1) AS has_prior`,
+        [seller.id],
+      );
+      const historyAction = priorRes.rows[0]?.has_prior ? "resubmitted" : "submitted";
+
       // Upsert the pending verification record
       const verRes = await client.query(
         `INSERT INTO seller_verifications (seller_id, status, verification_type, evidence_urls, submitted_at)
@@ -251,15 +260,26 @@ export function registerVerificationRoutes(app: Express) {
         [seller.id],
       );
 
-      // Review history: submitted
+      // Review history: the canonical lifecycle action for this submission.
       await client.query(
         `INSERT INTO seller_review_history
            (seller_id, previous_status, new_status, action, reviewer_id)
-         VALUES ($1, $2, 'pending', 'submitted', $3)`,
-        [seller.id, seller.verification_status ?? "unverified", userId],
+         VALUES ($1, $2, 'pending', $3, $4)`,
+        [seller.id, seller.verification_status ?? "unverified", historyAction, userId],
       );
 
       await client.query("COMMIT");
+
+      // A new / resubmitted application is a seller change: the VelCenter
+      // verification queue refetches on this signal (the payload is only a
+      // signal — the queue re-reads the row from the API).
+      try {
+        broadcast(CHANNELS.SELLER_UPDATED, "seller:status-changed", {
+          sellerId: seller.id,
+          action: historyAction === "resubmitted" ? "resubmitted" : "submitted",
+          newStatus: "pending",
+        });
+      } catch { /* broadcast is best-effort */ }
 
       res.json({ success: true, data: verRes.rows[0] });
     } catch (err) {
@@ -495,12 +515,22 @@ export function registerVerificationRoutes(app: Express) {
                 sh.name AS shop_name, sh.slug AS shop_slug, sh.category AS shop_category,
                 sh.address_line1, sh.address_line2, sh.subdistrict, sh.district, sh.city,
                 sh.state, sh.postal_code, sh.country, sh.phone AS shop_phone,
-                ss.settings AS seller_settings
+                ss.settings AS seller_settings,
+                COALESCE(hist.resubmission_count, 0)::int AS resubmission_count
          FROM seller_verifications sv
          JOIN sellers s ON s.id = sv.seller_id
          JOIN users u ON u.id = s.user_id
          LEFT JOIN shops sh ON sh.seller_id = s.id
          LEFT JOIN seller_settings ss ON ss.seller_id = s.id
+         -- How many times this applicant sent the application again after a
+         -- correction/rejection. Counted from seller_review_history — never from
+         -- the request, the page, or a client counter. One aggregate per row,
+         -- so the queue stays a single bounded query.
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*)::int AS resubmission_count
+           FROM seller_review_history rh
+           WHERE rh.seller_id = sv.seller_id AND rh.action = 'resubmitted'
+         ) hist ON TRUE
          ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
          ORDER BY sv.submitted_at DESC NULLS LAST, sv.created_at DESC, sv.id DESC
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -531,8 +561,14 @@ export function registerVerificationRoutes(app: Express) {
       const sellers = sellerRes.rows.map((row: Record<string, unknown>) => {
         const clean: Record<string, unknown> = { ...row };
         delete clean.total_count;
+        // `application_type` is derived from the recorded history, so a reviewer
+        // can tell a first-time applicant from one that was sent back and
+        // resubmitted — and a resubmission can never be reported as "new".
+        const resubmissionCount = Number(clean.resubmission_count ?? 0) || 0;
         return {
           ...clean,
+          resubmission_count: resubmissionCount,
+          application_type: resubmissionCount > 0 ? "resubmitted" : "new",
           evidence_count: Array.isArray(clean.evidence_urls) ? (clean.evidence_urls as unknown[]).length : 0,
           evidence_urls: undefined,
         };

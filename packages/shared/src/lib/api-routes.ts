@@ -13,16 +13,38 @@ import { apiBaseUrl as API_BASE } from "./sites";
 const _getCache = new Map<string, { data: any; expires: number }>();
 const GET_TTL_MS = 60_000;
 
+/** Live readers (useQuery) that must re-run their loader after a mutation. */
+const _invalidationListeners = new Set<() => void>();
+
+/**
+ * Drop cached GET responses. With no prefix the WHOLE cache is cleared, and
+ * every mutation helper below does that before its request, because one write
+ * can change several read surfaces at once (a verification decision moves the
+ * seller queue, the seller list and the badge counts). Without it, a refetch
+ * issued right after a successful mutation replayed a body captured BEFORE the
+ * write — the classic "toast says done, UI still shows the old state until a
+ * reload" bug. The 60s cache is per-tab only; the API stays the source of truth.
+ */
 function invalidateGetCache(prefix?: string) {
-  if (!prefix) { _getCache.clear(); return; }
-  for (const key of _getCache.keys()) {
-    if (key.startsWith(prefix)) _getCache.delete(key);
+  if (!prefix) {
+    _getCache.clear();
+  } else {
+    for (const key of _getCache.keys()) {
+      if (key.startsWith(prefix)) _getCache.delete(key);
+    }
+  }
+  // Mounted `useQuery` readers re-read from the API, so a component that is on
+  // screen during a mutation renders the post-write server state instead of the
+  // body it fetched before it. A broken listener must never break the mutation.
+  for (const listener of _invalidationListeners) {
+    try {
+      listener();
+    } catch { /* ignore */ }
   }
 }
 
 async function apiPost(path: string, args?: any): Promise<any> {
-  // Invalidate GET cache on any mutation
-  invalidateGetCache(path.split("/").slice(0, 4).join("/"));
+  invalidateGetCache();
   // Strip /api prefix if present — API_BASE already includes it
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, {
@@ -72,6 +94,7 @@ async function apiGetFresh(path: string): Promise<any> {
 }
 
 async function apiPut(path: string, args?: any): Promise<any> {
+  invalidateGetCache();
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, {
     method: "PUT",
@@ -89,6 +112,7 @@ async function apiPut(path: string, args?: any): Promise<any> {
 }
 
 async function apiPatch(path: string, args?: any): Promise<any> {
+  invalidateGetCache();
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, {
     method: "PATCH",
@@ -106,6 +130,7 @@ async function apiPatch(path: string, args?: any): Promise<any> {
 }
 
 async function apiDelete(path: string): Promise<any> {
+  invalidateGetCache();
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, {
     method: "DELETE",
@@ -399,6 +424,8 @@ export function useAction(routeKeyOrFn: string | ((...args: any[]) => any)): (..
  */
 export function useQuery(routeKeyOrFn: (() => Promise<any>) | string): any {
   const [data, setData] = useState<any>(undefined);
+  // Bumped by the mutation invalidation bus below, which re-runs the loader.
+  const [version, setVersion] = useState(0);
   const loaderRef = useRef<() => Promise<any>>(() => Promise.resolve(undefined));
   loaderRef.current =
     typeof routeKeyOrFn === "function"
@@ -419,7 +446,17 @@ export function useQuery(routeKeyOrFn: (() => Promise<any>) | string): any {
     return () => {
       alive = false;
     };
-  }, [routeKeyOrFn]);
+  }, [routeKeyOrFn, version]);
+
+  // Any mutation invalidates the GET cache — this component follows so the
+  // state on screen matches the server once the write is confirmed.
+  useEffect(() => {
+    const listener = () => setVersion((v) => v + 1);
+    _invalidationListeners.add(listener);
+    return () => {
+      _invalidationListeners.delete(listener);
+    };
+  }, []);
 
   return data;
 }

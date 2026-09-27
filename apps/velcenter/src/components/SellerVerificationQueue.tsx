@@ -38,6 +38,10 @@ interface VerificationRow {
   seller_id: string;
   status: string;
   verification_type?: string | null;
+  /** `new` = first application, `resubmitted` = came back after a correction. */
+  application_type?: "new" | "resubmitted" | null;
+  /** Real `resubmitted` events in seller_review_history — server-counted. */
+  resubmission_count?: number | null;
   evidence_count?: number | null;
   submitted_at?: string | null;
   reviewed_at?: string | null;
@@ -264,9 +268,27 @@ export default function SellerVerificationQueue() {
                 <div className="flex items-center gap-3">
                   <Store className="size-4 shrink-0 text-[#10B981]" />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-sm font-semibold text-slate-900">{row.shop_name ?? "—"}</p>
                       <VerificationStatusLabel status={(row.status === "unverified" ? "unverified" : row.status) as never} />
+                      {/* First application vs. one that was sent back for correction and
+                          resubmitted. Both labels come from the existing review.*
+                          vocabulary; the count is the server's history count. */}
+                      {row.application_type === "resubmitted" ? (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-amber-200 bg-amber-50 text-[11px] font-medium text-amber-700"
+                        >
+                          {t("review.actionResubmitted")} ×{row.resubmission_count ?? 0}
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-500"
+                        >
+                          {t("review.actionSubmitted")}
+                        </Badge>
+                      )}
                     </div>
                     <p className="truncate text-xs text-slate-400">
                       {row.owner_name} · {row.owner_email}

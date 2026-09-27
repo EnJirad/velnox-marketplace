@@ -343,6 +343,18 @@ export function setupSellerRoutes(app: Express): void {
       invalidateCachedProfile(userId);
       console.log("[seller] application submitted:", sellerId);
 
+      // Realtime signal for the VelCenter verification queue: a submitted or
+      // resubmitted application must appear with its resubmission count without
+      // a page reload. Best-effort delivery only — the queue always re-reads the
+      // authoritative row from the API.
+      try {
+        broadcast(CHANNELS.SELLER_UPDATED, "seller:status-changed", {
+          sellerId,
+          action: previousStatus === "none" ? "submitted" : "resubmitted",
+          newStatus: "pending",
+        });
+      } catch { /* broadcast is best-effort */ }
+
       res.json({
         success: true,
         data: {

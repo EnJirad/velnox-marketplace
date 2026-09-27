@@ -10,10 +10,14 @@
  *
  * Refreshes on window focus, on the tab becoming visible again, and after a
  * successful submission (call `refetch()`), so an approval that happened while
- * the applicant waited shows up without a logout/login. No new realtime
- * channel: this reuses the status endpoint the gate already calls.
+ * the applicant waited shows up without a logout/login. A reviewer decision is
+ * also pushed live over the EXISTING per-user socket (`notification:created`),
+ * which this hook only treats as a signal to re-read the status API — no new
+ * socket, no new channel, and the API stays the source of truth.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "../lib/api-client";
+import { connectChatSocket, onChatEvent } from "../lib/chat-socket";
 import { apiBaseUrl } from "../lib/sites";
 import {
   sellerAccessFromStatusResponse,
@@ -71,6 +75,7 @@ export interface SellerApplicationState {
 }
 
 export function useSellerApplication(): SellerApplicationState {
+  const { user } = useAuth();
   const [application, setApplication] = useState<SellerApplication | null>(null);
   const [sellerAccess, setSellerAccess] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -98,6 +103,8 @@ export function useSellerApplication(): SellerApplicationState {
     }
   }, []);
 
+  const userId = user?.id ?? null;
+
   useEffect(() => {
     aliveRef.current = true;
     void refetch();
@@ -108,12 +115,24 @@ export function useSellerApplication(): SellerApplicationState {
     };
     window.addEventListener("focus", onRefresh);
     document.addEventListener("visibilitychange", onVisibility);
+
+    // Reviewer decisions arrive as `notification:created` on the caller's own
+    // private channel (the same shared socket the notification bell uses). Any
+    // seller-* notification means the application may have moved, so re-read the
+    // authoritative status endpoint. The event payload is never used as state.
+    if (userId) connectChatSocket(userId);
+    const off = onChatEvent("notification:created", (data: { type?: unknown } | null) => {
+      const type = typeof data?.type === "string" ? data.type : "";
+      if (type.startsWith("seller")) void refetch();
+    });
+
     return () => {
       aliveRef.current = false;
       window.removeEventListener("focus", onRefresh);
       document.removeEventListener("visibilitychange", onVisibility);
+      off();
     };
-  }, [refetch]);
+  }, [refetch, userId]);
 
   return { application, sellerAccess, loading, error, refetch };
 }
