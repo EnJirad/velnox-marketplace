@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-27 · **Branch:** `main` · **Latest pass:** Stripe sandbox audit — configuration documented, checkout code verified, sandbox E2E BLOCKED (§27)
+**Last updated:** 2026-09-27 · **Branch:** `main` · **Latest pass:** order-status contract — the velShop MyOrders crash is fixed at the source and proven in the deployed bundle (§28)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -120,17 +120,17 @@ at every persistence point). The still-open catalog read stayed in §9.4.
 
 ### Open, actionable
 
-- **Payments have never been executed against real Stripe (test mode), and the fix is a
-  two-step owner action** (§27, §18): add test-mode `STRIPE_SECRET_KEY` /
-  `STRIPE_PUBLISHABLE_KEY` and a test webhook's `whsec_…` as `STRIPE_WEBHOOK_SECRET`
-  in Settings → Environment, then re-run the audit. Until then Card / PromptPay /
-  webhook delivery / refund are **CODE VERIFIED, never PASS**, and no PaymentIntent,
-  PromptPay QR or refund has ever been created. **Production has no Stripe credential
-  and offers no payment method** (verified read-only 2026-09-27) — it is not a
-  substitute for a sandbox test. `STRIPE_CONNECT_MISSING`: no Connect, no payout
-  (checkout readiness ≠ payout readiness). The variable names are now documented in
-  `INSTALLATION.md` §4 + its reference table and `docs/ENVIRONMENT.md`; `.env.example`
-  still lacks them because that path is protected from agent edits (owner edit).
+- **Stripe sandbox round trips have still never been driven by an agent** (§27, §18). The
+  owner **completed the configuration step** — verified read-only 2026-09-27: production
+  reports `{configured:true, mode:"test", webhookConfigured:true}` and
+  `/api/payments/methods` offers **CARD + PROMPTPAY** (COD disabled); the key is a
+  `pk_test_…`. What is still unproven is the round trip itself: no PaymentIntent, PromptPay
+  QR, webhook delivery or refund has ever been executed **from this workspace**
+  (`freebuff-env list` → `{"files":{}}`), so those remain **CODE VERIFIED, never PASS** —
+  and driving them in production means taking money in the owner's own account, which is
+  not a substitute for a sandbox test. `STRIPE_CONNECT_MISSING`: no Connect, no payout
+  (checkout readiness ≠ payout readiness). Variable names: `INSTALLATION.md` §4 + reference
+  table and `docs/ENVIRONMENT.md`; `.env.example` is protected from agent edits (owner edit).
 - ~~**The 35 DB-gated tests have never been executed in this workspace.**~~
   **CLOSED** — all 35 now run against a disposable Postgres (`452 pass /
   0 fail / 0 skip`, twice consecutively), including the two self-approval HTTP
@@ -717,73 +717,66 @@ at typecheck + build + the executed API/DB layer, not visually. Applicants appro
 the OLD code still have `sellers.status='pending'` (their verification record is
 `verified`): re-approving once — from either button — converges the state.
 
-## 27. Stripe Sandbox/Test-Mode audit — configuration is owner-gated, checkout code verified (2026-09-27)
+## 27. Stripe Sandbox/Test-Mode audit (2026-09-27) — archived; configuration since COMPLETED
 
-**Outcome: audit PASS, sandbox E2E BLOCKED.** The existing implementation already satisfies
-every property the brief lists, so **no code, schema or Stripe behaviour was changed** (no
-defect found; the brief forbids redesign). This pass added the missing *configuration
-documentation* plus freshly executed evidence.
+**Archived verbatim** → [`history/archive/AI_Handoff-2026-09-27-stripe-sandbox-audit.md`](history/archive/AI_Handoff-2026-09-27-stripe-sandbox-audit.md)
+(the audit table, credential-gate proof, executed-evidence log incl. CI run `36305688863`, the
+env-var documentation change, and the Connect finding). Moved 2026-09-27 by §28 to keep this
+file under the edit-tool ceiling.
 
-**Credential gate (unchanged, re-confirmed).** `freebuff-env list` → `{"files":{}}` — this
-workspace defines **no** environment keys, so no Stripe object, PaymentIntent, PromptPay QR,
-webhook delivery or refund has ever been executed from here. `postgres`/`psql`/`docker` are
-**absent in this workspace** (§18's disposable PostgreSQL belonged to a different, disposable
-sandbox), so the 2 DB-gated payment tests skip locally and run in CI. **No live credential
-exists anywhere:** the only `sk_live_`/`pk_live_` strings in the tree are zero-filled
-placeholders in `payment-foundation.test.ts` and regexes in `payment-config.ts`, and a
-242-commit `git log -S` scan adds nothing.
+- **Outcome of that pass: audit PASS, no code changed, sandbox E2E BLOCKED.**
+- **Configuration is now DONE (owner).** §28 re-probed production read-only:
+  `{configured:true, mode:"test", webhookConfigured:true}`, `/api/payments/methods` →
+  **CARD + PROMPTPAY enabled**, COD disabled. Still **no live credential anywhere**.
+- **Still BLOCKED:** no agent-driven sandbox round trip (PaymentIntent / PromptPay QR /
+  webhook delivery / refund) has ever run, from here or anywhere else.
+- **Stripe Connect: MISSING** — `CHECKOUT READY` must never be read as `MARKETPLACE PAYOUT READY`.
+- `INSTALLATION.md` §4, `docs/ENVIRONMENT.md`: env names documented. **`.env.example` still
+  lacks them** — protected from agent edits, so it stays an owner edit.
 
-**Executed evidence (real processes + real HTTP, this workspace).**
-- Probe of the real route stack with nothing configured: `GET /api/stripe/configured` → 200
-  `{configured:false,mode:null,publishableKey:null,webhookConfigured:false,`
-  `reason:"STRIPE_NOT_CONFIGURED"}`; `GET /api/payments/methods` → 200, `paymentMethods: []`,
-  CARD/PROMPTPAY/COD all `enabled:false`, `cod:{enabled:false,customerSelectable:false}`; the
-  webhook **refuses rather than acknowledging** an unverifiable event → **503**; both checkout
-  endpoints answer **401** without a session cookie (auth precedes the method guard).
-- `bun test backend/tests/payment-foundation.test.ts` → **59 pass / 2 skip / 0 fail**
-  (61 tests, 160 assertions): live-key refusal, missing webhook secret = unavailable, COD
-  fail-closed (absent / misspelled / quoted / arbitrary), 403 `PAYMENT_METHOD_DISABLED` on
-  **both** checkout endpoints, unknown method → 400, webhook signature reject **and accept**
-  (`constructEventAsync`), the PromptPay unpaid-session trap, refundable arithmetic, and
-  line-item reconciliation against `orders.total_amount`.
-- Full suite **573 pass / 87 skip / 0 fail** locally (660 tests, 32 files; the 87 skips are
-  DB-gated — this workspace has no PostgreSQL) · backend `tsc` exit 0 · `bun run typecheck`
-  4/4 exit 0 · `i18n:check` th=en=my=**1319** · `git diff --check` clean.
-- **CI run `36305688863` on `4bf0002` — success (1m09s), disposable `postgres:16`: 658 pass /
-  2 skip / 0 fail.** The two DB-gated payment cases that skip here **passed there**: *webhook
-  idempotency — a duplicated event id is processed once and acknowledged twice*, and *a refused
-  COD attempt writes nothing — neither checkout endpoint creates an order, payment, shipment,
-  settlement, or request row*. The guard step printed **✅ Production database refused** and
-  **✅ Disposable test database accepted**. ⇒ webhook idempotency and the COD-no-write proof are
-  **AUTOMATED TEST VERIFIED** (CI, disposable database), not merely code-verified.
-- **Production, read-only:** `/api/health` 200 · `/api/shops` **200 with real rows** ⇒ §22's
-  provider suspension is **over** (the database serves again) · `/api/stripe/configured` 200
-  `{"configured":false,…,reason:"STRIPE_NOT_CONFIGURED"}` · `/api/payments/methods` → all
-  three methods `enabled:false`. **Production holds no Stripe credential and offers no
-  payment method: no live mode, nothing to leak, nothing touched.**
+---
 
-**Change — documentation only (no code, no schema, no payment behaviour).**
-`INSTALLATION.md` §4 and its *Backend (ALL secrets)* table plus `docs/ENVIRONMENT.md` now
-name the variables the source actually reads — `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,
-`STRIPE_WEBHOOK_SECRET`, `STRIPE_MODE`, `COD_ENABLED`, `COD_CUSTOMER_SELECTABLE` (and
-`TEST_DATABASE_URL`) — with test-mode placeholders, the webhook path, the 11 event types the
-implementation acts on, the `stripe listen` alternative, and the Connect warning.
-**`.env.example` still lacks them:** that path is in the agent tooling's protected set
-("Sensitive files cannot be changed"), so it stays an owner edit. `.ai/context/payment.md`
-gained the Connect finding and lost a now-false owner-action sentence.
+## 28. velShop MyOrders crash — order-status contract completed at the source (2026-09-27)
 
-**Stripe Connect: MISSING — not a defect of this task.** No connected account,
-`accountLink`/onboarding, `transfer_data`/`application_fee`/`on_behalf_of`, seller↔Stripe
-mapping, KYC state or Stripe payout exists; `payouts.process` was deliberately removed from
-the permission catalog because no payout endpoint, table or screen exists
-(`backend/lib/permissions.ts:28-29`, guarded by `center-rbac.test.ts`). Seller amounts are
-internal accounting (`commissions`, `settlements`, `seller-stats.ts`). ⇒ **`CHECKOUT READY`
-must never be read as `MARKETPLACE PAYOUT READY`.**
+**Reported:** production velShop `/orders` threw `Cannot read properties of undefined (reading
+'badge')` (`MyOrders-DRYpOOC9.js`). **Fixed at the contract, not hidden behind optional
+chaining.**
 
-**Owner action to unblock the sandbox (2 steps).** (1) Stripe Dashboard → **Test mode** →
-API keys → set `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY`; add a **test** webhook to
-`POST https://<backend-host>/api/payments/stripe/webhook` and set its `whsec_…` as
-`STRIPE_WEBHOOK_SECRET`. (2) Re-run this pass: `GET /api/stripe/configured` must report
-`configured:true, mode:"test"`, and only then do the Card / PromptPay / refund / webhook
-round trips become executable. **Still standing:** §22's Neon Usage check (owner) and the
-§14/§19 production E2E blocks.
+**Root cause.** `orders.status` is a superset of the fulfilment state machine: the Stripe
+routes write payment-lifecycle values into the same column (`backend/routes/stripe.ts` —
+`pending_payment` when a Checkout Session is created, `paid` on the confirming webhook,
+`payment_failed`, `refunded`), and it is free text with **no CHECK constraint**
+(`db/schema.sql`). `GET /api/customer/orders` (`backend/routes/cart.ts`) returns
+`status: r.status` **raw**, while shared `ORDER_STATUS_META` knew only the six fulfilment
+statuses — so the lookup was `undefined` for exactly those rows and `meta.badge` threw. Sellers
+never hit it because `normalizeSellerOrderStatus` normalises first; the customer route had no
+equivalent. **ACTUAL STATUS:** `pending_payment`, then `paid` — the customer's own order,
+seconds after a successful test-mode checkout.
+
+**Proven in production, not inferred.** The **deployed** bundle
+(`velshop.vercel.app/assets/MyOrders-DRYpOOC9.js`) does `const a=re[s.status]` then `${a.badge}`
+/ `${a.dot}` / `a.label` with **no guard**, and its table (`ShopHeader-CTizaw2L.js`) contains
+**only** the six keys — `pending_payment` / `paid` / `payment_failed` / `refunded` count **0**.
+`/api/stripe/configured` → `{configured:true, mode:"test", webhookConfigured:true}` with CARD +
+PROMPTPAY enabled ⇒ the path that writes those statuses is live.
+
+**Fix (Case A + Case C; no invented backend normalisation).** `StoreOrderStatus` +
+`ORDER_STATUS_META` + `NEXT_ORDER_STATUSES` (`packages/shared/src/lib/commerce.ts`) now carry the
+four real statuses, and a new `getOrderStatusMeta(status: unknown)` always returns a complete
+`{label,badge,dot}` — a neutral "ไม่ทราบสถานะ" for anything unrecognised (unknown, null,
+non-string, inherited prototype member) instead of `undefined`. Unguarded or lying call sites
+switched to it: `MyOrders.tsx`, `ShopOrderDetail.tsx` (was `?? …pending`, which showed an unknown
+order as "รอตรวจสอบ"), `Income.tsx` ×2. **Second defect:** a fully **refunded** order normalised to
+`pending` for sellers, offering a confirm action that would silently un-refund the order's
+status — now `cancelled`/terminal, matching `seller-intelligence.ts`, which already books
+`refunded` as a return. No schema, migration, DB write, payment-behaviour or API-shape change.
+
+**Verified.** `backend/tests/order-status-contract.test.ts` — **16 pass / 0 fail**: every backend
+status displayable, **stripe.ts's write literals re-derived from the file itself** (a new backend
+status fails the test instead of crashing a page), unknown/null/prototype fallbacks, a mixed
+valid+unknown+null list rendering end to end, seller invariants. Full backend suite **589 pass /
+87 skip / 0 fail** (was 573/87/660) · backend `tsc` 0 · `bun run typecheck` 4/4 exit 0 ·
+`i18n:check` th=en=my=1319 · `git diff --check` clean.
+
+**Still open:** the **browser** E2E on production `/orders` (needs a signed-in customer — Google
+OAuth only, no credentials in this workspace) and the Vercel redeploy that carries the fix.

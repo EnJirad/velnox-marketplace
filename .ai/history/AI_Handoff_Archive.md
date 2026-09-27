@@ -121,6 +121,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-27-postgres-53000-classified.md`](./archive/AI_Handoff-2026-09-27-postgres-53000-classified.md) | handoff §22 - PostgreSQL 53000 classified as a provider consumption quota; provider action required | the second pass on the same incident: `53000` observed on BOTH `connect` and `query`, the Neon FAQ quotation that matches both, why the connection-limit (`53300`), storage and provider-wide hypotheses were excluded, the VelRepeat 60 s poll arithmetic (~182 CU-hours vs the 100 CU-hour Free allowance), the read-only production probes (`/api/shops`, `/api/categories`, `/api/products` → 500 `DB_ERROR`) and the owner action (Neon Console → Usage → upgrade or wait for the monthly reset). Moved out on 2026-09-27 as the documented NEXT SPLIT to make room for §27 (the Stripe sandbox audit); a stub stays in `.ai/AI_HANDOFF.md` §22, the owner action is mirrored into §6, and §27 records that production serves again |
 
+### 2026-09-27 - the §27 split (Stripe sandbox audit superseded by the live re-probe)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-27-stripe-sandbox-audit.md`](./archive/AI_Handoff-2026-09-27-stripe-sandbox-audit.md) | handoff §27 - Stripe Sandbox/Test-Mode audit (audit PASS, sandbox E2E BLOCKED) | the full audit: the credential gate (`freebuff-env list` → `{"files":{}}`), the executed-evidence log against the real route stack (an unverifiable webhook **refused with 503** rather than acknowledged, both checkout endpoints **401** without a session cookie) and `payment-foundation.test.ts` (**59 pass / 2 skip**), the CI run `36305688863` on `4bf0002` that executed the two DB-gated payment cases, the env-var documentation change in `INSTALLATION.md` §4 + `docs/ENVIRONMENT.md`, and the Connect finding. Moved out of `.ai/AI_HANDOFF.md` §27 on 2026-09-27 by the §28 pass, which re-probed production and **superseded its headline production claim** — the owner had since completed the configuration (`{configured:true, mode:"test", webhookConfigured:true}`, CARD + PROMPTPAY enabled, no live credential). The BLOCKED and Connect statements stay live in §27's stub, §6, and `.ai/context/payment.md` |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
