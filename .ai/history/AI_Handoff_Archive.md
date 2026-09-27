@@ -103,6 +103,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 | [`archive/AI_Handoff-2026-09-26-production-readiness-audit.md`](./archive/AI_Handoff-2026-09-26-production-readiness-audit.md) | handoff §19 — production-readiness audit (TASK 009) | the 13-gate risk-ordered audit narrative. Moved out of `.ai/AI_HANDOFF.md` §19 on 2026-09-27; the verdict (**PRODUCTION: NOT READY**; Stripe TEST E2E and browser / OAuth / R2-authenticated E2E **BLOCKED**) stayed live in §19's stub, §6, and the evidence report [`.ai/tasks/completed/production-readiness-audit-2026-09-26.md`](../tasks/completed/production-readiness-audit-2026-09-26.md) |
 | [`archive/AI_Handoff-2026-09-26-stripe-e2e-tasks.md`](./archive/AI_Handoff-2026-09-26-stripe-e2e-tasks.md) | handoff §18 — Stripe TEST-mode E2E (TASK 007) + TASK 008 re-gate — **BLOCKED** | the credential gate (`freebuff-env list` → `{"files":{}}`, `stripeStatus()` → `STRIPE_NOT_CONFIGURED`, COD off), the executed tier (live-key refusal, webhook signature reject/accept, webhook idempotency, DB-gated *refused COD writes nothing*), the CODE-VERIFIED-only tier (request-key replay, single-active-session race), CI run ids, and the unblock steps. Moved out of `.ai/AI_HANDOFF.md` §18 on 2026-09-27 to keep the live handoff under the ~55 KB edit limit; the **BLOCKED statements are mirrored in `.ai/context/payment.md`** and §18 keeps a stub |
 
+### 2026-09-27 - the §21 split (postgres 53000, first pass)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-27-postgres-53000.md`](./archive/AI_Handoff-2026-09-27-postgres-53000.md) | handoff §21 - production PostgreSQL 53000: provider quota (BLOCKED evidence) + the one real pool leak fixed | the first pass: 53000 = a provider-side Neon consumption quota, the read-only production evidence (`/api/shops`, `/api/categories` 500 while `/api/health` 200), the measured single-`pg.Pool` analysis, the `POST /api/admin/sellers/:id/revoke` connection leak fixed with `finally { client.release(); }`, the safe DB failure logging, and the executed proof (`db-client-release.test.ts`). Moved out on 2026-09-27 after §22 re-verified and classified the same incident; the code fix + logging stay live in §21's stub and §22 |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
