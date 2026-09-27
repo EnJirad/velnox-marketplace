@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import { rateLimitSecurity } from "./middleware/rate-limit.js";
 import { createOriginGuard } from "./middleware/origin-guard.js";
 import { requireDiagAccess } from "./middleware/diag-guard.js";
+import { stripeWebhookRawBody } from "./middleware/stripe-raw-body.js";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { setupRoutes } from "./routes/index.js";
@@ -38,16 +39,12 @@ app.use(helmet());
 app.set("trust proxy", 1);
 app.use(cookieParser());
 
-// Stripe webhook needs the raw body for signature verification.
-// Use a custom middleware: if path matches webhook, skip express.json
-// and use express.raw instead. This must run BEFORE express.json.
-app.use((req, res, next) => {
-  if (req.path === "/api/payments/stripe/webhook" && req.method === "POST") {
-    express.raw({ type: "application/json" })(req, res, next);
-  } else {
-    next();
-  }
-});
+// Stripe webhook needs the raw body for signature verification, so its body is
+// buffered as a Buffer here and NOT parsed by express.json below. The matcher
+// (path/method, and the fact that the content type must not gate this route)
+// lives in middleware/stripe-raw-body.ts and is covered by tests, so this order
+// cannot silently drift. MUST stay BEFORE express.json.
+app.use(stripeWebhookRawBody);
 
 // JSON payload cap. All bodies here are small (chat ≤4k chars, reviews ≤2k,
 // checkout/address metadata) — R2 file bytes go straight to Cloudflare via

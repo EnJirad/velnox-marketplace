@@ -22,7 +22,6 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import express from "express";
-import type { NextFunction, Request, Response } from "express";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import { createHmac, randomUUID } from "crypto";
@@ -37,7 +36,9 @@ import {
   paymentMethodOptions,
   stripePaymentMethodType,
   stripeStatus,
+  webhookSecretHealth,
 } from "../lib/payment-config.js";
+import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
 import { setupCartRoutes } from "../routes/cart.js";
 import { buildCheckoutLineItems, refundableMinorFor, sessionConfirmsPayment, setupStripeRoutes } from "../routes/stripe.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
@@ -78,15 +79,12 @@ afterEach(() => setPaymentEnv());
 
 function buildApp(): express.Express {
   const app = express();
-  // Mirror server.ts: the Stripe webhook must see the RAW body for signature
-  // verification, so it is parsed before express.json.
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path === "/api/payments/stripe/webhook" && req.method === "POST") {
-      express.raw({ type: "application/json" })(req, res, next);
-      return;
-    }
-    next();
-  });
+  // The REAL middleware `server.ts` mounts, in the real position — not a copy.
+  // This is the gate that decides whether signature verification can succeed at
+  // all, so the signature cases below (including the accepted-signature one) run
+  // against the deployment's own ordering: a change to it cannot pass here while
+  // failing in production. The raw body must be read before express.json.
+  app.use(stripeWebhookRawBody);
   app.use(express.json());
   app.use(cookieParser());
   setupCartRoutes(app);
@@ -340,6 +338,110 @@ describe("assertPaymentMethodUsable", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("unreachable");
     expect(result.code).toBe("STRIPE_LIVE_KEY_REFUSED");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4b. Webhook signing secret — shape only, actionable without the value
+// ═══════════════════════════════════════════════════════════════════════════
+// A variable that is SET but cannot verify anything (`webhookConfigured` is
+// true, every delivery still answers 400) is invisible from outside the
+// deployment. These cases pin the report that makes it visible, and the report's
+// central property: it never carries a character of the secret.
+
+describe("webhook signing secret health", () => {
+  const WELL_FORMED = `whsec_${"a".repeat(32)}`;
+
+  test("a well-formed value reports usable, and the report carries no secret", () => {
+    setPaymentEnv({ STRIPE_WEBHOOK_SECRET: WELL_FORMED });
+    const health = webhookSecretHealth();
+    expect(health).toEqual({
+      present: true,
+      shapeUsable: true,
+      prefixOk: true,
+      lengthBucket: "expected",
+      wrappedInQuotes: false,
+      interiorWhitespace: false,
+      surroundingWhitespaceOnly: false,
+    });
+    expect(JSON.stringify(health)).not.toContain("whsec_");
+  });
+
+  test("an absent value is reported absent, not healthy", () => {
+    setPaymentEnv({});
+    const health = webhookSecretHealth();
+    expect(health.present).toBe(false);
+    expect(health.shapeUsable).toBe(false);
+    expect(health.lengthBucket).toBe("absent");
+  });
+
+  test("a value pasted with its wrapping quotes can never verify a signature", () => {
+    // `envString()` trims whitespace but not quotes, so this is the shape of a
+    // real copy-paste failure: everything looks configured and nothing verifies.
+    setPaymentEnv({ STRIPE_WEBHOOK_SECRET: `"${WELL_FORMED}"` });
+    const health = webhookSecretHealth();
+    expect(health.wrappedInQuotes).toBe(true);
+    expect(health.shapeUsable).toBe(false);
+  });
+
+  test("whitespace INSIDE the value is fatal; whitespace around it is harmless", () => {
+    setPaymentEnv({ STRIPE_WEBHOOK_SECRET: `whsec_aaaa aaaa${"a".repeat(20)}` });
+    expect(webhookSecretHealth().interiorWhitespace).toBe(true);
+    expect(webhookSecretHealth().shapeUsable).toBe(false);
+
+    setPaymentEnv({ STRIPE_WEBHOOK_SECRET: `  ${WELL_FORMED}\n` });
+    const padded = webhookSecretHealth();
+    expect(padded.surroundingWhitespaceOnly).toBe(true);
+    expect(padded.interiorWhitespace).toBe(false);
+    // The env lookup trims it, so signatures still verify — reported as harmless.
+    expect(padded.shapeUsable).toBe(true);
+  });
+
+  test("a value that is not a whsec_ secret at all is refused by shape", () => {
+    setPaymentEnv({ STRIPE_WEBHOOK_SECRET: "sk_test_000000000000000000000000" });
+    const health = webhookSecretHealth();
+    expect(health.prefixOk).toBe(false);
+    expect(health.shapeUsable).toBe(false);
+  });
+
+  test("GET /api/stripe/configured reports the shape without the value", async () => {
+    setPaymentEnv(TEST_STRIPE_ENV);
+    await withServer(async (base) => {
+      const res = await fetch(`${base}/api/stripe/configured`);
+      const raw = await res.text();
+      expect(raw).not.toContain(TEST_WEBHOOK_SECRET);
+      const body = JSON.parse(raw);
+      expect(body.data.webhookSecretHealth.present).toBe(true);
+      expect(body.data.webhookSecretHealth.shapeUsable).toBe(true);
+      // The self-test is opt-in: the hot path stays pure.
+      expect(body.data.webhookSignatureSelfTest).toBeUndefined();
+    });
+  });
+
+  test("the self-test verifies a signature this deployment signed itself", async () => {
+    // This is the check that separates "the configured secret is not the secret
+    // that signed that delivery" (a configuration answer) from "this process
+    // cannot verify any signature" (a code defect). It is run in production via
+    // GET /api/stripe/configured?selfTest=1, so it is pinned here.
+    setPaymentEnv(TEST_STRIPE_ENV);
+    await withServer(async (base) => {
+      const res = await fetch(`${base}/api/stripe/configured?selfTest=1`);
+      const body = await res.json();
+      const selfTest = body.data.webhookSignatureSelfTest;
+      expect(selfTest.attempted).toBe(true);
+      expect(selfTest.verified).toBe(true);
+      expect(selfTest.reason).toBeNull();
+    });
+  });
+
+  test("the self-test reports itself not attempted instead of failing when Stripe is unconfigured", async () => {
+    setPaymentEnv({});
+    await withServer(async (base) => {
+      const res = await fetch(`${base}/api/stripe/configured?selfTest=1`);
+      const body = await res.json();
+      expect(body.data.webhookSignatureSelfTest.attempted).toBe(false);
+      expect(body.data.webhookSignatureSelfTest.verified).toBe(false);
+    });
   });
 });
 

@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-27 · **Branch:** `main` · **Latest pass:** VelShop cart — marketplace selection by `shop_id` + sticky summary bar and shop-grouped order sheet (§29)
+**Last updated:** 2026-09-27 · **Branch:** `main` · **Latest pass:** Stripe webhook 400 "No signatures found matching the expected signature" — the raw-body/signature boundary made self-identifying (§33)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -644,87 +644,14 @@ a 20px box with a transparent 12px halo (`after:absolute after:-inset-3`) = a **
 target — confirmed present in the emitted `index-*.css`, not just written in the source.
 
 **Still open:** browser verification of `/cart` (selection taps, sheet, one-handed mobile
-layout) — no signed-in session exists in this workspace.
+layout) — no signed-in session exists in this workspace.## 30. VelShop checkout → Stripe in ONE press + resume payment (2026-09-27) — archived
 
-## 30. VelShop checkout → Stripe in ONE press + resume payment (2026-09-27)
-
-**Root cause.** `ShopCheckout.tsx` treated order creation as the end of checkout:
-`handleSubmit()` → `checkoutAction()` → `setResult(res)` rendered the "คำสั่งซื้อสำเร็จ"
-screen, and only ITS second button (`handlePayOnline()`) called
-`createStripeCheckoutAction()` and redirected. CARD/PromptPay therefore cost two presses,
-the customer could stop on a screen that claimed a completed purchase, and the resulting
-order sat unpaid with no way back to Stripe. Two related dead ends: `ShopOrderDetail.tsx`
-gated its pay button on a legacy `method === "online" && status === "pending"` payment row
-(real sessions are stored as `CARD`/`PROMPTPAY` + `requires_action`), so it never appeared
-for a Stripe order; `MyOrders.tsx` had no resume path at all.
-
-**New flow (CARD + PROMPTPAY).** validate address / GPS / method →
-`POST /api/customer/checkout` (existing `requestId` idempotency) →
-`POST /api/stripe/checkout` with `orderId = parentOrderId`, the customer's own `method`,
-the existing request key and `returnPath` → `window.location.assign(url)` in the CURRENT
-tab. No success screen, no second press, no new tab/window. The CTA reads
-"กำลังเตรียมการชำระเงิน…" while it runs (new `checkout.preparingPayment`), and the click
-guard is a ref checked before the first `await` (one press = one order). COD keeps the
-order-placed screen — that is now the only path that can reach it.
-
-**Money safety.** The order is created `pending` and moves to `pending_payment` when the
-session opens; the payment row is `requires_action`. VelShop reports a sale only from the
-API's own state: `POST /api/payments/stripe/webhook` is still the ONLY writer of
-`orders.status = 'paid'` (pinned by a test that scans `backend/routes|lib|realtime`), and a
-missing/empty session URL throws instead of navigating to `undefined`.
-
-**CARD.** `stripePaymentMethodType("CARD")` → `payment_method_types: ["card"]`.
-
-**PromptPay.** `PROMPTPAY` → `payment_method_types: ["promptpay"]` through the existing
-`stripePaymentMethodType()`; the choice is snapshotted at submit and never defaulted (no
-client-side QR, no phone-number collection, no new rail, money stays THB-only). The
-deliberate `checkout.session.completed` + `payment_status !== "paid"` guard stays, so a
-scanned-but-unsettled PromptPay session is never announced as paid.
-
-**Resume payment.** New `apps/velshop/src/components/shop/ResumePaymentButton.tsx` is the
-ONE control used by My Orders, the order page, the success page and the cancel page. It
-re-opens the rail recorded on the order's own payment row; when no rail was recorded it
-asks (the backend's method list) instead of defaulting to card; it sends a fresh
-per-attempt `requestKey` and redirects in the same tab. Payability comes from one shared
-rule, `orderStripePayability()` in `packages/shared/src/lib/commerce.ts` — only the
-statuses the backend accepts (`pending`/`pending_payment`, pinned against the literal list
-in `stripe.ts`), never a `paid`/`payment_failed`/`cancelled`/`refunded` order and never a
-COD order. `payment_failed` offering no retry is the backend rule: its reserved stock was
-already released. `GET /api/customer/orders` now also returns the newest `paymentMethod`
-(one additive subselect) so the list can resume the same rail.
-
-**Success / cancel.** `/checkout/success` reads the order back from
-`GET /api/orders/:id`, keeps polling while it is unsettled, says
-"กำลังรอยืนยันการชำระเงินจาก Stripe", and offers the same rail again — it never labels a
-payment from the browser redirect. `/checkout/cancel` now loads the order and offers the
-resume too; nothing is deleted or faked client-side.
-
-**Files.** `apps/velshop/src/pages/{ShopCheckout,MyOrders,ShopOrderDetail,ShopCheckoutSuccess,ShopCheckoutCancel}.tsx`,
-`apps/velshop/src/components/shop/ResumePaymentButton.tsx` (new),
-`packages/shared/src/lib/commerce.ts`, `packages/shared/src/lib/i18n/locales/{th,en,my}.ts`,
-`backend/routes/cart.ts` (one additive list field), `backend/tests/checkout-payment-flow.test.ts`
-(new). No schema change, no new cart/payment system, and the cart's quantity / selection /
-grouping / persistence behaviour is untouched (only the local cart refresh after an order).
-
-**Verified in this workspace.** `backend/tests/checkout-payment-flow.test.ts` **37 pass /
-4 skip / 0 fail** (the skips are its four DB-gated refusal cases) · backend
-`bun tsc --noEmit` exit 0 · `bun run typecheck` 4/4 exit 0 · `bun run build:velshop`
-exit 0 · `i18n:check` th = en = my = **1331** · `git diff --check` clean · full
-`bun test backend/tests` **672 pass / 84 skip / 1 fail**, where the single failure is
-`test-database-isolation`'s child probe: it re-reads the workspace `.env` and therefore
-sees the production `DATABASE_URL` (pre-existing and environment-only — a local suite run
-needs `bun --no-env-file` with `DATABASE_URL` hidden, because `.env` here carries
-production credentials). Commit `cfee0bd` on `main`; pushed and remote-verified
-(local HEAD == `origin/main`).
-
-**NOT verified here — do not treat as production-ready.** The live browser flow against
-Stripe (real session URL → Stripe page → webhook → `paid`) and the DB-gated refusal cases
-in CI. This workspace has no signed-in session and no disposable database, and its `.env`
-points at production, so no Stripe request or order was exercised from here.
-
-**Note for the next agent:** `.ai/context/payment.md` exists and is the payment narrative
-(§15/§16/§18 + archive are its history). Webhook-delivery evidence for the current
-settlement investigation is §31.
+**Archived verbatim** (2026-09-27, to keep this file editable) →
+[`history/archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md`](history/archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md).
+One-press CARD/PromptPay checkout + the shared `ResumePaymentButton`, and the rule it
+established that still stands: `POST /api/payments/stripe/webhook` is the **only** writer of
+`orders.status = 'paid'`. Its browser E2E against Stripe remained open, and the payment
+narrative lives in `.ai/context/payment.md`.
 
 ---
 
@@ -838,4 +765,72 @@ stripe/webhook` must return 2xx with no timeout and log the stage lines; never c
 signing secret into `STRIPE_WEBHOOK_SECRET`.
 
 **Open:** a `payment_events` row left `processing` is re-armed only on a `failed` retry (§31).
-This handoff is ~53 KB, close to the ~55 KB edit-tool limit: archive §§28–§30 next pass.
+§30 is archived; §§28–§29 remain live records.
+
+---
+
+## 33. Stripe webhook 400 "No signatures found matching the expected signature" — the boundary made self-identifying (2026-09-27)
+
+**Reported.** `stripe listen --forward-to …/api/payments/stripe/webhook` → `[400]`, Render log
+`[stripe webhook] signature verification failed: No signatures found matching the expected
+signature for payload.` (A different symptom from §32's timeout — same route.)
+
+**Proven in production by probe (executed, read-only):** no signature → 400, forged signature →
+400 (routing + `constructEventAsync` alive), and — the decisive discriminator — a **150 KB
+valid-JSON body on the webhook path answers 500** (body-parser `entity.too.large`, the *raw*
+parser's 100 KB default) while the same body on another path answers 404 (the JSON parser's 1 MB
+limit accepts it). So the deployed revision really does read this route's body with
+`express.raw`: **verification sees the exact signed bytes.** The production `pk_test_…` and the
+reported `pi_3UKKDBKp4iwMdWLy0TvMGUuZ` also share the token `Kp4iwMdWLy` (one test-mode account;
+corroborating only).
+
+**Root cause of the reported 400.** A `stripe listen --forward-to <production-url>` session signs
+with its **own per-session secret**, which is a different secret *by design* from the Dashboard
+endpoint's — so forwarding a CLI session into production **must** 400 unless production's
+`STRIPE_WEBHOOK_SECRET` is that session's secret, which the rules forbid. The one cause that
+would break **real** deliveries is a **value mismatch**: the variable is not `velpay`'s signing
+secret (leftover CLI secret, a secret from a deleted/recreated endpoint or another account, or a
+value pasted with wrapping quotes). `webhookConfigured: true` cannot distinguish them — it is
+true for a value that verifies nothing — and Stripe's API cannot either: an endpoint's `secret`
+is **returned only at creation** (`GET /v1/webhook_endpoints` never re-exposes it), so alignment
+is a Dashboard read.
+
+**Fix (code, minimal — no schema, no payment-logic, no auth/CORS change).**
+- `backend/middleware/stripe-raw-body.ts` (new) — the raw-body gate as an exported, testable
+  module: matches the path as Express routes it (case-insensitive, trailing slash) and does
+  **not** gate on `Content-Type`. Mounted in `server.ts` before `express.json()`; the inline copy
+  it replaces is gone (tests used to mirror that copy, so a `server.ts` regression could not fail).
+- `backend/routes/stripe.ts` — a non-raw body is refused with **500 "Webhook body was not
+  preserved for signature verification"** instead of the misleading 400, and the stages
+  `webhook_received` (body kind + byte count only) → `signature verified` → `claimed —
+  dispatching` → `processed` are logged with elapsed ms. Never a secret/signature/payload/cookie.
+- `backend/lib/payment-config.ts` — `webhookSecretHealth()`: shape-only (`shapeUsable`, `whsec_`
+  prefix, coarse length bucket, wrapping quotes, interior vs surrounding whitespace), returned by
+  `GET /api/stripe/configured`. No character of the value is derivable from it.
+- `GET /api/stripe/configured?selfTest=1` → `webhookSignatureSelfTest`, which signs a throwaway
+  payload with the deployed secret and verifies it through the same SDK call the webhook uses:
+  `verified: true` rules out the raw-body cause and any WebCrypto/runtime defect, `false` is a
+  code defect. (Found on the way: `generateTestHeaderString` has the same sync/async trap as
+  `constructEvent` — the async form is required.)
+
+**Verified here.** new `stripe-webhook-raw-body.test.ts` **13 pass/0 fail** ·
+`payment-foundation.test.ts` 67 pass/2 skip/0 fail (`buildApp` now uses the real middleware) ·
+full backend suite **697 pass / 91 skip / 0 fail** (788 tests/37 files; was 676/91/767) · backend
+`tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1331 · `git diff --check` clean.
+Docs: `docs/ENVIRONMENT.md` + `.ai/context/payment.md` (the three causes, in the order to check
+them); **`INSTALLATION.md` wrong host fixed** (`velnx-api` → `velnox-api`) — the §31 hazard.
+
+**NOT verified here (owner-side: no Stripe credential, no Render env, no DB reach).** Proof chain
+after the redeploy carrying this commit: (1) `GET /api/stripe/configured` contains
+`webhookSecretHealth` ⇒ the host runs this revision; (2) `?selfTest=1` → `verified: true`;
+(3) Dashboard → Developers → Webhooks → `velpay` → **resend a real delivery** → `2xx` + a
+`signature verified`/`processed` line in Render's log; (4) the DB row changes. **Step (3) is the
+only authoritative E2E — a CLI forward is not**, by definition.
+
+**DB perf (that brief's §12) — investigated, no change made.** The `velrepeat_plans` due-query is
+covered by the matching partial index `idx_velrepeat_plans_due (status, next_run_at) WHERE status
+= 'active'` in **both** `db/schema.sql` and migration `034`, and it is the FIRST query of every
+`startVelRepeatScheduler()` tick: interval **60 s** vs pool `idleTimeoutMillis: 30000`, so each
+tick's first query pays a fresh TCP+TLS+Neon handshake (~1.2–1.5 s) over the ~0.2 s baseline. Not
+a plan problem and **not** the webhook cause; an index/pool change needs a measurement that
+separates connect time from execute time.

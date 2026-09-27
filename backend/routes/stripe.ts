@@ -53,6 +53,7 @@ import {
   paymentMethodOptions,
   customerSelectablePaymentMethods,
   assertPaymentMethodUsable,
+  webhookSecretHealth,
   type PaymentMethodId,
 } from "../lib/payment-config.js";
 import Stripe from "stripe";
@@ -76,6 +77,69 @@ function getStripe(): Stripe | null {
   const client = new Stripe(key, { apiVersion: "2025-08-27.basil" as never });
   cachedClient = { key, client };
   return client;
+}
+
+/**
+ * Prove that THIS process can verify a signature it ought to be able to verify.
+ *
+ * WHY THIS EXISTS
+ * When `POST /api/payments/stripe/webhook` answers 400 "Invalid signature" to a
+ * real Stripe delivery, two very different causes produce the identical message:
+ * the configured `STRIPE_WEBHOOK_SECRET` is not the secret that signed that
+ * request, or this runtime/SDK cannot verify a signature at all (a WebCrypto-path
+ * defect would reject genuine events and forgeries alike, silently disabling
+ * every webhook while still looking like signature enforcement). Nothing outside
+ * the deployment can tell those apart, and the second cause is a real code defect
+ * that no amount of dashboard inspection would reveal.
+ *
+ * This check signs a throwaway payload with the DEPLOYED secret and immediately
+ * verifies it through the exact call the webhook uses. It makes no Stripe API
+ * call, touches no database, and returns no secret and no signature:
+ *
+ *   verified: true  → the runtime, the SDK and the configured value are
+ *                     self-consistent, so a 400 can only mean the value is not
+ *                     the secret that signed that particular delivery (an
+ *                     endpoint/CLI/account mismatch — a configuration answer).
+ *   verified: false → the failure is inside this process (loading the value or
+ *                     the signature path) and is a defect to fix in code.
+ */
+export async function selfTestWebhookSignature(): Promise<{
+  attempted: boolean;
+  verified: boolean;
+  reason: string | null;
+}> {
+  const s = getStripe();
+  const webhookSecret = stripeWebhookSecret();
+  if (!s || !webhookSecret) {
+    return { attempted: false, verified: false, reason: "stripe_test_mode_not_configured" };
+  }
+
+  const payload = JSON.stringify({
+    id: "evt_velnox_signature_selftest",
+    object: "event",
+    type: "velnox.signature_self_test",
+    data: { object: {} },
+  });
+
+  try {
+    // Signed here, one line above — so a failure cannot be a delivery problem.
+    //
+    // The ASYNC generator, for the same reason the webhook uses
+    // `constructEventAsync`: the SDK selects a WebCrypto-backed provider, whose
+    // synchronous API throws for every input. Using the sync form here would
+    // report a false "this deployment cannot verify signatures" — the mirror of
+    // the bug this whole check exists to rule out.
+    const header = await s.webhooks.generateTestHeaderStringAsync({ payload, secret: webhookSecret });
+    await s.webhooks.constructEventAsync(payload, header, webhookSecret);
+    return { attempted: true, verified: true, reason: null };
+  } catch (err) {
+    // A signature/crypto failure reason, never a secret value.
+    return {
+      attempted: true,
+      verified: false,
+      reason: err instanceof Error ? err.message.slice(0, 200) : "signature self-test failed",
+    };
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -612,7 +676,7 @@ export function setupStripeRoutes(app: Express): void {
   // ── GET /api/stripe/configured ──────────────────────────────────────────
   // Backward-compatible shape, extended with the mode and the *publishable*
   // key only — a secret key is never exposed here or anywhere else.
-  app.get("/api/stripe/configured", (_req: Request, res: Response) => {
+  app.get("/api/stripe/configured", async (req: Request, res: Response) => {
     const status = stripeStatus();
     res.json({
       success: true,
@@ -622,6 +686,18 @@ export function setupStripeRoutes(app: Express): void {
         publishableKey: status.publishableKey,
         webhookConfigured: status.webhookConfigured,
         reason: status.reason,
+        // Shape-only report on STRIPE_WEBHOOK_SECRET (`whsec_` prefix, a coarse
+        // length bucket, wrapping quotes, interior whitespace) — no character of
+        // the value is derivable from it. It separates "the signing secret was
+        // pasted wrong" from "the endpoint sent the wrong thing" without Render
+        // dashboard access, which is otherwise a dead end: `webhookConfigured`
+        // is true for a value that can never verify anything.
+        webhookSecretHealth: webhookSecretHealth(),
+        // Opt-in so the hot path stays pure. Answers "can this deployment verify
+        // ANY signature?" — see selfTestWebhookSignature().
+        ...(req.query.selfTest === "1"
+          ? { webhookSignatureSelfTest: await selfTestWebhookSignature() }
+          : {}),
       },
     });
   });
@@ -1040,6 +1116,34 @@ export function setupStripeRoutes(app: Express): void {
         return;
       }
 
+      // ── Stage: raw body ────────────────────────────────────────────────
+      // Stripe signs the exact bytes it sends, so verification over anything but
+      // those bytes cannot succeed. If the body was JSON-parsed first (the
+      // raw-body middleware and this route drifting apart) or never arrived,
+      // answering "Invalid signature" would describe a wiring bug as a forged
+      // event — so the two are reported differently. See
+      // middleware/stripe-raw-body.ts.
+      const rawBody = req.body as unknown;
+      if (!Buffer.isBuffer(rawBody) && typeof rawBody !== "string") {
+        console.error(
+          "[stripe webhook] raw body unavailable — refusing before signature verification. " +
+            "The raw-body middleware must be mounted before express.json() for this route " +
+            "(middleware/stripe-raw-body.ts).",
+        );
+        res.status(500).json({ error: "Webhook body was not preserved for signature verification" });
+        return;
+      }
+
+      // Stage: a signed request reached the handler. No event id exists yet (the
+      // payload is not parsed until the signature is verified), so this names the
+      // body's kind and size only — never the payload, the signature, or a secret.
+      const bodyBytes = Buffer.isBuffer(rawBody)
+        ? rawBody.length
+        : Buffer.byteLength(rawBody as string, "utf8");
+      console.log(
+        `[stripe webhook] webhook_received body=${Buffer.isBuffer(rawBody) ? "buffer" : "string"} bytes=${bodyBytes} signature=present (+${elapsed()}ms)`,
+      );
+
       let event: Stripe.Event;
       try {
         // `constructEventAsync`, not `constructEvent`: the Stripe SDK selects a
@@ -1050,7 +1154,20 @@ export function setupStripeRoutes(app: Express): void {
         event = await s.webhooks.constructEventAsync(req.body, signature, webhookSecret);
       } catch (err) {
         // The failure reason is a signature mismatch, not a secret value.
-        console.error("[stripe webhook] signature verification failed:", err instanceof Error ? err.message : "invalid signature");
+        //
+        // This one message has two causes that look identical from outside: the
+        // configured signing secret is not the secret that signed THIS request,
+        // or the request did not come from the configured endpoint at all —
+        // `stripe listen --forward-to` signs with a per-session secret of its
+        // own, which by design is not the endpoint's secret, and the CLI secret
+        // must never be copied into production to make forwarding pass.
+        // `GET /api/stripe/configured?selfTest=1` reports the signing secret's
+        // shape and whether this deployment can verify any signature at all,
+        // which separates those from a defect in this process.
+        console.error(
+          "[stripe webhook] signature_verification_failed:",
+          err instanceof Error ? err.message : "invalid signature",
+        );
         res.status(400).json({ error: "Invalid signature" });
         return;
       }

@@ -105,11 +105,53 @@ Add `STRIPE_SECRET_KEY` (`sk_test_…`), `STRIPE_PUBLISHABLE_KEY` (`pk_test_…`
 (`psql "$TEST_DATABASE_URL" -f db/run-sqleditor.sql`).
 
 As of **2026-09-27** the names and the sandbox webhook setup (endpoint path + the 11
-handled event types + the `stripe listen` alternative) are documented in
+handled event types + the CLI-vs-endpoint secret rule below) are documented in
 `INSTALLATION.md` §4 and its *Backend (ALL secrets)* reference table, and in
 `docs/ENVIRONMENT.md`. **`.env.example` still lacks the Stripe/COD lines:** that file is
 in the agent tooling's protected set ("Sensitive files cannot be changed"), so adding
 them there is an owner edit by hand.
+
+## Webhook signature — the boundary that decides 400 vs 2xx
+
+`POST /api/payments/stripe/webhook` verifies `STRIPE_WEBHOOK_SECRET` over the **raw
+bytes**, so every 400 in the Render log means that request did not verify. Three
+distinct causes produce the *same* Stripe message ("No signatures found matching the
+expected signature for payload"). Separate them in this order:
+
+1. **The request did not come from the endpoint.** `stripe listen --forward-to
+   <production-url>` signs with its own **per-session** secret, so forwarding to
+   production ALWAYS 400s unless the production secret is that session's secret — which
+   the rules forbid. A CLI 400 is therefore **expected** and is *not* evidence of a
+   defect. The authoritative test is a real delivery to the `velpay` endpoint
+   (Dashboard → Developers → Webhooks → recent deliveries → `2xx`); `stripe trigger
+   <type>` **without** `--forward-to` also delivers to the configured endpoint.
+2. **The value is not that endpoint's secret** — a leftover CLI session secret, a secret
+   from a deleted/recreated endpoint or another account, or a value pasted with its
+   wrapping quotes still on it. Render's variable is unreadable from the sandbox, so
+   this is checked by **shape, never by value**: `GET /api/stripe/configured` →
+   `webhookSecretHealth` (`shapeUsable: false` = every delivery 400s while
+   `webhookConfigured` still reads `true`).
+3. **The raw body was lost** — a wiring regression, not a signature one: if
+   `express.json()` parsed the body first, the SDK hashes a re-serialised object and
+   EVERY genuine delivery 400s while the endpoint still looks like it enforces
+   signatures. `backend/middleware/stripe-raw-body.ts` owns that gate (mounted before
+   `express.json()` in `server.ts`), `backend/tests/stripe-webhook-raw-body.test.ts`
+   exercises the real middleware (not a copy), and the handler answers
+   `500 "Webhook body was not preserved for signature verification"` — never the
+   misleading 400 — when the body is not raw.
+
+Checks that prove things about the **deployment**, in the order they become available:
+
+* `GET /api/stripe/configured` returning `webhookSecretHealth` proves the host is
+  running this revision (the field did not exist before it).
+* `GET /api/stripe/configured?selfTest=1` → `webhookSignatureSelfTest.verified: true`
+  signs a throwaway payload with the deployed secret and verifies it through the same
+  SDK call the webhook uses, so it rules out (3) and any WebCrypto/runtime defect
+  without revealing anything. `verified: false` is a code defect; `verified: true`
+  with a 400 on a real endpoint delivery is cause (2) — an owner-side value fix.
+* The handler logs `webhook_received` → `signature verified` → `claimed — dispatching`
+  → `processed`, each with elapsed ms, so Render's log names the last stage that
+  completed. No secret, signature, payload, token or cookie is ever logged.
 
 ## Stripe Connect / marketplace payout — **MISSING**
 

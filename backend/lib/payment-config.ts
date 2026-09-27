@@ -216,6 +216,92 @@ export function stripeWebhookSecret(): string | null {
   return envString("STRIPE_WEBHOOK_SECRET");
 }
 
+// ─── Webhook signing secret — shape-only health ──────────────────────────────
+
+/** The prefix every Stripe endpoint signing secret carries. */
+const WEBHOOK_SECRET_PREFIX = "whsec_";
+/** `whsec_` (6) + a 32-character token. Reported only as a coarse bucket. */
+const WEBHOOK_SECRET_EXPECTED_LENGTH = 38;
+
+/**
+ * Shape-only health report for `STRIPE_WEBHOOK_SECRET`.
+ *
+ * WHY THIS EXISTS
+ * One class of "No signatures found matching the expected signature for
+ * payload" is invisible from outside the deployment: the variable is *set* (so
+ * `webhookConfigured` is `true` and the endpoint looks configured) but the value
+ * can never verify anything — it was pasted with its wrapping quotes still on
+ * it, with a stray space inside, or it is a different secret entirely (a
+ * `stripe listen` CLI session secret, a key from a recreated endpoint, another
+ * account). Every delivery then answers 400 while the configuration reports
+ * itself healthy, which is exactly the dead end this report removes.
+ *
+ * Reported as booleans and one coarse length bucket, so the answer is
+ * actionable without revealing the value: no character of the secret is
+ * derivable from this report, and the check is pure (no network, no Stripe
+ * call, nothing to rate-limit).
+ *
+ * The value is read here deliberately WITHOUT trimming: leading/trailing
+ * whitespace is harmless (the env lookup trims it) but worth reporting as such,
+ * whereas whitespace *inside* the value and wrapping quotes are not trimmed and
+ * make every signature fail.
+ */
+export interface WebhookSecretHealth {
+  present: boolean;
+  /** Headline: false means every delivery will 400 until the value is replaced. */
+  shapeUsable: boolean;
+  /** Starts with `whsec_` — the only shape Stripe issues for endpoint secrets. */
+  prefixOk: boolean;
+  lengthBucket: "absent" | "short" | "expected" | "long";
+  /** `"whsec_…"` pasted with its wrapping quotes can never verify a signature. */
+  wrappedInQuotes: boolean;
+  /** A space, tab or newline INSIDE the value — not trimmed, never verifies. */
+  interiorWhitespace: boolean;
+  /** Leading/trailing whitespace only. Harmless: the env lookup trims it. */
+  surroundingWhitespaceOnly: boolean;
+}
+
+export function webhookSecretHealth(): WebhookSecretHealth {
+  const raw = process.env.STRIPE_WEBHOOK_SECRET;
+  if (typeof raw !== "string" || raw === "") {
+    return {
+      present: false,
+      shapeUsable: false,
+      prefixOk: false,
+      lengthBucket: "absent",
+      wrappedInQuotes: false,
+      interiorWhitespace: false,
+      surroundingWhitespaceOnly: false,
+    };
+  }
+
+  const length = raw.length;
+  const trimmed = raw.trim();
+  // Judged on the TRIMMED value: the env lookup trims before use, so surrounding
+  // whitespace must not be reported as a broken prefix.
+  const prefixOk = trimmed.startsWith(WEBHOOK_SECRET_PREFIX);
+  const hasSurrounding = trimmed !== raw;
+  const interiorWhitespace = /\s/.test(trimmed);
+  const wrappedInQuotes =
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"));
+
+  return {
+    present: true,
+    shapeUsable: prefixOk && !interiorWhitespace && !wrappedInQuotes,
+    prefixOk,
+    lengthBucket:
+      length < WEBHOOK_SECRET_EXPECTED_LENGTH - 4
+        ? "short"
+        : length > WEBHOOK_SECRET_EXPECTED_LENGTH + 4
+          ? "long"
+          : "expected",
+    wrappedInQuotes,
+    interiorWhitespace,
+    surroundingWhitespaceOnly: hasSurrounding && !interiorWhitespace,
+  };
+}
+
 // ─── COD feature flags (both default OFF) ────────────────────────────────────
 
 /**

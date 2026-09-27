@@ -133,6 +133,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-27-closed-records.md`](./archive/AI_Handoff-2026-09-27-closed-records.md) | handoff §23–§26 — the seller-verification records of 2026-09-27 | §23 the identity-evidence purpose parser (`c12185c`); §24 seller access = an approved application only, across the tab bar, the seller APIs and the revision flow; §25 the verification queue's new-vs-resubmitted counts + realtime state sync; §26 approval as ONE decision (seller access + reviewer badge). Moved out on 2026-09-27 as the documented NEXT SPLIT, together with §24–§26; §6 keeps the open items |
 
+### 2026-09-27 — the §30 split (VelShop one-press checkout, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md`](./archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md) | handoff §30 — checkout → Stripe in ONE press + resume payment | the one-press CARD/PromptPay checkout, the shared `ResumePaymentButton`, and the rule it established that still stands: the webhook is the **only** writer of `orders.status = 'paid'`. Its browser E2E against Stripe stayed open. Moved out on 2026-09-27 as edit-headroom housekeeping (§28–§29 remain live) |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
