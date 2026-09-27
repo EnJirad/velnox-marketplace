@@ -738,3 +738,51 @@ one document missing → 400 naming exactly `selfie_id`, no seller row created; 
 (610 tests, 28 files; was 597/2/0) · backend `tsc` exit 0 · `bun run typecheck` 4/4 exit 0 ·
 `git diff --check` clean. The production applicant can resubmit: the failed attempt created
 no seller row, and the three existing `media` rows now satisfy submit.
+
+## 24. Seller access = approved application only — tab bar, authorization, revision flow (2026-09-27)
+
+**Rule (unchanged, now enforced in ONE place).** `sellerAccess = true ⇔ sellers.status = 'approved'`.
+`users.role` is a cached promotion, never the check; client-supplied `role` / `approved` /
+`sellerAccess` / `userId` is never read.
+
+**What was wrong.** velseller rendered its bottom tab bar unconditionally (static
+`<MobileTabBar items={SELLER_TABS} />`), so the seller navigation was visible to signed-out users and
+to every `pending` / `needs_correction` / `rejected` applicant. `GET /api/seller/profile` and
+`PATCH /api/seller/shop` had no status check at all (any account with a `sellers` row could read its
+profile and edit its shop), and `GET /api/seller/velrepeat/deliveries`, its delivery PATCH and
+`/api/seller/velrepeat/overview` only checked that a `sellers` row existed. Product option
+management resolved the seller with no status filter. A `needs_correction` resubmission also started
+from an EMPTY form — previous shop data, applicant data and the three identity documents were never
+reloaded.
+
+**Changes.** New `backend/middleware/seller.ts` — `resolveSellerAccess(userId)` and
+`requireApprovedSeller` (403 `SELLER_NOT_APPROVED`) — applied to `GET /api/seller/profile`,
+`PATCH /api/seller/shop`, the three `/api/seller/velrepeat/*` dashboard routes and the
+product-options seller lookup. The applicant flow (`apply`, `status`, `evidence*`, `verification`)
+stays open by design: it is how an application is created, corrected and resubmitted.
+`GET /api/seller/status` now returns a top-level server-computed `sellerAccess` plus `shop{…}` and
+`applicantInfo.idNumber` for prefill. Frontend: `packages/shared/src/lib/seller-access.ts`
+(fail-closed decision helpers) + `hooks/use-seller-application.ts` (own application from the cookie
+session; refetch on focus/visibility so an approval lands without re-login); the velseller tab bar
+renders only through `shouldShowSellerTab({sellerAccess, loading, error})` — hidden while loading, on
+API error, and for every non-approved status; `RequireRole` prefills the previous application and
+hydrates the three documents from `GET /api/seller/evidence` (own rows, matched by purpose), so a
+correction resubmits the SAME application with the SAME documents.
+
+**Verification (actually run).** New `backend/tests/seller-access-authorization.test.ts` (15 cases;
+real disposable PostgreSQL + real HTTP): `sellerAccess` false for no-application / pending /
+under_review / needs_correction / rejected / suspended, true only for approved; `GET /api/seller/profile`
+and `PATCH /api/seller/shop` → 403 `SELLER_NOT_APPROVED` for every non-approved status (the shop is
+provably unmodified) and 200 for approved; a pending applicant injecting
+`role`/`approved`/`sellerAccess`/`status`/`userId=<approved account>` in the body still gets 403;
+ownership isolation (an applicant cannot read the approved account's status, shop slug or documents —
+the evidence list only ever returns the caller's rows). Full suite **624 pass / 2 skip / 0 fail**
+(626 tests, 29 files; was 610/2/0) · backend `tsc` exit 0 · `bun run typecheck` 4/4 exit 0 ·
+`bun run build:apps` 4/4 exit 0 · `git diff --check` clean · **no schema change** (`db/` untouched,
+no new field: `sellers.status` was already authoritative).
+
+**Deliberately not changed.** No new endpoint, no new realtime channel (the WS client is chat-only;
+the tab refetches on focus/visibility instead), and no change to the applicant-side endpoints. A
+rejected applicant still re-applies with prefilled data (existing business rule); a suspended seller
+simply loses the tab and the seller APIs. Stripe TEST E2E and browser/OAuth E2E remain BLOCKED
+(§6, §22).

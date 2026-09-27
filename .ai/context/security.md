@@ -8,6 +8,7 @@ Google OAuth + JWT httpOnly session cookies. Backend is the gatekeeper. Password
 
 - `backend/routes/auth.ts` — `GET /auth/google`, `GET /auth/google/callback`, `GET /api/auth/me`, `POST /api/auth/logout`
 - `backend/middleware/auth.ts` — `requireAuth`, `optionalAuth`, JWT verify, `revoked_tokens` check (in-memory `revokedJTIs` set + DB fallback)
+- `backend/middleware/seller.ts` — `requireApprovedSeller`: seller access is `sellers.status = 'approved'` for the caller's OWN row (session identity only), 403 `SELLER_NOT_APPROVED` otherwise
 - `backend/db/index.ts` — `revoked_tokens` table
 - `packages/shared/src/hooks/use-auth.ts`, `packages/shared/src/components/RequireAuth.tsx`, `packages/shared/src/components/RequireRole.tsx` — frontend auth state
 - `packages/shared/src/lib/api-routes.ts` — `api.auth.*`
