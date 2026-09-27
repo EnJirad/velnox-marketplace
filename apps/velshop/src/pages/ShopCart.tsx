@@ -192,6 +192,10 @@ export default function ShopCart() {
                 checked={checkboxChecked(allState)}
                 onCheckedChange={handleSelectAll}
                 aria-label={t("cartPage.selectAll")}
+                // size-5 visible box + a transparent 12px halo = a 44px touch
+                // target, so the box is easy to hit one-handed. The halo lives
+                // on the button itself, so it only adds hit area — no layout shift.
+                className="relative size-5 after:absolute after:-inset-3 after:content-['']"
               />
               <span className="text-sm font-medium text-slate-700">
                 {allState === "all" ? t("cartPage.deselectAll") : t("cartPage.selectAll")}
@@ -216,6 +220,7 @@ export default function ShopCart() {
                       checked={checkboxChecked(shopState)}
                       onCheckedChange={() => handleSelectShop(group.lines)}
                       aria-label={`${t("cartPage.selectAll")} · ${group.shopName}`}
+                      className="relative size-5 after:absolute after:-inset-3 after:content-['']"
                     />
                     <Store className="size-4 shrink-0 text-[#10B981]" />
                     <p className="min-w-0 truncate text-sm font-semibold text-slate-900">
@@ -244,6 +249,7 @@ export default function ShopCart() {
                               checked={isSelected}
                               onCheckedChange={() => handleSelectItem(line.id)}
                               aria-label={line.name}
+                              className="relative size-5 after:absolute after:-inset-3 after:content-['']"
                             />
                           </div>
 
