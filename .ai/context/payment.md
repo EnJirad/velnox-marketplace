@@ -99,10 +99,29 @@ ONLY** — a live-looking secret key is refused, never used.
 
 ## Unblock (owner actions)
 
-Add in Settings → Environment: `STRIPE_SECRET_KEY` (`sk_test_…`),
-`STRIPE_PUBLISHABLE_KEY` (`pk_test_…`), `STRIPE_WEBHOOK_SECRET` (`whsec_…`), optionally
-`STRIPE_MODE=test`, and `TEST_DATABASE_URL` pointing at a disposable PostgreSQL
-(`psql "$TEST_DATABASE_URL" -f db/run-sqleditor.sql`). `.env.example` does not document
-`STRIPE_*` / `COD_*` yet and agent tooling cannot edit it — add them by hand.
+Add `STRIPE_SECRET_KEY` (`sk_test_…`), `STRIPE_PUBLISHABLE_KEY` (`pk_test_…`),
+`STRIPE_WEBHOOK_SECRET` (`whsec_…`), optionally `STRIPE_MODE=test`, and
+`TEST_DATABASE_URL` pointing at a disposable PostgreSQL
+(`psql "$TEST_DATABASE_URL" -f db/run-sqleditor.sql`).
+
+As of **2026-09-27** the names and the sandbox webhook setup (endpoint path + the 11
+handled event types + the `stripe listen` alternative) are documented in
+`INSTALLATION.md` §4 and its *Backend (ALL secrets)* reference table, and in
+`docs/ENVIRONMENT.md`. **`.env.example` still lacks the Stripe/COD lines:** that file is
+in the agent tooling's protected set ("Sensitive files cannot be changed"), so adding
+them there is an owner edit by hand.
+
+## Stripe Connect / marketplace payout — **MISSING**
+
+This repository has **no Stripe Connect implementation**: no connected account, no
+`accountLink`/onboarding, no `transfer_data` / `application_fee` / `on_behalf_of`, no
+seller↔Stripe account mapping, no KYC state, no Stripe payout. The customer is charged
+through the platform's own Stripe account; seller amounts are **internal accounting only**
+(`commissions`, `settlements`, `backend/lib/seller-stats.ts`). `payouts.process` was
+deliberately removed from the permission catalog because no payout endpoint, table or
+screen exists (`backend/lib/permissions.ts:28-29`, guarded by `center-rbac.test.ts`).
+
+**`CHECKOUT READY` never implies `MARKETPLACE PAYOUT READY`.** Building Connect is out of
+scope until an owner asks for it.
 
 Related: `checkout.md`, `customer.md`, `security.md`, `testing.md`, `database.md`.

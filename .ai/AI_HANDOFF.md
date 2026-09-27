@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-26 · **Branch:** `main` · **Latest pass:** moderation queue paginated + verification queue localized (§20); Stripe E2E still BLOCKED (§19)
+**Last updated:** 2026-09-27 · **Branch:** `main` · **Latest pass:** Stripe sandbox audit — configuration documented, checkout code verified, sandbox E2E BLOCKED (§27)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -120,6 +120,17 @@ at every persistence point). The still-open catalog read stayed in §9.4.
 
 ### Open, actionable
 
+- **Payments have never been executed against real Stripe (test mode), and the fix is a
+  two-step owner action** (§27, §18): add test-mode `STRIPE_SECRET_KEY` /
+  `STRIPE_PUBLISHABLE_KEY` and a test webhook's `whsec_…` as `STRIPE_WEBHOOK_SECRET`
+  in Settings → Environment, then re-run the audit. Until then Card / PromptPay /
+  webhook delivery / refund are **CODE VERIFIED, never PASS**, and no PaymentIntent,
+  PromptPay QR or refund has ever been created. **Production has no Stripe credential
+  and offers no payment method** (verified read-only 2026-09-27) — it is not a
+  substitute for a sandbox test. `STRIPE_CONNECT_MISSING`: no Connect, no payout
+  (checkout readiness ≠ payout readiness). The variable names are now documented in
+  `INSTALLATION.md` §4 + its reference table and `docs/ENVIRONMENT.md`; `.env.example`
+  still lacks them because that path is protected from agent edits (owner edit).
 - ~~**The 35 DB-gated tests have never been executed in this workspace.**~~
   **CLOSED** — all 35 now run against a disposable Postgres (`452 pass /
   0 fail / 0 skip`, twice consecutively), including the two self-approval HTTP
@@ -364,8 +375,10 @@ Moved 2026-09-25. The rules are live in `.ai/AI_RULES.md` §0, `AGENTS.md` rule 
 [`history/archive/AI_Handoff-2026-09-25-test-database-isolation.md`](history/archive/AI_Handoff-2026-09-25-test-database-isolation.md).
 Moved 2026-09-26 (§20) to stay under the ~55 KB edit limit. The live rules are
 [`.ai/context/testing.md`](context/testing.md) and `.github/workflows/test.yml`; the
-guard is `backend/db/test-database.ts`. Still-open items stayed in §6 (add
-`TEST_DATABASE_URL` to `.env.example` by hand if it is still missing).
+guard is `backend/db/test-database.ts`. Still-open items stayed in §6. The variable names
+are now documented in `INSTALLATION.md` §4 + its *Backend (ALL secrets)* table and
+`docs/ENVIRONMENT.md` (§27); `.env.example` still lacks them — that path is in the agent
+tooling's protected set, so it stays an owner edit.
 
 ---
 
@@ -507,71 +520,15 @@ What stays live:
 
 ## 22. PostgreSQL 53000 — provider-side quota classified; provider action required (2026-09-27)
 
-**New production evidence (with §21's safe logging deployed as `c2d3639`).** Render
-logs now show `53000` on BOTH paths: `operation: connect` from
-`backend/db/index.ts:70` (the `getClient()` failure logger) called by
-`backend/routes/auth.ts:133` (`const poolClient = await getClient();` inside
-`resolveUser()`), AND `operation: query` / `statement: SELECT`; the VelRepeat
-scheduler fails the same way. ⇒ new connections are refused AND existing
-connections are dropped. No OAuth code was touched.
-
-**Classification — (B)+(E): a provider consumption quota was exhausted and Neon
-suspended the project's compute. Not (A) connection limit, not (C) storage, not
-(F) provider-wide.**
-- Neon FAQ *"What are the limits and quotas for Neon's Free plan?"*
-  (`neon.com/faqs/free-plan-limits-and-quotas`): *"CU-hours or network transfer
-  used up: the project's compute is suspended until the next billing period or
-  until you upgrade. **Existing connections drop and new ones can't open.**"* —
-  a verbatim match to the two observed operations. Free-plan budget: **100 CU-hours
-  per project per month** and **5 GB per project per month public network
-  transfer**; computes scale to zero only after **5 minutes** of inactivity.
-- **(A) excluded:** Postgres connection exhaustion is `53300` *"remaining
-  connection slots are reserved for non-replication superuser connections"* —
-  a different code and message (Neon's own support write-up uses `53300` for
-  connection limits); the pool is 20 connections in one process (§21).
-- **(C) excluded:** per the same FAQ, storage above 0.5 GB fails *inserts, updates
-  and deletes that would increase storage* — connections and SELECTs keep working.
-  A refused connect plus a refused SELECT contradict it.
-- **(F) excluded:** the message is account/project-scoped.
-- **Which of the two Free-plan metrics tripped is BLOCKED:** it needs Neon Console
-  → project → Usage (or the Neon API). No credential exists in this workspace
-  (`freebuff-env list` → `{}`), and the SELECT-only diagnostic workflow still cannot
-  be dispatched — `gh workflow run diag-neon-schema.yml` → **HTTP 403 Resource not
-  accessible by integration** (re-confirmed 2026-09-27; Actions *read* works —
-  `gh run list` — Actions *write* does not). Last *proven* production-DB workflow
-  connection: `migrate-neon.yml` run `36167403209` success at
-  **2026-09-25T17:29:05Z**.
-
-**Contributing factor (arithmetic, not a guess).** `startVelRepeatScheduler()`
-(`server.ts:521`) polls with the default **60 s** interval
-(`VELREPEAT_SCHEDULER_INTERVAL_MS`, floor 10 s) and every tick runs at least one
-SELECT (`processDuePlans(25)`), forever. Neon's Free plan scales a compute to zero
-only after **5 minutes** of inactivity, so a 60-second poll never allows an idle
-window: the compute stays active 24/7 ≈ 0.25 CU × ~730 h ≈ **~182 CU-hours/month** —
-~1.8× the 100 CU-hour allowance, enough to suspend the project ~16–17 days into a
-monthly window with zero customer traffic. (Conditional on the project being on the
-Free plan, which this workspace cannot read.) **No scheduler change was made:** the
-root cause is a provider quota, and the brief forbids application-code changes that
-hide that; the cadence is an owner decision.
-
-**Connection findings (re-verified, unchanged).** Still exactly one `pg.Pool`
-(`max: 20`, idle 30 s, connect timeout 5 s); THE one real leak (shop revoke) was
-fixed in §21; every other lease releases in `finally`; the scheduler has no
-overlapping ticks, no unbounded batches, no long-running transactions.
-
-**Production verification (read-only, 2026-09-27).** `/api/health` 200 (it does not
-touch the DB) · `/api/shops` → 500 `DB_ERROR` · `/api/categories` → 500 `DB_ERROR` ·
-`/api/products` → 500 `DB_ERROR`. **DB CONNECT: FAIL** (provider-suspended) ·
-**DB QUERY: FAIL** · **Google OAuth: BLOCKED** (downstream symptom; no authorized
-test account) · **Scheduler: BLOCKED** (needs Render logs; same 53000 in the
-reported logs).
-
-**Owner action (PROVIDER ACTION REQUIRED).** Neon Console → project → **Usage**:
-read CU-hours and public network transfer against the plan allowance (100 CU-hours /
-5 GB on Free), then either upgrade to Launch or wait for the monthly reset —
-compute resumes automatically and no data is lost. If the project came from the
-Vercel Neon integration, the same limits are adjustable from Vercel → Integrations
-→ Neon → manage → settings.
+**Archived** (closed record; conclusions unchanged) →
+[`history/archive/AI_Handoff-2026-09-27-postgres-53000-classified.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000-classified.md).
+Moved 2026-09-27 to make room for §27 (this was the documented NEXT SPLIT). What stays live:
+production threw `53000` on **connect AND query** (a provider consumption quota had
+suspended the project's compute, not a connection-limit or storage failure); the DB is
+**reachable again** (verified read-only 2026-09-27 08:09Z — `/api/shops` 200 with real
+rows, where §22 saw 500 `DB_ERROR`). The VelRepeat 60 s poll (≈182 CU-h/month vs the
+100 CU-hour Free-plan allowance) is still an **owner cadence decision**, and the plan's
+Usage figures are still unreadable from a workspace — see §27 for the current owner action.
 
 **Housekeeping:** superseded material lives in [`history/archive/`](history/archive/)
 (dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes and 2026-09-23
@@ -579,15 +536,12 @@ production-verification pass, §8,
 §10, §12, §14's TASK 004B narrative, §17 and §19 (moved 2026-09-27), and (2026-09-26)
 §2's verification system →
 `.ai/context/verification.md` plus §15/§16's payment narratives →
-`.ai/context/payment.md` + §18. This file sits **~46 KB against a ~40 KB soft
-ceiling; 55 KB is the hard limit where editing stops working — measured 2026-09-26:
-≤54.8 KB edits, ≥68.2 KB does not.
-NEXT SPLIT: §22** — mirror its owner action (Neon console quota) into §6 first,
-then archive the narrative; §20 and §21 are already archived (stubs above).
-Text edits are measured safe to ≤54.8 KB; ≥68 KB fails. Keep §6 (gaps), §9.4/§9.5,
-the §14 stub — and keep §18's BLOCKED statements, now mirrored in
-`.ai/context/payment.md` (stub above). §21's first pass was archived
-2026-09-27 (stub above) after §22 re-verified it; §25 is the newest record.
+`.ai/context/payment.md` + §18. 55 KB is the hard limit where editing stops working
+(measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not). **NEXT SPLIT: §23**
+(evidence-purpose parser record; §24–§26 are closed records too). Keep §6 (gaps), §9.4/§9.5,
+the §14 stub, and §18's BLOCKED statements — now mirrored in
+`.ai/context/payment.md` (stub above). §21's first pass and §22 were archived
+2026-09-27 (stubs above); §27 is the newest record.
 
 ## 23. Seller application rejected documents it already had — evidence purpose parser fixed (2026-09-27)
 
@@ -762,3 +716,67 @@ change, no new endpoint/table/socket.
 at typecheck + build + the executed API/DB layer, not visually. Applicants approved by
 the OLD code still have `sellers.status='pending'` (their verification record is
 `verified`): re-approving once — from either button — converges the state.
+
+## 27. Stripe Sandbox/Test-Mode audit — configuration is owner-gated, checkout code verified (2026-09-27)
+
+**Outcome: audit PASS, sandbox E2E BLOCKED.** The existing implementation already satisfies
+every property the brief lists, so **no code, schema or Stripe behaviour was changed** (no
+defect found; the brief forbids redesign). This pass added the missing *configuration
+documentation* plus freshly executed evidence.
+
+**Credential gate (unchanged, re-confirmed).** `freebuff-env list` → `{"files":{}}` — this
+workspace defines **no** environment keys, so no Stripe object, PaymentIntent, PromptPay QR,
+webhook delivery or refund has ever been executed from here. `postgres`/`psql`/`docker` are
+**absent in this workspace** (§18's disposable PostgreSQL belonged to a different, disposable
+sandbox), so the 2 DB-gated payment tests skip locally and run in CI. **No live credential
+exists anywhere:** the only `sk_live_`/`pk_live_` strings in the tree are zero-filled
+placeholders in `payment-foundation.test.ts` and regexes in `payment-config.ts`, and a
+242-commit `git log -S` scan adds nothing.
+
+**Executed evidence (real processes + real HTTP, this workspace).**
+- Probe of the real route stack with nothing configured: `GET /api/stripe/configured` → 200
+  `{configured:false,mode:null,publishableKey:null,webhookConfigured:false,`
+  `reason:"STRIPE_NOT_CONFIGURED"}`; `GET /api/payments/methods` → 200, `paymentMethods: []`,
+  CARD/PROMPTPAY/COD all `enabled:false`, `cod:{enabled:false,customerSelectable:false}`; the
+  webhook **refuses rather than acknowledging** an unverifiable event → **503**; both checkout
+  endpoints answer **401** without a session cookie (auth precedes the method guard).
+- `bun test backend/tests/payment-foundation.test.ts` → **59 pass / 2 skip / 0 fail**
+  (61 tests, 160 assertions): live-key refusal, missing webhook secret = unavailable, COD
+  fail-closed (absent / misspelled / quoted / arbitrary), 403 `PAYMENT_METHOD_DISABLED` on
+  **both** checkout endpoints, unknown method → 400, webhook signature reject **and accept**
+  (`constructEventAsync`), the PromptPay unpaid-session trap, refundable arithmetic, and
+  line-item reconciliation against `orders.total_amount`.
+- Full suite **573 pass / 87 skip / 0 fail** (660 tests, 32 files; the 87 skips are DB-gated —
+  CI runs them on a disposable `postgres:16`) · backend `tsc` exit 0 · `bun run typecheck`
+  4/4 exit 0 · `i18n:check` th=en=my=**1319** · `git diff --check` clean.
+- **Production, read-only:** `/api/health` 200 · `/api/shops` **200 with real rows** ⇒ §22's
+  provider suspension is **over** (the database serves again) · `/api/stripe/configured` 200
+  `{"configured":false,…,reason:"STRIPE_NOT_CONFIGURED"}` · `/api/payments/methods` → all
+  three methods `enabled:false`. **Production holds no Stripe credential and offers no
+  payment method: no live mode, nothing to leak, nothing touched.**
+
+**Change — documentation only (no code, no schema, no payment behaviour).**
+`INSTALLATION.md` §4 and its *Backend (ALL secrets)* table plus `docs/ENVIRONMENT.md` now
+name the variables the source actually reads — `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,
+`STRIPE_WEBHOOK_SECRET`, `STRIPE_MODE`, `COD_ENABLED`, `COD_CUSTOMER_SELECTABLE` (and
+`TEST_DATABASE_URL`) — with test-mode placeholders, the webhook path, the 11 event types the
+implementation acts on, the `stripe listen` alternative, and the Connect warning.
+**`.env.example` still lacks them:** that path is in the agent tooling's protected set
+("Sensitive files cannot be changed"), so it stays an owner edit. `.ai/context/payment.md`
+gained the Connect finding and lost a now-false owner-action sentence.
+
+**Stripe Connect: MISSING — not a defect of this task.** No connected account,
+`accountLink`/onboarding, `transfer_data`/`application_fee`/`on_behalf_of`, seller↔Stripe
+mapping, KYC state or Stripe payout exists; `payouts.process` was deliberately removed from
+the permission catalog because no payout endpoint, table or screen exists
+(`backend/lib/permissions.ts:28-29`, guarded by `center-rbac.test.ts`). Seller amounts are
+internal accounting (`commissions`, `settlements`, `seller-stats.ts`). ⇒ **`CHECKOUT READY`
+must never be read as `MARKETPLACE PAYOUT READY`.**
+
+**Owner action to unblock the sandbox (2 steps).** (1) Stripe Dashboard → **Test mode** →
+API keys → set `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY`; add a **test** webhook to
+`POST https://<backend-host>/api/payments/stripe/webhook` and set its `whsec_…` as
+`STRIPE_WEBHOOK_SECRET`. (2) Re-run this pass: `GET /api/stripe/configured` must report
+`configured:true, mode:"test"`, and only then do the Card / PromptPay / refund / webhook
+round trips become executable. **Still standing:** §22's Neon Usage check (owner) and the
+§14/§19 production E2E blocks.

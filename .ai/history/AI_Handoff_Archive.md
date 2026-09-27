@@ -115,6 +115,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-26-moderation-pagination-i18n.md`](./archive/AI_Handoff-2026-09-26-moderation-pagination-i18n.md) | handoff §20 - moderation-queue pagination + verification-queue i18n | the bounded `GET /api/admin/products/moderation` (pagination envelope, one consumer moved), the `review.*` localization of `SellerVerificationQueue.tsx` (24 keys in th/en/my), the corrupted `ระงับและลบrêtailer แล้ว` string fix, the executed 9-case pagination suite, and the single-use `bun` anchor-asserting tooling escape hatch. Moved out on 2026-09-27 as the documented NEXT SPLIT; the live bullets or blockers stay in §20's stub, §19 and §6 |
 
+### 2026-09-27 - the §22 split (postgres 53000 classified)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-27-postgres-53000-classified.md`](./archive/AI_Handoff-2026-09-27-postgres-53000-classified.md) | handoff §22 - PostgreSQL 53000 classified as a provider consumption quota; provider action required | the second pass on the same incident: `53000` observed on BOTH `connect` and `query`, the Neon FAQ quotation that matches both, why the connection-limit (`53300`), storage and provider-wide hypotheses were excluded, the VelRepeat 60 s poll arithmetic (~182 CU-hours vs the 100 CU-hour Free allowance), the read-only production probes (`/api/shops`, `/api/categories`, `/api/products` → 500 `DB_ERROR`) and the owner action (Neon Console → Usage → upgrade or wait for the monthly reset). Moved out on 2026-09-27 as the documented NEXT SPLIT to make room for §27 (the Stripe sandbox audit); a stub stays in `.ai/AI_HANDOFF.md` §22, the owner action is mirrored into §6, and §27 records that production serves again |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
