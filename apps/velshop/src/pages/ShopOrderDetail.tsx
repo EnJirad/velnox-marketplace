@@ -25,7 +25,13 @@ import {
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { api } from "@velnox/shared/lib/api-routes";
-import { formatBaht, formatIsoDateTime, getOrderStatusMeta, orderStripePayability } from "@velnox/shared/lib/commerce";
+import {
+  formatBaht,
+  formatIsoDateTime,
+  getOrderStatusMeta,
+  orderCustomerCancelability,
+  orderStripePayability,
+} from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   ArrowLeft,
@@ -119,7 +125,6 @@ const ORDER_STEPS: Array<{ key: string; icon: LucideIcon }> = [
   { key: "completed", icon: CheckCircle2 },
 ];
 
-const CANCELABLE = new Set(["pending", "confirmed"]);
 const REVIEWABLE = new Set(["delivered", "completed"]);
 
 export default function ShopOrderDetail() {
@@ -308,6 +313,18 @@ export default function ShopOrderDetail() {
    */
   const payability = orderStripePayability(order);
 
+  /**
+   * The SAME rule the backend enforces, from the shared contract: the cancel
+   * button cannot appear where `PATCH /api/customer/orders/:orderId/cancel`
+   * would answer `INVALID_STATUS`/`ORDER_ALREADY_PAID`, and cannot disappear for
+   * an unpaid order the customer needs a way out of.
+   *
+   * The previous local set (`pending`, `confirmed`) left `pending_payment` — the
+   * status an order carries while it waits at Stripe — with a "continue payment"
+   * button and NO way to cancel, which is exactly the dead end this fixes.
+   */
+  const cancelability = orderCustomerCancelability(order);
+
   const address = order.addressSnapshot;
   const addressText = address
     ? [
@@ -362,7 +379,7 @@ export default function ShopOrderDetail() {
           {order.status === "cancelled" ? (
             <div className="mt-5 flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
               <XCircle className="size-4 text-slate-400" />
-              {t("orderDetail.cancelledNote")}
+              {t("orderCancel.cancelledNotice")}
             </div>
           ) : (
             <div className="mt-5 flex flex-wrap items-center gap-1">
@@ -639,7 +656,7 @@ export default function ShopOrderDetail() {
               {t("orderDetail.buyAgain")}
             </Button>
           )}
-          {CANCELABLE.has(order.status) && (
+          {cancelability.cancelable && (
             <Button
               variant="outline"
               className="ml-auto gap-1.5 border-red-200 text-red-600 hover:bg-red-50"
@@ -658,12 +675,16 @@ export default function ShopOrderDetail() {
         <AlertDialogContent className="bg-white">
           <AlertDialogHeader>
             <AlertDialogTitle>{t("orderDetail.cancelDialogTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("orderDetail.cancelDialogDesc")}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {/* An order that can still be paid gets the copy that says so: the
+                  customer must know cancelling ends the chance to pay it. */}
+              {payability.payable ? t("orderCancel.dialogDescUnpaid") : t("orderDetail.cancelDialogDesc")}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>{t("orderDetail.close")}</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>{t("orderCancel.back")}</AlertDialogCancel>
             <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={handleCancel} disabled={busy}>
-              {busy ? t("orderDetail.cancelling") : t("orderDetail.confirmCancel")}
+              {busy ? t("orderDetail.cancelling") : t("orderDetail.cancelOrder")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

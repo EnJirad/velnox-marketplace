@@ -4,6 +4,17 @@
  */
 
 export const my = {
+  /**
+   * Order-cancellation copy (see the Thai dictionary for why this is its own
+   * namespace and not part of `orderDetail`).
+   */
+  orderCancel: {
+    back: "နောက်သို့",
+    dialogDescUnpaid:
+      "ဖျက်သိမ်းပြီးပါက ဤမှာယူမှုအတွက် ငွေပေးချေနိုင်တော့မည် မဟုတ်ပါ၊ ကုန်လက်ကျန်ကို ပြန်လွှတ်ပေးပါမည်",
+    cancelledNotice:
+      "ဤမှာယူမှုကို ဖျက်သိမ်းလိုက်ပြီ — ဤမှာယူမှုအတွက် ငွေပေးချေနိုင်တော့မည် မဟုတ်ပါ",
+  },
   common: {
     loading: "ဖွင့်နေသည်...",
     error: "တစ်ခုခု မှားယွင်းသွားသည်",

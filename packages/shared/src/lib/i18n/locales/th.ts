@@ -3,6 +3,20 @@
  * Natural e-commerce Thai; missing keys fall back here.
  */
 export const th = {
+  /**
+   * Order-cancellation copy.
+   *
+   * A namespace of its own because it is new, shared by the order page's cancel
+   * dialog and its cancelled state — and because the `orderDetail` block sits
+   * past this large file's safe edit window (the same reason `myAuthPatch` /
+   * `myShopPatch` exist), so new copy is added where it can be added safely.
+   */
+  orderCancel: {
+    back: "กลับไป",
+    dialogDescUnpaid:
+      "หากยกเลิกแล้วจะไม่สามารถชำระเงินสำหรับออเดอร์นี้ได้อีก และสินค้าที่กันไว้จะถูกคืนกลับสู่การขาย",
+    cancelledNotice: "ออเดอร์นี้ถูกยกเลิกแล้ว — ไม่สามารถชำระเงินสำหรับออเดอร์นี้ได้อีก",
+  },
   common: {
     loading: "กำลังโหลด...",
     error: "มีบางอย่างผิดพลาด",

@@ -2,6 +2,13 @@ import type { Dict } from "./index";
 
 /** VelShop English dictionary — mirrors the Thai key shape (typed). */
 export const en: Dict = {
+  /** See the Thai dictionary for why this is its own namespace. */
+  orderCancel: {
+    back: "Go back",
+    dialogDescUnpaid:
+      "Once cancelled this order can no longer be paid, and the stock held for it is released back for sale",
+    cancelledNotice: "This order was cancelled — it can no longer be paid",
+  },
   common: {
     loading: "Loading...",
     error: "Something went wrong",

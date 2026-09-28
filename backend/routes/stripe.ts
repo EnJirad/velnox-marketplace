@@ -80,6 +80,39 @@ function getStripe(): Stripe | null {
 }
 
 /**
+ * Expire an open Checkout Session so a stale Stripe URL can never take money for
+ * an order that is no longer payable.
+ *
+ * WHY THIS EXISTS
+ * A customer who abandons Stripe leaves an OPEN session (Stripe keeps it ~24 h).
+ * If they then cancel the order, the old `checkout.stripe.com` tab — or a
+ * bookmarked URL — would still be chargeable, producing a captured payment on a
+ * cancelled order. Cancellation therefore closes the provider side first.
+ *
+ * Best effort by design and never throws: the order is cancelled whether or not
+ * Stripe answers, and the webhook stays the only authority on payment state. A
+ * session that already completed or expired cannot be expired again, which is a
+ * non-event (its own `checkout.session.expired` / `completed` event is handled
+ * idempotently and can no longer move a cancelled order). Only the session id —
+ * never a secret — reaches the log.
+ */
+export async function expireStripeCheckoutSession(sessionId: string): Promise<boolean> {
+  if (typeof sessionId !== "string" || sessionId.trim() === "") return false;
+  const s = getStripe();
+  if (!s) return false;
+  try {
+    await s.checkout.sessions.expire(sessionId);
+    return true;
+  } catch (err) {
+    console.warn(
+      `[stripe] could not expire checkout session ${sessionId}:`,
+      err instanceof Error ? err.message : "unknown error",
+    );
+    return false;
+  }
+}
+
+/**
  * Prove that THIS process can verify a signature it ought to be able to verify.
  *
  * WHY THIS EXISTS
@@ -321,6 +354,18 @@ async function markPaymentSucceeded(
       [orderId],
     );
 
+    // Read the payment row's status BEFORE touching it, so the warning below can
+    // tell "this delivery is the one that recorded the money" from a repeat of
+    // an already-paid row (Stripe fires checkout.session.completed and
+    // payment_intent.succeeded for the same charge — a duplicate must not warn).
+    const priorPayment = await client.query(
+      `SELECT status FROM payments
+        WHERE order_id = $1 AND provider = 'stripe' AND status <> 'failed'
+        ORDER BY created_at DESC LIMIT 1`,
+      [orderId],
+    );
+    const priorPaymentStatus: string | null = priorPayment.rows[0]?.status ?? null;
+
     await client.query(
       `UPDATE payments
           SET status = 'paid',
@@ -338,6 +383,18 @@ async function markPaymentSucceeded(
     );
 
     const moved = (updated.rowCount ?? 0) > 0;
+    if (!moved && priorPaymentStatus !== "paid") {
+      // Money arrived for an order that is no longer payable (the customer
+      // cancelled it while the rail was still open, or it is already terminal).
+      // The order is deliberately NOT resurrected — the guard above only accepts
+      // a pre-payment status, so a cancelled order can never become paid. The
+      // payment row still records the money, which is exactly what makes the
+      // case refundable; this line is what makes it visible to an operator.
+      // Order id only: no payload, no customer or payment field, no secret.
+      console.warn(
+        `[stripe webhook] payment received for order ${orderId} that is no longer payable — manual review/refund required`,
+      );
+    }
     if (moved) {
       // Reserved stock becomes sold stock exactly once, because only the
       // request that actually moved the order reaches here.

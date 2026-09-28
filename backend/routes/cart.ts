@@ -15,6 +15,7 @@
  *   POST   /api/customer/checkout        — Create order from cart
  *   GET    /api/customer/orders          — List user's orders
  *   GET    /api/customer/orders/:id      — Get order detail
+ *   PATCH  /api/customer/orders/:id/cancel — Customer cancels an unpaid order
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
@@ -22,6 +23,13 @@ import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { normalizePaymentMethod, assertPaymentMethodUsable, PAYMENT_METHOD, type PaymentMethodId } from "../lib/payment-config.js";
+// The Stripe client lives in stripe.ts (one lazy, test-mode-only client). The
+// cancel route closes the provider side of an abandoned Checkout Session with
+// it; no other Stripe logic moves here.
+import { expireStripeCheckoutSession } from "./stripe.js";
+// Item/shipment projections live in lib/order-read.ts (pure readers, extracted
+// from this file so the route handlers stay findable).
+import { fetchOrderItemsForOrders, fetchShipmentsForOrder } from "../lib/order-read.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,135 +46,6 @@ function generateOrderNumber(): string {
   const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
   const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
   return `VNX-${dateStr}-${rand}`;
-}
-
-/**
- * Resolve order item display data (snapshot-first) for one or more orders.
- *
- * Image priority: purchased snapshot → current variant image → product gallery.
- * Variant name priority: purchased snapshot → current option labels → variant name.
- * Products are LEFT JOINed so deleted/unpublished products never break the order view.
- */
-async function fetchOrderItemsForOrders(orderIds: string[]): Promise<Record<string, any[]>> {
-  if (orderIds.length === 0) return {};
-
-  const itemsRes = await query(
-    `SELECT oi.id, oi.order_id, oi.product_id, oi.shop_id, oi.variant_id,
-            oi.quantity, oi.price, oi.subtotal,
-            COALESCE(NULLIF(oi.product_name_snapshot, ''), NULLIF(oi.product_name, ''), p.name, '') AS product_name,
-            oi.variant_name_snapshot AS variant_name_snapshot,
-            COALESCE(oi.image_url_snapshot,
-                     (SELECT url FROM product_images WHERE product_id = oi.product_id ORDER BY sort_order ASC LIMIT 1)) AS image_url,
-            p.unit AS unit, p.status AS product_status
-     FROM order_items oi
-     LEFT JOIN products p ON oi.product_id = p.id
-     WHERE oi.order_id = ANY($1)
-     ORDER BY oi.created_at ASC`,
-    [orderIds],
-  );
-
-  // Resolve current variant names + images for items whose snapshot is missing
-  // (backward compatibility for orders created before snapshots were stored).
-  const variantIds = [...new Set(itemsRes.rows.map((r: any) => r.variant_id).filter(Boolean))];
-  const variantMap = new Map<string, { name: string; image: string | null; labels: string | null }>();
-  if (variantIds.length > 0) {
-    try {
-      const varRes = await query(
-        `SELECT pv.id AS variant_id, pv.name,
-                (SELECT url FROM product_variant_images WHERE variant_id = pv.id ORDER BY sort_order ASC LIMIT 1) AS variant_image,
-                (SELECT string_agg(pov.label, ' / ' ORDER BY pog.sort_order)
-                 FROM product_variant_values pvv
-                 JOIN product_option_values pov ON pvv.option_value_id = pov.id
-                 JOIN product_option_groups pog ON pov.option_group_id = pog.id
-                 WHERE pvv.variant_id = pv.id) AS option_labels
-         FROM product_variants pv
-         WHERE pv.id = ANY($1)`,
-        [variantIds],
-      );
-      for (const row of varRes.rows) {
-        variantMap.set(row.variant_id, { name: row.name, image: row.variant_image, labels: row.option_labels });
-      }
-    } catch {
-      // Variant tables may not exist on legacy databases — snapshots already cover most cases.
-    }
-  }
-
-  const byOrder = new Map<string, any[]>();
-  for (const r of itemsRes.rows) {
-    const variant = r.variant_id ? variantMap.get(r.variant_id) : null;
-    const variantName = r.variant_name_snapshot || variant?.labels || variant?.name || null;
-    const imageUrl = r.image_url || variant?.image || null;
-    const unitPrice = parseFloat(r.price) || 0;
-    const item = {
-      id: r.id,
-      orderId: r.order_id,
-      productId: r.product_id,
-      shopId: r.shop_id,
-      variantId: r.variant_id,
-      productName: r.product_name || "สินค้า",
-      unit: r.unit ?? "",
-      unitPrice,
-      price: unitPrice,
-      quantity: r.quantity,
-      subtotal: parseFloat(r.subtotal) || unitPrice * r.quantity,
-      variantName,
-      imageUrl,
-      productStatus: r.product_status,
-    };
-    const list = byOrder.get(r.order_id) ?? [];
-    list.push(item);
-    byOrder.set(r.order_id, list);
-  }
-  return Object.fromEntries(byOrder);
-}
-
-/**
- * Load shipments for an order with their tracking events.
- * Tracking events are read defensively so legacy DBs without the table
- * still return shipments (events just empty).
- */
-async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
-  const sRes = await query(
-    `SELECT s.id, s.carrier, s.tracking_number, s.status, s.estimated_delivery_date
-     FROM shipments s
-     WHERE s.order_id = $1
-     ORDER BY s.created_at DESC`,
-    [orderId],
-  );
-  const shipments = sRes.rows.map((r: any) => ({
-    id: r.id,
-    carrier: r.carrier,
-    trackingNumber: r.tracking_number,
-    status: r.status,
-    estimatedDeliveryDate: r.estimated_delivery_date,
-    events: [] as any[],
-  }));
-  if (shipments.length === 0) return shipments;
-  try {
-    const eventsRes = await query(
-      `SELECT te.id, te.shipment_id, te.status, te.description, te.location, te.occurred_at
-       FROM tracking_events te
-       WHERE te.shipment_id = ANY($1)
-       ORDER BY te.occurred_at ASC`,
-      [shipments.map((s) => s.id)],
-    );
-    const byShipment = new Map<string, any[]>();
-    for (const e of eventsRes.rows) {
-      const list = byShipment.get(e.shipment_id) ?? [];
-      list.push({
-        id: e.id,
-        status: e.status,
-        description: e.description,
-        location: e.location,
-        occurredAt: e.occurred_at,
-      });
-      byShipment.set(e.shipment_id, list);
-    }
-    for (const s of shipments) s.events = byShipment.get(s.id) ?? [];
-  } catch {
-    // tracking_events may not exist on legacy databases.
-  }
-  return shipments;
 }
 
 /**
@@ -1272,21 +1151,66 @@ export function setupCartRoutes(app: Express): void {
   });
 
   // ── PATCH /api/customer/orders/:orderId/cancel ────────────────────────────
-  // Customer cancels their own order before it ships; stock is restored.
+  // The customer cancels their own order before it ships; reserved stock goes
+  // back to the shelves. `pending_payment` IS cancelable (2026-09-28): that is
+  // the status an order carries while it has a Stripe Checkout Session —
+  // exactly where a customer lands after abandoning Stripe — and the previous
+  // list (`pending`, `confirmed`) refused it, so the order page could offer only
+  // "continue payment" and the customer had no way to call the order off.
   app.patch("/api/customer/orders/:orderId/cancel", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
       const orderId = param(req, "orderId");
 
+      // The statuses a customer may cancel FROM. Deliberately literal: this route
+      // is the server-side authority that the storefront's shared contract
+      // (`CUSTOMER_CANCELABLE_ORDER_STATUSES` in packages/shared) is pinned
+      // against by backend/tests/customer-order-cancel.test.ts, so a divergence
+      // becomes a failing test instead of a button the server refuses.
+      const CANCELABLE_STATUSES = ["pending", "pending_payment", "confirmed"];
+      // Already dead ends: the order can no longer be paid, so there is nothing
+      // to release and a repeat request is answered with the current state
+      // instead of an error (a double click or a retried request is harmless).
+      const TERMINAL_STATUSES = ["cancelled", "payment_failed", "expired"];
+
+      // Order + live payment state in ONE read. Ownership is part of the WHERE,
+      // so another customer's order is a 404 — never a 403 that would confirm the
+      // order exists to someone who does not own it.
       const orderRes = await query(
-        `SELECT id, status FROM orders WHERE id = $1 AND user_id = $2`,
+        `SELECT o.id, o.status,
+                (SELECT status FROM payments
+                  WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS latest_payment_status,
+                (SELECT provider_checkout_session_id FROM payments
+                  WHERE order_id = o.id AND provider = 'stripe'
+                    AND status IN ('pending', 'requires_action')
+                  ORDER BY created_at DESC LIMIT 1) AS open_session_id
+           FROM orders o
+          WHERE o.id = $1 AND o.user_id = $2`,
         [orderId, userId],
       );
       if (orderRes.rows.length === 0) {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Order not found" } });
         return;
       }
-      if (!["pending", "confirmed"].includes(orderRes.rows[0].status)) {
+      const order = orderRes.rows[0];
+
+      if (TERMINAL_STATUSES.includes(order.status)) {
+        res.json({
+          success: true,
+          data: {
+            id: orderId,
+            status: order.status,
+            cancelled: order.status === "cancelled",
+            alreadyFinal: true,
+            stockReleased: false,
+          },
+        });
+        return;
+      }
+
+      // The order state decides: a paid, shipped, delivered or completed order is
+      // not the customer's to cancel any more (a refund is a different flow).
+      if (!CANCELABLE_STATUSES.includes(order.status)) {
         res.status(400).json({
           success: false,
           error: { code: "INVALID_STATUS", message: "Order can only be cancelled before it ships" },
@@ -1294,16 +1218,101 @@ export function setupCartRoutes(app: Express): void {
         return;
       }
 
-      await withTransaction(async (client) => {
-        await client.query(
-          `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
-          [orderId],
+      // Payment state is checked BEFORE the order is moved. A `paid` payment on an
+      // order row that lags one transition behind must never be "cancelled", and a
+      // charge already in flight must be allowed to settle first — money taken for
+      // a cancelled order is a refund problem, not a cancellation.
+      if (order.latest_payment_status === "paid") {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: "ORDER_ALREADY_PAID",
+            message: "This order has already been paid. Please request a refund instead of cancelling.",
+          },
+        });
+        return;
+      }
+      if (order.latest_payment_status === "processing") {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: "PAYMENT_IN_PROGRESS",
+            message: "A payment for this order is being processed. Please try again in a moment.",
+          },
+        });
+        return;
+      }
+
+      // Close the provider side FIRST. Expiring the abandoned Checkout Session
+      // makes a new charge from the old Stripe tab impossible before the order is
+      // marked cancelled, so the window in which a stale session could pay a
+      // cancelled order is as small as the provider allows. Best effort: the
+      // cancellation proceeds either way, and the webhook stays the only
+      // authority on payment state.
+      if (order.open_session_id) {
+        await expireStripeCheckoutSession(order.open_session_id);
+      }
+
+      const outcome = await withTransaction(async (client) => {
+        // One guarded UPDATE is the race gate. Under READ COMMITTED a concurrent
+        // cancel blocks on the row lock and then re-evaluates the WHERE clause
+        // against the committed row, where the status is no longer cancelable —
+        // so of two simultaneous requests exactly one actually moves the order,
+        // and the loser cannot release stock a second time.
+        const claim = await client.query(
+          `UPDATE orders SET status = 'cancelled', updated_at = NOW()
+            WHERE id = $1 AND status = ANY($2::text[])
+            RETURNING id`,
+          [orderId, CANCELABLE_STATUSES],
         );
-        // Restore stock atomically via the shared inventory-release path.
-        // Idempotent: the inventory_released flag ensures at-most-once
-        // restoration regardless of how many actors call cancel.
-        await releaseOrderInventory(client, orderId);
+        const moved = claim.rows.length > 0;
+
+        if (moved) {
+          // The abandoned attempt must not stay "awaiting payment" on a cancelled
+          // order. `paid` rows are never rewritten here — that would falsify
+          // money state.
+          await client.query(
+            `UPDATE payments
+                SET status = 'cancelled', failure_code = 'ORDER_CANCELLED',
+                    failure_message = 'The customer cancelled this order before payment.',
+                    updated_at = NOW()
+              WHERE order_id = $1 AND provider = 'stripe'
+                AND status IN ('pending', 'requires_action')`,
+            [orderId],
+          );
+        }
+
+        // Restore stock via the ONE inventory-release path. Idempotent twice over:
+        // only the claim winner reaches a changed status, and
+        // releaseOrderInventory itself atomically claims the `inventory_released`
+        // flag inside THIS transaction. A repeated cancel, a retried request, a
+        // concurrent cancel and a late Stripe webhook can each release stock AT
+        // MOST ONCE — and a release is refused outright for an order that has
+        // become `paid` in the meantime (the status guard inside
+        // releaseOrderInventory), so stock is never handed back for an order that
+        // is going to ship.
+        const released = await releaseOrderInventory(client, orderId);
+        return { moved, released };
       });
+
+      if (!outcome.moved) {
+        // Lost the race (a concurrent cancel already did the work) or the order
+        // moved on (a payment landed first). Report the authoritative state
+        // instead of claiming a cancellation that did not happen.
+        const current = await query(`SELECT status FROM orders WHERE id = $1`, [orderId]);
+        const status: string = current.rows[0]?.status ?? "unknown";
+        res.json({
+          success: true,
+          data: {
+            id: orderId,
+            status,
+            cancelled: status === "cancelled",
+            alreadyFinal: true,
+            stockReleased: outcome.released,
+          },
+        });
+        return;
+      }
 
       // Publish the transition on the ONE order channel so every open session
       // follows it (the VelCenter orders tab and the buyer's other tabs) — the
@@ -1311,12 +1320,21 @@ export function setupCartRoutes(app: Express): void {
       try {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
           orderId,
-          from: orderRes.rows[0].status,
+          from: order.status,
           to: "cancelled",
         });
       } catch { /* best-effort — a committed cancel never fails on a socket error */ }
 
-      res.json({ success: true, data: { id: orderId, status: "cancelled" } });
+      res.json({
+        success: true,
+        data: {
+          id: orderId,
+          status: "cancelled",
+          cancelled: true,
+          alreadyFinal: false,
+          stockReleased: outcome.released,
+        },
+      });
     } catch (err) {
       console.error("[orders] cancel error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to cancel order" } });

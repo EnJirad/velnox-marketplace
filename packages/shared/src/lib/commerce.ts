@@ -509,6 +509,91 @@ export function orderStripePayability(order: OrderPayabilityInput | null | undef
 }
 
 // ---------------------------------------------------------------------------
+// customer cancellation contract
+// ---------------------------------------------------------------------------
+/**
+ * The order statuses a customer may cancel through
+ * `PATCH /api/customer/orders/:orderId/cancel`.
+ *
+ * `pending` is an order that was created but never taken to Stripe;
+ * `pending_payment` is one that HAS a (possibly abandoned) Checkout Session —
+ * the state a customer lands in after leaving Stripe, and the one that used to
+ * offer only "continue payment"; `confirmed` is accepted by the seller and not
+ * yet shipped. Everything else is either paid/shipped (the seller now owns the
+ * decision) or already terminal.
+ *
+ * `backend/tests/customer-order-cancel.test.ts` pins this list against the
+ * literal list in `backend/routes/cart.ts`, so the storefront can never offer a
+ * cancel the server would refuse (or hide one it would accept).
+ */
+export const CUSTOMER_CANCELABLE_ORDER_STATUSES = ["pending", "pending_payment", "confirmed"] as const;
+export type CustomerCancelableOrderStatus = (typeof CUSTOMER_CANCELABLE_ORDER_STATUSES)[number];
+
+/** Is this a status the customer may still cancel from? */
+export function isOrderCancelableByCustomer(status: unknown): boolean {
+  return typeof status === "string" && (CUSTOMER_CANCELABLE_ORDER_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Payment statuses that make cancellation unsafe.
+ *
+ * `paid` means money moved, so cancelling here would need a refund, not a
+ * cancellation — the backend refuses it. `processing` means a charge is in
+ * flight (a card being authorised), where cancelling could leave a captured
+ * payment attached to a dead order.
+ */
+const PAYMENT_BLOCKS_CANCELLATION = new Set(["paid", "processing"]);
+
+/** The smallest order shape the cancellation decision needs. */
+export interface OrderCancelabilityInput {
+  status: unknown;
+  /** `orders` list / detail expose the latest payment status. */
+  paymentStatus?: unknown;
+  /** `orders` detail exposes every payment, newest first. */
+  payments?: Array<{ status?: unknown }> | null;
+}
+
+export interface OrderCustomerCancelability {
+  /** The backend would cancel this order right now. */
+  cancelable: boolean;
+  /**
+   * Why not — `"payment_in_progress"` when money is paid or being authorized,
+   * `"not_cancelable"` when the order status is outside the cancelable set
+   * (paid, shipped, or already terminal). Callers show a reason instead of a
+   * button that would be refused.
+   */
+  reason: "payment_in_progress" | "not_cancelable" | null;
+}
+
+/**
+ * Decide whether the customer may cancel this order, mirroring the backend rule
+ * in `PATCH /api/customer/orders/:orderId/cancel`.
+ *
+ * This is the ONE rule the order page's cancel button reads, so it can never
+ * appear where the backend answers `INVALID_STATUS`/`ORDER_ALREADY_PAID`, and
+ * never disappear where the backend would accept the cancellation. The payment
+ * half is checked FIRST: a `pending_payment` order whose payment already says
+ * `paid` (an order row lagging one transition behind) must not offer cancel.
+ */
+export function orderCustomerCancelability(
+  order: OrderCancelabilityInput | null | undefined,
+): OrderCustomerCancelability {
+  if (!order) return { cancelable: false, reason: "not_cancelable" };
+
+  const statuses = [
+    order.paymentStatus,
+    ...(order.payments ?? []).map((p) => p?.status),
+  ].filter((s): s is string => typeof s === "string");
+  if (statuses.some((s) => PAYMENT_BLOCKS_CANCELLATION.has(s.trim().toLowerCase()))) {
+    return { cancelable: false, reason: "payment_in_progress" };
+  }
+
+  return isOrderCancelableByCustomer(order.status)
+    ? { cancelable: true, reason: null }
+    : { cancelable: false, reason: "not_cancelable" };
+}
+
+// ---------------------------------------------------------------------------
 // subscriptions (VelRepeat)
 // ---------------------------------------------------------------------------
 export interface StoreSubscription {
