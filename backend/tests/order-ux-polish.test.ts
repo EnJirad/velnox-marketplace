@@ -31,12 +31,15 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 import {
+  formatPaymentCountdown,
   getOrderStatusMeta,
   getPaymentStatusBadge,
   ORDER_PROGRESS_STAGES,
   ORDER_STATUS_META,
   orderProgressStageIndex,
   orderStatusI18nKey,
+  paymentReservationPhase,
+  paymentReservationState,
 } from "../../packages/shared/src/lib/commerce.ts";
 import { translations } from "../../packages/shared/src/lib/i18n/locales/index";
 
@@ -191,5 +194,92 @@ describe("order UX — address, retry and the reservation", () => {
     expect(list).toContain("statusLabel");
     expect(list).toContain('t("orderReservation.expiredTitle")');
     expect(list).not.toContain("formatPaymentCountdown(-");
+  });
+});
+
+describe("order UX — the reservation deadline must reach the screen (regression)", () => {
+  test("an unpaid order 30 minutes out counts down; one second past it never goes negative", () => {
+    const now = Date.now();
+
+    // The happy path the storefront renders for a fresh unpaid order.
+    const fresh = paymentReservationState(
+      { status: "pending_payment", paymentExpiresAt: now + 30 * 60_000 },
+      now,
+    );
+    expect(fresh.hasWindow).toBe(true);
+    expect(fresh.expired).toBe(false);
+    expect(fresh.remainingMs).toBe(1_800_000);
+    expect(formatPaymentCountdown(fresh.remainingMs)).toBe("30:00");
+    expect(
+      paymentReservationPhase({ status: "pending_payment", paymentExpiresAt: now + 30 * 60_000 }, now),
+    ).toBe("active");
+
+    // A later read of the same order keeps ticking down (no new deadline).
+    const later = paymentReservationState(
+      { status: "pending_payment", paymentExpiresAt: now + 1_740_000 },
+      now,
+    );
+    expect(later.remainingMs).toBe(1_740_000);
+    expect(formatPaymentCountdown(later.remainingMs)).toBe("29:00");
+
+    // The last seconds are the urgent state, not an anomaly.
+    expect(
+      paymentReservationPhase({ status: "pending", paymentExpiresAt: now + 10_000 }, now),
+    ).toBe("urgent");
+
+    // One second past the deadline: expired, zero left, and the clock reads 00:00.
+    const lapsed = paymentReservationState(
+      { status: "pending_payment", paymentExpiresAt: now - 1_000 },
+      now,
+    );
+    expect(lapsed.hasWindow).toBe(true);
+    expect(lapsed.expired).toBe(true);
+    expect(lapsed.remainingMs).toBe(0);
+    expect(formatPaymentCountdown(lapsed.remainingMs)).toBe("00:00");
+    expect(formatPaymentCountdown(lapsed.remainingMs).startsWith("-")).toBe(false);
+    expect(
+      paymentReservationPhase({ status: "pending_payment", paymentExpiresAt: now - 1_000 }, now),
+    ).toBe("expired");
+  });
+
+  test("the deadline cannot be lost between the API and the two order pages", () => {
+    // 1. BOTH read routes map the column onto the camelCase field the app expects.
+    const cart = read("backend/routes/cart.ts");
+    const mappings = cart.match(/paymentExpiresAt: \w+\.payment_expires_at \? new Date\(/g) ?? [];
+    expect(mappings.length).toBe(2);
+    // The reads select `o.*`, so a database that predates migration 048 yields
+    // `payment_expires_at: undefined` → `null` instead of taking the route down.
+    expect(cart.match(/SELECT o\.\*/g)?.length).toBeGreaterThanOrEqual(2);
+
+    // 2. The client-side type carries the field, so it survives the transformation.
+    expect(read("packages/shared/src/lib/commerce.ts")).toContain(
+      "paymentExpiresAt?: number | null;",
+    );
+
+    // 3. Both pages derive their countdown from the object the API returned.
+    expect(read(ORDER_DETAIL_PAGE)).toContain("paymentReservationState(order, now)");
+    expect(read(MY_ORDERS_PAGE)).toContain("paymentReservationState(order, now)");
+
+    // 4. Nothing on the client invents a deadline, and no second countdown exists.
+    for (const page of [ORDER_DETAIL_PAGE, MY_ORDERS_PAGE]) {
+      const src = read(page);
+      expect(src).not.toMatch(/paymentExpiresAt:\s*(Date\.now\(\)|new Date)/);
+      expect((src.match(/setInterval\(\(\) => setNow\(Date\.now\(\)\), 1000\)/g) ?? []).length).toBe(1);
+      expect(src).toContain("clearInterval");
+    }
+  });
+
+  test("the clock never depends on which payment method the order carries", () => {
+    // The reservation is about held stock, not about Stripe's rail: a CARD order,
+    // a PromptPay order and an order with no recorded method all count down.
+    const detail = read(ORDER_DETAIL_PAGE);
+    expect(detail).toContain(
+      'const reservationOpen = reservationPhase === "active" || reservationPhase === "urgent";',
+    );
+    expect(detail).not.toMatch(/reservationOpen\s*=.*paymentMethod/);
+    const list = read(MY_ORDERS_PAGE);
+    expect(list).not.toMatch(/reservationPhase.*paymentMethod/);
+    // …and the pay action is offered beside it regardless of the method.
+    expect(detail).toContain("<ResumePaymentButton");
   });
 });
