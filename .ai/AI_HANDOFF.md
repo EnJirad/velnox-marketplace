@@ -537,107 +537,25 @@ production-verification pass, §8,
 §2's verification system →
 `.ai/context/verification.md` plus §15/§16's payment narratives →
 `.ai/context/payment.md` + §18. 55 KB is the hard limit where editing stops working
-(measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not). **NEXT SPLIT: done — §27 archived 2026-09-27 by §31** (an archived record); §28/§29/§30 are the live records. **Done
-2026-09-27:** §21–§22 stubs above, and §23–§26 moved verbatim to
+(measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not). **Done 2026-09-27:** §21–§22 stubs above, and §23–§26 moved verbatim to
 [`history/archive/AI_Handoff-2026-09-27-closed-records.md`](history/archive/AI_Handoff-2026-09-27-closed-records.md).
+**Done 2026-09-28:** §27–§36 collapsed into the ONE pointer note below (each already had a full
+record in `history/archive/`), which is what kept this file editable for §39. When appending, move a
+superseded record to `history/archive/` and point at it — do not grow this file.
 Keep §6 (gaps), §9.4/§9.5, the §14 stub, and §18's BLOCKED statements.
 
-## 27. Stripe Sandbox/Test-Mode audit (2026-09-27) — archived; configuration since COMPLETED
+## 27–36. Archived records (2026-09-27 → 2026-09-28)
 
-**Archived verbatim** → [`history/archive/AI_Handoff-2026-09-27-closed-records.md`] (the
-audit table, credential-gate proof, executed-evidence log incl. CI run `36305688863`, the
-env-var documentation change, and the Connect finding). Configuration is DONE (owner);
-`.env.example` still lacks the Stripe/COD lines (protected file — owner edit). That pass
-ended: audit PASS, no code changed, sandbox E2E BLOCKED — §31 is the live settlement
-record.
-
-## 28. velShop MyOrders status contract + velShop cart selection (2026-09-27) — archived
-
-**Archived verbatim** → [`history/archive/AI_Handoff-2026-09-27-velshop-orders-cart.md`](history/archive/AI_Handoff-2026-09-27-velshop-orders-cart.md)
-(sections 28 and 29 together, 2026-09-28, for edit headroom). What still stands: render
-`orders.status` only through `getOrderStatusMeta()` (the column is free text and also carries the
-payment-lifecycle values this backend writes), and cart selection is derived client state that
-calls no API. Both are pinned by `order-status-contract.test.ts` / `cart-selection.test.ts`.
-Browser E2E for `/orders` and `/cart` stayed open (a signed-in Google session is needed).
-
----
-
-## 29. velShop cart — marketplace selection + sticky summary (2026-09-27) — archived
-
-Moved together with §28 → [`history/archive/AI_Handoff-2026-09-27-velshop-orders-cart.md`](history/archive/AI_Handoff-2026-09-27-velshop-orders-cart.md).
-
----
-
-## 30. VelShop checkout → Stripe in ONE press + resume payment (2026-09-27) — archived
-
-**Archived verbatim** (2026-09-27, to keep this file editable) →
-[`history/archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md`](history/archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md).
-One-press CARD/PromptPay checkout + the shared `ResumePaymentButton`, and the rule it
-established that still stands: `POST /api/payments/stripe/webhook` is the **only** writer of
-`orders.status = 'paid'`. Its browser E2E against Stripe remained open, and the payment
-narrative lives in `.ai/context/payment.md`.
-
----
-
-## 31. PromptPay settlement diagnostic — order stuck `pending_payment` (2026-09-27) — archived
-
-Full record: [`history/archive/AI_Handoff-2026-09-27-promptpay-settlement.md`](history/archive/AI_Handoff-2026-09-27-promptpay-settlement.md)
-— diagnostic only (nothing was changed): the global webhook path had demonstrably settled an
-order (§28), so the failure was on the PromptPay-specific leg, and the decisive reads
-(endpoint `enabled_events`, `payment_events` rows, the session's `payment_status`) are all
-owner-side. Superseded for current state by §33. Archived 2026-09-28 for edit headroom.
-
----
-
-## 32. Stripe webhook never answers — unbounded DB waits (2026-09-27) — archived
-
-**Root cause:** the pool bounded only connection ACQUISITION; node-postgres has no per-query
-deadline, so a statement the server never finished left the webhook pending until the caller
-gave up (the Stripe CLI aborts at 30 s) — and `pool.on("error")` called `process.exit(-1)`.
-**Fix:** `query_timeout: 15000` (in-process only) + a non-fatal pool error handler; the webhook
-logs secret-free stage timings. Full record:
-[`history/archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md`](./history/archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md).
-
----
-
-## 33. Webhook 400 "No signatures found matching the expected signature" (2026-09-27) — archived
-
-**Verdict:** the raw body was correct (`express.raw` really is in front of this route — proven by
-a 150 KB body answering 500 there and 404 elsewhere); a CLI `stripe listen` forward **must** 400
-because it signs with its own per-session secret, so the only real-delivery cause is a
-`STRIPE_WEBHOOK_SECRET` value mismatch. Full record:
-[`history/archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md`](./history/archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md).
-
----
-
-## 34. DB latency — the pool idled down to zero (2026-09-28) — archived
-
-**Root cause:** connection establishment, not a slow query and not a missing index. `pool.query()`
-reported checkout + execution as ONE number, so the ~1.3 s TCP/TLS/auth handshake to Neon was
-charged to whichever statement opened an empty pool (measured in production: 1.627/1.738 s cold →
-0.388/0.357 s warm on the same endpoint). **Fix:** `min: 1` warm floor + `maxLifetimeSeconds:
-1800` + acquire/execute split logging (`classifySlowQuery()`). No index was added. Full record:
-[`history/archive/AI_Handoff-2026-09-28-db-pool-latency.md`](./history/archive/AI_Handoff-2026-09-28-db-pool-latency.md).
-
----
-
-## 35. Customer order cancellation (2026-09-28) — archived
-
-Full record: [`history/archive/AI_Handoff-2026-09-28-customer-cancellation.md`](./history/archive/AI_Handoff-2026-09-28-customer-cancellation.md)
-(one shared cancel rule for button + server, the guarded claim, the ONE release path, the
-`orderCancel` i18n namespace, the 55 KiB tooling finding). Still open there: re-run its 14
-`TEST_DATABASE_URL`-gated cases; browser check of the dialog (th/en/my). The two failures that
-reddened `main` were test-side and are fixed in **§37**.
-
----
-
-## 36. Dynamic Payment Reservation V1 — an unpaid order holds stock for a risk-based window (2026-09-28) — superseded by §38
-
-The v1 policy derived the window from stock cover, 7-day sales velocity and `products.featured`
-(15/20/30/45/60 min). **Part 1 replaced it with a fixed 30 minutes** (§38): the duration must not
-depend on demand, popularity or behaviour signals. The expiry sweep, the ONE release path, the race
-guards and the columns it introduced all still stand. Full record:
-[`history/archive/AI_Handoff-2026-09-28-dynamic-reservation-v1.md`](./history/archive/AI_Handoff-2026-09-28-dynamic-reservation-v1.md).
+Each is recorded in full under [`history/archive/`](history/archive/) (dated index:
+[`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)): §27 the Stripe sandbox/test-mode
+audit (`AI_Handoff-2026-09-27-stripe-sandbox-audit.md`); §28–§29 the velShop order-status contract
+and the cart selection UI (`…-velshop-orders-cart.md`); §30 checkout → Stripe in one press + resume
+payment (`…-velshop-checkout-onepress.md`); §31 the PromptPay settlement diagnostic
+(`…-promptpay-settlement.md`); §32–§33 the webhook stall + signature boundary
+(`…-stripe-webhook-stall-and-signature.md`); §34 the pool-latency finding (`…-db-pool-latency.md`);
+§35 customer order cancellation (`…-customer-cancellation.md`, its two owner-side items still open);
+§36 the superseded risk-based reservation v1 (`…-dynamic-reservation-v1.md`). The deploy-order net
+they led to is §37; the order surfaces themselves are recorded by §38 and §39.
 
 ---
 
@@ -819,3 +737,60 @@ SQL Editor).
 
 **Still open (owner-side).** (1) A browser pass over the new order page, the list countdown and the
 method chooser in th/en/my. (2) The production migration above.
+
+## 39. Order UX polish — status, progress, address, language (2026-09-28)
+
+**Reported (ORDER UX FINAL POLISH — the last task before VelRepeat).** Make the order list and order
+page clear, consistent and multilingual for every unpaid order: per-order countdowns, readable
+status, ONE simple progress line, the ORDER's own address, a clearer retry, and no hard-coded Thai.
+The 30-minute reservation, the sweep and the release path are untouched.
+
+**Countdown position + states.** Each list card keeps its OWN countdown, placed at the bottom-left of
+THAT card (status badge, then the countdown, then one hurry note inside the last 3 minutes) so a
+running clock is never ambiguous. ONE presentation clock per page: every card derives its own
+remaining time from its own `paymentExpiresAt`. A lapsed card shows the expired state and refetches
+once (the sweep may already have released the stock); `visibilitychange` still re-reads the API.
+Nothing in the browser writes an order status or a deadline.
+
+**Readable, localized status.** The order-status text came from `ORDER_STATUS_META.label`, which is
+Thai-only — so English/Myanmar rendered Thai on both surfaces. NEW `orderStatusI18nKey()` (shared)
+maps `orders.status` → `orderStatus.*`, NEW `orderStatus` namespace (th/en/my) covers all 11
+statuses + `unknown`, and both pages render the translated label. The payment pill now uses the
+semantic badge tokens (`getPaymentStatusBadge`) instead of a white-on-white badge. The Burmese table
+also gained the six order-page strings that were still English (`myOrderPatch.orderDetail` in
+`locales/index.ts`; that patch object can no longer carry the outer `satisfies Partial<Dict>`,
+which a partially-filled namespace cannot satisfy).
+
+**ONE progress line, real statuses.** The old five-icon stepper (no payment stage) is replaced by
+`ORDER_PROGRESS_STAGES` = placed → payment → processing → shipped → delivered, with
+`orderProgressStageIndex()` as the single mapping (`pending`/`pending_payment` → 1,
+`paid`/`confirmed` → 2, `shipped` → 3, `delivered`/`completed` → 4). Terminal orders
+(`cancelled`, `expired`, `payment_failed`, `refunded`) return -1 and get the notice that explains
+them instead of a line implying progress. One `<ol>`, no nested bars; on a narrow screen only the
+current stage label shows (all five names stay in the DOM for screen readers) and
+`aria-current="step"` marks the stage. Order status and payment status are separate concepts, each
+with its own visible caption.
+
+**Address = the order's snapshot.** The delivery section renders `orders.shipping_address` exactly as
+stored (`addressSnapshot`), one line per real field, omitting fields the snapshot lacks, with a
+labelled recipient and the country translated only for `TH`. It never reads the profile/address
+book, so changing the default address later cannot rewrite an existing order.
+
+**Retry + terminal states.** `ResumePaymentButton` reads "Pay again" (`orderReservation.payAgain`)
+and still opens the chooser from `GET /api/payments/methods`. A `payment_failed` order gets its own
+notice and NO countdown and NO pay button — the backend released the stock at that point, so a
+deadline or a pay button would promise a payment the server refuses; "buy again" is the way forward.
+
+**Verified here.** `typecheck` 4/4 · backend `tsc` 0 · `build:velshop` 0 · `i18n:check`
+th=en=my=**1369** · `git diff --check` clean · NEW `backend/tests/order-ux-polish.test.ts`
+**10 pass / 0 fail** (one-line progress contract + stage mapping, terminal → -1, a localized label
+for every status in all three locales, readable badge tokens incl. the unknown case, both surfaces
+render the localized label, the detail page uses the order's OWN snapshot and never a profile
+address, a failed payment keeps the original deadline and no fabricated one, per-card countdown) ·
+reservation + checkout suites **97 pass / 23 skip / 0 fail** · full backend suite **799 pass /
+119 skip / 1 fail**, the same pre-existing `test-database-isolation` sandbox probe (it re-reads this
+workspace's `.env`; CI, with no `.env`, passes).
+
+**Still open (owner-side).** (1) The browser pass over both order surfaces and the method chooser in
+th/en/my. (2) The production migration (§37): without `payment_expires_at` there is no countdown in
+production, and the polish only changes what is rendered when the column exists.

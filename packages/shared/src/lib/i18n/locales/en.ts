@@ -11,11 +11,12 @@ export const en: Dict = {
   },
   /** Payment-reservation copy — see the Thai dictionary for why it lives here. */
   orderReservation: {
-    payWithin: "Pay within {time}",
-    remaining: "{time} remaining",
-    expiresIn: "Payment expires in",
+    payWithin: "Please pay within {time}",
+    remaining: "Time remaining {time}",
+    expiresIn: "Please pay within",
     urgentNote: "Almost out of time — please pay before the window closes.",
     payNow: "Pay now",
+    payAgain: "Pay again",
     windowNote:
       "If payment is not completed in time, the items we are holding will be released for other customers automatically.",
     expiredTitle: "Payment window expired",
@@ -691,7 +692,7 @@ export const en: Dict = {
 
   checkoutCancel: {
     title: "Payment cancelled",
-    description: "Your order has not been paid. You can return to complete payment later.",
+    description: "You left before the payment completed — this order is NOT cancelled and it still holds its items until the payment window closes, so you can come back and pay.",
     backToCart: "Back to cart",
   },
 
@@ -733,10 +734,16 @@ export const en: Dict = {
     paymentTitle: "Payment",
     itemsTitle: "Items in this order",
     deliveryTitle: "Delivery",
+    shipTo: "Deliver to",
+    recipientFallback: "Recipient",
+    countryTH: "Thailand",
     summaryTitle: "Order summary",
     discount: "Discount",
     paymentMethod: "Payment method",
     paymentStatus: "Payment status",
+    orderStatusLabel: "Order status",
+    paymentFailedTitle: "Payment failed",
+    paymentFailedDesc: "This payment did not go through and the items we were holding have been released. Please place a new order if you still want them.",
     actionsTitle: "Actions",
     choosePaymentDescAny: "Choose how you want to pay and we'll take you straight to Stripe Checkout.",
     continueAction: "Continue",
@@ -829,12 +836,27 @@ export const en: Dict = {
     failed: "Payment failed",
   },
 
-  orderSteps: {
-    pending: "Awaiting review",
-    confirmed: "Store preparing",
-    shipped: "In transit",
+  orderStatus: {
+    pending: "Pending review",
+    pending_payment: "Payment pending",
+    paid: "Paid",
+    payment_failed: "Payment failed",
+    confirmed: "Confirmed",
+    shipped: "Shipped",
     delivered: "Delivered",
     completed: "Completed",
+    refunded: "Refunded",
+    expired: "Payment expired",
+    cancelled: "Cancelled",
+    unknown: "Unknown status",
+  },
+
+  orderSteps: {
+    placed: "Placed",
+    payment: "Payment",
+    processing: "Processing",
+    shipped: "Shipped",
+    delivered: "Delivered",
   },
 
   tracking: {

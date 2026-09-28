@@ -404,6 +404,21 @@ export function getOrderStatusMeta(status: unknown): OrderStatusMeta {
 }
 
 /**
+ * The i18n key that names an order status.
+ *
+ * `ORDER_STATUS_META.label` is the seller-side Thai fallback; the customer apps
+ * must render the status in the shopper's language, so the badge text comes from
+ * `orderStatus.*` and this function is the single place that maps
+ * `orders.status` → key. An unrecognised status resolves to `orderStatus.unknown`
+ * rather than a missing key.
+ */
+export function orderStatusI18nKey(status: unknown): string {
+  return typeof status === "string" && Object.prototype.hasOwnProperty.call(ORDER_STATUS_META, status)
+    ? `orderStatus.${status}`
+    : "orderStatus.unknown";
+}
+
+/**
  * Allowed next statuses per the order state machine (backend enforces too).
  *
  * The payment-lifecycle keys mirror `normalizeSellerOrderStatus()`
@@ -478,6 +493,137 @@ export function stripeMethodForPaymentMethod(method: unknown): StripeResumableMe
  * would charge the customer for an order they chose to pay on delivery.
  */
 const NON_STRIPE_PAYMENT_METHODS = new Set(["cod", "cash_on_delivery"]);
+
+// ---------------------------------------------------------------------------
+// payment-status tokens — the sibling of ORDER_STATUS_META
+// ---------------------------------------------------------------------------
+/**
+ * Badge treatment per PAYMENT status.
+ *
+ * STYLING ONLY, on purpose: the LABEL always comes from `paymentLabels.*` in the
+ * dictionaries, so no Thai copy is duplicated here (the order-status meta
+ * predates that split and keeps its labels for the seller/center apps). One
+ * palette per meaning, using the same tailwind steps + ring the design system
+ * documents for badges (`VELNOX_DESIGN_THEME.md` §16, and every value below is a
+ * palette step that is already in use in this file):
+ *
+ *   amber  = waiting on the customer (pending / requires_action)
+ *   sky    = the provider is working (processing)
+ *   emerald= settled (paid)
+ *   violet = money went back (refunded / partially_refunded)
+ *   rose   = it failed (failed)
+ *   slate  = neutral / nothing will happen (unpaid, cancelled)
+ *
+ * WHY THIS EXISTS — the order page used to render the payment status as a plain
+ * white pill with a faint ring, which on a white card is invisible: the status
+ * "blended into the background". A status must never be communicated by colour
+ * alone either, so the caller always renders the translated LABEL inside it.
+ */
+export const PAYMENT_STATUS_BADGE: Record<string, { badge: string; dot: string }> = {
+  unpaid: {
+    badge: "bg-slate-100 text-slate-600 ring-slate-600/15 hover:bg-slate-100",
+    dot: "bg-slate-400",
+  },
+  pending: {
+    badge: "bg-amber-50 text-amber-700 ring-amber-600/15 hover:bg-amber-50",
+    dot: "bg-amber-500",
+  },
+  requires_action: {
+    badge: "bg-amber-50 text-amber-700 ring-amber-600/15 hover:bg-amber-50",
+    dot: "bg-amber-500",
+  },
+  processing: {
+    badge: "bg-sky-50 text-sky-700 ring-sky-600/15 hover:bg-sky-50",
+    dot: "bg-sky-500",
+  },
+  paid: {
+    badge: "bg-emerald-50 text-emerald-700 ring-emerald-600/15 hover:bg-emerald-50",
+    dot: "bg-emerald-500",
+  },
+  partially_refunded: {
+    badge: "bg-violet-50 text-violet-700 ring-violet-600/15 hover:bg-violet-50",
+    dot: "bg-violet-500",
+  },
+  refunded: {
+    badge: "bg-violet-50 text-violet-700 ring-violet-600/15 hover:bg-violet-50",
+    dot: "bg-violet-500",
+  },
+  failed: {
+    badge: "bg-rose-50 text-rose-700 ring-rose-600/15 hover:bg-rose-50",
+    dot: "bg-rose-500",
+  },
+  cancelled: {
+    badge: "bg-slate-100 text-slate-500 ring-slate-600/10 hover:bg-slate-100",
+    dot: "bg-slate-400",
+  },
+};
+
+/**
+ * A payment status this build does not know (or a missing one): neutral slate,
+ * exactly like `UNKNOWN_ORDER_STATUS_META`. Returned by value, so callers can
+ * render `badge` unconditionally and can never hit `undefined.badge`.
+ */
+export const UNKNOWN_PAYMENT_STATUS_BADGE = {
+  badge: "bg-slate-100 text-slate-500 ring-slate-600/10 hover:bg-slate-100",
+  dot: "bg-slate-400",
+};
+
+/** Resolve the badge tokens for any payment status the API may return. */
+export function getPaymentStatusBadge(status: unknown): { badge: string; dot: string } {
+  if (
+    typeof status === "string" &&
+    Object.prototype.hasOwnProperty.call(PAYMENT_STATUS_BADGE, status)
+  ) {
+    return PAYMENT_STATUS_BADGE[status];
+  }
+  return UNKNOWN_PAYMENT_STATUS_BADGE;
+}
+
+// ---------------------------------------------------------------------------
+// customer-facing order progress
+// ---------------------------------------------------------------------------
+/**
+ * The five stages the customer-facing progress line shows, in order.
+ *
+ * A PRESENTATION grouping of the real `orders.status` values — it invents no
+ * state and renames nothing in the backend (`orders.status` stays free text, and
+ * the fulfilled/payment lifecycles stay separate):
+ *
+ *   placed     ← `pending`            the order exists, payment not started
+ *   payment    ← `pending_payment`    waiting at Stripe / the webhook
+ *   processing ← `confirmed`          the store accepted and is preparing it
+ *   shipped    ← `shipped`
+ *   delivered  ← `delivered` | `completed`
+ *
+ * An order that is paid sits at `processing` (payment done, waiting for the
+ * store); a terminal order (`cancelled`, `expired`, `payment_failed`, `refunded`)
+ * has NO stage — the page replaces the line with the notice that explains it.
+ */
+export const ORDER_PROGRESS_STAGES = ["placed", "payment", "processing", "shipped", "delivered"] as const;
+
+export type OrderProgressStage = (typeof ORDER_PROGRESS_STAGES)[number];
+
+/**
+ * Index of the CURRENT stage in `ORDER_PROGRESS_STAGES`, or `-1` when the order
+ * is terminal and must not be drawn as a progress line at all.
+ */
+export function orderProgressStageIndex(status: unknown): number {
+  switch (typeof status === "string" ? status : "") {
+    case "pending":
+    case "pending_payment":
+      return 1;
+    case "paid":
+    case "confirmed":
+      return 2;
+    case "shipped":
+      return 3;
+    case "delivered":
+    case "completed":
+      return 4;
+    default:
+      return -1;
+  }
+}
 
 /** The smallest order shape the payability decision needs. */
 export interface OrderPayabilityInput {

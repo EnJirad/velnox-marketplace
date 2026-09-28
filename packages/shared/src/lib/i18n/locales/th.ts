@@ -26,11 +26,12 @@ export const th = {
    * `formatPaymentCountdown()` (shared), so every locale renders the same clock.
    */
   orderReservation: {
-    payWithin: "ชำระเงินภายใน {time}",
+    payWithin: "กรุณาชำระภายใน {time}",
     remaining: "เหลืออีก {time}",
-    expiresIn: "ชำระเงินภายใน",
+    expiresIn: "กรุณาชำระเงินภายใน",
     urgentNote: "ใกล้หมดเวลาแล้ว กรุณาชำระเงินก่อนหมดเขต",
     payNow: "ชำระเงินตอนนี้",
+    payAgain: "ชำระเงินอีกครั้ง",
     windowNote:
       "หากไม่ชำระภายในเวลานี้ ระบบจะคืนสินค้าที่กันไว้ให้ลูกค้าคนอื่นโดยอัตโนมัติ",
     expiredTitle: "เวลาชำระเงินหมดแล้ว",
@@ -708,7 +709,7 @@ export const th = {
 
   checkoutCancel: {
     title: "การชำระเงินถูกยกเลิก",
-    description: "คำสั่งซื้อของคุณยังไม่ได้รับการชำระเงิน คุณสามารถกลับมาชำระเงินได้ภายหลัง",
+    description: "คุณออกจากการชำระเงินก่อนทำรายการสำเร็จ — ออเดอร์นี้ยังไม่ถูกยกเลิก และยังกันสินค้าไว้จนกว่าจะหมดเวลาชำระเงิน จึงกลับมาชำระเงินต่อได้",
     backToCart: "กลับไปตะกร้า",
   },
 
@@ -733,10 +734,16 @@ export const th = {
 
   orderDetail: {
     deliveryTitle: "การจัดส่ง",
+    shipTo: "จัดส่งไปที่",
+    recipientFallback: "ผู้รับ",
+    countryTH: "ประเทศไทย",
     summaryTitle: "สรุปคำสั่งซื้อ",
     discount: "ส่วนลด",
     paymentMethod: "วิธีชำระเงิน",
     paymentStatus: "สถานะการชำระเงิน",
+    orderStatusLabel: "สถานะออเดอร์",
+    paymentFailedTitle: "ชำระเงินไม่สำเร็จ",
+    paymentFailedDesc: "การชำระเงินครั้งนี้ไม่สำเร็จ และระบบได้คืนสินค้าที่กันไว้แล้ว หากยังต้องการสินค้า กรุณาสั่งซื้อใหม่อีกครั้ง",
     actionsTitle: "จัดการออเดอร์",
     choosePaymentDescAny: "เลือกวิธีชำระเงินที่ต้องการ แล้วระบบจะพาไปหน้าชำระเงินของ Stripe",
     continueAction: "ดำเนินการต่อ",
@@ -846,12 +853,27 @@ export const th = {
     failed: "ชำระไม่สำเร็จ",
   },
 
-  orderSteps: {
+  orderStatus: {
     pending: "รอตรวจสอบ",
-    confirmed: "ร้านกำลังเตรียมสินค้า",
+    pending_payment: "รอชำระเงิน",
+    paid: "ชำระเงินแล้ว",
+    payment_failed: "ชำระเงินไม่สำเร็จ",
+    confirmed: "ยืนยันแล้ว",
     shipped: "กำลังจัดส่ง",
     delivered: "จัดส่งแล้ว",
     completed: "เสร็จสิ้น",
+    refunded: "คืนเงินแล้ว",
+    expired: "หมดเวลาชำระเงิน",
+    cancelled: "ยกเลิก",
+    unknown: "ไม่ทราบสถานะ",
+  },
+
+  orderSteps: {
+    placed: "สั่งซื้อแล้ว",
+    payment: "การชำระเงิน",
+    processing: "ร้านเตรียมสินค้า",
+    shipped: "กำลังจัดส่ง",
+    delivered: "จัดส่งแล้ว",
   },
 
   tracking: {

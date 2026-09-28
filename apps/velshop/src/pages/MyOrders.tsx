@@ -27,6 +27,7 @@ import {
   formatIsoDateTime,
   formatPaymentCountdown,
   getOrderStatusMeta,
+  orderStatusI18nKey,
   orderStripePayability,
   paymentReservationPhase,
   paymentReservationState,
@@ -351,6 +352,9 @@ export default function MyOrders() {
             <div className="mt-3 space-y-4">
               {orders.map((order: StoreOrder) => {
                 const meta = getOrderStatusMeta(order.status);
+                // The badge TEXT must follow the shopper's language — the shared
+                // `meta.label` stays the Thai seller-side fallback.
+                const statusLabel = t(orderStatusI18nKey(order.status));
                 const items = order.items ?? [];
                 // An order that is still payable keeps its "continue payment"
                 // entry point here, so a customer who left Stripe never has to go
@@ -366,61 +370,17 @@ export default function MyOrders() {
                     className="rounded-xl border border-slate-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-[#10B981]/40 hover:shadow-[0_12px_30px_rgba(15,23,42,0.06)]"
                   >
                     <Link to={`/orders/${order.id}`} className="block p-5">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            {t("orders.orderNo", { no: shortOrderNumber(order.orderNumber) })}
-                          </p>
-                          <p className="mt-0.5 text-xs text-slate-400">
-                            {formatIsoDateTime(order.createdAt)} ·{" "}
-                            {t("orders.pieces", {
-                              count: order.itemCount ?? items.reduce((s, i) => s + i.quantity, 0),
-                            })}
-                          </p>
-                        </div>
-                        <Badge className={`gap-1.5 rounded-full ring-1 ring-inset ${meta.badge}`}>
-                          <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                          {meta.label}
-                        </Badge>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {t("orders.orderNo", { no: shortOrderNumber(order.orderNumber) })}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          {formatIsoDateTime(order.createdAt)} ·{" "}
+                          {t("orders.pieces", {
+                            count: order.itemCount ?? items.reduce((s, i) => s + i.quantity, 0),
+                          })}
+                        </p>
                       </div>
-
-                      {/* Payment reservation countdown — paid orders show none. */}
-                      {(reservationPhase === "active" || reservationPhase === "urgent") && (
-                        <div
-                          className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-2 ${
-                            reservationPhase === "urgent"
-                              ? "bg-rose-50 ring-1 ring-inset ring-rose-200"
-                              : "bg-amber-50 ring-1 ring-inset ring-amber-200"
-                          }`}
-                        >
-                          <Clock3
-                            className={`size-4 shrink-0 ${
-                              reservationPhase === "urgent" ? "text-rose-600" : "text-amber-600"
-                            }`}
-                          />
-                          <p
-                            className={`text-sm font-semibold tabular-nums ${
-                              reservationPhase === "urgent" ? "text-rose-700" : "text-amber-800"
-                            }`}
-                          >
-                            {t("orderReservation.remaining", {
-                              time: formatPaymentCountdown(reservation.remainingMs),
-                            })}
-                          </p>
-                          {reservationPhase === "urgent" && (
-                            <p className="text-xs text-rose-600">{t("orderReservation.urgentNote")}</p>
-                          )}
-                        </div>
-                      )}
-
-                      {reservationPhase === "expired" && (
-                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-inset ring-slate-200">
-                          <XCircle className="size-4 shrink-0 text-slate-400" />
-                          <p className="text-sm font-medium text-slate-600">
-                            {t("orderReservation.expiredTitle")}
-                          </p>
-                        </div>
-                      )}
 
                       <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                         {items.map((item) => (
@@ -458,15 +418,68 @@ export default function MyOrders() {
                         ))}
                       </div>
 
-                      <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
-                        <span className="text-sm text-slate-500">{t("orders.total")}</span>
-                        <span className="text-lg font-bold tabular-nums tracking-tight text-slate-900">
-                          {formatBaht(order.total)}
-                        </span>
-                        <span className="text-xs font-medium text-[#10B981]">{t("orders.viewDetail")}</span>
+                      {/*
+                        The card's own status, with ITS countdown underneath.
+
+                        Position matters (ORDER UX POLISH): the status and the timer sit
+                        together at the bottom-left of THIS card, so it is never ambiguous
+                        which order a running clock belongs to. There is one presentation
+                        clock for the whole list, and each card derives its own remaining
+                        time from its own `paymentExpiresAt` — never a shared deadline.
+                      */}
+                      <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-4">
+                        <div className="min-w-0">
+                          <Badge className={`gap-1.5 rounded-full text-xs font-semibold ring-1 ring-inset ${meta.badge}`}>
+                            <span className={`size-1.5 rounded-full ${meta.dot}`} />
+                            {statusLabel}
+                          </Badge>
+
+                          {(reservationPhase === "active" || reservationPhase === "urgent") && (
+                            <p
+                              role="timer"
+                              aria-live="off"
+                              className={`mt-2 flex items-center gap-1.5 text-sm font-semibold tabular-nums ${
+                                reservationPhase === "urgent" ? "text-rose-700" : "text-amber-700"
+                              }`}
+                            >
+                              <Clock3 className="size-3.5 shrink-0" />
+                              {t("orderReservation.payWithin", {
+                                time: formatPaymentCountdown(reservation.remainingMs),
+                              })}
+                            </p>
+                          )}
+
+                          {reservationPhase === "urgent" && (
+                            <p className="mt-1 text-xs font-medium text-rose-600">
+                              {t("orderReservation.urgentNote")}
+                            </p>
+                          )}
+
+                          {reservationPhase === "expired" && (
+                            <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                              <XCircle className="size-3.5 shrink-0" />
+                              {t("orderReservation.expiredTitle")}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="ml-auto text-right">
+                          <p className="text-xs text-slate-500">{t("orders.total")}</p>
+                          <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">
+                            {formatBaht(order.total)}
+                          </p>
+                        </div>
                       </div>
                     </Link>
                     <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 border-slate-200 text-slate-600"
+                        asChild
+                      >
+                        <Link to={`/orders/${order.id}`}>{t("orders.viewDetail")}</Link>
+                      </Button>
                       {payability.payable && (
                         <ResumePaymentButton
                           orderId={order.id}

@@ -233,4 +233,25 @@ screen exists (`backend/lib/permissions.ts:28-29`, guarded by `center-rbac.test.
 **`CHECKOUT READY` never implies `MARKETPLACE PAYOUT READY`.** Building Connect is out of
 scope until an owner asks for it.
 
+## Order status vs payment status — two concepts, two renderings
+
+`orders.status` (free text, written by the Stripe routes and the seller) and `orders.payment_status`
+are different things and must stay separately readable on the customer's order screens:
+
+* **Order status text** comes from the dictionaries via `orderStatusI18nKey()` + the `orderStatus`
+  namespace (th/en/my, all 11 statuses + `unknown`). `ORDER_STATUS_META.label` is Thai-only and is
+  the **seller-side fallback** — never render it in VelShop. Tokens (`meta.badge` / `meta.dot`) stay
+  shared, and `getPaymentStatusBadge()` resolves the payment pill for any status the API returns.
+* **Payability** is decided by ONE shared rule, `orderStripePayability()`: only `pending` /
+  `pending_payment` with a live window and a Stripe rail (`CARD` / `PROMPTPAY`). `payment_failed`,
+  `expired`, `cancelled`, `refunded` and COD orders get **no** pay button — for `payment_failed` the
+  sweep already released the stock, so the page shows the failure notice (and "buy again") rather
+  than a deadline or a retry the backend would refuse.
+* **"Cancel order" is not "leaving Stripe"**: the cancel button follows `orderCustomerCancelability()`
+  and the server's guarded cancel; abandoning the hosted checkout leaves the order unpaid with its
+  ORIGINAL `payment_expires_at` (nothing client-side may reset or extend it).
+
+The window itself is FIXED 30 minutes (see *Payment reservation window* above) and the backend remains
+its only enforcer.
+
 Related: `checkout.md`, `customer.md`, `security.md`, `testing.md`, `database.md`.

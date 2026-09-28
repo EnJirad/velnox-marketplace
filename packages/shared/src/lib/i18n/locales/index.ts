@@ -401,6 +401,19 @@ const myShopPatch = {
  * (same mechanism as myAuthPatch/myShopPatch).
  */
 const myOrderPatch = {
+  /**
+   * Order Detail copy that was still English inside the Burmese table. The order
+   * page is where a Myanmar shopper waits out the 30-minute payment window, so
+   * none of it may fall back to English.
+   */
+  orderDetail: {
+    shopTitle: "ဆိုင်",
+    retry: "ထပ်ကြိုးစားမည်",
+    paymentTitle: "ငွေပေးချေမှု",
+    noShipment: "ပို့ဆောင်မှု အချက်အလက် မရှိသေးပါ",
+    noShipmentDesc: "ရောင်းချသူက သင့်မှာယူမှုကို ပို့ဆောင်လိုက်ပါက ခြေရာခံအချက်အလက်များ ဤနေရာတွင် ပေါ်လာမည်",
+    productUnavailable: "ဤကုန်ပစ္စည်းကို ဆက်လက်ဝယ်ယူနိုင်တော့မည် မဟုတ်ပါ",
+  } satisfies Partial<Dict["orderDetail"]>,
   paymentMethods: {
     card: "ခရက်ဒစ် / ဒက်ဘစ် ကတ်",
     promptpay: "ပရော့ပ်ဖေး",
@@ -409,7 +422,7 @@ const myOrderPatch = {
     unavailable: "ခေတ္တ အသုံးပြုနိုင်ပါ",
     cod: "Cash on delivery",
   } satisfies Partial<Dict["paymentMethods"]>,
-} satisfies Partial<Dict>;
+};
 
 /**
  * Burmese comments/chat + reviews labels (Comments & Chat feature).
@@ -1167,6 +1180,7 @@ export const translations: Record<Language, Dict> = {
     chat: { ...myChatPatch.chat },
     sellerChat: myChatPatch.sellerChat,
     notifications: { ...myBase.notifications, ...myNotifyPatch },
+    orderDetail: { ...myBase.orderDetail, ...myOrderPatch.orderDetail },
     cartPage: { ...myBase.cartPage, ...myShopPatch.cartPage },
     velrepeat: { ...myBase.velrepeat, ...myShopPatch.velrepeat },
     cookies: myShopPatch.cookies,

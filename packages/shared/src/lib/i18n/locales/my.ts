@@ -19,9 +19,10 @@ export const my = {
   orderReservation: {
     payWithin: "ငွေပေးချေရန် {time} အတွင်း",
     remaining: "ကျန်ရှိချိန် {time}",
-    expiresIn: "ငွေပေးချေရန် ကုန်ဆုံးချိန်",
+    expiresIn: "ငွေပေးချေရန်",
     urgentNote: "အချိန်နီးကပ်နေပြီ — သတ်မှတ်အချိန်မတိုင်မီ ငွေပေးချေပါ။",
     payNow: "ယခုပေးချေပါ",
+    payAgain: "ထပ်မံပေးချေပါ",
     windowNote:
       "သတ်မှတ်အချိန်အတွင်း ငွေပေးချေခြင်း မပြုပါက ထိန်းသိမ်းထားသော ပစ္စည်းများကို အခြားဝယ်ယူသူများအတွက် အလိုအလျောက် ပြန်လွတ်ပေးမည် ဖြစ်သည်။",
     expiredTitle: "ငွေပေးချေရန် အချိန်ကုန်ဆုံးသွားပါပြီ",
@@ -623,7 +624,7 @@ export const my = {
 
   checkoutCancel: {
     title: "ငွေပေးချေမှု ပယ်ဖျက်ပြီးပါပြီ",
-    description: "သင့်မှာယူမှုကို ငွေမပေးရသေးပါ။ နောက်မှ ငွေပေးချေနိုင်ပါသည်။",
+    description: "ငွေပေးချေမှု မပြီးမီ ထွက်သွားပါသည် — ဤမှာယူမှုကို မပယ်ဖျက်ပါ၊ သတ်မှတ်အချိန်မတိုင်မီ ပစ္စည်းများကို ထိန်းသိမ်းထားဆဲဖြစ်သည်။ ပြန်လာပြီး ငွေပေးချေနိုင်ပါသည်။",
     backToCart: "တစ်ဝက်သို့ ပြန်သွားမည်",
   },
 
@@ -644,16 +645,22 @@ export const my = {
 
   orderDetail: {
     deliveryTitle: "ပို့ဆောင်မှု",
+    shipTo: "ပို့ဆောင်ရန်",
+    recipientFallback: "လက်ခံသူ",
+    countryTH: "ထိုင်းနိုင်ငံ",
     summaryTitle: "မှာယူမှု အကျဉ်းချုပ်",
     discount: "လျှော့ဈေး",
     paymentMethod: "ငွေပေးချေမှု နည်းလမ်း",
     paymentStatus: "ငွေပေးချေမှု အခြေအနေ",
+    orderStatusLabel: "မှာယူမှု အခြေအနေ",
+    paymentFailedTitle: "ငွေပေးချေမှု မအောင်မြင်ပါ",
+    paymentFailedDesc: "ဤငွေပေးချေမှု မအောင်မြင်ပါ၊ ထိန်းသိမ်းထားသော ပစ္စည်းများကို ပြန်လွတ်ပေးလိုက်ပါပြီ။ ဆက်လက်လိုချင်ပါက မှာယူမှုအသစ် ပြုလုပ်ပါ။",
     actionsTitle: "လုပ်ဆောင်ချက်များ",
     choosePaymentDescAny: "လိုချင်သော ငွေပေးချေမှုနည်းလမ်းကို ရွေးပါ၊ ထို့နောက် Stripe Checkout သို့ သွားပါမည်။",
     continueAction: "ဆက်လုပ်မည်",
     shopTitle: "Shop",
     retry: "Try again",
-    noAddress: "No shipping address on file for this order",
+    noAddress: "ဤမှာယူမှုအတွက် ပို့ဆောင်မည့်လိပ်စာ မရှိပါ",
     noShipment: "No shipping information yet",
     noShipmentDesc: "Once the seller ships your order, tracking details will appear here",
     productUnavailable: "This product is no longer available",
@@ -749,12 +756,27 @@ export const my = {
     failed: "ငွေပေးချေမှု မအောင်မြင်ပါ",
   },
 
-  orderSteps: {
+  orderStatus: {
     pending: "စစ်ဆေးနေသည်",
-    confirmed: "ဆိုင်က ပြင်ဆင်နေသည်",
+    pending_payment: "ငွေပေးချေရန် စောင့်ဆိုင်းနေသည်",
+    paid: "ငွေပေးချေပြီး",
+    payment_failed: "ငွေပေးချေမှု မအောင်မြင်ပါ",
+    confirmed: "အတည်ပြုပြီး",
     shipped: "ပို့ဆောင်နေသည်",
     delivered: "ပို့ဆောင်ပြီး",
-    completed: "ပြီးဆုံးသည်",
+    completed: "ပြီးစီး",
+    refunded: "ငွေပြန်အမ်းပြီး",
+    expired: "ငွေပေးချေရန် အချိန်ကုန်ဆုံး",
+    cancelled: "ပယ်ဖျက်ပြီး",
+    unknown: "အခြေအနေ မသိ",
+  },
+
+  orderSteps: {
+    placed: "မှာယူပြီး",
+    payment: "ငွေပေးချေမှု",
+    processing: "ဆိုင်က ပြင်ဆင်နေသည်",
+    shipped: "ပို့ဆောင်နေသည်",
+    delivered: "ပို့ဆောင်ပြီး",
   },
 
   tracking: {

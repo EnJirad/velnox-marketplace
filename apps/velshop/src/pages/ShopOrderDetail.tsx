@@ -30,7 +30,11 @@ import {
   formatIsoDateTime,
   formatPaymentCountdown,
   getOrderStatusMeta,
+  getPaymentStatusBadge,
+  ORDER_PROGRESS_STAGES,
   orderCustomerCancelability,
+  orderProgressStageIndex,
+  orderStatusI18nKey,
   orderStripePayability,
   paymentReservationPhase,
   paymentReservationState,
@@ -50,7 +54,6 @@ import {
   Store,
   Truck,
   XCircle,
-  type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
@@ -91,7 +94,13 @@ interface OrderItemRow {
   productStatus?: string | null;
 }
 
+/**
+ * The address SNAPSHOT stored on this order at checkout (`orders.shipping_address`).
+ * Every field below is written server-side from the address row the customer
+ * selected, so the page can never show the profile's current/default address.
+ */
 interface OrderAddressSnapshot {
+  label?: string;
   recipientName?: string;
   phone?: string;
   line1?: string;
@@ -100,6 +109,7 @@ interface OrderAddressSnapshot {
   district?: string;
   province?: string;
   postalCode?: string;
+  country?: string;
 }
 
 interface TrackingEventRow {
@@ -153,14 +163,6 @@ interface OrderDetail {
    */
   paymentExpiresAt?: number | null;
 }
-
-const ORDER_STEPS: Array<{ key: string; icon: LucideIcon }> = [
-  { key: "pending", icon: Clock3 },
-  { key: "confirmed", icon: Package },
-  { key: "shipped", icon: Truck },
-  { key: "delivered", icon: CheckCircle2 },
-  { key: "completed", icon: CheckCircle2 },
-];
 
 const REVIEWABLE = new Set(["delivered", "completed"]);
 
@@ -364,10 +366,30 @@ export default function ShopOrderDetail() {
   }
 
   const meta = getOrderStatusMeta(order.status);
+  /** Localized order-status text (the shared `meta.label` is the Thai seller fallback). */
+  const statusLabel = t(orderStatusI18nKey(order.status));
+  /** The PAYMENT status is a different concept from the order status — its own tokens. */
+  const paymentBadge = getPaymentStatusBadge(order.paymentStatus);
   const items = order.items ?? [];
   const shipments = order.shipments ?? [];
   const payments = order.payments ?? [];
-  const stepIndex = order.status === "cancelled" ? -1 : ORDER_STEPS.findIndex((s) => s.key === order.status);
+  /**
+   * The progress line's current stage, or -1 for a terminal order. `payment_failed`
+   * and `refunded` land here too: an order that will not progress any further must
+   * never be drawn as one that will.
+   */
+  const stageIndex = orderProgressStageIndex(order.status);
+  /** The one-line explanation a terminal order gets instead of the progress line. */
+  const progressNotice: { title: string; desc?: string } | null =
+    order.status === "cancelled"
+      ? { title: t("orderCancel.cancelledNotice") }
+      : order.status === "expired"
+        ? { title: t("orderReservation.expiredTitle"), desc: t("orderReservation.expiredDesc") }
+        : order.status === "payment_failed"
+          ? { title: t("orderDetail.paymentFailedTitle"), desc: t("orderDetail.paymentFailedDesc") }
+          : order.status === "refunded"
+            ? { title: t("paymentLabels.refunded") }
+            : null;
 
   /**
    * Still-payable order + the rail the customer actually chose.
@@ -388,17 +410,23 @@ export default function ShopOrderDetail() {
   const cancelability = orderCustomerCancelability(order);
 
   const address = order.addressSnapshot;
-  const addressText = address
+  /**
+   * The order's OWN address, one line per real field — and only fields that exist.
+   * A missing value is omitted rather than printed as an empty or invented line.
+   */
+  const addressLines: string[] = address
     ? [
         address.line1,
         address.line2,
-        address.subdistrict,
-        address.district,
-        address.province,
-        address.postalCode,
-      ]
-        .filter(Boolean)
-        .join(" · ")
+        [address.subdistrict, address.district].filter(Boolean).join(" "),
+        [address.province, address.postalCode].filter(Boolean).join(" "),
+      ].filter((line): line is string => Boolean(line && String(line).trim()))
+    : [];
+  /** The snapshot stores an ISO country code; only the known one is translated. */
+  const addressCountry = address?.country
+    ? address.country.toUpperCase() === "TH"
+      ? t("orderDetail.countryTH")
+      : address.country
     : "";
 
   const payTargetOrderId = order.parentOrderId || order.id;
@@ -435,15 +463,32 @@ export default function ShopOrderDetail() {
                 {t("orderDetail.orderedAt", { date: formatIsoDateTime(order.createdAt) })}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className={`gap-1.5 rounded-full ring-1 ring-inset ${meta.badge}`}>
-                <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                {meta.label}
-              </Badge>
-              <Badge className="gap-1.5 rounded-full bg-white ring-1 ring-inset ring-slate-200">
-                <span className="size-1.5 rounded-full bg-slate-400" />
-                {paymentLabel(order.paymentStatus)}
-              </Badge>
+            {/*
+              Order status and payment status are two different concepts, so each pill
+              gets its own visible caption — the text (not the colour) is what says which
+              is which, and both use the design system's semantic status tokens.
+            */}
+            <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+              <div>
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  {t("orderDetail.orderStatusLabel")}
+                </p>
+                <Badge className={`gap-1.5 rounded-full font-semibold ring-1 ring-inset ${meta.badge}`}>
+                  <span className={`size-1.5 rounded-full ${meta.dot}`} />
+                  {statusLabel}
+                </Badge>
+              </div>
+              <div>
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  {t("orderDetail.paymentStatus")}
+                </p>
+                <Badge
+                  className={`gap-1.5 rounded-full font-semibold ring-1 ring-inset ${paymentBadge.badge}`}
+                >
+                  <span className={`size-1.5 rounded-full ${paymentBadge.dot}`} />
+                  {paymentLabel(order.paymentStatus)}
+                </Badge>
+              </div>
             </div>
           </div>
 
@@ -498,6 +543,33 @@ export default function ShopOrderDetail() {
           )}
 
           {/*
+            The payment attempt failed inside an existing reservation: say that, keep
+            the ORIGINAL deadline visible, and offer the retry. The window is never
+            extended here — only the backend can create a new reservation.
+          */}
+          {order.status === "payment_failed" && (
+            <div className="border-t border-rose-100 bg-rose-50/70 px-5 py-5 sm:px-6">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                {/*
+                  No clock here on purpose: a failed payment means the backend
+                  already released the held stock, so this reservation is void —
+                  offering a deadline (or a pay button) would promise a payment the
+                  server would refuse.
+                */}
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-rose-700">
+                    <XCircle className="size-4 shrink-0" />
+                    {t("orderDetail.paymentFailedTitle")}
+                  </p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-rose-700/90">
+                    {t("orderDetail.paymentFailedDesc")}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/*
             No window at all (COD, a legacy row, or a database that predates the
             reservation columns) but the order is still payable: the pay action
             must not vanish just because there is no countdown to show.
@@ -516,44 +588,91 @@ export default function ShopOrderDetail() {
         {/* ── 2. Progress ────────────────────────────────────────────────── */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.progress")}</h2>
-          {order.status === "cancelled" || order.status === "expired" || payability.expired ? (
-            <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
-              <p className="flex items-center gap-3">
-                <XCircle className="size-4 shrink-0 text-slate-400" />
-                {order.status === "cancelled"
-                  ? t("orderCancel.cancelledNotice")
-                  : t("orderReservation.expiredTitle")}
+          {progressNotice || stageIndex < 0 || payability.expired ? (
+            /*
+              Terminal (cancelled/expired/payment_failed/refunded) or a lapsed window:
+              one sentence, no progress line that would imply the order still moves.
+            */
+            <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3">
+              <p className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <XCircle
+                  className={`size-4 shrink-0 ${
+                    order.status === "payment_failed" ? "text-rose-400" : "text-slate-400"
+                  }`}
+                />
+                {progressNotice?.title ?? t("orderReservation.expiredTitle")}
               </p>
-              {order.status !== "cancelled" && (
-                <p className="mt-1.5 pl-7 text-xs text-slate-400">{t("orderReservation.expiredDesc")}</p>
+              {(progressNotice ? progressNotice.desc : t("orderReservation.expiredDesc")) && (
+                <p className="mt-1.5 pl-6 text-xs leading-5 text-slate-500">
+                  {progressNotice ? progressNotice.desc : t("orderReservation.expiredDesc")}
+                </p>
               )}
             </div>
           ) : (
-            <div className="mt-5 flex flex-wrap items-center gap-1">
-              {ORDER_STEPS.map((s, i) => {
-                const Icon = s.icon;
-                const done = stepIndex >= i;
-                return (
-                  <div key={s.key} className="flex items-center">
-                    <div className="flex flex-col items-center gap-1.5">
+            /*
+              ONE line, five REAL order statuses (placed → payment → processing →
+              shipped → delivered) with the current stage marked by `aria-current`
+              and by shape as well as colour. Labels collapse to the current stage on
+              a narrow screen — never a second bar, never nested progress.
+            */
+            <>
+              <ol className="mt-5 flex list-none items-start pl-0">
+                {ORDER_PROGRESS_STAGES.map((stage, i) => {
+                  const done = stageIndex > i;
+                  const current = stageIndex === i;
+                  return (
+                    <li key={stage} className="flex min-w-0 flex-1 flex-col items-center">
+                      <div className="flex w-full items-center">
+                        <span
+                          aria-hidden="true"
+                          className={`h-0.5 flex-1 ${
+                            i === 0 ? "bg-transparent" : stageIndex >= i ? "bg-[#10B981]" : "bg-slate-200"
+                          }`}
+                        />
+                        <span
+                          aria-hidden="true"
+                          className={`flex size-6 shrink-0 items-center justify-center rounded-full ${
+                            done
+                              ? "bg-[#10B981] text-white"
+                              : current
+                                ? "bg-white text-[#10B981] ring-2 ring-[#10B981]"
+                                : "bg-slate-100 text-slate-400 ring-1 ring-inset ring-slate-200"
+                          }`}
+                        >
+                          {done && <CheckCircle2 className="size-3.5" />}
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className={`h-0.5 flex-1 ${
+                            i === ORDER_PROGRESS_STAGES.length - 1
+                              ? "bg-transparent"
+                              : stageIndex > i
+                                ? "bg-[#10B981]"
+                                : "bg-slate-200"
+                          }`}
+                        />
+                      </div>
+                      {/* The stage name always exists for assistive tech. */}
+                      <span className="sr-only">{t(`orderSteps.${stage}`)}</span>
                       <span
-                        className={`flex size-8 items-center justify-center rounded-full ${
-                          done ? "bg-[#10B981] text-white" : "bg-slate-100 text-slate-400"
+                        aria-current={current ? "step" : undefined}
+                        className={`mt-2 hidden truncate text-[11px] sm:block ${
+                          current ? "font-semibold text-slate-900" : done ? "text-slate-500" : "text-slate-400"
                         }`}
                       >
-                        <Icon className="size-4" />
+                        {t(`orderSteps.${stage}`)}
                       </span>
-                      <span className={`text-[11px] ${done ? "font-medium text-slate-900" : "text-slate-400"}`}>
-                        {t(`orderSteps.${s.key}`)}
-                      </span>
-                    </div>
-                    {i < ORDER_STEPS.length - 1 && (
-                      <span className={`mx-2 mb-5 h-0.5 w-8 sm:w-12 ${stepIndex > i ? "bg-[#10B981]" : "bg-slate-200"}`} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                    </li>
+                  );
+                })}
+              </ol>
+              <p
+                aria-hidden="true"
+                className="mt-3 text-center text-xs font-medium text-slate-600 sm:hidden"
+              >
+                {t(`orderSteps.${ORDER_PROGRESS_STAGES[stageIndex]}`)}
+              </p>
+            </>
           )}
         </section>
 
@@ -651,16 +770,36 @@ export default function ShopOrderDetail() {
             {t("orderDetail.deliveryTitle")}
           </h2>
 
-          {/* Shipping address */}
+          {/*
+            Shipping address — the SNAPSHOT taken at checkout, never the profile's
+            current/default address. One line per stored field; absent fields are
+            omitted instead of invented.
+          */}
           {address ? (
             <div className="mt-4 flex gap-3">
               <MapPin className="mt-0.5 size-4 shrink-0 text-slate-300" />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-900">
-                  {address.recipientName ?? ""}
-                  {address.phone ? ` · ${address.phone}` : ""}
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  {t("orderDetail.shipTo")}
                 </p>
-                <p className="mt-1 text-sm leading-6 break-words text-slate-600">{addressText || "—"}</p>
+                <p className="mt-1 text-sm font-semibold break-words text-slate-900">
+                  {address.recipientName || t("orderDetail.recipientFallback")}
+                </p>
+                {address.phone && (
+                  <p className="text-sm tabular-nums break-words text-slate-500">{address.phone}</p>
+                )}
+                {addressLines.length > 0 && (
+                  <p className="mt-2 text-sm leading-6 break-words text-slate-600">
+                    {addressLines.map((line) => (
+                      <span key={line} className="block">
+                        {line}
+                      </span>
+                    ))}
+                  </p>
+                )}
+                {addressCountry && (
+                  <p className="mt-1 text-sm break-words text-slate-500">{addressCountry}</p>
+                )}
               </div>
             </div>
           ) : (
@@ -743,7 +882,13 @@ export default function ShopOrderDetail() {
             </div>
             <div className="rounded-xl border border-slate-100 p-3">
               <p className="text-xs text-slate-400">{t("orderDetail.paymentStatus")}</p>
-              <p className="mt-1 text-sm font-medium text-slate-900">{paymentLabel(order.paymentStatus)}</p>
+              {/* The design system's payment-status tokens: never white-on-white. */}
+              <span
+                className={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${paymentBadge.badge}`}
+              >
+                <span className={`size-1.5 rounded-full ${paymentBadge.dot}`} />
+                {paymentLabel(order.paymentStatus)}
+              </span>
             </div>
           </div>
           {payments.length > 0 && (

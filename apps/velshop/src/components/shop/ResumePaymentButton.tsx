@@ -172,7 +172,7 @@ export function ResumePaymentButton({
         onClick={openChooser}
       >
         {paying ? <Loader2 className="size-3.5 animate-spin" /> : <CreditCard className="size-3.5" />}
-        {paying ? t("orderDetail.payingNow") : t("orderReservation.payNow")}
+        {paying ? t("orderDetail.payingNow") : t("orderReservation.payAgain")}
       </Button>
       {failed && <p className="mt-1.5 text-xs text-rose-600">{t("checkout.payStartFailed")}</p>}
 
