@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-28 · **Branch:** `main` · **Latest pass:** Dynamic Payment Reservation V1 — unpaid orders hold stock for a risk-based window, then the sweep releases it exactly once (§36)
+**Last updated:** 2026-09-28 · **Branch:** `main` · **Latest pass:** Fixed 30-minute payment reservation + countdown + pay-again UX — the reservation is a constant 30 min and both order surfaces count it down (§38, supersedes §36)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -631,75 +631,13 @@ reddened `main` were test-side and are fixed in **§37**.
 
 ---
 
-## 36. Dynamic Payment Reservation V1 — an unpaid order holds stock for a risk-based window (2026-09-28)
+## 36. Dynamic Payment Reservation V1 — an unpaid order holds stock for a risk-based window (2026-09-28) — superseded by §38
 
-**Reported.** Stock reserved at order creation had NO deadline: an order abandoned at Stripe held
-its units until someone cancelled it or Stripe expired the session (~24 h), so the last unit of a
-scarce product sat behind an abandoned order. Asked for: risk-based reservation windows (MIN 10,
-MAX 60, default 30 min), an expiry mechanism that releases exactly once, no resurrection by a late
-webhook, a countdown in the order UI, and tests.
-
-**Architecture as found (inspected, not assumed).** Stock is reserved inside the
-order-creation transaction (`backend/routes/cart.ts`): variant items → guarded
-`product_variants.stock -= qty`; non-variant → `reserveInventoryStock()` (`inventory.reserved +=`).
-ONE release path exists, `releaseOrderInventory()` (`backend/lib/inventory.ts`), whose atomic
-`inventory_released` claim + status guard already made release at-most-once for cancel / payment
-failure / session expiry. Schedulers exist (`backend/jobs/velrepeat-scheduler.ts`, 60 s tick,
-DB-as-source-of-truth). `orders.status` had no deadline column; COD/VelRepeat orders are settled by
-the carrier (VelRepeat inserts its own orders and never touches Stripe). **No reservation system
-was duplicated — this extends the existing one.**
-
-**Policy (new `backend/lib/payment-reservation.ts`, pure + deterministic).** Signals from real
-columns only: `inventory.quantity - reserved`, `product_variants.stock`, `products.featured`
-(the platform's promotion flag — the schema has NO flash-sale field, so none is invented), and
-7-day sales velocity from `order_items ⋈ orders` over real sold statuses
-(`paid|confirmed|shipped|delivered|completed`, covering the Stripe and COD rails). Scarcest line
-wins (`MIN(available_stock)`).
-
-| Risk | Window | Fires when |
-|---|---|---|
-| CRITICAL | 15 min | ≤2 available · ≤5 available with ≥1 unit/day · <1.5 days of cover · promoted AND ≤5 available |
-| HIGH | 20 min | ≤10 available · ≤20 available with ≥1 unit/day · <3 days of cover |
-| NORMAL | 30 min | everything else (the default; also "stock unknown") |
-| LOW | 45 min | ≥20 available, <1 unit/day, ≥10 days of cover, not promoted |
-| VERY_LOW | 60 min | ≥50 available, ≤0.2 units/day, ≥30 days of cover, not promoted |
-
-Windows are clamped to 10–60 and the whole policy (riskLevel, minutes, reason, signals) is stored
-on the order.
-
-**Changes.**
-
-| Piece | Change |
-|---|---|
-| `backend/lib/payment-reservation.ts` | NEW — the ONE policy: thresholds, `calculatePaymentReservationPolicy()` (pure), `gatherOrderReservationSignals()` (one SQL round trip), `applyPaymentReservationPolicy()`. COD → no window |
-| `backend/jobs/payment-reservation-scheduler.ts` | NEW — scan (`payment_expires_at <= NOW()`, expirable statuses, `inventory_released = FALSE`) → guarded claim `pending|pending_payment → expired` → payment row `cancelled` (`PAYMENT_RESERVATION_EXPIRED`) → `releaseOrderInventory()` → then close the Stripe session. `paid`/`processing` payments block the claim entirely |
-| `backend/routes/cart.ts` | Checkout takes the window INSIDE the order-creation transaction; both read routes expose `paymentExpiresAt` (ms) |
-| `backend/routes/stripe.ts` | `markPaymentSucceeded` guard now also requires `inventory_released = FALSE` (a paid-after-release order can never be resurrected) and logs the reason (incl. `reservation_expired`); checkout refuses a lapsed window with **400 `PAYMENT_RESERVATION_EXPIRED` BEFORE** any session is created; the session is created with `expires_at` = the deadline (Stripe's 30 min–24 h bound applied) and the response carries `paymentExpiresAt` |
-| `backend/server.ts` | `startPaymentReservationScheduler()` beside the VelRepeat scheduler |
-| `backend/routes/seller-orders.ts` | `expired` maps to `cancelled` (the seller has nothing to fulfil; the default branch would have invited a confirmation) |
-| `packages/shared/src/lib/commerce.ts` | `expired` status + meta + terminal transitions; `orderStripePayability` now returns `expired` and refuses a lapsed window; NEW `paymentReservationState()` + `formatPaymentCountdown()` |
-| `apps/velshop/.../ShopOrderDetail.tsx` | Countdown strip ("ชำระเงินภายใน MM:SS"), one-second presentation-only tick, one refetch when it lapses, expired notice replacing the steps, no pay button |
-| `apps/velshop/.../ShopCheckoutSuccess.tsx` | `expired` is terminal for polling and has a status meta |
-| i18n | NEW top-level `orderReservation` namespace (th/en/my): `payWithin` (`{time}`), `windowNote`, `expiredTitle`, `expiredDesc` — i18n:check th=en=my=**1338** |
-| DB | `orders.payment_expires_at TIMESTAMPTZ`, `orders.reservation_policy JSONB`, `idx_orders_payment_expires_at` (partial on `IS NOT NULL`) in **both** `db/schema.sql` and `db/run-sqleditor.sql` (+ new `db/migrations/048_payment_reservation.sql`, additive/idempotent) |
-
-**Deploy order (safety).** The columns arrive with migration `048`, and the host deploys on push,
-so the two can cross: the reservation write is therefore wrapped in a `SAVEPOINT` and tolerates
-**only** `undefined_column` (42703) — otherwise a missing column would abort the order-creation
-transaction and break EVERY checkout. A backend newer than its database keeps serving, orders get
-no window (like legacy rows), the write logs the exact migration to apply, and the sweep logs once
-and resumes by itself on the first scan that succeeds after the migration lands.
-
-**Race handling (the invariant: no order is ever resurrected, no unit released twice).** Sweep,
-webhook and customer cancel all write the same row through guarded UPDATEs, so the row lock picks
-exactly one winner and the losers re-evaluate to 0 rows. A payment that arrives before the
-deadline wins (stock becomes SOLD, `inventory_released` stays FALSE, the sweep then skips it). A
-payment that arrives after the order expired cannot reclaim stock and cannot set `paid` — the money
-stays on the payment row and is logged as **manual review/refund required** (the reconciliation
-path; no refund is invented in code). A `paid`/`processing` payment blocks the automatic expiry, so
-a live charge is never expired out from under the customer. Nothing under
-`backend/middleware/stripe-raw-body.ts` or the webhook's signature/`payment_events` handling
-changed.
+The v1 policy derived the window from stock cover, 7-day sales velocity and `products.featured`
+(15/20/30/45/60 min). **Part 1 replaced it with a fixed 30 minutes** (§38): the duration must not
+depend on demand, popularity or behaviour signals. The expiry sweep, the ONE release path, the race
+guards and the columns it introduced all still stand. Full record:
+[`history/archive/AI_Handoff-2026-09-28-dynamic-reservation-v1.md`](./history/archive/AI_Handoff-2026-09-28-dynamic-reservation-v1.md).
 
 ---
 
@@ -790,3 +728,76 @@ apply migration `048` to production (Neon SQL Editor) **before** the backend tha
 column deploys. (2) A browser pass on the countdown and the expired notice (th/en/my). (3) No real
 Stripe delivery was reproduced here, so the "late payment after expiry → manual refund" path is
 proven at the state level in tests, not against a live charge.
+
+---
+
+## 38. Fixed 30-minute payment reservation + countdown + pay-again UX (2026-09-28)
+
+**Reported (Part 1 FINAL, before VelRepeat).** Finish the unpaid-order / payment-reservation
+experience and make the Order UI production-ready: the reservation is **exactly 30 minutes** (no
+dynamic duration), the customer sees a countdown in the order list and on the order page, and can
+pay again — choosing the payment method again — while the window is valid. VelRepeat, customer
+memory, traffic/sales signals and personalization are explicitly OUT of scope.
+
+**The window is now a CONSTANT — this supersedes §36's risk-based windows.** `backend/lib/payment-reservation.ts`
+was rewritten so the duration is `PAYMENT_RESERVATION_MINUTES = 30` for every eligible order
+(`payment_expires_at = created_at + 30 min`). Part 1 forbids deriving it from popularity, views,
+clicks, sales velocity, demand or behaviour — the exact inputs the v1 policy read — so the risk
+table, the signal query (`gatherOrderReservationSignals`) and `deriveDemandMetrics()` are GONE and
+the policy is now a pure function of `now`. Everything else is unchanged: `orders.reservation_policy`
+still records the policy that produced a deadline (`version: "v2"`, `reservationMinutes: 30`,
+`reason`), so a v1 row stays distinguishable; the SAVEPOINT deploy-order guard, the expiry sweep,
+the ONE release path, the "a paid-after-release order is never resurrected" guard and the Stripe
+session `expires_at` bound all stand. Side benefit: order creation no longer runs the signal query
+at all — one round trip less on the checkout path that §32/§34/§37 were about.
+
+**Countdown — ONE rule for both surfaces.** NEW `paymentReservationPhase()` and
+`PAYMENT_RESERVATION_URGENT_MS = 3 min` in `packages/shared/src/lib/commerce.ts`, returning
+`active` / `urgent` (last 3 minutes, the documented `02:13` case) / `expired` / `none`. `MyOrders.tsx`
+and `ShopOrderDetail.tsx` both read it, so an order can never look active on one surface and expired
+on the other. The **list** now counts down per order (it previously had only the button), refetches
+once when a window lapses, and refetches on `visibilitychange`; the **detail page** turns the
+countdown into the hero (order no + status, "Payment expires in" + a big `MM:SS` + the note) with the
+pay action beside it. Paid/cancelled orders show no countdown; a lapsed one shows the expired notice,
+never `-00:23`. The clock is presentation only — the backend deadline is the source of truth and the
+backend enforces it (checkout answers `400 PAYMENT_RESERVATION_EXPIRED`).
+
+**Order page restructured into a production hierarchy.** Header card (status, countdown, pay) →
+progress → items → **delivery** (address + carrier/tracking; there is no shipping-method column, so
+none is invented) → **payment** (method, status, payment rows) → **order summary** (subtotal,
+shipping, discount only when > 0, total) → shop → **actions** (pay now, back, buy again, cancel
+order). Mobile first: `tabular-nums` clock, wrapping address, no horizontal overflow. Every string
+lives in the dictionaries (th/en/my).
+
+**Pay again = choose the method AGAIN.** `ResumePaymentButton` no longer auto-uses the recorded rail:
+one press always opens a chooser listing the rails the BACKEND reports enabled
+(`GET /api/payments/methods` → CARD/PROMPTPAY), preselects the recorded one, and continues with the
+one the customer picks. (The backend already abandons a stale open session for a different method
+instead of charging the wrong rail.) A `pageshow` listener re-enables the button when the customer
+comes Back from Stripe; `onUnknownMethod` is gone from all four surfaces.
+
+**Migration headroom + production state.** `db/migrations/048_payment_reservation.sql` — comment
+updated only (the DDL is byte-identical, additive, idempotent): the runner fires only when a
+`db/migrations/*.sql` file changes, and `048` has never applied. **Production Neon therefore still
+has NO `payment_expires_at`/`reservation_policy`** (§37, quota `36371800184`), so in production the
+reservation and the countdown are INERT — `orders` keeps answering `paymentExpiresAt: null`, the
+pages simply render no countdown, and checkout is unaffected (that is the deploy-order net from
+§37 working). Do not report the reservation as live in production until an owner read confirms the
+columns.
+
+**Verified here.** backend `tsc` 0 · `typecheck` 4/4 · `build:velshop` 0 · `i18n:check`
+th=en=my=**1350** · `git diff --check` clean · `payment-reservation-policy` +
+`payment-reservation-expiry` **49 pass / 19 skip / 0 fail** — new coverage: the 30:00 start, the
+`02:13` urgent case, the full phase matrix (paid/cancelled/shipped → none, sweep-written `expired` →
+expired, COD/legacy → none, lapsed → 00:00 never negative), the policy module's "no dynamic input"
+source contract (no `riskLevel`/velocity/`featured` in code), the order-API deadline data contract
+over HTTP (`29:xx` back out of a fresh 30-minute row), and source contracts for the list countdown
+and the pay-again chooser · `checkout-payment-flow` 38 pass / 4 skip (its chooser case now pins
+"every rail", not "unknown rail") · full backend suite **789 pass / 119 skip / 1 fail**, the single
+failure being the pre-existing `test-database-isolation` child probe, which re-reads this sandbox's
+`.env` (production `DATABASE_URL`); it passes in CI, where no `.env` exists and `DATABASE_URL` is unset.
+
+**NOT verified here (owner-side).** (1) The 19 `TEST_DATABASE_URL`-gated cases — the fixed-30 write,
+release-exactly-once, the concurrency/duplicate-webhook races and the new API deadline contract —
+need a disposable database (CI `test.yml` provisions `postgres:16`). (2) A browser pass over the new
+order page, the list countdown and the chooser in th/en/my. (3) Production schema as above.

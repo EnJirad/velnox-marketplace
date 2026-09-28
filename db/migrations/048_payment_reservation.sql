@@ -1,8 +1,8 @@
 -- =============================================================
 -- Migration: V0048
 -- Date: 2026-09-28
--- Description: Dynamic Payment Reservation Policy V1 — a deadline for the stock
---              an unpaid order holds, plus the audited policy that produced it.
+-- Description: Payment reservation — a deadline for the stock an unpaid order
+--              holds, plus the audited policy that produced it.
 -- Reason: Stock is reserved inside the order-creation transaction, but the
 --         reservation had no deadline: an order abandoned at Stripe held its
 --         units until someone cancelled it or Stripe expired the session (~24 h
@@ -11,6 +11,11 @@
 --         in backend/jobs/payment-reservation-scheduler.ts expires those orders
 --         and releases the stock through the ONE release path
 --         (releaseOrderInventory) exactly once.
+-- Note: The columns are policy-agnostic — they store a deadline and the policy
+--       record that produced it. The duration is now a CONSTANT 30 minutes
+--       (backend/lib/payment-reservation.ts, `version: "v2"`); the earlier
+--       risk-based windows (15-60 min, `version: "v1"`) are superseded, and a
+--       stored v1 row stays distinguishable by its version field.
 -- Affected: orders (payment_expires_at, reservation_policy + one partial index)
 -- Safety: Additive and idempotent only. No DROP TABLE, no DROP COLUMN, no
 --         TRUNCATE, no DELETE, no backfill of existing rows (a NULL deadline

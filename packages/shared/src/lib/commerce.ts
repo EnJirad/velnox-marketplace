@@ -620,6 +620,48 @@ export function formatPaymentCountdown(remainingMs: number): string {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
 
+/**
+ * A reservation inside this much of its deadline is "almost over": the UI
+ * emphasises it (warmer colour, an explicit "hurry" note) without any animation.
+ *
+ * Three minutes: the last tenth of the 30-minute window. It is what makes a
+ * countdown like `02:13` render as the urgent state rather than an ordinary one.
+ */
+export const PAYMENT_RESERVATION_URGENT_MS = 3 * 60_000;
+
+/** How the reservation must be presented for one order. */
+export type PaymentReservationPhase = "none" | "active" | "urgent" | "expired";
+
+/**
+ * The ONE presentation phase both order surfaces (list + detail) read, so the
+ * same order can never look "active" in one place and "expired" in the other.
+ *
+ *   `active`   — a window is open, comfortably more than the urgent threshold left
+ *   `urgent`   — a window is open but nearly over (`PAYMENT_RESERVATION_URGENT_MS`)
+ *   `expired`  — the deadline has passed, or the expiry sweep already moved the
+ *                order to `expired`
+ *   `none`     — no countdown belongs here: a COD or legacy order with no stored
+ *                deadline, or an order that was paid/cancelled/shipped
+ *
+ * PRESENTATION ONLY. The backend deadline is the source of truth and the backend
+ * enforces it; a wrong client clock can mis-render a number, never change state.
+ */
+export function paymentReservationPhase(
+  order: OrderReservationInput | null | undefined,
+  now: number = Date.now(),
+): PaymentReservationPhase {
+  const state = paymentReservationState(order, now);
+  if (state.hasWindow) {
+    if (state.expired) return "expired";
+    return state.remainingMs <= PAYMENT_RESERVATION_URGENT_MS ? "urgent" : "active";
+  }
+  // No countdown for an order that is no longer waiting to be paid. The ONE
+  // exception is an order the sweep already ended: its window really did lapse,
+  // so the storefront says so instead of rendering nothing. A paid or cancelled
+  // order shows nothing — a countdown there would suggest a payment is possible.
+  return order?.status === "expired" ? "expired" : "none";
+}
+
 // ---------------------------------------------------------------------------
 // customer cancellation contract
 // ---------------------------------------------------------------------------

@@ -33,10 +33,16 @@ ONLY** — a live-looking secret key is refused, never used.
 | POST | `/api/admin/orders/:orderId/refund` | `orders.manage` permission |
 | GET | `/api/orders/:orderId` | payment + refunds included |
 
-## Payment reservation window (do not weaken)
+## Payment reservation window — FIXED 30 minutes (do not weaken)
 
-An unpaid order holds its reserved stock for a **risk-based deadline** (`orders.payment_expires_at`,
-see `checkout.md` for the policy table), not forever. The deadline is the backend's promise:
+An unpaid order holds its reserved stock for **exactly 30 minutes**
+(`orders.payment_expires_at = created_at + 30 min`, `backend/lib/payment-reservation.ts`), not
+forever and NOT a variable window. The duration is a constant on purpose: it must not depend on
+popularity, product views or clicks, sales velocity, demand or behaviour signals — those belong to
+VelRepeat. `orders.reservation_policy` still records the policy that produced a deadline
+(`version: "v2"`, `reservationMinutes: 30`, `reason`); a `version: "v1"` row is a legacy risk-based
+window (15–60 min, superseded). COD gets no window at all (nothing online is waited on). The deadline
+is the backend's promise:
 
 - `POST /api/stripe/checkout` refuses a lapsed window with **400 `PAYMENT_RESERVATION_EXPIRED`**
   **before** the Stripe session is created, so a charge is never started for an order the sweep is
@@ -51,6 +57,26 @@ see `checkout.md` for the policy table), not forever. The deadline is the backen
   money on the payment row (which is what makes it refundable) and logs
   `manual review/refund required` with the reason. No refund is invented in code — an operator
   decides.
+
+### Storefront contract (presentation only)
+
+- **One rule, both surfaces.** `paymentReservationPhase()`
+  (`packages/shared/src/lib/commerce.ts`) returns `active` / `urgent` (the last
+  `PAYMENT_RESERVATION_URGENT_MS` = 3 min — the documented `02:13` case) / `expired` / `none`, and
+  `MyOrders.tsx` + `ShopOrderDetail.tsx` both read it, so an order can never look active on one
+  surface and expired on the other. The list counts down per order and refetches when the tab
+  becomes visible or a window lapses; the order page shows the clock as its hero. A paid, cancelled
+  or shipped order shows NO countdown; a lapsed one shows the expired notice, never `-00:23`.
+- **The clock never decides anything.** The frontend must not compute an expiry independently, and
+  no status may ever be written from it — the backend deadline + the guarded writes are the source
+  of truth (that is also why `GET /api/customer/orders` and `…/orders/:orderId` expose
+  `paymentExpiresAt` in ms; the read is schema-tolerant, so a database without the column simply
+  reports no window).
+- **Pay again = choose the method AGAIN.** `ResumePaymentButton` always opens a chooser built from
+  `GET /api/payments/methods` (never a hard-coded rail list), PRESELECTS the recorded rail and
+  continues with the one the customer picks; a missing session URL is an error, never a redirect.
+- **The only writer of `paid` is still the Stripe webhook.** Nothing in the reservation, countdown
+  or chooser may mark an order paid.
 
 ## Rules (do not weaken)
 

@@ -273,7 +273,6 @@ export default function ShopCheckoutSuccess() {
                     orderId={order.id}
                     method={payability.method}
                     returnPath={`/orders/${order.id}`}
-                    onUnknownMethod="ask"
                   />
                 </div>
                 <p className="mt-3 text-[11px] leading-5 text-amber-700/70">{t("checkoutSuccess.polling")}</p>

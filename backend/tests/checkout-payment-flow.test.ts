@@ -371,11 +371,18 @@ describe("resume payment — one shared control on every surface", () => {
     expect(src).toContain("crypto.randomUUID()");
   });
 
-  test("an unknown rail opens the backend's own method list, never a default", () => {
+  test("the method chooser opens for EVERY rail, and lists the backend's own methods", () => {
     const src = read(RESUME_BUTTON);
-    expect(src).toContain("void openChooser();");
+    // The chooser is no longer reserved for an unknown rail: the customer may
+    // choose the payment method again on any unpaid order (a PromptPay attempt
+    // that failed can be retried by card).
+    expect(src).toContain("onClick={openChooser}");
+    expect(src).toContain("void loadMethods();");
     expect(src).toContain("fetchPaymentMethods()");
     expect(src).toContain('m.id === "CARD" || m.id === "PROMPTPAY"');
+    // The recorded rail is only PRESELECTED, so switching rails is a real choice.
+    expect(src).toContain("setSelected(method)");
+    expect(src).toContain("setSelected(rail)");
     // The request body carries the RESOLVED rail only — no literal, no
     // fallback, and no operator that could substitute one.
     const payload = src.slice(src.indexOf("await createStripeCheckout({"), src.indexOf("})) as unknown"));

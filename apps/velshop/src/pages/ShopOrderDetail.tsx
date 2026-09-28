@@ -32,6 +32,7 @@ import {
   getOrderStatusMeta,
   orderCustomerCancelability,
   orderStripePayability,
+  paymentReservationPhase,
   paymentReservationState,
 } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
@@ -54,6 +55,26 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
+
+/**
+ * Order detail — the customer's single place to understand and act on an order.
+ *
+ * LAYOUT (one clear hierarchy, mobile first):
+ *   1. the order header + STATUS, with the payment reservation countdown and the
+ *      ONE pay action beside it;
+ *   2. progress timeline;
+ *   3. items (image, name, variant, quantity, price);
+ *   4. delivery (shipping address + shipment tracking);
+ *   5. payment (method + status);
+ *   6. order summary (subtotal, shipping, discount, total);
+ *   7. the shop;
+ *   8. actions (back, buy again, cancel order).
+ *
+ * The countdown is PRESENTATION ONLY: `paymentExpiresAt` is computed and enforced
+ * by the backend (a new Checkout Session is refused with
+ * `PAYMENT_RESERVATION_EXPIRED` once it has passed), so a wrong client clock can
+ * only ever mis-render a number — never change an order's state.
+ */
 
 interface OrderItemRow {
   id: string;
@@ -98,6 +119,13 @@ interface ShipmentRow {
   events?: TrackingEventRow[];
 }
 
+interface PaymentRow {
+  id: string;
+  method: string;
+  status: string;
+  amount: number;
+}
+
 interface OrderDetail {
   id: string;
   orderNumber: string;
@@ -106,6 +134,7 @@ interface OrderDetail {
   paymentStatus: string;
   shippingStatus: string;
   subtotal: number;
+  discount: number;
   shippingFee: number;
   total: number;
   note: string | null;
@@ -116,11 +145,11 @@ interface OrderDetail {
   addressSnapshot: OrderAddressSnapshot | null;
   items?: OrderItemRow[];
   shipments?: ShipmentRow[];
-  payments?: Array<{ id: string; method: string; status: string; amount: number }>;
+  payments?: PaymentRow[];
   /**
-   * Payment reservation deadline in Unix ms (Dynamic Payment Reservation V1),
-   * or null when the order holds no window. The BACKEND computed this; the
-   * countdown below only renders it.
+   * Payment reservation deadline in Unix ms (Fixed 30-minute Payment
+   * Reservation), or null when the order holds no window. The BACKEND computed
+   * this; the countdown below only renders it.
    */
   paymentExpiresAt?: number | null;
 }
@@ -147,14 +176,7 @@ export default function ShopOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  /**
-   * Presentation-only clock for the reservation countdown.
-   *
-   * The DEADLINE comes from the API and the backend enforces it; this state
-   * exists solely to re-render the remaining time. Nothing here may change an
-   * order's status — that is exactly the "no fake timer as source of truth"
-   * rule, and why a skewed client clock can only ever mis-render millis.
-   */
+  /** Presentation-only clock for the reservation countdown (see the header note). */
   const [now, setNow] = useState(() => Date.now());
 
   // cancel dialog
@@ -213,6 +235,7 @@ export default function ShopOrderDetail() {
 
   /** The reservation window this order currently holds (presentation only). */
   const reservation = paymentReservationState(order, now);
+  const reservationPhase = paymentReservationPhase(order, now);
 
   // Tick the countdown once a second, and ONLY while a window is open: a settled
   // order must not keep a timer alive.
@@ -343,18 +366,16 @@ export default function ShopOrderDetail() {
   const meta = getOrderStatusMeta(order.status);
   const items = order.items ?? [];
   const shipments = order.shipments ?? [];
+  const payments = order.payments ?? [];
   const stepIndex = order.status === "cancelled" ? -1 : ORDER_STEPS.findIndex((s) => s.key === order.status);
 
   /**
    * Still-payable order + the rail the customer actually chose.
    *
-   * The previous version looked for a payment row whose method was the legacy
-   * literal `online` with status `pending`. Real Stripe sessions are recorded as
-   * `CARD`/`PROMPTPAY` with status `requires_action`, and an order whose session
-   * creation failed has no payment row at all — so the button was missing in
-   * exactly the two cases a customer needs it. The rule now comes from the
-   * shared contract (`orderStripePayability`), which mirrors the backend's
-   * payable-status list and never invents a method.
+   * The rule comes from the shared contract (`orderStripePayability`), which
+   * mirrors the backend's payable-status list, refuses a lapsed reservation and
+   * never invents a method: the recorded rail is only PRESELECTED in the method
+   * chooser, and the customer may pick the other one.
    */
   const payability = orderStripePayability(order);
 
@@ -363,10 +384,6 @@ export default function ShopOrderDetail() {
    * button cannot appear where `PATCH /api/customer/orders/:orderId/cancel`
    * would answer `INVALID_STATUS`/`ORDER_ALREADY_PAID`, and cannot disappear for
    * an unpaid order the customer needs a way out of.
-   *
-   * The previous local set (`pending`, `confirmed`) left `pending_payment` — the
-   * status an order carries while it waits at Stripe — with a "continue payment"
-   * button and NO way to cancel, which is exactly the dead end this fixes.
    */
   const cancelability = orderCustomerCancelability(order);
 
@@ -384,60 +401,123 @@ export default function ShopOrderDetail() {
         .join(" · ")
     : "";
 
+  const payTargetOrderId = order.parentOrderId || order.id;
+  const reservationOpen = reservationPhase === "active" || reservationPhase === "urgent";
+  const reservationUrgent = reservationPhase === "urgent";
+
+  /** The countdown and the pay action, shown in ONE place (the header card). */
+  const heroActions = payability.payable ? (
+    <ResumePaymentButton
+      orderId={payTargetOrderId}
+      method={payability.method}
+      returnPath={`/orders/${order.id}`}
+      size="default"
+    />
+  ) : null;
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-              <Package className="size-4 text-[#10B981]" />
-              {t("orders.orderNo", { no: order.orderNumber })}
-            </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{t("orderDetail.title")}</h1>
-            <p className="mt-1 text-sm text-slate-500">{t("orderDetail.orderedAt", { date: formatIsoDateTime(order.createdAt) })}</p>
+        {/* ── 1. Order header + status + payment reservation ─────────────── */}
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="flex flex-wrap items-start justify-between gap-3 p-5 sm:p-6">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
+                <Package className="size-4 shrink-0 text-[#10B981]" />
+                <span className="truncate">{t("orders.orderNo", { no: order.orderNumber })}</span>
+              </p>
+              <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                {t("orderDetail.title")}
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                {t("orderDetail.orderedAt", { date: formatIsoDateTime(order.createdAt) })}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className={`gap-1.5 rounded-full ring-1 ring-inset ${meta.badge}`}>
+                <span className={`size-1.5 rounded-full ${meta.dot}`} />
+                {meta.label}
+              </Badge>
+              <Badge className="gap-1.5 rounded-full bg-white ring-1 ring-inset ring-slate-200">
+                <span className="size-1.5 rounded-full bg-slate-400" />
+                {paymentLabel(order.paymentStatus)}
+              </Badge>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className={`gap-1.5 rounded-full ring-1 ring-inset ${meta.badge}`}>
-              <span className={`size-1.5 rounded-full ${meta.dot}`} />
-              {meta.label}
-            </Badge>
-            <Badge className="gap-1.5 rounded-full bg-white ring-1 ring-inset ring-slate-200">
-              <span className="size-1.5 rounded-full bg-slate-400" />
-              {paymentLabel(order.paymentStatus)}
-            </Badge>
-            {payability.payable && (
-              <ResumePaymentButton
-                orderId={order.parentOrderId || order.id}
-                method={payability.method}
-                returnPath={`/orders/${order.id}`}
-                onUnknownMethod="ask"
-              />
-            )}
-          </div>
-        </div>
 
-        {/*
-          Payment reservation window (Dynamic Payment Reservation V1).
-          The deadline is the backend's; this strip only renders the remaining
-          time so the customer knows how long the held stock is theirs.
-        */}
-        {reservation.hasWindow && !reservation.expired && (
-          <section className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <Clock3 className="size-4 shrink-0 text-amber-600" />
-            <p className="text-sm font-semibold tabular-nums text-amber-800">
-              {t("orderReservation.payWithin", { time: formatPaymentCountdown(reservation.remainingMs) })}
-            </p>
-            <p className="text-xs text-amber-700">{t("orderReservation.windowNote")}</p>
-          </section>
-        )}
+          {/* Reservation window open: the countdown IS the call to action. */}
+          {reservationOpen && (
+            <div
+              className={`border-t px-5 py-5 sm:px-6 ${
+                reservationUrgent ? "border-rose-100 bg-rose-50/70" : "border-amber-100 bg-amber-50/70"
+              }`}
+            >
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div className="min-w-0">
+                  <p
+                    className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${
+                      reservationUrgent ? "text-rose-700" : "text-amber-700"
+                    }`}
+                  >
+                    <Clock3 className="size-3.5 shrink-0" />
+                    {t("orderReservation.expiresIn")}
+                  </p>
+                  <p
+                    className={`mt-1 text-4xl font-bold tabular-nums tracking-tight sm:text-5xl ${
+                      reservationUrgent ? "text-rose-700" : "text-amber-900"
+                    }`}
+                  >
+                    {formatPaymentCountdown(reservation.remainingMs)}
+                  </p>
+                  <p className={`mt-2 max-w-md text-xs leading-5 ${reservationUrgent ? "text-rose-700" : "text-amber-800"}`}>
+                    {reservationUrgent ? t("orderReservation.urgentNote") : t("orderReservation.windowNote")}
+                  </p>
+                </div>
+                {heroActions}
+              </div>
+            </div>
+          )}
 
-        {/* Timeline */}
-        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
+          {/* Window lapsed: say so instead of showing a negative countdown. */}
+          {reservationPhase === "expired" && (
+            <div className="border-t border-slate-100 bg-slate-50 px-5 py-5 sm:px-6">
+              <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <XCircle className="size-4 shrink-0 text-slate-400" />
+                {t("orderReservation.expiredTitle")}
+              </p>
+              <p className="mt-1.5 max-w-md text-xs leading-5 text-slate-500">{t("orderReservation.expiredDesc")}</p>
+              <Button variant="outline" size="sm" className="mt-3 gap-1.5 border-slate-200 text-slate-700" asChild>
+                <Link to="/orders">
+                  <ArrowLeft className="size-3.5" />
+                  {t("orderDetail.backToOrders")}
+                </Link>
+              </Button>
+            </div>
+          )}
+
+          {/*
+            No window at all (COD, a legacy row, or a database that predates the
+            reservation columns) but the order is still payable: the pay action
+            must not vanish just because there is no countdown to show.
+          */}
+          {reservationPhase === "none" && payability.payable && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 sm:px-6">
+              <p className="flex items-center gap-2 text-sm text-slate-600">
+                <CreditCard className="size-4 shrink-0 text-slate-300" />
+                {t("orderDetail.payOnlinePending")}
+              </p>
+              {heroActions}
+            </div>
+          )}
+        </section>
+
+        {/* ── 2. Progress ────────────────────────────────────────────────── */}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.progress")}</h2>
           {order.status === "cancelled" || order.status === "expired" || payability.expired ? (
-            <div className="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
               <p className="flex items-center gap-3">
                 <XCircle className="size-4 shrink-0 text-slate-400" />
                 {order.status === "cancelled"
@@ -468,9 +548,7 @@ export default function ShopOrderDetail() {
                       </span>
                     </div>
                     {i < ORDER_STEPS.length - 1 && (
-                      <span
-                        className={`mx-2 mb-5 h-0.5 w-8 sm:w-12 ${stepIndex > i ? "bg-[#10B981]" : "bg-slate-200"}`}
-                      />
+                      <span className={`mx-2 mb-5 h-0.5 w-8 sm:w-12 ${stepIndex > i ? "bg-[#10B981]" : "bg-slate-200"}`} />
                     )}
                   </div>
                 );
@@ -479,68 +557,242 @@ export default function ShopOrderDetail() {
           )}
         </section>
 
-        {/* Shipment tracking */}
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-              <Truck className="size-4 text-[#10B981]" />
-              {t("orderDetail.shipmentTitle")}
-            </h2>
-            {shipments.length > 0 && (
-              <Button variant="outline" size="sm" className="gap-1.5 border-slate-200 text-slate-600" asChild>
-                <Link to={`/orders/${order.id}/tracking`}>
-                  <Truck className="size-3.5" />
-                  {t("orderDetail.fullTimeline")}
-                </Link>
-              </Button>
-            )}
-          </div>
-          {shipments.length === 0 ? (
-            <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
-              <Truck className="size-6 text-slate-300" />
-              <p className="mt-2 text-sm font-medium text-slate-600">{t("orderDetail.noShipment")}</p>
-              <p className="mt-1 text-xs text-slate-400">{t("orderDetail.noShipmentDesc")}</p>
-            </div>
-          ) : (
-            shipments.map((s) => (
-              <div key={s.id} className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <p className="font-semibold text-slate-900">{s.carrier}</p>
-                  <p className="font-mono text-xs text-slate-500">{s.trackingNumber ?? t("orderDetail.noTrackingNo")}</p>
-                </div>
-                <p className="mt-1 text-xs text-slate-400">
-                  {t("orderDetail.status", { status: trackingLabel(s.status) })}
-                  {s.estimatedDeliveryDate ? ` · ${t("orderDetail.eta", { date: s.estimatedDeliveryDate })}` : ""}
-                </p>
-                {s.events && s.events.length > 0 && (
-                  <div className="mt-4 space-y-0">
-                    {[...s.events].reverse().slice(0, 3).map((e, i) => (
-                      <div key={e.id} className="flex gap-3">
-                        <div className="flex flex-col items-center">
-                          <span className={`mt-1 size-2.5 rounded-full ${i === 0 ? "bg-[#10B981]" : "bg-slate-300"}`} />
-                          {i < 2 && <span className="w-px flex-1 bg-slate-200" />}
-                        </div>
-                        <div className="pb-4">
-                          <p className="text-sm font-medium text-slate-900">
-                            {trackingLabel(e.status)}
-                          </p>
-                          <p className="mt-0.5 text-[11px] text-slate-400">
-                            {e.location ? `${e.location} · ` : ""}
-                            {formatIsoDateTime(e.occurredAt)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
+        {/* ── 3. Items ───────────────────────────────────────────────────── */}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+          <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.itemsTitle")}</h2>
+          <div className="mt-4 space-y-3">
+            {items.map((item) => {
+              const productAvailable = item.productStatus === "published";
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    {item.imageUrl ? (
+                      productAvailable ? (
+                        <Link to={`/products/${item.productId}`} className="shrink-0">
+                          <img
+                            src={item.imageUrl}
+                            alt={item.productName}
+                            className="size-14 rounded-[10px] border border-slate-100 object-cover"
+                            loading="lazy"
+                          />
+                        </Link>
+                      ) : (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.productName}
+                          className="size-14 rounded-[10px] border border-slate-100 object-cover opacity-60"
+                          loading="lazy"
+                        />
+                      )
+                    ) : (
+                      <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
+                        <ImageOff className="size-4 text-slate-300" />
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      {productAvailable ? (
+                        <Link
+                          to={`/products/${item.productId}`}
+                          className="block truncate text-sm font-semibold text-slate-900 transition-colors hover:text-[#10B981]"
+                        >
+                          {item.productName}
+                        </Link>
+                      ) : (
+                        <p className="block truncate text-sm font-semibold text-slate-400">{item.productName}</p>
+                      )}
+                      {item.variantName && (
+                        <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{item.variantName}</p>
+                      )}
+                      {!productAvailable && (
+                        <p className="mt-0.5 text-xs text-amber-600">{t("orderDetail.productUnavailable")}</p>
+                      )}
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {formatBaht(item.unitPrice)}
+                        {item.unit ? ` / ${item.unit}` : ""} × {item.quantity}
+                      </p>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))
+                  <div className="flex shrink-0 items-center gap-3">
+                    <p className="text-sm font-bold tabular-nums text-slate-900">{formatBaht(item.subtotal)}</p>
+                    {REVIEWABLE.has(order.status) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1 border-slate-200 text-slate-600"
+                        onClick={() => {
+                          setReviewTarget(item);
+                          setReviewRating(5);
+                          setReviewComment("");
+                        }}
+                      >
+                        <Star className="size-3.5" />
+                        {t("orderDetail.review")}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {order.note && (
+            <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              {t("orderDetail.note", { note: order.note })}
+            </p>
           )}
         </section>
 
-        {/* Shop */}
+        {/* ── 4. Delivery ────────────────────────────────────────────────── */}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+          <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
+            <Truck className="size-4 text-[#10B981]" />
+            {t("orderDetail.deliveryTitle")}
+          </h2>
+
+          {/* Shipping address */}
+          {address ? (
+            <div className="mt-4 flex gap-3">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-slate-300" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-900">
+                  {address.recipientName ?? ""}
+                  {address.phone ? ` · ${address.phone}` : ""}
+                </p>
+                <p className="mt-1 text-sm leading-6 break-words text-slate-600">{addressText || "—"}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+              <MapPin className="size-4 shrink-0 text-slate-300" />
+              {t("orderDetail.noAddress")}
+            </p>
+          )}
+
+          {/* Shipment tracking (carrier + tracking number are real columns; there
+              is no shipping-method column, so none is invented) */}
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-700">{t("orderDetail.shipmentTitle")}</h3>
+              {shipments.length > 0 && (
+                <Button variant="outline" size="sm" className="gap-1.5 border-slate-200 text-slate-600" asChild>
+                  <Link to={`/orders/${order.id}/tracking`}>
+                    <Truck className="size-3.5" />
+                    {t("orderDetail.fullTimeline")}
+                  </Link>
+                </Button>
+              )}
+            </div>
+            {shipments.length === 0 ? (
+              <div className="mt-3 flex flex-col items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+                <Truck className="size-6 text-slate-300" />
+                <p className="mt-2 text-sm font-medium text-slate-600">{t("orderDetail.noShipment")}</p>
+                <p className="mt-1 text-xs text-slate-400">{t("orderDetail.noShipmentDesc")}</p>
+              </div>
+            ) : (
+              shipments.map((s) => (
+                <div key={s.id} className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <p className="font-semibold text-slate-900">{s.carrier}</p>
+                    <p className="font-mono text-xs break-all text-slate-500">
+                      {s.trackingNumber ?? t("orderDetail.noTrackingNo")}
+                    </p>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {t("orderDetail.status", { status: trackingLabel(s.status) })}
+                    {s.estimatedDeliveryDate ? ` · ${t("orderDetail.eta", { date: s.estimatedDeliveryDate })}` : ""}
+                  </p>
+                  {s.events && s.events.length > 0 && (
+                    <div className="mt-4 space-y-0">
+                      {[...s.events].reverse().slice(0, 3).map((e, i) => (
+                        <div key={e.id} className="flex gap-3">
+                          <div className="flex flex-col items-center">
+                            <span className={`mt-1 size-2.5 rounded-full ${i === 0 ? "bg-[#10B981]" : "bg-slate-300"}`} />
+                            {i < 2 && <span className="w-px flex-1 bg-slate-200" />}
+                          </div>
+                          <div className="pb-4">
+                            <p className="text-sm font-medium text-slate-900">{trackingLabel(e.status)}</p>
+                            <p className="mt-0.5 text-[11px] text-slate-400">
+                              {e.location ? `${e.location} · ` : ""}
+                              {formatIsoDateTime(e.occurredAt)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* ── 5. Payment ─────────────────────────────────────────────────── */}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+          <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
+            <CreditCard className="size-4 text-[#10B981]" />
+            {t("orderDetail.paymentTitle")}
+          </h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-100 p-3">
+              <p className="text-xs text-slate-400">{t("orderDetail.paymentMethod")}</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">
+                {payments[0]?.method ? paymentMethodLabel(payments[0].method) : "—"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-100 p-3">
+              <p className="text-xs text-slate-400">{t("orderDetail.paymentStatus")}</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{paymentLabel(order.paymentStatus)}</p>
+            </div>
+          </div>
+          {payments.length > 0 && (
+            <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+              {payments.map((p) => (
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span className="flex items-center gap-2 text-slate-600">
+                    <CreditCard className="size-4 text-slate-300" />
+                    {paymentMethodLabel(p.method)}
+                  </span>
+                  <span className="font-medium tabular-nums text-slate-900">
+                    {formatBaht(p.amount)} · {paymentLabel(p.status)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── 6. Order summary ───────────────────────────────────────────── */}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+          <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.summaryTitle")}</h2>
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-slate-500">{t("orderDetail.subtotal")}</span>
+              <span className="tabular-nums text-slate-900">{formatBaht(order.subtotal)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-slate-500">{t("orderDetail.shipping")}</span>
+              <span className="tabular-nums text-slate-900">{formatBaht(order.shippingFee)}</span>
+            </div>
+            {order.discount > 0 && (
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-slate-500">{t("orderDetail.discount")}</span>
+                <span className="tabular-nums text-emerald-600">−{formatBaht(order.discount)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-3">
+              <span className="font-medium text-slate-500">{t("orderDetail.total")}</span>
+              <span className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
+                {formatBaht(order.total)}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* ── 7. Shop ────────────────────────────────────────────────────── */}
         {order.shopName && (
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
             <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
               <Store className="size-4 text-[#10B981]" />
               {t("orderDetail.shopTitle")}
@@ -561,180 +813,48 @@ export default function ShopOrderDetail() {
           </section>
         )}
 
-        {/* Items */}
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-          <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.itemsTitle")}</h2>
-          <div className="mt-4 space-y-3">
-            {items.map((item) => {
-              const productAvailable = item.productStatus === "published";
-              return (
-              <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  {item.imageUrl ? (
-                    productAvailable ? (
-                      <Link to={`/products/${item.productId}`} className="shrink-0">
-                        <img
-                          src={item.imageUrl}
-                          alt={item.productName}
-                          className="size-14 rounded-[10px] border border-slate-100 object-cover"
-                          loading="lazy"
-                        />
-                      </Link>
-                    ) : (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.productName}
-                        className="size-14 rounded-[10px] border border-slate-100 object-cover opacity-60"
-                        loading="lazy"
-                      />
-                    )
-                  ) : (
-                    <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
-                      <ImageOff className="size-4 text-slate-300" />
-                    </span>
-                  )}
-                  <div className="min-w-0">
-                    {productAvailable ? (
-                      <Link
-                        to={`/products/${item.productId}`}
-                        className="block truncate text-sm font-semibold text-slate-900 transition-colors hover:text-[#10B981]"
-                      >
-                        {item.productName}
-                      </Link>
-                    ) : (
-                      <p className="block truncate text-sm font-semibold text-slate-400">{item.productName}</p>
-                    )}
-                    {item.variantName && (
-                      <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{item.variantName}</p>
-                    )}
-                    {!productAvailable && (
-                      <p className="mt-0.5 text-xs text-amber-600">{t("orderDetail.productUnavailable")}</p>
-                    )}
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      {formatBaht(item.unitPrice)}
-                      {item.unit ? ` / ${item.unit}` : ""} × {item.quantity}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <p className="text-sm font-bold tabular-nums text-slate-900">{formatBaht(item.subtotal)}</p>
-                  {REVIEWABLE.has(order.status) && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 border-slate-200 text-slate-600"
-                      onClick={() => {
-                        setReviewTarget(item);
-                        setReviewRating(5);
-                        setReviewComment("");
-                      }}
-                    >
-                      <Star className="size-3.5" />
-                      {t("orderDetail.review")}
-                    </Button>
-                  )}
-                </div>
-              </div>
-              );
-            })}
-          </div>
-          <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-4 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">{t("orderDetail.subtotal")}</span>
-              <span className="tabular-nums text-slate-900">{formatBaht(order.subtotal)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">{t("orderDetail.shipping")}</span>
-              <span className="tabular-nums text-slate-900">{formatBaht(order.shippingFee)}</span>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-              <span className="font-medium text-slate-500">{t("orderDetail.total")}</span>
-              <span className="text-xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(order.total)}</span>
-            </div>
-          </div>
-          {order.note && (
-            <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              {t("orderDetail.note", { note: order.note })}
-            </p>
-          )}
-        </section>
-
-        {/* Payment */}
-        {(order.payments ?? []).length > 0 && (
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-              <CreditCard className="size-4 text-[#10B981]" />
-              {t("orderDetail.paymentTitle")}
-            </h2>
-            <div className="mt-3 space-y-2">
-              {(order.payments ?? []).map((p) => (
-                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="flex items-center gap-2 text-slate-600">
-                    <CreditCard className="size-4 text-slate-300" />
-                    {paymentMethodLabel(p.method)}
-                  </span>
-                  <span className="tabular-nums font-medium text-slate-900">
-                    {formatBaht(p.amount)} · {paymentLabel(p.status)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Address */}
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-          <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-            <MapPin className="size-4 text-[#10B981]" />
-            {t("orderDetail.addressTitle")}
-          </h2>
-          {address ? (
-            <>
-              <p className="mt-3 text-sm font-medium text-slate-900">
-                {address.recipientName ?? ""}
-                {address.phone ? ` · ${address.phone}` : ""}
-              </p>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{addressText || "—"}</p>
-            </>
-          ) : (
-            <p className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-              <MapPin className="size-4 shrink-0 text-slate-300" />
-              {t("orderDetail.noAddress")}
-            </p>
-          )}
-        </section>
-
-        {/* Actions */}
-        <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Button variant="outline" className="border-slate-200 text-slate-700" asChild>
-            <Link to="/orders">
-              <ArrowLeft className="size-4" />
-              {t("orderDetail.backToOrders")}
-            </Link>
-          </Button>
-          {order.status !== "cancelled" && (
-            <Button
-              variant="outline"
-              className="gap-1.5 border-slate-200 text-slate-700"
-              onClick={handleBuyAgain}
-              disabled={busy}
-            >
-              <RefreshCw className="size-4" />
-              {t("orderDetail.buyAgain")}
+        {/* ── 8. Actions ─────────────────────────────────────────────────── */}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+          <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.actionsTitle")}</h2>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            {payability.payable && (
+              <ResumePaymentButton
+                orderId={payTargetOrderId}
+                method={payability.method}
+                returnPath={`/orders/${order.id}`}
+                size="default"
+              />
+            )}
+            <Button variant="outline" className="border-slate-200 text-slate-700" asChild>
+              <Link to="/orders">
+                <ArrowLeft className="size-4" />
+                {t("orderDetail.backToOrders")}
+              </Link>
             </Button>
-          )}
-          {cancelability.cancelable && (
-            <Button
-              variant="outline"
-              className="ml-auto gap-1.5 border-red-200 text-red-600 hover:bg-red-50"
-              onClick={() => setCancelOpen(true)}
-              disabled={busy}
-            >
-              <XCircle className="size-4" />
-              {t("orderDetail.cancelOrder")}
-            </Button>
-          )}
-        </div>
+            {order.status !== "cancelled" && (
+              <Button
+                variant="outline"
+                className="gap-1.5 border-slate-200 text-slate-700"
+                onClick={handleBuyAgain}
+                disabled={busy}
+              >
+                <RefreshCw className="size-4" />
+                {t("orderDetail.buyAgain")}
+              </Button>
+            )}
+            {cancelability.cancelable && (
+              <Button
+                variant="outline"
+                className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 sm:ml-auto"
+                onClick={() => setCancelOpen(true)}
+                disabled={busy}
+              >
+                <XCircle className="size-4" />
+                {t("orderDetail.cancelOrder")}
+              </Button>
+            )}
+          </div>
+        </section>
       </main>
 
       {/* Cancel confirm */}

@@ -169,6 +169,11 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-28-customer-cancellation.md`](./archive/AI_Handoff-2026-09-28-customer-cancellation.md) | handoff §35 — unpaid orders get a way out | The one shared cancel rule for button + server, the guarded claim + the ONE `releaseOrderInventory()` path, the `orderCancel` i18n namespace, and the 55 KiB matching-window tooling finding. Moved out on 2026-09-28 so §37 (production checkout down — migration 048 never applied) could be appended. Its two test-side failures were fixed in §37 |
 
+### 2026-09-28 — the §36 split (dynamic reservation superseded by a fixed 30-minute window)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-28-dynamic-reservation-v1.md`](./archive/AI_Handoff-2026-09-28-dynamic-reservation-v1.md) | handoff §36 — Dynamic Payment Reservation V1 (risk-based window) | The v1 policy that derived the stock-hold window from stock cover / 7-day sales velocity / `products.featured` (CRITICAL 15 · HIGH 20 · NORMAL 30 · LOW 45 · VERY_LOW 60, clamped 10–60), what it changed (the policy module, the expiry sweep, the two read routes, the Stripe `expires_at` bound, the `orderReservation` i18n namespace, migration 048) and the race invariants it established: no order is ever resurrected, no unit released twice. Moved out on 2026-09-28 because **§38 superseded its duration rule** with a CONSTANT 30 minutes (Part 1 forbids deriving the window from demand or behaviour signals); the sweep, the ONE release path and the race guards it describes are still live |
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

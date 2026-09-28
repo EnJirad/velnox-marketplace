@@ -12,6 +12,10 @@ export const en: Dict = {
   /** Payment-reservation copy — see the Thai dictionary for why it lives here. */
   orderReservation: {
     payWithin: "Pay within {time}",
+    remaining: "{time} remaining",
+    expiresIn: "Payment expires in",
+    urgentNote: "Almost out of time — please pay before the window closes.",
+    payNow: "Pay now",
     windowNote:
       "If payment is not completed in time, the items we are holding will be released for other customers automatically.",
     expiredTitle: "Payment window expired",
@@ -728,6 +732,14 @@ export const en: Dict = {
     productUnavailable: "This product is no longer available",
     paymentTitle: "Payment",
     itemsTitle: "Items in this order",
+    deliveryTitle: "Delivery",
+    summaryTitle: "Order summary",
+    discount: "Discount",
+    paymentMethod: "Payment method",
+    paymentStatus: "Payment status",
+    actionsTitle: "Actions",
+    choosePaymentDescAny: "Choose how you want to pay and we'll take you straight to Stripe Checkout.",
+    continueAction: "Continue",
     subtotal: "Items",
     shipping: "Shipping",
     total: "Total",

@@ -40,6 +40,8 @@ import {
   getOrderStatusMeta,
   NEXT_ORDER_STATUSES,
   orderStripePayability,
+  PAYMENT_RESERVATION_URGENT_MS,
+  paymentReservationPhase,
   paymentReservationState,
 } from "../../packages/shared/src/lib/commerce.ts";
 import { translations } from "../../packages/shared/src/lib/i18n/locales/index";
@@ -54,6 +56,9 @@ import {
   isUndefinedColumnError,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
   PAYMENT_RESERVATION_EXPIRED_STATUS,
+  PAYMENT_RESERVATION_MINUTES,
+  PAYMENT_RESERVATION_MS,
+  PAYMENT_RESERVATION_POLICY_VERSION,
   selectOrderPaymentRow,
 } from "../lib/payment-reservation.js";
 import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
@@ -73,6 +78,10 @@ const SERVER = "backend/server.ts";
 const POLICY_LIB = "backend/lib/payment-reservation.ts";
 const SWEEP_JOB = "backend/jobs/payment-reservation-scheduler.ts";
 const ORDER_DETAIL_PAGE = "apps/velshop/src/pages/ShopOrderDetail.tsx";
+const MY_ORDERS_PAGE = "apps/velshop/src/pages/MyOrders.tsx";
+const PAY_BUTTON = "apps/velshop/src/components/shop/ResumePaymentButton.tsx";
+const CHECKOUT_SUCCESS_PAGE = "apps/velshop/src/pages/ShopCheckoutSuccess.tsx";
+const CHECKOUT_CANCEL_PAGE = "apps/velshop/src/pages/ShopCheckoutCancel.tsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. The storefront rule: countdown, expiry and payability
@@ -192,14 +201,143 @@ describe("payment reservation — the countdown the order page renders", () => {
     expect(page).not.toContain("paymentExpiresAt: Date.now()");
     expect(page).not.toMatch(/status:\s*"expired"/);
   });
+
+  test("the order page has the production hierarchy: hero, items, delivery, payment, summary, actions", () => {
+    const page = read(ORDER_DETAIL_PAGE);
+    // Every section title comes from the dictionary, so all three locales cover it.
+    for (const section of ["itemsTitle", "deliveryTitle", "paymentTitle", "summaryTitle", "actionsTitle", "paymentMethod", "paymentStatus"]) {
+      expect(page).toContain(`t("orderDetail.${section}")`);
+    }
+    // The reservation block labels the clock and, when nearly over, says so.
+    expect(page).toContain('t("orderReservation.expiresIn")');
+    expect(page).toContain('t("orderReservation.urgentNote")');
+    expect(page).toContain('t("orderReservation.windowNote")');
+    // The expired state replaces the clock — a lapsed window is never a timer.
+    expect(page).toContain('reservationPhase === "expired"');
+    // A discount line only exists when the order really carries one.
+    expect(page).toContain("order.discount > 0");
+    // The address wraps instead of overflowing, and the countdown is prominent.
+    expect(page).toContain("break-words");
+    expect(page).toContain("tabular-nums");
+  });
+
+  test("the orders list counts down per order, and paid orders show nothing", () => {
+    const page = read(MY_ORDERS_PAGE);
+    expect(page).toContain("paymentReservationPhase");
+    expect(page).toContain("formatPaymentCountdown");
+    // One presentation clock, ticking only while a window is open.
+    expect(page).toContain("setInterval(() => setNow(Date.now()), 1000)");
+    expect(page).toContain("hasOpenReservation");
+    // The countdown block is gated on the OPEN phases, so a paid order (whose
+    // phase is "none") can never render one.
+    expect(page).toContain('reservationPhase === "active" || reservationPhase === "urgent"');
+    expect(page).toContain('reservationPhase === "expired"');
+    // A stale list is refreshed by the server, never patched locally.
+    expect(page).toContain('window.addEventListener("visibilitychange"');
+    expect(page).not.toContain("paymentExpiresAt: Date.now()");
+    expect(page).not.toMatch(/status:\s*"expired"/);
+  });
+
+  test("the pay button lets the customer choose the method AGAIN, from the real config", () => {
+    const button = read(PAY_BUTTON);
+    // The rails come from the backend's discovery endpoint, never hard-coded copy
+    // of which methods exist (a disabled rail must not be offered).
+    expect(button).toContain("api.payments.methods");
+    expect(button).toContain('m.enabled');
+    expect(button).toContain('m.id === "CARD" || m.id === "PROMPTPAY"');
+    // The recorded rail is only PRESELECTED — the customer can switch rails, and
+    // the chooser opens even when nothing was recorded.
+    expect(button).toContain("setSelected(method)");
+    expect(button).toContain("onClick={openChooser}");
+    expect(button).not.toContain("onUnknownMethod");
+    expect(button).not.toContain("if (method === null)");
+    expect(button).toContain('onClick={() => selected && void startPayment(selected)}');
+    // Nothing is ever marked paid here, and a missing URL is an error.
+    expect(button).toContain("window.location.assign(url)");
+    expect(button).toContain('typeof url !== "string"');
+    expect(button).not.toMatch(/status\s*[:=]\s*"paid"/);
+    expect(button).toContain('window.addEventListener("pageshow"');
+    // …and no surface may force a rail on the button any more.
+    for (const page of [ORDER_DETAIL_PAGE, MY_ORDERS_PAGE, CHECKOUT_SUCCESS_PAGE, CHECKOUT_CANCEL_PAGE]) {
+      expect(read(page)).not.toContain("onUnknownMethod");
+    }
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. i18n — the copy exists in every locale
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════
+// 1b. The countdown STATES the two order surfaces render
+// ══════════════════════════════════════════════════════════════════════════
+
+describe("payment reservation — the countdown states", () => {
+  const now = Date.UTC(2026, 8, 28, 12, 0, 0);
+  const at = (remainingMs: number, status = "pending_payment") => ({
+    status,
+    paymentExpiresAt: now + remainingMs,
+  });
+
+  test("a fresh 30-minute window starts at 30:00 and is active", () => {
+    expect(paymentReservationPhase(at(PAYMENT_RESERVATION_MS), now)).toBe("active");
+    expect(formatPaymentCountdown(PAYMENT_RESERVATION_MS)).toBe("30:00");
+  });
+
+  test("the clock is MM:SS all the way down — the 29:47 the list shows", () => {
+    expect(formatPaymentCountdown(PAYMENT_RESERVATION_MS - 13_000)).toBe("29:47");
+  });
+
+  test("only the last three minutes are urgent", () => {
+    expect(PAYMENT_RESERVATION_URGENT_MS).toBe(3 * 60_000);
+    expect(paymentReservationPhase(at(PAYMENT_RESERVATION_URGENT_MS + 1), now)).toBe("active");
+    expect(paymentReservationPhase(at(PAYMENT_RESERVATION_URGENT_MS), now)).toBe("urgent");
+    // The documented "almost expired" example.
+    expect(paymentReservationPhase(at(2 * 60_000 + 13_000), now)).toBe("urgent");
+    expect(formatPaymentCountdown(2 * 60_000 + 13_000)).toBe("02:13");
+    expect(paymentReservationPhase(at(1_000), now)).toBe("urgent");
+  });
+
+  test("a lapsed window is expired, and never renders a negative clock", () => {
+    expect(paymentReservationPhase(at(-1), now)).toBe("expired");
+    const state = paymentReservationState(at(-1), now);
+    expect(state.remainingMs).toBe(0);
+    expect(formatPaymentCountdown(state.remainingMs)).toBe("00:00");
+    expect(formatPaymentCountdown(-25_000)).toBe("00:00");
+  });
+
+  test("a decided order shows no countdown at all, whatever deadline it still carries", () => {
+    for (const status of ["paid", "cancelled", "shipped", "delivered", "refunded"]) {
+      expect(paymentReservationPhase(at(20 * 60_000, status), now)).toBe("none");
+    }
+  });
+
+  test("an order the sweep already ended shows the expired state", () => {
+    expect(paymentReservationPhase({ status: "expired", paymentExpiresAt: now + 60_000 }, now)).toBe("expired");
+    // …including a legacy `expired` row that carries no deadline at all.
+    expect(paymentReservationPhase({ status: "expired" }, now)).toBe("expired");
+  });
+
+  test("an order with no window (COD, legacy row, junk value) shows no countdown", () => {
+    expect(paymentReservationPhase({ status: "pending" }, now)).toBe("none");
+    expect(paymentReservationPhase({ status: "pending_payment", paymentExpiresAt: null }, now)).toBe("none");
+    expect(paymentReservationPhase({ status: "pending_payment", paymentExpiresAt: "not-a-date" }, now)).toBe("none");
+    expect(paymentReservationPhase(null, now)).toBe("none");
+    expect(paymentReservationPhase(undefined, now)).toBe("none");
+  });
+});
+
 describe("payment reservation copy (th / en / my)", () => {
-  const keys = ["payWithin", "windowNote", "expiredTitle", "expiredDesc"] as const;
+  const keys = [
+    "payWithin",
+    "remaining",
+    "expiresIn",
+    "urgentNote",
+    "payNow",
+    "windowNote",
+    "expiredTitle",
+    "expiredDesc",
+  ] as const;
 
   for (const lang of ["th", "en", "my"] as const) {
     test(`${lang} has the whole namespace`, () => {
@@ -213,6 +351,9 @@ describe("payment reservation copy (th / en / my)", () => {
       // The countdown value is injected by the shared formatter, so the
       // placeholder must survive in every language.
       expect(ns.payWithin).toContain("{time}");
+      expect(ns.remaining).toContain("{time}");
+      // The hero label carries NO placeholder: the clock is rendered beside it.
+      expect(ns.expiresIn).not.toContain("{time}");
     });
   }
 });
@@ -869,6 +1010,35 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
     });
   }
 
+  test("the order API exposes the deadline, so a refresh rebuilds the same countdown", async () => {
+    // The storefront never invents a deadline: it counts down to the field the
+    // API returns. This pins the data contract end to end — a fresh 30-minute
+    // row in, the same clock out — which is what makes a page refresh, a second
+    // tab or another device agree about the remaining time.
+    const seed = await seedOrder({ status: "pending_payment", expiresInMs: 30 * 60_000 });
+    try {
+      const payload = await withServer(async (base) => {
+        const res = await fetch(`${base}/api/customer/orders/${seed.orderId}`, {
+          headers: { Cookie: `velnox_session=${sessionToken(seed.ownerId)}` },
+        });
+        return (await res.json()) as {
+          data?: { paymentExpiresAt?: number | null; status?: string; orderNumber?: string };
+        };
+      });
+      const expiresAt = payload.data?.paymentExpiresAt;
+      expect(typeof expiresAt).toBe("number");
+      const remainingMinutes = (expiresAt! - Date.now()) / 60_000;
+      expect(remainingMinutes).toBeGreaterThan(29);
+      expect(remainingMinutes).toBeLessThanOrEqual(30);
+      // …and the shared helpers turn exactly this field into the UI state.
+      const order = { status: payload.data?.status, paymentExpiresAt: expiresAt };
+      expect(paymentReservationPhase(order)).toBe("active");
+      expect(formatPaymentCountdown(paymentReservationState(order).remainingMs)).toMatch(/^29:\d\d$/);
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
   test("checkout refuses a lapsed reservation with PAYMENT_RESERVATION_EXPIRED", async () => {
     const seed = await seedOrder({ status: "pending_payment", payment: { status: "requires_action" } });
     try {
@@ -909,10 +1079,13 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
     }
   });
 
-  test("the window written at creation is risk-based, stored and auditable", async () => {
+  test("the window written at creation is a FIXED 30 minutes for every order, stored and auditable", async () => {
     const { withTransaction, query } = await import("../db/index.js");
 
-    // Scarce: 2 sellable units, no sales history → CRITICAL 15 min.
+    // Scarce: 2 sellable units, no sales history. Under the v1 risk policy this
+    // was the shortest window (15 min); Part 1 must give it the SAME 30 minutes
+    // as any other order — this case is the discriminator that proves the
+    // duration no longer depends on stock.
     const scarce = await seedOrder({ status: "pending", quantity: 1, reserved: 1, inventoryQuantity: 100 });
     await query(`UPDATE inventory SET reserved = 98 WHERE product_id = $1`, [scarce.productId]);
     try {
@@ -920,27 +1093,36 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
         applyPaymentReservationPolicy(client, scarce.orderId, "CARD"),
       );
       expect(policy).not.toBeNull();
-      expect(policy!.riskLevel).toBe("CRITICAL");
-      expect(policy!.reservationMinutes).toBe(15);
-      expect(policy!.signals.availableStock).toBe(2);
+      expect(policy!.reservationMinutes).toBe(PAYMENT_RESERVATION_MINUTES);
+      expect(policy!.version).toBe(PAYMENT_RESERVATION_POLICY_VERSION);
 
       const state = await stateOf(scarce.orderId, scarce.productId);
-      expect(state.reservationPolicy).toMatchObject({ riskLevel: "CRITICAL", reservationMinutes: 15 });
+      expect(state.reservationPolicy).toMatchObject({
+        version: PAYMENT_RESERVATION_POLICY_VERSION,
+        reservationMinutes: 30,
+      });
+      // The deadline is creation + 30:00, not a shorter "risky" window.
       const deltaMinutes = (state.paymentExpiresAt!.getTime() - Date.now()) / 60_000;
-      expect(deltaMinutes).toBeGreaterThan(13);
-      expect(deltaMinutes).toBeLessThanOrEqual(15);
+      expect(deltaMinutes).toBeGreaterThan(29);
+      expect(deltaMinutes).toBeLessThanOrEqual(30);
     } finally {
       await purgeUsers([scarce.ownerId, scarce.sellerUserId]);
     }
 
-    // Deep stock, no demand → VERY_LOW 60 min.
+    // Deep stock, no demand — the LONGEST window under v1 (60 min). It must be
+    // 30 minutes too, so "more stock" can never hand out a longer hold.
     const deep = await seedOrder({ status: "pending", quantity: 1, reserved: 1, inventoryQuantity: 500 });
     try {
       const policy = await withTransaction((client) => applyPaymentReservationPolicy(client, deep.orderId, "PROMPTPAY"));
-      expect(policy!.riskLevel).toBe("VERY_LOW");
-      expect(policy!.reservationMinutes).toBe(60);
+      expect(policy!.reservationMinutes).toBe(30);
       const state = await stateOf(deep.orderId, deep.productId);
-      expect(state.reservationPolicy).toMatchObject({ riskLevel: "VERY_LOW", reservationMinutes: 60 });
+      expect(state.reservationPolicy).toMatchObject({
+        version: PAYMENT_RESERVATION_POLICY_VERSION,
+        reservationMinutes: 30,
+      });
+      const deltaMinutes = (state.paymentExpiresAt!.getTime() - Date.now()) / 60_000;
+      expect(deltaMinutes).toBeGreaterThan(29);
+      expect(deltaMinutes).toBeLessThanOrEqual(30);
     } finally {
       await purgeUsers([deep.ownerId, deep.sellerUserId]);
     }

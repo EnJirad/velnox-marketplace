@@ -93,7 +93,6 @@ export default function ShopCheckoutCancel() {
                   orderId={orderId}
                   method={payability.method}
                   returnPath={`/orders/${orderId}`}
-                  onUnknownMethod="ask"
                   size="default"
                   className="w-full"
                 />

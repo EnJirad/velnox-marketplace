@@ -1,5 +1,5 @@
 /**
- * Dynamic Payment Reservation Policy V1 — the risk → window decision.
+ * Fixed Payment Reservation Policy — exactly 30 minutes, for every order.
  *
  * WHY THIS FILE EXISTS
  * -------------------
@@ -9,276 +9,157 @@
  * scarce product therefore sat behind an abandoned order while other customers
  * were told it was out of stock.
  *
- * `backend/lib/payment-reservation.ts` fixes that with a DETERMINISTIC,
- * rule-based window derived only from data this schema really stores (stock,
- * `products.featured`, trailing sales velocity). What is pinned here:
+ * `backend/lib/payment-reservation.ts` fixes that with a CONSTANT window. What is
+ * pinned here:
  *
- *    1. the default is 30 minutes;
- *    2. every risk level maps to its documented window (CRITICAL 15, HIGH 20,
- *       NORMAL 30, LOW 45, VERY_LOW 60);
- *    3. the V1 hard limits (MIN 10, MAX 60) cannot be escaped, not even by a
- *       future edit to the risk table;
- *    4. the decisions are deterministic and their reasons are auditable;
+ *    1. the duration is exactly 30 minutes — 1800 s, 1 800 000 ms — and
+ *       `expiresAt` is `now` plus exactly that;
+ *    2. the policy is a pure function of `now` ALONE: it takes no signals, so no
+ *       order can ever get a different window;
+ *    3. the module reads no popularity / views / clicks / sales-velocity /
+ *       demand / behaviour data — the Part-1 scope boundary is enforced here, not
+ *       just documented (v1's risk-based inputs are gone: `payment-reservation.ts`
+ *       must not mention them);
+ *    4. the stored `reservation_policy` record survives a JSONB round trip and
+ *       identifies the policy version, so a v1 row stays distinguishable;
  *    5. COD gets no window at all (no online payment is waited on).
  *
  * No database and no Stripe call is involved: the policy is a pure function of
  * its inputs, which is exactly why it can be tested exhaustively.
  */
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 import {
   calculatePaymentReservationPolicy,
-  clampReservationMinutes,
-  deriveDemandMetrics,
   isUndefinedColumnError,
-  PAYMENT_RESERVATION_DEFAULT_MINUTES,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
   PAYMENT_RESERVATION_EXPIRED_STATUS,
-  PAYMENT_RESERVATION_MAX_MINUTES,
-  PAYMENT_RESERVATION_MIN_MINUTES,
+  PAYMENT_RESERVATION_MINUTES,
+  PAYMENT_RESERVATION_MS,
   PAYMENT_RESERVATION_POLICY_VERSION,
-  PAYMENT_RESERVATION_RISK_LEVELS,
-  PAYMENT_RESERVATION_RISK_MINUTES,
-  PAYMENT_RESERVATION_SOLD_STATUSES,
-  PAYMENT_RESERVATION_THRESHOLDS,
+  PAYMENT_RESERVATION_REASON,
+  PAYMENT_RESERVATION_SECONDS,
   paymentMethodNeedsReservation,
-  type PaymentReservationSignals,
 } from "../lib/payment-reservation.js";
 
-/** Build a signal set from real-shaped numbers, deriving velocity/coverage. */
-function sig(over: Partial<PaymentReservationSignals> = {}): PaymentReservationSignals {
-  const availableStock = over.availableStock === undefined ? 15 : over.availableStock;
-  const unitsSold7d = over.unitsSold7d ?? 0;
-  return {
-    availableStock,
-    totalStock: over.totalStock === undefined ? availableStock : over.totalStock,
-    reservedStock: over.reservedStock ?? 0,
-    unitsSold7d,
-    isPromoted: over.isPromoted ?? false,
-    itemLines: over.itemLines ?? 1,
-    ...deriveDemandMetrics(availableStock, unitsSold7d),
-    ...over,
-  };
+const root = join(import.meta.dir, "..", "..");
+const POLICY_LIB = "backend/lib/payment-reservation.ts";
+const policySource = () => readFileSync(join(root, POLICY_LIB), "utf8");
+
+/**
+ * The module with its comments removed — i.e. what the CODE actually does.
+ *
+ * The file header deliberately documents the v1 risk policy it replaced (that is
+ * why a v1 `reservation_policy` row is still distinguishable), so the scope
+ * checks below must look at statements, not at prose.
+ */
+function codeOnly(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
-const policy = (over: Partial<PaymentReservationSignals> = {}, now?: Date) =>
-  calculatePaymentReservationPolicy(sig(over), now);
+describe("payment reservation policy — the 30-minute fixed window", () => {
+  test("the duration is exactly 30 minutes, in every unit the code uses", () => {
+    expect(PAYMENT_RESERVATION_MINUTES).toBe(30);
+    expect(PAYMENT_RESERVATION_SECONDS).toBe(30 * 60);
+    expect(PAYMENT_RESERVATION_SECONDS).toBe(1800);
+    expect(PAYMENT_RESERVATION_MS).toBe(30 * 60_000);
+    expect(PAYMENT_RESERVATION_MS).toBe(1_800_000);
+  });
 
-describe("payment reservation policy V1 — risk → window", () => {
-  test("an ordinary order gets the 30-minute default", () => {
-    const p = policy({ availableStock: 15 });
-    expect(p.riskLevel).toBe("NORMAL");
-    expect(p.reservationMinutes).toBe(PAYMENT_RESERVATION_DEFAULT_MINUTES);
+  test("a policy is always 30 minutes and says so", () => {
+    const p = calculatePaymentReservationPolicy();
     expect(p.reservationMinutes).toBe(30);
-    expect(p.reason).toBe("standard stock and demand");
+    expect(p.reservationMinutes).toBe(PAYMENT_RESERVATION_MINUTES);
+    expect(p.reason).toBe(PAYMENT_RESERVATION_REASON);
+    expect(p.reason).toContain("30-minute");
     expect(p.version).toBe(PAYMENT_RESERVATION_POLICY_VERSION);
   });
 
-  test("critical stock (≤2 available) gets 15 minutes", () => {
-    for (const available of [2, 1, 0]) {
-      const p = policy({ availableStock: available });
-      expect(p.riskLevel).toBe("CRITICAL");
-      expect(p.reservationMinutes).toBe(15);
-      expect(p.reason).toContain("critical stock");
+  test("expiresAt is `now` plus exactly 30 minutes — never 29, never 31", () => {
+    const now = new Date("2026-09-28T00:00:00.000Z");
+    expect(calculatePaymentReservationPolicy(now).expiresAt).toBe("2026-09-28T00:30:00.000Z");
+
+    // A less round instant, including crossing an hour and a DST-free day
+    // boundary, must land on the same delta.
+    for (const iso of [
+      "2026-09-28T12:34:56.789Z",
+      "2026-09-28T23:45:00.000Z",
+      "2026-12-31T23:59:59.999Z",
+      "2026-03-01T00:00:00.000Z",
+    ]) {
+      const start = new Date(iso);
+      const expires = new Date(calculatePaymentReservationPolicy(start).expiresAt);
+      expect(expires.getTime() - start.getTime()).toBe(PAYMENT_RESERVATION_MS);
+      expect(expires.getTime() - start.getTime()).toBe(1_800_000);
     }
   });
 
-  test("scarce stock with active demand (≤5 available, ≥1 unit/day) gets 15 minutes", () => {
-    // 14 units in the 7-day window → 2/day.
-    const p = policy({ availableStock: 5, unitsSold7d: 14 });
-    expect(p.riskLevel).toBe("CRITICAL");
-    expect(p.reservationMinutes).toBe(15);
-    expect(p.reason).toContain("scarce stock");
-    expect(p.reason).toContain("active demand");
-  });
-
-  test("a promoted (spotlight/flash-style) item that is scarce gets 15 minutes", () => {
-    // The schema has no flash-sale column; `products.featured` is the platform's
-    // real promotion signal, and this is the branch that maps it to the
-    // shortest window.
-    const p = policy({ availableStock: 4, isPromoted: true, unitsSold7d: 0 });
-    expect(p.riskLevel).toBe("CRITICAL");
-    expect(p.reservationMinutes).toBe(15);
-    expect(p.reason).toContain("promoted");
-  });
-
-  test("under 1.5 days of stock cover gets 15 minutes", () => {
-    // 20 available, 14 units/day → 1.43 days of cover.
-    const p = policy({ availableStock: 20, unitsSold7d: 98 });
-    expect(p.riskLevel).toBe("CRITICAL");
-    expect(p.reservationMinutes).toBe(15);
-    expect(p.reason).toContain("stock cover");
-  });
-
-  test("tight stock (≤10 available) gets 20 minutes", () => {
-    for (const available of [10, 9, 3]) {
-      const p = policy({ availableStock: available });
-      expect(p.riskLevel).toBe("HIGH");
-      expect(p.reservationMinutes).toBe(20);
-      expect(p.reason).toContain("tight stock");
-    }
-  });
-
-  test("moderate stock with active demand (≤20 available, ≥1 unit/day) gets 20 minutes", () => {
-    const p = policy({ availableStock: 20, unitsSold7d: 7 });
-    expect(p.riskLevel).toBe("HIGH");
-    expect(p.reservationMinutes).toBe(20);
-    expect(p.reason).toContain("active demand");
-  });
-
-  test("under 3 days of stock cover gets 20 minutes", () => {
-    // 30 available, 12 units/day → 2.5 days of cover.
-    const p = policy({ availableStock: 30, unitsSold7d: 84 });
-    expect(p.riskLevel).toBe("HIGH");
-    expect(p.reservationMinutes).toBe(20);
-    expect(p.reason).toContain("stock cover");
-  });
-
-  test("ample stock with low demand gets 45 minutes", () => {
-    // 40 available, 0.29 units/day → ~140 days of cover.
-    const p = policy({ availableStock: 40, unitsSold7d: 2 });
-    expect(p.riskLevel).toBe("LOW");
-    expect(p.reservationMinutes).toBe(45);
-    expect(p.reason).toContain("low demand");
-  });
-
-  test("very high stock with negligible demand gets 60 minutes", () => {
-    // 100 available, 0.14 units/day → 700 days of cover.
-    const p = policy({ availableStock: 100, unitsSold7d: 1 });
-    expect(p.riskLevel).toBe("VERY_LOW");
-    expect(p.reservationMinutes).toBe(60);
-    expect(p.reason).toContain("negligible demand");
-  });
-
-  test("a busy product does not get a long window just because stock is high", () => {
-    // 100 available but 0.43 units/day is NOT negligible → LOW, not VERY_LOW.
-    expect(policy({ availableStock: 100, unitsSold7d: 3 }).reservationMinutes).toBe(45);
-    // 30 available at 3 units/day → 10 days of cover but real demand → NORMAL.
-    expect(policy({ availableStock: 30, unitsSold7d: 21 }).reservationMinutes).toBe(30);
-  });
-
-  test("a promoted item never earns the long windows", () => {
-    const p = policy({ availableStock: 60, unitsSold7d: 0, isPromoted: true });
-    expect(p.riskLevel).toBe("NORMAL");
-    expect(p.reservationMinutes).toBe(30);
-  });
-
-  test("an unknown stock level falls back to the default window, never to a guess", () => {
-    // No product row / no inventory row: we cannot judge scarcity, so the
-    // standard window is applied and the reason says so.
-    const p = policy({ availableStock: null, totalStock: null, reservedStock: null, itemLines: 0 });
-    expect(p.riskLevel).toBe("NORMAL");
-    expect(p.reservationMinutes).toBe(30);
-    expect(p.reason).toContain("unknown");
-  });
-
-  test("the reason is always non-empty and names the branch that fired", () => {
-    const cases: Array<[Partial<PaymentReservationSignals>, string]> = [
-      [{ availableStock: 1 }, "critical stock"],
-      [{ availableStock: 8 }, "tight stock"],
-      [{ availableStock: 15 }, "standard stock"],
-      [{ availableStock: 40, unitsSold7d: 2 }, "ample stock"],
-      [{ availableStock: 100, unitsSold7d: 0 }, "deep stock"],
-    ];
-    for (const [input, fragment] of cases) {
-      const p = policy(input);
-      expect(p.reason.length).toBeGreaterThan(0);
-      expect(p.reason).toContain(fragment);
-    }
+  test("the same instant always produces the same decision", () => {
+    const now = new Date("2026-09-28T00:00:00.000Z");
+    expect(calculatePaymentReservationPolicy(now)).toEqual(calculatePaymentReservationPolicy(now));
   });
 });
 
-describe("payment reservation policy V1 — the hard limits", () => {
-  test("MIN 10 / MAX 60 / DEFAULT 30 are the documented values", () => {
-    expect(PAYMENT_RESERVATION_MIN_MINUTES).toBe(10);
-    expect(PAYMENT_RESERVATION_MAX_MINUTES).toBe(60);
-    expect(PAYMENT_RESERVATION_DEFAULT_MINUTES).toBe(30);
-  });
-
-  test("every level in the risk table is already inside the limits", () => {
-    for (const level of PAYMENT_RESERVATION_RISK_LEVELS) {
-      const minutes = PAYMENT_RESERVATION_RISK_MINUTES[level];
-      expect(minutes).toBeGreaterThanOrEqual(PAYMENT_RESERVATION_MIN_MINUTES);
-      expect(minutes).toBeLessThanOrEqual(PAYMENT_RESERVATION_MAX_MINUTES);
-      // …and clamping is a no-op on a legal value (the table is a fixed point).
-      expect(clampReservationMinutes(minutes)).toBe(minutes);
-    }
-    expect(Object.keys(PAYMENT_RESERVATION_RISK_MINUTES).sort()).toEqual(
-      [...PAYMENT_RESERVATION_RISK_LEVELS].sort(),
+describe("payment reservation policy — nothing dynamic is involved", () => {
+  test("the policy is a function of `now` alone — it accepts no signals", () => {
+    // ONE parameter, with a default: a caller cannot pass stock, velocity or a
+    // risk level, so no order can be given a different window than any other.
+    expect(codeOnly(policySource())).toContain(
+      "export function calculatePaymentReservationPolicy(now: Date = new Date())",
     );
   });
 
-  test("the risk → time table is exactly the documented one", () => {
-    expect(PAYMENT_RESERVATION_RISK_MINUTES).toEqual({
-      CRITICAL: 15,
-      HIGH: 20,
-      NORMAL: 30,
-      LOW: 45,
-      VERY_LOW: 60,
-    });
-  });
-
-  test("clamping can neither go below MIN nor above MAX", () => {
-    expect(clampReservationMinutes(-100)).toBe(10);
-    expect(clampReservationMinutes(0)).toBe(10);
-    expect(clampReservationMinutes(5)).toBe(10);
-    expect(clampReservationMinutes(10)).toBe(10);
-    expect(clampReservationMinutes(20.4)).toBe(20);
-    expect(clampReservationMinutes(60)).toBe(60);
-    expect(clampReservationMinutes(61)).toBe(60);
-    expect(clampReservationMinutes(10_000)).toBe(60);
-    expect(clampReservationMinutes(Number.NaN)).toBe(30);
-    expect(clampReservationMinutes(Number.POSITIVE_INFINITY)).toBe(30);
-  });
-
-  test("a policy built from ANY signal combination obeys the limits", () => {
-    const stocks = [null, 0, 1, 2, 3, 5, 8, 10, 15, 20, 21, 40, 50, 60, 100, 5000];
-    const sold = [0, 1, 3, 7, 14, 98, 700];
-    for (const availableStock of stocks) {
-      for (const unitsSold7d of sold) {
-        for (const isPromoted of [false, true]) {
-          const p = policy({ availableStock, unitsSold7d, isPromoted });
-          expect(p.reservationMinutes).toBeGreaterThanOrEqual(PAYMENT_RESERVATION_MIN_MINUTES);
-          expect(p.reservationMinutes).toBeLessThanOrEqual(PAYMENT_RESERVATION_MAX_MINUTES);
-          expect(PAYMENT_RESERVATION_RISK_LEVELS).toContain(p.riskLevel);
-        }
-      }
+  test("the module reads no popularity, views, clicks, velocity or demand data", () => {
+    const source = codeOnly(policySource());
+    for (const forbidden of [
+      "salesVelocity",
+      "unitsSold",
+      "stockCoverage",
+      "velocityWindow",
+      "riskLevel",
+      "CRITICAL",
+      "VERY_LOW",
+      "isPromoted",
+      "featured",
+      "view_count",
+      "click",
+    ]) {
+      expect(source).not.toContain(forbidden);
     }
+    // …and no signal-gathering query is left behind either.
+    expect(source).not.toContain("gatherOrderReservationSignals");
+    expect(source).not.toContain("order_items");
+  });
+
+  test("no risk → window table survives, and no second duration is defined", () => {
+    const source = codeOnly(policySource());
+    // v1 exported MIN/MAX/DEFAULT and a RISK_MINUTES table; Part 1 has ONE number.
+    expect(source).not.toContain("PAYMENT_RESERVATION_MAX_MINUTES");
+    expect(source).not.toContain("PAYMENT_RESERVATION_MIN_MINUTES");
+    expect(source).not.toContain("PAYMENT_RESERVATION_RISK_MINUTES");
+    expect(source).toContain("PAYMENT_RESERVATION_MINUTES = 30");
   });
 });
 
-describe("payment reservation policy V1 — determinism, expiry and method scope", () => {
-  test("the same signals always produce the same decision", () => {
-    const first = policy({ availableStock: 4, unitsSold7d: 14, isPromoted: true });
-    const second = policy({ availableStock: 4, unitsSold7d: 14, isPromoted: true });
-    expect(second).toEqual(first);
-  });
-
-  test("expiresAt is `now` plus exactly the chosen window", () => {
-    const now = new Date("2026-09-28T00:00:00.000Z");
-    expect(policy({ availableStock: 1 }, now).expiresAt).toBe("2026-09-28T00:15:00.000Z");
-    expect(policy({ availableStock: 8 }, now).expiresAt).toBe("2026-09-28T00:20:00.000Z");
-    expect(policy({ availableStock: 15 }, now).expiresAt).toBe("2026-09-28T00:30:00.000Z");
-    expect(policy({ availableStock: 40, unitsSold7d: 2 }, now).expiresAt).toBe("2026-09-28T00:45:00.000Z");
-    expect(policy({ availableStock: 100, unitsSold7d: 0 }, now).expiresAt).toBe("2026-09-28T01:00:00.000Z");
-  });
-
+describe("payment reservation policy — the stored record and the sweep's scope", () => {
   test("the stored policy survives a JSONB round trip unchanged", () => {
     // `orders.reservation_policy` is JSONB: what the audit trail holds is the
-    // serialised policy, so it must be lossless.
-    const p = policy({ availableStock: 5, unitsSold7d: 14, reservedStock: 3, totalStock: 20, itemLines: 2 });
+    // serialised policy, so it must be lossless and version-tagged.
+    const p = calculatePaymentReservationPolicy(new Date("2026-09-28T00:00:00.000Z"));
     const roundTripped = JSON.parse(JSON.stringify(p)) as typeof p;
     expect(roundTripped).toEqual(p);
-    expect(roundTripped.signals.availableStock).toBe(5);
-    expect(roundTripped.signals.salesVelocityPerDay).toBeCloseTo(2, 6);
-    expect(roundTripped.signals.stockCoverageDays).toBeCloseTo(2.5, 6);
-  });
-
-  test("demand metrics derive from the trailing window, and zero demand means no cover figure", () => {
-    expect(deriveDemandMetrics(30, 7)).toEqual({ salesVelocityPerDay: 1, stockCoverageDays: 30 });
-    expect(deriveDemandMetrics(30, 0)).toEqual({ salesVelocityPerDay: 0, stockCoverageDays: null });
-    expect(deriveDemandMetrics(null, 7)).toEqual({ salesVelocityPerDay: 1, stockCoverageDays: null });
-    expect(PAYMENT_RESERVATION_THRESHOLDS.velocityWindowDays).toBe(7);
+    expect(roundTripped.expiresAt).toBe("2026-09-28T00:30:00.000Z");
+    expect(roundTripped.reservationMinutes).toBe(30);
+    // A v1 row carried the risk inputs; a Part-1 row must not, so the audit
+    // trail never implies the window depended on behaviour.
+    expect(Object.keys(roundTripped).sort()).toEqual([
+      "expiresAt",
+      "reason",
+      "reservationMinutes",
+      "version",
+    ]);
   });
 
   test("COD waits on no online payment, so it gets no window", () => {
@@ -310,14 +191,5 @@ describe("payment reservation policy V1 — determinism, expiry and method scope
   test("the expiry sweep only ever touches pre-payment statuses", () => {
     expect([...PAYMENT_RESERVATION_EXPIRABLE_STATUSES]).toEqual(["pending", "pending_payment"]);
     expect(PAYMENT_RESERVATION_EXPIRED_STATUS).toBe("expired");
-    // A sale counts whether it came through Stripe (`paid`) or through the COD /
-    // VelRepeat rails (which never pass through `paid`).
-    expect([...PAYMENT_RESERVATION_SOLD_STATUSES]).toEqual([
-      "paid",
-      "confirmed",
-      "shipped",
-      "delivered",
-      "completed",
-    ]);
   });
 });

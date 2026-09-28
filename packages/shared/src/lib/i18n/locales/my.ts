@@ -18,6 +18,10 @@ export const my = {
   /** Payment-reservation copy — see the Thai dictionary for why it lives here. */
   orderReservation: {
     payWithin: "ငွေပေးချေရန် {time} အတွင်း",
+    remaining: "ကျန်ရှိချိန် {time}",
+    expiresIn: "ငွေပေးချေရန် ကုန်ဆုံးချိန်",
+    urgentNote: "အချိန်နီးကပ်နေပြီ — သတ်မှတ်အချိန်မတိုင်မီ ငွေပေးချေပါ။",
+    payNow: "ယခုပေးချေပါ",
     windowNote:
       "သတ်မှတ်အချိန်အတွင်း ငွေပေးချေခြင်း မပြုပါက ထိန်းသိမ်းထားသော ပစ္စည်းများကို အခြားဝယ်ယူသူများအတွက် အလိုအလျောက် ပြန်လွတ်ပေးမည် ဖြစ်သည်။",
     expiredTitle: "ငွေပေးချေရန် အချိန်ကုန်ဆုံးသွားပါပြီ",
@@ -639,6 +643,14 @@ export const my = {
   },
 
   orderDetail: {
+    deliveryTitle: "ပို့ဆောင်မှု",
+    summaryTitle: "မှာယူမှု အကျဉ်းချုပ်",
+    discount: "လျှော့ဈေး",
+    paymentMethod: "ငွေပေးချေမှု နည်းလမ်း",
+    paymentStatus: "ငွေပေးချေမှု အခြေအနေ",
+    actionsTitle: "လုပ်ဆောင်ချက်များ",
+    choosePaymentDescAny: "လိုချင်သော ငွေပေးချေမှုနည်းလမ်းကို ရွေးပါ၊ ထို့နောက် Stripe Checkout သို့ သွားပါမည်။",
+    continueAction: "ဆက်လုပ်မည်",
     shopTitle: "Shop",
     retry: "Try again",
     noAddress: "No shipping address on file for this order",

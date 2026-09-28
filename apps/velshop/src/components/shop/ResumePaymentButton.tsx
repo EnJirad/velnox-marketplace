@@ -3,62 +3,66 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@velnox/shared/components/ui/dialog";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { useLanguage } from "@/lib/i18n";
-import { CreditCard, Loader2, QrCode, type LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { Check, CreditCard, Loader2, QrCode, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
 /**
- * "Continue payment" for an order that the backend will still accept a Stripe
- * Checkout Session for.
+ * "Pay now" for an order the backend will still accept a Stripe Checkout Session
+ * for — the customer can choose the payment method AGAIN.
  *
  * WHY THIS EXISTS
  * ---------------
  * An unpaid order can be left behind in two ways: the customer abandons Stripe
  * Checkout, or the order is created and the session request then fails. Both
- * leave a real order that is payable, so the customer must be able to resume it
- * WITHOUT going back to the cart and without creating a second order.
+ * leave a real order that is still payable inside its reservation window, so the
+ * customer must be able to pay it WITHOUT going back to the cart and without
+ * creating a second order.
  *
  * The rules it obeys (all of them enforced server-side too):
- *   • the method comes from the order's OWN payment record — a PromptPay
- *     customer is never redirected to a card form by a default;
- *   • when no method was recorded the customer is asked (never guessed), using
- *     the backend's own method discovery;
- *   • ONE button press = order → Stripe session → `window.location.assign(url)`
- *     in the current tab, with no intermediate screen;
+ *   • the chooser lists the methods the BACKEND reports as enabled
+ *     (`GET /api/payments/methods` → CARD / PROMPTPAY). Nothing is hard-coded, so
+ *     a rail that is switched off can never be offered;
+ *   • the rail the order already used is only PRESELECTED — never re-used
+ *     silently. The customer may switch rails (a PromptPay attempt that failed
+ *     can be retried by card), and the backend abandons a stale open session for
+ *     a different method rather than charging the wrong one;
+ *   • ONE button press in the chooser = order → Stripe session →
+ *     `window.location.assign(url)` in the current tab, with no intermediate
+ *     screen and nothing marked paid on the client;
  *   • a missing/empty session URL is an error, never a redirect to
  *     `undefined`/`null`;
- *   • the button enters its loading state on the first click and stays there
- *     while the request is in flight, so a double click cannot open two
- *     sessions (the backend additionally allows at most one active session per
- *     order).
+ *   • the button enters its loading state on the first press and stays there
+ *     while the request is in flight, so a double press cannot open two sessions
+ *     (the backend additionally allows at most one active session per order);
+ *   • coming BACK from Stripe (browser bfcache) re-enables the button instead of
+ *     leaving it spinning forever.
  */
+
+/** The rails this storefront can open a Stripe session for. */
+type StripeRail = "CARD" | "PROMPTPAY";
 
 interface ResumePaymentButtonProps {
   /** The order to pay (`parentOrderId` of a multi-shop checkout). */
   orderId: string;
   /** The rail recorded on the order's payment row, or null when not recorded. */
-  method: "CARD" | "PROMPTPAY" | null;
+  method: StripeRail | null;
   /** Where the customer returns to; the backend keeps its own success/cancel URLs. */
   returnPath?: string;
-  /**
-   * When the recorded method is unknown: `"ask"` opens the method chooser,
-   * `"link"` sends the customer to the order page (which can ask), `"hidden"`
-   * renders nothing.
-   */
-  onUnknownMethod?: "ask" | "link" | "hidden";
   size?: "sm" | "default";
   className?: string;
   /** Extra classes for the primary/outline treatment used by each surface. */
   variant?: "primary" | "outline";
 }
 
-const METHOD_ICONS: Record<"CARD" | "PROMPTPAY", LucideIcon> = {
+const RAIL_ICONS: Record<StripeRail, LucideIcon> = {
   CARD: CreditCard,
   PROMPTPAY: QrCode,
 };
@@ -71,7 +75,6 @@ export function ResumePaymentButton({
   orderId,
   method,
   returnPath,
-  onUnknownMethod = "ask",
   size = "sm",
   variant = "primary",
   className,
@@ -80,13 +83,50 @@ export function ResumePaymentButton({
   const createStripeCheckout = useAction(api.stripe.createStripeCheckoutAction);
   const fetchPaymentMethods = useAction(api.payments.methods);
 
+  const [open, setOpen] = useState(false);
+  const [methods, setMethods] = useState<StripeRail[] | null>(null);
+  const [selected, setSelected] = useState<StripeRail | null>(method);
   const [paying, setPaying] = useState(false);
-  const [chooserOpen, setChooserOpen] = useState(false);
-  const [methods, setMethods] = useState<Array<"CARD" | "PROMPTPAY"> | null>(null);
   const [failed, setFailed] = useState(false);
 
-  /** Guards the whole redirect: the first click wins, the rest are ignored. */
-  const startPayment = async (chosen: "CARD" | "PROMPTPAY") => {
+  /**
+   * A page restored from the bfcache (the customer pressed Back from Stripe) is
+   * the SAME document that started a redirect, so its `paying` state is stale:
+   * the request died with the navigation. Leaving the button disabled would
+   * strand the customer on a screen where nothing can be clicked.
+   */
+  useEffect(() => {
+    const restore = () => {
+      setPaying(false);
+      setOpen(false);
+    };
+    window.addEventListener("pageshow", restore);
+    return () => window.removeEventListener("pageshow", restore);
+  }, []);
+
+  /** The enabled rails, straight from the backend's own payment configuration. */
+  const loadMethods = useCallback(async () => {
+    try {
+      const res = (await fetchPaymentMethods()) as PaymentMethodsPayload;
+      const available = (res?.methods ?? [])
+        .filter((m) => m.enabled && (m.id === "CARD" || m.id === "PROMPTPAY"))
+        .map((m) => m.id as StripeRail);
+      setMethods(available);
+    } catch (err) {
+      console.error("Payment method discovery failed:", err);
+      setMethods([]);
+    }
+  }, [fetchPaymentMethods]);
+
+  const openChooser = () => {
+    setFailed(false);
+    setSelected(method);
+    setOpen(true);
+    if (methods === null) void loadMethods();
+  };
+
+  /** Guards the whole redirect: the first press wins, the rest are ignored. */
+  const startPayment = async (chosen: StripeRail) => {
     if (paying) return;
     setPaying(true);
     setFailed(false);
@@ -116,38 +156,10 @@ export function ResumePaymentButton({
     }
   };
 
-  const openChooser = async () => {
-    setChooserOpen(true);
-    if (methods !== null) return;
-    try {
-      const res = (await fetchPaymentMethods()) as PaymentMethodsPayload;
-      const available = (res?.methods ?? [])
-        .filter((m) => m.enabled && (m.id === "CARD" || m.id === "PROMPTPAY"))
-        .map((m) => m.id as "CARD" | "PROMPTPAY");
-      setMethods(available);
-    } catch (err) {
-      console.error("Payment method discovery failed:", err);
-      setMethods([]);
-    }
-  };
-
   const buttonClass =
     variant === "primary"
       ? "gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
       : "gap-1.5 border-[#10B981]/30 bg-[#F0FDF9] text-[#10B981] hover:bg-[#D1FAE5]";
-
-  const label = paying ? t("orderDetail.payingNow") : t("orderDetail.payOnlineNow");
-
-  // No recorded rail and the caller cannot ask here — hand over to the order
-  // page instead of guessing a method.
-  if (method === null && onUnknownMethod === "link") {
-    return (
-      <Button variant="outline" size={size} className={`${buttonClass} ${className ?? ""}`} asChild>
-        <Link to={`/orders/${orderId}`}>{t("orders.choosePaymentMethod")}</Link>
-      </Button>
-    );
-  }
-  if (method === null && onUnknownMethod === "hidden") return null;
 
   return (
     <>
@@ -157,50 +169,84 @@ export function ResumePaymentButton({
         className={`${buttonClass} ${className ?? ""}`}
         aria-busy={paying}
         disabled={paying}
-        onClick={() => {
-          if (method === null) {
-            void openChooser();
-            return;
-          }
-          void startPayment(method);
-        }}
+        onClick={openChooser}
       >
         {paying ? <Loader2 className="size-3.5 animate-spin" /> : <CreditCard className="size-3.5" />}
-        {label}
+        {paying ? t("orderDetail.payingNow") : t("orderReservation.payNow")}
       </Button>
       {failed && <p className="mt-1.5 text-xs text-rose-600">{t("checkout.payStartFailed")}</p>}
 
-      <Dialog open={chooserOpen} onOpenChange={(open) => !paying && setChooserOpen(open)}>
-        <DialogContent className="sm:max-w-sm">
+      <Dialog open={open} onOpenChange={(next) => !paying && setOpen(next)}>
+        <DialogContent className="bg-white sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{t("orderDetail.choosePaymentTitle")}</DialogTitle>
-            <DialogDescription>{t("orderDetail.choosePaymentDesc")}</DialogDescription>
+            <DialogTitle className="text-slate-900">{t("orderDetail.choosePaymentTitle")}</DialogTitle>
+            <DialogDescription>{t("orderDetail.choosePaymentDescAny")}</DialogDescription>
           </DialogHeader>
+
           {methods === null ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="size-5 animate-spin text-slate-300" />
             </div>
           ) : methods.length === 0 ? (
-            <p className="py-4 text-sm text-slate-500">{t("paymentMethods.unavailable")}</p>
+            <div className="py-2">
+              <p className="text-sm text-slate-500">{t("paymentMethods.unavailable")}</p>
+              <Button variant="outline" size="sm" className="mt-3 border-slate-200 text-slate-600" asChild>
+                <Link to={`/orders/${orderId}`}>{t("orderDetail.backToOrders")}</Link>
+              </Button>
+            </div>
           ) : (
             <div className="grid gap-2">
-              {methods.map((m) => {
-                const Icon = METHOD_ICONS[m];
+              {methods.map((rail) => {
+                const Icon = RAIL_ICONS[rail];
+                const isSelected = selected === rail;
                 return (
-                  <Button
-                    key={m}
-                    variant="outline"
-                    className="justify-start gap-2 border-slate-200 text-slate-700"
+                  <button
+                    key={rail}
+                    type="button"
+                    onClick={() => setSelected(rail)}
                     disabled={paying}
-                    onClick={() => void startPayment(m)}
+                    aria-pressed={isSelected}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+                      isSelected
+                        ? "border-[#10B981] bg-[#F0FDF9] ring-1 ring-[#10B981]/30"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
                   >
-                    {paying ? <Loader2 className="size-4 animate-spin" /> : <Icon className="size-4 text-[#10B981]" />}
-                    {t(`paymentMethods.${m.toLowerCase()}`)}
-                  </Button>
+                    <span
+                      className={`flex size-9 shrink-0 items-center justify-center rounded-[10px] ${
+                        isSelected ? "bg-[#10B981] text-white" : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      <Icon className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
+                      {t(`paymentMethods.${rail.toLowerCase()}`)}
+                    </span>
+                    {isSelected && <Check className="size-4 shrink-0 text-[#10B981]" />}
+                  </button>
                 );
               })}
             </div>
           )}
+
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              variant="outline"
+              className="border-slate-200 text-slate-600"
+              onClick={() => setOpen(false)}
+              disabled={paying}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+              disabled={paying || selected === null}
+              onClick={() => selected && void startPayment(selected)}
+            >
+              {paying && <Loader2 className="size-4 animate-spin" />}
+              {paying ? t("orderDetail.payingNow") : t("orderDetail.continueAction")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

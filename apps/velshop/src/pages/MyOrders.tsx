@@ -25,14 +25,18 @@ import {
   formatBaht,
   formatIsoDate,
   formatIsoDateTime,
+  formatPaymentCountdown,
   getOrderStatusMeta,
   orderStripePayability,
+  paymentReservationPhase,
+  paymentReservationState,
   shortOrderNumber,
   type StoreOrder,
   type StoreSubscription,
 } from "@velnox/shared/lib/commerce";
 import {
   CalendarClock,
+  Clock3,
   ImageOff,
   Loader2,
   PackageSearch,
@@ -40,7 +44,7 @@ import {
   ShoppingBag,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
@@ -110,8 +114,67 @@ export default function MyOrders() {
     };
   }, [myOrdersAction, mySubscriptionsAction]);
 
+  /**
+   * Presentation-only clock for the payment-reservation countdowns.
+   *
+   * The DEADLINE comes from the API (`paymentExpiresAt`, computed by the
+   * backend) and the backend enforces it; this state exists only to re-render
+   * the remaining time. Nothing here may change an order's status — that is the
+   * "no client timer as source of truth" rule, and why a skewed client clock can
+   * only ever mis-render a number.
+   */
+  const [now, setNow] = useState(() => Date.now());
+
   const orders = data?.orders ?? [];
   const subscriptions = data?.subscriptions ?? [];
+
+  /** Is any order still counting down? Only then does the clock need to tick. */
+  const hasOpenReservation = useMemo(
+    () =>
+      orders.some((order: StoreOrder) => {
+        const phase = paymentReservationPhase(order, now);
+        return phase === "active" || phase === "urgent";
+      }),
+    [orders, now],
+  );
+
+  useEffect(() => {
+    if (!hasOpenReservation) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [hasOpenReservation]);
+
+  /**
+   * Re-read the authoritative list when the tab becomes visible again (a phone
+   * that was locked, or a return from another tab): the countdown must never be
+   * the only thing that knows time passed.
+   */
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("visibilitychange", onVisibility);
+    return () => window.removeEventListener("visibilitychange", onVisibility);
+  }, [load]);
+
+  /**
+   * When a countdown lapses, refetch ONCE for that order. The expiry sweep may
+   * already have written `expired` and released the stock; until the API answers,
+   * the card shows the expired state rather than a negative timer. The ref stops
+   * a lapse from refetching in a loop.
+   */
+  const refetchedFor = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const lapsed = orders.find(
+      (order: StoreOrder) =>
+        paymentReservationPhase(order, now) === "expired" &&
+        order.status !== "expired" &&
+        order.status !== "paid",
+    );
+    if (!lapsed || refetchedFor.current.has(lapsed.id)) return;
+    refetchedFor.current.add(lapsed.id);
+    void load();
+  }, [orders, now, load]);
 
   const handleRepeat = async () => {
     if (!repeatOrder || repeating) return;
@@ -293,6 +356,10 @@ export default function MyOrders() {
                 // entry point here, so a customer who left Stripe never has to go
                 // back to the cart (which no longer holds the items) to pay.
                 const payability = orderStripePayability(order);
+                // The reservation window (Fixed 30-minute Payment Reservation):
+                // the deadline is the backend's, this only renders it.
+                const reservation = paymentReservationState(order, now);
+                const reservationPhase = paymentReservationPhase(order, now);
                 return (
                   <div
                     key={order.id}
@@ -316,6 +383,44 @@ export default function MyOrders() {
                           {meta.label}
                         </Badge>
                       </div>
+
+                      {/* Payment reservation countdown — paid orders show none. */}
+                      {(reservationPhase === "active" || reservationPhase === "urgent") && (
+                        <div
+                          className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-2 ${
+                            reservationPhase === "urgent"
+                              ? "bg-rose-50 ring-1 ring-inset ring-rose-200"
+                              : "bg-amber-50 ring-1 ring-inset ring-amber-200"
+                          }`}
+                        >
+                          <Clock3
+                            className={`size-4 shrink-0 ${
+                              reservationPhase === "urgent" ? "text-rose-600" : "text-amber-600"
+                            }`}
+                          />
+                          <p
+                            className={`text-sm font-semibold tabular-nums ${
+                              reservationPhase === "urgent" ? "text-rose-700" : "text-amber-800"
+                            }`}
+                          >
+                            {t("orderReservation.remaining", {
+                              time: formatPaymentCountdown(reservation.remainingMs),
+                            })}
+                          </p>
+                          {reservationPhase === "urgent" && (
+                            <p className="text-xs text-rose-600">{t("orderReservation.urgentNote")}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {reservationPhase === "expired" && (
+                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-inset ring-slate-200">
+                          <XCircle className="size-4 shrink-0 text-slate-400" />
+                          <p className="text-sm font-medium text-slate-600">
+                            {t("orderReservation.expiredTitle")}
+                          </p>
+                        </div>
+                      )}
 
                       <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                         {items.map((item) => (
@@ -365,12 +470,13 @@ export default function MyOrders() {
                       {payability.payable && (
                         <ResumePaymentButton
                           orderId={order.id}
+                          // The list carries the newest payment method; it is used
+                          // only to PRESELECT the chooser. The customer picks the
+                          // rail again (the chooser must be reachable even when
+                          // nothing was recorded, which is why the method is
+                          // allowed to be null).
                           method={payability.method}
                           returnPath={`/orders/${order.id}`}
-                          // The list only carries the newest payment method. When
-                          // it is not recorded the order page asks the customer
-                          // (it can list the rails) instead of guessing one here.
-                          onUnknownMethod="link"
                         />
                       )}
                       <Button

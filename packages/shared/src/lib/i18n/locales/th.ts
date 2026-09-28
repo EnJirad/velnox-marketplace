@@ -27,6 +27,10 @@ export const th = {
    */
   orderReservation: {
     payWithin: "ชำระเงินภายใน {time}",
+    remaining: "เหลืออีก {time}",
+    expiresIn: "ชำระเงินภายใน",
+    urgentNote: "ใกล้หมดเวลาแล้ว กรุณาชำระเงินก่อนหมดเขต",
+    payNow: "ชำระเงินตอนนี้",
     windowNote:
       "หากไม่ชำระภายในเวลานี้ ระบบจะคืนสินค้าที่กันไว้ให้ลูกค้าคนอื่นโดยอัตโนมัติ",
     expiredTitle: "เวลาชำระเงินหมดแล้ว",
@@ -728,6 +732,14 @@ export const th = {
   },
 
   orderDetail: {
+    deliveryTitle: "การจัดส่ง",
+    summaryTitle: "สรุปคำสั่งซื้อ",
+    discount: "ส่วนลด",
+    paymentMethod: "วิธีชำระเงิน",
+    paymentStatus: "สถานะการชำระเงิน",
+    actionsTitle: "จัดการออเดอร์",
+    choosePaymentDescAny: "เลือกวิธีชำระเงินที่ต้องการ แล้วระบบจะพาไปหน้าชำระเงินของ Stripe",
+    continueAction: "ดำเนินการต่อ",
     title: "รายละเอียดออเดอร์",
     orderedAt: "สั่งเมื่อ {date}",
     progress: "ความคืบหน้าออเดอร์",
