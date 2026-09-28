@@ -797,7 +797,25 @@ and the pay-again chooser · `checkout-payment-flow` 38 pass / 4 skip (its choos
 failure being the pre-existing `test-database-isolation` child probe, which re-reads this sandbox's
 `.env` (production `DATABASE_URL`); it passes in CI, where no `.env` exists and `DATABASE_URL` is unset.
 
-**NOT verified here (owner-side).** (1) The 19 `TEST_DATABASE_URL`-gated cases — the fixed-30 write,
-release-exactly-once, the concurrency/duplicate-webhook races and the new API deadline contract —
-need a disposable database (CI `test.yml` provisions `postgres:16`). (2) A browser pass over the new
-order page, the list countdown and the chooser in th/en/my. (3) Production schema as above.
+
+**CI then verified the DB-gated half — `34e8891`, run `36437470190` GREEN: 907 pass / 2 skip / 0 fail**
+(909 tests, 41 files) against the disposable `postgres:16` from `test.yml`. All 19 reservation cases
+executed and passed, including the ones this sandbox can only skip: "the window written at creation
+is a FIXED 30 minutes for every order, stored and auditable", "the order API exposes the deadline, so
+a refresh rebuilds the same countdown" (NEW), "five concurrent sweeps still release exactly once",
+"a late payment cannot resurrect an expired order — the reconciliation path",
+"checkout refuses a lapsed reservation with `PAYMENT_RESERVATION_EXPIRED`", the SAVEPOINT
+deploy-order case and "the expiry sweep only ever touches the pre-payment statuses it declares".
+
+**Production — still NOT active, re-confirmed this pass.** The push re-queued the migration runner
+(it fires only when `db/migrations/*.sql` changes) and `Migrate Neon Database` run `36437470328`
+**failed again** on the same provider condition: `psql: … ERROR: Your account or project has exceeded
+the quota. Upgrade your plan to increase limits.` (§22/§37). So `orders.payment_expires_at` /
+`reservation_policy` are still absent from production Neon, and the reservation + countdown remain
+inert there — orders answer `paymentExpiresAt: null`, the pages render no countdown, and checkout is
+unaffected (the §37 deploy-order net). **Owner action to make it live:** clear the Neon quota, then
+Actions → Migrate Neon Database → Run workflow (or paste the four statements from §37 into the Neon
+SQL Editor).
+
+**Still open (owner-side).** (1) A browser pass over the new order page, the list countdown and the
+method chooser in th/en/my. (2) The production migration above.
