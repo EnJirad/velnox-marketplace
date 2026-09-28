@@ -9,6 +9,15 @@ export const en: Dict = {
       "Once cancelled this order can no longer be paid, and the stock held for it is released back for sale",
     cancelledNotice: "This order was cancelled — it can no longer be paid",
   },
+  /** Payment-reservation copy — see the Thai dictionary for why it lives here. */
+  orderReservation: {
+    payWithin: "Pay within {time}",
+    windowNote:
+      "If payment is not completed in time, the items we are holding will be released for other customers automatically.",
+    expiredTitle: "Payment window expired",
+    expiredDesc:
+      "This order's payment window has closed and the held items were released back to the shop. Please place a new order if you still want them.",
+  },
   common: {
     loading: "Loading...",
     error: "Something went wrong",

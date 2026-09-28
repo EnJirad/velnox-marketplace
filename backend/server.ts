@@ -24,6 +24,7 @@ import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupCenterRoutes } from "./routes/center.js";
 import { registerVerificationRoutes } from "./routes/verification.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
+import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupChatRoutes } from "./routes/chat.js";
 import { broadcast, CHANNELS, setupWebSocket } from "./realtime/index.js";
@@ -516,4 +517,10 @@ server.listen(PORT, "0.0.0.0", () => {
 
   // ─── VelRepeat V2 Scheduler (recurring commerce worker) ────────────
   startVelRepeatScheduler();
+
+  // ─── Payment reservation sweep (Dynamic Payment Reservation V1) ─────
+  // Ends unpaid orders whose reservation window has lapsed and returns their
+  // stock through the one release path. The DB is the source of truth; the
+  // interval only triggers the scan.
+  startPaymentReservationScheduler();
 });

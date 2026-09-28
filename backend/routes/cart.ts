@@ -21,6 +21,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
+import { applyPaymentReservationPolicy } from "../lib/payment-reservation.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { normalizePaymentMethod, assertPaymentMethodUsable, PAYMENT_METHOD, type PaymentMethodId } from "../lib/payment-config.js";
 // The Stripe client lives in stripe.ts (one lazy, test-mode-only client). The
@@ -927,6 +928,16 @@ export function setupCartRoutes(app: Express): void {
               [orderId, totalAmount],
             );
           }
+
+          // ── Payment reservation window (Dynamic Payment Reservation V1) ────
+          // The stock for this order was reserved on the lines above, so the
+          // DEADLINE is taken here, in the same transaction: an order can only
+          // ever hold stock for a window it was actually granted, and a rollback
+          // leaves no deadline (and no policy) behind. The window is derived from
+          // real stock + real trailing sales velocity, never from a fixed
+          // constant, and the reason is stored on the order for audit. COD is
+          // settled by the carrier, so it gets no window at all.
+          await applyPaymentReservationPolicy(client, orderId, paymentMethod);
         }
 
         // Clear only the purchased items from cart (preserves unselected items)
@@ -1046,6 +1057,10 @@ export function setupCartRoutes(app: Express): void {
           // assuming a rail, so a PromptPay customer is never sent to a card
           // form by a default.
           paymentMethod: r.payment_method ?? null,
+          // The payment reservation deadline (Dynamic Payment Reservation V1).
+          // Milliseconds, or null when the order has no window (COD, legacy
+          // rows). Presentation reads it; the backend stays the source of truth.
+          paymentExpiresAt: r.payment_expires_at ? new Date(r.payment_expires_at).getTime() : null,
           shippingStatus: r.shipping_status,
           shippingMethod: null,
           trackingNumber: null,
@@ -1118,6 +1133,10 @@ export function setupCartRoutes(app: Express): void {
           customerUserId: order.user_id,
           status: order.status,
           paymentStatus: order.payment_status,
+          paymentMethod: paymentsRes.rows[0]?.method ?? null,
+          // See the list route: the reservation deadline in ms, null when the
+          // order holds no window. The order page counts down from THIS value.
+          paymentExpiresAt: order.payment_expires_at ? new Date(order.payment_expires_at).getTime() : null,
           shippingStatus: order.shipping_status,
           shippingMethod: null,
           trackingNumber: shipments[0]?.trackingNumber ?? null,

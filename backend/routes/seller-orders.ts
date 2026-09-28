@@ -96,6 +96,11 @@ export function normalizeSellerOrderStatus(dbStatus: string): SellerOrderStatus 
     case "cancelled":
     case "payment_failed":
     case "refunded":
+    case "expired":
+      // `expired` is the payment reservation window lapsing (its stock was
+      // released by the expiry sweep): the seller has nothing to fulfil, and
+      // falling through to `pending` would invite a confirmation of an order
+      // that can never be paid.
       return "cancelled"; // nothing to fulfill
     default:
       return "pending";

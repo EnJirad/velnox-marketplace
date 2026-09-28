@@ -350,7 +350,8 @@ async function markPaymentSucceeded(
   return withTransaction(async (client) => {
     const updated = await client.query(
       `UPDATE orders SET status = 'paid', updated_at = NOW()
-       WHERE id = $1 AND status IN ('pending', 'pending_payment')`,
+       WHERE id = $1 AND status IN ('pending', 'pending_payment')
+         AND inventory_released = FALSE`,
       [orderId],
     );
 
@@ -384,15 +385,30 @@ async function markPaymentSucceeded(
 
     const moved = (updated.rowCount ?? 0) > 0;
     if (!moved && priorPaymentStatus !== "paid") {
-      // Money arrived for an order that is no longer payable (the customer
-      // cancelled it while the rail was still open, or it is already terminal).
-      // The order is deliberately NOT resurrected — the guard above only accepts
-      // a pre-payment status, so a cancelled order can never become paid. The
-      // payment row still records the money, which is exactly what makes the
-      // case refundable; this line is what makes it visible to an operator.
-      // Order id only: no payload, no customer or payment field, no secret.
+      // Money arrived for an order that is no longer payable: the customer
+      // cancelled it while the rail was still open, its payment reservation
+      // window lapsed and the expiry sweep released the stock, or it is already
+      // terminal. The order is deliberately NOT resurrected — the guard above
+      // accepts only a pre-payment status, and `inventory_released = FALSE`
+      // additionally refuses the case where the units were already returned to
+      // the shelf and may now belong to another customer's order. The payment
+      // row still records the money, which is exactly what makes the case
+      // refundable; this line is what makes it visible to an operator.
+      // Order id, status and two booleans only: no payload, no signature, no
+      // customer or payment identifier, no secret.
+      const state = await client.query(
+        `SELECT status,
+                inventory_released,
+                (payment_expires_at IS NOT NULL AND payment_expires_at <= NOW()) AS reservation_expired
+           FROM orders WHERE id = $1`,
+        [orderId],
+      );
+      const row = state.rows[0];
+      const why = row?.reservation_expired
+        ? "its payment reservation had already expired and the stock was released"
+        : `the order status is '${row?.status ?? "unknown"}'`;
       console.warn(
-        `[stripe webhook] payment received for order ${orderId} that is no longer payable — manual review/refund required`,
+        `[stripe webhook] payment received for order ${orderId} that is no longer payable (${why}) — manual review/refund required`,
       );
     }
     if (moved) {
@@ -835,7 +851,7 @@ export function setupStripeRoutes(app: Express): void {
 
       // ── Order: existence, ownership, payable status ─────────────────────
       const orderResult = await query(
-        `SELECT id, user_id, order_number, status, total_amount, currency
+        `SELECT id, user_id, order_number, status, total_amount, currency, payment_expires_at
            FROM orders WHERE id = $1`,
         [orderId],
       );
@@ -850,6 +866,26 @@ export function setupStripeRoutes(app: Express): void {
       }
       if (!["pending", "pending_payment"].includes(order.status)) {
         fail(res, 400, "INVALID_STATUS", `Order status '${order.status}' cannot be paid`);
+        return;
+      }
+
+      // ── Payment reservation: is the customer still inside the window? ────
+      // The deadline written at order creation (lib/payment-reservation.ts) is
+      // the customer-facing promise, not the moment the expiry sweep happens to
+      // run. Refusing here keeps a payment from being accepted for an order the
+      // sweep is releasing in the same second — and "continue payment after the
+      // window" answers a clear 400 instead of opening a session on an order
+      // that is about to be terminal.
+      const reservationExpiresAt = order.payment_expires_at
+        ? new Date(order.payment_expires_at).getTime()
+        : null;
+      if (reservationExpiresAt !== null && reservationExpiresAt <= Date.now()) {
+        fail(
+          res,
+          400,
+          "PAYMENT_RESERVATION_EXPIRED",
+          "The payment window for this order has expired. Please place a new order.",
+        );
         return;
       }
 
@@ -1003,6 +1039,16 @@ export function setupStripeRoutes(app: Express): void {
 
       // ── Create the Checkout Session ─────────────────────────────────────
       const frontendUrl = process.env.VITE_VELSHOP_URL || "https://velshop.vercel.app";
+
+      // Stripe's own bounds for a session's `expires_at` are 30 min – 24 h from
+      // now, applied to the reservation deadline resolved above.
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const sessionExpiresAt = reservationExpiresAt
+        ? Math.min(
+            Math.max(Math.floor(reservationExpiresAt / 1000), nowSeconds + 30 * 60),
+            nowSeconds + 24 * 60 * 60,
+          )
+        : undefined;
       const session = await s.checkout.sessions.create({
         mode: "payment",
         payment_method_types: [stripePaymentMethodType(method)!],
@@ -1022,6 +1068,14 @@ export function setupStripeRoutes(app: Express): void {
         payment_intent_data: { metadata: { orderId, userId, method } },
         customer_creation: "always",
         allow_promotion_codes: true,
+        // Stripe bounds a session's own expiry to 30 min – 24 h from creation,
+        // while the reservation window may be shorter (MIN is 10 min). The
+        // session is therefore asked to close as soon as Stripe allows and never
+        // later than the deadline; when the window is shorter than Stripe's
+        // minimum, the expiry sweep closes the session explicitly at the
+        // deadline (jobs/payment-reservation-scheduler.ts). The ORDER row — not
+        // the session — is the source of truth either way.
+        ...(sessionExpiresAt ? { expires_at: sessionExpiresAt } : {}),
       });
 
       const intentId =
@@ -1087,6 +1141,7 @@ export function setupStripeRoutes(app: Express): void {
                 amount: expectedMinor / 100,
                 currency,
                 expiresAt: winnerSession.expires_at,
+                paymentExpiresAt: reservationExpiresAt,
                 reused: true,
               };
               await rememberResponse(data);
@@ -1124,7 +1179,11 @@ export function setupStripeRoutes(app: Express): void {
         amount: expectedMinor / 100,
         currency,
         paymentId,
+        // `expiresAt` stays the SESSION's expiry (epoch seconds, unchanged
+        // contract). `paymentExpiresAt` is the reservation deadline in ms — the
+        // window the order page counts down, and the value the backend enforces.
         expiresAt: session.expires_at,
+        paymentExpiresAt: reservationExpiresAt,
         reused: false,
       };
       await rememberResponse(data);

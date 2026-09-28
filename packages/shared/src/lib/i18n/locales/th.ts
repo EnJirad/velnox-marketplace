@@ -17,6 +17,22 @@ export const th = {
       "หากยกเลิกแล้วจะไม่สามารถชำระเงินสำหรับออเดอร์นี้ได้อีก และสินค้าที่กันไว้จะถูกคืนกลับสู่การขาย",
     cancelledNotice: "ออเดอร์นี้ถูกยกเลิกแล้ว — ไม่สามารถชำระเงินสำหรับออเดอร์นี้ได้อีก",
   },
+  /**
+   * Payment-reservation copy (Dynamic Payment Reservation V1).
+   *
+   * Same reason as `orderCancel` for living here: this block must be editable in
+   * every locale, and `orderDetail` sits past the safe edit window of the large
+   * dictionaries. The countdown value itself is formatted in
+   * `formatPaymentCountdown()` (shared), so every locale renders the same clock.
+   */
+  orderReservation: {
+    payWithin: "ชำระเงินภายใน {time}",
+    windowNote:
+      "หากไม่ชำระภายในเวลานี้ ระบบจะคืนสินค้าที่กันไว้ให้ลูกค้าคนอื่นโดยอัตโนมัติ",
+    expiredTitle: "เวลาชำระเงินหมดแล้ว",
+    expiredDesc:
+      "ออเดอร์นี้หมดเวลาชำระเงินแล้ว และสินค้าที่กันไว้ถูกคืนกลับสู่การขายแล้ว หากยังต้องการสินค้า กรุณาสั่งซื้อใหม่",
+  },
   common: {
     loading: "กำลังโหลด...",
     error: "มีบางอย่างผิดพลาด",

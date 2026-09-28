@@ -76,6 +76,27 @@ describe("order payability — the rule the resume button and the backend share"
     expect([...PAYABLE_ORDER_STATUSES]).toEqual(["pending", "pending_payment"]);
     expect(isOrderPayable("pending")).toBe(true);
     expect(isOrderPayable("pending_payment")).toBe(true);
+    // `expired` (the payment reservation window lapsing) is terminal for
+    // payment, like every other status outside this list.
+    expect(isOrderPayable("expired")).toBe(false);
+    expect(orderStripePayability({ status: "expired" })).toEqual({
+      payable: false,
+      method: null,
+      expired: false,
+    });
+  });
+
+  test("a lapsed payment reservation is not payable before the sweep even writes `expired`", () => {
+    // The reservation rule itself is pinned in
+    // `payment-reservation-expiry.test.ts`; here we only pin that the shared
+    // payability answer carries the flag the order page renders.
+    const now = Date.now();
+    expect(orderStripePayability({ status: "pending_payment", paymentExpiresAt: now + 60_000 }).expired).toBe(false);
+    expect(orderStripePayability({ status: "pending_payment", paymentExpiresAt: now - 1 })).toEqual({
+      payable: false,
+      method: null,
+      expired: true,
+    });
   });
 
   test("a payment_failed order is NOT payable — retrying follows the backend rule", () => {
@@ -85,6 +106,7 @@ describe("order payability — the rule the resume button and the backend share"
     expect(orderStripePayability({ status: "payment_failed", paymentStatus: "failed" })).toEqual({
       payable: false,
       method: null,
+      expired: false,
     });
   });
 
@@ -92,31 +114,34 @@ describe("order payability — the rule the resume button and the backend share"
     expect(orderStripePayability({ status: "cancelled", paymentStatus: "cancelled" })).toEqual({
       payable: false,
       method: null,
+      expired: false,
     });
     expect(orderStripePayability({ status: "refunded", paymentStatus: "refunded" })).toEqual({
       payable: false,
       method: null,
+      expired: false,
     });
   });
 
   test("a paid order has no resume entry point, even if the order row lags", () => {
-    expect(orderStripePayability({ status: "paid", paymentStatus: "paid" })).toEqual({ payable: false, method: null });
-    expect(orderStripePayability({ status: "completed", paymentStatus: "paid" })).toEqual({ payable: false, method: null });
+    expect(orderStripePayability({ status: "paid", paymentStatus: "paid" })).toEqual({ payable: false, method: null, expired: false });
+    expect(orderStripePayability({ status: "completed", paymentStatus: "paid" })).toEqual({ payable: false, method: null, expired: false });
     // The payment row is the authority on money: a stale `pending_payment`
     // order whose payment is already `paid` must not offer a second charge.
     expect(orderStripePayability({ status: "pending_payment", paymentStatus: "paid" })).toEqual({
       payable: false,
       method: null,
+      expired: false,
     });
   });
 
   test("an unpaid pending_payment order IS payable, with the method it was created with", () => {
     expect(
       orderStripePayability({ status: "pending_payment", paymentStatus: "requires_action", paymentMethod: "PROMPTPAY" }),
-    ).toEqual({ payable: true, method: "PROMPTPAY" });
+    ).toEqual({ payable: true, method: "PROMPTPAY", expired: false });
     expect(
       orderStripePayability({ status: "pending_payment", paymentStatus: "requires_action", paymentMethod: "CARD" }),
-    ).toEqual({ payable: true, method: "CARD" });
+    ).toEqual({ payable: true, method: "CARD", expired: false });
   });
 
   test("the legacy `online` rail resumes as CARD, and PromptPay never collapses into card", () => {
@@ -135,10 +160,11 @@ describe("order payability — the rule the resume button and the backend share"
     expect(orderStripePayability({ status: "pending", paymentStatus: "pending", paymentMethod: "cod" })).toEqual({
       payable: false,
       method: null,
+      expired: false,
     });
     expect(
       orderStripePayability({ status: "pending", paymentStatus: "pending", paymentMethod: "cash_on_delivery" }),
-    ).toEqual({ payable: false, method: null });
+    ).toEqual({ payable: false, method: null, expired: false });
   });
 
   test("a payable order with no recorded method asks instead of defaulting to card", () => {
@@ -147,10 +173,11 @@ describe("order payability — the rule the resume button and the backend share"
     expect(orderStripePayability({ status: "pending", paymentStatus: "unpaid", paymentMethod: null })).toEqual({
       payable: true,
       method: null,
+      expired: false,
     });
-    expect(orderStripePayability({ status: "pending", paymentStatus: "unpaid" })).toEqual({ payable: true, method: null });
+    expect(orderStripePayability({ status: "pending", paymentStatus: "unpaid" })).toEqual({ payable: true, method: null, expired: false });
     // An unrecognised method is also "ask", never "assume card".
-    expect(orderStripePayability({ status: "pending", paymentMethod: "cheque" })).toEqual({ payable: true, method: null });
+    expect(orderStripePayability({ status: "pending", paymentMethod: "cheque" })).toEqual({ payable: true, method: null, expired: false });
   });
 
   test("the order-detail shape (payments[], newest first) is read too", () => {
@@ -160,15 +187,15 @@ describe("order payability — the rule the resume button and the backend share"
         paymentStatus: "requires_action",
         payments: [{ method: "PROMPTPAY", status: "requires_action" }],
       }),
-    ).toEqual({ payable: true, method: "PROMPTPAY" });
+    ).toEqual({ payable: true, method: "PROMPTPAY", expired: false });
     expect(
       orderStripePayability({ status: "pending_payment", paymentStatus: "pending", payments: [{ method: "cod" }] }),
-    ).toEqual({ payable: false, method: null });
+    ).toEqual({ payable: false, method: null, expired: false });
   });
 
   test("hostile input is not payable", () => {
     for (const order of [null, undefined, { status: null }, { status: "" }, { status: 42 }, { status: "PENDING" }]) {
-      expect(orderStripePayability(order as never)).toEqual({ payable: false, method: null });
+      expect(orderStripePayability(order as never)).toEqual({ payable: false, method: null, expired: false });
     }
   });
 

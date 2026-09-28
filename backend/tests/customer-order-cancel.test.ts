@@ -234,7 +234,11 @@ describe("webhook behaviour after a cancellation", () => {
   test("funds arriving for a non-payable order are logged for an operator, never ignored", () => {
     // The payment row keeps recording the money (that is what makes it
     // refundable) while the ORDER is protected — and the case is visible.
-    expect(stripeSrc).toContain("no longer payable — manual review/refund required");
+    // The message names the case (cancelled, or a lapsed payment reservation)
+    // and always asks for the manual review that refunds the money.
+    expect(stripeSrc).toContain("no longer payable");
+    expect(stripeSrc).toContain("manual review/refund required");
+    expect(stripeSrc).toContain("reservation_expired");
     expect(stripeSrc).toContain("const priorPaymentStatus: string | null =");
   });
 
@@ -281,7 +285,9 @@ describe("storefront — both actions on an unpaid order", () => {
 
   test("a cancelled order shows the cancelled state and no way back to payment", () => {
     expect(src).toContain('t("orderCancel.cancelledNotice")');
-    expect(src).toContain('{order.status === "cancelled" ? (');
+    // The same terminal slot also covers an expired payment reservation.
+    expect(src).toMatch(/order\.status === "cancelled"[\s\S]{0,160}order\.status === "expired"/);
+    expect(src).toContain('t("orderReservation.expiredTitle")');
     // Payability already excludes `cancelled`; the cancel button excludes it too.
     expect(isOrderCancelableByCustomer("cancelled")).toBe(false);
   });

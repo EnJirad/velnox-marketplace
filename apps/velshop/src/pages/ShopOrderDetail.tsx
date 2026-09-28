@@ -28,9 +28,11 @@ import { api } from "@velnox/shared/lib/api-routes";
 import {
   formatBaht,
   formatIsoDateTime,
+  formatPaymentCountdown,
   getOrderStatusMeta,
   orderCustomerCancelability,
   orderStripePayability,
+  paymentReservationState,
 } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -49,7 +51,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
 
@@ -115,6 +117,12 @@ interface OrderDetail {
   items?: OrderItemRow[];
   shipments?: ShipmentRow[];
   payments?: Array<{ id: string; method: string; status: string; amount: number }>;
+  /**
+   * Payment reservation deadline in Unix ms (Dynamic Payment Reservation V1),
+   * or null when the order holds no window. The BACKEND computed this; the
+   * countdown below only renders it.
+   */
+  paymentExpiresAt?: number | null;
 }
 
 const ORDER_STEPS: Array<{ key: string; icon: LucideIcon }> = [
@@ -138,6 +146,16 @@ export default function ShopOrderDetail() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+
+  /**
+   * Presentation-only clock for the reservation countdown.
+   *
+   * The DEADLINE comes from the API and the backend enforces it; this state
+   * exists solely to re-render the remaining time. Nothing here may change an
+   * order's status — that is exactly the "no fake timer as source of truth"
+   * rule, and why a skewed client clock can only ever mis-render millis.
+   */
+  const [now, setNow] = useState(() => Date.now());
 
   // cancel dialog
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -192,6 +210,33 @@ export default function ShopOrderDetail() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** The reservation window this order currently holds (presentation only). */
+  const reservation = paymentReservationState(order, now);
+
+  // Tick the countdown once a second, and ONLY while a window is open: a settled
+  // order must not keep a timer alive.
+  useEffect(() => {
+    if (!reservation.hasWindow || reservation.expired) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [reservation.hasWindow, reservation.expired]);
+
+  /**
+   * When the window closes, refetch ONCE. The backend may already have written
+   * `expired` and released the stock; until it answers, the page shows the
+   * expired notice rather than pretending a payment is still possible.
+   */
+  const refetchedForExpiry = useRef(false);
+  useEffect(() => {
+    if (!reservation.hasWindow || !reservation.expired) {
+      refetchedForExpiry.current = false;
+      return;
+    }
+    if (refetchedForExpiry.current) return;
+    refetchedForExpiry.current = true;
+    void load();
+  }, [reservation.hasWindow, reservation.expired, load]);
 
   const handleCancel = async () => {
     if (!order) return;
@@ -373,13 +418,35 @@ export default function ShopOrderDetail() {
           </div>
         </div>
 
+        {/*
+          Payment reservation window (Dynamic Payment Reservation V1).
+          The deadline is the backend's; this strip only renders the remaining
+          time so the customer knows how long the held stock is theirs.
+        */}
+        {reservation.hasWindow && !reservation.expired && (
+          <section className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <Clock3 className="size-4 shrink-0 text-amber-600" />
+            <p className="text-sm font-semibold tabular-nums text-amber-800">
+              {t("orderReservation.payWithin", { time: formatPaymentCountdown(reservation.remainingMs) })}
+            </p>
+            <p className="text-xs text-amber-700">{t("orderReservation.windowNote")}</p>
+          </section>
+        )}
+
         {/* Timeline */}
         <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.progress")}</h2>
-          {order.status === "cancelled" ? (
-            <div className="mt-5 flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
-              <XCircle className="size-4 text-slate-400" />
-              {t("orderCancel.cancelledNotice")}
+          {order.status === "cancelled" || order.status === "expired" || payability.expired ? (
+            <div className="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              <p className="flex items-center gap-3">
+                <XCircle className="size-4 shrink-0 text-slate-400" />
+                {order.status === "cancelled"
+                  ? t("orderCancel.cancelledNotice")
+                  : t("orderReservation.expiredTitle")}
+              </p>
+              {order.status !== "cancelled" && (
+                <p className="mt-1.5 pl-7 text-xs text-slate-400">{t("orderReservation.expiredDesc")}</p>
+              )}
             </div>
           ) : (
             <div className="mt-5 flex flex-wrap items-center gap-1">

@@ -51,6 +51,11 @@ const STATUS_META: Record<string, { icon: typeof CheckCircle2; color: string; bg
   pending_payment: { icon: Clock, color: "text-amber-500", bg: "bg-amber-50", labelKey: "checkoutSuccess.pendingPayment" },
   cancelled: { icon: XCircle, color: "text-red-500", bg: "bg-red-50", labelKey: "checkoutSuccess.cancelled" },
   payment_failed: { icon: XCircle, color: "text-red-500", bg: "bg-red-50", labelKey: "checkoutSuccess.paymentFailed" },
+  // The payment reservation window lapsed before this order was paid (its stock
+  // is back on the shelf). The label reuses the reservation copy so no new key
+  // has to be added to the `checkoutSuccess` blocks, which sit past the safe
+  // edit window of the large dictionaries.
+  expired: { icon: XCircle, color: "text-slate-500", bg: "bg-slate-100", labelKey: "orderReservation.expiredTitle" },
 };
 
 export default function ShopCheckoutSuccess() {
@@ -95,7 +100,7 @@ export default function ShopCheckoutSuccess() {
     }
 
     /** Nothing more can change for these; keep polling only while unsettled. */
-    const TERMINAL_STATUSES = new Set(["paid", "cancelled", "payment_failed", "refunded", "completed"]);
+    const TERMINAL_STATUSES = new Set(["paid", "cancelled", "payment_failed", "refunded", "completed", "expired"]);
     const MAX_ATTEMPTS = 30;
     const INTERVAL_MS = 3000;
     let alive = true;

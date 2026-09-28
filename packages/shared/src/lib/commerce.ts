@@ -207,7 +207,13 @@ export type StoreOrderStatus =
   | "completed"
   | "payment_failed"
   | "refunded"
-  | "cancelled";
+  | "cancelled"
+  /**
+   * The payment reservation window lapsed before the order was paid
+   * (written by the expiry sweep, `backend/jobs/payment-reservation-scheduler.ts`).
+   * Terminal for payment, and its reserved stock has been returned to the shelf.
+   */
+  | "expired";
 export type StorePaymentStatus =
   | "unpaid"
   | "pending"
@@ -289,6 +295,12 @@ export interface StoreOrder {
     }>;
   }>;
   payments?: Array<{ id: string; method: string; status: string; amount: number }>;
+  /**
+   * The payment reservation deadline in Unix ms (Dynamic Payment Reservation
+   * V1), or null/absent when the order holds no window (COD, legacy rows).
+   * The backend is the source of truth; the order page only counts down to it.
+   */
+  paymentExpiresAt?: number | null;
   shopId?: string | null;
   shopName?: string | null;
   shopSlug?: string | null;
@@ -355,6 +367,11 @@ export const ORDER_STATUS_META: Record<StoreOrderStatus, OrderStatusMeta> = {
     badge: "bg-violet-50 text-violet-700 ring-violet-600/15 hover:bg-violet-50",
     dot: "bg-violet-500",
   },
+  expired: {
+    label: "หมดเวลาชำระเงิน",
+    badge: "bg-slate-100 text-slate-500 ring-slate-600/10 hover:bg-slate-100",
+    dot: "bg-slate-400",
+  },
 };
 
 /**
@@ -405,6 +422,7 @@ export const NEXT_ORDER_STATUSES: Record<StoreOrderStatus, StoreOrderStatus[]> =
   payment_failed: [],
   refunded: [],
   cancelled: [],
+  expired: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -470,6 +488,12 @@ export interface OrderPayabilityInput {
   paymentMethod?: unknown;
   /** `orders` detail exposes every payment, newest first. */
   payments?: Array<{ method?: unknown }> | null;
+  /**
+   * The payment reservation deadline in Unix ms, when the endpoint supplies it.
+   * A past deadline means the backend will refuse a new Checkout Session
+   * (`PAYMENT_RESERVATION_EXPIRED`), so no pay button may be offered.
+   */
+  paymentExpiresAt?: unknown;
 }
 
 export interface OrderStripePayability {
@@ -481,6 +505,12 @@ export interface OrderStripePayability {
    * method on a payable order means: ask the customer, never default to card.
    */
   method: StripeResumableMethod | null;
+  /**
+   * True when the payment reservation window has lapsed. The order is (or is
+   * about to be) `expired` and its stock released — the page shows the expired
+   * notice instead of a pay button.
+   */
+  expired: boolean;
 }
 
 /**
@@ -493,19 +523,101 @@ export interface OrderStripePayability {
  * backend would accept the payment.
  */
 export function orderStripePayability(order: OrderPayabilityInput | null | undefined): OrderStripePayability {
-  if (!order || !isOrderPayable(order.status)) return { payable: false, method: null };
+  if (!order || !isOrderPayable(order.status)) {
+    return { payable: false, method: null, expired: false };
+  }
   // Belt and braces: a paid payment must never present a pay-again button even
   // if the order row lags one transition behind the payment row.
   if (typeof order.paymentStatus === "string" && order.paymentStatus.toLowerCase() === "paid") {
-    return { payable: false, method: null };
+    return { payable: false, method: null, expired: false };
+  }
+
+  // The reservation deadline is enforced by the backend
+  // (`POST /api/stripe/checkout` answers 400 PAYMENT_RESERVATION_EXPIRED once it
+  // has passed), so the button must disappear at the same instant — even before
+  // the expiry sweep has written `expired` onto the order row.
+  if (paymentReservationState(order).expired) {
+    return { payable: false, method: null, expired: true };
   }
 
   const latestMethod = order.paymentMethod ?? order.payments?.[0]?.method ?? null;
   if (typeof latestMethod === "string" && NON_STRIPE_PAYMENT_METHODS.has(latestMethod.trim().toLowerCase())) {
-    return { payable: false, method: null };
+    return { payable: false, method: null, expired: false };
   }
 
-  return { payable: true, method: stripeMethodForPaymentMethod(latestMethod) };
+  return { payable: true, method: stripeMethodForPaymentMethod(latestMethod), expired: false };
+}
+
+// ---------------------------------------------------------------------------
+// payment reservation window (Dynamic Payment Reservation V1)
+// ---------------------------------------------------------------------------
+/** The smallest order shape the reservation countdown needs. */
+export interface OrderReservationInput {
+  status?: unknown;
+  paymentExpiresAt?: unknown;
+}
+
+export interface PaymentReservationState {
+  /** The order carries a deadline (so a countdown is meaningful). */
+  hasWindow: boolean;
+  /** Unix ms, or null when there is no window. */
+  expiresAt: number | null;
+  /** The deadline has passed (or the order is already terminal for payment). */
+  expired: boolean;
+  /** Milliseconds left; 0 once expired. Never negative. */
+  remainingMs: number;
+}
+
+/**
+ * Read the reservation window off an order. PRESENTATION ONLY — the backend
+ * deadline and the backend's own guarded writes remain the source of truth; a
+ * client clock can be wrong in either direction, which is exactly why nothing
+ * here may ever move an order's state.
+ *
+ * A window is only reported for an order that is still waiting to be paid: one
+ * that is paid, cancelled, refunded or expired has no countdown to show, and
+ * showing one would suggest a payment is still possible.
+ */
+export function paymentReservationState(
+  order: OrderReservationInput | null | undefined,
+  now: number = Date.now(),
+): PaymentReservationState {
+  const none: PaymentReservationState = { hasWindow: false, expiresAt: null, expired: false, remainingMs: 0 };
+  if (!order) return none;
+
+  const raw = order.paymentExpiresAt;
+  const expiresAt =
+    typeof raw === "number" && Number.isFinite(raw)
+      ? raw
+      : typeof raw === "string" && Number.isFinite(Date.parse(raw))
+        ? Date.parse(raw)
+        : null;
+  if (expiresAt === null) return none;
+
+  const remainingMs = Math.max(0, expiresAt - now);
+  const windowOpen = order.status === undefined || isOrderPayable(order.status);
+  if (!windowOpen) {
+    // A decided order keeps its stored deadline for audit, but it is not a
+    // countdown and it is not payable.
+    return { hasWindow: false, expiresAt, expired: true, remainingMs: 0 };
+  }
+  return { hasWindow: true, expiresAt, expired: remainingMs <= 0, remainingMs };
+}
+
+/**
+ * Format a countdown as `MM:SS` (under an hour) or `H:MM:SS`, clock style so it
+ * never reflows as digits change. `0` / negative / non-finite renders `00:00`.
+ */
+export function formatPaymentCountdown(remainingMs: number): string {
+  const totalSeconds =
+    typeof remainingMs === "number" && Number.isFinite(remainingMs) && remainingMs > 0
+      ? Math.floor(remainingMs / 1000)
+      : 0;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
 
 // ---------------------------------------------------------------------------

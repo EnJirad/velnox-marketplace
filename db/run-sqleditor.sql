@@ -375,6 +375,8 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_address JSONB,
   notes TEXT,
   inventory_released BOOLEAN NOT NULL DEFAULT FALSE,
+  payment_expires_at TIMESTAMPTZ,
+  reservation_policy JSONB,
   velrepeat_run_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -384,6 +386,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_unreleased ON orders (id) WHERE inventory_
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_shop ON orders (shop_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
+CREATE INDEX IF NOT EXISTS idx_orders_payment_expires_at ON orders (payment_expires_at) WHERE payment_expires_at IS NOT NULL;
 CREATE TABLE IF NOT EXISTS checkout_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
