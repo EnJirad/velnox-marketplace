@@ -11,12 +11,18 @@
 #     (via information_schema / to_regclass / pg_catalog), so probes cannot
 #     fail the job — they only change the reported state.
 #
-# Manual trigger only: Actions -> Velnox Neon Schema Diagnostic -> Run workflow.
+# Trigger: Actions -> Velnox Neon Schema Diagnostic -> Run workflow, OR a push
+# to main that changes this file (workflow_dispatch is refused for app tokens
+# without Actions:write — edit the probes and push to re-run).
 
 name: Velnox Neon Schema Diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diag-neon-schema.yml
 
 jobs:
   diagnose:
@@ -174,11 +180,46 @@ jobs:
                             WHERE conrelid = to_regclass('velrepeat_plans')
                               AND contype = 'c'
                               AND pg_get_constraintdef(oid) LIKE '%item_unavailable%'),
-                          'MISSING (044 repair not applied)') AS state;
-
-          -- other known drift markers -----------------------------------------------
+                          'MISSING (044 repair not applied)') AS state;          -- other known drift markers -----------------------------------------------
           SELECT 'shops.idx_shops_seller uniqueness' AS probe,
-                 COALESCE((SELECT indexdef FROM pg_indexes
-                            WHERE indexname = 'idx_shops_seller'),
-                          'MISSING') AS state;
+                 COALESCE((SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_shops_seller'), 'MISSING') AS state;
+          SQL
+
+      - name: Payment reservation probes (migration 048)
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          -- The storefront countdown reads orders.payment_expires_at, so whether
+          -- migration 048 applied decides if a 30-minute countdown can exist at all.
+          SELECT 'orders.payment_expires_at' AS probe,
+                 COALESCE((SELECT data_type FROM information_schema.columns
+                            WHERE table_name = 'orders' AND column_name = 'payment_expires_at'),
+                          'MISSING (048 not applied)') AS state;
+          SELECT 'orders.reservation_policy' AS probe,
+                 COALESCE((SELECT data_type FROM information_schema.columns
+                            WHERE table_name = 'orders' AND column_name = 'reservation_policy'),
+                          'MISSING (048 not applied)') AS state;
+          SELECT 'idx_orders_payment_expires_at' AS probe,
+                 COALESCE((SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_orders_payment_expires_at'),
+                          'MISSING (048 not applied)') AS state;
+          -- Aggregates only: how many orders carry a deadline, and which policy
+          -- version produced it. No order id, user id or any other identifier.
+          SELECT 'orders with a deadline / orders total' AS probe,
+                 CASE WHEN (SELECT count(*) FROM information_schema.columns
+                              WHERE table_name = 'orders' AND column_name = 'payment_expires_at') = 0
+                      THEN 'COLUMN MISSING (048 not applied)'
+                      ELSE (SELECT count(*) FILTER (WHERE payment_expires_at IS NOT NULL)::text ||
+                                   '/' || count(*)::text FROM orders)
+                 END AS state;
+          SELECT 'reservation_policy versions' AS probe,
+                 CASE WHEN (SELECT count(*) FROM information_schema.columns
+                              WHERE table_name = 'orders' AND column_name = 'reservation_policy') = 0
+                      THEN 'COLUMN MISSING (048 not applied)'
+                      ELSE COALESCE((SELECT string_agg(v || ' n=' || n::text, ', ' ORDER BY n)
+                                       FROM (SELECT COALESCE(reservation_policy->>'version', '(null)') AS v,
+                                                    count(*) AS n
+                                               FROM orders GROUP BY 1) s),
+                                    '(no rows)')
+                 END AS state;
           SQL
