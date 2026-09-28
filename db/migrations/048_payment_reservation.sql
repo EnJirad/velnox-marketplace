@@ -16,6 +16,9 @@
 --       (backend/lib/payment-reservation.ts, `version: "v2"`); the earlier
 --       risk-based windows (15-60 min, `version: "v1"`) are superseded, and a
 --       stored v1 row stays distinguishable by its version field.
+-- Re-queued 2026-09-28: comment-only touch. Both earlier attempts (02:57Z, 14:38Z)
+--       died on the provider quota, so production still has neither column and the
+--       storefront countdown cannot render. DDL below is unchanged.
 -- Affected: orders (payment_expires_at, reservation_policy + one partial index)
 -- Safety: Additive and idempotent only. No DROP TABLE, no DROP COLUMN, no
 --         TRUNCATE, no DELETE, no backfill of existing rows (a NULL deadline
