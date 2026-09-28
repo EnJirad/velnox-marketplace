@@ -376,14 +376,46 @@ export async function applyPaymentReservationPolicy(
   const signals = await gatherOrderReservationSignals(client, orderId);
   const policy = calculatePaymentReservationPolicy(signals, now);
 
-  await client.query(
-    `UPDATE orders
-        SET payment_expires_at = $2::timestamptz,
-            reservation_policy = $3::jsonb,
-            updated_at = NOW()
-      WHERE id = $1`,
-    [orderId, policy.expiresAt, JSON.stringify(policy)],
-  );
+  // ── Deploy-order safety ────────────────────────────────────────────────
+  // The two columns arrive with `db/migrations/048_payment_reservation.sql`, and
+  // a backend deploy can reach production BEFORE that migration is applied (the
+  // host deploys on push). Without this guard the missing column would abort the
+  // caller's order-creation transaction and break EVERY checkout — turning a
+  // missing deadline into lost sales. The write therefore runs inside a
+  // SAVEPOINT: only "undefined_column" is swallowed (with a loud, actionable
+  // log) and the order simply stays without a window — exactly like a legacy row,
+  // which the sweep ignores. Every other error still aborts the transaction.
+  await client.query("SAVEPOINT velnox_payment_reservation");
+  try {
+    await client.query(
+      `UPDATE orders
+          SET payment_expires_at = $2::timestamptz,
+              reservation_policy = $3::jsonb,
+              updated_at = NOW()
+        WHERE id = $1`,
+      [orderId, policy.expiresAt, JSON.stringify(policy)],
+    );
+    await client.query("RELEASE SAVEPOINT velnox_payment_reservation");
+  } catch (err) {
+    await client.query("ROLLBACK TO SAVEPOINT velnox_payment_reservation");
+    if (isUndefinedColumnError(err)) {
+      console.error(
+        "[reservation] orders.payment_expires_at/reservation_policy are missing — " +
+          "apply db/migrations/048_payment_reservation.sql. This order has NO reservation window " +
+          "(stock is held until it is cancelled, as before).",
+      );
+      return null;
+    }
+    throw err;
+  }
 
   return policy;
+}
+
+/**
+ * `undefined_column` — the schema predates the migration that adds the column.
+ * Distinguished from every other failure so only this one is tolerated.
+ */
+export function isUndefinedColumnError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "42703";
 }

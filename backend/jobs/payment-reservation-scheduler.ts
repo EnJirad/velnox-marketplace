@@ -36,6 +36,7 @@
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
 import {
+  isUndefinedColumnError,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
   PAYMENT_RESERVATION_EXPIRED_STATUS,
 } from "../lib/payment-reservation.js";
@@ -229,6 +230,14 @@ export async function processExpiredPaymentReservations(
 let running = false;
 
 /**
+ * True while the scan has failed because the columns are missing (migration 048
+ * not applied yet). It keeps the 30 s tick from repeating the same line forever,
+ * and a later successful scan clears it — so applying the migration re-enables
+ * the sweep on the next tick, without a restart.
+ */
+let schemaMissingWarned = false;
+
+/**
  * Start the expiry sweep. Mirrors the VelRepeat scheduler: the interval only
  * triggers a scan, the database decides, and overlapping ticks are impossible
  * within one process.
@@ -240,9 +249,23 @@ export function startPaymentReservationScheduler(intervalMs = 30_000): NodeJS.Ti
     running = true;
     try {
       const { due, expired, skipped } = await processExpiredPaymentReservations(25);
+      schemaMissingWarned = false;
       if (due > 0) console.log(`[reservation] sweep: due=${due} expired=${expired} skipped=${skipped}`);
     } catch (err) {
-      console.error("[reservation] sweep error:", err);
+      if (isUndefinedColumnError(err)) {
+        // The backend is newer than the database. Say it once, clearly, and keep
+        // serving: without the columns there is nothing to sweep, and every other
+        // route still works.
+        if (!schemaMissingWarned) {
+          schemaMissingWarned = true;
+          console.error(
+            "[reservation] sweep disabled — orders.payment_expires_at is missing. " +
+              "Apply db/migrations/048_payment_reservation.sql; the sweep resumes on its own.",
+          );
+        }
+      } else {
+        console.error("[reservation] sweep error:", err);
+      }
     } finally {
       running = false;
     }

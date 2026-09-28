@@ -50,6 +50,7 @@ import {
 } from "../jobs/payment-reservation-scheduler.js";
 import {
   applyPaymentReservationPolicy,
+  isUndefinedColumnError,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
   PAYMENT_RESERVATION_EXPIRED_STATUS,
 } from "../lib/payment-reservation.js";
@@ -292,6 +293,23 @@ describe("payment reservation — the wiring contracts", () => {
     expect(refusal).toBeLessThan(sessionCreate);
     // The session is also asked to close no later than the deadline.
     expect(stripe).toContain("expires_at: sessionExpiresAt");
+  });
+
+  test("the reservation write survives being deployed before its migration", () => {
+    const lib = read(POLICY_LIB);
+    // The write is savepointed, so a missing column cannot abort the caller's
+    // order-creation transaction (which would break EVERY checkout), and only
+    // `undefined_column` is tolerated.
+    expect(lib).toContain("SAVEPOINT velnox_payment_reservation");
+    expect(lib).toContain("ROLLBACK TO SAVEPOINT velnox_payment_reservation");
+    expect(lib).toContain("RELEASE SAVEPOINT velnox_payment_reservation");
+    expect(lib).toContain("isUndefinedColumnError(err)");
+    expect(lib).toContain("throw err;");
+    expect(lib).toContain("048_payment_reservation.sql");
+    // The sweep says so once and keeps serving rather than crashing every tick.
+    const job = read(SWEEP_JOB);
+    expect(job).toContain("sweep disabled");
+    expect(job).toContain("schemaMissingWarned");
   });
 
   test("both canonical schema files carry the same columns and index", () => {
@@ -820,6 +838,36 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       expect(state.reservationPolicy).toBeNull();
     } finally {
       await purgeUsers([cod.ownerId, cod.sellerUserId]);
+    }
+  });
+
+  test("a SAVEPOINT keeps a failed reservation write from poisoning the checkout transaction", async () => {
+    // Mechanics of the deploy-order shim in `applyPaymentReservationPolicy`: a
+    // statement that fails with `undefined_column` must be recoverable, so the
+    // order (and the customer's checkout) survives a backend that is newer than
+    // its database. ANY other failure must still abort the transaction.
+    const { withTransaction } = await import("../db/index.js");
+    const seed = await seedOrder({ status: "pending" });
+    try {
+      const outcome = await withTransaction(async (client) => {
+        await client.query("SAVEPOINT velnox_payment_reservation");
+        let undefinedColumn = false;
+        try {
+          await client.query(`UPDATE orders SET definitely_not_a_column = 'x' WHERE id = $1`, [seed.orderId]);
+        } catch (err) {
+          undefinedColumn = isUndefinedColumnError(err);
+          await client.query("ROLLBACK TO SAVEPOINT velnox_payment_reservation");
+        }
+        // The transaction is STILL USABLE — that is the point of the shim.
+        const after = await client.query(`SELECT id, status FROM orders WHERE id = $1`, [seed.orderId]);
+        await client.query(`UPDATE orders SET updated_at = NOW() WHERE id = $1`, [seed.orderId]);
+        return { undefinedColumn, rows: after.rows.length, status: after.rows[0]?.status as string };
+      });
+      expect(outcome.undefinedColumn).toBe(true);
+      expect(outcome.rows).toBe(1);
+      expect(outcome.status).toBe("pending");
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
     }
   });
 

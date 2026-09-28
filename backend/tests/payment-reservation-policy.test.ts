@@ -30,6 +30,7 @@ import {
   calculatePaymentReservationPolicy,
   clampReservationMinutes,
   deriveDemandMetrics,
+  isUndefinedColumnError,
   PAYMENT_RESERVATION_DEFAULT_MINUTES,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
   PAYMENT_RESERVATION_EXPIRED_STATUS,
@@ -290,6 +291,20 @@ describe("payment reservation policy V1 — determinism, expiry and method scope
     // direction, because a window can never leak stock forever.
     expect(paymentMethodNeedsReservation(undefined)).toBe(true);
     expect(paymentMethodNeedsReservation(null)).toBe(true);
+  });
+
+  test("only `undefined_column` is tolerated — a deploy may precede its migration", () => {
+    // The reservation write runs inside a SAVEPOINT and swallows EXACTLY this
+    // code, so a backend deployed before `db/migrations/048_payment_reservation.sql`
+    // keeps checkout working instead of breaking every order. Any other error
+    // must still abort the caller's transaction.
+    expect(isUndefinedColumnError({ code: "42703" })).toBe(true);
+    expect(isUndefinedColumnError({ code: "42P01" })).toBe(false);
+    expect(isUndefinedColumnError({ code: "23505" })).toBe(false);
+    expect(isUndefinedColumnError(new Error("boom"))).toBe(false);
+    expect(isUndefinedColumnError(null)).toBe(false);
+    expect(isUndefinedColumnError(undefined)).toBe(false);
+    expect(isUndefinedColumnError("42703")).toBe(false);
   });
 
   test("the expiry sweep only ever touches pre-payment statuses", () => {
