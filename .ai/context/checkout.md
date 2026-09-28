@@ -21,7 +21,7 @@ and a stale note claimed none existed. `backend/routes/stripe.ts` is real.)
 
 ```
 cart_items → POST /api/customer/checkout (idempotent via checkout_requests[scope=checkout])
-→ orders + order_items (stock reserved)
+→ orders + order_items (stock reserved + a payment reservation deadline, see below)
 → POST /api/stripe/checkout (Checkout Session; idempotent via checkout_requests[scope=payment]
    + idx_payments_one_active_stripe) → payments
 → Stripe webhook (authoritative) → payments.status + orders.status
@@ -50,6 +50,45 @@ The rule the storefront reads is `orderCustomerCancelability()` /
 button and server, pinned by `backend/tests/customer-order-cancel.test.ts`. Copy lives in the
 `orderCancel` i18n namespace.
 
+## Payment reservation window (Dynamic Payment Reservation V1)
+
+An unpaid order holds stock for a **risk-based window** instead of forever. The deadline is decided
+once, inside the order-creation transaction, by `backend/lib/payment-reservation.ts` and stored on
+the order (`orders.payment_expires_at` + `orders.reservation_policy`, the audited policy JSON).
+
+| Risk | Window | Fires when |
+|---|---|---|
+| CRITICAL | 15 min | ≤2 available · ≤5 available with ≥1 unit/day · <1.5 days of cover · promoted AND ≤5 available |
+| HIGH | 20 min | ≤10 available · ≤20 available with ≥1 unit/day · <3 days of cover |
+| NORMAL | 30 min | the default (also "stock unknown") |
+| LOW | 45 min | ≥20 available, <1 unit/day, ≥10 days of cover, not promoted |
+| VERY_LOW | 60 min | ≥50 available, ≤0.2 units/day, ≥30 days of cover, not promoted |
+
+Hard limits **MIN 10 / MAX 60**, default **30** minutes. Signals come only from real columns:
+`inventory.quantity − reserved`, `product_variants.stock`, `products.featured` (the platform's
+promotion flag — there is **no** flash-sale column, so none is invented) and 7-day sales velocity
+from `order_items ⋈ orders`. The scarcest line decides the window. COD gets **no** window (no
+online payment is waited on).
+
+When the deadline passes, `backend/jobs/payment-reservation-scheduler.ts` (started in `server.ts`,
+30 s tick) ends the order:
+
+1. the claim is one guarded `UPDATE orders … status = 'expired' WHERE status IN
+   ('pending','pending_payment') AND inventory_released = FALSE AND payment_expires_at <= NOW()` —
+   the race gate against the webhook and the customer's own cancel;
+2. a `paid`/`processing` payment blocks it outright (a live charge is never expired);
+3. the waiting payment row becomes `cancelled` with `failure_code =
+   'PAYMENT_RESERVATION_EXPIRED'`;
+4. stock returns through `releaseOrderInventory()` — the ONE release path — so a repeat, a
+   concurrent sweep or a retried request can never restore the same units twice;
+5. the Stripe Checkout Session is closed afterwards (best effort).
+
+The order page counts down from the API's `paymentExpiresAt` (ms) via
+`paymentReservationState()` / `formatPaymentCountdown()` — **presentation only**. A late payment for
+an expired order cannot resurrect it or reclaim stock: `markPaymentSucceeded` requires a
+pre-payment status AND `inventory_released = FALSE`, records the money on the payment row and logs
+`manual review/refund required` (no refund is invented in code).
+
 ## Endpoints (payment)
 
 | Endpoint | Notes |
@@ -77,10 +116,10 @@ button and server, pinned by `backend/tests/customer-order-cancel.test.ts`. Copy
   both default off, fail closed). `method=COD` → **403 `PAYMENT_METHOD_DISABLED`**
   before any order/payment/shipment/settlement write, independent of Stripe state.
 - **Stock is reserved at order creation and released exactly once.** Cancellation, payment
-  failure and session expiry all converge on `releaseOrderInventory()` inside their own
-  transaction; its `inventory_released` claim is what makes a repeated, concurrent, retried
-  or webhook-driven release impossible, and its status guard refuses to release for an order
-  that has become `paid`.
+  failure, session expiry **and the payment-reservation deadline** all converge on
+  `releaseOrderInventory()` inside their own transaction; its `inventory_released` claim is what
+  makes a repeated, concurrent, retried or webhook-driven release impossible, and its status
+  guard refuses to release for an order that has become `paid`.
 - Order and Payment are separate lifecycles. Only paired transitions are written:
   `paid`→`paid`, `failed`→`payment_failed`, expired/canceled→`cancelled`, full
   refund→`refunded`.

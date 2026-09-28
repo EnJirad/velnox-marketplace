@@ -12,9 +12,14 @@ ONLY** — a live-looking secret key is refused, never used.
 - `backend/routes/stripe.ts` — checkout, webhook, payment status, refund, order detail
 - `backend/routes/cart.ts` — `POST /api/customer/checkout` (order creation) + same method guard
 - `apps/velshop/src/pages/ShopCheckout.tsx` — storefront; renders only backend-enabled methods
+- `backend/lib/payment-reservation.ts` — the ONE Dynamic Payment Reservation V1 policy (window +
+  the audited `reservation_policy` written on the order)
+- `backend/jobs/payment-reservation-scheduler.ts` — the expiry sweep (`expired` + release + session close)
 - DB: `payments`, `payment_events`, `refunds`, `orders`, `checkout_requests`, `inventory`
-- `db/migrations/047_payment_foundation.sql` (+ the two canonical files)
-- Tests: `backend/tests/payment-foundation.test.ts`
+- `db/migrations/047_payment_foundation.sql`, `db/migrations/048_payment_reservation.sql`
+  (+ the two canonical files)
+- Tests: `backend/tests/payment-foundation.test.ts`, `payment-reservation-policy.test.ts`,
+  `payment-reservation-expiry.test.ts`
 
 ## Endpoints
 
@@ -22,11 +27,30 @@ ONLY** — a live-looking secret key is refused, never used.
 |---|---|---|
 | GET | `/api/stripe/configured` | `{configured, mode, publishableKey, reason}` — never a secret |
 | GET | `/api/payments/methods` | backend-driven discovery; the storefront renders THIS list |
-| POST | `/api/stripe/checkout` | `{orderId, method: CARD\|PROMPTPAY, requestKey?}` — requires auth |
+| POST | `/api/stripe/checkout` | `{orderId, method: CARD\|PROMPTPAY, requestKey?}` — requires auth. Refuses an order whose reservation window lapsed with **400 `PAYMENT_RESERVATION_EXPIRED`** BEFORE any session is created; the response carries `paymentExpiresAt` (ms) |
 | POST | `/api/payments/stripe/webhook` | raw body, `constructEventAsync` signature check |
 | GET | `/api/stripe/payment-status/:sessionId` | ownership-checked |
 | POST | `/api/admin/orders/:orderId/refund` | `orders.manage` permission |
 | GET | `/api/orders/:orderId` | payment + refunds included |
+
+## Payment reservation window (do not weaken)
+
+An unpaid order holds its reserved stock for a **risk-based deadline** (`orders.payment_expires_at`,
+see `checkout.md` for the policy table), not forever. The deadline is the backend's promise:
+
+- `POST /api/stripe/checkout` refuses a lapsed window with **400 `PAYMENT_RESERVATION_EXPIRED`**
+  **before** the Stripe session is created, so a charge is never started for an order the sweep is
+  releasing in the same second;
+- the Stripe session is created with `expires_at` = the deadline where Stripe allows it (its own
+  bound is 30 min – 24 h), and closed explicitly by the sweep otherwise;
+- once expired, the order is `expired` (terminal) and its stock is back on the shelf through
+  `releaseOrderInventory()` — exactly once, even under concurrent sweeps;
+- a `paid`/`processing` payment blocks the expiry, so a live or captured charge is never expired;
+- **a late payment can never resurrect an expired order or reclaim another customer's stock:**
+  `markPaymentSucceeded` requires a pre-payment status AND `inventory_released = FALSE`, records the
+  money on the payment row (which is what makes it refundable) and logs
+  `manual review/refund required` with the reason. No refund is invented in code — an operator
+  decides.
 
 ## Rules (do not weaken)
 

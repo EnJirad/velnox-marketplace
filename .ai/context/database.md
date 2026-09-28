@@ -102,6 +102,37 @@ then update `db/schema.sql` + `db/run-sqleditor.sql` together. This is the evide
 composite index such as `refunds (order_id, created_at)`: the 2026-09-28 investigation rejected it
 because the latency was connection acquisition, not the plan (handoff §34).
 
+## Payment reservation (orders.payment_expires_at)
+
+`orders` carries the Dynamic Payment Reservation V1 window: `payment_expires_at TIMESTAMPTZ`
+(NULL = no window — COD orders and every row that predates the feature, which the sweep ignores)
+and `reservation_policy JSONB` (the audited policy: `riskLevel`, `reservationMinutes`, `reason`,
+`signals`). Both are written by `backend/lib/payment-reservation.ts` inside the order-creation
+transaction; nothing else writes them.
+
+`idx_orders_payment_expires_at ON orders (payment_expires_at) WHERE payment_expires_at IS NOT NULL`
+serves the sweep's range scan **and** its `ORDER BY`; the status / `inventory_released` filters are
+applied by `backend/jobs/payment-reservation-scheduler.ts` to the few due rows. The index predicate
+is deliberately loose: one index, no duplicated status list to drift out of sync.
+
+Introduced by `db/migrations/048_payment_reservation.sql` (additive, idempotent, no backfill).
+Apply it to production **before** deploying a backend that writes the column.
+
+```sql
+-- what the sweep reads (read-only owner check)
+SELECT id, status, payment_expires_at FROM orders
+ WHERE payment_expires_at IS NOT NULL AND payment_expires_at <= NOW()
+   AND status IN ('pending', 'pending_payment') AND inventory_released = FALSE
+ ORDER BY payment_expires_at ASC LIMIT 25;
+
+-- the health of the feature: how many windows are open, and how many lapsed but unswept
+SELECT count(*) FILTER (WHERE payment_expires_at > NOW()) AS open_windows,
+       count(*) FILTER (WHERE payment_expires_at <= NOW()
+                          AND status IN ('pending','pending_payment')
+                          AND inventory_released = FALSE) AS lapsed_unswept
+  FROM orders WHERE payment_expires_at IS NOT NULL;
+```
+
 ## Safety & Verification
 
 - Never `DROP DATABASE/SCHEMA/TABLE` or `TRUNCATE` without explicit owner auth.

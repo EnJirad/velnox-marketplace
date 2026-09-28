@@ -151,6 +151,18 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-27-promptpay-settlement.md`](./archive/AI_Handoff-2026-09-27-promptpay-settlement.md) | handoff §31 — PromptPay settlement diagnostic (order stuck `pending_payment`) | A diagnostic-only pass (no code changed) that ruled out a global webhook failure and pointed at the PromptPay-specific leg; its decisive reads — the endpoint's `enabled_events`, the `payment_events` delivery rows, the stuck session's `payment_status` — remain owner-side. Moved out on 2026-09-28 so §35 (customer order cancellation) could be appended; superseded for current state by §33 |
 
+### 2026-09-28 — the §§32–33 split (Stripe webhook stall + signature boundary, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md`](./archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md) | handoff §32–§33 — the webhook that never answered, and the signature 400 made self-identifying | §32 the unbounded-DB-wait root cause (`query_timeout: 15000`, non-fatal pool error handler, stage timings) — fixed and committed on `main`; §33 the raw-body boundary proof (`middleware/stripe-raw-body.ts`, `webhookSecretHealth()`, `?selfTest=1`, the `INSTALLATION.md` host fix) and why a `stripe listen` forward *must* 400. Moved out on 2026-09-28 so §36 (dynamic payment reservation) could be appended |
+
+### 2026-09-28 — the §34 split (DB pool latency, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-28-db-pool-latency.md`](./archive/AI_Handoff-2026-09-28-db-pool-latency.md) | handoff §34 — the pool idled down to zero, so connection establishment landed on the first statement | The production measurement that separated connect time from execute time (1.627/1.738 s cold → 0.388/0.357 s warm on the same endpoint), why neither reported query needed an index, the `min: 1` + `maxLifetimeSeconds: 1800` fix, and the post-deploy latency sweep. Moved out on 2026-09-28 for edit headroom |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-28 · **Branch:** `main` · **Latest pass:** DB latency root cause — the pool idled down to zero, so connection establishment landed on the first statement of the minute (§34)
+**Last updated:** 2026-09-28 · **Branch:** `main` · **Latest pass:** Dynamic Payment Reservation V1 — unpaid orders hold stock for a risk-based window, then the sweep releases it exactly once (§36)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -589,187 +589,35 @@ owner-side. Superseded for current state by §33. Archived 2026-09-28 for edit h
 
 ---
 
-## 32. Stripe webhook never answers in production — unbounded DB waits (2026-09-27)
+## 32. Stripe webhook never answers — unbounded DB waits (2026-09-27) — archived
 
-**Reported.** A REAL signed event forwarded to `POST /api/payments/stripe/webhook`
-(`velnox-api.onrender.com`) times out — *"context deadline exceeded (Client.Timeout exceeded
-while awaiting headers)"* — while `GET /api/stripe/configured`, `/api/payments/methods` and the
-DB read `/api/shops` all answer 200.
-
-**Measured (read-only; `freebuff-env list` → `{}`).** The Stripe CLI aborts a forwarded
-delivery after **30s** (stripe-cli#710). Production answers every pre-DB path fast (no/forged
-signature → 400, chunked → 400, 300 KB body → 500, all ≤0.3s), so routing, the raw-body
-branch and `constructEventAsync` are healthy. The stall is the only work between the
-signature check and `res.json()`: the `payment_events` claim, `handleStripeEvent`, and the
-payment/order writes.
-
-**Root cause.** `backend/db/index.ts` bounded only ACQUIRING a connection
-(`connectionTimeoutMillis`); node-postgres applies no per-query deadline, so a statement the
-server never finishes (Neon compute scaled to zero, pooler restart, blocked row lock) left the
-webhook pending until the CALLER gave up. Second cause: `pool.on("error")` called
-`process.exit(-1)`, so a routine Neon idle-close restarted the service mid-request.
-
-**Fix.** `query_timeout: 15000` (in-process; NOT `statement_timeout`/`lock_timeout`/
-`idle_in_transaction_session_timeout` — startup parameters PgBouncer on Neon rejects). Pool
-error handler logs safe fields and keeps the pool alive; the webhook logs secret-free stage
-timings. No schema change, `db/` untouched, no payment state altered.
-
-**Verified.** `webhook-resilience.test.ts` 10 pass/0 fail · backend suite 676 pass/91 skip/0
-fail · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1331 · `diff
---check` clean. **NOT production-verified** (no credential/DB here). Owner: after redeploy,
-`stripe trigger payment_intent.succeeded` via `stripe listen --forward-to …/api/payments/
-stripe/webhook` must return 2xx with no timeout and log the stage lines; never copy the CLI
-signing secret into `STRIPE_WEBHOOK_SECRET`.
-
-**Open:** a `payment_events` row left `processing` is re-armed only on a `failed` retry (§31).
-§30 is archived; §§28–§29 joined it on 2026-09-28 (§34).
+**Root cause:** the pool bounded only connection ACQUISITION; node-postgres has no per-query
+deadline, so a statement the server never finished left the webhook pending until the caller
+gave up (the Stripe CLI aborts at 30 s) — and `pool.on("error")` called `process.exit(-1)`.
+**Fix:** `query_timeout: 15000` (in-process only) + a non-fatal pool error handler; the webhook
+logs secret-free stage timings. Full record:
+[`history/archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md`](./history/archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md).
 
 ---
 
-## 33. Stripe webhook 400 "No signatures found matching the expected signature" — the boundary made self-identifying (2026-09-27)
+## 33. Webhook 400 "No signatures found matching the expected signature" (2026-09-27) — archived
 
-**Reported.** `stripe listen --forward-to …/api/payments/stripe/webhook` → `[400]`, Render log
-`[stripe webhook] signature verification failed: No signatures found matching the expected
-signature for payload.` (A different symptom from §32's timeout — same route.)
-
-**Proven in production by probe (executed, read-only):** no signature → 400, forged signature →
-400 (routing + `constructEventAsync` alive), and — the decisive discriminator — a **150 KB
-valid-JSON body on the webhook path answers 500** (body-parser `entity.too.large`, the *raw*
-parser's 100 KB default) while the same body on another path answers 404 (the JSON parser's 1 MB
-limit accepts it). So the deployed revision really does read this route's body with
-`express.raw`: **verification sees the exact signed bytes.** The production `pk_test_…` and the
-reported `pi_3UKKDBKp4iwMdWLy0TvMGUuZ` also share the token `Kp4iwMdWLy` (one test-mode account;
-corroborating only).
-
-**Root cause of the reported 400.** A `stripe listen --forward-to <production-url>` session signs
-with its **own per-session secret**, which is a different secret *by design* from the Dashboard
-endpoint's — so forwarding a CLI session into production **must** 400 unless production's
-`STRIPE_WEBHOOK_SECRET` is that session's secret, which the rules forbid. The one cause that
-would break **real** deliveries is a **value mismatch**: the variable is not `velpay`'s signing
-secret (leftover CLI secret, a secret from a deleted/recreated endpoint or another account, or a
-value pasted with wrapping quotes). `webhookConfigured: true` cannot distinguish them — it is
-true for a value that verifies nothing — and Stripe's API cannot either: an endpoint's `secret`
-is **returned only at creation** (`GET /v1/webhook_endpoints` never re-exposes it), so alignment
-is a Dashboard read.
-
-**Fix (code, minimal — no schema, no payment-logic, no auth/CORS change).**
-- `backend/middleware/stripe-raw-body.ts` (new) — the raw-body gate as an exported, testable
-  module: matches the path as Express routes it (case-insensitive, trailing slash) and does
-  **not** gate on `Content-Type`. Mounted in `server.ts` before `express.json()`; the inline copy
-  it replaces is gone (tests used to mirror that copy, so a `server.ts` regression could not fail).
-- `backend/routes/stripe.ts` — a non-raw body is refused with **500 "Webhook body was not
-  preserved for signature verification"** instead of the misleading 400, and the stages
-  `webhook_received` (body kind + byte count only) → `signature verified` → `claimed —
-  dispatching` → `processed` are logged with elapsed ms. Never a secret/signature/payload/cookie.
-- `backend/lib/payment-config.ts` — `webhookSecretHealth()`: shape-only (`shapeUsable`, `whsec_`
-  prefix, coarse length bucket, wrapping quotes, interior vs surrounding whitespace), returned by
-  `GET /api/stripe/configured`. No character of the value is derivable from it.
-- `GET /api/stripe/configured?selfTest=1` → `webhookSignatureSelfTest`, which signs a throwaway
-  payload with the deployed secret and verifies it through the same SDK call the webhook uses:
-  `verified: true` rules out the raw-body cause and any WebCrypto/runtime defect, `false` is a
-  code defect. (Found on the way: `generateTestHeaderString` has the same sync/async trap as
-  `constructEvent` — the async form is required.)
-
-**Verified here.** new `stripe-webhook-raw-body.test.ts` **13 pass/0 fail** ·
-`payment-foundation.test.ts` 67 pass/2 skip/0 fail (`buildApp` now uses the real middleware) ·
-full backend suite **697 pass / 91 skip / 0 fail** (788 tests/37 files; was 676/91/767) · backend
-`tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1331 · `git diff --check` clean.
-Docs: `docs/ENVIRONMENT.md` + `.ai/context/payment.md` (the three causes, in the order to check
-them); **`INSTALLATION.md` wrong host fixed** (`velnx-api` → `velnox-api`) — the §31 hazard.
-
-**NOT verified here (owner-side: no Stripe credential, no Render env, no DB reach).** Proof chain
-after the redeploy carrying this commit: (1) `GET /api/stripe/configured` contains
-`webhookSecretHealth` ⇒ the host runs this revision; (2) `?selfTest=1` → `verified: true`;
-(3) Dashboard → Developers → Webhooks → `velpay` → **resend a real delivery** → `2xx` + a
-`signature verified`/`processed` line in Render's log; (4) the DB row changes. **Step (3) is the
-only authoritative E2E — a CLI forward is not**, by definition.
-
-**DB read verdict:** CI's only URL is quota-refused while production's own DB read serves — see
-`.ai/context/payment.md`. Still no `payment_events`/`payments`/`orders` row reachable here.
-
-**DB perf (that brief's §12) — investigated, no change made.** The `velrepeat_plans` due-query is
-covered by the matching partial index `idx_velrepeat_plans_due (status, next_run_at) WHERE status
-= 'active'` in **both** `db/schema.sql` and migration `034`, and it is the FIRST query of every
-`startVelRepeatScheduler()` tick: interval **60 s** vs pool `idleTimeoutMillis: 30000`, so each
-tick's first query pays a fresh TCP+TLS+Neon handshake (~1.2–1.5 s) over the ~0.2 s baseline. Not
-a plan problem and **not** the webhook cause; an index/pool change needs a measurement that
-separates connect time from execute time. **That measurement was made in §34 — the diagnosis
-above was right about the handshake and was fixed there.**
+**Verdict:** the raw body was correct (`express.raw` really is in front of this route — proven by
+a 150 KB body answering 500 there and 404 elsewhere); a CLI `stripe listen` forward **must** 400
+because it signs with its own per-session secret, so the only real-delivery cause is a
+`STRIPE_WEBHOOK_SECRET` value mismatch. Full record:
+[`history/archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md`](./history/archive/AI_Handoff-2026-09-27-stripe-webhook-stall-and-signature.md).
 
 ---
 
-## 34. DB latency — the pool idled down to zero, so connection establishment landed on the first statement (2026-09-28)
+## 34. DB latency — the pool idled down to zero (2026-09-28) — archived
 
-**Reported (production log).** The order-detail `refunds` query (`SELECT id, amount, status,
-reason, created_at, refunded_at FROM refunds WHERE order_id = $1 ORDER BY created_at ASC`) at
-**1519–1538 ms** and the VelRepeat due-plan scan (`SELECT id FROM velrepeat_plans WHERE status =
-'active' AND next_run_at <= NOW() ORDER BY next_run_at ASC LIMIT $1`) at **1515 ms**, while other
-statements in the same window ran **205–225 ms**.
-
-**Root cause: connection acquisition — neither query is slow, and neither needs an index.**
-`idx_refunds_order (order_id)` matches the refunds predicate exactly;
-`idx_velrepeat_plans_due (status, next_run_at) WHERE status = 'active'` (in **both**
-`db/schema.sql` and migration `034`) matches the VelRepeat WHERE + ORDER BY exactly. The two slow
-statements share no table, index or SQL — the only thing they shared was *being the first
-statement to run on an empty pool*. With `max: 20`, `idleTimeoutMillis: 30000` and **no floor**,
-this bursty low-traffic workspace left the pool empty for most of every minute, and
-`pool.query()` reported checkout **+** execution as ONE number, so the ~1.3 s TCP/TLS/auth
-handshake to Neon was logged as if it were query time. The 60 s VelRepeat tick (> the 30 s reap)
-paid it once a minute; any request arriving after the pool idled out paid the same cost.
-
-**Proven in production by measurement** (executed read-only from this workspace; three pairs of
-`GET /api/shops?cb=…` — a DB-backed route, *not either reported query* — each after 40 s of no
-traffic): pair 2 **1.627 s cold → 0.388 / 0.357 s warm**; pair 3 **1.738 s cold → 0.379 / 0.376 s
-warm**; `/api/health` (no DB) 0.144–0.193 s throughout; pair 1 landed while the pool was still
-warm (0.393 / 0.489 / 0.395 s) — itself consistent with the mechanism. A fixed ~1.3 s that
-vanishes on an immediate repeat is connection establishment, and it is the same number as the two
-reported queries.
-
-**Fix — `backend/db/index.ts` only** (no schema, no index, no payment code):
-- **`min: 1`** warm floor. pg-pool arms its idle-reap timer only while `_clients.length > min`, so
-the last client is never reaped and the next caller (including the scheduler tick) reuses it;
-a burst still trims back to one. No proactive refill: a server-closed client is replaced and kept
-warm again by the next query.
-- **`maxLifetimeSeconds: 1800`** bounds that now-persistent connection's age (pg-pool client-side
-timer — no startup parameter) so it cannot outlive a Neon pooler maintenance window.
-- **`query()` times the lease and the statement separately** and logs `acquire Xms + execute Yms =
-Zms, layer=pool-connection|statement, pool idle/total/waiting` — the measurement §33 asked for.
-`layer` comes from the new exported `classifySlowQuery()`. Deliberately NOT added: `keepAlive`
-(pg turns it into the `keepalives` startup parameter, which Neon's PgBouncer rejects — the hazard
-that already keeps `statement_timeout` off this pool).
-
-**No index added, on evidence.** `(order_id, created_at)` was the other candidate; the ~1.3 s is
-not in the plan, both access paths are already covered, and an index whose cost is dominated by
-something else only adds write cost. Owner can re-confirm with `EXPLAIN (ANALYZE, BUFFERS)`
-(read-only procedure in `.ai/context/database.md`).
-
-**Verified here.** new `db-latency.test.ts` **12 pass / 2 skip / 0 fail** · full backend suite
-**709 pass / 93 skip / 0 fail** (802 tests/38 files; was 697/91/788) · backend `tsc` 0 ·
-`typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1331 · `git diff --check` clean. Nothing under
-`backend/routes/` changed, so the webhook's raw body, signature verification, `payment_events`
-idempotency and state machine are as §32–§33 left them — re-proved by re-running that suite.
-
-**After the fix — measured in production, executed** (post-deploy; one `GET /api/shops` after each
-idle gap, then an immediate repeat): 5 s → **0.356 / 0.352 s**; 20 s → **0.400 / 0.354 s**; 40 s →
-**0.482 / 0.401 s**; 70 s → **0.420 / 0.399 s**. The same 40 s gap that read **1.627 / 1.738 s**
-before the fix now reads **0.48 s**, and the penalty stays gone at 70 s — the signature of
-`min: 1` (pg-pool arms no reap timer for the last client, so the pool cannot idle down to zero).
-One 0.895 s sample taken while the deploy was still settling is exactly why the sweep, not a
-single sample, is the evidence. Webhook negatives re-run on the deployed revision: no signature →
-**400**, forged signature → **400**. **Deploy proof is behavioral**: `git merge-base --is-ancestor
-4832750 origin/main` is true and the GitHub deployments API records `4832750` for the four Vercel
-production environments, but Render records nothing there — the latency change itself, plus
-`/api/stripe/configured` still exposing §33's `webhookSecretHealth`, is what shows the backend
-runs a revision at least as new as this commit.
-
-**Open / owner-side.** (1) The two reported queries can only be re-logged by the owner (the
-order-detail route needs a customer session, the VelRepeat tick is internal), but the mechanism
-that produced their 1.5 s is the one measured and removed above. (2) New log lines for `refunds` /
-the VelRepeat tick should read
-`layer=statement` with a small acquire; a line still reading `layer=pool-connection` means
-something else is emptying the pool (a Neon-side idle close), and the new line says so directly.
-(3) `EXPLAIN (ANALYZE, BUFFERS)` on both queries confirms index scans. (4) The ~1.5 s was never a
-Stripe webhook cause; the webhook budget is unchanged.
+**Root cause:** connection establishment, not a slow query and not a missing index. `pool.query()`
+reported checkout + execution as ONE number, so the ~1.3 s TCP/TLS/auth handshake to Neon was
+charged to whichever statement opened an empty pool (measured in production: 1.627/1.738 s cold →
+0.388/0.357 s warm on the same endpoint). **Fix:** `min: 1` warm floor + `maxLifetimeSeconds:
+1800` + acquire/execute split logging (`classifySlowQuery()`). No index was added. Full record:
+[`history/archive/AI_Handoff-2026-09-28-db-pool-latency.md`](./history/archive/AI_Handoff-2026-09-28-db-pool-latency.md).
 
 ---
 
@@ -834,8 +682,87 @@ handler sat at byte 56,594 — **unmatchable**, which is why `lib/order-read.ts`
 real cleanup, not a workaround for its own sake). The same limit is why the new copy became a
 top-level `orderCancel` namespace instead of living in `orderDetail`: in `th.ts` (106 KB) and
 `my.ts` (100 KB) that block is past the window — the existing `myAuthPatch` / `myShopPatch` /
-`myOrderPatch` precedent.
-
-**Open / owner-side.** (1) Re-run the 14 DB-gated cases (CI or a disposable Postgres). (2) A
-browser check of the new dialog in velShop (th/en/my) — not executable here. (3) The `min: 1`
+`myOrderPatch` precedent.**Open / owner-side.** (1) Re-run the 14 DB-gated cases (CI or a disposable Postgres). (2)
+A browser check of the new dialog in velShop (th/en/my) — not executable here. (3) The `min: 1`
 reservation cost (§34) is unchanged; `INSTALLATION.md` still carries the wrong `velnx-api` host (§31).
+
+---
+
+## 36. Dynamic Payment Reservation V1 — an unpaid order holds stock for a risk-based window (2026-09-28)
+
+**Reported.** Stock reserved at order creation had NO deadline: an order abandoned at Stripe held
+its units until someone cancelled it or Stripe expired the session (~24 h), so the last unit of a
+scarce product sat behind an abandoned order. Asked for: risk-based reservation windows (MIN 10,
+MAX 60, default 30 min), an expiry mechanism that releases exactly once, no resurrection by a late
+webhook, a countdown in the order UI, and tests.
+
+**Architecture as found (inspected, not assumed).** Stock is reserved inside the
+order-creation transaction (`backend/routes/cart.ts`): variant items → guarded
+`product_variants.stock -= qty`; non-variant → `reserveInventoryStock()` (`inventory.reserved +=`).
+ONE release path exists, `releaseOrderInventory()` (`backend/lib/inventory.ts`), whose atomic
+`inventory_released` claim + status guard already made release at-most-once for cancel / payment
+failure / session expiry. Schedulers exist (`backend/jobs/velrepeat-scheduler.ts`, 60 s tick,
+DB-as-source-of-truth). `orders.status` had no deadline column; COD/VelRepeat orders are settled by
+the carrier (VelRepeat inserts its own orders and never touches Stripe). **No reservation system
+was duplicated — this extends the existing one.**
+
+**Policy (new `backend/lib/payment-reservation.ts`, pure + deterministic).** Signals from real
+columns only: `inventory.quantity - reserved`, `product_variants.stock`, `products.featured`
+(the platform's promotion flag — the schema has NO flash-sale field, so none is invented), and
+7-day sales velocity from `order_items ⋈ orders` over real sold statuses
+(`paid|confirmed|shipped|delivered|completed`, covering the Stripe and COD rails). Scarcest line
+wins (`MIN(available_stock)`).
+
+| Risk | Window | Fires when |
+|---|---|---|
+| CRITICAL | 15 min | ≤2 available · ≤5 available with ≥1 unit/day · <1.5 days of cover · promoted AND ≤5 available |
+| HIGH | 20 min | ≤10 available · ≤20 available with ≥1 unit/day · <3 days of cover |
+| NORMAL | 30 min | everything else (the default; also "stock unknown") |
+| LOW | 45 min | ≥20 available, <1 unit/day, ≥10 days of cover, not promoted |
+| VERY_LOW | 60 min | ≥50 available, ≤0.2 units/day, ≥30 days of cover, not promoted |
+
+Windows are clamped to 10–60 and the whole policy (riskLevel, minutes, reason, signals) is stored
+on the order.
+
+**Changes.**
+
+| Piece | Change |
+|---|---|
+| `backend/lib/payment-reservation.ts` | NEW — the ONE policy: thresholds, `calculatePaymentReservationPolicy()` (pure), `gatherOrderReservationSignals()` (one SQL round trip), `applyPaymentReservationPolicy()`. COD → no window |
+| `backend/jobs/payment-reservation-scheduler.ts` | NEW — scan (`payment_expires_at <= NOW()`, expirable statuses, `inventory_released = FALSE`) → guarded claim `pending|pending_payment → expired` → payment row `cancelled` (`PAYMENT_RESERVATION_EXPIRED`) → `releaseOrderInventory()` → then close the Stripe session. `paid`/`processing` payments block the claim entirely |
+| `backend/routes/cart.ts` | Checkout takes the window INSIDE the order-creation transaction; both read routes expose `paymentExpiresAt` (ms) |
+| `backend/routes/stripe.ts` | `markPaymentSucceeded` guard now also requires `inventory_released = FALSE` (a paid-after-release order can never be resurrected) and logs the reason (incl. `reservation_expired`); checkout refuses a lapsed window with **400 `PAYMENT_RESERVATION_EXPIRED` BEFORE** any session is created; the session is created with `expires_at` = the deadline (Stripe's 30 min–24 h bound applied) and the response carries `paymentExpiresAt` |
+| `backend/server.ts` | `startPaymentReservationScheduler()` beside the VelRepeat scheduler |
+| `backend/routes/seller-orders.ts` | `expired` maps to `cancelled` (the seller has nothing to fulfil; the default branch would have invited a confirmation) |
+| `packages/shared/src/lib/commerce.ts` | `expired` status + meta + terminal transitions; `orderStripePayability` now returns `expired` and refuses a lapsed window; NEW `paymentReservationState()` + `formatPaymentCountdown()` |
+| `apps/velshop/.../ShopOrderDetail.tsx` | Countdown strip ("ชำระเงินภายใน MM:SS"), one-second presentation-only tick, one refetch when it lapses, expired notice replacing the steps, no pay button |
+| `apps/velshop/.../ShopCheckoutSuccess.tsx` | `expired` is terminal for polling and has a status meta |
+| i18n | NEW top-level `orderReservation` namespace (th/en/my): `payWithin` (`{time}`), `windowNote`, `expiredTitle`, `expiredDesc` — i18n:check th=en=my=**1338** |
+| DB | `orders.payment_expires_at TIMESTAMPTZ`, `orders.reservation_policy JSONB`, `idx_orders_payment_expires_at` (partial on `IS NOT NULL`) in **both** `db/schema.sql` and `db/run-sqleditor.sql` (+ new `db/migrations/048_payment_reservation.sql`, additive/idempotent) |
+
+**Race handling (the invariant: no order is ever resurrected, no unit released twice).** Sweep,
+webhook and customer cancel all write the same row through guarded UPDATEs, so the row lock picks
+exactly one winner and the losers re-evaluate to 0 rows. A payment that arrives before the
+deadline wins (stock becomes SOLD, `inventory_released` stays FALSE, the sweep then skips it). A
+payment that arrives after the order expired cannot reclaim stock and cannot set `paid` — the money
+stays on the payment row and is logged as **manual review/refund required** (the reconciliation
+path; no refund is invented in code). A `paid`/`processing` payment blocks the automatic expiry, so
+a live charge is never expired out from under the customer. Nothing under
+`backend/middleware/stripe-raw-body.ts` or the webhook's signature/`payment_events` handling
+changed.
+
+**Verified here.** NEW `payment-reservation-policy.test.ts` **25 pass/0 fail** (the full risk
+table, MIN/MAX clamps over every signal combination, determinism, JSONB round trip) · NEW
+`payment-reservation-expiry.test.ts` **22 pass / 15 skip / 0 fail** (countdown + i18n + wiring +
+source contracts; the 15 skips are the `TEST_DATABASE_URL`-gated expiry/concurrency/webhook
+cases) · full backend suite **786 pass / 117 skip / 0 fail** (903 tests, 41 files; was 732/107/839)
+· `checkout-payment-flow.test.ts` 38 pass / 4 skip (shapes updated for the additive `expired`
+field) · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1338 · `diff
+db/schema.sql db/run-sqleditor.sql` identical · `git diff --check` clean.
+
+**NOT verified here (owner-side).** (1) The 15 DB-gated cases need `TEST_DATABASE_URL` or CI
+(`.github/workflows/test.yml` provisions `postgres:16` and bootstraps `db/run-sqleditor.sql`);
+apply migration `048` to production (Neon SQL Editor) **before** the backend that writes the
+column deploys. (2) A browser pass on the countdown and the expired notice (th/en/my). (3) No real
+Stripe delivery was reproduced here, so the "late payment after expiry → manual refund" path is
+proven at the state level in tests, not against a live charge.
