@@ -139,6 +139,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md`](./archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md) | handoff §30 — checkout → Stripe in ONE press + resume payment | the one-press CARD/PromptPay checkout, the shared `ResumePaymentButton`, and the rule it established that still stands: the webhook is the **only** writer of `orders.status = 'paid'`. Its browser E2E against Stripe stayed open. Moved out on 2026-09-27 as edit-headroom housekeeping (§28–§29 remain live) |
 
+### 2026-09-28 — the §28–§29 split (velShop order-status contract + cart selection, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-27-velshop-orders-cart.md`](./archive/AI_Handoff-2026-09-27-velshop-orders-cart.md) | handoff §28–§29 — the velShop order-status contract and the cart selection UI | §28 `getOrderStatusMeta()` as the only safe renderer of the free-text `orders.status` column (which also carries the payment-lifecycle values `backend/routes/stripe.ts` writes) plus the refunded-order seller-status fix and its production bundle proof; §29 `shop_id`-grouped cart selection derived from one `Set` of item ids, calling no API. Moved out on 2026-09-28 for edit headroom so §34 (DB latency) could be appended; browser E2E for `/orders` and `/cart` stayed open |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

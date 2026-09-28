@@ -48,6 +48,60 @@ bootstrap it once with `db/run-sqleditor.sql`. The guard is
 `backend/db/test-database.ts`, wired into the pool factory via
 `resolveConnectionString()` in `backend/db/index.ts`. See `testing.md`.
 
+## Pool Configuration & Latency Attribution
+
+Single pool in `backend/db/index.ts`. Current shape and why:
+
+| Option | Value | Why |
+|--------|-------|-----|
+| `max` | 20 | unchanged |
+| `min` | **1** | Warm floor. pg-pool arms its idle-reap timer only while `_clients.length > min`, so the last client is never reaped. Without it the pool empties 30 s after the previous query and the next statement pays the whole TCP/TLS/auth handshake to Neon (~1.3 s measured 2026-09-28) on its own critical path |
+| `idleTimeoutMillis` | 30000 | Bursts still trim back down to `min` |
+| `connectionTimeoutMillis` | 5000 | Bounds acquiring a connection |
+| `query_timeout` | 15000 | Client-side statement deadline — **the only** timeout that may be set here |
+| `maxLifetimeSeconds` | 1800 | Bounds the age of the now-persistent connection (client-side timer) |
+
+**Never add a server-side/startup parameter** — `statement_timeout`, `lock_timeout`,
+`idle_in_transaction_session_timeout`, or `keepAlive` (pg sends it as `keepalives`): Neon's
+PgBouncer rejects an untracked startup parameter, which breaks **every** connection instead of one
+route. `query_timeout` is enforced in-process, which is what makes it safe on this deployment.
+
+**Read a slow-query log line by its split, not its total.** `query()` logs
+`acquire Xms + execute Yms = Zms, layer=pool-connection|statement, pool idle/total/waiting`. A warm
+round trip here is ~0.2 s, so the total alone cannot distinguish a bad plan from a cold pool: a
+large acquire with a small execute is connection checkout, the reverse is the statement/database.
+`classifySlowQuery()` performs that attribution (pinned by `backend/tests/db-latency.test.ts`);
+`db-client-release.test.ts` guards the lease/release half, and `webhook-resilience.test.ts` guards
+the bounded waits.
+
+### Owner read-only check before changing ANY index
+
+Run in the Neon SQL Editor. `EXPLAIN` only, and never `ANALYZE` on a mutating statement:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, amount, status, reason, created_at, refunded_at
+  FROM refunds WHERE order_id = '<order-uuid>' ORDER BY created_at ASC;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id FROM velrepeat_plans
+ WHERE status = 'active' AND next_run_at <= NOW()
+ ORDER BY next_run_at ASC LIMIT 25;
+
+SELECT indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes
+ WHERE relname IN ('refunds', 'velrepeat_plans') ORDER BY relname, indexrelname;
+
+SELECT relname, n_live_tup, n_dead_tup, last_analyze, last_autoanalyze
+  FROM pg_stat_user_tables WHERE relname IN ('refunds', 'velrepeat_plans');
+```
+
+Expected: `refunds` → Index Scan on `idx_refunds_order`; `velrepeat_plans` → Index Scan on
+`idx_velrepeat_plans_due` (the partial index) with **no Sort**. Only a Seq Scan justifies an
+index/statistics change — check `pg_indexes` for an equivalent index first so none is duplicated,
+then update `db/schema.sql` + `db/run-sqleditor.sql` together. This is the evidence bar for a
+composite index such as `refunds (order_id, created_at)`: the 2026-09-28 investigation rejected it
+because the latency was connection acquisition, not the plan (handoff §34).
+
 ## Safety & Verification
 
 - Never `DROP DATABASE/SCHEMA/TABLE` or `TRUNCATE` without explicit owner auth.

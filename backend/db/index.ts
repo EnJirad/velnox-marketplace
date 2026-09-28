@@ -38,12 +38,39 @@ const connectionString = resolveConnectionString();
 // 15s keeps one webhook inside the caller's 30s window
 // (connectionTimeoutMillis 5s + query_timeout 15s = 20s worst case) while still
 // far exceeding the slowest legitimate query this project runs (~2s).
+// ─── Warm floor ────────────────────────────────────────────────────────────
+// Measured root cause (2026-09-28): this deployment serves traffic in bursts
+// around a 60s scheduler tick, so the pool sat EMPTY for most of every minute
+// and the next statement paid a full TCP + TLS + auth handshake to Neon on its
+// own critical path. That fixed ~1.3s was billed to whichever statement
+// happened to open the connection — which is why two unrelated,
+// perfectly-indexed queries logged ~1.5s (`refunds` in the order-detail
+// fan-out, and the VelRepeat due-plan scan) while the same statements on an
+// already-open connection logged ~0.2s.
+//
+// `min` is the knob for exactly that: pg-pool only arms its idle-reap timer
+// while `_clients.length > min`, so the last client is never reaped, while a
+// burst still trims back down to one. It also makes the VelRepeat tick reuse
+// one warm connection instead of redialing Neon every 60s. pg-pool performs no
+// proactive refill, so a client the server closes is replaced — and kept warm
+// again — by the next query.
+//
+// Deliberately NOT set: `keepAlive`. node-postgres turns it into the
+// `keepalives` startup parameter, and Neon's PgBouncer rejects an untracked
+// startup parameter ("unsupported startup parameter") — the same hazard that
+// keeps `statement_timeout` off this pool.
 const pool = new pg.Pool({
   connectionString,
   max: 20,
+  min: 1,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
   query_timeout: 15000,
+  // Bound the age of that now-persistent connection. Client-side timer only
+  // (no startup parameter is added), so a warm client cannot outlive a Neon
+  // pooler maintenance window indefinitely: after this it is recycled on its
+  // next release and the pool dials a fresh one.
+  maxLifetimeSeconds: 1800,
 });
 
 // An IDLE client erroring is routine with a managed provider: Neon closes idle
@@ -81,27 +108,58 @@ function logDbFailure(operation: string, sql: string | null, err: unknown): void
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function query(text: string, params?: unknown[]): Promise<pg.QueryResult<any>> {
-  // Track pool wait time (time spent waiting for a connection from the pool)
-  const poolWaitStart = Date.now();
+  // The pool lease and the statement are timed SEPARATELY. `pool.query()`
+  // reported a single number that merged two costs with opposite fixes —
+  // checkout (waiting for / establishing a connection) and execution (the
+  // statement itself) — so a cold pool looked exactly like a bad query plan.
+  // Keeping them apart is what makes a slow-query log line name its own layer.
+  // Checkout goes through getClient() so a refused connection is logged with
+  // the same safe fields as every other caller, and the "one lease path" guard
+  // in db-client-release.test.ts keeps holding.
+  const startedAt = Date.now();
+  const client = await getClient();
+  const acquireMs = Date.now() - startedAt;
+
   let result: pg.QueryResult<any>;
+  let execMs = 0;
   try {
-    result = await pool.query(text, params);
+    result = await client.query(text, params);
+    execMs = Date.now() - startedAt - acquireMs;
   } catch (err) {
     logDbFailure("query", text, err);
     throw err;
+  } finally {
+    client.release();
   }
-  const totalMs = Date.now() - poolWaitStart;
+  const totalMs = acquireMs + execMs;
 
-  // The pg library does not expose pool wait vs execution separately.
-  // However, since Neon proxies all queries through a single connection pool,
-  // the totalMs includes: network RTT to Neon proxy + proxy query + network RTT back.
-  // For performance monitoring we log slow queries.
-  if (totalMs > 150) {
+  if (totalMs > SLOW_QUERY_MS) {
     const queryPreview = text.replace(/\s+/g, ' ').substring(0, 150);
-    console.warn(`[DB] query (${totalMs}ms):`, queryPreview);
+    console.warn(
+      `[DB] slow query (acquire ${acquireMs}ms + execute ${execMs}ms = ${totalMs}ms, layer=${classifySlowQuery(acquireMs, execMs)}, pool idle=${pool.idleCount} total=${pool.totalCount} waiting=${pool.waitingCount}):`,
+      queryPreview,
+    );
   }
 
   return result;
+}
+
+/** A statement is reported when acquire + execute exceeds this. */
+export const SLOW_QUERY_MS = 150;
+
+/**
+ * Which layer a slow statement's time actually went to.
+ *
+ * On this deployment a WARM round trip is ~0.2s, so the absolute number alone
+ * cannot tell an operator whether to look at Neon's plan or at the pool: two
+ * unrelated queries that both logged ~1.5s shared no SQL, table or index, only
+ * the fact that each was the first statement to run on an empty pool. The
+ * acquire/execute split separates those cases — a large acquire with a small
+ * execute means connection checkout, a small acquire with a large execute means
+ * the statement or the database.
+ */
+export function classifySlowQuery(acquireMs: number, execMs: number): "pool-connection" | "statement" {
+  return acquireMs > execMs ? "pool-connection" : "statement";
 }
 
 export async function getClient(): Promise<pg.PoolClient> {

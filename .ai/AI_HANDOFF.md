@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-27 · **Branch:** `main` · **Latest pass:** Stripe webhook 400 "No signatures found matching the expected signature" — the raw-body/signature boundary made self-identifying (§33)
+**Last updated:** 2026-09-28 · **Branch:** `main` · **Latest pass:** DB latency root cause — the pool idled down to zero, so connection establishment landed on the first statement of the minute (§34)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -551,100 +551,24 @@ env-var documentation change, and the Connect finding). Configuration is DONE (o
 ended: audit PASS, no code changed, sandbox E2E BLOCKED — §31 is the live settlement
 record.
 
-## 28. velShop MyOrders crash — order-status contract completed at the source (2026-09-27)
+## 28. velShop MyOrders status contract + velShop cart selection (2026-09-27) — archived
 
-**Reported:** production velShop `/orders` threw `Cannot read properties of undefined (reading
-'badge')` (`MyOrders-DRYpOOC9.js`). **Fixed at the contract, not hidden behind optional
-chaining.**
-
-**Root cause.** `orders.status` is a superset of the fulfilment state machine: the Stripe
-routes write payment-lifecycle values into the same column (`backend/routes/stripe.ts` —
-`pending_payment` when a Checkout Session is created, `paid` on the confirming webhook,
-`payment_failed`, `refunded`), and it is free text with **no CHECK constraint**
-(`db/schema.sql`). `GET /api/customer/orders` (`backend/routes/cart.ts`) returns
-`status: r.status` **raw**, while shared `ORDER_STATUS_META` knew only the six fulfilment
-statuses — so the lookup was `undefined` for exactly those rows and `meta.badge` threw. Sellers
-never hit it because `normalizeSellerOrderStatus` normalises first; the customer route had no
-equivalent. **ACTUAL STATUS:** `pending_payment`, then `paid` — the customer's own order,
-seconds after a successful test-mode checkout.
-
-**Proven in production, not inferred.** The **deployed** bundle
-(`velshop.vercel.app/assets/MyOrders-DRYpOOC9.js`) does `const a=re[s.status]` then `${a.badge}`
-/ `${a.dot}` / `a.label` with **no guard**, and its table (`ShopHeader-CTizaw2L.js`) contains
-**only** the six keys — `pending_payment` / `paid` / `payment_failed` / `refunded` count **0**.
-`/api/stripe/configured` → `{configured:true, mode:"test", webhookConfigured:true}` with CARD +
-PROMPTPAY enabled ⇒ the path that writes those statuses is live.
-
-**Fix (Case A + Case C; no invented backend normalisation).** `StoreOrderStatus` +
-`ORDER_STATUS_META` + `NEXT_ORDER_STATUSES` (`packages/shared/src/lib/commerce.ts`) now carry the
-four real statuses, and a new `getOrderStatusMeta(status: unknown)` always returns a complete
-`{label,badge,dot}` — a neutral "ไม่ทราบสถานะ" for anything unrecognised (unknown, null,
-non-string, inherited prototype member) instead of `undefined`. Unguarded or lying call sites
-switched to it: `MyOrders.tsx`, `ShopOrderDetail.tsx` (was `?? …pending`, which showed an unknown
-order as "รอตรวจสอบ"), `Income.tsx` ×2. **Second defect:** a fully **refunded** order normalised to
-`pending` for sellers, offering a confirm action that would silently un-refund the order's
-status — now `cancelled`/terminal, matching `seller-intelligence.ts`, which already books
-`refunded` as a return. No schema, migration, DB write, payment-behaviour or API-shape change.
-
-**Verified.** `backend/tests/order-status-contract.test.ts` — **16 pass / 0 fail**: every backend
-status displayable, **stripe.ts's write literals re-derived from the file itself** (a new backend
-status fails the test instead of crashing a page), unknown/null/prototype fallbacks, a mixed
-valid+unknown+null list rendering end to end, seller invariants. Full backend suite **589 pass /
-87 skip / 0 fail** (was 573/87/660) · backend `tsc` 0 · `bun run typecheck` 4/4 exit 0 ·
-`i18n:check` th=en=my=1319 · `git diff --check` clean.
-
-**Still open:** the **browser** E2E on production `/orders` (needs a signed-in customer — Google
-OAuth only, no credentials in this workspace) and the Vercel redeploy that carries the fix.
+**Archived verbatim** → [`history/archive/AI_Handoff-2026-09-27-velshop-orders-cart.md`](history/archive/AI_Handoff-2026-09-27-velshop-orders-cart.md)
+(sections 28 and 29 together, 2026-09-28, for edit headroom). What still stands: render
+`orders.status` only through `getOrderStatusMeta()` (the column is free text and also carries the
+payment-lifecycle values this backend writes), and cart selection is derived client state that
+calls no API. Both are pinned by `order-status-contract.test.ts` / `cart-selection.test.ts`.
+Browser E2E for `/orders` and `/cart` stayed open (a signed-in Google session is needed).
 
 ---
 
-## 29. VelShop cart — marketplace selection + sticky summary (2026-09-27)
+## 29. velShop cart — marketplace selection + sticky summary (2026-09-27) — archived
 
-**Goal:** `/cart` reads like a marketplace cart without a second cart system — no new
-API, table, cart store or payment code (Stripe untouched, `db/` untouched).
+Moved together with §28 → [`history/archive/AI_Handoff-2026-09-27-velshop-orders-cart.md`](history/archive/AI_Handoff-2026-09-27-velshop-orders-cart.md).
 
-**What changed**
-- **Grouping is by `shop_id`, not the display name.** `GET /api/customer/cart` now returns
-  `shopId` (`p.shop_id AS shop_id` added to `CART_ITEMS_QUERY_FULL`/`_BASIC` + one field in
-  `formatCartRow`) — the same key `POST /api/customer/checkout` groups orders by, so the
-  groups shown are literally how the orders split. Additive field on existing endpoints.
-- **One `Set` of cart-item ids is the only stored selection state.** Item / per-shop /
-  select-all checkboxes are all *derived* (`selectionState`), so ticking one item flips its
-  shop and the global box automatically and the three can never disagree. Checkbox uses
-  Radix `checked="indeterminate"` — the previous `ref.indeterminate = …` on a `<button>`
-  was a no-op (that property exists only on `input`), so partial state never rendered.
-- **The big in-content summary box is gone.** A sticky bottom bar is the only summary
-  surface (now on every breakpoint; `md:bottom-[calc(1rem+…)]` because `MobileTabBar` is
-  `md:hidden`), showing selected count, subtotal, discount, shipping, total — **all derived
-  from the current selection**, never the whole cart. Tapping it **only** opens the
-  shop-grouped order sheet (name / variant / qty / unit price / line total per shop + the
-  four totals). Checkout buttons keep the existing `navigate("/checkout", { state:
-  { selectedCartItems } })` flow.
-- **Discount and shipping are genuinely 0**, not invented: checkout inserts orders with
-  `total_amount` only (so `orders.discount`/`shipping_fee` keep their 0 defaults), the
-  order payload reports `shippingFee: 0`, and the UI reuses `checkout.shippingFree`.
-  `packages/shared/src/lib/cart-selection.ts` is pure (no I/O, no React) and holds this.
+---
 
-**Selection cannot touch data** — it calls no API at all (only the qty stepper `setQty`,
-the trash `remove` and `handleCheckout` do), and a test deep-compares the line fixtures
-before/after to prove the helpers mutate nothing: no quantity, stock, order or payment path.
-
-**Verified:** new `backend/tests/cart-selection.test.ts` **40 pass / 0 fail** (item/shop/all
-selection, partial, multi-shop, empty cart, variant lines, no-mutation, summary arithmetic,
-per-shop totals summing to the grand total; no mock API — pure functions over the real line
-shape) · full backend suite **629 pass / 87 skip / 0 fail** (was 589/87/676) · backend `tsc`
-0 · `bun run typecheck` 4/4 exit 0 · `i18n:check` th=en=my=**1320** (new `cart.discount`) ·
-`bun run build:velshop` exit 0 · `git diff --check` clean.
-
-**Responsive / mobile-first:** the bar clears the `MobileTabBar` on phones
-(`bottom-[calc(5rem+env(safe-area-inset-bottom))]`, that bar is `md:hidden`) and drops to
-`md:bottom-[calc(1rem+…)]` on larger screens; the page carries `pb-44 md:pb-32` so no content
-sits behind it, and the sheet pads with `env(safe-area-inset-bottom)`. All three checkboxes are
-a 20px box with a transparent 12px halo (`after:absolute after:-inset-3`) = a **44px** touch
-target — confirmed present in the emitted `index-*.css`, not just written in the source.
-
-**Still open:** browser verification of `/cart` (selection taps, sheet, one-handed mobile
-layout) — no signed-in session exists in this workspace.## 30. VelShop checkout → Stripe in ONE press + resume payment (2026-09-27) — archived
+## 30. VelShop checkout → Stripe in ONE press + resume payment (2026-09-27) — archived
 
 **Archived verbatim** (2026-09-27, to keep this file editable) →
 [`history/archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md`](history/archive/AI_Handoff-2026-09-27-velshop-checkout-onepress.md).
@@ -765,7 +689,7 @@ stripe/webhook` must return 2xx with no timeout and log the stage lines; never c
 signing secret into `STRIPE_WEBHOOK_SECRET`.
 
 **Open:** a `payment_events` row left `processing` is re-armed only on a `failed` retry (§31).
-§30 is archived; §§28–§29 remain live records.
+§30 is archived; §§28–§29 joined it on 2026-09-28 (§34).
 
 ---
 
@@ -836,4 +760,65 @@ covered by the matching partial index `idx_velrepeat_plans_due (status, next_run
 `startVelRepeatScheduler()` tick: interval **60 s** vs pool `idleTimeoutMillis: 30000`, so each
 tick's first query pays a fresh TCP+TLS+Neon handshake (~1.2–1.5 s) over the ~0.2 s baseline. Not
 a plan problem and **not** the webhook cause; an index/pool change needs a measurement that
-separates connect time from execute time.
+separates connect time from execute time. **That measurement was made in §34 — the diagnosis
+above was right about the handshake and was fixed there.**
+
+---
+
+## 34. DB latency — the pool idled down to zero, so connection establishment landed on the first statement (2026-09-28)
+
+**Reported (production log).** The order-detail `refunds` query (`SELECT id, amount, status,
+reason, created_at, refunded_at FROM refunds WHERE order_id = $1 ORDER BY created_at ASC`) at
+**1519–1538 ms** and the VelRepeat due-plan scan (`SELECT id FROM velrepeat_plans WHERE status =
+'active' AND next_run_at <= NOW() ORDER BY next_run_at ASC LIMIT $1`) at **1515 ms**, while other
+statements in the same window ran **205–225 ms**.
+
+**Root cause: connection acquisition — neither query is slow, and neither needs an index.**
+`idx_refunds_order (order_id)` matches the refunds predicate exactly;
+`idx_velrepeat_plans_due (status, next_run_at) WHERE status = 'active'` (in **both**
+`db/schema.sql` and migration `034`) matches the VelRepeat WHERE + ORDER BY exactly. The two slow
+statements share no table, index or SQL — the only thing they shared was *being the first
+statement to run on an empty pool*. With `max: 20`, `idleTimeoutMillis: 30000` and **no floor**,
+this bursty low-traffic workspace left the pool empty for most of every minute, and
+`pool.query()` reported checkout **+** execution as ONE number, so the ~1.3 s TCP/TLS/auth
+handshake to Neon was logged as if it were query time. The 60 s VelRepeat tick (> the 30 s reap)
+paid it once a minute; any request arriving after the pool idled out paid the same cost.
+
+**Proven in production by measurement** (executed read-only from this workspace; three pairs of
+`GET /api/shops?cb=…` — a DB-backed route, *not either reported query* — each after 40 s of no
+traffic): pair 2 **1.627 s cold → 0.388 / 0.357 s warm**; pair 3 **1.738 s cold → 0.379 / 0.376 s
+warm**; `/api/health` (no DB) 0.144–0.193 s throughout; pair 1 landed while the pool was still
+warm (0.393 / 0.489 / 0.395 s) — itself consistent with the mechanism. A fixed ~1.3 s that
+vanishes on an immediate repeat is connection establishment, and it is the same number as the two
+reported queries.
+
+**Fix — `backend/db/index.ts` only** (no schema, no index, no payment code):
+- **`min: 1`** warm floor. pg-pool arms its idle-reap timer only while `_clients.length > min`, so
+the last client is never reaped and the next caller (including the scheduler tick) reuses it;
+a burst still trims back to one. No proactive refill: a server-closed client is replaced and kept
+warm again by the next query.
+- **`maxLifetimeSeconds: 1800`** bounds that now-persistent connection's age (pg-pool client-side
+timer — no startup parameter) so it cannot outlive a Neon pooler maintenance window.
+- **`query()` times the lease and the statement separately** and logs `acquire Xms + execute Yms =
+Zms, layer=pool-connection|statement, pool idle/total/waiting` — the measurement §33 asked for.
+`layer` comes from the new exported `classifySlowQuery()`. Deliberately NOT added: `keepAlive`
+(pg turns it into the `keepalives` startup parameter, which Neon's PgBouncer rejects — the hazard
+that already keeps `statement_timeout` off this pool).
+
+**No index added, on evidence.** `(order_id, created_at)` was the other candidate; the ~1.3 s is
+not in the plan, both access paths are already covered, and an index whose cost is dominated by
+something else only adds write cost. Owner can re-confirm with `EXPLAIN (ANALYZE, BUFFERS)`
+(read-only procedure in `.ai/context/database.md`).
+
+**Verified here.** new `db-latency.test.ts` **12 pass / 2 skip / 0 fail** · full backend suite
+**709 pass / 93 skip / 0 fail** (802 tests/38 files; was 697/91/788) · backend `tsc` 0 ·
+`typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1331 · `git diff --check` clean. Nothing under
+`backend/routes/` changed, so the webhook's raw body, signature verification, `payment_events`
+idempotency and state machine are as §32–§33 left them — re-proved by re-running that suite.
+
+**Open / owner-side.** (1) After this deploys, re-run the pair probe — the cold request should now
+be ~0.38 s too. (2) New log lines for `refunds` / the VelRepeat tick should read
+`layer=statement` with a small acquire; a line still reading `layer=pool-connection` means
+something else is emptying the pool (a Neon-side idle close), and the new line says so directly.
+(3) `EXPLAIN (ANALYZE, BUFFERS)` on both queries confirms index scans. (4) The ~1.5 s was never a
+Stripe webhook cause; the webhook budget is unchanged.
