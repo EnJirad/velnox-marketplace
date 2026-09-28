@@ -399,10 +399,8 @@ export async function applyPaymentReservationPolicy(
   } catch (err) {
     await client.query("ROLLBACK TO SAVEPOINT velnox_payment_reservation");
     if (isUndefinedColumnError(err)) {
-      console.error(
-        "[reservation] orders.payment_expires_at/reservation_policy are missing — " +
-          "apply db/migrations/048_payment_reservation.sql. This order has NO reservation window " +
-          "(stock is held until it is cancelled, as before).",
+      warnReservationSchemaMissing(
+        "this order has NO reservation window (stock is held until it is cancelled, as before)",
       );
       return null;
     }
@@ -418,4 +416,84 @@ export async function applyPaymentReservationPolicy(
  */
 export function isUndefinedColumnError(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: string }).code === "42703";
+}
+
+/**
+ * Say it once per process, name the migration, and never repeat: a backend that
+ * is ahead of its database is a deploy condition, not a per-request fault, so
+ * repeating the line for every order would bury the one that matters.
+ */
+let reservationSchemaWarned = false;
+
+export function warnReservationSchemaMissing(effect: string): void {
+  if (reservationSchemaWarned) return;
+  reservationSchemaWarned = true;
+  console.error(
+    "[reservation] orders.payment_expires_at/reservation_policy are missing — apply " +
+      `db/migrations/048_payment_reservation.sql; ${effect}.`,
+  );
+}
+
+/**
+ * The order columns the payment path reads — a superset of what each caller
+ * needs, so one read serves both the checkout and the webhook.
+ */
+export interface OrderPaymentRow {
+  id: string;
+  user_id: string;
+  order_number: string | null;
+  status: string;
+  total_amount: string | number;
+  currency: string | null;
+  inventory_released: boolean;
+  /** The reservation deadline, or null when the order holds no window. */
+  payment_expires_at: string | Date | null;
+}
+
+/**
+ * Read an order for the payment path without depending on the schema version.
+ *
+ * WHY THIS IS NOT OPTIONAL — deploy order is not guaranteed here. The host
+ * deploys on push, so a backend that NAMES `payment_expires_at` can reach
+ * production before `db/migrations/048_payment_reservation.sql` has been
+ * applied. A statement naming a missing column fails with `undefined_column`
+ * (42703), and on this path that does not degrade, it stops trading: production
+ * logged `[stripe] checkout error: column "payment_expires_at" does not exist`
+ * (2026-09-28) and no Checkout Session could be opened for ANY order — the
+ * missing deadline took the whole checkout down instead of simply not being
+ * enforced. A missing deadline must never cost a sale.
+ *
+ * HOW — the deadline is taken from the row's JSON form rather than named as a
+ * column. `to_jsonb(o) ->> 'payment_expires_at'` is a key lookup: it yields NULL
+ * when the column does not exist, exactly as it does when the column exists and
+ * is NULL. ONE statement therefore reads correctly against both schemas, and it
+ * cannot raise `undefined_column` at all.
+ *
+ * WHY NOT "catch 42703 and retry without the column" — the write path can do
+ * that because it owns a SAVEPOINT, but a caller here may already be inside its
+ * own transaction (`withTransaction` issues BEGIN, and the Stripe webhook sync
+ * runs inside one). PostgreSQL aborts the ENTIRE transaction on the first failed
+ * statement, so a retry would fail with `25P02` and take the webhook sync down
+ * with it — replacing a broken checkout with a broken webhook. A read that never
+ * fails needs no recovery, so it is safe in both contexts and costs no extra
+ * round trip.
+ *
+ * The result is the legacy-row meaning this module already assigns to an order
+ * that holds no window — the state the expiry sweep ignores — so callers behave
+ * as they did before the feature existed and start enforcing real deadlines the
+ * moment the migration lands. Nothing is cached, so nothing has to be restarted.
+ */
+export async function selectOrderPaymentRow(
+  run: (sql: string, params: unknown[]) => Promise<{ rows: any[] }>,
+  orderId: string,
+): Promise<OrderPaymentRow | undefined> {
+  const result = await run(
+    `SELECT o.id, o.user_id, o.order_number, o.status, o.total_amount, o.currency,
+            o.inventory_released,
+            to_jsonb(o) ->> 'payment_expires_at' AS payment_expires_at
+       FROM orders o
+      WHERE o.id = $1`,
+    [orderId],
+  );
+  return result.rows[0] as OrderPaymentRow | undefined;
 }

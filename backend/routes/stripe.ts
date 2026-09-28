@@ -37,6 +37,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { writeAuditLog, auditClientIp } from "../lib/audit-log.js";
@@ -396,15 +397,20 @@ async function markPaymentSucceeded(
       // refundable; this line is what makes it visible to an operator.
       // Order id, status and two booleans only: no payload, no signature, no
       // customer or payment identifier, no secret.
-      const state = await client.query(
-        `SELECT status,
-                inventory_released,
-                (payment_expires_at IS NOT NULL AND payment_expires_at <= NOW()) AS reservation_expired
-           FROM orders WHERE id = $1`,
-        [orderId],
+      // Same schema-tolerant read as checkout: a webhook must never fail
+      // because this backend is newer than the database. Naming the reservation
+      // column here would abort the whole sync transaction with
+      // `undefined_column`, and Stripe would retry a payment that has in fact
+      // already been recorded.
+      const row = await selectOrderPaymentRow(
+        (sql, params) => client.query(sql, params),
+        orderId,
       );
-      const row = state.rows[0];
-      const why = row?.reservation_expired
+      const reservationExpired =
+        row?.payment_expires_at !== null &&
+        row?.payment_expires_at !== undefined &&
+        new Date(row.payment_expires_at).getTime() <= Date.now();
+      const why = reservationExpired
         ? "its payment reservation had already expired and the stock was released"
         : `the order status is '${row?.status ?? "unknown"}'`;
       console.warn(
@@ -850,16 +856,17 @@ export function setupStripeRoutes(app: Express): void {
       }
 
       // ── Order: existence, ownership, payable status ─────────────────────
-      const orderResult = await query(
-        `SELECT id, user_id, order_number, status, total_amount, currency, payment_expires_at
-           FROM orders WHERE id = $1`,
-        [orderId],
-      );
-      if (orderResult.rows.length === 0) {
+      // Read through `selectOrderPaymentRow`, which tolerates a database older
+      // than this backend. Naming `payment_expires_at` directly made the deploy
+      // order fatal: production logged `[stripe] checkout error: column
+      // "payment_expires_at" does not exist` (2026-09-28) and NO order could get
+      // a Checkout Session. Without the column the read reports no window, which
+      // is the legacy-row case handled directly below.
+      const order = await selectOrderPaymentRow((sql, params) => query(sql, params), orderId);
+      if (!order) {
         fail(res, 404, "NOT_FOUND", "Order not found");
         return;
       }
-      const order = orderResult.rows[0];
       if (order.user_id !== userId) {
         fail(res, 403, "FORBIDDEN", "Not your order");
         return;

@@ -238,7 +238,9 @@ describe("webhook behaviour after a cancellation", () => {
     // and always asks for the manual review that refunds the money.
     expect(stripeSrc).toContain("no longer payable");
     expect(stripeSrc).toContain("manual review/refund required");
-    expect(stripeSrc).toContain("reservation_expired");
+    // Derived by the schema-tolerant read, so the reason survives a database
+    // that predates the reservation columns.
+    expect(stripeSrc).toContain("const reservationExpired =");
     expect(stripeSrc).toContain("const priorPaymentStatus: string | null =");
   });
 
@@ -352,6 +354,13 @@ describeDb("customer cancellation (requires TEST_DATABASE_URL)", () => {
     quantity?: number;
     /** Units already reserved by this order (what a cancel must give back). */
     reserved?: number;
+    /**
+     * True when a release ALREADY ran for this order — the `inventory_released`
+     * flag a second release must find and refuse. A `payment_failed` order got
+     * there through `markPaymentFailed`, which released its stock, so a fixture
+     * that models one must set this or it is not modelling that order at all.
+     */
+    inventoryReleased?: boolean;
     /** An abandoned Stripe attempt: `requires_action`, no session id by default. */
     payment?: { status: string; method: string } | null;
     paymentMethod?: string;
@@ -393,9 +402,9 @@ describeDb("customer cancellation (requires TEST_DATABASE_URL)", () => {
     await query(`INSERT INTO inventory (product_id, quantity, reserved) VALUES ($1, 50, $2)`, [productId, reserved]);
 
     const order = await query(
-      `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency)
-       VALUES ($1, $2, $3, $4, 360.00, 'THB') RETURNING id`,
-      [ownerId, shop.rows[0].id, `CX-${tag.slice(-12)}`, opts.status],
+      `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency, inventory_released)
+       VALUES ($1, $2, $3, $4, 360.00, 'THB', $5) RETURNING id`,
+      [ownerId, shop.rows[0].id, `CX-${tag.slice(-12)}`, opts.status, opts.inventoryReleased ?? false],
     );
     const orderId = order.rows[0].id as string;
     await query(
@@ -498,8 +507,17 @@ describeDb("customer cancellation (requires TEST_DATABASE_URL)", () => {
         ]);
         expect([a.status, b.status]).toEqual([200, 200]);
         // Exactly one request did the work; the other reports the outcome.
-        const moved = [a, b].filter((r) => r.body.data?.cancelled === true);
+        //
+        // `alreadyFinal` is the discriminator, NOT `cancelled`. `cancelled`
+        // reports the ORDER's state, so both requests legitimately say `true`
+        // once the winner has committed — scenario 10 below pins exactly that, on
+        // a cancel that never moved anything. Only the winner reports
+        // `alreadyFinal: false`.
+        const moved = [a, b].filter((r) => r.body.data?.alreadyFinal === false);
         expect(moved.length).toBe(1);
+        // Both observe the same authoritative state: the order is cancelled.
+        expect([a, b].every((r) => r.body.data?.status === "cancelled")).toBe(true);
+        expect([a, b].every((r) => r.body.data?.cancelled === true)).toBe(true);
         expect([a, b].filter((r) => r.body.data?.stockReleased === true).length).toBeLessThanOrEqual(1);
       });
       const after = await stateOf(seed.orderId, seed.productId);
@@ -602,8 +620,15 @@ describeDb("customer cancellation (requires TEST_DATABASE_URL)", () => {
 
   test("a payment_failed order is an idempotent no-op — nothing is released twice (scenario 9)", async () => {
     // `markPaymentFailed` already released this order's stock, so a cancel
-    // request must NOT give it back a second time.
-    const seed = await seedOrder({ status: "payment_failed", reserved: 0, payment: { status: "failed", method: "CARD" } });
+    // request must NOT give it back a second time. `inventoryReleased: true` is
+    // what that release leaves behind — without it the fixture described an order
+    // that never failed, and the assertion below could not be about idempotency.
+    const seed = await seedOrder({
+      status: "payment_failed",
+      reserved: 0,
+      inventoryReleased: true,
+      payment: { status: "failed", method: "CARD" },
+    });
     try {
       await withServer(async (base) => {
         const res = await cancel(base, seed.orderId, seed.ownerId);

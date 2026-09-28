@@ -30,6 +30,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHmac } from "crypto";
 import express from "express";
+import cookieParser from "cookie-parser";
 import { existsSync, readFileSync } from "fs";
 import jwt from "jsonwebtoken";
 import { join } from "path";
@@ -53,7 +54,9 @@ import {
   isUndefinedColumnError,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
   PAYMENT_RESERVATION_EXPIRED_STATUS,
+  selectOrderPaymentRow,
 } from "../lib/payment-reservation.js";
+import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
 import { setupCartRoutes } from "../routes/cart.js";
 import { setupStripeRoutes } from "../routes/stripe.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
@@ -281,7 +284,12 @@ describe("payment reservation — the wiring contracts", () => {
     expect(guard).toContain("status IN ('pending', 'pending_payment')");
     expect(guard).toContain("inventory_released = FALSE");
     // …and the refusal is logged with the reservation reason, never silently.
-    expect(stripe).toContain("reservation_expired");
+    // That reason is derived from the schema-tolerant read, so the log line also
+    // survives a database that predates the reservation columns.
+    expect(stripe).toContain("const reservationExpired =");
+    expect(stripe).toContain(
+      "its payment reservation had already expired and the stock was released",
+    );
   });
 
   test("checkout refuses a lapsed reservation BEFORE it can open a session", () => {
@@ -345,6 +353,86 @@ describe("payment reservation — the wiring contracts", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 3b. Deploy order: a backend must never be taken down by its own new column
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("payment reservation — a backend that is newer than its database", () => {
+  /** A row as PostgreSQL returns it when the reservation column EXISTS. */
+  const liveRow = {
+    id: "11111111-1111-1111-1111-111111111111",
+    user_id: "22222222-2222-2222-2222-222222222222",
+    order_number: "VN-1",
+    status: "pending_payment",
+    total_amount: "360.00",
+    currency: "THB",
+    inventory_released: false,
+    payment_expires_at: "2026-09-28T12:30:00.000Z",
+  };
+
+  test("the deadline comes from the row's JSON, never from naming the column", async () => {
+    const calls: Array<{ sql: string; params: unknown[] }> = [];
+    const run = async (sql: string, params: unknown[]) => {
+      calls.push({ sql, params });
+      return { rows: [liveRow] };
+    };
+
+    const row = await selectOrderPaymentRow(run, liveRow.id);
+
+    expect(row).toEqual(liveRow);
+    // ONE statement. A JSON key lookup cannot raise `undefined_column`, so a read
+    // that never fails needs no recovery step — which is what makes it safe even
+    // when the caller is already inside its own transaction.
+    expect(calls.length).toBe(1);
+    expect(calls[0].sql).toContain("to_jsonb(o) ->> 'payment_expires_at' AS payment_expires_at");
+    const withoutTheKeyLookup = calls[0].sql
+      .split("to_jsonb(o) ->> 'payment_expires_at' AS payment_expires_at")
+      .join("");
+    expect(withoutTheKeyLookup).not.toContain("payment_expires_at");
+    expect(calls[0].params).toEqual([liveRow.id]);
+  });
+
+  test("a database without the column still yields the row — reporting no window", async () => {
+    // What the pre-migration schema returns: the key is simply absent, so the
+    // lookup is NULL — the same value as a present-but-unset deadline, which is
+    // the legacy-row meaning the expiry sweep already ignores.
+    const run = async () => ({ rows: [{ ...liveRow, payment_expires_at: null }] });
+    const row = await selectOrderPaymentRow(run, liveRow.id);
+    expect(row?.payment_expires_at).toBeNull();
+    expect(row?.status).toBe("pending_payment");
+    expect(row?.inventory_released).toBe(false);
+  });
+
+  test("a genuine database fault is still reported, never swallowed", async () => {
+    const boom = Object.assign(new Error("connection terminated unexpectedly"), { code: "08006" });
+    const run = async () => {
+      throw boom;
+    };
+    await expect(selectOrderPaymentRow(run, liveRow.id)).rejects.toThrow(
+      "connection terminated unexpectedly",
+    );
+  });
+
+  test("an unknown order stays unknown — no row is invented", async () => {
+    const run = async () => ({ rows: [] });
+    expect(await selectOrderPaymentRow(run, "no-such-order")).toBeUndefined();
+  });
+
+  test("the payment path never names the reservation column inside a statement", () => {
+    // Comments may quote the production error; executable lines may not name the
+    // column. A statement that named it is what turned a missing deadline into a
+    // dead checkout, so every surviving mention must be a JS read off a row.
+    const code = read(STRIPE_ROUTE).replace(/^\s*\/\/.*$/gm, "");
+    const mentions = (code.match(/payment_expires_at/g) ?? []).length;
+    const propertyReads = (code.match(/\.payment_expires_at/g) ?? []).length;
+    expect(mentions).toBeGreaterThan(0);
+    expect(mentions).toBe(propertyReads);
+    expect(code).toContain("selectOrderPaymentRow");
+    // …and the one module allowed to know the read declares it.
+    expect(read(POLICY_LIB)).toContain("export async function selectOrderPaymentRow");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 4. Database-gated: the real transitions and the real stock movement
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -375,7 +463,16 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
 
   function buildApp(): express.Express {
     const app = express();
+    // The REAL middleware `server.ts` mounts, in the real order — not a copy:
+    // the Stripe webhook verifies the exact bytes Stripe signed, so the raw-body
+    // middleware must precede `express.json`, and `requireAuth` reads
+    // `req.cookies`, which needs cookie-parser. Without both, every
+    // authenticated route here answered 401 and every signature case failed
+    // verification, so the checkout and webhook cases below could not have been
+    // testing what they claimed.
+    app.use(stripeWebhookRawBody);
     app.use(express.json());
+    app.use(cookieParser());
     setupCartRoutes(app);
     setupStripeRoutes(app);
     return app;
@@ -741,6 +838,21 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
     }
   });
 
+  /**
+   * A FULLY usable test-mode configuration.
+   *
+   * `stripeStatus().usable` refuses a half-configured deployment: the secret key
+   * and an explicit `test` mode are not enough, the webhook secret must be present
+   * too. Without it `getStripe()` returns null and the route answers 503 BEFORE it
+   * reaches the deadline guard — so a reservation case would be measuring the
+   * provider gate instead of the reservation.
+   */
+  function useStripeTestMode() {
+    process.env.STRIPE_SECRET_KEY = "sk_test_000000000000000000000000";
+    process.env.STRIPE_MODE = "test";
+    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  }
+
   async function startCheckout(orderId: string, ownerId: string, method = "CARD") {
     process.env.STRIPE_SECRET_KEY = "sk_test_000000000000000000000000";
     process.env.STRIPE_MODE = "test";
@@ -760,6 +872,11 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
   test("checkout refuses a lapsed reservation with PAYMENT_RESERVATION_EXPIRED", async () => {
     const seed = await seedOrder({ status: "pending_payment", payment: { status: "requires_action" } });
     try {
+      // Stripe is fully configured here precisely so the 503 provider gate cannot
+      // be what answers: the request must reach the deadline guard and be refused
+      // by the RESERVATION. The guard is ordered before the session call, so this
+      // still makes no network request.
+      useStripeTestMode();
       const lapsed = await startCheckout(seed.orderId, seed.ownerId);
       // The guard fires BEFORE any Stripe call (there is no network here), so a
       // 400 with this code proves the deadline — not the provider — decided.
@@ -838,6 +955,135 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       expect(state.reservationPolicy).toBeNull();
     } finally {
       await purgeUsers([cod.ownerId, cod.sellerUserId]);
+    }
+  });
+
+  test("a REAL missing column is survived by the read — including inside a transaction", async () => {
+    // The production failure, reproduced without touching `public`: a real
+    // `orders` table WITHOUT the reservation column, shadowed into a throwaway
+    // schema for one session. It also pins WHY the read is written so that it
+    // cannot fail, rather than catching `42703` and retrying: PostgreSQL aborts
+    // the whole transaction on the first failed statement (`25P02`), so a retry
+    // would take a caller's webhook sync down with it.
+    const seed = await seedOrder({ status: "pending_payment", expiresInMs: 12 * 60_000 });
+    try {
+      const { query, withTransaction } = await import("../db/index.js");
+      const outcome = await withTransaction(async (client) => {
+        await client.query("CREATE SCHEMA IF NOT EXISTS velnox_legacy_probe");
+        await client.query("SET LOCAL search_path = velnox_legacy_probe, public");
+        await client.query("DROP TABLE IF EXISTS velnox_legacy_probe.orders");
+        // INCLUDING DEFAULTS: the shadow table must otherwise behave like the
+        // real one, so the only difference under test is the missing column.
+        await client.query(
+          "CREATE TABLE velnox_legacy_probe.orders (LIKE public.orders INCLUDING DEFAULTS)",
+        );
+        await client.query(
+          "ALTER TABLE velnox_legacy_probe.orders DROP COLUMN payment_expires_at",
+        );
+        await client.query(
+          `INSERT INTO velnox_legacy_probe.orders
+             (id, user_id, shop_id, order_number, status, subtotal, shipping_fee,
+              discount, total_amount, currency, inventory_released)
+           SELECT id, user_id, shop_id, order_number, status, subtotal, shipping_fee,
+                  discount, total_amount, currency, inventory_released
+             FROM public.orders WHERE id = $1`,
+          [seed.orderId],
+        );
+
+        // The probe table really has no such column.
+        const probe = await client.query(
+          `SELECT count(*)::int AS n FROM information_schema.columns
+            WHERE table_schema = 'velnox_legacy_probe' AND table_name = 'orders'
+              AND column_name = 'payment_expires_at'`,
+        );
+
+        // 1. Naming the column fails here for real — this is the production error.
+        await client.query("SAVEPOINT velnox_probe");
+        let rawCode: string | null = null;
+        try {
+          await client.query(
+            "SELECT payment_expires_at FROM velnox_legacy_probe.orders WHERE id = $1",
+            [seed.orderId],
+          );
+        } catch (err) {
+          rawCode = (err as { code?: string }).code ?? null;
+        }
+        // 2. …and the failure has poisoned the transaction: even `SELECT 1` is
+        //    refused until the savepoint is rolled back. A "catch 42703 and retry"
+        //    read would die exactly here.
+        let poisonedCode: string | null = null;
+        try {
+          await client.query("SELECT 1");
+        } catch (err) {
+          poisonedCode = (err as { code?: string }).code ?? null;
+        }
+        await client.query("ROLLBACK TO SAVEPOINT velnox_probe");
+
+        // 3. The payment read survives the same schema, in the same transaction.
+        const row = await selectOrderPaymentRow(
+          (sql, params) => client.query(sql, params),
+          seed.orderId,
+        );
+
+        // 4. …and the transaction is still healthy for the writes that follow it.
+        const after = await client.query(
+          "SELECT status FROM velnox_legacy_probe.orders WHERE id = $1",
+          [seed.orderId],
+        );
+
+        return {
+          missing: probe.rows[0].n as number,
+          rawCode,
+          poisonedCode,
+          row,
+          after: after.rows[0]?.status as string,
+        };
+      });
+
+      expect(outcome.missing).toBe(0);
+      expect(outcome.rawCode).toBe("42703");
+      expect(outcome.poisonedCode).toBe("25P02");
+      expect(outcome.row?.payment_expires_at).toBeNull();
+      expect(outcome.row?.status).toBe("pending_payment");
+      expect(outcome.row?.total_amount).toBe("360.00");
+      expect(outcome.after).toBe("pending_payment");
+      // The real table was never touched.
+      const live = await query("SELECT payment_expires_at FROM orders WHERE id = $1", [
+        seed.orderId,
+      ]);
+      expect(live.rows[0].payment_expires_at).toBeTruthy();
+    } finally {
+      const { query } = await import("../db/index.js");
+      await query("DROP SCHEMA IF EXISTS velnox_legacy_probe CASCADE").catch(() => {});
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("the payment read resolves the real deadline from the canonical schema", async () => {
+    // The fallback must never be the only path exercised: against the migrated
+    // schema the deadline is read in ONE statement and returned as stored.
+    const seed = await seedOrder({ status: "pending_payment", expiresInMs: 12 * 60_000 });
+    const noWindow = await seedOrder({ status: "pending", expiresInMs: null });
+    try {
+      const { query } = await import("../db/index.js");
+      const run = (sql: string, params: unknown[]) => query(sql, params);
+
+      const row = await selectOrderPaymentRow(run, seed.orderId);
+      expect(row?.status).toBe("pending_payment");
+      expect(row?.inventory_released).toBe(false);
+      expect(row?.currency).toBe("THB");
+      expect(row?.payment_expires_at).toBeTruthy();
+      const remaining = new Date(row!.payment_expires_at as string).getTime() - Date.now();
+      expect(remaining).toBeGreaterThan(11 * 60_000);
+      expect(remaining).toBeLessThan(13 * 60_000);
+
+      // An order that legitimately holds no window stays null — the sweep skips
+      // those rows, so the read must agree with it.
+      const legacy = await selectOrderPaymentRow(run, noWindow.orderId);
+      expect(legacy?.payment_expires_at).toBeNull();
+    } finally {
+      await purgeUsers([noWindow.ownerId, noWindow.sellerUserId]);
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
     }
   });
 
