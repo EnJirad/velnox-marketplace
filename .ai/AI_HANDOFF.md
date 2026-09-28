@@ -740,6 +740,13 @@ on the order.
 | i18n | NEW top-level `orderReservation` namespace (th/en/my): `payWithin` (`{time}`), `windowNote`, `expiredTitle`, `expiredDesc` — i18n:check th=en=my=**1338** |
 | DB | `orders.payment_expires_at TIMESTAMPTZ`, `orders.reservation_policy JSONB`, `idx_orders_payment_expires_at` (partial on `IS NOT NULL`) in **both** `db/schema.sql` and `db/run-sqleditor.sql` (+ new `db/migrations/048_payment_reservation.sql`, additive/idempotent) |
 
+**Deploy order (safety).** The columns arrive with migration `048`, and the host deploys on push,
+so the two can cross: the reservation write is therefore wrapped in a `SAVEPOINT` and tolerates
+**only** `undefined_column` (42703) — otherwise a missing column would abort the order-creation
+transaction and break EVERY checkout. A backend newer than its database keeps serving, orders get
+no window (like legacy rows), the write logs the exact migration to apply, and the sweep logs once
+and resumes by itself on the first scan that succeeds after the migration lands.
+
 **Race handling (the invariant: no order is ever resurrected, no unit released twice).** Sweep,
 webhook and customer cancel all write the same row through guarded UPDATEs, so the row lock picks
 exactly one winner and the losers re-evaluate to 0 rows. A payment that arrives before the
@@ -751,11 +758,12 @@ a live charge is never expired out from under the customer. Nothing under
 `backend/middleware/stripe-raw-body.ts` or the webhook's signature/`payment_events` handling
 changed.
 
-**Verified here.** NEW `payment-reservation-policy.test.ts` **25 pass/0 fail** (the full risk
-table, MIN/MAX clamps over every signal combination, determinism, JSONB round trip) · NEW
-`payment-reservation-expiry.test.ts` **22 pass / 15 skip / 0 fail** (countdown + i18n + wiring +
-source contracts; the 15 skips are the `TEST_DATABASE_URL`-gated expiry/concurrency/webhook
-cases) · full backend suite **786 pass / 117 skip / 0 fail** (903 tests, 41 files; was 732/107/839)
+**Verified here.** NEW `payment-reservation-policy.test.ts` **26 pass/0 fail** (the full risk
+table, MIN/MAX clamps over every signal combination, determinism, JSONB round trip, the
+42703-only tolerance) · NEW `payment-reservation-expiry.test.ts` **23 pass / 16 skip / 0 fail**
+(countdown + i18n + wiring + source contracts; the 16 skips are the `TEST_DATABASE_URL`-gated
+expiry/concurrency/webhook/savepoint cases; `payment-reservation` both files = 49 pass/16 skip) ·
+full backend suite **788 pass / 118 skip / 0 fail** (906 tests, 41 files; was 732/107/839)
 · `checkout-payment-flow.test.ts` 38 pass / 4 skip (shapes updated for the additive `expired`
 field) · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1338 · `diff
 db/schema.sql db/run-sqleditor.sql` identical · `git diff --check` clean.

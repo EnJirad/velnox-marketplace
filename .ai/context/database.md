@@ -116,7 +116,11 @@ applied by `backend/jobs/payment-reservation-scheduler.ts` to the few due rows. 
 is deliberately loose: one index, no duplicated status list to drift out of sync.
 
 Introduced by `db/migrations/048_payment_reservation.sql` (additive, idempotent, no backfill).
-Apply it to production **before** deploying a backend that writes the column.
+Apply it to production **before** deploying a backend that writes the column — but the order does
+not have to be perfect: the reservation write runs inside a `SAVEPOINT` and tolerates **only**
+`undefined_column`, so a backend that is newer than its database keeps checkout working (orders
+simply get no window, exactly like legacy rows) and says so in the log. The sweep logs the missing
+column once and stays disabled until a scan succeeds after the migration.
 
 ```sql
 -- what the sweep reads (read-only owner check)
