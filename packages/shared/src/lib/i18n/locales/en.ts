@@ -15,6 +15,7 @@ export const en: Dict = {
     remaining: "Time remaining {time}",
     expiresIn: "Please pay within",
     urgentNote: "Almost out of time — please pay before the window closes.",
+    criticalNote: "⚠️ Almost no time left — please pay now",
     payNow: "Pay now",
     payAgain: "Pay again",
     windowNote:

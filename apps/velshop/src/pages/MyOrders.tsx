@@ -30,8 +30,11 @@ import {
   orderStatusI18nKey,
   orderStripePayability,
   paymentReservationPhase,
+  paymentReservationProgress,
   paymentReservationState,
+  paymentReservationTone,
   shortOrderNumber,
+  type PaymentReservationTone,
   type StoreOrder,
   type StoreSubscription,
 } from "@velnox/shared/lib/commerce";
@@ -53,6 +56,30 @@ interface Loaded {
   orders: StoreOrder[];
   subscriptions: StoreSubscription[];
 }
+
+/**
+ * Urgency styling for a running countdown: GREEN → YELLOW → RED (then the dark
+ * EXPIRED notice). Design-system tokens only; the clock, the translated note and
+ * the expired text always carry the state as well as the colour.
+ */
+const RESERVATION_TONE_TEXT: Record<PaymentReservationTone, string> = {
+  green: "text-emerald-700",
+  yellow: "text-amber-700",
+  red: "text-rose-700",
+  expired: "text-slate-400",
+};
+const RESERVATION_TONE_TRACK: Record<PaymentReservationTone, string> = {
+  green: "bg-emerald-100",
+  yellow: "bg-amber-100",
+  red: "bg-rose-100",
+  expired: "bg-slate-200",
+};
+const RESERVATION_TONE_FILL: Record<PaymentReservationTone, string> = {
+  green: "bg-emerald-500",
+  yellow: "bg-amber-500",
+  red: "bg-rose-500",
+  expired: "bg-slate-400",
+};
 
 export default function MyOrders() {
   const { t } = useLanguage();
@@ -364,6 +391,18 @@ export default function MyOrders() {
                 // the deadline is the backend's, this only renders it.
                 const reservation = paymentReservationState(order, now);
                 const reservationPhase = paymentReservationPhase(order, now);
+                // This card's OWN urgency tier and its share of the ORIGINAL
+                // window (the backend's reservation length — unknown length means
+                // no bar, never a made-up denominator).
+                const tone = paymentReservationTone(reservation.remainingMs);
+                const totalMs = order.reservationMinutes ? order.reservationMinutes * 60_000 : null;
+                const progress = paymentReservationProgress(reservation.remainingMs, totalMs);
+                const reservationNote =
+                  tone === "red"
+                    ? t("orderReservation.criticalNote")
+                    : tone === "yellow"
+                      ? t("orderReservation.urgentNote")
+                      : t("orderReservation.windowNote");
                 return (
                   <div
                     key={order.id}
@@ -435,31 +474,58 @@ export default function MyOrders() {
                           </Badge>
 
                           {(reservationPhase === "active" || reservationPhase === "urgent") && (
-                            <p
-                              role="timer"
-                              aria-live="off"
-                              className={`mt-2 flex items-center gap-1.5 text-sm font-semibold tabular-nums ${
-                                reservationPhase === "urgent" ? "text-rose-700" : "text-amber-700"
-                              }`}
-                            >
-                              <Clock3 className="size-3.5 shrink-0" />
-                              {t("orderReservation.payWithin", {
-                                time: formatPaymentCountdown(reservation.remainingMs),
-                              })}
-                            </p>
-                          )}
+                            <>
+                              <p
+                                role="timer"
+                                aria-live="off"
+                                className={`mt-2 flex items-center gap-1.5 text-sm font-semibold tabular-nums ${RESERVATION_TONE_TEXT[tone]}`}
+                              >
+                                <Clock3 className="size-3.5 shrink-0" />
+                                {t("orderReservation.payWithin", {
+                                  time: formatPaymentCountdown(reservation.remainingMs),
+                                })}
+                              </p>
 
-                          {reservationPhase === "urgent" && (
-                            <p className="mt-1 text-xs font-medium text-rose-600">
-                              {t("orderReservation.urgentNote")}
-                            </p>
+                              {progress !== null && (
+                                <div
+                                  className="mt-2 max-w-48"
+                                  role="progressbar"
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
+                                  aria-valuenow={Math.round(progress * 100)}
+                                  aria-label={t("orderReservation.expiresIn")}
+                                >
+                                  <div className={`h-1.5 overflow-hidden rounded-full ${RESERVATION_TONE_TRACK[tone]}`}>
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-1000 ease-linear ${RESERVATION_TONE_FILL[tone]}`}
+                                      style={{ width: `${Math.max(1, Math.round(progress * 100))}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              <p className={`mt-1.5 text-xs font-medium ${RESERVATION_TONE_TEXT[tone]}`}>
+                                {reservationNote}
+                              </p>
+                            </>
                           )}
 
                           {reservationPhase === "expired" && (
-                            <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                              <XCircle className="size-3.5 shrink-0" />
-                              {t("orderReservation.expiredTitle")}
-                            </p>
+                            /*
+                              The dark state the spec asks for: no negative clock,
+                              and the "stock returned" sentence only once the
+                              backend has actually written `expired`. */
+                            <div className="mt-2 rounded-lg bg-slate-900 px-3 py-2">
+                              <p className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                                <XCircle className="size-3.5 shrink-0 text-slate-400" />
+                                {t("orderReservation.expiredTitle")}
+                              </p>
+                              {order.status === "expired" && (
+                                <p className="mt-1 text-[11px] leading-4 text-slate-300">
+                                  {t("orderReservation.expiredDesc")}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
 

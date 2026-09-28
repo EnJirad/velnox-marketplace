@@ -21,6 +21,7 @@ export const my = {
     remaining: "ကျန်ရှိချိန် {time}",
     expiresIn: "ငွေပေးချေရန်",
     urgentNote: "အချိန်နီးကပ်နေပြီ — သတ်မှတ်အချိန်မတိုင်မီ ငွေပေးချေပါ။",
+    criticalNote: "⚠️ အချိန်နည်းနည်းသာ ကျန်တော့သည် — ယခုပေးချေပါ",
     payNow: "ယခုပေးချေပါ",
     payAgain: "ထပ်မံပေးချေပါ",
     windowNote:

@@ -1061,6 +1061,10 @@ export function setupCartRoutes(app: Express): void {
           // Milliseconds, or null when the order has no window (COD, legacy
           // rows). Presentation reads it; the backend stays the source of truth.
           paymentExpiresAt: r.payment_expires_at ? new Date(r.payment_expires_at).getTime() : null,
+          // The window LENGTH the backend took (reservation_policy), so the page
+          // can draw a progress bar against the real reservation instead of
+          // assuming one. Null when there is no window or no policy row.
+          reservationMinutes: r.reservation_policy?.reservationMinutes ?? null,
           shippingStatus: r.shipping_status,
           shippingMethod: null,
           trackingNumber: null,
@@ -1137,6 +1141,8 @@ export function setupCartRoutes(app: Express): void {
           // See the list route: the reservation deadline in ms, null when the
           // order holds no window. The order page counts down from THIS value.
           paymentExpiresAt: order.payment_expires_at ? new Date(order.payment_expires_at).getTime() : null,
+          // See the list route: the reservation length for the progress bar.
+          reservationMinutes: order.reservation_policy?.reservationMinutes ?? null,
           shippingStatus: order.shipping_status,
           shippingMethod: null,
           trackingNumber: shipments[0]?.trackingNumber ?? null,

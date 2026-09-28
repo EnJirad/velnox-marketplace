@@ -37,7 +37,10 @@ import {
   orderStatusI18nKey,
   orderStripePayability,
   paymentReservationPhase,
+  paymentReservationProgress,
   paymentReservationState,
+  paymentReservationTone,
+  type PaymentReservationTone,
 } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -153,6 +156,8 @@ interface OrderDetail {
   createdAt: number;
   /** null when the order has no stored shipping address (legacy/COD orders) */
   addressSnapshot: OrderAddressSnapshot | null;
+  /** The reservation LENGTH the backend took (minutes); null when unknown. */
+  reservationMinutes?: number | null;
   items?: OrderItemRow[];
   shipments?: ShipmentRow[];
   payments?: PaymentRow[];
@@ -165,6 +170,50 @@ interface OrderDetail {
 }
 
 const REVIEWABLE = new Set(["delivered", "completed"]);
+
+/**
+ * Urgency styling for the running countdown: GREEN → YELLOW → RED, then the dark
+ * EXPIRED notice. Tokens only (design-system colours, readable on light mode);
+ * colour is never the sole signal — the clock, the tier's translated note and the
+ * 00:00/expired text all carry the state too.
+ */
+const RESERVATION_TONE_STYLES: Record<
+  PaymentReservationTone,
+  { panel: string; label: string; clock: string; track: string; fill: string; note: string }
+> = {
+  green: {
+    panel: "border-emerald-100 bg-emerald-50/70",
+    label: "text-emerald-700",
+    clock: "text-emerald-700",
+    track: "bg-emerald-100",
+    fill: "bg-emerald-500",
+    note: "text-emerald-800",
+  },
+  yellow: {
+    panel: "border-amber-100 bg-amber-50/70",
+    label: "text-amber-700",
+    clock: "text-amber-900",
+    track: "bg-amber-100",
+    fill: "bg-amber-500",
+    note: "text-amber-800",
+  },
+  red: {
+    panel: "border-rose-100 bg-rose-50/70",
+    label: "text-rose-700",
+    clock: "text-rose-700",
+    track: "bg-rose-100",
+    fill: "bg-rose-500",
+    note: "text-rose-800",
+  },
+  expired: {
+    panel: "border-slate-800 bg-slate-900",
+    label: "text-slate-300",
+    clock: "text-white",
+    track: "bg-slate-700",
+    fill: "bg-slate-500",
+    note: "text-slate-300",
+  },
+};
 
 export default function ShopOrderDetail() {
   const { t } = useLanguage();
@@ -431,7 +480,22 @@ export default function ShopOrderDetail() {
 
   const payTargetOrderId = order.parentOrderId || order.id;
   const reservationOpen = reservationPhase === "active" || reservationPhase === "urgent";
-  const reservationUrgent = reservationPhase === "urgent";
+  /** Which urgency tier the clock is in (green / yellow / red). */
+  const reservationTone = paymentReservationTone(reservation.remainingMs);
+  const toneStyle = RESERVATION_TONE_STYLES[reservationTone];
+  /**
+   * The bar measures against the window the BACKEND took
+   * (orders.reservation_policy → order.reservationMinutes). Unknown length →
+   * no bar, never a fabricated 30-minute denominator.
+   */
+  const reservationTotalMs = order.reservationMinutes ? order.reservationMinutes * 60_000 : null;
+  const reservationProgress = paymentReservationProgress(reservation.remainingMs, reservationTotalMs);
+  const reservationNote =
+    reservationTone === "red"
+      ? t("orderReservation.criticalNote")
+      : reservationTone === "yellow"
+        ? t("orderReservation.urgentNote")
+        : t("orderReservation.windowNote");
 
   /** The countdown and the pay action, shown in ONE place (the header card). */
   const heroActions = payability.payable ? (
@@ -494,46 +558,68 @@ export default function ShopOrderDetail() {
 
           {/* Reservation window open: the countdown IS the call to action. */}
           {reservationOpen && (
-            <div
-              className={`border-t px-5 py-5 sm:px-6 ${
-                reservationUrgent ? "border-rose-100 bg-rose-50/70" : "border-amber-100 bg-amber-50/70"
-              }`}
-            >
+            <div className={`border-t px-5 py-5 sm:px-6 ${toneStyle.panel}`}>
               <div className="flex flex-wrap items-end justify-between gap-4">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p
-                    className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${
-                      reservationUrgent ? "text-rose-700" : "text-amber-700"
-                    }`}
+                    className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${toneStyle.label}`}
                   >
                     <Clock3 className="size-3.5 shrink-0" />
                     {t("orderReservation.expiresIn")}
                   </p>
                   <p
-                    className={`mt-1 text-4xl font-bold tabular-nums tracking-tight sm:text-5xl ${
-                      reservationUrgent ? "text-rose-700" : "text-amber-900"
-                    }`}
+                    className={`mt-1 text-4xl font-bold tabular-nums tracking-tight sm:text-5xl ${toneStyle.clock}`}
+                    role="timer"
+                    aria-live="off"
                   >
                     {formatPaymentCountdown(reservation.remainingMs)}
                   </p>
-                  <p className={`mt-2 max-w-md text-xs leading-5 ${reservationUrgent ? "text-rose-700" : "text-amber-800"}`}>
-                    {reservationUrgent ? t("orderReservation.urgentNote") : t("orderReservation.windowNote")}
-                  </p>
+                  {/*
+                    How much of the ORIGINAL window is left. The denominator is
+                    the backend's reservation length, so a shorter/longer window
+                    (or an unknown one) is drawn truthfully — an unknown length
+                    simply draws no bar.
+                  */}
+                  {reservationProgress !== null && (
+                    <div
+                      className="mt-3 max-w-md"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(reservationProgress * 100)}
+                      aria-label={t("orderReservation.expiresIn")}
+                    >
+                      <div className={`h-2 overflow-hidden rounded-full ${toneStyle.track}`}>
+                        <div
+                          className={`h-full rounded-full transition-all duration-1000 ease-linear ${toneStyle.fill}`}
+                          style={{ width: `${Math.max(1, Math.round(reservationProgress * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <p className={`mt-2 max-w-md text-xs leading-5 ${toneStyle.note}`}>{reservationNote}</p>
                 </div>
                 {heroActions}
               </div>
             </div>
           )}
 
-          {/* Window lapsed: say so instead of showing a negative countdown. */}
+          {/* Window lapsed: the dark notice replaces the clock — never a negative. */}
           {reservationPhase === "expired" && (
-            <div className="border-t border-slate-100 bg-slate-50 px-5 py-5 sm:px-6">
-              <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <div className="border-t border-slate-800 bg-slate-900 px-5 py-5 sm:px-6">
+              <p className="flex items-center gap-2 text-sm font-semibold text-white">
                 <XCircle className="size-4 shrink-0 text-slate-400" />
                 {t("orderReservation.expiredTitle")}
               </p>
-              <p className="mt-1.5 max-w-md text-xs leading-5 text-slate-500">{t("orderReservation.expiredDesc")}</p>
-              <Button variant="outline" size="sm" className="mt-3 gap-1.5 border-slate-200 text-slate-700" asChild>
+              <p className="mt-1.5 max-w-md text-xs leading-5 text-slate-300">
+                {t("orderReservation.expiredDesc")}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 gap-1.5 border-slate-600 bg-slate-800 text-white hover:bg-slate-700"
+                asChild
+              >
                 <Link to="/orders">
                   <ArrowLeft className="size-3.5" />
                   {t("orderDetail.backToOrders")}

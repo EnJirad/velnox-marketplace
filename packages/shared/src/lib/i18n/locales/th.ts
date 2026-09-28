@@ -30,6 +30,7 @@ export const th = {
     remaining: "เหลืออีก {time}",
     expiresIn: "กรุณาชำระเงินภายใน",
     urgentNote: "ใกล้หมดเวลาแล้ว กรุณาชำระเงินก่อนหมดเขต",
+    criticalNote: "⚠️ เหลือเวลาเพียงเล็กน้อย กรุณาชำระเงินตอนนี้",
     payNow: "ชำระเงินตอนนี้",
     payAgain: "ชำระเงินอีกครั้ง",
     windowNote:

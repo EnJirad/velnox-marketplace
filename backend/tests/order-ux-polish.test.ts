@@ -39,7 +39,11 @@ import {
   orderProgressStageIndex,
   orderStatusI18nKey,
   paymentReservationPhase,
+  paymentReservationProgress,
   paymentReservationState,
+  paymentReservationTone,
+  PAYMENT_RESERVATION_RED_MS,
+  PAYMENT_RESERVATION_YELLOW_MS,
 } from "../../packages/shared/src/lib/commerce.ts";
 import { translations } from "../../packages/shared/src/lib/i18n/locales/index";
 
@@ -281,5 +285,123 @@ describe("order UX — the reservation deadline must reach the screen (regressio
     expect(list).not.toMatch(/reservationPhase.*paymentMethod/);
     // …and the pay action is offered beside it regardless of the method.
     expect(detail).toContain("<ResumePaymentButton");
+  });
+});
+
+describe("order UX — urgency states and the progress bar", () => {
+  test("the tiers are GREEN past 15:00, YELLOW to 05:01, RED to 00:01, then expired", () => {
+    // Spec boundaries, exact.
+    expect(PAYMENT_RESERVATION_YELLOW_MS).toBe(15 * 60_000);
+    expect(PAYMENT_RESERVATION_RED_MS).toBe(5 * 60_000);
+    expect(paymentReservationTone(15 * 60_000 + 1_000)).toBe("green");
+    expect(paymentReservationTone(15 * 60_000)).toBe("yellow");
+    expect(paymentReservationTone(5 * 60_000 + 1_000)).toBe("yellow");
+    expect(paymentReservationTone(5 * 60_000)).toBe("red");
+    expect(paymentReservationTone(1_000)).toBe("red");
+    expect(paymentReservationTone(0)).toBe("expired");
+    expect(paymentReservationTone(-1_000)).toBe("expired");
+    expect(paymentReservationTone(Number.NaN)).toBe("expired");
+    // A whole 30-minute window starts green.
+    expect(paymentReservationTone(30 * 60_000)).toBe("green");
+  });
+
+  test("the clock reads 30:00 → 00:00 across every boundary, never negative", () => {
+    const cases: Array<[number, string]> = [
+      [30 * 60_000, "30:00"],
+      [30 * 60_000 - 1_000, "29:59"],
+      [15 * 60_000, "15:00"],
+      [15 * 60_000 - 1_000, "14:59"],
+      [5 * 60_000, "05:00"],
+      [5 * 60_000 - 1_000, "04:59"],
+      [1_000, "00:01"],
+      [0, "00:00"],
+      [-1_000, "00:00"],
+      [-60_000, "00:00"],
+    ];
+    for (const [ms, expected] of cases) {
+      expect(formatPaymentCountdown(ms)).toBe(expected);
+    }
+  });
+
+  test("the bar measures the backend's window, and draws nothing when it is unknown", () => {
+    const thirty = 30 * 60_000;
+    expect(paymentReservationProgress(thirty, thirty)).toBe(1);
+    expect(paymentReservationProgress(thirty / 2, thirty)).toBe(0.5);
+    expect(paymentReservationProgress(60_000, thirty)).toBeCloseTo(1 / 30, 5);
+    expect(paymentReservationProgress(0, thirty)).toBe(0);
+    // A window the backend did not report (or a malformed one) draws no bar…
+    expect(paymentReservationProgress(thirty, null)).toBeNull();
+    expect(paymentReservationProgress(thirty, undefined)).toBeNull();
+    expect(paymentReservationProgress(thirty, 0)).toBeNull();
+    // …and a clock that somehow outruns its window is clamped, never > 100%.
+    expect(paymentReservationProgress(thirty * 2, thirty)).toBe(1);
+  });
+
+  test("three unpaid orders keep three independent clocks", () => {
+    const now = Date.now();
+    const orders = [
+      { status: "pending_payment", paymentExpiresAt: now + 25 * 60_000 },
+      { status: "pending_payment", paymentExpiresAt: now + 10 * 60_000 },
+      { status: "pending_payment", paymentExpiresAt: now + 2 * 60_000 },
+    ].map((o) => ({ ...o, reservationMinutes: 30 }));
+
+    const clocks = orders.map((o) => {
+      const state = paymentReservationState(o, now);
+      return {
+        clock: formatPaymentCountdown(state.remainingMs),
+        tone: paymentReservationTone(state.remainingMs),
+        progress: paymentReservationProgress(
+          state.remainingMs,
+          o.reservationMinutes ? o.reservationMinutes * 60_000 : null,
+        ),
+      };
+    });
+
+    expect(clocks.map((c) => c.clock)).toEqual(["25:00", "10:00", "02:00"]);
+    expect(clocks.map((c) => c.tone)).toEqual(["green", "yellow", "red"]);
+    expect(clocks.map((c) => c.progress)).toEqual([
+      (25 * 60_000) / (30 * 60_000),
+      (10 * 60_000) / (30 * 60_000),
+      (2 * 60_000) / (30 * 60_000),
+    ]);
+
+    // Reading one order never changes another (no shared mutable countdown).
+    const again = orders.map((o) =>
+      formatPaymentCountdown(paymentReservationState(o, now).remainingMs),
+    );
+    expect(again).toEqual(["25:00", "10:00", "02:00"]);
+  });
+
+  test("both surfaces render the tier, the bar and the dark expired state — no hard-coded copy", () => {
+    for (const page of [ORDER_DETAIL_PAGE, MY_ORDERS_PAGE]) {
+      const src = read(page);
+      // The tier, not a hard-coded colour decision per page.
+      expect(src).toContain("paymentReservationTone(");
+      expect(src).toContain("paymentReservationProgress(");
+      expect(src).toContain('role="progressbar"');
+      // The bar's denominator is the backend's reservation length, never 30 in code.
+      expect(src).toContain("reservationMinutes");
+      expect(src).not.toMatch(/30 \* 60_000/);
+      // Expired is the dark state, and the copy is translated.
+      expect(src).toContain("bg-slate-900");
+      expect(src).toContain('t("orderReservation.expiredTitle")');
+      expect(src).toContain('t("orderReservation.criticalNote")');
+      // No Thai/Myanmar literal may appear in a component (i18n rule).
+      expect(src).not.toMatch(/[\u0E00-\u0E7F\u1000-\u109F]/);
+      // The clock never renders a negative value.
+      expect(src).not.toContain("formatPaymentCountdown(-");
+    }
+  });
+
+  test("every tier has copy in th, en and my", () => {
+    for (const lang of ["th", "en", "my"] as const) {
+      const ns = locale(lang).orderReservation;
+      for (const key of ["windowNote", "urgentNote", "criticalNote", "expiredTitle", "expiredDesc", "expiresIn"]) {
+        expect(typeof ns[key]).toBe("string");
+        expect(ns[key].trim().length).toBeGreaterThan(0);
+      }
+      // The countdown label still carries its {time} placeholder everywhere.
+      expect(ns.payWithin).toContain("{time}");
+    }
   });
 });

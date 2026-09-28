@@ -301,6 +301,14 @@ export interface StoreOrder {
    * The backend is the source of truth; the order page only counts down to it.
    */
   paymentExpiresAt?: number | null;
+  /**
+   * The length of the reservation the BACKEND took, in minutes (from
+   * `orders.reservation_policy.reservationMinutes`), or null when the order has
+   * no window or the schema predates it. The progress bar divides the remaining
+   * time by THIS, so it can never assume 30 minutes when the backend says
+   * otherwise (a stored v1 row, for instance).
+   */
+  reservationMinutes?: number | null;
   shopId?: string | null;
   shopName?: string | null;
   shopSlug?: string | null;
@@ -774,6 +782,60 @@ export function formatPaymentCountdown(remainingMs: number): string {
  * countdown like `02:13` render as the urgent state rather than an ordinary one.
  */
 export const PAYMENT_RESERVATION_URGENT_MS = 3 * 60_000;
+
+/**
+ * The urgency tiers the storefront colours a running countdown with.
+ *
+ *   GREEN   more than `PAYMENT_RESERVATION_YELLOW_MS` left — an ordinary window
+ *   YELLOW  15:00 … 5:01 — the window is closing, make the clock noticeable
+ *   RED      5:00 … 0:01 — pay now (the last three minutes stay "urgent" too,
+ *            which is what turns the hurry note on)
+ *   EXPIRED 0 or less — the clock reads 00:00 and the dark notice takes over
+ *
+ * Boundaries are inclusive of the tier they name, matching the spec's
+ * 15:00 → YELLOW, 05:00 → RED, 00:01 → RED, 00:00 → EXPIRED.
+ * Colour is never the only signal: the clock and the translated note carry it.
+ */
+export const PAYMENT_RESERVATION_YELLOW_MS = 15 * 60_000;
+export const PAYMENT_RESERVATION_RED_MS = 5 * 60_000;
+
+export type PaymentReservationTone = "green" | "yellow" | "red" | "expired";
+
+/**
+ * Which urgency tier a remaining time belongs to. PRESENTATION ONLY — it reads
+ * a number the backend deadline produced and decides nothing about the order.
+ */
+export function paymentReservationTone(remainingMs: number): PaymentReservationTone {
+  if (typeof remainingMs !== "number" || !Number.isFinite(remainingMs) || remainingMs <= 0) {
+    return "expired";
+  }
+  if (remainingMs <= PAYMENT_RESERVATION_RED_MS) return "red";
+  if (remainingMs <= PAYMENT_RESERVATION_YELLOW_MS) return "yellow";
+  return "green";
+}
+
+/**
+ * How much of the ORIGINAL reservation window is left, as 0…1, for the progress
+ * bar. `totalMs` is the window the backend actually took (orders.reservation_policy
+ * → API → order.reservationMinutes), never a number invented by the page: when it
+ * is unknown the bar simply does not draw, while the clock keeps running off the
+ * backend deadline.
+ */
+export function paymentReservationProgress(
+  remainingMs: number,
+  totalMs: number | null | undefined,
+): number | null {
+  if (
+    typeof totalMs !== "number" ||
+    !Number.isFinite(totalMs) ||
+    totalMs <= 0 ||
+    typeof remainingMs !== "number" ||
+    !Number.isFinite(remainingMs)
+  ) {
+    return null;
+  }
+  return Math.min(1, Math.max(0, remainingMs / totalMs));
+}
 
 /** How the reservation must be presented for one order. */
 export type PaymentReservationPhase = "none" | "active" | "urgent" | "expired";
