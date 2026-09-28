@@ -621,70 +621,13 @@ charged to whichever statement opened an empty pool (measured in production: 1.6
 
 ---
 
-## 35. Customer order cancellation — unpaid orders get a way out (2026-09-28)
+## 35. Customer order cancellation (2026-09-28) — archived
 
-**Reported:** after a failed or abandoned Stripe payment the order page offered only
-"ชำระต่อ" — there was no way to cancel an order the customer no longer wanted, even though a
-`pending_payment` order is holding stock and its Checkout Session is still open at Stripe.
-
-**Root cause (code, not policy):** `PATCH /api/customer/orders/:orderId/cancel` accepted
-only `pending` / `confirmed`, and the order page kept its **own** second copy of that list
-(`new Set(["pending", "confirmed"])`). `pending_payment` — the status `POST
-/api/stripe/checkout` writes, and the one a customer returns with — matched neither.
-
-**Fix (one endpoint, one rule, no new system):**
-
-| Piece | Change |
-|---|---|
-| `packages/shared/src/lib/commerce.ts` | `CUSTOMER_CANCELABLE_ORDER_STATUSES` = `pending` \| `pending_payment` \| `confirmed`, `isOrderCancelableByCustomer()`, `orderCustomerCancelability()` (refuses when a payment is `paid`/`processing`). ONE rule for button and server |
-| `backend/routes/cart.ts` | Same route, widened: ownership in the `WHERE` (404, never 403), status check, payment-state check (`409 ORDER_ALREADY_PAID` / `409 PAYMENT_IN_PROGRESS`), then ONE transaction = guarded `UPDATE … status = ANY($2)` claim + abandon the `pending`/`requires_action` payment row + `releaseOrderInventory()`; terminal states are idempotent no-ops |
-| `backend/routes/stripe.ts` | New `expireStripeCheckoutSession()` — the abandoned session is expired **before** the order is cancelled, so the old Stripe tab can no longer charge it. `markPaymentSucceeded` now logs (order id only) when funds land on a non-payable order |
-| `backend/lib/order-read.ts` | NEW. `fetchOrderItemsForOrders()` / `fetchShipmentsForOrder()` moved out of `routes/cart.ts` verbatim (pure readers) — see the tooling note below |
-| `apps/velshop/src/pages/ShopOrderDetail.tsx` | Reads the shared rule; cancel button + confirm dialog now appear for an unpaid order next to "ชำระต่อ"; cancelled orders show `orderCancel.cancelledNotice` and never a pay button |
-| i18n (`th`/`en`/`my`) | NEW top-level `orderCancel` namespace: `back`, `dialogDescUnpaid`, `cancelledNotice` (i18n:check th=en=my=**1334**) |
-
-**State machine (unchanged except where it was broken):**
-
-```
-pending ──┐
-pending_payment ──┼── cancel  → cancelled  (stock released once, session expired)
-confirmed ──┘
-paid / shipped / delivered / completed / refunded  → REFUSED (400 INVALID_STATUS)
-payment paid (order row lagging)                   → REFUSED (409 ORDER_ALREADY_PAID)
-payment processing                                 → REFUSED (409 PAYMENT_IN_PROGRESS)
-already cancelled / payment_failed / expired       → 200 no-op (nothing released twice)
-```
-
-**Stock:** reserve at creation (`reserveInventoryStock` for non-variant, immediate
-`product_variants.stock -= qty` for variants); release through the ONE path,
-`releaseOrderInventory()`. Cancellation adds NO second mechanism — it calls that function
-inside its transaction, so the `inventory_released` claim keeps a repeated, concurrent,
-retried or webhook-driven cancel from returning stock twice, and its status guard refuses to
-release for an order that became `paid` meanwhile.
-
-**Webhook when the order is cancelled:** `markPaymentSucceeded` only moves orders from
-`pending`/`pending_payment`, so a cancelled order can never become `paid` — the money stays on
-the payment row (that is what makes it refundable) and the new log line names the case.
-`checkout.session.expired` and duplicate deliveries stay idempotent. Signature verification,
-raw body and the event claim are untouched.
-
-**Verification (executed here):** `backend/tests/customer-order-cancel.test.ts` NEW —
-**23 pass / 14 skip / 0 fail** (the 14 are `TEST_DATABASE_URL`-gated; no Postgres/docker
-exists in this workspace, and CI `.github/workflows/test.yml` provisions `postgres:16`, bootstraps
-`db/run-sqleditor.sql` and runs the full suite). Full backend suite **732 pass / 107 skip / 0
-fail** (839 tests, 39 files); payment/webhook/order suites **170 pass / 28 skip / 0 fail**;
-backend `tsc` 0; `typecheck` 4/4; `build:apps` 4/4; `i18n:check` 1334 each; `git diff --check`
-clean. **No DB-gated case is claimed as passing** — run them with `TEST_DATABASE_URL` or watch CI.
-
-**Tooling finding (important for the next agent):** this workspace's `str_replace` only matches
-inside roughly the first **55 KiB** of a file. `backend/routes/cart.ts` was 70 KB and its cancel
-handler sat at byte 56,594 — **unmatchable**, which is why `lib/order-read.ts` was extracted (a
-real cleanup, not a workaround for its own sake). The same limit is why the new copy became a
-top-level `orderCancel` namespace instead of living in `orderDetail`: in `th.ts` (106 KB) and
-`my.ts` (100 KB) that block is past the window — the existing `myAuthPatch` / `myShopPatch` /
-`myOrderPatch` precedent.**Open / owner-side.** (1) Re-run the 14 DB-gated cases (CI or a disposable Postgres). (2)
-A browser check of the new dialog in velShop (th/en/my) — not executable here. (3) The `min: 1`
-reservation cost (§34) is unchanged; `INSTALLATION.md` still carries the wrong `velnx-api` host (§31).
+Full record: [`history/archive/AI_Handoff-2026-09-28-customer-cancellation.md`](./history/archive/AI_Handoff-2026-09-28-customer-cancellation.md)
+(one shared cancel rule for button + server, the guarded claim, the ONE release path, the
+`orderCancel` i18n namespace, the 55 KiB tooling finding). Still open there: re-run its 14
+`TEST_DATABASE_URL`-gated cases; browser check of the dialog (th/en/my). The two failures that
+reddened `main` were test-side and are fixed in **§37**.
 
 ---
 
@@ -757,6 +700,79 @@ path; no refund is invented in code). A `paid`/`processing` payment blocks the a
 a live charge is never expired out from under the customer. Nothing under
 `backend/middleware/stripe-raw-body.ts` or the webhook's signature/`payment_events` handling
 changed.
+
+---
+
+## 37. CRITICAL — production checkout down: migration 048 never applied (2026-09-28)
+
+**Reported.** Render: `ERROR 42703 column "payment_expires_at" does not exist` and
+`[stripe] checkout error: column "payment_expires_at" does not exist` → no Checkout Session could be
+created, so no sale could be paid. OAuth unaffected.
+
+**Two independent causes — neither is "the field is in the wrong table".**
+
+1. **Production schema is behind the code.** `Migrate Neon Database` DID fire for migration 048
+   (run `36371800184`, commit `df719fe`) and **failed at its first statement**: `psql: … "ep-super-bird-
+   az88b4p7-pooler…neon.tech" failed: ERROR: Your account or project has exceeded the quota.`
+   (the §22 Neon quota, again). So it is absent from `schema_migrations` and never applied.
+2. **The read path had no deploy-order net.** `248db45` hardened the reservation **write** and the
+   **sweep**, but the **checkout read** still named the column
+   (`SELECT … payment_expires_at FROM orders WHERE id = $1`) → 42703 → 500 `STRIPE_ERROR`, before the
+   reservation guard could run. A missing deadline took checkout down instead of not being enforced.
+
+**Placement verified correct, not moved.** `payments` has no expiry column; the stock reservation IS
+order-keyed (`inventory_released` + the ONE release path `releaseOrderInventory(orderId)`).
+`orders.payment_expires_at` is the single source of truth already agreed across schema, migration,
+sweep, index and UI. No new table, column, endpoint or reservation system.
+
+**Fix — `fix(payments): survive a database that predates the reservation columns`.**
+
+| Piece | Change |
+|---|---|
+| `backend/lib/payment-reservation.ts` | NEW `selectOrderPaymentRow()` reads the deadline as `to_jsonb(o) ->> 'payment_expires_at'`: a JSON key lookup is NULL when the column is absent, so ONE statement is correct against BOTH schemas and **cannot raise** 42703. Chosen over "catch 42703 and retry" because the webhook runs inside `withTransaction` — PostgreSQL aborts a whole transaction on the first failed statement (`25P02`), so a retry would trade a broken checkout for a broken webhook. Also `warnReservationSchemaMissing()` (once per process, names migration 048) |
+| `backend/routes/stripe.ts` | Checkout's order read and the webhook's non-payable-order diagnostic both go through it; nothing names the column in a statement any more |
+| `backend/tests/payment-reservation-expiry.test.ts` | NEW deploy-order cases, incl. a real-DB one that shadows a column-less `orders` into a throwaway schema **inside a transaction** and proves the error is real (42703), that it poisons the transaction (25P02) and that the read survives anyway; plus the canonical-schema happy path |
+| `backend/tests/customer-order-cancel.test.ts` | `reservation_expired` → `reservationExpired` (the alias became a JS variable) |
+| `db/` | **No change needed** — `schema.sql` / `run-sqleditor.sql` already carry both columns + the partial index and match on those lines; `run-update.sql` still absent |
+
+**Also repaired — pre-existing red `main`, NOT caused by this bug.** CI run `36372222449` on the
+pre-fix tip already failed 6 tests this workspace reproduced exactly. `payment-reservation-expiry`'s
+HTTP harness mounted neither `stripeWebhookRawBody` nor `cookieParser`, so its checkout cases answered
+**401** and its webhook cases never verified a signature — they had never tested what they claimed;
+both are now mounted in `server.ts`'s real order. Two `customer-order-cancel` failures were test-side
+too: scenario 9's fixture never set `inventory_released` (its own premise, "markPaymentFailed already
+released this stock", was unrepresentable) and scenario 11 filtered on `cancelled` — the ORDER's state,
+which scenario 10 pins as `true` for a cancel that moved nothing — instead of `alreadyFinal`. Stock had
+in fact been released exactly once in both.
+
+**Verification (executed here).** Disposable PostgreSQL bootstrapped from `db/run-sqleditor.sql`, then
+`psql --single-transaction -f db/migrations/048_payment_reservation.sql` + a `schema_migrations` row
+(mirroring the workflow): full backend suite **911 pass / 2 skip / 0 fail** (913, 41 files); the two
+touched suites **83 pass / 0 fail**; backend `tsc` 0; `typecheck` 4/4; `i18n:check` th=en=my=1338;
+`git diff --check` clean. The local DB was still pre-migration when the fix first ran and the new tests
+passed against it, i.e. the read genuinely survives the schema production is in today.
+
+**OWNER ACTION — production schema (BLOCKED for an agent).** `gh workflow run migrate-neon.yml` →
+**403 `Resource not accessible by integration`** (the GitHub App has no `actions: write`). Either
+**Actions → Migrate Neon Database → Run workflow** with `migration_file = 048_payment_reservation.sql`
+(clear the quota of `36371800184` first), **or** in the Neon SQL Editor:
+
+```sql
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS reservation_policy JSONB;
+CREATE INDEX IF NOT EXISTS idx_orders_payment_expires_at
+  ON orders (payment_expires_at) WHERE payment_expires_at IS NOT NULL;
+INSERT INTO schema_migrations (migration_name)
+  VALUES ('048_payment_reservation') ON CONFLICT (migration_name) DO NOTHING;
+```
+
+Additive, nullable, no backfill, no rewrite; existing orders keep `NULL` (= "no window", exactly what
+the sweep ignores). Until applied the reservation feature is inert — but checkout works.
+
+**Still open.** Production schema unverified from an agent (no credentials; `diag-neon-schema.yml`
+cannot be dispatched for the same 403) — **do not report the column as verified until an owner read
+confirms it**. Stripe TEST E2E still BLOCKED (§16/§18). The 15/20/30/45/60 min windows come from the
+policy service; none is hard-coded in a route.
 
 **Verified here.** NEW `payment-reservation-policy.test.ts` **26 pass/0 fail** (the full risk
 table, MIN/MAX clamps over every signal combination, determinism, JSONB round trip, the

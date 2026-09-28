@@ -163,6 +163,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-28-db-pool-latency.md`](./archive/AI_Handoff-2026-09-28-db-pool-latency.md) | handoff §34 — the pool idled down to zero, so connection establishment landed on the first statement | The production measurement that separated connect time from execute time (1.627/1.738 s cold → 0.388/0.357 s warm on the same endpoint), why neither reported query needed an index, the `min: 1` + `maxLifetimeSeconds: 1800` fix, and the post-deploy latency sweep. Moved out on 2026-09-28 for edit headroom |
 
+### 2026-09-28 — the §35 split (customer order cancellation)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-28-customer-cancellation.md`](./archive/AI_Handoff-2026-09-28-customer-cancellation.md) | handoff §35 — unpaid orders get a way out | The one shared cancel rule for button + server, the guarded claim + the ONE `releaseOrderInventory()` path, the `orderCancel` i18n namespace, and the 55 KiB matching-window tooling finding. Moved out on 2026-09-28 so §37 (production checkout down — migration 048 never applied) could be appended. Its two test-side failures were fixed in §37 |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
