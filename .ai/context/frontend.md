@@ -32,6 +32,11 @@ Do not invent brand colors; search existing tokens/components first.
 - **Spacing:** `px-4 py-8 sm:px-6 sm:py-10`, gaps `gap-2`–`gap-4`, `p-5`–`p-6` for cards.
 - **Header:** `sticky top-0 z-40 bg-white/90 backdrop-blur border-b`; mobile tab bar `fixed bottom-0` with emerald active.
 - **i18n:** `packages/shared/src/lib/i18n/` — `th`/`en`/`my`; never render raw keys; language switch updates UI without full reload.
+  - `bun run i18n:check` enforces key parity + interpolation parity across the three locales.
+  - `th.ts` (~106 KB) and `my.ts` (~100 KB) are past this workspace's ~55 KiB edit window in
+    their later blocks, so new keys are added as a **top-level namespace near the top of the
+    file** (or via the patch objects in `locales/index.ts`, e.g. `myAuthPatch` /
+    `myShopPatch` / `myOrderPatch`). The `orderCancel` namespace is the current example.
 
 ## Product-Specific
 

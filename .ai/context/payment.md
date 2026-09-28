@@ -53,6 +53,13 @@ ONLY** — a live-looking secret key is refused, never used.
   `payment_status != "paid"` does **not** mark an order paid. Only
   `async_payment_succeeded` / `payment_intent.succeeded` / a `paid` session do
   (`sessionConfirmsPayment`).
+- **A cancelled order can never become paid.** `markPaymentSucceeded` only moves orders from
+  `pending`/`pending_payment`, so a `cancelled` order stays cancelled even if a verified
+  success event arrives (funds are still recorded on the payment row — that is what makes the
+  case refundable — and logged for an operator). Customer cancellation also **expires the
+  abandoned Checkout Session first** (`expireStripeCheckoutSession()`), so the old Stripe tab
+  cannot charge an order that is no longer payable. The cancel endpoint itself is documented
+  in `checkout.md`; its rule is `orderCustomerCancelability()` in `packages/shared`.
 - **Order ↔ payment are separate lifecycles.** Payment states: `pending`,
   `requires_action`, `processing`, `paid`, `failed`, `cancelled`, plus
   `refunded_amount` / `refund_status`. Paired transitions only: `paid`→`paid`,

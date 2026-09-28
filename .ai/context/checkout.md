@@ -28,6 +28,28 @@ cart_items → POST /api/customer/checkout (idempotent via checkout_requests[sco
 → shipments + tracking_events → VelRepeat plans/runs
 ```
 
+## Customer cancellation (order lifecycle)
+
+`PATCH /api/customer/orders/:orderId/cancel` (`backend/routes/cart.ts`) is the ONE
+cancellation path and the only place a customer may end an unpaid order. It cancels
+`pending` **and `pending_payment`** (the status an order carries while a Stripe Checkout
+Session exists — i.e. after an abandoned/failed payment) and `confirmed`, by:
+
+1. 404 for a non-owner (ownership is in the `WHERE` — never a 403 that confirms existence);
+2. refusing `paid`/`shipped`/`delivered`/`completed`/`refunded` (`400 INVALID_STATUS`),
+   a `paid` payment on a lagging order row (`409 ORDER_ALREADY_PAID`) and a payment being
+   authorised (`409 PAYMENT_IN_PROGRESS`);
+3. expiring the abandoned Stripe session FIRST (`expireStripeCheckoutSession()` in
+   `stripe.ts`) so the old Stripe tab cannot charge a cancelled order;
+4. one transaction: guarded `UPDATE … status = ANY($2)` claim (the race gate) → abandon the
+   `pending`/`requires_action` payment row → `releaseOrderInventory()`. Terminal states
+   (`cancelled`, `payment_failed`, `expired`) answer **200 as an idempotent no-op**.
+
+The rule the storefront reads is `orderCustomerCancelability()` /
+`CUSTOMER_CANCELABLE_ORDER_STATUSES` (`packages/shared/src/lib/commerce.ts`) — one list for
+button and server, pinned by `backend/tests/customer-order-cancel.test.ts`. Copy lives in the
+`orderCancel` i18n namespace.
+
 ## Endpoints (payment)
 
 | Endpoint | Notes |
@@ -54,6 +76,11 @@ cart_items → POST /api/customer/checkout (idempotent via checkout_requests[sco
 - **COD is IMPLEMENTED but DISABLED** (`COD_ENABLED` / `COD_CUSTOMER_SELECTABLE`,
   both default off, fail closed). `method=COD` → **403 `PAYMENT_METHOD_DISABLED`**
   before any order/payment/shipment/settlement write, independent of Stripe state.
+- **Stock is reserved at order creation and released exactly once.** Cancellation, payment
+  failure and session expiry all converge on `releaseOrderInventory()` inside their own
+  transaction; its `inventory_released` claim is what makes a repeated, concurrent, retried
+  or webhook-driven release impossible, and its status guard refuses to release for an order
+  that has become `paid`.
 - Order and Payment are separate lifecycles. Only paired transitions are written:
   `paid`→`paid`, `failed`→`payment_failed`, expired/canceled→`cancelled`, full
   refund→`refunded`.

@@ -145,6 +145,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-27-velshop-orders-cart.md`](./archive/AI_Handoff-2026-09-27-velshop-orders-cart.md) | handoff §28–§29 — the velShop order-status contract and the cart selection UI | §28 `getOrderStatusMeta()` as the only safe renderer of the free-text `orders.status` column (which also carries the payment-lifecycle values `backend/routes/stripe.ts` writes) plus the refunded-order seller-status fix and its production bundle proof; §29 `shop_id`-grouped cart selection derived from one `Set` of item ids, calling no API. Moved out on 2026-09-28 for edit headroom so §34 (DB latency) could be appended; browser E2E for `/orders` and `/cart` stayed open |
 
+### 2026-09-28 — the §31 split (PromptPay settlement diagnostic, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-27-promptpay-settlement.md`](./archive/AI_Handoff-2026-09-27-promptpay-settlement.md) | handoff §31 — PromptPay settlement diagnostic (order stuck `pending_payment`) | A diagnostic-only pass (no code changed) that ruled out a global webhook failure and pointed at the PromptPay-specific leg; its decisive reads — the endpoint's `enabled_events`, the `payment_events` delivery rows, the stuck session's `payment_status` — remain owner-side. Moved out on 2026-09-28 so §35 (customer order cancellation) could be appended; superseded for current state by §33 |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
