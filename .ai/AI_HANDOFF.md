@@ -816,8 +816,23 @@ something else only adds write cost. Owner can re-confirm with `EXPLAIN (ANALYZE
 `backend/routes/` changed, so the webhook's raw body, signature verification, `payment_events`
 idempotency and state machine are as §32–§33 left them — re-proved by re-running that suite.
 
-**Open / owner-side.** (1) After this deploys, re-run the pair probe — the cold request should now
-be ~0.38 s too. (2) New log lines for `refunds` / the VelRepeat tick should read
+**After the fix — measured in production, executed** (post-deploy; one `GET /api/shops` after each
+idle gap, then an immediate repeat): 5 s → **0.356 / 0.352 s**; 20 s → **0.400 / 0.354 s**; 40 s →
+**0.482 / 0.401 s**; 70 s → **0.420 / 0.399 s**. The same 40 s gap that read **1.627 / 1.738 s**
+before the fix now reads **0.48 s**, and the penalty stays gone at 70 s — the signature of
+`min: 1` (pg-pool arms no reap timer for the last client, so the pool cannot idle down to zero).
+One 0.895 s sample taken while the deploy was still settling is exactly why the sweep, not a
+single sample, is the evidence. Webhook negatives re-run on the deployed revision: no signature →
+**400**, forged signature → **400**. **Deploy proof is behavioral**: `git merge-base --is-ancestor
+4832750 origin/main` is true and the GitHub deployments API records `4832750` for the four Vercel
+production environments, but Render records nothing there — the latency change itself, plus
+`/api/stripe/configured` still exposing §33's `webhookSecretHealth`, is what shows the backend
+runs a revision at least as new as this commit.
+
+**Open / owner-side.** (1) The two reported queries can only be re-logged by the owner (the
+order-detail route needs a customer session, the VelRepeat tick is internal), but the mechanism
+that produced their 1.5 s is the one measured and removed above. (2) New log lines for `refunds` /
+the VelRepeat tick should read
 `layer=statement` with a small acquire; a line still reading `layer=pool-connection` means
 something else is emptying the pool (a Neon-side idle close), and the new line says so directly.
 (3) `EXPLAIN (ANALYZE, BUFFERS)` on both queries confirms index scans. (4) The ~1.5 s was never a
