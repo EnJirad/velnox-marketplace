@@ -255,3 +255,54 @@ The window itself is FIXED 30 minutes (see *Payment reservation window* above) a
 its only enforcer.
 
 Related: `checkout.md`, `customer.md`, `security.md`, `testing.md`, `database.md`.
+
+## Countdown not visible in production (2026-09-28) — diagnose before adding timers
+
+Reported as "the 30-minute countdown exists in source but customers never see it". Every link was
+traced; only one is broken, and it is **not** in application code.
+
+| # | Link | Result |
+|---|------|--------|
+| 1 | order creation → `orders.payment_expires_at` | `applyPaymentReservationPolicy()` — the **ONE** writer, inside the checkout transaction; skips on `isUndefinedColumnError` (deploy-order guard) |
+| 2 | `GET /api/customer/orders` → `paymentExpiresAt` | mapped (`cart.ts`, `SELECT o.*` + `new Date(r.payment_expires_at).getTime()`), pinned to 2 occurrences by test |
+| 3 | `GET /api/customer/orders/:id` → `paymentExpiresAt` | same mapping, ms, `null` when the row has no window |
+| 4 | client object → `StoreOrder.paymentExpiresAt?: number \| null` | survives the transformation (no stripping layer) |
+| 5 | `paymentReservationState(order, now)` | +30 min → `hasWindow true`, `expired false`, `1 800 000`, `30:00` · +29 min → `1 740 000` · +10 s → `urgent` · −1 s → `expired`, `0`, `00:00` (never negative) · `null` → `none` (no clock) |
+| 6 | status gate | `PAYABLE_ORDER_STATUSES = pending \| pending_payment`; `paid`/`payment_failed`/… → `none` |
+| 7 | `MyOrders` / `ShopOrderDetail` | per-card countdown at the bottom-left; ONE `setInterval(…, 1000)` per page, cleared on unmount, refetched on `visibilitychange`; the gate is the phase only — **never** the payment method |
+| 8 | **production database** | ❌ **root cause** — no `orders.payment_expires_at` |
+
+**Evidence for (8).** `Migrate Neon Database` run `36371800184` (2026-09-28 02:57Z) and `36437470328`
+(14:38Z) both failed with `psql: … ERROR: Your account or project has exceeded the quota`; the last
+**successful** migrate was 2026-09-25 17:29Z, before 048 existed (048 is dated 2026-09-28). The
+read-only probe added by `chore(ci): probe the production reservation columns` hit the identical quota
+at 16:12Z (run `36449336393`). With the column absent: the guard skips the write, `SELECT o.*` simply
+omits it → `paymentExpiresAt: null` → `phase "none"` → nothing to render, **no error anywhere**.
+That silence (the §37 deploy-order net working as intended) is exactly why it looked like a frontend
+bug. So the countdown code, the API contract and the deployed frontend are all fine — the runtime
+clock simply has no deadline to count down from.
+
+**Ruled out with runtime evidence.** The deployed Vercel bundle for `velshop.vercel.app` contains
+§39's markers (`orderDetail.paymentFailedTitle`, `orderDetail.shipTo`, `aria-current`, the Thai
+`ชำระเงินอีกครั้ง`), so production is running the countdown code, not an older build. CI on
+`9442e2a`: **920 pass / 0 fail / 2 skip**, including the new
+"the reservation deadline must reach the screen (regression)" cases in `order-ux-polish.test.ts`.
+
+**One-line check (owner, Neon SQL Editor — read-only):**
+
+```sql
+SELECT column_name, COALESCE(data_type, 'MISSING (048 not applied)') AS state
+FROM (VALUES ('payment_expires_at'), ('reservation_policy')) AS want(column_name)
+LEFT JOIN information_schema.columns c
+       ON c.table_name = 'orders' AND c.column_name = want.column_name;
+```
+
+**Fix (owner):** clear the Neon quota → run Actions *Migrate Neon Database*, or paste
+`db/migrations/048_payment_reservation.sql` (additive, idempotent) into the SQL Editor → **place a
+NEW order**. Orders created before the column exists keep `NULL` forever by design (no window was
+ever taken), so they will never show a countdown — do not treat that as a bug.
+
+Once the column exists nothing else needs changing: the writer, the reads, both pages and the sweep
+are already deployed and CI-verified.
+
+Related: `checkout.md`, `database.md`, `testing.md`.

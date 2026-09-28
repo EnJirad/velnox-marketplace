@@ -794,3 +794,16 @@ workspace's `.env`; CI, with no `.env`, passes).
 **Still open (owner-side).** (1) The browser pass over both order surfaces and the method chooser in
 th/en/my. (2) The production migration (§37): without `payment_expires_at` there is no countdown in
 production, and the polish only changes what is rendered when the column exists.
+
+## 40. Countdown invisible in production — migration 048 never applied (2026-09-28)
+
+**Root cause: production Neon has no `orders.payment_expires_at`.** `Migrate Neon Database` failed
+twice today (02:57Z, 14:38Z) on `exceeded the quota` — last success 2026-09-25, before 048 existed —
+and the read-only probe at 16:12Z hit the same quota. The write is then skipped by the deploy-order
+guard, `SELECT o.*` maps the absent column to `paymentExpiresAt: null`, phase `none`, so both pages
+render nothing: silent by design (§37's net), which is why it read as a UI bug. Ruled out: the
+numeric contract, the API mapping, the method gate and the deploy (the Vercel bundle already carries
+§39's code); CI `9442e2a` **920 pass / 0 fail** with a new "reservation deadline reaches the screen"
+regression test. Full trace + owner check: `.ai/context/payment.md` → *Countdown not visible in
+production*. **Owner action:** clear the quota → run migration 048 → place a NEW order (older rows
+keep `NULL` by design).
