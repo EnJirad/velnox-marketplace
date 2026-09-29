@@ -144,8 +144,10 @@ describe("order status CHECK — the allowed set comes from the writers, not fro
     for (const status of PAYMENTS_ONLY_STATUSES) {
       expect(ALLOWED_ORDER_STATUSES).not.toContain(status);
     }
-    // `failed` is the LOW #12 dead entry in RELEASABLE_STATUSES — no writer
-    // produces it on an order, so the schema must not bless it either.
+    // `failed` was the dead entry in `RELEASABLE_STATUSES` (audit LOW #12,
+    // removed 2026-09-30): it is a `payments.status` value, not an
+    // `orders.status` one, so no writer produces it on an order and the schema
+    // must not bless it either. This assertion is what pins that decision.
     expect(ALLOWED_ORDER_STATUSES).not.toContain("failed");
   });
 

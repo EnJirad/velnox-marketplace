@@ -534,7 +534,7 @@ plus §42.3–§42.5). One line per finding, with its current status:
 | M9 | `orders.status` has no CHECK constraint | ✅ **FIXED** §48 (migration 050) |
 | M10 | VelRepeat bypasses the order-creation guards (COD row, `sold_count` at creation, uncommittable hold) | ❌ **OPEN** |
 | M11 | Inventory-row AB-BA deadlock → generic 500 `CHECKOUT_FAILED` | ❌ **OPEN** |
-| L12 | `"failed"` is dead in `RELEASABLE_STATUSES` | ❌ **OPEN** |
+| L12 | `"failed"` is dead in `RELEASABLE_STATUSES` | ✅ **FIXED** §49 |
 | L13 | `inventory-race` concurrency evidence exists only in CI (LOCAL tier) | ℹ️ evidence note |
 | L14 | Settlement is per shop/order row → one multi-shop checkout can end partially paid / expired | ❌ **OPEN** |
 
@@ -558,33 +558,21 @@ DB-gated case locally (CI is the only execution).
 · audited base `2c52bfc` (§42) · start `829347e`. **No schema change, no migration touched, no
 reservation/policy/frontend change.**
 
-- **CRITICAL #1 PASS — settlement now CONSUMES stock.** NEW `commitOrderInventory()`
-  (`backend/lib/inventory.ts:115`, called only from `stripe.ts:429`, inside the same transaction as the
-  order claim) does `quantity −N, reserved −N` for a non-variant line, leaves a variant's
-  `product_variants.stock` where the reservation put it (and never touches the parent's hold), and
-  counts `sold_count +N` exactly once. Availability `quantity - reserved` is unchanged by a sale;
-  `GREATEST(0, …)` keeps stock non-negative.
-- **CRITICAL #2 PASS — ONE release authority.** `seller-orders.ts:613` now calls
-  `releaseOrderInventory()` and that route writes no inventory row at all. The release claim also
-  refuses an order whose money settled (`PAYMENT_SETTLED_STATUSES` from `order-lock.ts`), so
-  COMMIT+RELEASE and RELEASE+COMMIT are impossible for one reservation — the same rule the expiry
-  sweep already applies.
-- **Verified (real numbers):** local `857 pass / 161 skip / 0 fail` · **CI run `36564425934` green:
-  `1016 pass / 2 skip / 0 fail`** (1018 tests / 47 files, disposable `postgres:16`) — the +14 over the
-  audited baseline (`1002`) are the NEW `backend/tests/inventory-settlement.test.ts` (Tests A–J +
-  races), all individually `(pass)`. backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 0 ·
-  `i18n:check` th=en=my=**1414** · `git diff --check` clean · `lint` = placeholder (no real linter).
-- **Wrong invariants corrected (the assertion, not the number):** four tests in
-  `payment-reservation-expiry.test.ts` (`:979`/`:1374`/`:1476`) and `payment-cancellation-race.test.ts`
-  (`:834`/`:1149`/`:1177`/`:1203`) pinned the old "quantity is never consumed" bug; they now assert
-  `quantity −N` on commit and unchanged on release.
-- **Still blocked / open:** migration 048 **PRODUCTION BLOCKED** (§42 #6) · HIGH #4, #5 ·
-  MEDIUM #8–#11 (VelRepeat is still the only non-lib stock writer).
-  ~~HIGH #3~~ — fixed by §44 (a PAID order can no longer be cancelled) ·
-  ~~`center.ts` released NOTHING on an admin cancellation~~ — also fixed by §44 (it now calls the ONE
-  release authority, so the leak closed). The §43 reading of #3 — "cancelling a PAID order keeps the
-  money and returns no stock" — was a *consequence* of the missing guard, not a refund policy; the
-  refund question itself only opens if a cancellation is ever allowed after payment.
+- **CRITICAL #1 PASS — settlement now CONSUMES stock.** NEW `commitOrderInventory()` (called only
+  from `stripe.ts:429`, in the same transaction as the order claim) does `quantity −N, reserved −N`
+  for a non-variant line, leaves a variant's `product_variants.stock` where the reservation put it,
+  and counts `sold_count +N` once. `GREATEST(0, …)` keeps stock non-negative.
+- **CRITICAL #2 PASS — ONE release authority.** `seller-orders.ts` now calls
+  `releaseOrderInventory()` and writes no inventory row at all. The claim refuses an order whose money
+  settled, so COMMIT+RELEASE and RELEASE+COMMIT are impossible for one reservation.
+- **Verified:** local `857 pass / 161 skip / 0 fail` · **CI `36564425934` green:
+  `1016 pass / 2 skip / 0 fail`** (disposable `postgres:16`) · backend `tsc` 0 · `typecheck` 4/4 ·
+  `build:apps` 0 · i18n 1414×3 · `git diff --check` clean.
+- **Wrong invariants corrected (the assertion, not the number):** seven tests pinned the old
+  "quantity is never consumed" bug; they now assert `quantity −N` on commit.
+- **Still blocked / open:** migration 048 **PRODUCTION BLOCKED** (§42 #6) · VelRepeat is still the only
+  non-lib stock writer (MEDIUM #10). ~~HIGH #3~~ and ~~the `center.ts` release leak~~ — both fixed
+  by §44.
 - **Full evidence (sections A–N, race matrix, every command):**
   [`.ai/tasks/completed/inventory-integrity-fix-2026-09-29.md`](tasks/completed/inventory-integrity-fix-2026-09-29.md)
 
@@ -598,43 +586,27 @@ reservation/policy/frontend change.**
 Two commits because they are two independent defects.
 
 - **HIGH #3 PASS — money outranks a staff cancellation.** NEW
-  `assertNoSettledPaymentForCancellation(client, orderId)`
-  (`backend/lib/order-fulfillment.ts`, the ONE fulfilment authority) reads `orders.status` plus every
-  `payments.status` in `PAYMENT_SETTLED_STATUSES` (`order-lock.ts` = `paid`, `processing`) in **one**
-  statement, under the caller's existing `lockOrderRow`, and throws `FulfillmentError(409,
-  "ORDER_ALREADY_PAID")` when the order is `paid` or a `paid` payment row exists, else `(409,
-  "PAYMENT_IN_PROGRESS")`. Gated on `status === "cancelled"` in `seller-orders.ts` (after the `shipped`
-  gate, **before** the UPDATE) and on `to === "cancelled" && to !== rawFrom` in `center.ts`.
-  This is required because `normalizeOrderStatusToFulfillment` maps `paid → pending`, so a paid order
-  looked cancellable.
-- **The codes are the customer's.** `cart.ts:1314/1324` already refused this with the same two codes;
-  reusing them gives ONE vocabulary across every cancel surface instead of a staff-only one.
-- **Center release leak (NEW from §43) — CLOSED.** `center.ts` wrote `cancelled` and released nothing,
-  so an operator cancelling an UNPAID order stranded the hold forever: the customer path refuses an
-  already-cancelled order, and the sweep only claims `PAYMENT_RESERVATION_EXPIRABLE_STATUSES`. It now
-  imports `releaseOrderInventory` from `backend/lib/inventory.ts` and calls it after the UPDATE — the
-  same single release authority `seller-orders.ts` uses, so CRITICAL #2's "ONE release authority" now
-  really is one.
-- **Deliberately NOT changed:** `NEXT_ORDER_STATUSES` (`packages/shared/src/lib/commerce.ts:461`) —
-  it is pinned by `order-status-contract.test.ts` / `seller-order-ux.test.ts` and cannot know about
-  money. The button is still offered and the localized 409 refusal is what stops the write.
-- **UI / i18n:** `SellerOrderDetail.tsx` `fulfillmentErrorMessage` maps both new codes; new
-  `orderFulfillment.cancelPaidOrder` / `cancelPaymentInProgress` in th/en/my. VelCenter already
-  toasts `error.message`, so operators see the refusal with no new code.
-- **Verified (real numbers):** `860 pass / 162 skip / 0 fail` (1022 tests, 47 files) · backend `tsc` 0 ·
-  `typecheck` 4/4 · `i18n:check` th=en=my=**1416** · `git diff --check` clean · `lint` = placeholder.
-  New tests: a DB-gated "a paid order is refused a staff cancellation; an unpaid one is not" and
-  describe block **"9. Cancellation gate — money outranks a staff cancellation"** (3 source-contract
-  tests). Test J in `inventory-settlement.test.ts` (seller-cancel ∥ settlement) now accepts
-  `[200, 400, 409]`.
-- **Still open:** the **live** index is **§42.2** (one line per finding, with its current status) —
-  do not work from an older list. Since this section was written: **HIGH #4 ✅ §46**, **HIGH #5 ✅
-  §47**, **MEDIUM #9 ✅ §48**. Still open: **MEDIUM #8** (two urgency contracts in
-  `commerce.ts:783-898`), **#10** VelRepeat bypasses `releaseOrderInventory`
-  (`velrepeat-scheduler.ts:267-350`), **#11** inventory AB-BA deadlock (`cart.ts:1027-1034`),
-  **LOW #12–#14**, and **#6** migration 048/049 — **PRODUCTION BLOCKED** on the Neon quota (owner
-  action; never report Part 2 as live in production until it is applied). Full text of all fourteen
-  findings: [`history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md).
+  `assertNoSettledPaymentForCancellation()` (`lib/order-fulfillment.ts`) reads `orders.status` plus every
+  `payments.status` in `PAYMENT_SETTLED_STATUSES` in **one** statement, under the caller's existing
+  `lockOrderRow`, and throws 409 `ORDER_ALREADY_PAID` / `PAYMENT_IN_PROGRESS`. Gated **before** the
+  cancel UPDATE in BOTH `seller-orders.ts` and `center.ts`. Required because
+  `normalizeOrderStatusToFulfillment` maps `paid → pending`, so a paid order looked cancellable. The
+  codes are the **customer's** — `cart.ts` already used the same two, giving ONE vocabulary.
+- **Center release leak (NEW from §43) — CLOSED.** `center.ts` wrote `cancelled` and released
+  nothing, stranding the hold forever. It now calls the ONE `releaseOrderInventory()` authority.
+- **Deliberately NOT changed:** `NEXT_ORDER_STATUSES` (`commerce.ts:461`) — it is pinned by
+  `order-status-contract.test.ts` / `seller-order-ux.test.ts` and cannot know about money. The button
+  is still offered; the localized 409 refusal is what stops the write.
+- **Verified:** `860 pass / 162 skip / 0 fail` · `tsc` 0 · `typecheck` 4/4 · i18n 1416×3 ·
+  `git diff --check` clean. New: a DB-gated "a paid order is refused a staff cancellation; an unpaid
+  one is not" + 3 source-contract tests.
+- **Still open:** the **live** index is **§42.2** — do not work from an older list. **HIGH #4 ✅ §46**,
+  **HIGH #5 ✅ §47**, **MEDIUM #9 ✅ §48**, **LOW #12 ✅ §49**. Still open: **MEDIUM #8** (two urgency
+  contracts in `commerce.ts:783-898`), **#10** VelRepeat bypasses `releaseOrderInventory`, **#11**
+  inventory AB-BA deadlock (`cart.ts:1027-1034`), **LOW #13–#14**, and **#6** migration 048/049 —
+  **PRODUCTION BLOCKED** on the Neon quota (owner action; never report Part 2 as live in production
+  until it is applied). Full text of all findings:
+  [`history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md).
 
 ---## 45. CI follow-up — the paid-cancellation assertion was the bug, not the code (2026-09-29)
 
@@ -662,41 +634,28 @@ Two commits because they are two independent defects.
 inventory file, no frontend, no new business rule.
 
 - **Root cause — every write to `payments` chose its row by a NEWEST-ROW HEURISTIC, not by the
-  attempt the Stripe event names.** All three sync writers (and the completed-but-unpaid
-  `checkout.session.completed` branch) used `SELECT id … WHERE order_id=$1 AND provider='stripe'
-  AND status <> 'x' ORDER BY created_at DESC LIMIT 1`, discarding `paymentIntent.id` / `session.id` —
-  in hand at every call site and already stored in `provider_payment_id` /
-  `provider_checkout_session_id`. An order **legitimately has several payment rows** (checkout
-  retires one attempt and opens another), so a **LATE event about a dead attempt landed on the live
-  one**: a late `payment_intent.payment_failed` failed the customer's still-open session, flipped the
-  ORDER to `payment_failed` and released their stock; a late `payment_intent.succeeded` recorded
-  captured money against an attempt that was never charged (that row is what a refund is built from).
-  Both are Invariant F.
-- **The order-level half was NOT the bug and was NOT changed.** `payment_failed` is terminal for
-  payment by design — `PAYABLE_ORDER_STATUSES = ['pending','pending_payment']` at `stripe.ts:886`, and
-  `.ai/context/payment.md` says the answer is "buy again". **No retry policy was invented**; the
-  supported retry is the one INSIDE the payment window — that is where the defect was.
+  attempt the Stripe event names**, discarding `paymentIntent.id` / `session.id` even though they sit in
+  `provider_payment_id` / `provider_checkout_session_id`. An order **legitimately has several payment
+  rows**, so a **LATE event about a dead attempt landed on the live one**: a late
+  `payment_intent.payment_failed` failed the customer's still-open session, flipped the ORDER to
+  `payment_failed` and released their stock; a late `payment_intent.succeeded` recorded captured money
+  against an attempt that was never charged.
+- **The order-level half was NOT the bug and was NOT changed.** `PAYABLE_ORDER_STATUSES =
+  ['pending','pending_payment']` is the retry policy — **no policy was invented**.
 - **Solution:** NEW `resolvePaymentAttemptRow()` resolves the row by `provider_payment_id` OR
-  `provider_checkout_session_id` (order + `provider='stripe'` scoped), keeping the newest-row
-  heuristic ONLY as a fallback for an event carrying no stored identifier. The terminal guards moved
-  onto the **outer** UPDATE, and `markPaymentFailed` / `markPaymentCanceled` now require **this
-  attempt to have actually transitioned** (`status NOT IN ('paid','failed','cancelled')`, read from
+  `provider_checkout_session_id`, keeping the heuristic only as a fallback for an event with no
+  stored identifier. The terminal guards moved onto the **outer** UPDATE, and `markPaymentFailed` /
+  `markPaymentCanceled` now require **this attempt to have actually transitioned** (read from
   `rowCount`) before the order moves and stock is released.
-- **Inventory impact: none.** `commitOrderInventory()` / `releaseOrderInventory()` unmodified;
-  `releaseOrderInventory` is simply no longer *reached* by an event about a dead attempt.
-- **Tests:** NEW `payment-attempt-identity.test.ts` — 7 DB-free contract tests (local proof; **4
-  failed before the fix**) + 6 DB-gated behavioural tests driving the real webhook (CI-only). Local
-  `867 pass / 168 skip / 0 fail` · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3.
-- **⚠️ First CI run FAILED (`36585376063`, `1031 pass / 2 fail`) — both were defects in the NEW TESTS,
-  not the fix, and no production file changed in response** (one test asked for a `failed` attempt to
-  become `paid`; one fixture seeded two attempts inside `idx_payments_one_active_stripe`'s predicate).
-  Both corrected; details in the audit doc §22.
-- **✅ CI GREEN on `c599606`: run `36586188271` → success, `1033 pass / 2 skip / 0 fail`**, all six
-  DB-gated attempt-identity tests `(pass)`.
+- **Inventory impact: none.** `commitOrderInventory()` / `releaseOrderInventory()` unmodified.
+- **Tests:** NEW `payment-attempt-identity.test.ts` — 7 contract (local; **4 failed before the fix**)
+  + 6 DB-gated behavioural tests. Local `867 pass / 168 skip / 0 fail` · `tsc` 0 · `typecheck` 4/4 ·
+  `build:apps` 4/4 · i18n 1416×3. ⚠️ First CI `36585376063` failed (2 NEW-TEST defects, no production
+  change). **✅ GREEN on `c599606`: `36586188271` → `1033 pass / 2 skip / 0 fail`.**
 - **Full evidence (25 sections, state map, every command):**
   [`.ai/tasks/completed/payment-failed-retry-2026-09-29.md`](tasks/completed/payment-failed-retry-2026-09-29.md)
 - **Remaining blockers:** migration 048 **PRODUCTION BLOCKED** (owner, Neon quota) · Stripe E2E ⛔
-  · browser E2E ⛔ · MEDIUM #8–#11, LOW #12–#14 open.
+  · browser E2E ⛔ · MEDIUM #8–#11, LOW #13–#14 open.
 
 ---
 
@@ -731,23 +690,15 @@ inventory file, no frontend, no new business rule.
   cases A–D, dedupe, authorization, and that resolving changes nothing but the incident. Local full
   suite **878 pass / 176 skip / 0 fail**, 1054 tests / 49 files · backend `tsc` 0 · `typecheck` 4/4 ·
   `build:apps` 4/4 · i18n 1416×3 · schema parity.
-- **⚠️ First CI run FAILED (`36590962144`, `1033 pass / 19 fail`) — a test-helper gap, NOT a
-  production defect.** `payment_incidents.order_id` is a NO ACTION FK on `orders`, but
-  `backend/tests/helpers/purge.ts` enumerates every NO ACTION child of a user's orders before
-  deleting them, and the new table was missing from that list. Incidents are written
-  **automatically** by the webhook, so all 13 pre-existing late-payment suites started failing too —
-  in their own `finally` block, with all assertions passed. Fixed by adding the table to that loop;
-  no assertion weakened, no test skipped, schema unchanged.
-- **⚠️ Second CI run FAILED (`36591311016`, `1050 pass / 2 fail`) — a test-fixture gap in THIS task's
-  own tests, not a product defect.** Both were `Expected: 200 / Received: 403`: the fixture inserted
-  only an `employees` row, but `resolvePermissions` takes the role from **`users.role`** (default
-  `'customer'`) and reads the permission list only for a `staff` account, so both seeded "operators"
-  resolved an empty one. Fixed by inserting the role on `users`; the 403 assertions were **not**
-  weakened.
-- **✅ CI GREEN on the third run — `36592289354` (`b9551b8`): `1052 pass / 2 skip / 0 fail`,
-  1054 tests / 49 files, job success.** All 18 tests of the new file executed against the
-  disposable PostgreSQL (the 2 skips are the unrelated R2 cases). Both fixes are confirmed by
-  execution, not by reasoning.
+- **⚠️ Two CI failures, both TEST defects, zero production files changed.** (a) `36590962144`
+  (`1033 pass / 19 fail`): `payment_incidents.order_id` is a NO ACTION FK on `orders`, but
+  `tests/helpers/purge.ts` enumerates every NO ACTION child before deleting, and the new table was
+  missing — so all 13 pre-existing late-payment suites failed in their own `finally` block. Fixed by
+  adding the table; no assertion weakened, no test skipped. (b) `36591311016` (`1050 pass / 2 fail`):
+  `Expected: 200 / Received: 403` — the fixture seeded an `employees` row but `resolvePermissions`
+  takes the role from **`users.role`**; fixed by inserting the role, 403 assertions **not** weakened.
+- **✅ CI GREEN on the third run — `36592289354` (`b9551b8`): `1052 pass / 2 skip / 0 fail`.** All 18
+  tests of the new file executed against the disposable PostgreSQL.
 - **Full evidence (28 sections):**
   [`.ai/tasks/completed/late-payment-operator-2026-09-29.md`](tasks/completed/late-payment-operator-2026-09-29.md)
 - **⚠️ OWNER DECISION, not solved here:** in Case A the charge sits on a `failed` row, so the
@@ -758,56 +709,98 @@ inventory file, no frontend, no new business rule.
 
 ## 48. MEDIUM #9 — `orders.status` CHECK (2026-09-29)
 
-**Status: FIXED** · `fix(db): constrain order status values` · start `08e72e1`. **No state machine
-change, no new status, no application source file touched.**
+**Status: FIXED** · `fix(db): constrain order status values` · commits `619747f`/`61d7b50`/`04ab7ea`.
+**No state machine change, no new status, no application source file touched.**
 
-- **Root cause — the only status column in the schema without a CHECK.** `orders.status` was `TEXT NOT
-  NULL DEFAULT 'pending'`, while `sellers.status`, `verification_status`, `velrepeat_plans.status` and
-  `velrepeat_runs.status` all have one. Free text lets a typo or a retired path store a value nothing
-  knows, and `normalizeOrderStatusToFulfillment()` answers `pending` for anything unrecognised — so
-  the row looks un-actioned, not broken.
+- **Root cause — the only status column in the schema without a CHECK.** Free text let a typo or a
+  retired path store a value nothing knows, and `normalizeOrderStatusToFulfillment()` answers
+  `pending` for anything unrecognised — so the row looks un-actioned, not broken.
 - **The allowed set was DERIVED from the writers, not chosen:** the 7 `FULFILLMENT_STATUSES`
   (`lib/order-fulfillment.ts`) ∪ 5 payment-lifecycle values `routes/stripe.ts` writes
   (`pending_payment`/`paid`/`payment_failed`/`refunded`) ∪ `expired` (the reservation sweep — a real
   orders.status value). The two parameterized writers (`seller-orders.ts:617`, `center.ts:517`)
-  cannot escape the set: `canTransitionFulfillment()` gates them in-transaction.
-- **Deliberately excluded:** `failed` (dead in `RELEASABLE_STATUSES`, audit LOW #12 — no writer produces
-  it) and every `payments.status` value (`processing`, `requires_action`, `partially_refunded`).
-  Payment state stays a separate axis.
-- **History — a RE-ADD, not an invention:** V0003 declared a narrower list (no `packing`, no
-  `completed`, no payment values), the real writers began failing, and **V0016 dropped it**
-  (`016_sync_schema_discrepancies.sql:26`). V0050 restores it with the correct list.
-- **Constraint:** `orders_status_check` — inline on `CREATE TABLE orders` plus an idempotent `ALTER` in
-  the schema's self-heal section; both canonical files byte-identical. **Migration V0050** — DROP IF
-  EXISTS + ADD, two statements, no trigger/enum/table. `db/run-update.sql` untouched.
-- **It is NOT the state machine, and a test proves it:** `completed → pending` (no edge in
-  `FULFILLMENT_TRANSITIONS`) is **accepted** by the database. `canTransitionFulfillment()`,
-  `lockOrderRow()` and the payment/shipment/cancellation gates remain the only transition authority;
-  none was weakened.
+  cannot escape the set: `isFulfillmentStatus` + `canTransitionFulfillment()` gate them.
+- **Deliberately excluded:** `failed` (dead in `RELEASABLE_STATUSES`, audit LOW #12 — now removed,
+  see §49) and every `payments.status` value. Payment state stays a separate axis.
+- **History — a RE-ADD, not an invention:** V0003 declared a narrower list, the real writers began
+  failing, and **V0016 dropped it**. V0050 restores it with the correct list. Inline on
+  `CREATE TABLE orders` + an idempotent `ALTER` in the self-heal section; both canonical files
+  byte-identical. `db/run-update.sql` untouched.
+- **It is NOT the state machine, and a test proves it:** `completed → pending` is **accepted** by the
+  database. The gates remain the only transition authority; none was weakened.
 - **Tests:** NEW `order-status-check-constraint.test.ts` — 17 contract (local) + 9 DB-gated
-  (PostgreSQL only). The DB-gated ones assert the **real error** (`23514`,
-  `constraint = orders_status_check`), every allowed value on INSERT *and* UPDATE, near-misses
-  (`PAID`, `" pending"`, `ship`, `payed`), and that the guarded cancel/expiry shapes still write.
-  One pre-existing test asserted the CHECK's **absence**; it was rewritten to the new truth with
-  **stronger** assertions, never skipped or weakened.
+  (PostgreSQL only). One pre-existing test asserted the CHECK's **absence**; it was rewritten to the
+  new truth with **stronger** assertions, never skipped or weakened.
 - **✅ Verification:** local `896 pass / 185 skip / 0 fail` (1081 tests / 50 files) · backend `tsc` 0 ·
   `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3 · schema parity OK · `git diff --check` clean ·
   `lint` = `echo 'Lint not yet configured'` (no real lint script in the repo).
 - **⚠️ First CI run FAILED (`36596404247` Tests + `36596404197` Migrate Neon) — two causes, one mine.**
-  (a) The **Neon quota blocker** (audit #6) killed `Migrate Neon Database` on its *first* step,
-  `CREATE TABLE schema_migrations` — pre-existing; it never reached migration 050. (b) **One bug in my
-  own test:** it seeded with `RETURNING status` (no `id`), so the following `UPDATE … WHERE id = NULL`
-  matched zero rows and raised nothing — the NOT NULL assertion was *vacuous*. Fixed by returning
-  `id, status`, asserting `rowCount === 1` before the refusal check, and re-reading the row.
+  (a) The **Neon quota blocker** (audit #6) killed `Migrate Neon Database` on its *first* step —
+  pre-existing; it never reached migration 050. (b) **One bug in my own test:** it seeded with
+  `RETURNING status` (no `id`), so the following `UPDATE … WHERE id = NULL` matched zero rows and
+  raised nothing — the NOT NULL assertion was *vacuous*. Fixed by returning `id, status`, asserting
+  `rowCount === 1` before the refusal check, and re-reading the row.
 - **✅ CI GREEN on `61d7b50`: run `36597070677` → success, `1079 pass / 2 skip / 0 fail`**, and **all
   nine** DB-gated constraint tests report `(pass)` — the only place they can execute. `Migrate Neon
   Database` does not re-run (it triggers only on a new migration file) and stays blocked on quota.
 - **⚠️ Production NOT verified, and this migration NARROWS the set.** If any historical production
   row carries an out-of-set value, V0050 **fails loudly by design** rather than rewriting a live
-  order's status — the diagnostic `SELECT` is in the migration header. 048/049 are still unapplied,
-  so 050 has not run either and production `orders.status` is still unconstrained.
+  order's status. 048/049 are still unapplied, so 050 has not run either and production
+  `orders.status` is still unconstrained.
 - **Full evidence (30 sections):**
   [`.ai/tasks/completed/order-status-check-2026-09-29.md`](tasks/completed/order-status-check-2026-09-29.md)
 - **HIGH #5 untouched** — no refund policy, no refund-route change, no reopen. The captured-charge-on-
   `failed`-attempt question remains an **OWNER DECISION**.
-- **Next task:** MEDIUM #8 — collapse the two overlapping reservation-urgency contracts in `commerce.ts`.
+- **Next task:** LOW #12 (now §49, done) → MEDIUM #8 — collapse the two overlapping reservation-urgency
+  contracts in `commerce.ts`.
+
+---
+
+## 49. LOW #12 — the dead `failed` order status removed (2026-09-30)
+
+**Status: FIXED (Case A — dead confirmed).** `fix(order): remove dead failed status guard` ·
+start `04ab7ea` (= `origin/main`). **Read-side guard cleanup only:** no schema change, no migration,
+no new status, no state-machine / cancellation / refund / retry change, no `payments.status` change,
+no Stripe semantics change, no production data touched.
+
+- **What it was.** `RELEASABLE_STATUSES` (`backend/lib/inventory.ts`) gates the atomic
+  `inventory_released` claim so a paid / shipped / delivered / completed order can never have its
+  stock returned. It listed `"failed"` — a value that **does not exist in the order domain**.
+- **Proven dead, not assumed.** All **11** `orders.status` writers were enumerated; the three
+  dynamic ones were traced to their origin (`seller-orders.ts:617` and `center.ts:517` are
+  `SET status = $1` but gated by `isFulfillmentStatus` + `canTransitionFulfillment`;
+  `payment-reservation-scheduler.ts:149` writes the constant `expired`). The union of reachable
+  values is MEDIUM #9's exact 12-value set — **no `failed`**. Two files that *look* like writers are
+  not: `inventory.ts:206` writes the **flag**, `payment-reservation.ts:139` writes the **reservation
+  window**. `git log --all -S"UPDATE orders SET status = 'failed'"` returns **nothing** — the value
+  was never written, at any commit. It was present in the *first* version of the guard (`707d1c0`),
+  i.e. a `payments.status` value copied into an `orders.status` guard.
+- **Removed from `RELEASABLE_STATUSES`; the const is now exported** so a test asserts the real value
+  instead of a copy. The claim SQL, its `$2`/`$3` binding, the idempotency claim and the
+  settled-payment refusal are **byte-identical**. There is exactly **one** call site.
+- **Every other `'failed'` is a different axis and was left alone:** `payments.status`
+  (`stripe.ts:592`, `:1259`, `payment-config.ts`), `payment_events.status` (`:1578`), the V0049
+  incident comment, `StorePaymentStatus`, and the read-side analytics guards
+  (`center.ts:281`, `products.ts:2256`, `seller-intelligence.ts:226/254/319`) — those are **reads**,
+  now unreachable no-ops, and rewriting analytics is out of scope.
+- **Tests:** NEW `dead-order-status-failed.test.ts` — **26 local + 4 DB-gated** pinning all six
+  required proofs, incl. a whole-tree assertion that **no source file writes
+  `orders.status = 'failed'`**, a table-resolution scan proving every SQL `status = 'failed'` write
+  targets `payments`/`payment_events`, the MEDIUM #9 set still exactly 12 and still without `failed`,
+  and (DB-gated) that **PostgreSQL itself refuses it with 23514 on both INSERT and UPDATE**. One
+  pre-existing MEDIUM #9 assertion (`not.toContain("failed")`) was **kept**, only its comment
+  updated. **Mutation-checked:** re-adding `"failed"` fails 6 of the new tests.
+- **✅ Verification:** local `922 pass / 189 skip / 0 fail` (1111 tests / 51 files) — exactly +26
+  pass / +4 skip / +1 file over the `04ab7ea` baseline (`896/185`, 50 files) · backend `tsc` 0 ·
+  `typecheck` 4/4 · `build:apps` 4/4 · i18n th=en=my=1416 · schema parity OK · `git diff --check`
+  clean · `lint` = `echo 'Lint not yet configured'` (no real lint script in the repo).
+- **Production:** **migrations 048/049/050 are all still NOT APPLIED** (Neon quota — **OWNER
+  ACTION**). This commit changes no migration file, so `Migrate Neon Database` will not re-run and
+  stays red for the same pre-existing reason. The change is safe to deploy before 050 exists: it only
+  narrows a read guard.
+- **Full evidence (10 sections, the full 8-category classification, every writer, every command):**
+  [`.ai/tasks/completed/dead-order-status-failed-2026-09-30.md`](tasks/completed/dead-order-status-failed-2026-09-30.md)
+- **MEDIUM #9 and HIGH #5 both untouched.** The captured-charge-on-a-`failed`-**attempt** question
+  remains an **OWNER DECISION** (it concerns `payments.status`, not modified here).
+- **Next task:** MEDIUM #8 — collapse the two overlapping reservation-urgency contracts in
+  `commerce.ts:783-898`.

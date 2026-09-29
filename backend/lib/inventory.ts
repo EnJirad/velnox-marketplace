@@ -152,17 +152,33 @@ export async function commitOrderInventory(
 // ─── Order inventory release ───────────────────────────────────────────────
 
 /**
- * Cancellex order statuses whose inventory may still be reserved.
+ * Order statuses whose inventory may still be reserved.
  * Paid / shipped / delivered / completed orders must never have their
  * inventory released — the stock has already been consumed.
+ *
+ * Every entry below is an `orders.status` value with a REAL writer; the list
+ * is the read side of the same domain, not an independent opinion about which
+ * states exist:
+ *
+ *   pending          — INSERT at checkout (routes/cart.ts) and VelRepeat
+ *                      (jobs/velrepeat-scheduler.ts)
+ *   pending_payment  — the Checkout Session was created (routes/stripe.ts)
+ *   cancelled        — customer / seller / operator / session-expired cancel
+ *   payment_failed   — `payment_intent.payment_failed` (routes/stripe.ts)
+ *   expired          — the reservation sweep (jobs/payment-reservation-scheduler.ts)
+ *
+ * `"failed"` used to sit in this list and was DEAD: it is a `payments.status`
+ * value (a per-ATTEMPT outcome), not an `orders.status` one, no writer has
+ * ever produced it on an order, and `orders_status_check` deliberately does not
+ * allow it. It was removed by audit LOW #12. Do not re-add it: adding it back
+ * would make the release guard accept a state the order domain cannot reach.
  */
-const RELEASABLE_STATUSES = [
+export const RELEASABLE_STATUSES: string[] = [
   "pending",
   "pending_payment",
   "cancelled",
   "payment_failed",
   "expired",
-  "failed",
 ];
 
 /**
