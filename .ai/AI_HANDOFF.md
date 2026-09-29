@@ -788,29 +788,35 @@ Two commits because they are two independent defects.
   was in the DB-gated test §44 itself added —
   `order-fulfillment-state-machine.test.ts` → `"a paid order is refused a staff cancellation; an
   unpaid one is not"`. It seeds `paidRow` at `orders.status = 'paid'` on purpose (that is the fourth
-  case: the raw webhook-written status must be refused, not just a `paid` **payment row**), and then
-  three lines later swept **all** rows asserting `'confirmed'` — `Expected: "confirmed"` /
+  case: the raw webhook-written status must be refused, not just a `paid` **payment row**), then three
+  lines later swept **all** rows asserting `'confirmed'` — `Expected: "confirmed"` /
   `Received: "paid"`. `assertNoSettledPaymentForCancellation` is a single `SELECT`
-  (`order-fulfillment.ts:311-319`, no write), so it could never restore `confirmed`; and no code
-  anywhere writes `confirmed` onto a `paid` order. The refusal assertion one line earlier
-  (`:769`, `ORDER_ALREADY_PAID`) **passed** — the gate was correct. Fix = compare each row against
-  **its own seeded status** (`paidRow` → `paid`, the other three → `confirmed`) and add `unpaid` to
-  the select so the ALLOWED path is covered too. No test deleted, no `.only`/`.skip`, no rule changed.
+  (`order-fulfillment.ts:311-319`, no write), so it could never restore `confirmed`, and nothing
+  writes `confirmed` onto a `paid` order. The `ORDER_ALREADY_PAID` assertion just before it
+  (`:769`) **passed** — the gate was correct. Fix: compare each row against **its own seeded status**
+  (`paidRow` → `paid`, the other three → `confirmed`) and add `unpaid` to the select so the ALLOWED
+  path is covered too. No test deleted, no `.only`/`.skip`, no rule changed.
 - **The brief's filename was wrong, and I did not guess.** `backend/tests/fulfilment-gates-and-races.test.ts`
   **does not exist**; the failure is the describe block `"fulfilment gates and races (requires
-  TEST_DATABASE_URL)"` at `order-fulfillment-state-machine.test.ts:414` (British spelling). Found by
+  TEST_DATABASE_URL)"` at `order-fulfillment-state-machine.test.ts:414` (British spelling), found by
   grepping the describe title.
-- **Test result (real numbers):** targeted `24 pass / 5 skip / 0 fail` · 12 related files
-  `189 pass / 83 skip / 0 fail` · **full `bun test backend/tests` = `860 pass / 162 skip / 0 fail`,
-  1022 tests / 47 files, 4992 expect calls, exit 0 — identical to the §44 baseline** · backend `tsc` 0 ·
-  `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` th=en=my=**1416** · `git diff --check` clean ·
-  `lint` = placeholder. Full evidence: `.ai/tasks/completed/inventory-integrity-fix-2026-09-29.md`
+- **Local result (real numbers):** targeted `24 pass / 5 skip / 0 fail` · 12 related files
+  `189 pass / 83 skip / 0 fail` · **full suite `860 pass / 162 skip / 0 fail`, 1022 tests / 47 files,
+  exit 0 — identical to the §44 baseline** · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 ·
+  `i18n:check` th=en=my=**1416** · `git diff --check` clean · `lint` = placeholder. Full evidence incl.
+  the before/after tables: `.ai/tasks/completed/inventory-integrity-fix-2026-09-29.md`
   → "CI Failure Follow-up".
-- **⚠️ Read this before trusting any DB-gated result.** That 5th skip IS the fixed test. It is
+- **✅ CI GREEN — run `36580595287` on `2a725d3`: `1020 pass / 2 skip / 0 fail`** (1022 tests /
+  47 files, 5958 expect calls), and the fixed test now logs
+  `(pass) fulfilment gates and races (requires TEST_DATABASE_URL) > a paid order is refused a staff
+  cancellation; an unpaid one is not`. The prior run `36578719384` on `08d6d68` had **exactly one**
+  failure, `Expected:
+  "confirmed"` / `Received: "paid"`, at the blanket sweep and NOT at the `ORDER_ALREADY_PAID` gate
+  assertion before it — CI itself confirms the gate was already correct.
+- **⚠️ Read this before trusting any DB-gated result.** That 5th local skip IS the fixed test. It is
   `test.skip` unless `TEST_DATABASE_URL` is set, and this workspace has no Postgres and no container
-  runtime (`docker`/`podman`/`pg_ctl`/`postgres`/`initdb`/`psql` all absent). So the local run proves
-  only that the file still parses and the other 24 tests pass — **the fix is verified by the CI run,
-  not locally.** This is the same LOCAL/CI split as audit row #17, and it is why the disposable
-  `postgres:16` job in `.github/workflows/test.yml` is the only real evidence.
-- **Still blocked (unchanged):** migration 048 **PRODUCTION BLOCKED** on the Neon quota (owner) ·
-  real Stripe E2E ⛔ · browser E2E ⛔ · audit HIGH #4/#5, MEDIUM #8–#11, LOW #12–#14 open (§44's list).
+  runtime (`docker`/`podman`/`pg_ctl`/`postgres`/`initdb`/`psql` all absent). The local run proves only
+  that the file parses and the other 24 tests pass — **the fix was proven by CI, not locally** (same
+  LOCAL/CI split as audit row #17).
+- **Still blocked (unchanged from §44):** migration 048 **PRODUCTION BLOCKED** on the Neon quota
+  (owner) · real Stripe E2E ⛔ · browser E2E ⛔ · audit HIGH #4/#5, MEDIUM #8–#11, LOW #12–#14 open.

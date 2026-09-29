@@ -531,3 +531,27 @@ The locally-skipped DB gate is unchanged and still fails closed: no Postgres and
 container runtime exist in this workspace, so the paid-cancellation test executes ONLY
 in CI, against the disposable `postgres:16` service container. That is the LOCAL tier
 recorded in the handoff, and it is why the CI run below is the proof of this fix.
+
+### CI confirmation (the real proof, since the fixed test cannot run locally)
+
+| | |
+|---|---|
+| Run | **`36580595287`** — `.github/workflows/test.yml` → job `Typecheck + tests (disposable PostgreSQL)` |
+| Commit | `2a725d3c467781d3e22f34a379cdf35c85dc2481` |
+| Result | **success** · `1020 pass / 2 skip / 0 fail` · 1022 tests / 47 files · 5958 expect calls |
+| The fixed test | `(pass) fulfilment gates and races (requires TEST_DATABASE_URL) > a paid order is refused a staff cancellation; an unpaid one is not [12.72ms]` |
+
+**What the previous run proves about the diagnosis.** Run `36578719384` on `08d6d68` was
+`failure` with **exactly one** failing test, and the log is the brief's own error verbatim:
+
+```
+Expected: "confirmed"
+Received: "paid"
+(fail) fulfilment gates and races (requires TEST_DATABASE_URL) > a paid order is refused a staff cancellation; an unpaid one is not [13.58ms]
+```
+
+i.e. the failure was at the blanket sweep, NOT at the `ORDER_ALREADY_PAID` gate assertion
+that precedes it — the gate itself was green in CI, which is the fourth piece of evidence
+that the implementation was correct and the assertion was the defect. It also confirms the
+file was `order-fulfillment-state-machine.test.ts` all along, not the
+`fulfilment-gates-and-races.test.ts` named in the brief.
