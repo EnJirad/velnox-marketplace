@@ -545,44 +545,29 @@ Full narrative: [`history/archive/AI_Handoff-2026-09-26-moderation-pagination-i1
   `velnox.com` NS delegation, §9.4 catalog reads, dead realtime channels);
   `ProductModerationQueue.tsx`'s other copy is still hardcoded Thai (pre-existing).
 
-## 21. Production PostgreSQL 53000 — first pass (2026-09-27) — archived, see §22
+## 21–22. PostgreSQL 53000 — first pass + provider-quota classification (2026-09-27) — archived
 
-Superseded by §22 (same incident, re-verified and classified as a provider-side Neon
-consumption quota) and moved to
-[`history/archive/AI_Handoff-2026-09-27-postgres-53000.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000.md).
-What stays live:
-
-- **Code fix from this pass — kept:** `POST /api/admin/sellers/:id/revoke` leaked one
-  pool connection per call (no `finally`) — the only unreleased lease in the backend.
-  Now releases in `finally` (`backend/routes/seller.ts`); `backend/tests/db-client-release.test.ts`
-  guards it (non-vacuous against the pre-fix source). Unrelated to 53000, but a real
-  service-wide outage trigger.
-- **`backend/db/index.ts`** logs failed queries/connects with `operation` + statement
-  keyword + PG `code`/`severity`/`message` only — never credentials or parameters.
-- Pool: exactly one `pg.Pool` (`max: 20`) shared by HTTP + WS + scheduler; no schema
-  change in that pass.
-
-## 22. PostgreSQL 53000 — provider-side quota classified; provider action required (2026-09-27)
-
-**Archived** (closed record; conclusions unchanged) →
-[`history/archive/AI_Handoff-2026-09-27-postgres-53000-classified.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000-classified.md).
-Moved 2026-09-27 to make room for §27 (this was the documented NEXT SPLIT). What stays live:
-production threw `53000` on **connect AND query** (a provider consumption quota had
-suspended the project's compute, not a connection-limit or storage failure); the DB is
-**reachable again** (verified read-only 2026-09-27 08:09Z — `/api/shops` 200 with real
-rows, where §22 saw 500 `DB_ERROR`). The VelRepeat 60 s poll (≈182 CU-h/month vs the
-100 CU-hour Free-plan allowance) is still an **owner cadence decision**, and the plan's
-Usage figures are still unreadable from a workspace — see §27 for the current owner action.
+Both are **archived** (closed records; conclusions unchanged) →
+[`history/archive/AI_Handoff-2026-09-27-postgres-53000.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000.md)
+and [`…-postgres-53000-classified.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000-classified.md).
+What stays live: production threw `53000` on **connect AND query** (a provider consumption quota, not a
+connection or storage limit) and is **reachable again** (verified read-only 2026-09-27 08:09Z — `/api/shops`
+200 with real rows); the VelRepeat 60 s poll (≈182 CU-h/month vs the 100 CU-hour Free-plan allowance) is
+still an **owner cadence decision**, and the plan's Usage figures are still unreadable from a workspace.
+One unrelated fix from that pass is kept: `POST /api/admin/sellers/:id/revoke` leaked one pool connection
+per call (the only unreleased lease in the backend) and now releases it in `finally`
+(`backend/routes/seller.ts`, guarded by `backend/tests/db-client-release.test.ts`). `backend/db/index.ts`
+logs failed queries/connects with `operation` + PG `code`/`severity`/`message` only — never credentials or
+parameters. Pool: exactly one `pg.Pool` (`max: 20`) shared by HTTP + WS + scheduler.
 
 **Housekeeping (do not grow this file).** Superseded records live in [`history/archive/`](history/archive/)
 with a dated index at [`.ai/history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md) — §5, §8, §10,
 §12, §14's TASK 004B narrative, §15–§19 (incl. §2's verification system → `.ai/context/verification.md` and
-§15–§16 → `.ai/context/payment.md`), §20–§26, §27–§36, and §37–§41 (pointer below). The file-edit tools
-stop matching past ~55 KB (measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not), so when appending a
-record, move a superseded one to `history/archive/` and point at it. **Done 2026-09-29:** §38–§41 →
-[`history/archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md`](history/archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md),
-which is what made room for §42. Keep §6 (gaps), §9.4/§9.5, the §14 stub, §18's BLOCKED statements and
-§42's verdicts.
+§15–§16 → `.ai/context/payment.md`), §20–§36, §37–§41, and **§42.2–§42.5** (pointers above). The file-edit
+tools stop matching past ~55 KB (measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not), so when appending
+a record, move a superseded one to `history/archive/` and point at it. **Done 2026-09-29:** §42.2–§42.5 →
+`AI_Handoff-2026-09-29-audit-findings-detail.md`, which is what made room for §44. Keep §6 (gaps), §9.4/§9.5,
+the §14 stub, §18's BLOCKED statements and §42's verdicts.
 
 **§27–§36 pointer (2026-09-27 → 2026-09-28).** Stripe sandbox audit; the velShop order-status contract +
 cart selection; one-press checkout; the PromptPay settlement diagnostic; the webhook stall + signature
@@ -602,18 +587,13 @@ statement that is correct against both schemas and cannot raise 42703). Still op
 
 **OWNER ACTION (unchanged, still required).** Clear the Neon quota, then **Actions → Migrate Neon
 Database → Run workflow** with `migration_file = 048_payment_reservation.sql` (`gh workflow run`
-answers 403 — the GitHub App has no `actions: write`), **or** run this in the Neon SQL Editor:
+answers 403 — the GitHub App has no `actions: write`), **or** run the SQL in the archive file, section
+**OWNER ACTION** ([`history/archive/AI_Handoff-2026-09-28-migration-048-read-path.md`](history/archive/AI_Handoff-2026-09-28-migration-048-read-path.md))
+in the Neon SQL Editor. It is additive and nullable, so existing orders keep `NULL` (= "no window",
+what the sweep ignores).
 
-```sql
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS reservation_policy JSONB;
-CREATE INDEX IF NOT EXISTS idx_orders_payment_expires_at
-  ON orders (payment_expires_at) WHERE payment_expires_at IS NOT NULL;
-INSERT INTO schema_migrations (migration_name)
-  VALUES ('048_payment_reservation') ON CONFLICT (migration_name) DO NOTHING;
-```
-
-Additive and nullable; existing orders keep `NULL` (= "no window", what the sweep ignores).
+**Current status (§42 #6, still true):** unapplied in production; the 30-minute countdown is therefore
+invisible to customers and the expiry sweep claims nothing.
 
 ---
 
@@ -685,117 +665,37 @@ and `quantity` is never consumed · (3) payment source of truth ✅ one · (4) o
 (`inventory.ts:73`) and the duplicated urgency model (#8) · (9) production schema mismatch ❌ (048 missing) ·
 (10) **no new authz hole** — the real exposure of this pass is integrity/financial, not access control.
 
-### 42.2 PROBLEMS — severity ordered
+### 42.2 PROBLEMS — severity ordered (index; full write-ups archived)
 
-**CRITICAL #1 — non-variant stock is never CONSUMED on payment.** `backend/routes/stripe.ts` →
-`markPaymentSucceeded`, `:426-435`. CURRENT: payment success only does
-`UPDATE inventory SET reserved = GREATEST(0, reserved - q)` (`:429`) + `products.sold_count + q` (`:433`);
-**nothing anywhere decrements `inventory.quantity`** (the only writer is the seller "set stock" endpoint,
-`backend/routes/products.ts:1487-1491`). Availability is `quantity - reserved` (`cart.ts:368, 498, 555,
-839`), so a PAID unit becomes sellable again. EXPECTED: a completed sale consumes stock. RISK: unbounded
-oversell, `sold_count > quantity`. **A test pins the wrong behaviour:**
-`backend/tests/payment-reservation-expiry.test.ts:979` `expect(after.quantity).toBe(50)`; no test asserts
-availability as `quantity - reserved`.
+**Archived 2026-09-29** → `.ai/history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`
+(the verbatim §42.2 paragraphs — source lines, SQL, and the test that pinned the wrong behaviour —
+plus §42.3–§42.5). One line per finding, with its current status:
 
-**CRITICAL #2 — seller cancellation is a SECOND release path → double release / phantom stock.**
-`backend/routes/seller-orders.ts:610-623` (variant `stock = stock + $1` `:616`;
-`UPDATE inventory SET reserved = GREATEST(0, reserved - $1)` `:621`). CURRENT: an inline restore that
-never sets `orders.inventory_released` and never calls `releaseOrderInventory()`. EXPECTED: every restore
-governed by that ONE atomic claim. RISK: cancel an order whose raw status is `pending_payment`/`paid`
-(it normalizes to `pending`) while a Stripe session is open → later `checkout.session.expired` →
-`markPaymentCanceled` → `releaseOrderInventory` still matches (`status='cancelled'` ∈ `RELEASABLE_STATUSES`,
-flag FALSE) → **stock returned twice**; the variant branch has no clamp, so phantom units are possible.
+| # | Finding (one line) | Status |
+|---|---|---|
+| C1 | Non-variant `inventory.quantity` never consumed on payment → a paid unit stays sellable | ✅ **FIXED** §43 |
+| C2 | Seller cancellation was a SECOND release path (inline restore, no claim) → double release / phantom units | ✅ **FIXED** §43 |
+| H3 | A seller/center can cancel a PAID order: money kept, no refund, no alert | ✅ **FIXED** §44 |
+| H4 | `payment_intent.payment_failed` is per-ATTEMPT but terminal at ORDER level → a later successful retry is refused | ❌ **OPEN** |
+| H5 | A payment arriving after the order died has no auto-refund and no operator queue (only `console.warn`) | ❌ **OPEN** |
+| H6 | PRODUCTION BLOCKED: migration 048 unapplied (Neon quota) → Part 2 inert in production | ⛔ **OWNER ACTION** |
+| M7 | The payment-success path ignores variants | ✅ resolved by §43 (`commitOrderInventory` leaves `product_variants.stock` to the reservation) |
+| M8 | Two overlapping urgency contracts in `commerce.ts` (3-minute vs GREEN/YELLOW/RED) | ❌ **OPEN** |
+| M9 | `orders.status` has no CHECK constraint | ❌ **OPEN** |
+| M10 | VelRepeat bypasses the order-creation guards (COD row, `sold_count` at creation, uncommittable hold) | ❌ **OPEN** |
+| M11 | Inventory-row AB-BA deadlock → generic 500 `CHECKOUT_FAILED` | ❌ **OPEN** |
+| L12 | `"failed"` is dead in `RELEASABLE_STATUSES` | ❌ **OPEN** |
+| L13 | `inventory-race` concurrency evidence exists only in CI (LOCAL tier) | ℹ️ evidence note |
+| L14 | Settlement is per shop/order row → one multi-shop checkout can end partially paid / expired | ❌ **OPEN** |
 
-**HIGH #3 — a seller/center can cancel a PAID order: money kept, no refund, no alert.**
-`order-fulfillment.ts:161` normalizes `paid → pending`, so `canTransitionOrderStatus` (`seller-orders.ts:576`)
-allows `→ cancelled` plus the #2 restore; `payments.status` stays `paid`; no refund and no operator alert.
+### 42.3–42.5 Archived (moved 2026-09-29, edit-headroom housekeeping)
 
-**HIGH #4 — `payment_intent.payment_failed` is per-ATTEMPT but terminal at ORDER level.**
-`markPaymentFailed` (`stripe.ts:447-473`; order guard `:467`) flips the order to `payment_failed` and
-releases stock; a later successful retry on the same open session is then refused by
-`markPaymentSucceeded`'s guard (`:341-441`) → the order stays `payment_failed` while
-`payments.status = 'paid'` and the stock is already released.
-
-**HIGH #5 — a payment arriving after the order died has no auto-refund and no operator queue.** Only
-`console.warn('[stripe webhook] payment received for order … that is no longer payable (…) — manual
-review/refund required')` (`stripe.ts:392-414`). The order is (correctly) never resurrected, but the
-money sits on the payment row with nothing but that log line.
-
-**HIGH #6 — PRODUCTION BLOCKED: migration 048 is unapplied, so Part 2 is INERT in production.**
-`Migrate Neon Database` dies on the Neon provider quota (`ERROR: Your account or project has exceeded the
-quota. Upgrade your plan to increase limits.` — runs `36454467112`, `36454465288`, `36437470328`,
-`36371800184`; the one-off `diag-neon-schema` probe `36449336393` too), so production Neon has **neither
-`payment_expires_at` nor `reservation_policy`**. The code is schema-tolerant by design (checkout does not
-break), but no deadline is written, the sweep self-disables and no countdown can render — **never report
-Part 2 as PASS in production**. Confirming read also needs an owner/admin session: `GET /api/_diag/schema`
-→ **401 `UNAUTHORIZED`** (`backend/middleware/diag-guard.ts`, `DIAG_ALLOWED_ROLES = ["owner","admin"]`).
-Owner action: clear the quota → apply 048 (§37's four statements or the Migrate Neon workflow) → place a
-NEW order.
-
-**MEDIUM #7 — the payment-success path ignores variants.** `stripe.ts:426-429` selects only `product_id`
-and adjusts `inventory.reserved` for every item, while `releaseOrderInventory`
-(`backend/lib/inventory.ts:155-167`) correctly distinguishes `variant_id`; `GREATEST(0, …)` hides the
-mismatch, and the update can steal a hold belonging to another order.
-
-**MEDIUM #8 — two overlapping urgency contracts coexist.** `paymentReservationPhase()` /
-`PAYMENT_RESERVATION_URGENT_MS = 3 min` AND `paymentReservationTone()` / `PAYMENT_RESERVATION_YELLOW_MS
-= 15 min` / `RED_MS = 5 min` live in the SAME file (`packages/shared/src/lib/commerce.ts:783-898`), and
-both `MyOrders.tsx` (`:163`, `:391-396`) and `ShopOrderDetail.tsx` (`:302-303`, `:511`) call both. §38
-documented only the 3-minute model; the GREEN/YELLOW/RED tiers of §39 match the code. EXPECTED: ONE
-urgency authority.
-
-**MEDIUM #9 — `orders.status` has no CHECK constraint** (`db/schema.sql:376`) while sibling tables have
-one; any string is storable, so every consumer must normalize (`getOrderStatusMeta()`,
-`normalizeOrderStatusToFulfillment()`).
-
-**MEDIUM #10 — VelRepeat is a second order-creation path that bypasses the guards.**
-`backend/jobs/velrepeat-scheduler.ts:267-350` inserts `orders.status='pending'` plus a `payments` row with
-method `'cod'` directly — skipping the fail-closed `payment-config` — increments `sold_count` at CREATION
-(not at settlement) and reserves stock that can never be committed (COD never reaches
-`markPaymentSucceeded`), so the hold lasts until cancellation.
-
-**MEDIUM #11 — inventory-row deadlock.** Order creation locks inventory rows in cart-item order
-(`cart.ts:1027-1034`); two checkouts with opposite item orderings can AB-BA deadlock → PostgreSQL aborts
-one → a generic **500 `CHECKOUT_FAILED`** instead of a 409.
-
-**LOW #12** `"failed"` is dead in `RELEASABLE_STATUSES` (`inventory.ts:73`) — nothing writes it. **#13**
-`inventory-race` is 4 pass / 8 skip locally, so concurrency evidence exists **only in CI** (LOCAL tier).
-**#14** settlement is per shop/order row, so one multi-shop checkout can end partially paid / partially
-expired.
-
-### 42.3 Cancellation matrix (read from source — no invented cells)
-
-| `orders.status` | customer cancel | reservation sweep | Stripe webhook | seller / center |
-|---|---|---|---|---|
-| `pending` | ✅ → `cancelled` + release | ✅ → `expired` + release | → `paid` / `payment_failed` / `cancelled` | → `confirmed`, `cancelled` |
-| `pending_payment` | ✅ same | ✅ same | same | same |
-| `paid` | ❌ 409 `ORDER_ALREADY_PAID` | ❌ blocked (`paid`/`processing`) | cannot move it | → `confirmed`, `cancelled` ⚠️ (#3) |
-| `confirmed` | ✅ → `cancelled` + release | ❌ | cannot move it; release refused (`confirmed` ∉ `RELEASABLE_STATUSES`) | → `packing`, `cancelled` |
-| `packing` | ❌ 400 `INVALID_STATUS` | ❌ | — | → `shipped` (needs a shipment) |
-| `shipped` / `delivered` / `completed` | ❌ | ❌ | — | next fulfilment step only |
-| `cancelled` | ⏹ 200 `alreadyFinal`, no release | ❌ | **release claim still matches ⚠️ (#2)** | — |
-| `payment_failed` | ⏹ `alreadyFinal` | ❌ | — | `confirmed` blocked (payment not confirmed) |
-| `expired` | ⏹ `alreadyFinal` | ❌ | — | — |
-| `refunded` | ❌ | ❌ | refund sync (`syncRefundFromStripe`) | — |
-
-### 42.4 Race verdicts
-
-✅ **payment × cancel** (guarded claim + lock-order-first) · ✅ **payment × expiry** (exactly-one-wins via
-the `NOT EXISTS (SELECT 1 FROM payments … status IN ('paid','processing'))` guard) · ✅ **cancel ×
-expiry** · ✅ **payment × payment** (`idx_payments_one_active_stripe` + `checkout_requests` +
-`payment_events`) · ✅ **expiry × expiry** (the DB claim is the only gate). ❌ **seller-cancel release ×
-webhook release** — #2, the one double-release left. Lock discipline ✅ (see 42.1 verdict 5). Impossible
-transition present: **`paid → cancelled`** (#3).
-
-### 42.5 Recommended next actions (owner-priority order)
-
-1. **Apply migration 048** — unblocks Part 2 in production (owner action on the Neon quota).
-2. **Fix stock consumption on settlement (#1)** and the test that pins the wrong behaviour.
-3. **Route the seller cancellation restore through `releaseOrderInventory()` (#2).**
-4. **Decide the `paid`-order cancellation policy** — refund + alert, or refuse (#3).
-5. **Give late/refused payments an operator surface** instead of a `console.warn` (#4, #5).
-6. **Add the `orders.status` CHECK (#9)** and collapse the two urgency contracts (#8).
-7. **Remove the VelRepeat order-creation bypass (#10)** and the inventory-row deadlock (#11).
+The cancellation matrix, the race verdicts and the prioritized action list moved **verbatim** to
+[`history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md),
+which now holds all of §42.2–§42.5. The matrix and the race verdicts are fully superseded: their only
+two ❌ cells were fixed by §43 (#2, the double release) and §44 (#3, `paid → cancelled`), so every
+✅ verdict in §42.4 still holds and the two ❌ ones are closed. The current open list is **§44's
+"Still open"** — do not work from 42.5.
 
 **Not claimable from a workspace (do not treat as verified anywhere).** Real Stripe E2E (no PaymentIntent,
 PromptPay QR, webhook delivery or refund has ever been executed from this sandbox); the production schema
@@ -830,9 +730,63 @@ reservation/policy/frontend change.**
   `:979` (`quantity` stays 50 after selling 2 → now 48 + availability), `:1374`, `:1476`, and
   `payment-cancellation-race.test.ts` `:834/:1149/:1177/:1203` now assert `quantity −N` on commit and
   unchanged on release.
-- **Still blocked / open:** migration 048 **PRODUCTION BLOCKED** (§42 #6) · HIGH #3 — cancelling a PAID
-  order keeps the money and now, correctly, returns no stock (refund policy = owner decision), #4, #5 ·
-  MEDIUM #8–#11 (VelRepeat is still the only non-lib stock writer) · **NEW from this pass:**
-  `center.ts:503` releases NOTHING, so an admin cancellation of an unpaid order leaks its reservation.
+- **Still blocked / open:** migration 048 **PRODUCTION BLOCKED** (§42 #6) · HIGH #4, #5 ·
+  MEDIUM #8–#11 (VelRepeat is still the only non-lib stock writer).
+  ~~HIGH #3~~ — fixed by §44 (a PAID order can no longer be cancelled) ·
+  ~~`center.ts` released NOTHING on an admin cancellation~~ — also fixed by §44 (it now calls the ONE
+  release authority, so the leak closed). The §43 reading of #3 — "cancelling a PAID order keeps the
+  money and returns no stock" — was a *consequence* of the missing guard, not a refund policy; the
+  refund question itself only opens if a cancellation is ever allowed after payment.
 - **Full evidence (sections A–N, race matrix, every command):**
   [`.ai/tasks/completed/inventory-integrity-fix-2026-09-29.md`](tasks/completed/inventory-integrity-fix-2026-09-29.md)
+
+---
+
+## 44. Paid-order cancellation guard + the center release leak (2026-09-29)
+
+**Task** `fix(orders): refuse cancelling a paid order (audit HIGH #3)` · **commit `895cebf`**
+**Task** `fix(center): release the reservation on an admin cancellation` · **commit `3d77254`**
+(both pushed, == `origin/main`). Base `c9fd09b` (§43). **No schema change, no migration touched.**
+Two commits because they are two independent defects.
+
+- **HIGH #3 PASS — money outranks a staff cancellation.** NEW
+  `assertNoSettledPaymentForCancellation(client, orderId)`
+  (`backend/lib/order-fulfillment.ts`, the ONE fulfilment authority) reads `orders.status` plus every
+  `payments.status` in `PAYMENT_SETTLED_STATUSES` (`order-lock.ts` = `paid`, `processing`) in **one**
+  statement, under the caller's existing `lockOrderRow`, and throws `FulfillmentError(409,
+  "ORDER_ALREADY_PAID")` when the order is `paid` or a `paid` payment row exists, else `(409,
+  "PAYMENT_IN_PROGRESS")`. Gated on `status === "cancelled"` in `seller-orders.ts` (after the `shipped`
+  gate, **before** the UPDATE) and on `to === "cancelled" && to !== rawFrom` in `center.ts`.
+  This is required because `normalizeOrderStatusToFulfillment` maps `paid → pending`, so a paid order
+  looked cancellable.
+- **The codes are the customer's.** `cart.ts:1314/1324` already refused this with the same two codes;
+  reusing them gives ONE vocabulary across every cancel surface instead of a staff-only one.
+- **Center release leak (NEW from §43) — CLOSED.** `center.ts` wrote `cancelled` and released nothing,
+  so an operator cancelling an UNPAID order stranded the hold forever: the customer path refuses an
+  already-cancelled order, and the sweep only claims `PAYMENT_RESERVATION_EXPIRABLE_STATUSES`. It now
+  imports `releaseOrderInventory` from `backend/lib/inventory.ts` and calls it after the UPDATE — the
+  same single release authority `seller-orders.ts` uses, so CRITICAL #2's "ONE release authority" now
+  really is one.
+- **Deliberately NOT changed:** `NEXT_ORDER_STATUSES` (`packages/shared/src/lib/commerce.ts:461`) —
+  it is pinned by `order-status-contract.test.ts` / `seller-order-ux.test.ts` and cannot know about
+  money. The button is still offered and the localized 409 refusal is what stops the write.
+- **UI / i18n:** `SellerOrderDetail.tsx` `fulfillmentErrorMessage` maps both new codes; new
+  `orderFulfillment.cancelPaidOrder` / `cancelPaymentInProgress` in th/en/my. VelCenter
+  (`Center.tsx:784`) already toasts `error.message`, so operators see the refusal with no new code.
+- **Verified (real numbers):** `NODE_ENV=test bun test backend/tests` → **860 pass / 162 skip /
+  0 fail** (1022 tests, 47 files; the DB-gated paid-cancel test runs in CI only) · backend `tsc` 0 ·
+  `typecheck` 4/4 · `i18n:check` th=en=my=**1416** · `git diff --check` clean · `lint` = placeholder.
+  New tests: a DB-gated "a paid order is refused a staff cancellation; an unpaid one is not" and
+  describe block **"9. Cancellation gate — money outranks a staff cancellation"** (3 source-contract
+  tests: the codes match `cart.ts`; both routes run the gate under the lock before the UPDATE and never
+  write `payments`; the seller page translates the refusal in th/en/my). Test J in
+  `inventory-settlement.test.ts` (seller-cancel ∥ settlement) now accepts `[200, 400, 409]`.
+- **Still open (not started — await an owner "continue"):** **HIGH #4** `payment_intent.payment_failed`
+  is terminal at ORDER level while the payment row is per-attempt (`stripe.ts:447-473`) · **HIGH #5** a
+  late payment landing after the order died is only a `console.warn`, never an operator queue
+  (`stripe.ts:392-414`) · **MEDIUM #8** two urgency contracts in `commerce.ts:783-898` · **#9** no
+  CHECK on `orders.status` · **#10** VelRepeat bypasses `releaseOrderInventory`
+  (`velrepeat-scheduler.ts:267-350`) · **#11** inventory AB-BA deadlock (`cart.ts:1027-1034`) ·
+  **LOW #12–#14** · **#6** migration 048, **PRODUCTION BLOCKED** on the Neon quota (owner action —
+  never report Part 2 as live in production until it is applied). Full text of all fourteen findings:
+  [`history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md).

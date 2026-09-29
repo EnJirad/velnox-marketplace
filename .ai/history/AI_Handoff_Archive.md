@@ -186,6 +186,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md`](./archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md) | handoff §38–§41 — the fixed 30-minute payment reservation + countdown, the order UX polish, the production-invisible countdown, and the order-surface refactor | §38 the CONSTANT 30-minute reservation (`PAYMENT_RESERVATION_MINUTES = 30`, which superseded §36's risk bands) plus the countdown and the pay-again method chooser; §39 the order UX polish (localized `orderStatus.*` namespace, ONE progress line, the order's own address snapshot, no hard-coded Thai); §40 the countdown invisible in production because migration 048 was never applied; §41 the customer + seller order-surface refactor (shared `OrderStatusBadge`, the NEW `SellerOrderDetail`, `generateOrderNumber()` in `backend/lib/order-number.ts`, `ApiError` carrying the HTTP status). Moved out on 2026-09-29 so §42 (the full-system audit of Part 1 + Part 2) could be appended; **§42 restates their current status**, including the still-unapplied migration 048 and the seller stock-release path that bypasses `releaseOrderInventory()` |
 
+### 2026-09-29 — the §42.2–§42.5 split (audit findings detail, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](./archive/AI_Handoff-2026-09-29-audit-findings-detail.md) | handoff §42.2–§42.5 — the fourteen full-system audit findings (CRITICAL #1–#2, HIGH #3–#5, MEDIUM #6–#11, LOW #12–#14) plus the cancellation matrix, race verdicts and action list | The verbatim audit text for every finding: what was read, the exact file/line, the race or money path, and the proposed fix; then the §42.3 cancellation matrix, the §42.4 race verdicts and the §42.5 prioritized actions. #1/#2 are fixed by §43, #3 by §44, #6 is owner-blocked on the Neon quota; the rest (#4, #5, #8–#14) are still open and are listed in §44's "Still open". The matrix and race verdicts are fully superseded — their only two ❌ cells were closed by §43 and §44. Moved out on 2026-09-29 so §43 and §44 could be appended — the handoff keeps only a 14-row status index table |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
