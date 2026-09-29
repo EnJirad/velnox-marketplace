@@ -407,8 +407,8 @@ Full narrative: [`history/archive/AI_Handoff-2026-09-26-moderation-pagination-i1
   `ProductModerationQueue.tsx` pages it (25) and its badge reads `pagination.total`.
 - `SellerVerificationQueue.tsx` renders through the `review.*` namespace (24 keys added in
   th/en/my); the corrupted `ระงับและลบrêtailer แล้ว` string is fixed.
-- Tooling note: both edits sat past the ~55 KB match window and were applied with a
-  single-use `bun` anchor-asserting script (same idea as §11's `patch -p1`).
+- Tooling note: both edits sat past the ~55 KB match window and were applied with a single-use
+  `bun` anchor-asserting script.
 - Still open / unchanged: §19's release blockers (Stripe TEST E2E, browser/OAuth/R2 E2E,
   `velnox.com` NS delegation, §9.4 catalog reads, dead realtime channels);
   `ProductModerationQueue.tsx`'s other copy is still hardcoded Thai (pre-existing).
@@ -619,8 +619,8 @@ Two commits because they are two independent defects.
   it is pinned by `order-status-contract.test.ts` / `seller-order-ux.test.ts` and cannot know about
   money. The button is still offered and the localized 409 refusal is what stops the write.
 - **UI / i18n:** `SellerOrderDetail.tsx` `fulfillmentErrorMessage` maps both new codes; new
-  `orderFulfillment.cancelPaidOrder` / `cancelPaymentInProgress` in th/en/my. VelCenter
-  (`Center.tsx:784`) already toasts `error.message`, so operators see the refusal with no new code.
+  `orderFulfillment.cancelPaidOrder` / `cancelPaymentInProgress` in th/en/my. VelCenter already
+  toasts `error.message`, so operators see the refusal with no new code.
 - **Verified (real numbers):** `860 pass / 162 skip / 0 fail` (1022 tests, 47 files) · backend `tsc` 0 ·
   `typecheck` 4/4 · `i18n:check` th=en=my=**1416** · `git diff --check` clean · `lint` = placeholder.
   New tests: a DB-gated "a paid order is refused a staff cancellation; an unpaid one is not" and
@@ -756,16 +756,16 @@ inventory file, no frontend, no new business rule.
 - **Remaining blockers:** migrations 048 **and 049 PRODUCTION BLOCKED** (owner, Neon quota) ·
   Stripe E2E ⛔ · browser E2E ⛔ · MEDIUM #8–#11, LOW #12–#14 open.
 
-## 48. MEDIUM #9 — `orders.status` CHECK constraint (2026-09-29)
+## 48. MEDIUM #9 — `orders.status` CHECK (2026-09-29)
 
-**Status: FIXED** · `fix(db): constrain order status values` · start `08e72e1`.
-**No state machine change, no new status, no application source file touched.**
+**Status: FIXED** · `fix(db): constrain order status values` · start `08e72e1`. **No state machine
+change, no new status, no application source file touched.**
 
-- **Root cause — the only status column in the schema without a CHECK.** `orders.status` was `TEXT
-  NOT NULL DEFAULT 'pending'`, while `sellers.status`, `verification_status`, `velrepeat_plans.status`
-  and `velrepeat_runs.status` all have one. Free text lets a typo or a retired path store a value
-  nothing knows, and `normalizeOrderStatusToFulfillment()` answers `pending` for anything
-  unrecognised — so the row looks un-actioned, not broken.
+- **Root cause — the only status column in the schema without a CHECK.** `orders.status` was `TEXT NOT
+  NULL DEFAULT 'pending'`, while `sellers.status`, `verification_status`, `velrepeat_plans.status` and
+  `velrepeat_runs.status` all have one. Free text lets a typo or a retired path store a value nothing
+  knows, and `normalizeOrderStatusToFulfillment()` answers `pending` for anything unrecognised — so
+  the row looks un-actioned, not broken.
 - **The allowed set was DERIVED from the writers, not chosen:** the 7 `FULFILLMENT_STATUSES`
   (`lib/order-fulfillment.ts`) ∪ 5 payment-lifecycle values `routes/stripe.ts` writes
   (`pending_payment`/`paid`/`payment_failed`/`refunded`) ∪ `expired` (the reservation sweep — a real
@@ -774,40 +774,40 @@ inventory file, no frontend, no new business rule.
 - **Deliberately excluded:** `failed` (dead in `RELEASABLE_STATUSES`, audit LOW #12 — no writer produces
   it) and every `payments.status` value (`processing`, `requires_action`, `partially_refunded`).
   Payment state stays a separate axis.
-- **History — this is a RE-ADD, not an invention:** V0003 declared a narrower list (no `packing`,
-  no `completed`, no payment values), the real writers began failing, and **V0016 dropped it**
+- **History — a RE-ADD, not an invention:** V0003 declared a narrower list (no `packing`, no
+  `completed`, no payment values), the real writers began failing, and **V0016 dropped it**
   (`016_sync_schema_discrepancies.sql:26`). V0050 restores it with the correct list.
-- **Constraint:** `orders_status_check` — inline on `CREATE TABLE orders` plus an idempotent `ALTER`
-  in the schema's self-heal section; both canonical files byte-identical. **Migration V0050** —
-  DROP IF EXISTS + ADD, two statements, no trigger/enum/table. `db/run-update.sql` untouched.
+- **Constraint:** `orders_status_check` — inline on `CREATE TABLE orders` plus an idempotent `ALTER` in
+  the schema's self-heal section; both canonical files byte-identical. **Migration V0050** — DROP IF
+  EXISTS + ADD, two statements, no trigger/enum/table. `db/run-update.sql` untouched.
 - **It is NOT the state machine, and a test proves it:** `completed → pending` (no edge in
   `FULFILLMENT_TRANSITIONS`) is **accepted** by the database. `canTransitionFulfillment()`,
-  `lockOrderRow()`, and the payment/shipment/cancellation gates remain the only transition
-  authority; none was weakened.
+  `lockOrderRow()` and the payment/shipment/cancellation gates remain the only transition authority;
+  none was weakened.
 - **Tests:** NEW `order-status-check-constraint.test.ts` — 17 contract (local) + 9 DB-gated
   (PostgreSQL only). The DB-gated ones assert the **real error** (`23514`,
   `constraint = orders_status_check`), every allowed value on INSERT *and* UPDATE, near-misses
   (`PAID`, `" pending"`, `ship`, `payed`), and that the guarded cancel/expiry shapes still write.
   One pre-existing test asserted the CHECK's **absence**; it was rewritten to the new truth with
   **stronger** assertions, never skipped or weakened.
-- **✅ Verification:** local `896 pass / 185 skip / 0 fail` (1081 tests / 50 files) · backend `tsc` 0
-  · `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3 · schema parity OK · `git diff --check` clean ·
-  `lint` is `echo 'Lint not yet configured'` (no real lint script in the repo).
-- **⚠️ First CI run FAILED (`36596404247` Tests + `36596404197` Migrate Neon) — two causes, one of
-  them mine.** (a) The **Neon quota blocker** (audit #6) killed `Migrate Neon Database` on its *first*
-  step, `CREATE TABLE schema_migrations` — pre-existing, it never reached migration 050. (b) **One
-  bug in my own test:** it seeded with `RETURNING status` (no `id`), so the following
-  `UPDATE … WHERE id = NULL` matched zero rows and raised nothing — the NOT NULL assertion was
-  *vacuous*. Fixed by returning `id, status`, asserting `rowCount === 1` before the refusal check,
-  and re-reading the row. **8 of the 9 DB-gated tests had already passed against real PostgreSQL**,
-  including both `23514` rejections and the legal-value/illegal-transition case.
+- **✅ Verification:** local `896 pass / 185 skip / 0 fail` (1081 tests / 50 files) · backend `tsc` 0 ·
+  `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3 · schema parity OK · `git diff --check` clean ·
+  `lint` = `echo 'Lint not yet configured'` (no real lint script in the repo).
+- **⚠️ First CI run FAILED (`36596404247` Tests + `36596404197` Migrate Neon) — two causes, one mine.**
+  (a) The **Neon quota blocker** (audit #6) killed `Migrate Neon Database` on its *first* step,
+  `CREATE TABLE schema_migrations` — pre-existing; it never reached migration 050. (b) **One bug in my
+  own test:** it seeded with `RETURNING status` (no `id`), so the following `UPDATE … WHERE id = NULL`
+  matched zero rows and raised nothing — the NOT NULL assertion was *vacuous*. Fixed by returning
+  `id, status`, asserting `rowCount === 1` before the refusal check, and re-reading the row.
+- **✅ CI GREEN on `61d7b50`: run `36597070677` → success, `1079 pass / 2 skip / 0 fail`**, and **all
+  nine** DB-gated constraint tests report `(pass)` — the only place they can execute. `Migrate Neon
+  Database` does not re-run (it triggers only on a new migration file) and stays blocked on quota.
 - **⚠️ Production NOT verified, and this migration NARROWS the set.** If any historical production
   row carries an out-of-set value, V0050 **fails loudly by design** rather than rewriting a live
   order's status — the diagnostic `SELECT` is in the migration header. 048/049 are still unapplied,
   so 050 has not run either and production `orders.status` is still unconstrained.
 - **Full evidence (30 sections):**
   [`.ai/tasks/completed/order-status-check-2026-09-29.md`](tasks/completed/order-status-check-2026-09-29.md)
-- **HIGH #5 untouched** — no refund policy, no refund-route change, no reopen. The captured-charge
-  -on-`failed`-attempt question remains an **OWNER DECISION**.
-- **Next task:** MEDIUM #8 — collapse the two overlapping reservation-urgency contracts in
-  `packages/shared`'s `commerce.ts`.
+- **HIGH #5 untouched** — no refund policy, no refund-route change, no reopen. The captured-charge-on-
+  `failed`-attempt question remains an **OWNER DECISION**.
+- **Next task:** MEDIUM #8 — collapse the two overlapping reservation-urgency contracts in `commerce.ts`.

@@ -17,8 +17,8 @@ policy.
 
 ## 3. Ending SHA
 
-`619747f32b56ba722e13be6b0882a8bae515cf50` (implementation commit) — then the test-fix commit
-recorded in §25.
+`61d7b509bd607226066b8c4d211f3539f9fb7122` (the CI-green head). Implementation commit
+`619747f32b56ba722e13be6b0882a8bae515cf50`, test-fix commit `61d7b50…`.
 
 ## 4. Branch
 
@@ -319,9 +319,17 @@ to PostgreSQL as `NULL`, `WHERE id = NULL` matched **zero rows**, no error was r
 refusal check (so the statement can never again be a silent no-op), and the row's status is read back
 afterwards. The assertion was strengthened, not weakened — no test was skipped or deleted.
 
-### 25.2 Second run
+### 25.2 Second run — `36597070677` on `61d7b50` — **GREEN**
 
-Recorded after the fix was pushed.
+| | |
+|---|---|
+| Workflow / job | `Tests` → `Typecheck + tests (disposable PostgreSQL)` · **success** |
+| Result | **1079 pass / 2 skip / 0 fail** — 1081 tests across 50 files |
+| DB-gated evidence | **all 9** of this task's PostgreSQL tests report `(pass)`: the constraint exists with the derived set, every allowed value inserts *and* updates, invalid insert **and** update are refused with `23514`, near-misses are refused, the guarded cancel/expiry shapes still write, `DEFAULT`/`NOT NULL` hold, and a legal value reached by an illegal transition is still accepted |
+
+The two skips are the unrelated R2-credential cases. The `Migrate Neon Database` workflow triggers
+only when a file under `db/migrations/` changes, so it did not re-run for this test-only commit; its
+failure in §25.1 was the pre-existing Neon quota blocker and remains an owner action.
 
 ## 26. Production status
 
