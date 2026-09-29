@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-29 · **Branch:** `main` · **Latest pass:** Full-system audit of Part 1 + Part 2 (`2c52bfc`) — **read the audit §42 FIRST**: it records what was checked, what PASSED, what FAILED and what is **PRODUCTION BLOCKED**, incl. two CRITICAL inventory defects and the still-unapplied migration 048
+**Last updated:** 2026-09-29 · **Branch:** `main` · **Latest pass:** inventory CRITICAL #1/#2 fixed (`8b89ecf`, **§43**) — §42 remains the full-system audit: what PASSED, what FAILED, what is **PRODUCTION BLOCKED** (migration 048 still unapplied)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -801,3 +801,38 @@ transition present: **`paid → cancelled`** (#3).
 PromptPay QR, webhook delivery or refund has ever been executed from this sandbox); the production schema
 query (401); browser E2E of `/orders`, `/cart` and the seller order pages (no signed-in session); and any
 DB-gated case locally (see 42.1 #17 — CI is the only execution).
+
+---
+
+## 43. Inventory integrity — audit CRITICAL #1 + #2 fixed (2026-09-29)
+
+**Task** `fix(inventory): harden settlement and release` · **commit `8b89ecf`** (pushed, == `origin/main`)
+· audited base `2c52bfc` (§42) · start `829347e`. **No schema change, no migration touched, no
+reservation/policy/frontend change.**
+
+- **CRITICAL #1 PASS — settlement now CONSUMES stock.** NEW `commitOrderInventory()`
+  (`backend/lib/inventory.ts:115`, called only from `stripe.ts:429`, inside the same transaction as the
+  order claim) does `quantity −N, reserved −N` for a non-variant line, leaves a variant's
+  `product_variants.stock` where the reservation put it (and never touches the parent's hold), and
+  counts `sold_count +N` exactly once. Availability `quantity - reserved` is unchanged by a sale;
+  `GREATEST(0, …)` keeps stock non-negative.
+- **CRITICAL #2 PASS — ONE release authority.** `seller-orders.ts:613` now calls
+  `releaseOrderInventory()` and that route writes no inventory row at all. The release claim also
+  refuses an order whose money settled (`PAYMENT_SETTLED_STATUSES` from `order-lock.ts`), so
+  COMMIT+RELEASE and RELEASE+COMMIT are impossible for one reservation — the same rule the expiry
+  sweep already applies.
+- **Verified (real numbers):** local `857 pass / 161 skip / 0 fail` · **CI run `36564425934` green:
+  `1016 pass / 2 skip / 0 fail`** (1018 tests / 47 files, disposable `postgres:16`) — the +14 over the
+  audited baseline (`1002`) are the NEW `backend/tests/inventory-settlement.test.ts` (Tests A–J +
+  races), all individually `(pass)`. backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 0 ·
+  `i18n:check` th=en=my=**1414** · `git diff --check` clean · `lint` = placeholder (no real linter).
+- **Wrong invariants corrected (the assertion, not the number):** `payment-reservation-expiry.test.ts`
+  `:979` (`quantity` stays 50 after selling 2 → now 48 + availability), `:1374`, `:1476`, and
+  `payment-cancellation-race.test.ts` `:834/:1149/:1177/:1203` now assert `quantity −N` on commit and
+  unchanged on release.
+- **Still blocked / open:** migration 048 **PRODUCTION BLOCKED** (§42 #6) · HIGH #3 — cancelling a PAID
+  order keeps the money and now, correctly, returns no stock (refund policy = owner decision), #4, #5 ·
+  MEDIUM #8–#11 (VelRepeat is still the only non-lib stock writer) · **NEW from this pass:**
+  `center.ts:503` releases NOTHING, so an admin cancellation of an unpaid order leaks its reservation.
+- **Full evidence (sections A–N, race matrix, every command):**
+  [`.ai/tasks/completed/inventory-integrity-fix-2026-09-29.md`](tasks/completed/inventory-integrity-fix-2026-09-29.md)
