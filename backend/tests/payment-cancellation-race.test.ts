@@ -48,6 +48,7 @@ import {
 } from "../lib/order-lock.js";
 import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
 import { setupCartRoutes } from "../routes/cart.js";
+import { setupSellerOrderRoutes } from "../routes/seller-orders.js";
 import { setupStripeRoutes } from "../routes/stripe.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
 import { purgeUsers } from "./helpers/purge.js";
@@ -228,6 +229,9 @@ describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => 
     app.use(cookieParser());
     setupCartRoutes(app);
     setupStripeRoutes(app);
+    // The seller side of the fulfilment races: both legs of every cancel-vs-
+    // seller case below are REAL HTTP requests against the REAL routes.
+    setupSellerOrderRoutes(app);
     return app;
   }
 
@@ -336,6 +340,23 @@ describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => 
       data?: { status?: string; cancelled?: boolean; stockReleased?: boolean };
       error?: { code?: string };
     };
+    return { status: res.status, body };
+  }
+
+  /** The seller's own transition endpoint — the other half of every race here. */
+  async function sellerSetStatus(
+    base: string,
+    orderId: string,
+    sellerUserId: string,
+    status: string,
+    extra?: Record<string, unknown>,
+  ) {
+    const res = await fetch(`${base}/api/seller/orders/${orderId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: `velnox_session=${token(sellerUserId)}` },
+      body: JSON.stringify({ status, ...(extra ?? {}) }),
+    });
+    const body = (await res.json()) as { data?: { status?: string }; error?: { code?: string } };
     return { status: res.status, body };
   }
 
@@ -746,6 +767,316 @@ describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => 
       expect(released.inventoryReleased).toBe(true);
     } finally {
       await purgeUsers([paidSeed.ownerId, paidSeed.sellerUserId, releasedSeed.ownerId, releasedSeed.sellerUserId]);
+    }
+  });
+
+  // ── Concurrency cases that need BOTH sides in flight ──────────────────────
+  // Every test below holds the order row in a separate connection, issues both
+  // real HTTP requests (or the real worker) while the lock is held, proves BOTH
+  // are waiting on that one row, then releases it. That is what makes them race
+  // tests rather than two sequential calls: the winner is decided by PostgreSQL,
+  // never by the order the test happened to run them in.
+
+  test("TEST 06 — checkout.session.completed ∥ payment_intent.succeeded settle the order exactly once", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    try {
+      await holdOrderLock(seed.orderId, async (release) => {
+        let settled = 0;
+        const session = deliverWebhook(paidSessionEvent(seed.orderId)).then((s) => { settled++; return s; });
+        const intent = deliverWebhook(succeededEvent(seed.orderId)).then((s) => { settled++; return s; });
+
+        await sleep(600);
+        expect(settled).toBe(0); // BOTH deliveries are queued on the same order row
+        await release();
+
+        const [s1, s2] = await Promise.all([session, intent]);
+        expect(s1).toBe(200);
+        expect(s2).toBe(200);
+
+        const after = await stateOf(seed.orderId, seed.productId);
+        expect(after.status).toBe("paid");
+        expect(after.soldCount).toBe(3); // committed ONCE, whichever event won
+        expect(after.reserved).toBe(0); // never −3
+        expect(after.inventoryReleased).toBe(false);
+        expect(after.payments.filter((p) => p.status === "paid")).toHaveLength(1);
+      });
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 07 — the reservation expiry ∥ a settlement: one valid final state, decided by the database", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    const { query } = await import("../db/index.js");
+    await query(`UPDATE orders SET payment_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, [seed.orderId]);
+    try {
+      await holdOrderLock(seed.orderId, async (release) => {
+        let decided = 0;
+        const settle = deliverWebhook(succeededEvent(seed.orderId)).then((s) => { decided++; return s; });
+        const expire = expirePaymentReservation(seed.orderId).then((r) => { decided++; return r; });
+
+        await sleep(600);
+        expect(decided).toBe(0); // both wait on the order row — no interleaved writes
+        await release();
+
+        const [webhookStatus, expiry] = await Promise.all([settle, expire]);
+        expect(webhookStatus).toBe(200);
+        expect(["expired", "skipped"]).toContain(expiry.outcome);
+
+        const after = await stateOf(seed.orderId, seed.productId);
+        const paymentWon = after.status === "paid";
+        const expiryWon = after.status === "expired";
+        // Exactly one valid final state — never a mixture, never a resurrection.
+        expect(paymentWon || expiryWon).toBe(true);
+        // Whatever happened, the reservation was released exactly once OR
+        // committed exactly once — never both, never neither.
+        expect(after.reserved).toBe(0);
+        expect(after.quantity).toBe(50); // stock never goes negative
+        expect(after.soldCount).toBe(paymentWon ? 3 : 0);
+        expect(after.inventoryReleased).toBe(!paymentWon);
+
+        if (paymentWon) {
+          expect(expiry.outcome).toBe("skipped"); // the sweep refuses a settled charge
+        } else {
+          // The order is NOT resurrected, and the money is still RECORDED —
+          // which is exactly what makes it refundable rather than lost.
+          expect(after.payments[0].status).toBe("paid");
+          expect(after.soldCount).toBe(0);
+        }
+      });
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 18 — the SAME Stripe event delivered concurrently settles exactly once", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    const event = succeededEvent(seed.orderId);
+    try {
+      // Three parallel deliveries of one event id: Stripe retries and parallel
+      // workers both land here, and `payment_events` may claim the id only once.
+      const results = await Promise.all([
+        deliverWebhook(event),
+        deliverWebhook(event),
+        deliverWebhook(event),
+      ]);
+      expect(results).toEqual([200, 200, 200]);
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("paid");
+      expect(after.soldCount).toBe(3);
+      expect(after.reserved).toBe(0);
+      expect(after.inventoryReleased).toBe(false);
+      expect(after.payments.filter((p) => p.status === "paid")).toHaveLength(1);
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 15 — a duplicated settlement retry after a cancellation changes nothing", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    try {
+      await withServer(async (base) => {
+        expect((await cancel(base, seed.orderId, seed.ownerId)).status).toBe(200);
+      });
+
+      const event = succeededEvent(seed.orderId);
+      expect(await deliverWebhook(event)).toBe(200);
+      expect(await deliverWebhook(event)).toBe(200); // Stripe's own redelivery
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("cancelled"); // never resurrected by a retry
+      expect(after.inventoryReleased).toBe(true);
+      expect(after.reserved).toBe(0);
+      expect(after.soldCount).toBe(0);
+      expect(after.payments.filter((p) => p.status === "paid")).toHaveLength(1); // money recorded ONCE
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 09 — cancel ∥ confirmed: the payment axis decides, both in flight", async () => {
+    const seed = await seedOrder({ status: "pending", quantity: 3, payment: { status: "requires_action" } });
+    try {
+      await holdOrderLock(seed.orderId, async (release) => {
+        let decided = 0;
+        const confirmed = withServer((base) => sellerSetStatus(base, seed.orderId, seed.sellerUserId, "confirmed"))
+          .then((r) => { decided++; return r; });
+        const cancelled = withServer((base) => cancel(base, seed.orderId, seed.ownerId))
+          .then((r) => { decided++; return r; });
+
+        await sleep(600);
+        expect(decided).toBe(0); // both blocked on the SAME order row
+        await release();
+
+        const [sellerRes, cancelRes] = await Promise.all([confirmed, cancelled]);
+        // Neither answer is a 500 — a deadlock would surface as one.
+        expect(cancelRes.status).toBe(200);
+        expect([400, 409]).toContain(sellerRes.status);
+        // `confirmed` requires SETTLED money, and there is none: the seller may
+        // never move an unpaid order into fulfilment, whoever held the lock first.
+        if (sellerRes.status === 409) expect(sellerRes.body.error?.code).toBe("PAYMENT_NOT_CONFIRMED");
+        else expect(sellerRes.body.error?.code).toBe("INVALID_TRANSITION");
+        expect(cancelRes.body.data?.cancelled).toBe(true);
+
+        const after = await stateOf(seed.orderId, seed.productId);
+        expect(after.status).toBe("cancelled");
+        expect(after.inventoryReleased).toBe(true);
+        expect(after.reserved).toBe(0); // released exactly once
+        expect(after.soldCount).toBe(0);
+      });
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 08 — cancel ∥ packing: both in flight, one winner, no contradiction", async () => {
+    // The genuinely contested case: an order in `confirmed` whose payment has
+    // NOT settled, so BOTH the customer's cancel and the seller's `packing`
+    // pass their own gates and it is the lock that decides. (The common shape —
+    // a Card order that WAS paid — is covered by the second half of this test,
+    // where the money gate refuses the cancel outright.)
+    const seed = await seedOrder({ status: "confirmed", quantity: 3, payment: { status: "requires_action" } });
+    try {
+      await holdOrderLock(seed.orderId, async (release) => {
+        let decided = 0;
+        const packed = withServer((base) => sellerSetStatus(base, seed.orderId, seed.sellerUserId, "packing"))
+          .then((r) => { decided++; return r; });
+        const cancelled = withServer((base) => cancel(base, seed.orderId, seed.ownerId))
+          .then((r) => { decided++; return r; });
+
+        await sleep(600);
+        expect(decided).toBe(0); // BOTH are inside their transaction, waiting
+        await release();
+
+        const [packRes, cancelRes] = await Promise.all([packed, cancelled]);
+        expect(cancelRes.status).toBe(200); // definitive answers, never a 500
+        expect([200, 400]).toContain(packRes.status);
+
+        const after = await stateOf(seed.orderId, seed.productId);
+        const cancelWon = after.status === "cancelled";
+        const packWon = after.status === "packing";
+        expect(cancelWon || packWon).toBe(true); // never both, never neither
+
+        if (cancelWon) {
+          // `packing` is refused: a cancelled order may never start fulfilment.
+          expect(cancelRes.body.data?.cancelled).toBe(true);
+          expect(packRes.status).toBe(400);
+          expect(packRes.body.error?.code).toBe("INVALID_TRANSITION");
+          expect(after.inventoryReleased).toBe(true);
+          expect(after.reserved).toBe(0); // released exactly once
+        } else {
+          // `packing` committed first: the cancel then finds nothing to move —
+          // the point of no return — and NO stock is handed back.
+          expect(cancelRes.body.data?.cancelled).toBe(false);
+          expect(cancelRes.body.data?.alreadyFinal).toBe(true);
+          expect(packRes.status).toBe(200);
+          expect(after.inventoryReleased).toBe(false);
+          expect(after.reserved).toBe(3); // still held for the buyer
+        }
+        expect(after.soldCount).toBe(0); // nothing sold in either case
+      });
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 08b — on a PAID order the money gate refuses the cancel before packing is even asked", async () => {
+    // The production shape of the same race: pay → confirm → cancel ∥ packing.
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    try {
+      expect(await deliverWebhook(succeededEvent(seed.orderId))).toBe(200);
+      await withServer(async (base) => {
+        expect((await sellerSetStatus(base, seed.orderId, seed.sellerUserId, "confirmed")).status).toBe(200);
+
+        const [cancelRes, packRes] = await Promise.all([
+          cancel(base, seed.orderId, seed.ownerId),
+          sellerSetStatus(base, seed.orderId, seed.sellerUserId, "packing"),
+        ]);
+        expect(cancelRes.status).toBe(409);
+        expect(cancelRes.body.error?.code).toBe("ORDER_ALREADY_PAID");
+        expect(packRes.status).toBe(200);
+      });
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("packing");
+      expect(after.inventoryReleased).toBe(false);
+      expect(after.reserved).toBe(0); // committed at settlement, never re-reserved
+      expect(after.soldCount).toBe(3);
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 10 — cancel ∥ shipped: a packed order can no longer be cancelled", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    try {
+      expect(await deliverWebhook(succeededEvent(seed.orderId))).toBe(200);
+      await withServer(async (base) => {
+        expect((await sellerSetStatus(base, seed.orderId, seed.sellerUserId, "confirmed")).status).toBe(200);
+        expect((await sellerSetStatus(base, seed.orderId, seed.sellerUserId, "packing")).status).toBe(200);
+
+        const [cancelRes, shipRes] = await Promise.all([
+          cancel(base, seed.orderId, seed.ownerId),
+          sellerSetStatus(base, seed.orderId, seed.sellerUserId, "shipped", {
+            carrier: "Kerry",
+            trackingNumber: "TH-RACE-1",
+          }),
+        ]);
+        // `packing` is past the point of no return: the cancel is refused by the
+        // state machine (and by the money gate) whichever answer arrives first.
+        expect([400, 409]).toContain(cancelRes.status);
+        expect(["INVALID_STATUS", "ORDER_ALREADY_PAID"]).toContain(cancelRes.body.error?.code ?? "");
+        expect(shipRes.status).toBe(200);
+      });
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("shipped");
+      expect(after.inventoryReleased).toBe(false);
+      expect(after.soldCount).toBe(3);
+      const { query } = await import("../db/index.js");
+      const shipments = await query(
+        `SELECT carrier, tracking_number FROM shipments WHERE order_id = $1`,
+        [seed.orderId],
+      );
+      // `shipped` is never a placeholder: a real shipment with real tracking.
+      expect(shipments.rows).toHaveLength(1);
+      expect(shipments.rows[0]).toMatchObject({ carrier: "Kerry", tracking_number: "TH-RACE-1" });
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 14 — a cancelled order can NEVER return to active fulfilment (concurrent attempts)", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    try {
+      await withServer(async (base) => {
+        expect((await cancel(base, seed.orderId, seed.ownerId)).status).toBe(200);
+
+        // Every forward move, issued at the same moment, from the same endpoint.
+        const attempts = await Promise.all([
+          sellerSetStatus(base, seed.orderId, seed.sellerUserId, "confirmed"),
+          sellerSetStatus(base, seed.orderId, seed.sellerUserId, "packing"),
+          sellerSetStatus(base, seed.orderId, seed.sellerUserId, "shipped", {
+            carrier: "Kerry",
+            trackingNumber: "TH-ZOMBIE",
+          }),
+        ]);
+        for (const attempt of attempts) {
+          expect(attempt.status).toBe(400);
+          expect(attempt.body.error?.code).toBe("INVALID_TRANSITION");
+        }
+      });
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("cancelled"); // terminal, under concurrent pressure
+      expect(after.inventoryReleased).toBe(true);
+      expect(after.reserved).toBe(0);
+      expect(after.soldCount).toBe(0);
+      const { query } = await import("../db/index.js");
+      expect((await query(`SELECT id FROM shipments WHERE order_id = $1`, [seed.orderId])).rows).toHaveLength(0);
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
     }
   });
 });
