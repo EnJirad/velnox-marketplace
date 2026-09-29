@@ -754,6 +754,8 @@ inventory file, no frontend, no new business rule.
   fixture seeded two attempts inside `idx_payments_one_active_stripe`'s predicate, so the database
   correctly rejected it — the legal shape is one active + one retired attempt. Both were corrected
   and re-verified; details in the audit doc §22.
+- **✅ CI GREEN on `c599606`: run `36586188271` → success, `1033 pass / 2 skip / 0 fail`**, and all six
+  DB-gated attempt-identity tests report `(pass)` — the only place they can execute.
 - **Full evidence (25 sections, state map, every command):**
   [`.ai/tasks/completed/payment-failed-retry-2026-09-29.md`](tasks/completed/payment-failed-retry-2026-09-29.md)
 - **Recorded dependency (not fixed, deliberately):** a captured charge arriving for an attempt

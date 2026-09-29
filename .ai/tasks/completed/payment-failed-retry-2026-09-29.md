@@ -267,6 +267,10 @@ $ bun run lint     → "Lint not yet configured" (placeholder), exit 0
 
 ## 22. CI result
 
+**FINAL: run `36586188271` on `c599606` → `success` · `1033 pass / 2 skip / 0 fail` · 1035 tests
+/ 48 files.** All six DB-gated attempt-identity tests report `(pass)`, which is the only place they
+can execute.
+
 **Run `36585376063` on the first push (`0d786f4`) FAILED — and both failures were defects in the
 NEW TESTS, not in the fix.** Reported before fixing, as the rules require.
 
