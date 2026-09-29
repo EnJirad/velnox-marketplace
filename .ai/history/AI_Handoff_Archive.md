@@ -180,6 +180,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-28-migration-048-read-path.md`](./archive/AI_Handoff-2026-09-28-migration-048-read-path.md) | handoff §37 — production checkout down: migration 048 never applied | The two independent causes (the `Migrate Neon Database` run dying on the §22 Neon quota, and the checkout READ naming `payment_expires_at` so a missing deadline took checkout down instead of being unenforced), the `selectOrderPaymentRow()` fix (`to_jsonb(o) ->> 'payment_expires_at'`, chosen over "catch 42703 and retry" because pg poisons the whole transaction), the repair of the pre-existing red `main` (two HTTP harnesses that had never mounted `stripeWebhookRawBody` / `cookieParser`), and the disposable-PostgreSQL verification. Moved out on 2026-09-29 for edit headroom so §41 (order UX refactor) could be appended; §40 restates the same root cause with the resolution, and the OWNER SQL stayed inline in the handoff |
 
+### 2026-09-29 — the §38–§41 split (payment reservation + order surfaces, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md`](./archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md) | handoff §38–§41 — the fixed 30-minute payment reservation + countdown, the order UX polish, the production-invisible countdown, and the order-surface refactor | §38 the CONSTANT 30-minute reservation (`PAYMENT_RESERVATION_MINUTES = 30`, which superseded §36's risk bands) plus the countdown and the pay-again method chooser; §39 the order UX polish (localized `orderStatus.*` namespace, ONE progress line, the order's own address snapshot, no hard-coded Thai); §40 the countdown invisible in production because migration 048 was never applied; §41 the customer + seller order-surface refactor (shared `OrderStatusBadge`, the NEW `SellerOrderDetail`, `generateOrderNumber()` in `backend/lib/order-number.ts`, `ApiError` carrying the HTTP status). Moved out on 2026-09-29 so §42 (the full-system audit of Part 1 + Part 2) could be appended; **§42 restates their current status**, including the still-unapplied migration 048 and the seller stock-release path that bypasses `releaseOrderInventory()` |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

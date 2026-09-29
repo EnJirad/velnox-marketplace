@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-28 · **Branch:** `main` · **Latest pass:** Fixed 30-minute payment reservation + countdown + pay-again UX — the reservation is a constant 30 min and both order surfaces count it down (§38, supersedes §36)
+**Last updated:** 2026-09-29 · **Branch:** `main` · **Latest pass:** Full-system audit of Part 1 + Part 2 (`2c52bfc`) — **read the audit §42 FIRST**: it records what was checked, what PASSED, what FAILED and what is **PRODUCTION BLOCKED**, incl. two CRITICAL inventory defects and the still-unapplied migration 048
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -574,32 +574,21 @@ rows, where §22 saw 500 `DB_ERROR`). The VelRepeat 60 s poll (≈182 CU-h/month
 100 CU-hour Free-plan allowance) is still an **owner cadence decision**, and the plan's
 Usage figures are still unreadable from a workspace — see §27 for the current owner action.
 
-**Housekeeping:** superseded material lives in [`history/archive/`](history/archive/)
-(dated index: `.ai/history/AI_Handoff_Archive.md`) — §5's 2026-09-22 passes and 2026-09-23
-production-verification pass, §8,
-§10, §12, §14's TASK 004B narrative, §17 and §19 (moved 2026-09-27), and (2026-09-26)
-§2's verification system →
-`.ai/context/verification.md` plus §15/§16's payment narratives →
-`.ai/context/payment.md` + §18. 55 KB is the hard limit where editing stops working
-(measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not). **Done 2026-09-27:** §21–§22 stubs above, and §23–§26 moved verbatim to
-[`history/archive/AI_Handoff-2026-09-27-closed-records.md`](history/archive/AI_Handoff-2026-09-27-closed-records.md).
-**Done 2026-09-28:** §27–§36 collapsed into the ONE pointer note below (each already had a full
-record in `history/archive/`), which is what kept this file editable for §39. When appending, move a
-superseded record to `history/archive/` and point at it — do not grow this file.
-Keep §6 (gaps), §9.4/§9.5, the §14 stub, and §18's BLOCKED statements.
+**Housekeeping (do not grow this file).** Superseded records live in [`history/archive/`](history/archive/)
+with a dated index at [`.ai/history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md) — §5, §8, §10,
+§12, §14's TASK 004B narrative, §15–§19 (incl. §2's verification system → `.ai/context/verification.md` and
+§15–§16 → `.ai/context/payment.md`), §20–§26, §27–§36, and §37–§41 (pointer below). The file-edit tools
+stop matching past ~55 KB (measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not), so when appending a
+record, move a superseded one to `history/archive/` and point at it. **Done 2026-09-29:** §38–§41 →
+[`history/archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md`](history/archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md),
+which is what made room for §42. Keep §6 (gaps), §9.4/§9.5, the §14 stub, §18's BLOCKED statements and
+§42's verdicts.
 
-## 27–36. Archived records (2026-09-27 → 2026-09-28)
-
-Each is recorded in full under [`history/archive/`](history/archive/) (dated index:
-[`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)): §27 the Stripe sandbox/test-mode
-audit (`AI_Handoff-2026-09-27-stripe-sandbox-audit.md`); §28–§29 the velShop order-status contract
-and the cart selection UI (`…-velshop-orders-cart.md`); §30 checkout → Stripe in one press + resume
-payment (`…-velshop-checkout-onepress.md`); §31 the PromptPay settlement diagnostic
-(`…-promptpay-settlement.md`); §32–§33 the webhook stall + signature boundary
-(`…-stripe-webhook-stall-and-signature.md`); §34 the pool-latency finding (`…-db-pool-latency.md`);
-§35 customer order cancellation (`…-customer-cancellation.md`, its two owner-side items still open);
-§36 the superseded risk-based reservation v1 (`…-dynamic-reservation-v1.md`). The deploy-order net
-they led to is §37; the order surfaces themselves are recorded by §38 and §39.
+**§27–§36 pointer (2026-09-27 → 2026-09-28).** Stripe sandbox audit; the velShop order-status contract +
+cart selection; one-press checkout; the PromptPay settlement diagnostic; the webhook stall + signature
+boundary; DB pool latency; customer order cancellation (its two owner-side items still open); the
+superseded risk-based reservation v1. Each is recorded in full in `history/archive/` per the index above
+(the per-file list was replaced by this pointer on 2026-09-29).
 
 ---
 
@@ -628,227 +617,187 @@ Additive and nullable; existing orders keep `NULL` (= "no window", what the swee
 
 ---
 
-## 38. Fixed 30-minute payment reservation + countdown + pay-again UX (2026-09-28)
+## 38–41. Archived (moved 2026-09-29, edit-headroom housekeeping)
 
-**Reported (Part 1 FINAL, before VelRepeat).** Finish the unpaid-order / payment-reservation
-experience and make the Order UI production-ready: the reservation is **exactly 30 minutes** (no
-dynamic duration), the customer sees a countdown in the order list and on the order page, and can
-pay again — choosing the payment method again — while the window is valid. VelRepeat, customer
-memory, traffic/sales signals and personalization are explicitly OUT of scope.
+§38 (fixed 30-minute reservation + countdown + pay-again UX), §39 (order UX polish — status, progress,
+address, language), §40 (countdown invisible in production — migration 048) and §41 (order-surface
+refactor: shared `OrderStatusBadge`, new seller order detail, `generateOrderNumber()`) moved **verbatim**
+to [`history/archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md`](history/archive/AI_Handoff-2026-09-29-part2-and-order-surfaces.md)
+(index row: [`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)) so §42 could be appended.
 
-**The window is now a CONSTANT — this supersedes §36's risk-based windows.** `backend/lib/payment-reservation.ts`
-was rewritten so the duration is `PAYMENT_RESERVATION_MINUTES = 30` for every eligible order
-(`payment_expires_at = created_at + 30 min`). Part 1 forbids deriving it from popularity, views,
-clicks, sales velocity, demand or behaviour — the exact inputs the v1 policy read — so the risk
-table, the signal query (`gatherOrderReservationSignals`) and `deriveDemandMetrics()` are GONE and
-the policy is now a pure function of `now`. Everything else is unchanged: `orders.reservation_policy`
-still records the policy that produced a deadline (`version: "v2"`, `reservationMinutes: 30`,
-`reason`), so a v1 row stays distinguishable; the SAVEPOINT deploy-order guard, the expiry sweep,
-the ONE release path, the "a paid-after-release order is never resurrected" guard and the Stripe
-session `expires_at` bound all stand. Side benefit: order creation no longer runs the signal query
-at all — one round trip less on the checkout path that §32/§34/§37 were about.
+**Still live from them.** The reservation is a **CONSTANT 30 minutes** (`PAYMENT_RESERVATION_MINUTES`;
+§36's risk bands are deleted) · the tier UI is GREEN >15:00 / YELLOW ≤15:00 / RED ≤5:00 · **migration
+048 is still NOT applied in production** (§42 #6) · the browser pass over both order surfaces in th/en/my
+is still open. **One correction to §38:** its "the ONE release path" holds for the PAYMENT paths only —
+§42 #2 records the second (seller) release path that bypasses `releaseOrderInventory()`.
 
-**Countdown — ONE rule for both surfaces.** NEW `paymentReservationPhase()` and
-`PAYMENT_RESERVATION_URGENT_MS = 3 min` in `packages/shared/src/lib/commerce.ts`, returning
-`active` / `urgent` (last 3 minutes, the documented `02:13` case) / `expired` / `none`. `MyOrders.tsx`
-and `ShopOrderDetail.tsx` both read it, so an order can never look active on one surface and expired
-on the other. The **list** now counts down per order (it previously had only the button), refetches
-once when a window lapses, and refetches on `visibilitychange`; the **detail page** turns the
-countdown into the hero (order no + status, "Payment expires in" + a big `MM:SS` + the note) with the
-pay action beside it. Paid/cancelled orders show no countdown; a lapsed one shows the expired notice,
-never `-00:23`. The clock is presentation only — the backend deadline is the source of truth and the
-backend enforces it (checkout answers `400 PAYMENT_RESERVATION_EXPIRED`).
+---
 
-**Order page restructured into a production hierarchy.** Header card (status, countdown, pay) →
-progress → items → **delivery** (address + carrier/tracking; there is no shipping-method column, so
-none is invented) → **payment** (method, status, payment rows) → **order summary** (subtotal,
-shipping, discount only when > 0, total) → shop → **actions** (pay now, back, buy again, cancel
-order). Mobile first: `tabular-nums` clock, wrapping address, no horizontal overflow. Every string
-lives in the dictionaries (th/en/my).
+## 42. Full-system audit — Part 1 (cancellation race) + Part 2 (30-min reservation) (2026-09-29)
 
-**Pay again = choose the method AGAIN.** `ResumePaymentButton` no longer auto-uses the recorded rail:
-one press always opens a chooser listing the rails the BACKEND reports enabled
-(`GET /api/payments/methods` → CARD/PROMPTPAY), preselects the recorded one, and continues with the
-one the customer picks. (The backend already abandons a stale open session for a different method
-instead of charging the wrong rail.) A `pageshow` listener re-enables the button when the customer
-comes Back from Stripe; `onUnknownMethod` is gone from all four surfaces.
+**What this pass is.** A read-only, end-to-end audit of Velnox at **`2c52bfc`**
+("feat(payment): implement reservation expiry and stock release") covering Part 1 (payment ↔ customer
+cancellation race hardening) and Part 2 (30-minute payment reservation + automatic expiry + stock
+release). **No code, schema, migration, API, state-machine or UI change was made by this pass.** Evidence
+tiers are used strictly: **LOCAL VERIFIED** = a command was executed in this sandbox and its output is
+quoted · **PRODUCTION VERIFIED** = a live production read · **PRODUCTION BLOCKED** = not observable from
+a workspace or blocked by a provider condition · **CODE-VERIFIED ONLY** = read from source, not executed.
 
-**Migration headroom + production state.** `db/migrations/048_payment_reservation.sql` — comment
-updated only (the DDL is byte-identical, additive, idempotent): the runner fires only when a
-`db/migrations/*.sql` file changes, and `048` has never applied. **Production Neon therefore still
-has NO `payment_expires_at`/`reservation_policy`** (§37, quota `36371800184`), so in production the
-reservation and the countdown are INERT — `orders` keeps answering `paymentExpiresAt: null`, the
-pages simply render no countdown, and checkout is unaffected (that is the deploy-order net from
-§37 working). Do not report the reservation as live in production until an owner read confirms the
-columns.
+**§0 startup sync — the sandbox was 34 commits stale.** `git status` showed `## main...origin/main` with
+local `9e7e178` (a stale remote-tracking ref). `git fetch origin` put `origin/main` at `2c52bfc` →
+**behind 34 / ahead 0**, so `git pull --ff-only origin main` was run: HEAD is now
+`2c52bfc734428232ed67dbde3a07b9985d4a506d` == `origin/main`, tree clean, no local work lost, and **no
+commit was created** (that fast-forward is the only workspace mutation of the audit). The 34 commits
+carry Part 1 (`d4e184d`, `a2eb2be` harden cancellation race; `ad7bae9` fulfilment state machine), Part 2
+(`34e8891`, `d7282bb`, `8261152`, `2c52bfc`) and the order surfaces (`31c0d19`, `dcceffd`). **Any handoff
+or context text written before `2c52bfc` is not verified against the audited code.**
 
-**Verified here.** backend `tsc` 0 · `typecheck` 4/4 · `build:velshop` 0 · `i18n:check`
-th=en=my=**1350** · `git diff --check` clean · `payment-reservation-policy` +
-`payment-reservation-expiry` **49 pass / 19 skip / 0 fail** — new coverage: the 30:00 start, the
-`02:13` urgent case, the full phase matrix (paid/cancelled/shipped → none, sweep-written `expired` →
-expired, COD/legacy → none, lapsed → 00:00 never negative), the policy module's "no dynamic input"
-source contract (no `riskLevel`/velocity/`featured` in code), the order-API deadline data contract
-over HTTP (`29:xx` back out of a fresh 30-minute row), and source contracts for the list countdown
-and the pay-again chooser · `checkout-payment-flow` 38 pass / 4 skip (its chooser case now pins
-"every rail", not "unknown rail") · full backend suite **789 pass / 119 skip / 1 fail**, the single
-failure being the pre-existing `test-database-isolation` child probe, which re-reads this sandbox's
-`.env` (production `DATABASE_URL`); it passes in CI, where no `.env` exists and `DATABASE_URL` is unset.
+### 42.1 What was checked, and the result
 
+| # | Checked | How | Result |
+|---|---|---|---|
+| 1 | Repo sync | `git fetch` / `git rev-parse` | ✅ local fast-forwarded 34 commits to `2c52bfc` |
+| 2 | Backend suite (sandbox) | `NODE_ENV=test bun test backend/tests` | ✅ **850 pass / 154 skip / 0 fail** (1004 tests, 46 files) |
+| 3 | CI on the audited SHA | Actions run `36551376766` | ✅ **1002 pass / 2 skip / 0 fail** (disposable `postgres:16`, no repo secrets) |
+| 4 | Backend types | `bunx tsc --noEmit` (backend) | ✅ exit 0 |
+| 5 | App types | `bun run typecheck` | ✅ 4/4 apps exit 0 |
+| 6 | i18n parity | `bun run i18n:check` | ✅ th = en = my = **1414** |
+| 7 | Hygiene | `git diff --check` · `bun run lint` | ✅ clean · ⚠️ `lint` is a placeholder ("Lint not yet configured") — no real linter exists |
+| 8 | Sources of truth | source read | ⚠️ PARTIAL — reservation ✅ one, payment ✅ one, order state ✅ one; **inventory ❌ two release paths and `quantity` never consumed (#1, #2)** |
+| 9 | Races: payment×cancel, payment×expiry, cancel×expiry, payment×payment, expiry×expiry | source + suites + CI | ✅ exactly-one-wins holds on all five |
+| 10 | Race: seller-cancel release × webhook release | source | ❌ **FAIL — double release (#2)** |
+| 11 | Stripe surface | source (`stripe.ts`) | ✅ 11 event types, signature via `constructEventAsync` + raw-body middleware, unverifiable → 503, per-event idempotency claim |
+| 12 | Production schema | `Migrate Neon Database` logs + `/api/_diag/schema` | ❌ **PRODUCTION BLOCKED — migration 048 never applied (#6)** |
+| 13 | Production payment config | `GET /api/stripe/configured` · `GET /api/payments/methods` | ✅ PRODUCTION VERIFIED — `{configured:true, mode:"test", webhookConfigured:true, webhookSecretHealth.present:true}`, `["CARD","PROMPTPAY"]`, **COD disabled**, THB |
+| 14 | Production health | `GET /api/health` | ✅ PRODUCTION VERIFIED — 200 |
+| 15 | Real Stripe E2E (PaymentIntent / PromptPay QR / webhook / refund) | — | ⛔ **BLOCKED** — no `STRIPE_*` keys, no `DATABASE_URL`, no session; never executed from this workspace |
+| 16 | Browser E2E of `/orders`, `/cart`, seller order pages | — | ⛔ **BLOCKED** — no signed-in session; layout pinned by contract tests only |
+| 17 | DB-gated suites locally | `bun test backend/tests` | ⚠️ SKIPPED locally (no `postgres`/`psql`/`docker`, no `TEST_DATABASE_URL`); the fail-closed guard refuses a production URL — proven: `NODE_ENV=test DATABASE_URL=…neon.tech… bun test backend/tests` → `REFUSING TEST AGAINST PRODUCTION DATABASE`, exit 2. These cases DO run in CI (#3) |
+| 18 | Migration numbering + schema drift | `migration-numbering` / `schema-drift` suites | ✅ PASS — `db/schema.sql` and `db/run-sqleditor.sql` byte-identical (`diff` empty); head `048` |
 
-**CI then verified the DB-gated half — `34e8891`, run `36437470190` GREEN: 907 pass / 2 skip / 0 fail**
-(909 tests, 41 files) against the disposable `postgres:16` from `test.yml`. All 19 reservation cases
-executed and passed, including the ones this sandbox can only skip: "the window written at creation
-is a FIXED 30 minutes for every order, stored and auditable", "the order API exposes the deadline, so
-a refresh rebuilds the same countdown" (NEW), "five concurrent sweeps still release exactly once",
-"a late payment cannot resurrect an expired order — the reconciliation path",
-"checkout refuses a lapsed reservation with `PAYMENT_RESERVATION_EXPIRED`", the SAVEPOINT
-deploy-order case and "the expiry sweep only ever touches the pre-payment statuses it declares".
+**Verdicts on the ten architecture questions.** (1) reservation source of truth ✅ one
+(`backend/lib/payment-reservation.ts`) · (2) inventory source of truth ❌ variant vs `quantity - reserved`,
+and `quantity` is never consumed · (3) payment source of truth ✅ one · (4) order-state authority ✅ one
+(`backend/lib/order-fulfillment.ts`) · (5) lock strategy ✅ compatible — every writer of `orders` +
+`payments` takes `lockOrderRow()` (`backend/lib/order-lock.ts`) first (`stripe.ts:350/454/487/573`,
+`cart.ts:1350`, `payment-reservation-scheduler.ts:161`) · (6) double commit/release ❌ the seller path ·
+(7) an impossible transition exists: `paid → cancelled` · (8) dead code: `RELEASABLE_STATUSES."failed"`
+(`inventory.ts:73`) and the duplicated urgency model (#8) · (9) production schema mismatch ❌ (048 missing) ·
+(10) **no new authz hole** — the real exposure of this pass is integrity/financial, not access control.
 
-**Production — still NOT active, re-confirmed this pass.** The push re-queued the migration runner
-(it fires only when `db/migrations/*.sql` changes) and `Migrate Neon Database` run `36437470328`
-**failed again** on the same provider condition: `psql: … ERROR: Your account or project has exceeded
-the quota. Upgrade your plan to increase limits.` (§22/§37). So `orders.payment_expires_at` /
-`reservation_policy` are still absent from production Neon, and the reservation + countdown remain
-inert there — orders answer `paymentExpiresAt: null`, the pages render no countdown, and checkout is
-unaffected (the §37 deploy-order net). **Owner action to make it live:** clear the Neon quota, then
-Actions → Migrate Neon Database → Run workflow (or paste the four statements from §37 into the Neon
-SQL Editor).
+### 42.2 PROBLEMS — severity ordered
 
-**Still open (owner-side).** (1) A browser pass over the new order page, the list countdown and the
-method chooser in th/en/my. (2) The production migration above.
+**CRITICAL #1 — non-variant stock is never CONSUMED on payment.** `backend/routes/stripe.ts` →
+`markPaymentSucceeded`, `:426-435`. CURRENT: payment success only does
+`UPDATE inventory SET reserved = GREATEST(0, reserved - q)` (`:429`) + `products.sold_count + q` (`:433`);
+**nothing anywhere decrements `inventory.quantity`** (the only writer is the seller "set stock" endpoint,
+`backend/routes/products.ts:1487-1491`). Availability is `quantity - reserved` (`cart.ts:368, 498, 555,
+839`), so a PAID unit becomes sellable again. EXPECTED: a completed sale consumes stock. RISK: unbounded
+oversell, `sold_count > quantity`. **A test pins the wrong behaviour:**
+`backend/tests/payment-reservation-expiry.test.ts:979` `expect(after.quantity).toBe(50)`; no test asserts
+availability as `quantity - reserved`.
 
-## 39. Order UX polish — status, progress, address, language (2026-09-28)
+**CRITICAL #2 — seller cancellation is a SECOND release path → double release / phantom stock.**
+`backend/routes/seller-orders.ts:610-623` (variant `stock = stock + $1` `:616`;
+`UPDATE inventory SET reserved = GREATEST(0, reserved - $1)` `:621`). CURRENT: an inline restore that
+never sets `orders.inventory_released` and never calls `releaseOrderInventory()`. EXPECTED: every restore
+governed by that ONE atomic claim. RISK: cancel an order whose raw status is `pending_payment`/`paid`
+(it normalizes to `pending`) while a Stripe session is open → later `checkout.session.expired` →
+`markPaymentCanceled` → `releaseOrderInventory` still matches (`status='cancelled'` ∈ `RELEASABLE_STATUSES`,
+flag FALSE) → **stock returned twice**; the variant branch has no clamp, so phantom units are possible.
 
-**Reported (ORDER UX FINAL POLISH — the last task before VelRepeat).** Make the order list and order
-page clear, consistent and multilingual for every unpaid order: per-order countdowns, readable
-status, ONE simple progress line, the ORDER's own address, a clearer retry, and no hard-coded Thai.
-The 30-minute reservation, the sweep and the release path are untouched.
+**HIGH #3 — a seller/center can cancel a PAID order: money kept, no refund, no alert.**
+`order-fulfillment.ts:161` normalizes `paid → pending`, so `canTransitionOrderStatus` (`seller-orders.ts:576`)
+allows `→ cancelled` plus the #2 restore; `payments.status` stays `paid`; no refund and no operator alert.
 
-**Countdown position + states.** Each list card keeps its OWN countdown, placed at the bottom-left of
-THAT card (status badge, then the countdown, then one hurry note inside the last 3 minutes) so a
-running clock is never ambiguous. ONE presentation clock per page: every card derives its own
-remaining time from its own `paymentExpiresAt`. A lapsed card shows the expired state and refetches
-once (the sweep may already have released the stock); `visibilitychange` still re-reads the API.
-Nothing in the browser writes an order status or a deadline.
+**HIGH #4 — `payment_intent.payment_failed` is per-ATTEMPT but terminal at ORDER level.**
+`markPaymentFailed` (`stripe.ts:447-473`; order guard `:467`) flips the order to `payment_failed` and
+releases stock; a later successful retry on the same open session is then refused by
+`markPaymentSucceeded`'s guard (`:341-441`) → the order stays `payment_failed` while
+`payments.status = 'paid'` and the stock is already released.
 
-**Readable, localized status.** The order-status text came from `ORDER_STATUS_META.label`, which is
-Thai-only — so English/Myanmar rendered Thai on both surfaces. NEW `orderStatusI18nKey()` (shared)
-maps `orders.status` → `orderStatus.*`, NEW `orderStatus` namespace (th/en/my) covers all 11
-statuses + `unknown`, and both pages render the translated label. The payment pill now uses the
-semantic badge tokens (`getPaymentStatusBadge`) instead of a white-on-white badge. The Burmese table
-also gained the six order-page strings that were still English (`myOrderPatch.orderDetail` in
-`locales/index.ts`; that patch object can no longer carry the outer `satisfies Partial<Dict>`,
-which a partially-filled namespace cannot satisfy).
+**HIGH #5 — a payment arriving after the order died has no auto-refund and no operator queue.** Only
+`console.warn('[stripe webhook] payment received for order … that is no longer payable (…) — manual
+review/refund required')` (`stripe.ts:392-414`). The order is (correctly) never resurrected, but the
+money sits on the payment row with nothing but that log line.
 
-**ONE progress line, real statuses.** The old five-icon stepper (no payment stage) is replaced by
-`ORDER_PROGRESS_STAGES` = placed → payment → processing → shipped → delivered, with
-`orderProgressStageIndex()` as the single mapping (`pending`/`pending_payment` → 1,
-`paid`/`confirmed` → 2, `shipped` → 3, `delivered`/`completed` → 4). Terminal orders
-(`cancelled`, `expired`, `payment_failed`, `refunded`) return -1 and get the notice that explains
-them instead of a line implying progress. One `<ol>`, no nested bars; on a narrow screen only the
-current stage label shows (all five names stay in the DOM for screen readers) and
-`aria-current="step"` marks the stage. Order status and payment status are separate concepts, each
-with its own visible caption.
+**HIGH #6 — PRODUCTION BLOCKED: migration 048 is unapplied, so Part 2 is INERT in production.**
+`Migrate Neon Database` dies on the Neon provider quota (`ERROR: Your account or project has exceeded the
+quota. Upgrade your plan to increase limits.` — runs `36454467112`, `36454465288`, `36437470328`,
+`36371800184`; the one-off `diag-neon-schema` probe `36449336393` too), so production Neon has **neither
+`payment_expires_at` nor `reservation_policy`**. The code is schema-tolerant by design (checkout does not
+break), but no deadline is written, the sweep self-disables and no countdown can render — **never report
+Part 2 as PASS in production**. Confirming read also needs an owner/admin session: `GET /api/_diag/schema`
+→ **401 `UNAUTHORIZED`** (`backend/middleware/diag-guard.ts`, `DIAG_ALLOWED_ROLES = ["owner","admin"]`).
+Owner action: clear the quota → apply 048 (§37's four statements or the Migrate Neon workflow) → place a
+NEW order.
 
-**Address = the order's snapshot.** The delivery section renders `orders.shipping_address` exactly as
-stored (`addressSnapshot`), one line per real field, omitting fields the snapshot lacks, with a
-labelled recipient and the country translated only for `TH`. It never reads the profile/address
-book, so changing the default address later cannot rewrite an existing order.
+**MEDIUM #7 — the payment-success path ignores variants.** `stripe.ts:426-429` selects only `product_id`
+and adjusts `inventory.reserved` for every item, while `releaseOrderInventory`
+(`backend/lib/inventory.ts:155-167`) correctly distinguishes `variant_id`; `GREATEST(0, …)` hides the
+mismatch, and the update can steal a hold belonging to another order.
 
-**Retry + terminal states.** `ResumePaymentButton` reads "Pay again" (`orderReservation.payAgain`)
-and still opens the chooser from `GET /api/payments/methods`. A `payment_failed` order gets its own
-notice and NO countdown and NO pay button — the backend released the stock at that point, so a
-deadline or a pay button would promise a payment the server refuses; "buy again" is the way forward.
+**MEDIUM #8 — two overlapping urgency contracts coexist.** `paymentReservationPhase()` /
+`PAYMENT_RESERVATION_URGENT_MS = 3 min` AND `paymentReservationTone()` / `PAYMENT_RESERVATION_YELLOW_MS
+= 15 min` / `RED_MS = 5 min` live in the SAME file (`packages/shared/src/lib/commerce.ts:783-898`), and
+both `MyOrders.tsx` (`:163`, `:391-396`) and `ShopOrderDetail.tsx` (`:302-303`, `:511`) call both. §38
+documented only the 3-minute model; the GREEN/YELLOW/RED tiers of §39 match the code. EXPECTED: ONE
+urgency authority.
 
-**Verified here.** `typecheck` 4/4 · backend `tsc` 0 · `build:velshop` 0 · `i18n:check`
-th=en=my=**1369** · `git diff --check` clean · NEW `backend/tests/order-ux-polish.test.ts`
-**10 pass / 0 fail** (one-line progress contract + stage mapping, terminal → -1, a localized label
-for every status in all three locales, readable badge tokens incl. the unknown case, both surfaces
-render the localized label, the detail page uses the order's OWN snapshot and never a profile
-address, a failed payment keeps the original deadline and no fabricated one, per-card countdown) ·
-reservation + checkout suites **97 pass / 23 skip / 0 fail** · full backend suite **799 pass /
-119 skip / 1 fail**, the same pre-existing `test-database-isolation` sandbox probe (it re-reads this
-workspace's `.env`; CI, with no `.env`, passes).
+**MEDIUM #9 — `orders.status` has no CHECK constraint** (`db/schema.sql:376`) while sibling tables have
+one; any string is storable, so every consumer must normalize (`getOrderStatusMeta()`,
+`normalizeOrderStatusToFulfillment()`).
 
-**Still open (owner-side).** (1) The browser pass over both order surfaces and the method chooser in
-th/en/my. (2) The production migration (§37): without `payment_expires_at` there is no countdown in
-production, and the polish only changes what is rendered when the column exists.
+**MEDIUM #10 — VelRepeat is a second order-creation path that bypasses the guards.**
+`backend/jobs/velrepeat-scheduler.ts:267-350` inserts `orders.status='pending'` plus a `payments` row with
+method `'cod'` directly — skipping the fail-closed `payment-config` — increments `sold_count` at CREATION
+(not at settlement) and reserves stock that can never be committed (COD never reaches
+`markPaymentSucceeded`), so the hold lasts until cancellation.
 
-## 40. Countdown invisible in production — migration 048 never applied (2026-09-28)
+**MEDIUM #11 — inventory-row deadlock.** Order creation locks inventory rows in cart-item order
+(`cart.ts:1027-1034`); two checkouts with opposite item orderings can AB-BA deadlock → PostgreSQL aborts
+one → a generic **500 `CHECKOUT_FAILED`** instead of a 409.
 
-**Root cause: production Neon has no `orders.payment_expires_at`.** Three migration runs died on
-`exceeded the quota` (02:57Z, 14:38Z, 16:56Z); last success 2026-09-25, before 048 existed. The write
-is then skipped by the deploy-order guard, `SELECT o.*` maps the absent column to
-`paymentExpiresAt: null`, phase `none`, both pages render nothing — silent by design (§37's net).
-Logic, API mapping and
-deploy ruled out (the bundle carries the code); CI `d7282bb` green with the regression tests. Full
-trace + owner check: `.ai/context/payment.md` → *Countdown not visible in production*.
+**LOW #12** `"failed"` is dead in `RELEASABLE_STATUSES` (`inventory.ts:73`) — nothing writes it. **#13**
+`inventory-race` is 4 pass / 8 skip locally, so concurrency evidence exists **only in CI** (LOCAL tier).
+**#14** settlement is per shop/order row, so one multi-shop checkout can end partially paid / partially
+expired.
 
-**Shipped anyway:** the tier UI (`8261152`) — GREEN >15:00, YELLOW ≤15:00, RED ≤5:00, dark expired —
-plus a bar measured against `orders.reservation_policy.reservationMinutes` (now on both read routes),
-never a hard-coded 30; deployed on Vercel (chunks carry `reservationMinutes`/`progressbar`/
-`criticalNote`).
+### 42.3 Cancellation matrix (read from source — no invented cells)
 
-**Owner action:** clear the quota → apply 048 (re-queued as `d7282bb`, comment-only, still failing)
-→ place a NEW order. Rows created earlier keep `NULL` by design and will never show a countdown.
+| `orders.status` | customer cancel | reservation sweep | Stripe webhook | seller / center |
+|---|---|---|---|---|
+| `pending` | ✅ → `cancelled` + release | ✅ → `expired` + release | → `paid` / `payment_failed` / `cancelled` | → `confirmed`, `cancelled` |
+| `pending_payment` | ✅ same | ✅ same | same | same |
+| `paid` | ❌ 409 `ORDER_ALREADY_PAID` | ❌ blocked (`paid`/`processing`) | cannot move it | → `confirmed`, `cancelled` ⚠️ (#3) |
+| `confirmed` | ✅ → `cancelled` + release | ❌ | cannot move it; release refused (`confirmed` ∉ `RELEASABLE_STATUSES`) | → `packing`, `cancelled` |
+| `packing` | ❌ 400 `INVALID_STATUS` | ❌ | — | → `shipped` (needs a shipment) |
+| `shipped` / `delivered` / `completed` | ❌ | ❌ | — | next fulfilment step only |
+| `cancelled` | ⏹ 200 `alreadyFinal`, no release | ❌ | **release claim still matches ⚠️ (#2)** | — |
+| `payment_failed` | ⏹ `alreadyFinal` | ❌ | — | `confirmed` blocked (payment not confirmed) |
+| `expired` | ⏹ `alreadyFinal` | ❌ | — | — |
+| `refunded` | ❌ | ❌ | refund sync (`syncRefundFromStripe`) | — |
 
-## 41. Order UX refactor — customer + seller order surfaces (2026-09-29)
+### 42.4 Race verdicts
 
-**Scope.** VelShop Orders / Order Detail and VelSeller Orders + a NEW seller Order Detail. The payment
-reservation, countdown, Stripe webhook, inventory release and the database schema were **not** touched
-(§38/§39/§40 carry them unchanged) — this pass moves and repaints the surfaces only. No migration, no
-new endpoint, no second timer, no second state machine.
+✅ **payment × cancel** (guarded claim + lock-order-first) · ✅ **payment × expiry** (exactly-one-wins via
+the `NOT EXISTS (SELECT 1 FROM payments … status IN ('paid','processing'))` guard) · ✅ **cancel ×
+expiry** · ✅ **payment × payment** (`idx_payments_one_active_stripe` + `checkout_requests` +
+`payment_events`) · ✅ **expiry × expiry** (the DB claim is the only gate). ❌ **seller-cancel release ×
+webhook release** — #2, the one double-release left. Lock discipline ✅ (see 42.1 verdict 5). Impossible
+transition present: **`paid → cancelled`** (#3).
 
-**One status vocabulary, one badge.** NEW `packages/shared/src/components/order/OrderStatusBadge.tsx`
-owns the icon + palette for every `orders.status` (11 values + `unknown`) and the five progress-stage
-icons. Both apps render it, so their statuses cannot drift. `lib/shop.ts`'s `ORDER_STATUS_ICONS` stays
-velcenter's six-status fulfilment map (its `shipped` label means something else), so the two were
-deliberately NOT merged.
+### 42.5 Recommended next actions (owner-priority order)
 
-**VelShop.** Orders list: order number on the left and the status badge TOP RIGHT of the same header row
-(was: the badge sat in the money footer, where it read as part of the total); every product row is its
-OWN link to `/products/:id` (the whole card used to be one order link, so a product could never be
-opened from here), and an unavailable product renders unlinked with `orderDetail.productUnavailable`.
-Order Detail: the order number is the `h1`; the shop/seller block is REMOVED from the customer surface
-(`shopId`/`shopName` stay in the API — the seller page and velcenter still render them); the progress
-line keeps ONE ordered list and gains stage icons (done = check, current = the stage icon, not reached =
-outline), laid out vertically on a phone and horizontally from `sm`; a 401/403 load and a 404 now get
-different copy (`orderDetail.noAccess`/`noAccessDesc` vs `notFound`).
+1. **Apply migration 048** — unblocks Part 2 in production (owner action on the Neon quota).
+2. **Fix stock consumption on settlement (#1)** and the test that pins the wrong behaviour.
+3. **Route the seller cancellation restore through `releaseOrderInventory()` (#2).**
+4. **Decide the `paid`-order cancellation policy** — refund + alert, or refuse (#3).
+5. **Give late/refused payments an operator surface** instead of a `console.warn` (#4, #5).
+6. **Add the `orders.status` CHECK (#9)** and collapse the two urgency contracts (#8).
+7. **Remove the VelRepeat order-creation bypass (#10)** and the inventory-row deadlock (#11).
 
-**VelSeller.** `SellerOrders` becomes a management surface: server-side status filter chips
-(`?status=`, the six fulfilment statuses), an eight-column desktop table and tappable mobile cards,
-every order number linking to the new route. NEW `SellerOrderDetail` at `/seller/orders/:orderId`
-inside `RequireRole role="seller"`: customer, items (each product links to the storefront product page —
-there is no seller-side product route, and creating one was not this task), the order's OWN address
-snapshot, real shipment/tracking events newest-first with an honest empty state, payment, summary, and
-status buttons built from `NEXT_ORDER_STATUSES` = the backend's `SELLER_ORDER_STATUS_TRANSITIONS`
-(terminal orders explain themselves; cancelling confirms first because it restores stock server-side).
-It reads `GET /api/seller/orders/:id`, which resolves the seller from the SESSION and verifies ownership
-inside the query — the page passes no seller id.
-
-**Shared API client.** `api-routes.ts` now throws `ApiError` carrying the HTTP status (still an `Error`
-with the same message, so every existing `catch (err) { err.message }` is unchanged) — that is what lets
-the order page tell "not yours" (403) from "not found" (404).
-
-**Order numbers.** `generateOrderNumber()` moves to `backend/lib/order-number.ts`: ONE definition
-(cart.ts plus a dead copy in stripe.ts collapsed), `crypto.randomInt` instead of `Math.random`, and an
-alphabet without `0/O`, `1/I/L`, `U/V`. The format is unchanged — `VNX-YYYYMMDD-XXXXXX`, never
-sequential, no UUID exposed to a customer. `orders.order_number` was already guarded by
-`idx_orders_number_unique` (both schema files), so checkout now retries that ONE collision under a
-SAVEPOINT, and `isOrderNumberCollision()` refuses to treat any other unique violation as retryable.
-
-**New i18n.** `sellerOrders.*` (30 keys), `orderDetail.noAccess`/`noAccessDesc`,
-`trackingLabels.none` — in th, en and my.
-
-**Verified here.** `order-number` 7 pass · `seller-order-ux` 12 pass · `order-ux-polish` 22 pass (was
-20; two assertions moved onto the shared badge) · full backend suite **830 pass / 119 skip / 1 fail**, the
-single failure the pre-existing sandbox-only `.env` guard that passes in CI · backend `tsc` 0 ·
-`typecheck` 4/4 · `i18n:check` th=en=my=**1404** · `build:velshop` and `build:velseller` green, with
-`SellerOrderDetail` emitted as its own chunk · `git diff --check` clean.
-
-**Not verified here.** (1) A browser pass over both apps at 390/430/1280/1440 px — the sandbox has no
-session and no dev server is started per policy, so layout is pinned by contract tests, not observed.
-(2) The production schema: migration 048 is still unapplied (§40), so the countdown still renders only
-where `payment_expires_at` exists. (3) The seller list no longer carries an inline status dropdown —
-status changes are made on the order detail page, which is the redesigned flow (list → detail → change →
-back).
+**Not claimable from a workspace (do not treat as verified anywhere).** Real Stripe E2E (no PaymentIntent,
+PromptPay QR, webhook delivery or refund has ever been executed from this sandbox); the production schema
+query (401); browser E2E of `/orders`, `/cart` and the seller order pages (no signed-in session); and any
+DB-gated case locally (see 42.1 #17 — CI is the only execution).
