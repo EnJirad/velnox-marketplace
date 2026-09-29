@@ -113,15 +113,20 @@ trusting a pre-transaction read. A settlement after a cancellation is still reco
 payment row (refunding it) and never resurrects the order, re-reserves stock, or commits it.
 No schema change; Stripe webhook architecture untouched.
 
-Evidence: `backend/tests/payment-cancellation-race.test.ts` (12 cases — structural lock-order
-contract; forced-interleave probes proving both sides wait on the order row AND that no path
-holds the `payments` row while waiting; cancel→settlement; settlement→cancel; duplicate event
-id; `checkout.session.completed` + `payment_intent.succeeded`; cancel-vs-expiry sweep;
-`reserved`/`sold_count` exactly-once), plus a new `cancel vs shipment` race in
-`order-fulfillment-state-machine.test.ts`. Full backend suite **986 pass / 0 fail**;
-`tsc --noEmit`, `bun run typecheck` (4 apps) and `bun run build:apps` green; `git diff
---check` clean. The probe was proven to have teeth: removing the lock from
-`markPaymentCanceled` makes it fail with PostgreSQL `55P03`.
+Evidence: `backend/tests/payment-cancellation-race.test.ts` — **21 cases covering the whole
+TEST 01–18 race matrix**: the structural lock-order contract; forced-interleave probes that
+prove both sides wait on the SAME order row (and that no path holds the `payments` row while
+waiting); cancel↔settlement both ways; `checkout.session.completed` ∥
+`payment_intent.succeeded`; expiry ∥ settlement; cancel ∥ confirmed / packing / shipped —
+each issued as **concurrent real HTTP** against the real routes behind one held lock, so the
+winner is decided by PostgreSQL and never by issue order; the same event id delivered three
+times at once; a duplicated retry after a cancellation; `reserved`/`sold_count` exactly-once;
+a cancelled order refusing to return to fulfilment under concurrent pressure — plus a new
+`cancel vs shipment` race in `order-fulfillment-state-machine.test.ts`. Full backend suite
+**995 pass / 0 fail**; `tsc --noEmit`, `bun run typecheck` (4 apps) and `bun run build:apps`
+green; `git diff --check` clean; CI `36547644881` success on `d4e184d`. The probe was proven
+to have teeth: removing the lock from `markPaymentCanceled` makes it fail with PostgreSQL
+`55P03`.
 
 ### 2026-09-29 — fulfilment state machine hardened: `packing` + payment/shipment gates
 
