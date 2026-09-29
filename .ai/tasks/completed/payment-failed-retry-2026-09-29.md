@@ -189,10 +189,10 @@ locally signed Stripe events (Stripe's own HMAC scheme; no network, no SDK call)
 | Scenario | Expected | Result | Test | Evidence |
 |---|---|---|---|---|
 | late FAILURE for a dead attempt | live attempt + order + stock untouched | **PASS (CI)** | `a late FAILURE for a dead attempt leaves the live attempt and the order alone` | order `pending_payment`, `inventory_released=false`, `reserved=3`, B `requires_action` |
-| late SUCCESS for a dead attempt | THAT row settles, not the live one | **PASS (CI)** | `a late SUCCESS for a dead attempt settles THAT row, not the live one` | A `paid`, B `requires_action`, order `paid`, `quantity 50→47`, `sold_count 3` |
+| late SUCCESS for a dead attempt | order settles; the failed attempt's history is NOT rewritten | **PASS (CI, after the §22 correction)** | `a late SUCCESS for a dead attempt settles the ORDER without rewriting the attempt's history` | A stays `failed`, B `requires_action`, order `paid`, `quantity 50→47`, `sold_count 3` |
 | SUCCESS duplicated | one settlement | **PASS (CI)** | `a duplicate SUCCESS settles once` | `quantity 50−N` once, `sold_count +N` once |
 | FAILURE duplicated | one release | **PASS (CI)** | `a duplicate FAILURE releases once` | `reserved→0` once, `quantity` unchanged, `sold_count 0` |
-| FAILURE after SUCCESS | order stays `paid` | **PASS (CI)** | `a late FAILURE after a SUCCESS does not move a paid order back to payment_failed` | order `paid`, `inventory_released=false`, stock committed |
+| FAILURE after SUCCESS | order stays `paid` | **PASS (CI, after the §22 fixture correction)** | `a late FAILURE after a SUCCESS does not move a paid order back to payment_failed` | one active + one retired attempt; order `paid`, A `paid`, B `failed`, `inventory_released=false`, stock committed |
 | no usable identifier | falls back, never dead-letters | **PASS (CI)** | `an attempt row written WITHOUT a PaymentIntent id still settles` | order `paid`, stock committed |
 | payment × cancellation | one writer wins | **PASS (local + CI)** | `payment-cancellation-race.test.ts` | unchanged suite, 0 fail |
 | payment success × expiry | one writer wins | **PASS (local + CI)** | `payment-reservation-expiry.test.ts` | unchanged suite, 0 fail |
@@ -267,9 +267,40 @@ $ bun run lint     → "Lint not yet configured" (placeholder), exit 0
 
 ## 22. CI result
 
-See the final report for the run id, conclusion and totals on the pushed commit. CI runs the
-full suite against a disposable `postgres:16`, which is where the six DB-gated tests above
-execute for real.
+**Run `36585376063` on the first push (`0d786f4`) FAILED — and both failures were defects in the
+NEW TESTS, not in the fix.** Reported before fixing, as the rules require.
+
+| | |
+|---|---|
+| Workflow / job | `Tests` → `Typecheck + tests (disposable PostgreSQL)` |
+| Totals | `1031 pass / 2 skip / **2 fail**` · 1035 tests / 48 files · 6033 expect calls · exit 1 |
+| Failure 1 | `a late SUCCESS for a dead attempt…` — `Expected: "paid"` / `Received: "failed"` at `payment-attempt-identity.test.ts:459` |
+| Failure 2 | `a late FAILURE after a SUCCESS…` — `error: duplicate key value violates unique constraint "idx_payments_one_active_stripe"` |
+
+**Failure 1 — my test asked for the opposite of Invariant A.** The fixture seeds attempt A as
+`failed` (the `SESSION_NOT_REUSABLE` shape) and then asserted the success event would make it
+`paid`. The implementation correctly refuses to rewrite a failed attempt's history
+(`AND status <> 'failed'`), so A stayed `failed`. The CI log shows the *rest* of the behaviour was
+right: `commitOrderInventory: … settled 1 item(s)` — the order settled and the stock was consumed
+exactly once, and the live attempt B was never touched. **The test expectation was wrong; the
+implementation was right.** The test now asserts the real state machine — A stays `failed`, B
+untouched, order `paid`, stock committed once — which is a *stronger* invariant than the one it
+previously asked for, and it is the ambiguity recorded as risk #1 in §24.
+
+**Failure 2 — my fixture modelled a state the schema forbids.** It seeded attempt A as
+`requires_action` AND attempt B as `pending`; both are inside the
+`idx_payments_one_active_stripe` predicate (`status IN ('pending','requires_action')`), so the
+database correctly rejected the second insert and the test could not even set up its scenario.
+The legal shape is one ACTIVE attempt plus one RETIRED (`failed`) one — which is exactly what
+checkout leaves behind after a method switch. The fixture was corrected to that shape; the
+scenario it was testing (a failure for one attempt arriving after another attempt's money settled)
+is unchanged and now actually runs.
+
+Neither failure indicated a production defect, and no production file was changed in response to
+either. This is also the second time in two tasks that the DB-gated half of a new suite could not
+be executed locally (§16/§24) — the first push is what surfaced both, which is the strongest
+argument for treating CI, not the sandbox, as the evidence for those cases.
+
 
 ## 23. Production verification status
 

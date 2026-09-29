@@ -447,19 +447,20 @@ describeDb("payment attempt identity (requires TEST_DATABASE_URL)", () => {
     }
   });
 
-  testFn("a late SUCCESS for a dead attempt settles THAT row, not the live one", async () => {
+  testFn("a late SUCCESS for a dead attempt settles the ORDER without rewriting the attempt's history", async () => {
     const tag = crypto.randomUUID().slice(0, 8);
     const { orderId, ownerId, productId, quantity } = await seedOrder(twoAttempts(tag));
     try {
       expect(await deliverWebhook(succeededEvent(orderId, `pi_${tag}_A`))).toBe(200);
 
       const state = await stateOf(orderId, productId);
-      // The attempt that was actually charged is the one that reads `paid` —
-      // that row is what a refund is built from.
-      expect(state.payments[`pi_${tag}_A`]).toBe("paid");
-      // The never-charged attempt is untouched.
+      // Invariant A: an attempt already recorded as `failed` is NEVER rewritten
+      // to `paid` by a later event. History is not mutable through a webhook.
+      expect(state.payments[`pi_${tag}_A`]).toBe("failed");
+      // …and the live attempt is not touched either — this event was not about it.
       expect(state.payments[`pi_${tag}_B`]).toBe("requires_action");
-      // The order settles, and the stock is consumed exactly once.
+      // The ORDER still settles (the existing policy: captured money settles the
+      // order), and the stock is consumed exactly once.
       expect(state.orderStatus).toBe("paid");
       expect(state.inventoryReleased).toBe(false);
       expect(state.quantity).toBe(50 - quantity);
@@ -538,6 +539,10 @@ describeDb("payment attempt identity (requires TEST_DATABASE_URL)", () => {
 
   testFn("a late FAILURE after a SUCCESS does not move a paid order back to payment_failed", async () => {
     const tag = crypto.randomUUID().slice(0, 8);
+    // TWO live attempts are not a legal state: `idx_payments_one_active_stripe`
+    // allows at most one row in ('pending','requires_action') per order. The
+    // real shape is one ACTIVE attempt plus one RETIRED (`failed`) one — which
+    // is exactly what checkout leaves behind after a method switch.
     const { orderId, ownerId, productId, quantity } = await seedOrder({
       status: "pending_payment",
       attempts: [
@@ -548,10 +553,11 @@ describeDb("payment attempt identity (requires TEST_DATABASE_URL)", () => {
           checkoutSessionId: `cs_${tag}_A`,
         },
         {
-          method: "CARD",
-          status: "pending",
+          method: "PROMPTPAY",
+          status: "failed",
           providerPaymentId: `pi_${tag}_B`,
           checkoutSessionId: `cs_${tag}_B`,
+          failureCode: "SESSION_NOT_REUSABLE",
         },
       ],
     });
@@ -563,6 +569,7 @@ describeDb("payment attempt identity (requires TEST_DATABASE_URL)", () => {
       const state = await stateOf(orderId, productId);
       expect(state.orderStatus).toBe("paid");
       expect(state.payments[`pi_${tag}_A`]).toBe("paid");
+      expect(state.payments[`pi_${tag}_B`]).toBe("failed");
       // Committed stock is never handed back by a status change.
       expect(state.inventoryReleased).toBe(false);
       expect(state.quantity).toBe(50 - quantity);

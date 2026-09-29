@@ -747,6 +747,13 @@ inventory file, no frontend, no new business rule.
   signed events (CI-only). One pre-existing literal in `checkout-payment-flow.test.ts:425` became a
   regex that ALSO now pins attempt scoping. Local full suite **867 pass / 168 skip / 0 fail**,
   1035 tests / 48 files, exit 0 · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3.
+- **⚠️ First CI run FAILED (`36585376063`, `1031 pass / 2 fail`) — both failures were defects in
+  the NEW TESTS, not the fix, and no production file changed in response.** (1) one test asked for
+  a `failed` attempt to become `paid`, i.e. the opposite of Invariant A; the code correctly
+  refused, and the log shows the order still settled and the stock committed exactly once. (2) one
+  fixture seeded two attempts inside `idx_payments_one_active_stripe`'s predicate, so the database
+  correctly rejected it — the legal shape is one active + one retired attempt. Both were corrected
+  and re-verified; details in the audit doc §22.
 - **Full evidence (25 sections, state map, every command):**
   [`.ai/tasks/completed/payment-failed-retry-2026-09-29.md`](tasks/completed/payment-failed-retry-2026-09-29.md)
 - **Recorded dependency (not fixed, deliberately):** a captured charge arriving for an attempt
