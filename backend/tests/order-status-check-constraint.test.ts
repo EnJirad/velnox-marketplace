@@ -469,19 +469,28 @@ describeDb("orders.status CHECK against a real database (requires TEST_DATABASE_
   testFn("the default and NOT NULL still hold", async () => {
     const userId = await seedUser();
     const { query } = await import("../db/index.js");
+    // RETURNING must include `id`: a `WHERE id = NULL` UPDATE matches no row and
+    // raises nothing, which would make the NOT NULL assertion below vacuous.
     const res = await query(
-      `INSERT INTO orders (user_id, total_amount, currency) VALUES ($1, 100, 'THB') RETURNING status`,
+      `INSERT INTO orders (user_id, total_amount, currency) VALUES ($1, 100, 'THB') RETURNING id, status`,
       [userId],
     );
+    const orderId = res.rows[0].id as string;
     expect(res.rows[0].status).toBe("pending");
 
     let caught: any = null;
     try {
-      await query(`UPDATE orders SET status = NULL WHERE id = $1`, [res.rows[0].id]);
+      const updated = await query(`UPDATE orders SET status = NULL WHERE id = $1`, [orderId]);
+      // The statement must have reached the row, or the refusal below proves nothing.
+      expect(updated.rowCount).toBe(1);
     } catch (err) {
       caught = err;
     }
     expect(caught).not.toBeNull();
     expect(caught.code).toBe("23502");
+
+    // The row kept its value.
+    const after = await query(`SELECT status FROM orders WHERE id = $1`, [orderId]);
+    expect(after.rows[0].status).toBe("pending");
   });
 });

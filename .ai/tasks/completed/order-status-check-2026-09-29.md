@@ -17,7 +17,8 @@ policy.
 
 ## 3. Ending SHA
 
-Recorded in §25 after the commit was pushed and verified.
+`619747f32b56ba722e13be6b0882a8bae515cf50` (implementation commit) — then the test-fix commit
+recorded in §25.
 
 ## 4. Branch
 
@@ -293,7 +294,34 @@ string changed; no translation was added.
 
 ## 25. CI run ID and result
 
-Recorded after the push. Local HEAD == `origin/main` verified post-push, working tree clean.
+### 25.1 First run — `36596404247` (Tests) / `36596404197` (Migrate Neon) on `619747f` — FAILED
+
+Reported before fixing, as the rules require. **Two independent jobs failed, with two different
+causes, and only one of them was mine.**
+
+| job | result | cause |
+|---|---|---|
+| `Migrate Neon Database` | failure | **The known Neon quota blocker — NOT this task.** It dies on the workflow's *first* step (`CREATE TABLE IF NOT EXISTS schema_migrations`): `ERROR: Your account or project has exceeded the quota`. It never reached migration 050, let alone 048/049. This is audit finding #6 / §22, an owner action that was already open before this task. |
+| `Tests` | failure — `1078 pass / 2 skip / 1 fail` | **A bug in my own new test.** `the default and NOT NULL still hold`. |
+
+The `Tests` log proves the schema change itself is sound: **8 of the 9 DB-gated tests passed against
+the disposable PostgreSQL**, including `PostgreSQL holds the constraint, with the derived allowed
+set`, both `23514 / orders_status_check` rejections, every allowed value on INSERT *and* UPDATE,
+the near-misses, and the legal-value/illegal-transition case.
+
+**Root cause of the one failure — a defective test, not a defective constraint.** The test seeded its
+row with `INSERT … RETURNING status`, then asserted that `UPDATE … SET status = NULL` was refused —
+but it addressed that row with `rows[0].id`, which that statement never returned. The parameter went
+to PostgreSQL as `NULL`, `WHERE id = NULL` matched **zero rows**, no error was raised, and
+`expect(caught).not.toBeNull()` failed. The NOT NULL assertion was *vacuous*, not wrong.
+
+**Fix:** the INSERT now returns `id, status`, the UPDATE asserts `rowCount === 1` **before** the
+refusal check (so the statement can never again be a silent no-op), and the row's status is read back
+afterwards. The assertion was strengthened, not weakened — no test was skipped or deleted.
+
+### 25.2 Second run
+
+Recorded after the fix was pushed.
 
 ## 26. Production status
 
