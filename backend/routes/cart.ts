@@ -988,13 +988,14 @@ export function setupCartRoutes(app: Express): void {
             );
           }
 
-          // ── Payment reservation window (Dynamic Payment Reservation V1) ────
+          // ── Payment reservation window (FIXED 30 minutes) ────────────────
           // The stock for this order was reserved on the lines above, so the
           // DEADLINE is taken here, in the same transaction: an order can only
           // ever hold stock for a window it was actually granted, and a rollback
-          // leaves no deadline (and no policy) behind. The window is derived from
-          // real stock + real trailing sales velocity, never from a fixed
-          // constant, and the reason is stored on the order for audit. COD is
+          // leaves no deadline (and no policy) behind. The window is a FIXED 30
+          // minutes from the SERVER clock (`PAYMENT_RESERVATION_MINUTES` in
+          // lib/payment-reservation.ts) — the client never supplies or extends
+          // it — and the policy is stored on the order for audit. COD is
           // settled by the carrier, so it gets no window at all.
           await applyPaymentReservationPolicy(client, orderId, paymentMethod);
         }
@@ -1116,7 +1117,7 @@ export function setupCartRoutes(app: Express): void {
           // assuming a rail, so a PromptPay customer is never sent to a card
           // form by a default.
           paymentMethod: r.payment_method ?? null,
-          // The payment reservation deadline (Dynamic Payment Reservation V1).
+          // The payment reservation deadline (FIXED 30 minutes, server clock).
           // Milliseconds, or null when the order has no window (COD, legacy
           // rows). Presentation reads it; the backend stays the source of truth.
           paymentExpiresAt: r.payment_expires_at ? new Date(r.payment_expires_at).getTime() : null,

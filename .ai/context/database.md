@@ -104,11 +104,12 @@ because the latency was connection acquisition, not the plan (handoff §34).
 
 ## Payment reservation (orders.payment_expires_at)
 
-`orders` carries the Dynamic Payment Reservation V1 window: `payment_expires_at TIMESTAMPTZ`
+`orders` carries the fixed 30-minute payment reservation: `payment_expires_at TIMESTAMPTZ`
 (NULL = no window — COD orders and every row that predates the feature, which the sweep ignores)
-and `reservation_policy JSONB` (the audited policy: `riskLevel`, `reservationMinutes`, `reason`,
-`signals`). Both are written by `backend/lib/payment-reservation.ts` inside the order-creation
-transaction; nothing else writes them.
+and `reservation_policy JSONB` (the audited policy: `{version: "v2", reservationMinutes: 30,
+reason, expiresAt}`; a v1 row with `riskLevel` + `signals` is historical data only — the risk-band
+calculation no longer exists). Both are written by `backend/lib/payment-reservation.ts` inside the
+order-creation transaction; nothing else writes them.
 
 `idx_orders_payment_expires_at ON orders (payment_expires_at) WHERE payment_expires_at IS NOT NULL`
 serves the sweep's range scan **and** its `ORDER BY`; the status / `inventory_released` filters are

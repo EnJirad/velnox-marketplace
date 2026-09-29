@@ -1079,4 +1079,142 @@ describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => 
       await purgeUsers([seed.ownerId, seed.sellerUserId]);
     }
   });
+
+  // ── Part ②: the reservation worker against the rest of the system ────────
+
+  test("TEST 05 — the expiry sweep ∥ a seller confirmation: an unpaid order never enters fulfilment", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    const { query } = await import("../db/index.js");
+    await query(`UPDATE orders SET payment_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, [seed.orderId]);
+    try {
+      await holdOrderLock(seed.orderId, async (release) => {
+        let decided = 0;
+        const confirm = withServer((base) => sellerSetStatus(base, seed.orderId, seed.sellerUserId, "confirmed"))
+          .then((r) => { decided++; return r; });
+        const expire = expirePaymentReservation(seed.orderId).then((r) => { decided++; return r; });
+
+        await sleep(600);
+        expect(decided).toBe(0); // both are inside their transaction, on the order row
+        await release();
+
+        const [sellerRes, expiry] = await Promise.all([confirm, expire]);
+        // The confirmation is refused whichever side held the lock first: either
+        // the transition table rejects `expired`, or the payment gate rejects an
+        // unpaid order (`confirmed` requires settled money).
+        expect([400, 409]).toContain(sellerRes.status);
+        expect(["INVALID_TRANSITION", "PAYMENT_NOT_CONFIRMED"]).toContain(sellerRes.body.error?.code ?? "");
+        expect(expiry.outcome).toBe("expired");
+
+        const after = await stateOf(seed.orderId, seed.productId);
+        expect(after.status).toBe("expired"); // never `confirmed`, never active
+        expect(after.inventoryReleased).toBe(true);
+        expect(after.reserved).toBe(0); // released exactly once
+        expect(after.soldCount).toBe(0);
+      });
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 06 — the expiry sweep ∥ packing: a lapsed deadline can never cancel work in progress", async () => {
+    // Real flow up to the race: pay → confirm. `payment_expires_at` stays behind
+    // as history and has now lapsed, so the worker has something to act on — and
+    // must refuse to act on it while the shop starts packing.
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    const { query } = await import("../db/index.js");
+    try {
+      expect(await deliverWebhook(succeededEvent(seed.orderId))).toBe(200);
+      await withServer(async (base) => {
+        expect((await sellerSetStatus(base, seed.orderId, seed.sellerUserId, "confirmed")).status).toBe(200);
+      });
+      await query(`UPDATE orders SET payment_expires_at = NOW() - INTERVAL '5 minutes' WHERE id = $1`, [seed.orderId]);
+
+      // Both run at the same moment against the same order.
+      const [expiry, packRes] = await Promise.all([
+        expirePaymentReservation(seed.orderId),
+        withServer((base) => sellerSetStatus(base, seed.orderId, seed.sellerUserId, "packing")),
+      ]);
+
+      // The worker refuses on BOTH levels: the eligibility read excludes every
+      // fulfilment status, and the guarded claim would match 0 rows anyway.
+      expect(expiry.outcome).toBe("skipped");
+      expect(expiry.reason).toContain("already decided");
+      expect(packRes.status).toBe(200);
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("packing"); // NOT expired, NOT cancelled
+      expect(after.inventoryReleased).toBe(false); // committed stock never released
+      expect(after.reserved).toBe(0);
+      expect(after.soldCount).toBe(3); // exactly one commit at settlement
+      expect(after.quantity).toBe(50);
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 09 — the settlement delivered twice DURING the expiry: one terminal transition at most", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    const { query } = await import("../db/index.js");
+    await query(`UPDATE orders SET payment_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, [seed.orderId]);
+    const event = succeededEvent(seed.orderId);
+    try {
+      // Three real writers at once: the worker and two deliveries of ONE event.
+      const [s1, s2, expiry] = await Promise.all([
+        deliverWebhook(event),
+        deliverWebhook(event),
+        expirePaymentReservation(seed.orderId),
+      ]);
+      expect(s1).toBe(200);
+      expect(s2).toBe(200);
+      expect(["expired", "skipped"]).toContain(expiry.outcome);
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      // Whichever side won, exactly ONE terminal inventory transition happened.
+      const committed = after.status === "paid";
+      const released = after.status === "expired";
+      expect(committed || released).toBe(true);
+      expect(after.reserved).toBe(0);
+      expect(after.quantity).toBe(50); // never negative, never double-touched
+      expect(after.soldCount).toBe(committed ? 3 : 0);
+      expect(after.inventoryReleased).toBe(released);
+      expect(after.payments.filter((p) => p.status === "paid")).toHaveLength(1); // money recorded once
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 10 — checkout.session.completed ∥ the expiry sweep: the final state follows the real payment state", async () => {
+    const seed = await seedOrder({ status: "pending_payment", quantity: 3, payment: { status: "requires_action" } });
+    const { query } = await import("../db/index.js");
+    await query(`UPDATE orders SET payment_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, [seed.orderId]);
+    try {
+      const [sessionStatus, expiry] = await Promise.all([
+        deliverWebhook(paidSessionEvent(seed.orderId)),
+        expirePaymentReservation(seed.orderId),
+      ]);
+      expect(sessionStatus).toBe(200);
+      expect(["expired", "skipped"]).toContain(expiry.outcome);
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      const paid = after.status === "paid";
+      const expired = after.status === "expired";
+      expect(paid || expired).toBe(true);
+      expect(after.reserved).toBe(0);
+      expect(after.quantity).toBe(50);
+      if (paid) {
+        // The charge won: committed once, and the worker refuses to touch it.
+        expect(expiry.outcome).toBe("skipped");
+        expect(after.soldCount).toBe(3);
+        expect(after.inventoryReleased).toBe(false);
+      } else {
+        // The deadline won first: the session's money is still RECORDED, but
+        // the order is not resurrected and nothing is committed.
+        expect(after.soldCount).toBe(0);
+        expect(after.inventoryReleased).toBe(true);
+        expect(after.payments.filter((p) => p.status === "paid")).toHaveLength(1);
+      }
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
 });

@@ -50,25 +50,24 @@ The rule the storefront reads is `orderCustomerCancelability()` /
 button and server, pinned by `backend/tests/customer-order-cancel.test.ts`. Copy lives in the
 `orderCancel` i18n namespace.
 
-## Payment reservation window (Dynamic Payment Reservation V1)
+## Payment reservation window (FIXED 30 minutes)
 
-An unpaid order holds stock for a **risk-based window** instead of forever. The deadline is decided
+An unpaid order holds stock for a **fixed 30 minutes** instead of forever. The deadline is decided
 once, inside the order-creation transaction, by `backend/lib/payment-reservation.ts` and stored on
-the order (`orders.payment_expires_at` + `orders.reservation_policy`, the audited policy JSON).
+the order (`orders.payment_expires_at` + `orders.reservation_policy`, the audited policy JSON
+`{version, reservationMinutes, reason, expiresAt}`):
 
-| Risk | Window | Fires when |
-|---|---|---|
-| CRITICAL | 15 min | ≤2 available · ≤5 available with ≥1 unit/day · <1.5 days of cover · promoted AND ≤5 available |
-| HIGH | 20 min | ≤10 available · ≤20 available with ≥1 unit/day · <3 days of cover |
-| NORMAL | 30 min | the default (also "stock unknown") |
-| LOW | 45 min | ≥20 available, <1 unit/day, ≥10 days of cover, not promoted |
-| VERY_LOW | 60 min | ≥50 available, ≤0.2 units/day, ≥30 days of cover, not promoted |
+    payment_expires_at = server_now + 30 minutes
 
-Hard limits **MIN 10 / MAX 60**, default **30** minutes. Signals come only from real columns:
-`inventory.quantity − reserved`, `product_variants.stock`, `products.featured` (the platform's
-promotion flag — there is **no** flash-sale column, so none is invented) and 7-day sales velocity
-from `order_items ⋈ orders`. The scarcest line decides the window. COD gets **no** window (no
-online payment is waited on).
+The value is a **constant** (`PAYMENT_RESERVATION_MINUTES = 30`, policy `version: "v2"`) taken from
+the SERVER clock — the client never supplies, extends or shortens it. Deliberately NOT dynamic:
+popularity, product views/clicks, sales velocity, demand score and customer behaviour feed nothing
+here (those belong to VelRepeat), so the storefront countdown always starts at 30:00 and the
+backend always enforces the same number. COD gets **no** window (no online payment is waited on).
+
+> v1 of this module was risk-based (15/20/30/45/60 minutes from stock cover + 7-day velocity).
+> That table no longer exists anywhere in the code. A stored `reservation_policy` row carrying
+> `version: "v1"` (with `riskLevel` + `signals`) is historical data only and is never re-derived.
 
 When the deadline passes, `backend/jobs/payment-reservation-scheduler.ts` (started in `server.ts`,
 30 s tick) ends the order:

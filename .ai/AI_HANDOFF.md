@@ -128,6 +128,24 @@ green; `git diff --check` clean; CI `36547644881` success on `d4e184d`. The prob
 to have teeth: removing the lock from `markPaymentCanceled` makes it fail with PostgreSQL
 `55P03`.
 
+**Part ② (same day) — the 30-minute reservation lifecycle, audited + tested end to end.**
+Nothing new was built: the system already existed (columns + index in both schema files,
+`lib/payment-reservation.ts` = fixed `PAYMENT_RESERVATION_MINUTES = 30` from the SERVER clock,
+the `payment-reservation-scheduler` worker wired at boot, countdown on both order surfaces with
+the GREEN/YELLOW/RED/EXPIRED tone contract, `orderReservation` copy in th/en/my, `paymentExpiresAt`
++ `reservationMinutes` on both order read routes). What was missing was the TEST MATRIX, so 7
+cases were added: expiry ∥ confirmation, expiry ∥ packing, expiry with a duplicated webhook,
+`checkout.session.completed` ∥ expiry, a settlement 1.5 s before the deadline, a pay-again
+attempt on an order the worker already ended, and the 1-reservation → at-most-1-terminal-
+transition invariant (plus `confirmed`/`packing` added to the never-expired status list).
+Stale "Dynamic Payment Reservation V1" wording (the deleted risk-band table) was corrected in
+`checkout.md`, `database.md`, `payment.md`, `cart.ts`, `server.ts`, `commerce.ts`, `th.ts`.
+Backend suite **1002 pass / 0 fail**, typecheck + `build:apps` + `i18n:check` green.
+**Still unverified: the production Neon columns** — dispatching the read-only
+`diag-neon-schema.yml` returns **403** (no `actions:write` on the app token) and `/api/_diag/schema`
+is 401 without a production session, so migration 048's presence in production remains an
+owner action, and the countdown is NOT claimed production-ready.
+
 ### 2026-09-29 — fulfilment state machine hardened: `packing` + payment/shipment gates
 
 ONE authority: `backend/lib/order-fulfillment.ts` — `pending → confirmed → packing →

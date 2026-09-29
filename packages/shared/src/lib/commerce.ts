@@ -309,8 +309,8 @@ export interface StoreOrder {
   }>;
   payments?: Array<{ id: string; method: string; status: string; amount: number }>;
   /**
-   * The payment reservation deadline in Unix ms (Dynamic Payment Reservation
-   * V1), or null/absent when the order holds no window (COD, legacy rows).
+   * The payment reservation deadline in Unix ms (FIXED 30-minute window), or
+   * null/absent when the order holds no window (COD, legacy rows).
    * The backend is the source of truth; the order page only counts down to it.
    */
   paymentExpiresAt?: number | null;
@@ -744,7 +744,7 @@ export function orderStripePayability(order: OrderPayabilityInput | null | undef
 }
 
 // ---------------------------------------------------------------------------
-// payment reservation window (Dynamic Payment Reservation V1)
+// payment reservation window (FIXED 30-minute payment reservation)
 // ---------------------------------------------------------------------------
 /** The smallest order shape the reservation countdown needs. */
 export interface OrderReservationInput {

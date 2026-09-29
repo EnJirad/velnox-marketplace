@@ -518,7 +518,7 @@ server.listen(PORT, "0.0.0.0", () => {
   // ─── VelRepeat V2 Scheduler (recurring commerce worker) ────────────
   startVelRepeatScheduler();
 
-  // ─── Payment reservation sweep (Dynamic Payment Reservation V1) ─────
+  // ─── Payment reservation sweep (FIXED 30-minute window) ──────────────
   // Ends unpaid orders whose reservation window has lapsed and returns their
   // stock through the one release path. The DB is the source of truth; the
   // interval only triggers the scan.

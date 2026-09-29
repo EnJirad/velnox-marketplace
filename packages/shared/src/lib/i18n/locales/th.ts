@@ -18,7 +18,7 @@ export const th = {
     cancelledNotice: "ออเดอร์นี้ถูกยกเลิกแล้ว — ไม่สามารถชำระเงินสำหรับออเดอร์นี้ได้อีก",
   },
   /**
-   * Payment-reservation copy (Dynamic Payment Reservation V1).
+   * Payment-reservation copy (FIXED 30-minute payment reservation).
    *
    * Same reason as `orderCancel` for living here: this block must be editable in
    * every locale, and `orderDetail` sits past the safe edit window of the large

@@ -712,6 +712,7 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       )
     ).rows[0];
     const inventory = (await query(`SELECT quantity, reserved FROM inventory WHERE product_id = $1`, [productId])).rows[0];
+    const product = (await query(`SELECT sold_count FROM products WHERE id = $1`, [productId])).rows[0];
     const payments = (
       await query(`SELECT status, failure_code FROM payments WHERE order_id = $1 ORDER BY created_at ASC`, [orderId])
     ).rows as Array<{ status: string; failure_code: string | null }>;
@@ -722,6 +723,8 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       reservationPolicy: order.reservation_policy as Record<string, unknown> | null,
       reserved: Number(inventory.reserved),
       quantity: Number(inventory.quantity),
+      /** 0 for a released/cancelled order — the exactly-once commit counter. */
+      soldCount: Number(product.sold_count),
       payments,
     };
   }
@@ -1302,7 +1305,11 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
   test("the expiry sweep only ever touches the pre-payment statuses it declares", async () => {
     // Belt and braces against a future edit widening the blast radius.
     expect([...PAYMENT_RESERVATION_EXPIRABLE_STATUSES]).toEqual(["pending", "pending_payment"]);
-    for (const status of ["paid", "shipped", "delivered", "completed", "cancelled", "refunded"]) {
+    // `confirmed` and `packing` are the fulfilment half of that blast radius: an
+    // order the shop has accepted (or started packing) must NEVER be expired —
+    // `payment_expires_at` stays behind as history after payment, and a lapsed
+    // deadline on it must not cancel work already in progress.
+    for (const status of ["paid", "confirmed", "packing", "shipped", "delivered", "completed", "cancelled", "refunded"]) {
       const seed = await seedOrder({ status, quantity: 2, reserved: 0, payment: { status: "paid" } });
       try {
         const result = await expirePaymentReservation(seed.orderId);
@@ -1313,6 +1320,171 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       } finally {
         await purgeUsers([seed.ownerId, seed.sellerUserId]);
       }
+    }
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // The reservation lifecycle matrix (Part ② — PHASE 7)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  test("TEST 01 — a settlement one second before the deadline wins, and the sweep that follows cannot touch it", async () => {
+    // 1.5 seconds of runway: the charge lands INSIDE the window, and only after
+    // that does the deadline actually lapse — the boundary case, not a comfortable
+    // 20-minute margin.
+    const seed = await seedOrder({
+      status: "pending_payment",
+      quantity: 2,
+      expiresInMs: 1_500,
+      payment: { status: "requires_action" },
+    });
+    try {
+      const status = await deliverWebhook({
+        id: `evt_b1_${crypto.randomUUID()}`,
+        object: "event",
+        type: "payment_intent.succeeded",
+        data: {
+          object: {
+            id: `pi_b1_${crypto.randomUUID()}`,
+            object: "payment_intent",
+            metadata: { orderId: seed.orderId },
+          },
+        },
+      });
+      expect(status).toBe(200);
+
+      const paid = await stateOf(seed.orderId, seed.productId);
+      expect(paid.status).toBe("paid");
+      expect(paid.reserved).toBe(0); // reserved → committed
+      expect(paid.soldCount).toBe(2); // committed exactly once
+      expect(paid.inventoryReleased).toBe(false); // …and NEVER released
+
+      // Outlive the deadline: the reservation really does lapse now.
+      await new Promise((r) => setTimeout(r, 1_800));
+      const sweep = await expirePaymentReservation(seed.orderId);
+      // The worker re-checks the payment state UNDER the order lock: a settled
+      // charge is never expired out from under the customer.
+      expect(sweep.outcome).toBe("skipped");
+      expect(sweep.reason).toContain("paid");
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("paid"); // never cancelled by the worker
+      expect(after.inventoryReleased).toBe(false);
+      expect(after.reserved).toBe(0);
+      expect(after.soldCount).toBe(2); // still exactly ONE commit
+      expect(after.quantity).toBe(50); // available stock untouched
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 11 — an order the worker already ended cannot start a new payment", async () => {
+    // A genuinely expired order: produced by the REAL worker, not hand-written.
+    const seed = await seedOrder({
+      status: "pending_payment",
+      quantity: 2,
+      expiresInMs: -1_000,
+      payment: { status: "requires_action" },
+    });
+    try {
+      expect((await expirePaymentReservation(seed.orderId)).outcome).toBe("expired");
+      const expired = await stateOf(seed.orderId, seed.productId);
+      expect(expired.status).toBe("expired");
+      expect(expired.inventoryReleased).toBe(true);
+
+      const paymentsBefore = expired.payments.length;
+
+      // Without a fully usable test-mode configuration the provider gate would
+      // refuse first (503) and this would measure Stripe's absence rather than
+      // the reservation rule — same reason as the neighbouring checkout cases.
+      useStripeTestMode();
+
+      // The customer presses "pay again" on the expired order: the existing
+      // rules refuse it — an expired reservation is never reused, and no new
+      // attempt/session/charge is fabricated to let the order revive.
+      const attempt = await startCheckout(seed.orderId, seed.ownerId, "CARD");
+      expect(attempt.status).toBeGreaterThanOrEqual(400);
+      expect(["INVALID_STATUS", "PAYMENT_RESERVATION_EXPIRED"]).toContain(attempt.body.error?.code ?? "");
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("expired"); // NOT revived
+      expect(after.payments.length).toBe(paymentsBefore); // no new payment attempt
+      expect(after.payments.every((p) => p.status !== "paid")).toBe(true); // nothing fabricated
+      expect(after.reserved).toBe(0); // never re-reserved
+      expect(after.inventoryReleased).toBe(true); // still released, exactly once
+      expect(after.soldCount).toBe(0);
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("TEST 14 — one reservation → at most ONE terminal inventory transition, never both", async () => {
+    const q = 2;
+    const settled = await seedOrder({
+      status: "pending_payment",
+      quantity: q,
+      expiresInMs: 60_000,
+      payment: { status: "requires_action" },
+    });
+    const lapsed = await seedOrder({
+      status: "pending_payment",
+      quantity: q,
+      expiresInMs: -1_000,
+      payment: { status: "requires_action" },
+    });
+    try {
+      // ── Path A: settled → committed, and the worker can never release it ──
+      expect(
+        await deliverWebhook({
+          id: `evt_inv_${crypto.randomUUID()}`,
+          object: "event",
+          type: "payment_intent.succeeded",
+          data: {
+            object: {
+              id: `pi_inv_${crypto.randomUUID()}`,
+              object: "payment_intent",
+              metadata: { orderId: settled.orderId },
+            },
+          },
+        }),
+      ).toBe(200);
+      expect((await expirePaymentReservation(settled.orderId)).outcome).toBe("skipped");
+      expect((await expirePaymentReservation(settled.orderId)).outcome).toBe("skipped"); // twice
+
+      // ── Path B: expired → released, and a late charge can never commit it ──
+      expect((await expirePaymentReservation(lapsed.orderId)).outcome).toBe("expired");
+      expect((await expirePaymentReservation(lapsed.orderId)).outcome).toBe("skipped"); // second worker
+      expect(
+        await deliverWebhook({
+          id: `evt_inv2_${crypto.randomUUID()}`,
+          object: "event",
+          type: "payment_intent.succeeded",
+          data: {
+            object: {
+              id: `pi_inv2_${crypto.randomUUID()}`,
+              object: "payment_intent",
+              metadata: { orderId: lapsed.orderId },
+            },
+          },
+        }),
+      ).toBe(200);
+
+      // ── The invariant, asserted on both terminals ──────────────────────
+      const a = await stateOf(settled.orderId, settled.productId);
+      expect(a.soldCount).toBe(q); // committed ONCE
+      expect(a.inventoryReleased).toBe(false); // and never released
+      expect(a.reserved).toBe(0); // reserved → committed
+      expect(a.quantity).toBe(50);
+
+      const b = await stateOf(lapsed.orderId, lapsed.productId);
+      expect(b.soldCount).toBe(0); // never committed
+      expect(b.inventoryReleased).toBe(true); // released ONCE
+      expect(b.reserved).toBe(0); // reserved → available
+      expect(b.quantity).toBe(50); // stock never went negative
+      // The late money is RECORDED on the payment row (that is what makes it
+      // refundable) but it never flips the order back to paid:
+      expect(b.status).toBe("expired");
+    } finally {
+      await purgeUsers([settled.ownerId, settled.sellerUserId, lapsed.ownerId, lapsed.sellerUserId]);
     }
   });
 });

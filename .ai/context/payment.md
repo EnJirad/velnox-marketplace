@@ -12,7 +12,7 @@ ONLY** — a live-looking secret key is refused, never used.
 - `backend/routes/stripe.ts` — checkout, webhook, payment status, refund, order detail
 - `backend/routes/cart.ts` — `POST /api/customer/checkout` (order creation) + same method guard
 - `apps/velshop/src/pages/ShopCheckout.tsx` — storefront; renders only backend-enabled methods
-- `backend/lib/payment-reservation.ts` — the ONE Dynamic Payment Reservation V1 policy (window +
+- `backend/lib/payment-reservation.ts` — the ONE fixed 30-minute reservation policy (the window +
   the audited `reservation_policy` written on the order)
 - `backend/jobs/payment-reservation-scheduler.ts` — the expiry sweep (`expired` + release + session close)
 - DB: `payments`, `payment_events`, `refunds`, `orders`, `checkout_requests`, `inventory`
