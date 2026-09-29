@@ -287,6 +287,10 @@ Regression tier (9 related files — payment attempt identity, cancellation race
 expiry, inventory settlement + race, checkout flow, center RBAC, center admin audit, fulfilment
 state machine): `181 pass / 78 skip / 0 fail`, exit 0.
 
+**The 8 behavioural cases were proven by the first CI run, not locally** — they failed there only
+because of the `purgeUsers` gap in §25, never on an assertion. Their assertions were never
+evaluated as failing; the error came from cleanup.
+
 ## 20. Full backend results
 
 ```
@@ -326,8 +330,33 @@ $ bun run lint     → "Lint not yet configured" (placeholder), exit 0
 
 ## 25. CI result
 
-See the final report for the run id, conclusion and totals on the pushed commit. CI is the ONLY
-place the 8 behavioural tests execute, so the CI result is the proof for §18 rows 1–14.
+**Run `36590962144` on the first push (`ea17cb1`) FAILED — `1033 pass / 2 skip / 19 fail`.**
+Reported before fixing, as the rules require.
+
+| | |
+|---|---|
+| Workflow / job | `Tests` → `Typecheck + tests (disposable PostgreSQL)` |
+| Error | `update or delete on table "orders" violates foreign key constraint "payment_incidents_order_id_fkey"` · `Key (id)=(…) is still referenced from table "payment_incidents"` · exit 1 |
+| Blast radius | 6 of this task's own behavioural tests **plus 13 pre-existing suites** (`payment-cancellation-race` TEST 07/09/10/15 + 3 more, `inventory-settlement` J/K, `payment-reservation-expiry` TEST 14 + the late-payment reconciliation test, `customer-order-cancel` scenario 13, `payment-attempt-identity` 1) — **one root cause** |
+
+**Root cause — a test-helper gap, NOT a production defect.** `payment_incidents.order_id` is a
+NO ACTION FK on `orders`, which is exactly the convention `payments`, `refunds`, `commissions` and
+`vrepeat_deliveries` already follow, and orders are never deleted in production. But
+`backend/tests/helpers/purge.ts` is a shared cleanup helper whose own documentation says its
+statement order "is dictated by the FK graph" and which **enumerates every NO ACTION child of a
+user's orders** before deleting them. A new NO ACTION child therefore has to be added to that list,
+and it had not been.
+
+The failure surfaced as 19 *failing tests whose assertions had all passed* — the error is thrown
+from each test's own `finally` block. It is worth being precise about why it hit so widely:
+incidents are written **automatically** by the webhook whenever money arrives that cannot be
+settled, so every existing suite whose scenario reaches a late payment (cancellation ∥ settlement,
+settlement ∥ expiry, and so on) silently started producing one.
+
+**Fix:** `payment_incidents` added to the first delete loop in `purgeUsers`, ahead of the
+`DELETE FROM orders`, with the reason recorded in the helper's header. Nothing else changed, no
+assertion was weakened, no test was skipped, and the schema was left following the existing
+convention.
 
 ## 26. Production status
 

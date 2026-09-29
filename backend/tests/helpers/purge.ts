@@ -13,9 +13,9 @@
  * canonical bootstrap (`db/run-sqleditor.sql`):
  *
  *   1. the NO ACTION children of the user's orders (product_reviews, payments,
- *      refunds, commissions, vrepeat_deliveries), then the orders themselves —
- *      order_items and shipments cascade, checkout_requests and velrepeat_runs
- *      are SET NULL, so neither blocks;
+ *      refunds, commissions, vrepeat_deliveries, payment_incidents), then the
+ *      orders themselves — order_items and shipments cascade,
+ *      checkout_requests and velrepeat_runs are SET NULL, so neither blocks;
  *   2. `seller_verifications.reviewed_by` is cleared, so those rows can leave
  *      with their seller (seller_verifications.seller_id → sellers CASCADE);
  *   3. the users — sellers, shops, products, inventory, seller goals,
@@ -27,13 +27,28 @@
  * `subscriptions`, `behavioral_events`, `platform_settings`,
  * `product_verifications`) are deliberately not handled — no fixture in this
  * suite writes them, and silently deleting them would hide a real leak.
+ *
+ * `payment_incidents` joined this list with audit HIGH #5 (2026-09-29). It is
+ * a NO ACTION child of `orders`, and it is written AUTOMATICALLY by the
+ * webhook whenever money arrives that cannot be settled — so it is not
+ * something a fixture opts into: any suite whose scenario reaches a late
+ * payment produces one, and without this the `DELETE FROM orders` below
+ * throws 23503 from the test's own `finally` block, which surfaces as a
+ * failing test whose assertions had all passed.
  */
 export async function purgeUsers(userIds: Array<string | null | undefined>): Promise<void> {
   const ids = userIds.filter((id): id is string => Boolean(id));
   if (ids.length === 0) return;
   const { query } = await import("../../db/index.js");
 
-  for (const table of ["product_reviews", "payments", "refunds", "commissions", "vrepeat_deliveries"]) {
+  for (const table of [
+    "payment_incidents",
+    "product_reviews",
+    "payments",
+    "refunds",
+    "commissions",
+    "vrepeat_deliveries",
+  ]) {
     await query(
       `DELETE FROM ${table} WHERE order_id IN (SELECT id FROM orders WHERE user_id = ANY($1::uuid[]))`,
       [ids],

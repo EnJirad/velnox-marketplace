@@ -796,6 +796,13 @@ inventory file, no frontend, no new business rule.
   8 behavioural (CI-only) covering cases A–D, dedupe, authorization, and that resolving changes
   nothing but the incident. Local full suite **878 pass / 176 skip / 0 fail**, 1054 tests /
   49 files · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3 · schema parity.
+- **⚠️ First CI run FAILED (`36590962144`, `1033 pass / 19 fail`) — a test-helper gap, NOT a
+  production defect.** `payment_incidents.order_id` is a NO ACTION FK on `orders` (the convention
+  `payments`/`refunds` already follow), but `backend/tests/helpers/purge.ts` enumerates every NO
+  ACTION child of a user's orders before deleting them, and the new table was missing from that
+  list. Incidents are written **automatically** by the webhook, so all 13 pre-existing late-payment
+  suites started failing too — in their own `finally` block, with all assertions passed. Fixed by
+  adding the table to that loop; no assertion weakened, no test skipped, schema unchanged.
 - **Full evidence (28 sections):**
   [`.ai/tasks/completed/late-payment-operator-2026-09-29.md`](tasks/completed/late-payment-operator-2026-09-29.md)
 - **⚠️ OWNER DECISION, not solved here:** in Case A the charge sits on a `failed` row, so the
