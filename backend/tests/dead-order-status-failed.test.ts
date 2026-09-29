@@ -447,7 +447,7 @@ describeDb("release guard + orders.status CHECK against a real database (require
     await query(
       `INSERT INTO order_items (order_id, product_id, product_name, quantity, price, subtotal)
        VALUES ($1, $2, 'test', $3, 100, $4)`,
-      [orderId, productId, "test", orderQty, 100 * orderQty],
+      [orderId, productId, orderQty, 100 * orderQty],
     );
     return orderId;
   }
