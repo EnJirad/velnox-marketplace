@@ -2,6 +2,7 @@ import { ResumePaymentButton } from "@/components/shop/ResumePaymentButton";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { useLanguage } from "@/lib/i18n";
+import { OrderStatusBadge } from "@velnox/shared/components/order/OrderStatusBadge";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import {
@@ -26,7 +27,6 @@ import {
   formatIsoDate,
   formatIsoDateTime,
   formatPaymentCountdown,
-  getOrderStatusMeta,
   orderStatusI18nKey,
   orderStripePayability,
   paymentReservationPhase,
@@ -378,7 +378,6 @@ export default function MyOrders() {
           ) : (
             <div className="mt-3 space-y-4">
               {orders.map((order: StoreOrder) => {
-                const meta = getOrderStatusMeta(order.status);
                 // The badge TEXT must follow the shopper's language — the shared
                 // `meta.label` stays the Thai seller-side fallback.
                 const statusLabel = t(orderStatusI18nKey(order.status));
@@ -408,9 +407,16 @@ export default function MyOrders() {
                     key={order.id}
                     className="rounded-xl border border-slate-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-[#10B981]/40 hover:shadow-[0_12px_30px_rgba(15,23,42,0.06)]"
                   >
-                    <Link to={`/orders/${order.id}`} className="block p-5">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
+                    {/*
+                      Header: the order number on the LEFT, the status badge TOP RIGHT
+                      of the same row. The badge used to sit at the bottom of the card
+                      next to the total, where it read as part of the money block; and
+                      the whole card used to be one big link, which made every product in
+                      it open the ORDER instead of the product.
+                    */}
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 p-5 pb-4">
+                      <Link to={`/orders/${order.id}`} className="group min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-[#10B981]">
                           {t("orders.orderNo", { no: shortOrderNumber(order.orderNumber) })}
                         </p>
                         <p className="mt-0.5 text-xs text-slate-400">
@@ -419,31 +425,60 @@ export default function MyOrders() {
                             count: order.itemCount ?? items.reduce((s, i) => s + i.quantity, 0),
                           })}
                         </p>
-                      </div>
+                      </Link>
+                      <OrderStatusBadge status={order.status} label={statusLabel} />
+                    </div>
 
-                      <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
-                        {items.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between gap-3 text-sm">
-                            <span className="flex min-w-0 items-center gap-2.5">
-                              {item.imageUrl ? (
-                                <img
-                                  src={item.imageUrl}
-                                  alt=""
-                                  className="size-9 shrink-0 rounded-lg border border-slate-100 object-cover"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-50">
-                                  <ImageOff className="size-3.5 text-slate-300" />
+                    {/*
+                      Items — each product row is its OWN link to the product page, so
+                      tapping a product opens the PRODUCT. The order number above is what
+                      opens the order. A product that is no longer on sale renders as an
+                      unlinkable row with an honest label rather than a dead link.
+                    */}
+                    <ul className="mx-5 list-none space-y-2 border-t border-slate-100 pb-1 pl-0 pt-4">
+                      {items.map((item) => {
+                        const productAvailable = item.productStatus === "published";
+                        const row = (
+                          <>
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt=""
+                                className={`size-9 shrink-0 rounded-lg border border-slate-100 object-cover ${
+                                  productAvailable ? "" : "opacity-60"
+                                }`}
+                                loading="lazy"
+                              />
+                            ) : (
+                              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-50">
+                                <ImageOff className="size-3.5 text-slate-300" />
+                              </span>
+                            )}
+                            <span className="min-w-0">
+                              <span className="block truncate text-slate-600">{item.productName}</span>
+                              {item.variantName && (
+                                <span className="block truncate text-xs text-slate-400">{item.variantName}</span>
+                              )}
+                              {!productAvailable && (
+                                <span className="block truncate text-xs text-amber-600">
+                                  {t("orderDetail.productUnavailable")}
                                 </span>
                               )}
-                              <span className="min-w-0">
-                                <span className="block truncate text-slate-600">{item.productName}</span>
-                                {item.variantName && (
-                                  <span className="block truncate text-xs text-slate-400">{item.variantName}</span>
-                                )}
-                              </span>
                             </span>
+                          </>
+                        );
+                        return (
+                          <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                            {productAvailable ? (
+                              <Link
+                                to={`/products/${item.productId}`}
+                                className="flex min-w-0 items-center gap-2.5 transition-colors hover:text-[#10B981]"
+                              >
+                                {row}
+                              </Link>
+                            ) : (
+                              <span className="flex min-w-0 items-center gap-2.5">{row}</span>
+                            )}
                             <span className="flex shrink-0 items-center gap-3">
                               <span className="text-xs text-slate-400">
                                 × {item.quantity}
@@ -453,11 +488,12 @@ export default function MyOrders() {
                                 {formatBaht(item.subtotal)}
                               </span>
                             </span>
-                          </div>
-                        ))}
-                      </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
 
-                      {/*
+                    {/*
                         The card's own status, with ITS countdown underneath.
 
                         Position matters (ORDER UX POLISH): the status and the timer sit
@@ -466,19 +502,14 @@ export default function MyOrders() {
                         clock for the whole list, and each card derives its own remaining
                         time from its own `paymentExpiresAt` — never a shared deadline.
                       */}
-                      <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-4">
+                      <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 px-5 pb-5 pt-4">
                         <div className="min-w-0">
-                          <Badge className={`gap-1.5 rounded-full text-xs font-semibold ring-1 ring-inset ${meta.badge}`}>
-                            <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                            {statusLabel}
-                          </Badge>
-
                           {(reservationPhase === "active" || reservationPhase === "urgent") && (
                             <>
                               <p
                                 role="timer"
                                 aria-live="off"
-                                className={`mt-2 flex items-center gap-1.5 text-sm font-semibold tabular-nums ${RESERVATION_TONE_TEXT[tone]}`}
+                                className={`flex items-center gap-1.5 text-sm font-semibold tabular-nums ${RESERVATION_TONE_TEXT[tone]}`}
                               >
                                 <Clock3 className="size-3.5 shrink-0" />
                                 {t("orderReservation.payWithin", {
@@ -515,7 +546,7 @@ export default function MyOrders() {
                               The dark state the spec asks for: no negative clock,
                               and the "stock returned" sentence only once the
                               backend has actually written `expired`. */
-                            <div className="mt-2 rounded-lg bg-slate-900 px-3 py-2">
+                            <div className="rounded-lg bg-slate-900 px-3 py-2">
                               <p className="flex items-center gap-1.5 text-xs font-semibold text-white">
                                 <XCircle className="size-3.5 shrink-0 text-slate-400" />
                                 {t("orderReservation.expiredTitle")}
@@ -536,7 +567,6 @@ export default function MyOrders() {
                           </p>
                         </div>
                       </div>
-                    </Link>
                     <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
                       <Button
                         variant="outline"

@@ -559,59 +559,17 @@ they led to is §37; the order surfaces themselves are recorded by §38 and §39
 
 ---
 
-## 37. CRITICAL — production checkout down: migration 048 never applied (2026-09-28)
+## 37. Migration 048 never applied — checkout read path repaired (2026-09-28)
 
-**Reported.** Render: `ERROR 42703 column "payment_expires_at" does not exist` and
-`[stripe] checkout error: column "payment_expires_at" does not exist` → no Checkout Session could be
-created, so no sale could be paid. OAuth unaffected.
+**Archived for length** → `.ai/history/archive/AI_Handoff-2026-09-28-migration-048-read-path.md`.
+In one line: production Neon still had no `orders.payment_expires_at`, the migration run died on the
+§22 quota, and the checkout READ named the column so a missing deadline took checkout down instead of
+being unenforced. Fixed by `selectOrderPaymentRow()` (`to_jsonb(o) ->> 'payment_expires_at'`: one
+statement that is correct against both schemas and cannot raise 42703). Still open — see §40.
 
-**Two independent causes — neither is "the field is in the wrong table".**
-
-1. **Production schema is behind the code.** `Migrate Neon Database` DID fire for migration 048
-   (run `36371800184`, commit `df719fe`) and **failed at its first statement**: `psql: … "ep-super-bird-
-   az88b4p7-pooler…neon.tech" failed: ERROR: Your account or project has exceeded the quota.`
-   (the §22 Neon quota, again). So it is absent from `schema_migrations` and never applied.
-2. **The read path had no deploy-order net.** `248db45` hardened the reservation **write** and the
-   **sweep**, but the **checkout read** still named the column
-   (`SELECT … payment_expires_at FROM orders WHERE id = $1`) → 42703 → 500 `STRIPE_ERROR`, before the
-   reservation guard could run. A missing deadline took checkout down instead of not being enforced.
-
-**Placement verified correct, not moved.** `payments` has no expiry column; the stock reservation IS
-order-keyed (`inventory_released` + the ONE release path `releaseOrderInventory(orderId)`).
-`orders.payment_expires_at` is the single source of truth already agreed across schema, migration,
-sweep, index and UI. No new table, column, endpoint or reservation system.
-
-**Fix — `fix(payments): survive a database that predates the reservation columns`.**
-
-| Piece | Change |
-|---|---|
-| `backend/lib/payment-reservation.ts` | NEW `selectOrderPaymentRow()` reads the deadline as `to_jsonb(o) ->> 'payment_expires_at'`: a JSON key lookup is NULL when the column is absent, so ONE statement is correct against BOTH schemas and **cannot raise** 42703. Chosen over "catch 42703 and retry" because the webhook runs inside `withTransaction` — PostgreSQL aborts a whole transaction on the first failed statement (`25P02`), so a retry would trade a broken checkout for a broken webhook. Also `warnReservationSchemaMissing()` (once per process, names migration 048) |
-| `backend/routes/stripe.ts` | Checkout's order read and the webhook's non-payable-order diagnostic both go through it; nothing names the column in a statement any more |
-| `backend/tests/payment-reservation-expiry.test.ts` | NEW deploy-order cases, incl. a real-DB one that shadows a column-less `orders` into a throwaway schema **inside a transaction** and proves the error is real (42703), that it poisons the transaction (25P02) and that the read survives anyway; plus the canonical-schema happy path |
-| `backend/tests/customer-order-cancel.test.ts` | `reservation_expired` → `reservationExpired` (the alias became a JS variable) |
-| `db/` | **No change needed** — `schema.sql` / `run-sqleditor.sql` already carry both columns + the partial index and match on those lines; `run-update.sql` still absent |
-
-**Also repaired — pre-existing red `main`, NOT caused by this bug.** CI run `36372222449` on the
-pre-fix tip already failed 6 tests this workspace reproduced exactly. `payment-reservation-expiry`'s
-HTTP harness mounted neither `stripeWebhookRawBody` nor `cookieParser`, so its checkout cases answered
-**401** and its webhook cases never verified a signature — they had never tested what they claimed;
-both are now mounted in `server.ts`'s real order. Two `customer-order-cancel` failures were test-side
-too: scenario 9's fixture never set `inventory_released` (its own premise, "markPaymentFailed already
-released this stock", was unrepresentable) and scenario 11 filtered on `cancelled` — the ORDER's state,
-which scenario 10 pins as `true` for a cancel that moved nothing — instead of `alreadyFinal`. Stock had
-in fact been released exactly once in both.
-
-**Verification (executed here).** Disposable PostgreSQL bootstrapped from `db/run-sqleditor.sql`, then
-`psql --single-transaction -f db/migrations/048_payment_reservation.sql` + a `schema_migrations` row
-(mirroring the workflow): full backend suite **911 pass / 2 skip / 0 fail** (913, 41 files); the two
-touched suites **83 pass / 0 fail**; backend `tsc` 0; `typecheck` 4/4; `i18n:check` th=en=my=1338;
-`git diff --check` clean. The local DB was still pre-migration when the fix first ran and the new tests
-passed against it, i.e. the read genuinely survives the schema production is in today.
-
-**OWNER ACTION — production schema (BLOCKED for an agent).** `gh workflow run migrate-neon.yml` →
-**403 `Resource not accessible by integration`** (the GitHub App has no `actions: write`). Either
-**Actions → Migrate Neon Database → Run workflow** with `migration_file = 048_payment_reservation.sql`
-(clear the quota of `36371800184` first), **or** in the Neon SQL Editor:
+**OWNER ACTION (unchanged, still required).** Clear the Neon quota, then **Actions → Migrate Neon
+Database → Run workflow** with `migration_file = 048_payment_reservation.sql` (`gh workflow run`
+answers 403 — the GitHub App has no `actions: write`), **or** run this in the Neon SQL Editor:
 
 ```sql
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ;
@@ -622,30 +580,7 @@ INSERT INTO schema_migrations (migration_name)
   VALUES ('048_payment_reservation') ON CONFLICT (migration_name) DO NOTHING;
 ```
 
-Additive, nullable, no backfill, no rewrite; existing orders keep `NULL` (= "no window", exactly what
-the sweep ignores). Until applied the reservation feature is inert — but checkout works.
-
-**Still open.** Production schema unverified from an agent (no credentials; `diag-neon-schema.yml`
-cannot be dispatched for the same 403) — **do not report the column as verified until an owner read
-confirms it**. Stripe TEST E2E still BLOCKED (§16/§18). The 15/20/30/45/60 min windows come from the
-policy service; none is hard-coded in a route.
-
-**Verified here.** NEW `payment-reservation-policy.test.ts` **26 pass/0 fail** (the full risk
-table, MIN/MAX clamps over every signal combination, determinism, JSONB round trip, the
-42703-only tolerance) · NEW `payment-reservation-expiry.test.ts` **23 pass / 16 skip / 0 fail**
-(countdown + i18n + wiring + source contracts; the 16 skips are the `TEST_DATABASE_URL`-gated
-expiry/concurrency/webhook/savepoint cases; `payment-reservation` both files = 49 pass/16 skip) ·
-full backend suite **788 pass / 118 skip / 0 fail** (906 tests, 41 files; was 732/107/839)
-· `checkout-payment-flow.test.ts` 38 pass / 4 skip (shapes updated for the additive `expired`
-field) · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` 1338 · `diff
-db/schema.sql db/run-sqleditor.sql` identical · `git diff --check` clean.
-
-**NOT verified here (owner-side).** (1) The 15 DB-gated cases need `TEST_DATABASE_URL` or CI
-(`.github/workflows/test.yml` provisions `postgres:16` and bootstraps `db/run-sqleditor.sql`);
-apply migration `048` to production (Neon SQL Editor) **before** the backend that writes the
-column deploys. (2) A browser pass on the countdown and the expired notice (th/en/my). (3) No real
-Stripe delivery was reproduced here, so the "late payment after expiry → manual refund" path is
-proven at the state level in tests, not against a live charge.
+Additive and nullable; existing orders keep `NULL` (= "no window", what the sweep ignores).
 
 ---
 
@@ -812,3 +747,64 @@ never a hard-coded 30; deployed on Vercel (chunks carry `reservationMinutes`/`pr
 
 **Owner action:** clear the quota → apply 048 (re-queued as `d7282bb`, comment-only, still failing)
 → place a NEW order. Rows created earlier keep `NULL` by design and will never show a countdown.
+
+## 41. Order UX refactor — customer + seller order surfaces (2026-09-29)
+
+**Scope.** VelShop Orders / Order Detail and VelSeller Orders + a NEW seller Order Detail. The payment
+reservation, countdown, Stripe webhook, inventory release and the database schema were **not** touched
+(§38/§39/§40 carry them unchanged) — this pass moves and repaints the surfaces only. No migration, no
+new endpoint, no second timer, no second state machine.
+
+**One status vocabulary, one badge.** NEW `packages/shared/src/components/order/OrderStatusBadge.tsx`
+owns the icon + palette for every `orders.status` (11 values + `unknown`) and the five progress-stage
+icons. Both apps render it, so their statuses cannot drift. `lib/shop.ts`'s `ORDER_STATUS_ICONS` stays
+velcenter's six-status fulfilment map (its `shipped` label means something else), so the two were
+deliberately NOT merged.
+
+**VelShop.** Orders list: order number on the left and the status badge TOP RIGHT of the same header row
+(was: the badge sat in the money footer, where it read as part of the total); every product row is its
+OWN link to `/products/:id` (the whole card used to be one order link, so a product could never be
+opened from here), and an unavailable product renders unlinked with `orderDetail.productUnavailable`.
+Order Detail: the order number is the `h1`; the shop/seller block is REMOVED from the customer surface
+(`shopId`/`shopName` stay in the API — the seller page and velcenter still render them); the progress
+line keeps ONE ordered list and gains stage icons (done = check, current = the stage icon, not reached =
+outline), laid out vertically on a phone and horizontally from `sm`; a 401/403 load and a 404 now get
+different copy (`orderDetail.noAccess`/`noAccessDesc` vs `notFound`).
+
+**VelSeller.** `SellerOrders` becomes a management surface: server-side status filter chips
+(`?status=`, the six fulfilment statuses), an eight-column desktop table and tappable mobile cards,
+every order number linking to the new route. NEW `SellerOrderDetail` at `/seller/orders/:orderId`
+inside `RequireRole role="seller"`: customer, items (each product links to the storefront product page —
+there is no seller-side product route, and creating one was not this task), the order's OWN address
+snapshot, real shipment/tracking events newest-first with an honest empty state, payment, summary, and
+status buttons built from `NEXT_ORDER_STATUSES` = the backend's `SELLER_ORDER_STATUS_TRANSITIONS`
+(terminal orders explain themselves; cancelling confirms first because it restores stock server-side).
+It reads `GET /api/seller/orders/:id`, which resolves the seller from the SESSION and verifies ownership
+inside the query — the page passes no seller id.
+
+**Shared API client.** `api-routes.ts` now throws `ApiError` carrying the HTTP status (still an `Error`
+with the same message, so every existing `catch (err) { err.message }` is unchanged) — that is what lets
+the order page tell "not yours" (403) from "not found" (404).
+
+**Order numbers.** `generateOrderNumber()` moves to `backend/lib/order-number.ts`: ONE definition
+(cart.ts plus a dead copy in stripe.ts collapsed), `crypto.randomInt` instead of `Math.random`, and an
+alphabet without `0/O`, `1/I/L`, `U/V`. The format is unchanged — `VNX-YYYYMMDD-XXXXXX`, never
+sequential, no UUID exposed to a customer. `orders.order_number` was already guarded by
+`idx_orders_number_unique` (both schema files), so checkout now retries that ONE collision under a
+SAVEPOINT, and `isOrderNumberCollision()` refuses to treat any other unique violation as retryable.
+
+**New i18n.** `sellerOrders.*` (30 keys), `orderDetail.noAccess`/`noAccessDesc`,
+`trackingLabels.none` — in th, en and my.
+
+**Verified here.** `order-number` 7 pass · `seller-order-ux` 12 pass · `order-ux-polish` 22 pass (was
+20; two assertions moved onto the shared badge) · full backend suite **830 pass / 119 skip / 1 fail**, the
+single failure the pre-existing sandbox-only `.env` guard that passes in CI · backend `tsc` 0 ·
+`typecheck` 4/4 · `i18n:check` th=en=my=**1404** · `build:velshop` and `build:velseller` green, with
+`SellerOrderDetail` emitted as its own chunk · `git diff --check` clean.
+
+**Not verified here.** (1) A browser pass over both apps at 390/430/1280/1440 px — the sandbox has no
+session and no dev server is started per policy, so layout is pinned by contract tests, not observed.
+(2) The production schema: migration 048 is still unapplied (§40), so the countdown still renders only
+where `payment_expires_at` exists. (3) The seller list no longer carries an inline status dropdown —
+status changes are made on the order detail page, which is the redesigned flow (list → detail → change →
+back).

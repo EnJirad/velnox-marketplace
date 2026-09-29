@@ -31,6 +31,8 @@ import { expireStripeCheckoutSession } from "./stripe.js";
 // Item/shipment projections live in lib/order-read.ts (pure readers, extracted
 // from this file so the route handlers stay findable).
 import { fetchOrderItemsForOrders, fetchShipmentsForOrder } from "../lib/order-read.js";
+// The ONE order-number generator (crypto-backed) and its collision predicate.
+import { generateOrderNumber, isOrderNumberCollision } from "../lib/order-number.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -39,14 +41,62 @@ function param(req: Request, key: string): string {
 }
 
 /**
- * Generate a human-readable order number like VNX-20260909-AB12CD.
- * Used for COD orders (Stripe orders get this from stripe.ts).
+ * How many order numbers to try before giving up on a collision. Five attempts
+ * against ~8.9e8 references a day is already far past "never happens"; the point of
+ * the bound is that the loop can never become an infinite retry under a database
+ * that is somehow misbehaving.
  */
-function generateOrderNumber(): string {
-  const date = new Date();
-  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
-  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
-  return `VNX-${dateStr}-${rand}`;
+const ORDER_NUMBER_ATTEMPTS = 5;
+
+/**
+ * Create the order row with a fresh human-readable number, retrying the ONE
+ * collision the unique index can produce.
+ *
+ * `orders.order_number` is guarded by `idx_orders_number_unique`, so a random
+ * reference CAN collide — rarely, but on a busy day "rarely" is not "never". A
+ * duplicate key would otherwise abort the whole checkout transaction, and inside a
+ * transaction the failed statement poisons every statement after it, so the retry
+ * runs under a SAVEPOINT and restores the transaction to a usable point first.
+ *
+ * Only `isOrderNumberCollision()` is retried: any other unique violation (the
+ * checkout idempotency key, a cart row, a payment slot) keeps propagating, because
+ * replaying an INSERT that fails for a different reason would hide a real bug.
+ */
+async function insertOrderWithUniqueNumber(
+  client: { query: (sql: string, params?: unknown[]) => Promise<any> },
+  params: {
+    userId: string;
+    shopId: string;
+    totalAmount: number;
+    shippingAddressId: string | null;
+    addressSnapshot: string | null;
+    notes: string | null;
+  },
+): Promise<{ id: string; created_at: Date }> {
+  for (let attempt = 1; ; attempt += 1) {
+    await client.query("SAVEPOINT order_number_attempt");
+    try {
+      const orderResult = await client.query(
+        `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency, shipping_address_id, shipping_address, notes)
+         VALUES ($1, $2, $3, 'pending', $4, 'THB', $5, $6, $7)
+         RETURNING id, created_at`,
+        [
+          params.userId,
+          params.shopId,
+          generateOrderNumber(),
+          params.totalAmount,
+          params.shippingAddressId,
+          params.addressSnapshot,
+          params.notes,
+        ],
+      );
+      await client.query("RELEASE SAVEPOINT order_number_attempt");
+      return orderResult.rows[0];
+    } catch (err) {
+      await client.query("ROLLBACK TO SAVEPOINT order_number_attempt");
+      if (attempt >= ORDER_NUMBER_ATTEMPTS || !isOrderNumberCollision(err)) throw err;
+    }
+  }
 }
 
 /**
@@ -843,15 +893,16 @@ export function setupCartRoutes(app: Express): void {
             totalAmount += parseFloat(item.price) * item.quantity;
           }
 
-          // Create order (with human-readable order number)
-          const orderNumber = generateOrderNumber();
-          const orderResult = await client.query(
-            `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency, shipping_address_id, shipping_address, notes)
-             VALUES ($1, $2, $3, 'pending', $4, 'THB', $5, $6, $7)
-             RETURNING id, created_at`,
-            [userId, shopId, orderNumber, totalAmount, shippingAddressId || null, serverAddressSnapshot ? JSON.stringify(serverAddressSnapshot) : null, notes || null],
-          );
-          const orderId = orderResult.rows[0].id;
+          // Create order (with a human-readable, collision-checked order number)
+          const orderResult = await insertOrderWithUniqueNumber(client, {
+            userId,
+            shopId,
+            totalAmount,
+            shippingAddressId: shippingAddressId || null,
+            addressSnapshot: serverAddressSnapshot ? JSON.stringify(serverAddressSnapshot) : null,
+            notes: notes || null,
+          });
+          const orderId = orderResult.id;
 
           // Create order items + decrease stock
           for (const item of shopItems) {

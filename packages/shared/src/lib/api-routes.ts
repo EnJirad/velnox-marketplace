@@ -43,6 +43,35 @@ function invalidateGetCache(prefix?: string) {
   }
 }
 
+/**
+ * An API failure that remembers the HTTP status.
+ *
+ * WHY IT EXISTS — the order pages must tell "this order is not yours" (401/403)
+ * apart from "this order does not exist" (404): the two need different copy, and a
+ * `{ message }`-only Error made them indistinguishable in the browser. It is still
+ * an `Error` subclass carrying the same message, so every existing
+ * `catch (err) { err.message }` behaves exactly as before.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+/**
+ * Turn a non-2xx response into an `ApiError`, preserving the server's message and
+ * the status code. Always throws — call it as `if (!res.ok) await throwApiError(…)`.
+ */
+async function throwApiError(res: Response, fallback: string): Promise<never> {
+  const data = await res.json().catch(() => ({ error: fallback }));
+  const errMsg = data.error?.message || data.error || fallback;
+  throw new ApiError(res.status, typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
+}
+
 async function apiPost(path: string, args?: any): Promise<any> {
   invalidateGetCache();
   // Strip /api prefix if present — API_BASE already includes it
@@ -53,11 +82,7 @@ async function apiPost(path: string, args?: any): Promise<any> {
     headers: { "Content-Type": "application/json" },
     body: args ? JSON.stringify(args) : undefined,
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
-    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
-    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
-  }
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
   // Unwrap {success, data} envelope — components expect the inner payload
   return json.data !== undefined ? json.data : json;
@@ -68,11 +93,7 @@ async function apiGet(path: string): Promise<any> {
   if (cached && cached.expires > Date.now()) return cached.data;
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, { credentials: "include" });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
-    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
-    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
-  }
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
   // Unwrap {success, data} envelope — components expect the inner payload
   const unwrapped = json.data !== undefined ? json.data : json;
@@ -84,11 +105,7 @@ async function apiGet(path: string): Promise<any> {
 async function apiGetFresh(path: string): Promise<any> {
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, { credentials: "include", cache: "no-store" });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
-    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
-    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
-  }
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
   return json.data !== undefined ? json.data : json;
 }
@@ -102,11 +119,7 @@ async function apiPut(path: string, args?: any): Promise<any> {
     headers: { "Content-Type": "application/json" },
     body: args ? JSON.stringify(args) : undefined,
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
-    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
-    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
-  }
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
   return json.data !== undefined ? json.data : json;
 }
@@ -120,11 +133,7 @@ async function apiPatch(path: string, args?: any): Promise<any> {
     headers: { "Content-Type": "application/json" },
     body: args ? JSON.stringify(args) : undefined,
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
-    const errMsg = data.error?.message || data.error || `Request failed: ${res.status}`;
-    throw new Error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
-  }
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
   return json.data !== undefined ? json.data : json;
 }
@@ -136,10 +145,7 @@ async function apiDelete(path: string): Promise<any> {
     method: "DELETE",
     credentials: "include",
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(data.error || `Request failed: ${res.status}`);
-  }
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
   return json.data !== undefined ? json.data : json;
 }
@@ -234,7 +240,17 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
     return apiGet(`/api/products/catalog?${params}`);
   },
   "api.commerce.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),
-  "api.commerce.sellerOrders": (a) => apiGet(`/api/seller/orders?limit=${a?.limit ?? 50}`),
+  "api.commerce.sellerOrders": (a) =>
+    apiGet(
+      `/api/seller/orders${buildQuery({
+        limit: a?.limit ?? 50,
+        // Server-side status filter: the seller order tab shows the REAL filtered
+        // set for that status, not a client-side slice of one page of results.
+        status: a?.status,
+        offset: a?.offset,
+      })}`,
+    ),
+  "api.commerce.sellerOrderDetail": (a) => apiGet(`/api/seller/orders/${a.orderId}`),
   "api.commerce.setOrderStatus": (a) => apiPatch(`/api/seller/orders/${a.orderId}/status`, a),
   "api.commerce.cancelOrderAction": (a) => apiPatch(`/api/customer/orders/${a.orderId}/cancel`, {}),
   // VelRepeat packages (new system)

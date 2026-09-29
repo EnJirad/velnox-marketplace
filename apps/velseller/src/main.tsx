@@ -51,6 +51,7 @@ const SellerGoals = lazy(() => import("@/pages/SellerGoals"));
 const MyShop = lazy(() => import("@/pages/MyShop"));
 const Reorder = lazy(() => import("@/pages/Reorder"));
 const SellerOrders = lazy(() => import("@/pages/SellerOrders"));
+const SellerOrderDetail = lazy(() => import("@/pages/SellerOrderDetail"));
 const SellerChat = lazy(() => import("@/pages/SellerChat"));
 const SellerProfile = lazy(() => import("@/pages/SellerProfile"));
 const Income = lazy(() => import("@/pages/Income"));
@@ -95,6 +96,19 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireRole role="seller">
                 <SellerOrders />
+              </RequireRole>
+            }
+          />
+          {/*
+            The seller's own order detail. A child route of /seller/orders so the
+            list keeps its identity in the URL — the seller can deep-link to one
+            order and go back to the list without losing where they were.
+          */}
+          <Route
+            path="/seller/orders/:orderId"
+            element={
+              <RequireRole role="seller">
+                <SellerOrderDetail />
               </RequireRole>
             }
           />

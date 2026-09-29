@@ -37,9 +37,33 @@ Shop media keys: `shop/{shopId}/logo.webp`, `shop/{shopId}/cover.webp` (ownershi
 - All shop/product mutations verify `user → seller → shop` ownership server-side.
 - `PRODUCT_CATEGORY_META` is display fallback only; categories come from `GET /api/categories`.
 
+## Seller order surfaces (VelSeller Orders)
+
+```
+GET   /api/seller/orders?limit=&status=&offset=   list — seller-scoped, server-side status filter
+GET   /api/seller/orders/:id                      detail — ownership verified INSIDE the query
+PATCH /api/seller/orders/:id/status               transition — enforced by canTransitionOrderStatus()
+```
+
+- **`/seller/orders/:orderId` is a SELLER route** (`RequireRole role="seller"`), backed by
+  `apps/velseller/src/pages/SellerOrderDetail.tsx`. It reads the seller endpoint only — never
+  `api.customer.orderDetail` — and passes no seller id: the server resolves it from the session.
+- **Ownership is in the SQL** (`WHERE o.id = $1 AND sh.seller_id = $2`) and only this seller's items are
+  selected (`fetchSellerItemsForOrders`) — another seller's portion of a shared order is never exposed.
+  Unknown and foreign orders answer the SAME 404, so existence does not leak.
+- **The status buttons come from `NEXT_ORDER_STATUSES`** in `commerce.ts`, which mirrors
+  `SELLER_ORDER_STATUS_TRANSITIONS` in `backend/routes/seller-orders.ts`
+  (`backend/tests/seller-order-ux.test.ts` pins the two together). Terminal statuses offer nothing.
+  Cancelling restores the seller's stock server-side and is confirmed first.
+- `normalizeSellerOrderStatus()` maps the payment-lifecycle values stripe.ts writes onto the six
+  fulfilment statuses: `pending_payment`/`paid` → `pending`, `expired`/`refunded`/`payment_failed` →
+  `cancelled`. The list's filter chips are exactly those six.
+- The order-status badge and the progress-stage icons live in
+  `packages/shared/src/components/order/OrderStatusBadge.tsx` — ONE mapping shared with VelShop.
+
 ## Common Failure Modes
 
-- `seller === null` conflated with loading (use `sellerLoaded`); missing ownership check on presign/confirm; shop `category`/`address` fields not persisted.
+- `seller === null` conflated with loading (use `sellerLoaded`); missing ownership check on presign/confirm; shop `category`/`address` fields not persisted; offering a status transition the backend refuses (read `NEXT_ORDER_STATUSES`, never a hand-written list).
 
 ## Verification
 

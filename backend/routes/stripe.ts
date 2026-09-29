@@ -37,6 +37,8 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+// The ONE order-number generator; stripe.ts used to carry a second, unused copy.
+import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { userHasPermission } from "../lib/permissions.js";
@@ -196,18 +198,6 @@ function toMinor(amount: unknown): number {
 
 function isUniqueViolation(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: string }).code === "23505";
-}
-
-/**
- * Generate a human-readable order number like VNX-20260925-AB12CD.
- * Only used when an order somehow has none (stripe.ts historically owned this
- * for online orders; cart.ts owns it for orders it creates).
- */
-function generateOrderNumber(): string {
-  const date = new Date();
-  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
-  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
-  return `VNX-${dateStr}-${rand}`;
 }
 
 /** Resolve a PaymentIntent's order through metadata, then through the payments row. */

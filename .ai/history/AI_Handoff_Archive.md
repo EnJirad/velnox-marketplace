@@ -174,6 +174,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-28-dynamic-reservation-v1.md`](./archive/AI_Handoff-2026-09-28-dynamic-reservation-v1.md) | handoff §36 — Dynamic Payment Reservation V1 (risk-based window) | The v1 policy that derived the stock-hold window from stock cover / 7-day sales velocity / `products.featured` (CRITICAL 15 · HIGH 20 · NORMAL 30 · LOW 45 · VERY_LOW 60, clamped 10–60), what it changed (the policy module, the expiry sweep, the two read routes, the Stripe `expires_at` bound, the `orderReservation` i18n namespace, migration 048) and the race invariants it established: no order is ever resurrected, no unit released twice. Moved out on 2026-09-28 because **§38 superseded its duration rule** with a CONSTANT 30 minutes (Part 1 forbids deriving the window from demand or behaviour signals); the sweep, the ONE release path and the race guards it describes are still live |
+### 2026-09-29 — the §37 split (migration 048 / checkout read path)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-28-migration-048-read-path.md`](./archive/AI_Handoff-2026-09-28-migration-048-read-path.md) | handoff §37 — production checkout down: migration 048 never applied | The two independent causes (the `Migrate Neon Database` run dying on the §22 Neon quota, and the checkout READ naming `payment_expires_at` so a missing deadline took checkout down instead of being unenforced), the `selectOrderPaymentRow()` fix (`to_jsonb(o) ->> 'payment_expires_at'`, chosen over "catch 42703 and retry" because pg poisons the whole transaction), the repair of the pre-existing red `main` (two HTTP harnesses that had never mounted `stripeWebhookRawBody` / `cookieParser`), and the disposable-PostgreSQL verification. Moved out on 2026-09-29 for edit headroom so §41 (order UX refactor) could be appended; §40 restates the same root cause with the resolution, and the OWNER SQL stayed inline in the handoff |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

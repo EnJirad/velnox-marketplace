@@ -100,6 +100,21 @@ pre-payment status AND `inventory_released = FALSE`, records the money on the pa
 | `GET /api/stripe/payment-status/:sessionId` | Ownership-checked |
 | `GET /api/orders/:orderId` | Order + payment + refunds (what the success page polls) |
 
+## Order numbers (`VNX-YYYYMMDD-XXXXXX`)
+
+One definition: **`backend/lib/order-number.ts` → `generateOrderNumber()`** (imported by `routes/cart.ts`
+and `routes/stripe.ts`; the two old private copies are gone).
+
+- The reference is 6 symbols from `crypto.randomInt` over `23456789ABCDEFGHJKMNPQRSTVWXYZ` — no `0/O`,
+  `1/I/L`, `U/V`, because the number gets dictated to support. **Never `Math.random()`** (predictable).
+- It is deliberately **not sequential** and never a UUID: `orders.id` is internal only. The date half
+  keeps it searchable; the random half keeps the daily order volume private.
+- Uniqueness is the DATABASE's job: `idx_orders_number_unique` (partial, `WHERE order_number IS NOT NULL`)
+  exists in **both** `db/schema.sql` and `db/run-sqleditor.sql`. Checkout therefore retries that ONE
+  collision — `insertOrderWithUniqueNumber()` in `routes/cart.ts`, under a SAVEPOINT so a failed INSERT
+  cannot poison the transaction — and `isOrderNumberCollision()` refuses any other unique violation
+  (order idempotency key, payment slot). `backend/tests/order-number.test.ts` pins all of it.
+
 ## Important Rules
 
 - All financial state in Neon; idempotency is **database-backed** (never an in-memory Map).

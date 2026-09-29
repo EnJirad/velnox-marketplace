@@ -2,6 +2,10 @@ import { ResumePaymentButton } from "@/components/shop/ResumePaymentButton";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { useLanguage } from "@/lib/i18n";
+import {
+  OrderStatusBadge,
+  orderProgressStageIcon,
+} from "@velnox/shared/components/order/OrderStatusBadge";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import {
@@ -24,12 +28,11 @@ import {
 } from "@velnox/shared/components/ui/dialog";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
-import { api } from "@velnox/shared/lib/api-routes";
+import { api, ApiError } from "@velnox/shared/lib/api-routes";
 import {
   formatBaht,
   formatIsoDateTime,
   formatPaymentCountdown,
-  getOrderStatusMeta,
   getPaymentStatusBadge,
   ORDER_PROGRESS_STAGES,
   orderCustomerCancelability,
@@ -46,6 +49,7 @@ import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   ArrowLeft,
   CheckCircle2,
+  Circle,
   Clock3,
   CreditCard,
   ImageOff,
@@ -54,7 +58,6 @@ import {
   Package,
   RefreshCw,
   Star,
-  Store,
   Truck,
   XCircle,
 } from "lucide-react";
@@ -73,8 +76,10 @@ import { toast } from "sonner";
  *   4. delivery (shipping address + shipment tracking);
  *   5. payment (method + status);
  *   6. order summary (subtotal, shipping, discount, total);
- *   7. the shop;
- *   8. actions (back, buy again, cancel order).
+ *   7. actions (back, buy again, cancel order).
+ *
+ * The shop/seller block that used to sit between the summary and the actions was
+ * REMOVED on purpose — see the note where it was. The data is untouched.
  *
  * The countdown is PRESENTATION ONLY: `paymentExpiresAt` is computed and enforced
  * by the backend (a new Checkout Session is refused with
@@ -224,6 +229,12 @@ export default function ShopOrderDetail() {
   const reviewProduct = useAction(api.customer.reviewProduct);
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The HTTP status behind a failed load. 401/403 means the order is not this
+   * customer's (or the session ended) and retrying changes nothing; 404 means it
+   * genuinely does not exist. The two get different copy — see `ApiError`.
+   */
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -273,7 +284,9 @@ export default function ShopOrderDetail() {
     try {
       const data = (await orderDetail({ orderId })) as unknown as OrderDetail;
       setOrder(data);
+      setErrorStatus(null);
     } catch (err) {
+      setErrorStatus(err instanceof ApiError ? err.status : null);
       setError(err instanceof Error ? err.message : t("orderDetail.loadFailed"));
     } finally {
       setLoading(false);
@@ -374,6 +387,9 @@ export default function ShopOrderDetail() {
     }
   };
 
+  /** A 401/403 load: the order belongs to someone else (or the session lapsed). */
+  const denied = errorStatus === 401 || errorStatus === 403;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -395,13 +411,24 @@ export default function ShopOrderDetail() {
           <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100">
             <Package className="size-7 text-slate-400" />
           </span>
-          <h1 className="mt-5 text-xl font-bold text-slate-900">{t("orderDetail.notFound")}</h1>
-          <p className="mt-2 text-sm text-slate-500">{error ?? t("orderDetail.notFoundDesc")}</p>
+          {/*
+            "Not yours" (401/403) and "does not exist" (404) are different problems
+            and must not share one sentence: the first is fixed by signing in again,
+            the second never is. An unknown failure keeps the server's own message.
+          */}
+          <h1 className="mt-5 text-xl font-bold text-slate-900">
+            {denied ? t("orderDetail.noAccess") : t("orderDetail.notFound")}
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            {denied ? t("orderDetail.noAccessDesc") : (error ?? t("orderDetail.notFoundDesc"))}
+          </p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-            <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
-              <RefreshCw className="size-4" />
-              {t("orderDetail.retry")}
-            </Button>
+            {!denied && (
+              <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
+                <RefreshCw className="size-4" />
+                {t("orderDetail.retry")}
+              </Button>
+            )}
             <Button variant="outline" className="gap-1.5 border-slate-200 text-slate-700" asChild>
               <Link to="/orders">
                 <ArrowLeft className="size-4" />
@@ -414,7 +441,6 @@ export default function ShopOrderDetail() {
     );
   }
 
-  const meta = getOrderStatusMeta(order.status);
   /** Localized order-status text (the shared `meta.label` is the Thai seller fallback). */
   const statusLabel = t(orderStatusI18nKey(order.status));
   /** The PAYMENT status is a different concept from the order status — its own tokens. */
@@ -513,15 +539,28 @@ export default function ShopOrderDetail() {
 
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
         {/* ── 1. Order header + status + payment reservation ─────────────── */}
+        <div className="mb-4">
+          <Link
+            to="/orders"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-[#10B981]"
+          >
+            <ArrowLeft className="size-4" />
+            {t("tracking.backToOrders")}
+          </Link>
+        </div>
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <div className="flex flex-wrap items-start justify-between gap-3 p-5 sm:p-6">
+          {/*
+            The order NUMBER is the heading — it is what the customer reads to
+            support and what they quote when asking about the order, so it is set at
+            heading size instead of being a small caption. The status badge sits on
+            the same row (top right on a wide screen, wrapped under it on a narrow
+            one) so it can never be mistaken for another block's label.
+          */}
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 p-5 sm:p-6">
             <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-                <Package className="size-4 shrink-0 text-[#10B981]" />
-                <span className="truncate">{t("orders.orderNo", { no: order.orderNumber })}</span>
-              </p>
-              <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-                {t("orderDetail.title")}
+              <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                <Package className="size-5 shrink-0 text-[#10B981]" />
+                <span className="truncate">{order.orderNumber}</span>
               </h1>
               <p className="mt-1 text-sm text-slate-500">
                 {t("orderDetail.orderedAt", { date: formatIsoDateTime(order.createdAt) })}
@@ -537,10 +576,7 @@ export default function ShopOrderDetail() {
                 <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
                   {t("orderDetail.orderStatusLabel")}
                 </p>
-                <Badge className={`gap-1.5 rounded-full font-semibold ring-1 ring-inset ${meta.badge}`}>
-                  <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                  {statusLabel}
-                </Badge>
+                <OrderStatusBadge status={order.status} label={statusLabel} size="default" />
               </div>
               <div>
                 <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
@@ -702,34 +738,59 @@ export default function ShopOrderDetail() {
               a narrow screen — never a second bar, never nested progress.
             */
             <>
-              <ol className="mt-5 flex list-none items-start pl-0">
+              {/*
+                ONE timeline, ONE ordered list. It is HORIZONTAL from `sm` up (five markers
+                across the row, efficient on the width a desktop has) and VERTICAL on
+                a phone, where five labels cannot stay readable side by side. This is
+                a layout switch on the same list — never a second bar, never nested
+                progress — and every stage keeps its name in both layouts, so the
+                narrow screen shows MORE than a collapsed "current stage only" line.
+              */}
+              <ol className="mt-5 flex list-none flex-col pl-0 sm:flex-row sm:items-start">
                 {ORDER_PROGRESS_STAGES.map((stage, i) => {
                   const done = stageIndex > i;
                   const current = stageIndex === i;
+                  const StageIcon = orderProgressStageIcon(stage);
+                  const marker = done
+                    ? "bg-[#10B981] text-white"
+                    : current
+                      ? "bg-white text-[#10B981] ring-2 ring-[#10B981]"
+                      : "bg-slate-100 text-slate-400 ring-1 ring-inset ring-slate-200";
                   return (
-                    <li key={stage} className="flex min-w-0 flex-1 flex-col items-center">
-                      <div className="flex w-full items-center">
+                    <li
+                      key={stage}
+                      className="flex min-w-0 gap-3 sm:flex-1 sm:flex-col sm:items-center sm:gap-0"
+                    >
+                      <div className="flex flex-col items-center sm:w-full sm:flex-row">
+                        {/* Desktop rail: the segment leading INTO this stage. */}
                         <span
                           aria-hidden="true"
-                          className={`h-0.5 flex-1 ${
+                          className={`hidden h-0.5 flex-1 sm:block ${
                             i === 0 ? "bg-transparent" : stageIndex >= i ? "bg-[#10B981]" : "bg-slate-200"
                           }`}
                         />
+                        {/*
+                          The marker carries the state by SHAPE as well as colour:
+                          done = check, current = the stage's own icon, not reached =
+                          an empty outline. A colour-blind reader still sees which
+                          stage the order is at.
+                        */}
                         <span
                           aria-hidden="true"
-                          className={`flex size-6 shrink-0 items-center justify-center rounded-full ${
-                            done
-                              ? "bg-[#10B981] text-white"
-                              : current
-                                ? "bg-white text-[#10B981] ring-2 ring-[#10B981]"
-                                : "bg-slate-100 text-slate-400 ring-1 ring-inset ring-slate-200"
-                          }`}
+                          className={`flex size-6 shrink-0 items-center justify-center rounded-full ${marker}`}
                         >
-                          {done && <CheckCircle2 className="size-3.5" />}
+                          {done ? (
+                            <CheckCircle2 className="size-3.5" />
+                          ) : current ? (
+                            <StageIcon className="size-3.5" />
+                          ) : (
+                            <Circle className="size-3" />
+                          )}
                         </span>
+                        {/* Desktop rail: the segment leaving this stage. */}
                         <span
                           aria-hidden="true"
-                          className={`h-0.5 flex-1 ${
+                          className={`hidden h-0.5 flex-1 sm:block ${
                             i === ORDER_PROGRESS_STAGES.length - 1
                               ? "bg-transparent"
                               : stageIndex > i
@@ -737,12 +798,21 @@ export default function ShopOrderDetail() {
                                 : "bg-slate-200"
                           }`}
                         />
+                        {/* Mobile rail: the vertical segment down to the next stage. */}
+                        {i < ORDER_PROGRESS_STAGES.length - 1 && (
+                          <span
+                            aria-hidden="true"
+                            className={`w-0.5 flex-1 sm:hidden ${
+                              done ? "bg-[#10B981]" : "bg-slate-200"
+                            }`}
+                          />
+                        )}
                       </div>
                       {/* The stage name always exists for assistive tech. */}
                       <span className="sr-only">{t(`orderSteps.${stage}`)}</span>
                       <span
                         aria-current={current ? "step" : undefined}
-                        className={`mt-2 hidden truncate text-[11px] sm:block ${
+                        className={`truncate pb-4 text-xs sm:mt-2 sm:pb-0 sm:text-[11px] ${
                           current ? "font-semibold text-slate-900" : done ? "text-slate-500" : "text-slate-400"
                         }`}
                       >
@@ -752,12 +822,6 @@ export default function ShopOrderDetail() {
                   );
                 })}
               </ol>
-              <p
-                aria-hidden="true"
-                className="mt-3 text-center text-xs font-medium text-slate-600 sm:hidden"
-              >
-                {t(`orderSteps.${ORDER_PROGRESS_STAGES[stageIndex]}`)}
-              </p>
             </>
           )}
         </section>
@@ -1021,30 +1085,15 @@ export default function ShopOrderDetail() {
           </div>
         </section>
 
-        {/* ── 7. Shop ────────────────────────────────────────────────────── */}
-        {order.shopName && (
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-            <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-              <Store className="size-4 text-[#10B981]" />
-              {t("orderDetail.shopTitle")}
-            </h2>
-            {order.shopId ? (
-              <Link
-                to={`/shops/${order.shopId}`}
-                className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-[#10B981]"
-              >
-                <span className="flex size-8 items-center justify-center rounded-full bg-slate-100">
-                  <Store className="size-4 text-slate-500" />
-                </span>
-                {order.shopName}
-              </Link>
-            ) : (
-              <p className="mt-2 text-sm font-medium text-slate-700">{order.shopName}</p>
-            )}
-          </section>
-        )}
+        {/*
+          NO shop/seller block here on purpose. The customer orders FROM a store; the
+          order page is about THIS order — what was bought, where it goes, how it is
+          paid and where it is. The backend still carries `shopId`/`shopName` and the
+          seller order page renders them, so this hides nothing from the seller and
+          removes nothing from the data model — it is a customer-surface decision.
+        */}
 
-        {/* ── 8. Actions ─────────────────────────────────────────────────── */}
+        {/* ── 7. Actions ─────────────────────────────────────────────────── */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="text-base font-bold tracking-tight text-slate-900">{t("orderDetail.actionsTitle")}</h2>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">

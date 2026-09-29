@@ -52,6 +52,7 @@ const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
 const ORDER_DETAIL_PAGE = "apps/velshop/src/pages/ShopOrderDetail.tsx";
 const MY_ORDERS_PAGE = "apps/velshop/src/pages/MyOrders.tsx";
+const ORDER_STATUS_BADGE_COMPONENT = "packages/shared/src/components/order/OrderStatusBadge.tsx";
 const LOCALES = ["th", "en", "my"] as const;
 
 const locale = (lang: (typeof LOCALES)[number]) =>
@@ -90,12 +91,40 @@ describe("order UX — the progress line", () => {
   test("the page draws that ONE line, and never a nested bar", () => {
     const page = read(ORDER_DETAIL_PAGE);
     expect(page).toContain("ORDER_PROGRESS_STAGES.map");
+    // Exactly one ordered list — no second bar, no nested progress indicator.
     expect((page.match(/<ol/g) ?? []).length).toBe(1);
     // The current stage is announced, and the stage names exist for screen readers.
     expect(page).toContain('aria-current={current ? "step" : undefined}');
     expect(page).toContain('className="sr-only"');
-    // A narrow screen collapses to the current stage only — no second bar.
+    // The SAME list re-lays-out for a narrow screen (vertical rail) instead of
+    // collapsing to the current stage or spawning a second bar; five labels cannot
+    // sit side by side on a phone, so they stack and all five stay readable.
     expect(page).toContain("sm:hidden");
+    expect(page).toContain("sm:flex-row");
+    expect(page).toContain("flex-col");
+  });
+
+  test("every stage marker carries an icon, and shape — not colour — says which", () => {
+    const page = read(ORDER_DETAIL_PAGE);
+    // The current stage draws the stage's OWN icon, a finished stage a check, and
+    // one that has not been reached an empty outline.
+    expect(page).toContain("orderProgressStageIcon(stage)");
+    expect(page).toContain("<CheckCircle2");
+    expect(page).toContain("<Circle");
+    // Every stage AND every status of the order contract has an icon in the shared
+    // module, so a marker or a badge can never render blank. Read as a contract on
+    // the shipped source, the same way the page assertions in this file work.
+    const badge = read(ORDER_STATUS_BADGE_COMPONENT);
+    const statusIconKeys = [...badge.matchAll(/^  (\w+): \w+,$/gm)].map((m) => m[1]);
+    for (const status of Object.keys(ORDER_STATUS_META)) {
+      expect(statusIconKeys).toContain(status);
+    }
+    const stageMap = badge.slice(badge.indexOf("ORDER_PROGRESS_STAGE_ICONS"));
+    for (const stage of ORDER_PROGRESS_STAGES) {
+      expect(stageMap).toMatch(new RegExp(`\\b${stage}:\\s*\\w+,`));
+    }
+    // An unknown status resolves to a real icon rather than nothing.
+    expect(badge).toContain("return CircleDashed;");
   });
 
   test("a terminal order replaces the line with the notice that explains it", () => {
@@ -134,10 +163,15 @@ describe("order UX — status text and tokens", () => {
       const src = read(page);
       expect(src).toContain("orderStatusI18nKey");
       expect(src).not.toContain("{meta.label}");
-      // The badge still uses the design system's tokens.
-      expect(src).toContain("meta.badge");
-      expect(src).toContain("meta.dot");
+      // The badge is the SHARED one, so VelShop and VelSeller cannot drift apart.
+      expect(src).toContain("<OrderStatusBadge");
+      expect(src).toContain("OrderStatusBadge");
     }
+    // …and the shared component is the single place that owns the tokens + icon.
+    const badge = read("packages/shared/src/components/order/OrderStatusBadge.tsx");
+    expect(badge).toContain("meta.badge");
+    expect(badge).toContain("ORDER_STATUS_ICONS");
+    expect(badge).toContain("label ?? meta.label");
   });
 
   test("the badges are readable tokens, never white-on-white", () => {
@@ -198,6 +232,34 @@ describe("order UX — address, retry and the reservation", () => {
     expect(list).toContain("statusLabel");
     expect(list).toContain('t("orderReservation.expiredTitle")');
     expect(list).not.toContain("formatPaymentCountdown(-");
+  });
+});
+
+describe("order UX — what each link in the Order list opens", () => {
+  test("the order NUMBER opens the order, and a product opens the PRODUCT", () => {
+    const list = read(MY_ORDERS_PAGE);
+    // The card is no longer one big link to the order: that made every product row
+    // open the order too, so a customer could never reach a product from here.
+    expect(list).not.toContain('className="block p-5"');
+    // The order number is its own link to the order…
+    expect(list).toContain("to={`/orders/${order.id}`}");
+    // …and each in-stock product row links to the product detail route.
+    expect(list).toContain("to={`/products/${item.productId}`}");
+    // …while a product that is no longer on sale is rendered unlinked, labelled.
+    expect(list).toContain('item.productStatus === "published"');
+    expect(list).toContain('t("orderDetail.productUnavailable")');
+  });
+
+  test("the order status badge is TOP RIGHT, beside the order number", () => {
+    const list = read(MY_ORDERS_PAGE);
+    // One header row: number on the left, badge on the right of the SAME row.
+    const header = list.slice(list.indexOf("Header: the order number on the LEFT"));
+    const row = header.slice(0, header.indexOf("Items —"));
+    expect(row).toContain("justify-between");
+    expect(row).toContain("<OrderStatusBadge status={order.status} label={statusLabel} />");
+    // The badge is not in the money/countdown footer any more.
+    const footer = list.slice(list.indexOf('t("orders.total")'));
+    expect(footer.slice(0, 200)).not.toContain("<OrderStatusBadge");
   });
 });
 
