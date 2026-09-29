@@ -12,9 +12,13 @@
  *
  * `orders.status` is a superset of the fulfilment state machine: the Stripe
  * routes write their own payment-lifecycle values ('pending_payment', 'paid',
- * 'payment_failed', 'refunded') into the same column, and `orders.status` is
- * free text with no CHECK constraint (db/schema.sql). For every such row the
- * lookup returned `undefined` and the render threw.
+ * 'payment_failed', 'refunded') into the same column. That column is constrained
+ * since audit MEDIUM #9 (migration V0050, `orders_status_check` in db/schema.sql)
+ * to exactly the union of those two lifecycles — so a row in the database can no
+ * longer carry a value this build has never heard of, but the UI contract is
+ * unchanged and must stay defensive: an older backend, a hand-written row or a
+ * future release can still put a value in front of this build, and the render
+ * must never throw on it.
  *
  * What is pinned here
  * -------------------

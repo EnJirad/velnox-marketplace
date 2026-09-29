@@ -365,7 +365,7 @@ CREATE TABLE IF NOT EXISTS orders (
   user_id UUID NOT NULL REFERENCES users(id),
   shop_id UUID REFERENCES shops(id),
   order_number TEXT,
-  status TEXT NOT NULL DEFAULT 'pending',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'packing', 'shipped', 'delivered', 'completed', 'cancelled', 'pending_payment', 'paid', 'payment_failed', 'refunded', 'expired')),
   subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
   shipping_fee NUMERIC(12, 2) NOT NULL DEFAULT 0,
   discount NUMERIC(12, 2) NOT NULL DEFAULT 0,
@@ -945,6 +945,21 @@ ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check;
 ALTER TABLE sellers
   ADD CONSTRAINT sellers_status_check
   CHECK (status IN ('pending', 'under_review', 'needs_correction', 'approved', 'rejected', 'suspended'));
+
+-- `orders.status` had no CHECK at all (audit MEDIUM #9), unlike every other
+-- status column in this schema. It is the union of the FULFILMENT chain
+-- (`backend/lib/order-fulfillment.ts`) and the PAYMENT lifecycle
+-- (`routes/stripe.ts` + the reservation sweep writing `expired`), and the set
+-- above is exactly what those writers can produce — derived from them, not
+-- invented here. It refuses values the domain does not have; it does not
+-- authorise transitions, which stay with `canTransitionFulfillment()`, the row
+-- lock and the payment/shipment/cancellation gates. V0050.
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+ALTER TABLE orders
+  ADD CONSTRAINT orders_status_check
+  CHECK (status IN ('pending', 'confirmed', 'packing', 'shipped', 'delivered',
+                    'completed', 'cancelled', 'pending_payment', 'paid',
+                    'payment_failed', 'refunded', 'expired'));
 
 -- VelCenter staff force-password-change (migration 046). Idempotent so a fresh
 -- bootstrap self-heals a database created before the column existed.

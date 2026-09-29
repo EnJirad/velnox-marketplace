@@ -385,19 +385,29 @@ describe("packing reaches every order surface", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 7. Database — no schema change is needed for `packing`
+// 7. Database — `packing` is a real, constrained orders.status value
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("database", () => {
-  test("orders.status stays free text, so `packing` needs no migration", () => {
+  test("orders.status carries a CHECK that admits `packing`", () => {
+    // This used to assert the column was FREE TEXT ("no CHECK on orders.status"),
+    // which was true until audit MEDIUM #9 and is now deliberately false: the
+    // column is constrained, and adding the state machine's `packing` state to a
+    // constrained column DOES require a schema change — migration V0050, which is
+    // exactly that. The concern this test protects is unchanged: `packing` must
+    // be storable. What changed is only that the schema now has to say so.
     for (const file of ["db/schema.sql", "db/run-sqleditor.sql"]) {
       const sql = read(file);
       expect(sql).toContain("status TEXT NOT NULL DEFAULT 'pending'");
-      // No CHECK constraint on orders.status (the sellers table has one, which
-      // is why the assertion is scoped to the orders table block).
       const ordersTable = sql.slice(sql.indexOf("CREATE TABLE IF NOT EXISTS orders ("));
       const block = ordersTable.slice(0, ordersTable.indexOf(");"));
-      expect(block).not.toContain("CHECK (status");
+      expect(block).toContain("CHECK (status");
+      // The constraint must admit the whole fulfilment chain, `packing` above
+      // all — it is the state the fulfilment machine added and the reason this
+      // assertion was ever written.
+      for (const status of FULFILLMENT_STATUSES) {
+        expect(block).toContain(`'${status}'`);
+      }
     }
     // The deprecated bootstrap file is never a dependency of this feature.
     const checked = [...new Bun.Glob("backend/**/*.ts").scanSync({ cwd: root })]
