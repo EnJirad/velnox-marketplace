@@ -424,7 +424,11 @@ describe("backend contract — the session endpoint and the webhook", () => {
 
   test("an expired/cancelled session cancels the order — it never marks it paid (scenario 9)", () => {
     expect(stripeSrc).toContain('case "checkout.session.expired"');
-    expect(stripeSrc).toContain("markPaymentCanceled(orderId");
+    // Whitespace-tolerant: the contract is that the expired-session path CALLS
+    // the cancel writer with the order, not how that call happens to be wrapped.
+    // It is also pinned attempt-scoped (audit HIGH #4) — the expiry of one
+    // session says nothing about a different session the customer still has open.
+    expect(stripeSrc).toMatch(/markPaymentCanceled\(\s*orderId,\s*\{[^}]*checkoutSessionId:\s*session\.id/);
     // A `completed` session whose payment has not settled is NOT a payment
     // (PromptPay completes the session before the bank settles).
     expect(stripeSrc).toContain("if (!sessionConfirmsPayment(session))");

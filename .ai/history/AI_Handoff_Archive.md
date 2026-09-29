@@ -192,6 +192,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](./archive/AI_Handoff-2026-09-29-audit-findings-detail.md) | handoff §42.1–§42.5 — the eighteen-row "what was checked" audit table, the fourteen findings (CRITICAL #1–#2, HIGH #3–#5, MEDIUM #6–#11, LOW #12–#14), the cancellation matrix, race verdicts and action list | The verbatim audit text: what was checked and how (the 18-row table, including the three rows that cannot be claimed from a workspace — real Stripe E2E, browser E2E, DB-gated suites), then every finding with its exact file/line and the proposed fix, then the §42.3 cancellation matrix, §42.4 race verdicts and §42.5 prioritized actions. #1/#2 fixed by §43, #3 by §44, #6 owner-blocked on the Neon quota; the rest (#4, #5, #8–#14) are still open and are listed in §44's "Still open". The matrix and race verdicts are fully superseded — their only two ❌ cells were closed by §43 and §44. Moved out on 2026-09-29 so §43, §44 and §45 could be appended; the handoff keeps a 14-row status index plus the architecture verdicts |
 
+### 2026-09-29 — the §5 split (latest passes, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-29-latest-passes.md`](./archive/AI_Handoff-2026-09-29-latest-passes.md) | handoff §5 "Latest passes" — the chronological narrative of completed work | Every finished pass in one place: the payment ↔ cancellation lock-order hardening and the 30-minute reservation lifecycle (2026-09-29), and the earlier payment-foundation, catalog, R2/media and realtime passes. **Completed work only — it lists no open gap.** Moved out on 2026-09-29 so §43 (CRITICAL #1/#2), §44 (HIGH #3), §45 (the CI follow-up) and §46 (HIGH #4 payment attempt identity) could be appended. The live list of what is still open is **§6 "Remaining gaps / open items"**, which deliberately stayed inline in the handoff |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

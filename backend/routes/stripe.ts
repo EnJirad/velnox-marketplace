@@ -337,10 +337,86 @@ interface SyncResult {
   inventoryReleased: boolean;
 }
 
+/**
+ * WHICH payment attempt an incoming Stripe event is about.
+ *
+ * Stripe names the attempt in every event it sends — a PaymentIntent event
+ * carries `payment_intent.id`, a Checkout Session event carries `session.id` —
+ * and `payments` stores both (`provider_payment_id`,
+ * `provider_checkout_session_id`). Carrying that identity through to the write
+ * is what keeps one attempt's event from landing on another attempt's row.
+ */
+interface PaymentAttemptRef {
+  /** Stripe PaymentIntent id, when the event is a PaymentIntent event. */
+  providerPaymentId?: string | null;
+  /** Stripe Checkout Session id, when the event is a Checkout Session event. */
+  checkoutSessionId?: string | null;
+}
+
+/** The minimum a SQL runner needs for the resolver: a transaction client or the pool. */
+type SqlRunner = {
+  query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }>;
+};
+
+/**
+ * Resolve the ONE `payments` row an event is about.
+ *
+ * WHY — an order legitimately has SEVERAL payment rows: `POST /api/stripe/checkout`
+ * retires the previous attempt (`SESSION_NOT_REUSABLE`) and opens a new one on
+ * the same order whenever the customer re-opens checkout or switches rail, and
+ * Stripe keeps delivering events for the retired session afterwards. The three
+ * sync writers used to ignore that and pick "the newest non-terminal row", so a
+ * LATE event about a dead attempt landed on the live one — failing a session the
+ * customer was about to pay, and freeing the stock, or recording captured money
+ * against an attempt that was never charged. A failure/success is a property of
+ * an ATTEMPT, so the row is found BY the identifier the event carries.
+ *
+ * The newest-row heuristic survives ONLY as the fallback for an event that names
+ * no stored attempt (a legacy row, or one written without an identifier), so
+ * nothing that resolves today changes behaviour.
+ *
+ * `excludeTerminal` is the status a FALLBACK must skip: a success must not
+ * settle an attempt already recorded as failed, and a failure must not touch one
+ * already recorded as paid. It is applied again on the caller's outer UPDATE, so
+ * the guard holds for the exactly-resolved row too.
+ *
+ * MUST be called inside the caller's transaction, under `lockOrderRow`.
+ */
+async function resolvePaymentAttemptRow(
+  client: SqlRunner,
+  orderId: string,
+  attempt: PaymentAttemptRef,
+  excludeTerminal: "paid" | "failed",
+): Promise<string | null> {
+  const intentId = attempt.providerPaymentId ?? null;
+  const sessionId = attempt.checkoutSessionId ?? null;
+
+  if (intentId || sessionId) {
+    // A NULL parameter compares as NULL, so an absent identifier simply does
+    // not match — the other one still can.
+    const exact = await client.query(
+      `SELECT id FROM payments
+        WHERE order_id = $1 AND provider = 'stripe'
+          AND (provider_payment_id = $2 OR provider_checkout_session_id = $3)
+        LIMIT 1`,
+      [orderId, intentId, sessionId],
+    );
+    if (exact.rows[0]) return exact.rows[0].id as string;
+  }
+
+  const fallback = await client.query(
+    `SELECT id FROM payments
+      WHERE order_id = $1 AND provider = 'stripe' AND status <> $2
+      ORDER BY created_at DESC LIMIT 1`,
+    [orderId, excludeTerminal],
+  );
+  return (fallback.rows[0]?.id as string | undefined) ?? null;
+}
+
 /** Payment succeeded → Payment `paid`, Order `paid`, stock committed. */
 async function markPaymentSucceeded(
   orderId: string,
-  providerPaymentId: string | null,
+  attempt: PaymentAttemptRef,
 ): Promise<SyncResult> {
   return withTransaction(async (client) => {
     // ORDER ROW FIRST (lib/order-lock.ts). The order row is the single
@@ -356,33 +432,37 @@ async function markPaymentSucceeded(
       [orderId],
     );
 
-    // Read the payment row's status BEFORE touching it, so the warning below can
-    // tell "this delivery is the one that recorded the money" from a repeat of
-    // an already-paid row (Stripe fires checkout.session.completed and
+    // The row THIS event is about, not merely the newest one: a captured charge
+    // must be recorded against the attempt that was actually charged, because
+    // that row is what a refund is later built from.
+    const attemptRowId = await resolvePaymentAttemptRow(client, orderId, attempt, "failed");
+
+    // Read that row's status BEFORE touching it, so the warning below can tell
+    // "this delivery is the one that recorded the money" from a repeat of an
+    // already-paid row (Stripe fires checkout.session.completed and
     // payment_intent.succeeded for the same charge — a duplicate must not warn).
-    const priorPayment = await client.query(
-      `SELECT status FROM payments
-        WHERE order_id = $1 AND provider = 'stripe' AND status <> 'failed'
-        ORDER BY created_at DESC LIMIT 1`,
-      [orderId],
-    );
+    const priorPayment = attemptRowId
+      ? await client.query(`SELECT status FROM payments WHERE id = $1`, [attemptRowId])
+      : { rows: [] as Array<{ status: string }> };
     const priorPaymentStatus: string | null = priorPayment.rows[0]?.status ?? null;
 
-    await client.query(
-      `UPDATE payments
-          SET status = 'paid',
-              paid_at = COALESCE(paid_at, NOW()),
-              updated_at = NOW(),
-              failure_code = NULL,
-              failure_message = NULL,
-              provider_payment_id = COALESCE($2, provider_payment_id)
-        WHERE id = (
-          SELECT id FROM payments
-           WHERE order_id = $1 AND provider = 'stripe' AND status <> 'failed'
-           ORDER BY created_at DESC LIMIT 1
-        )`,
-      [orderId, providerPaymentId],
-    );
+    if (attemptRowId) {
+      // `status <> 'failed'` is the terminal guard, now on the outer UPDATE, so
+      // it protects the resolved row itself: a success can never resurrect an
+      // attempt already recorded as failed, and a repeat re-stamps nothing
+      // (`paid_at = COALESCE(paid_at, NOW())`).
+      await client.query(
+        `UPDATE payments
+            SET status = 'paid',
+                paid_at = COALESCE(paid_at, NOW()),
+                updated_at = NOW(),
+                failure_code = NULL,
+                failure_message = NULL,
+                provider_payment_id = COALESCE($2, provider_payment_id)
+          WHERE id = $1 AND status <> 'failed'`,
+        [attemptRowId, attempt.providerPaymentId ?? null],
+      );
+    }
 
     const moved = (updated.rowCount ?? 0) > 0;
     if (!moved && priorPaymentStatus !== "paid") {
@@ -436,6 +516,7 @@ async function markPaymentSucceeded(
 /** Payment failed → Payment `failed`, Order `payment_failed`, stock released. */
 async function markPaymentFailed(
   orderId: string,
+  attempt: PaymentAttemptRef,
   failureCode: string,
   failureMessage: string,
 ): Promise<SyncResult> {
@@ -446,16 +527,34 @@ async function markPaymentFailed(
     // here too, so every writer shares one order (lib/order-lock.ts).
     await lockOrderRow(client, orderId);
 
-    await client.query(
-      `UPDATE payments
-          SET status = 'failed', failure_code = $2, failure_message = $3, updated_at = NOW()
-        WHERE id = (
-          SELECT id FROM payments
-           WHERE order_id = $1 AND provider = 'stripe' AND status <> 'paid'
-           ORDER BY created_at DESC LIMIT 1
-        )`,
-      [orderId, failureCode.slice(0, 120), failureMessage.slice(0, 500)],
-    );
+    // The row THIS event is about. A late failure for a retired attempt must
+    // never fail the customer's still-open session, and must never take the
+    // order down with it.
+    const attemptRowId = await resolvePaymentAttemptRow(client, orderId, attempt, "paid");
+    let attemptFailed = false;
+    if (attemptRowId) {
+      // `status NOT IN ('paid','failed','cancelled')` is the ATTEMPT guard: the
+      // row must still be OPEN for this to be a failure of it. It keeps a
+      // duplicate delivery from re-asserting a failure, and keeps captured money
+      // from being overwritten — whichever attempt either event names.
+      const rowWrite = await client.query(
+        `UPDATE payments
+            SET status = 'failed', failure_code = $2, failure_message = $3, updated_at = NOW()
+          WHERE id = $1 AND status NOT IN ('paid', 'failed', 'cancelled')`,
+        [attemptRowId, failureCode.slice(0, 120), failureMessage.slice(0, 500)],
+      );
+      attemptFailed = (rowWrite.rowCount ?? 0) > 0;
+    }
+
+    // THE ORDER MOVES BECAUSE THIS ATTEMPT FAILED — not because "some failure
+    // happened for this order". Tying the order transition to the attempt is
+    // what stops a late failure for a dead attempt from flipping a live order to
+    // `payment_failed` and releasing stock the customer is still inside the
+    // window for. A failure we cannot attribute to an open attempt of THIS
+    // order moves nothing, and is left visible in the log for an operator.
+    if (!attemptFailed) {
+      return { orderId, moved: false, inventoryReleased: false };
+    }
 
     const updated = await client.query(
       `UPDATE orders SET status = 'payment_failed', updated_at = NOW()
@@ -471,7 +570,11 @@ async function markPaymentFailed(
  * Payment abandoned (session expired / intent canceled) → Payment `canceled`,
  * Order `cancelled`, stock released.
  */
-async function markPaymentCanceled(orderId: string, reason: string): Promise<SyncResult> {
+async function markPaymentCanceled(
+  orderId: string,
+  attempt: PaymentAttemptRef,
+  reason: string,
+): Promise<SyncResult> {
   return withTransaction(async (client) => {
     // ORDER ROW FIRST — same reason as markPaymentFailed above: this path runs
     // concurrently with the customer's own cancel for exactly the same order
@@ -479,16 +582,26 @@ async function markPaymentCanceled(orderId: string, reason: string): Promise<Syn
     // not take `orders`/`payments` in opposite orders (lib/order-lock.ts).
     await lockOrderRow(client, orderId);
 
-    await client.query(
-      `UPDATE payments
-          SET status = 'cancelled', failure_code = $2, failure_message = $3, updated_at = NOW()
-        WHERE id = (
-          SELECT id FROM payments
-           WHERE order_id = $1 AND provider = 'stripe' AND status <> 'paid'
-           ORDER BY created_at DESC LIMIT 1
-        )`,
-      [orderId, "PAYMENT_CANCELED", reason.slice(0, 500)],
-    );
+    // Attempt-scoped for the same reason: an expired session says nothing about
+    // a different session the customer still has open.
+    const attemptRowId = await resolvePaymentAttemptRow(client, orderId, attempt, "paid");
+    let attemptCanceled = false;
+    if (attemptRowId) {
+      // Same ATTEMPT guard as the failure path: the row must still be OPEN.
+      const rowWrite = await client.query(
+        `UPDATE payments
+            SET status = 'cancelled', failure_code = $2, failure_message = $3, updated_at = NOW()
+          WHERE id = $1 AND status NOT IN ('paid', 'failed', 'cancelled')`,
+        [attemptRowId, "PAYMENT_CANCELED", reason.slice(0, 500)],
+      );
+      attemptCanceled = (rowWrite.rowCount ?? 0) > 0;
+    }
+
+    // The order is cancelled because THIS attempt was abandoned, never because
+    // some other session's session expired.
+    if (!attemptCanceled) {
+      return { orderId, moved: false, inventoryReleased: false };
+    }
 
     const updated = await client.query(
       `UPDATE orders SET status = 'cancelled', updated_at = NOW()
@@ -632,15 +745,22 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       // is still UNPAID. Marking the order paid here would be a fabricated
       // success, so only a `paid` session is authoritative.
       if (!sessionConfirmsPayment(session)) {
-        await query(
-          `UPDATE payments SET status = 'requires_action', updated_at = NOW()
-            WHERE id = (
-              SELECT id FROM payments
-               WHERE order_id = $1 AND provider = 'stripe' AND status <> 'paid'
-               ORDER BY created_at DESC LIMIT 1
-            )`,
-          [orderId],
+        // Attempt-scoped like every other payment-row write: a completed-but-
+        // unpaid session must not move a DIFFERENT session's row.
+        const awaitingRowId = await resolvePaymentAttemptRow(
+          // Outside the sync transaction: the pool-level runner, adapted.
+          { query: (sql: string, params?: unknown[]) => query(sql, params) },
+          orderId,
+          { checkoutSessionId: session.id },
+          "paid",
         );
+        if (awaitingRowId) {
+          await query(
+            `UPDATE payments SET status = 'requires_action', updated_at = NOW()
+              WHERE id = $1 AND status <> 'paid'`,
+            [awaitingRowId],
+          );
+        }
         console.log(
           `[stripe webhook] order ${orderId} session ${session.id} completed but unpaid (${session.payment_status}) — awaiting payment`,
         );
@@ -650,7 +770,10 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : (session.payment_intent?.id ?? null);
-      const result = await markPaymentSucceeded(orderId, intentId ?? session.id);
+      const result = await markPaymentSucceeded(orderId, {
+        providerPaymentId: intentId,
+        checkoutSessionId: session.id,
+      });
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
@@ -665,7 +788,10 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : (session.payment_intent?.id ?? null);
-      const result = await markPaymentSucceeded(orderId, intentId ?? session.id);
+      const result = await markPaymentSucceeded(orderId, {
+        providerPaymentId: intentId,
+        checkoutSessionId: session.id,
+      });
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
@@ -676,7 +802,16 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const session = event.data.object as Stripe.Checkout.Session;
       const orderId = session.metadata?.orderId;
       if (!orderId) return;
-      const result = await markPaymentFailed(orderId, "ASYNC_PAYMENT_FAILED", "The delayed payment did not complete.");
+      const asyncIntentId =
+        typeof session.payment_intent === "string"
+          ? session.payment_intent
+          : (session.payment_intent?.id ?? null);
+      const result = await markPaymentFailed(
+        orderId,
+        { providerPaymentId: asyncIntentId, checkoutSessionId: session.id },
+        "ASYNC_PAYMENT_FAILED",
+        "The delayed payment did not complete.",
+      );
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "payment_failed" });
       }
@@ -687,7 +822,11 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const session = event.data.object as Stripe.Checkout.Session;
       const orderId = session.metadata?.orderId;
       if (!orderId) return;
-      const result = await markPaymentCanceled(orderId, `Checkout session ${session.id} expired.`);
+      const result = await markPaymentCanceled(
+        orderId,
+        { checkoutSessionId: session.id },
+        `Checkout session ${session.id} expired.`,
+      );
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "cancelled" });
       }
@@ -702,7 +841,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         console.warn(`[stripe webhook] ${event.id} payment_intent.succeeded has no resolvable order — ignored`);
         return;
       }
-      const result = await markPaymentSucceeded(orderId, paymentIntent.id);
+      const result = await markPaymentSucceeded(orderId, { providerPaymentId: paymentIntent.id });
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
@@ -715,7 +854,12 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       if (!orderId) return;
       const code = paymentIntent.last_payment_error?.code ?? "PAYMENT_FAILED";
       const message = paymentIntent.last_payment_error?.message ?? "The payment was declined.";
-      const result = await markPaymentFailed(orderId, code, message);
+      const result = await markPaymentFailed(
+        orderId,
+        { providerPaymentId: paymentIntent.id },
+        code,
+        message,
+      );
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "payment_failed" });
       }
@@ -726,7 +870,11 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
       const orderId = await orderIdForPaymentIntent(paymentIntent);
       if (!orderId) return;
-      const result = await markPaymentCanceled(orderId, "The payment was canceled.");
+      const result = await markPaymentCanceled(
+        orderId,
+        { providerPaymentId: paymentIntent.id },
+        "The payment was canceled.",
+      );
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "cancelled" });
       }

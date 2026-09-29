@@ -95,104 +95,13 @@ A code belongs in the catalog **only while an endpoint checks it** —
 `center-rbac.test.ts` asserts that. Role / permission / employee mutations stay
 owner-only. Hiding a tab is UX only; every endpoint re-checks.
 
-## 5. Latest passes
+## 5. Latest passes — archived (moved 2026-09-29, edit-headroom housekeeping)
 
-### 2026-09-29 — payment ↔ customer-cancellation race hardened (shared LOCK ORDER)
-
-The contradiction was already unreachable (the guarded `UPDATE orders … status = ANY(…)`
-claims plus the `inventory_released` flag made exactly one writer win), but the two sides
-took the rows in OPPOSITE orders: cancel = `orders` → `payments`, while
-`markPaymentFailed` / `markPaymentCanceled` = `payments` → `orders` — an AB-BA deadlock
-PostgreSQL breaks by aborting one side (a 500 on the customer's cancel, or a `failed` event
-Stripe redelivers, with the winner decided by lock timing). `backend/lib/order-lock.ts` now
-defines the ONE order: the order row is locked FIRST by the cancel route,
-`markPaymentSucceeded`, `markPaymentFailed`, `markPaymentCanceled`, `syncRefundFromStripe`
-and the reservation sweep. The cancel route also re-reads the payment state UNDER that lock,
-so `paid`/`processing` still refuse (`ORDER_ALREADY_PAID` / `PAYMENT_IN_PROGRESS`) instead of
-trusting a pre-transaction read. A settlement after a cancellation is still recorded on the
-payment row (refunding it) and never resurrects the order, re-reserves stock, or commits it.
-No schema change; Stripe webhook architecture untouched.
-
-Evidence: `backend/tests/payment-cancellation-race.test.ts` — **21 cases covering the whole
-TEST 01–18 race matrix**: the structural lock-order contract; forced-interleave probes that
-prove both sides wait on the SAME order row (and that no path holds the `payments` row while
-waiting); cancel↔settlement both ways; `checkout.session.completed` ∥
-`payment_intent.succeeded`; expiry ∥ settlement; cancel ∥ confirmed / packing / shipped —
-each issued as **concurrent real HTTP** against the real routes behind one held lock, so the
-winner is decided by PostgreSQL and never by issue order; the same event id delivered three
-times at once; a duplicated retry after a cancellation; `reserved`/`sold_count` exactly-once;
-a cancelled order refusing to return to fulfilment under concurrent pressure — plus a new
-`cancel vs shipment` race in `order-fulfillment-state-machine.test.ts`. Full backend suite
-**995 pass / 0 fail**; `tsc --noEmit`, `bun run typecheck` (4 apps) and `bun run build:apps`
-green; `git diff --check` clean; CI `36547644881` success on `d4e184d`. The probe was proven
-to have teeth: removing the lock from `markPaymentCanceled` makes it fail with PostgreSQL
-`55P03`.
-
-**Part ② (same day) — the 30-minute reservation lifecycle, audited + tested end to end.**
-Nothing new was built: the system already existed (columns + index in both schema files,
-`lib/payment-reservation.ts` = fixed `PAYMENT_RESERVATION_MINUTES = 30` from the SERVER clock,
-the `payment-reservation-scheduler` worker wired at boot, countdown on both order surfaces with
-the GREEN/YELLOW/RED/EXPIRED tone contract, `orderReservation` copy in th/en/my, `paymentExpiresAt`
-+ `reservationMinutes` on both order read routes). What was missing was the TEST MATRIX, so 7
-cases were added: expiry ∥ confirmation, expiry ∥ packing, expiry with a duplicated webhook,
-`checkout.session.completed` ∥ expiry, a settlement 1.5 s before the deadline, a pay-again
-attempt on an order the worker already ended, and the 1-reservation → at-most-1-terminal-
-transition invariant (plus `confirmed`/`packing` added to the never-expired status list).
-Stale "Dynamic Payment Reservation V1" wording (the deleted risk-band table) was corrected in
-`checkout.md`, `database.md`, `payment.md`, `cart.ts`, `server.ts`, `commerce.ts`, `th.ts`.
-Backend suite **1002 pass / 0 fail**, typecheck + `build:apps` + `i18n:check` green.
-**Still unverified: the production Neon columns** — dispatching the read-only
-`diag-neon-schema.yml` returns **403** (no `actions:write` on the app token) and `/api/_diag/schema`
-is 401 without a production session, so migration 048's presence in production remains an
-owner action, and the countdown is NOT claimed production-ready.
-
-### 2026-09-29 — fulfilment state machine hardened: `packing` + payment/shipment gates
-
-ONE authority: `backend/lib/order-fulfillment.ts` — `pending → confirmed → packing →
-shipped → delivered → completed` + terminal `cancelled`. `confirmed` = the shop accepted the
-order (packing NOT started, the customer may still cancel); `packing` = fulfilment started
-(NOBODY may cancel: the table has no `packing → cancelled` edge). The seller route and the
-VelCenter admin route both apply it, each under `FOR UPDATE` on the order row. Two gates now
-run inside that transaction: shifting to `confirmed` needs a SETTLED payment (`paid`
-`payments` row — the Stripe webhook is the only writer; COD passes only while its disabled
-rail is on), and `packing → shipped` needs a `shipments` row carrying a carrier + tracking
-number (the seller ship dialog and VelCenter's collect them and send them WITH the
-transition, so status + shipment are one transaction). Customer cancellation is unchanged
-(`pending|pending_payment|confirmed`, still the guarded `UPDATE` in `cart.ts`) and the two
-paths serialize on the row. Seller reads now take the recipient name/phone from
-`orders.shipping_address` (account row = legacy fallback only). **NO schema change:**
-`orders.status` has no CHECK constraint, so `packing` needs no migration.
-
-Evidence: `backend/tests/order-fulfillment-state-machine.test.ts` (24 cases — real DB for
-both gates and for the cancel-vs-packing race in both orders), full backend suite **973
-pass / 0 fail**, `bun run typecheck` (4 apps) + `bun run build:apps` + `i18n:check`
-(th=en=my=1414) green. i18n note: the `packing` label lives in the new top-region
-`orderFulfillment` namespace because th/my's `orderStatus`/`orderSteps` blocks sit past the
-safe edit window; `orderStatusI18nKey()` / `orderProgressStageI18nKey()` are the ONE mapping.
-
-**Measured correction to the workspace rule:** the file-edit window is the first
-**32 768 bytes** (~32 KB), not ~55 KB — a match at byte 32 748 succeeds, one at 35 778 is
-"not found", so this handoff's own sections past ~32 KB (§37+) are no longer editable in
-place. Archive/split before growing further.
-
-### 2026-09-22 — two superseded passes
-
-**Archived** (closed records, both pushed at the time) →
-[`history/archive/AI_Handoff-2026-09-22-readiness-passes.md`](history/archive/AI_Handoff-2026-09-22-readiness-passes.md).
-Moved 2026-09-25 to keep this file under the ~55 KB edit limit. Covers the
-`/_diag` prefix guard, seller-verification queue pagination, the 029/030/034/035
-migration-numbering proof, honest overview counters, the dead route mappings removed
-from `api-routes.ts`, `order:updated` from every status writer, and `config:updated`.
-
-### 2026-09-23 — production verification: DB tests executed, one real bug found, media hardened
-
-**Archived** (closed record, pushed at the time) →
-[`history/archive/AI_Handoff-2026-09-23-production-verification.md`](history/archive/AI_Handoff-2026-09-23-production-verification.md).
-Moved 2026-09-27 to keep this file under the ~55 KB edit limit. Headline: all 35
-DB-gated tests executed for the first time on a disposable PostgreSQL (`452 pass /
-0 fail / 0 skip`), the `releaseOrderInventory` double-release was found and fixed by
-one guarded UPDATE, and R2/media enforcement moved server-side (10 MB cap + HeadObject
-at every persistence point). The still-open catalog read stayed in §9.4.
+The chronological "Latest passes" narratives moved **verbatim** to
+[`history/archive/AI_Handoff-2026-09-29-latest-passes.md`](history/archive/AI_Handoff-2026-09-29-latest-passes.md)
+(index row: [`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)) so the current
+records could be appended. It describes **completed** work only — the live list of what is
+still open is **§6 below**, which stayed inline, and the current work is **§43–§46**.
 
 ## 6. Remaining gaps / open items
 
@@ -563,11 +472,12 @@ parameters. Pool: exactly one `pg.Pool` (`max: 20`) shared by HTTP + WS + schedu
 **Housekeeping (do not grow this file).** Superseded records live in [`history/archive/`](history/archive/)
 with a dated index at [`.ai/history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md) — §5, §8, §10,
 §12, §14's TASK 004B narrative, §15–§19 (incl. §2's verification system → `.ai/context/verification.md` and
-§15–§16 → `.ai/context/payment.md`), §20–§36, §37–§41, and **§42.1–§42.5** (pointers above). The file-edit
+§15–§16 → `.ai/context/payment.md`), §20–§36, §37–§41, **§42.1–§42.5** and **§5 "Latest passes"** (pointers above). The file-edit
 tools stop matching past ~55 KB (measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not), so when appending
 a record, move a superseded one to `history/archive/` and point at it. **Done 2026-09-29:** §42.1–§42.5 →
-`AI_Handoff-2026-09-29-audit-findings-detail.md`, which is what made room for §44 and §45. Keep §6 (gaps),
-§9.4/§9.5, the §14 stub, §18's BLOCKED statements and §42's verdicts.
+`AI_Handoff-2026-09-29-audit-findings-detail.md` (made room for §44/§45) and §5 →
+`AI_Handoff-2026-09-29-latest-passes.md` (made room for §46). Keep §6 (gaps), §9.4/§9.5, the §14 stub,
+§18's BLOCKED statements and §42's verdicts.
 
 **§27–§36 pointer (2026-09-27 → 2026-09-28).** Stripe sandbox audit; the velShop order-status contract +
 cart selection; one-press checkout; the PromptPay settlement diagnostic; the webhook stall + signature
@@ -777,46 +687,70 @@ Two commits because they are two independent defects.
   never report Part 2 as live in production until it is applied). Full text of all fourteen findings:
   [`history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md).
 
----
-
-## 45. CI follow-up — the paid-cancellation assertion was the bug, not the code (2026-09-29)
+---## 45. CI follow-up — the paid-cancellation assertion was the bug, not the code (2026-09-29)
 
 **CI failure: FIXED.** Implementation changed: **NO** (zero source files touched).
-**Task** `test(orders): fix paid cancellation regression assertion` · start `08d6d68`.
+`test(orders): fix paid cancellation regression assertion` · start `08d6d68` · runs
+`36580595287` (`2a725d3`) and `36580934430` (`c313244`) both **success, 1020 pass / 2 skip / 0 fail**.
 
-- **Root cause: a stale assertion that contradicted its own fixture.** The one failure left after §44
-  was in the DB-gated test §44 itself added —
-  `order-fulfillment-state-machine.test.ts` → `"a paid order is refused a staff cancellation; an
-  unpaid one is not"`. It seeds `paidRow` at `orders.status = 'paid'` on purpose (that is the fourth
-  case: the raw webhook-written status must be refused, not just a `paid` **payment row**), then three
-  lines later swept **all** rows asserting `'confirmed'` — `Expected: "confirmed"` /
-  `Received: "paid"`. `assertNoSettledPaymentForCancellation` is a single `SELECT`
-  (`order-fulfillment.ts:311-319`, no write), so it could never restore `confirmed`, and nothing
-  writes `confirmed` onto a `paid` order. The `ORDER_ALREADY_PAID` assertion just before it
-  (`:769`) **passed** — the gate was correct. Fix: compare each row against **its own seeded status**
-  (`paidRow` → `paid`, the other three → `confirmed`) and add `unpaid` to the select so the ALLOWED
-  path is covered too. No test deleted, no `.only`/`.skip`, no rule changed.
-- **The brief's filename was wrong, and I did not guess.** `backend/tests/fulfilment-gates-and-races.test.ts`
-  **does not exist**; the failure is the describe block `"fulfilment gates and races (requires
-  TEST_DATABASE_URL)"` at `order-fulfillment-state-machine.test.ts:414` (British spelling), found by
-  grepping the describe title.
-- **Local result (real numbers):** targeted `24 pass / 5 skip / 0 fail` · 12 related files
-  `189 pass / 83 skip / 0 fail` · **full suite `860 pass / 162 skip / 0 fail`, 1022 tests / 47 files,
-  exit 0 — identical to the §44 baseline** · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 ·
-  `i18n:check` th=en=my=**1416** · `git diff --check` clean · `lint` = placeholder. Full evidence incl.
-  the before/after tables: `.ai/tasks/completed/inventory-integrity-fix-2026-09-29.md`
+- **Root cause:** a stale assertion that contradicted its own fixture, in the DB-gated test §44
+  added (`order-fulfillment-state-machine.test.ts`). It seeds `paidRow` at
+  `orders.status='paid'` on purpose (the 4th case: the raw webhook-written status must be refused,
+  not just a `paid` payment row), then swept ALL rows asserting `'confirmed'` —
+  `Expected: "confirmed"` / `Received: "paid"`. The gate is a read-only `SELECT` and the
+  `ORDER_ALREADY_PAID` assertion just before it PASSED, so the implementation was never wrong.
+  Fix: assert each row against its OWN seeded status, and add `unpaid` so the allowed path is
+  covered too. (The brief's filename `fulfilment-gates-and-races.test.ts` does not exist; the
+  describe block `"fulfilment gates and races"` is at `order-fulfillment-state-machine.test.ts:414`.)
+- Local `24 pass / 5 skip / 0 fail`; the fixed test is one of the 5 DB skips (no Postgres, no
+  container runtime here), so **CI is the proof**, not the local run.
+- Full evidence incl. both CI logs: `.ai/tasks/completed/inventory-integrity-fix-2026-09-29.md`
   → "CI Failure Follow-up".
-- **✅ CI GREEN — run `36580595287` on `2a725d3`: `1020 pass / 2 skip / 0 fail`** (1022 tests /
-  47 files, 5958 expect calls), and the fixed test now logs
-  `(pass) fulfilment gates and races (requires TEST_DATABASE_URL) > a paid order is refused a staff
-  cancellation; an unpaid one is not`. The prior run `36578719384` on `08d6d68` had **exactly one**
-  failure, `Expected:
-  "confirmed"` / `Received: "paid"`, at the blanket sweep and NOT at the `ORDER_ALREADY_PAID` gate
-  assertion before it — CI itself confirms the gate was already correct.
-- **⚠️ Read this before trusting any DB-gated result.** That 5th local skip IS the fixed test. It is
-  `test.skip` unless `TEST_DATABASE_URL` is set, and this workspace has no Postgres and no container
-  runtime (`docker`/`podman`/`pg_ctl`/`postgres`/`initdb`/`psql` all absent). The local run proves only
-  that the file parses and the other 24 tests pass — **the fix was proven by CI, not locally** (same
-  LOCAL/CI split as audit row #17).
-- **Still blocked (unchanged from §44):** migration 048 **PRODUCTION BLOCKED** on the Neon quota
-  (owner) · real Stripe E2E ⛔ · browser E2E ⛔ · audit HIGH #4/#5, MEDIUM #8–#11, LOW #12–#14 open.
+
+---
+
+## 46. HIGH #4 — payment ATTEMPT identity (2026-09-29)
+
+**Status: FIXED** · `fix(payment): separate failed attempts from order payment state` · start
+`c313244`. **One production file: `backend/routes/stripe.ts`.** No schema, no migration, no
+inventory file, no frontend, no new business rule.
+
+- **Root cause — every write to `payments` chose its row by a NEWEST-ROW HEURISTIC, not by the
+  attempt the Stripe event names.** All three sync writers (and the completed-but-unpaid
+  `checkout.session.completed` branch) used `SELECT id … WHERE order_id=$1 AND provider='stripe'
+  AND status <> 'x' ORDER BY created_at DESC LIMIT 1`, discarding `paymentIntent.id` /
+  `session.id` — in hand at every call site and already stored in `provider_payment_id` /
+  `provider_checkout_session_id`. An order **legitimately has several payment rows**: checkout
+  itself retires one attempt (`SESSION_NOT_REUSABLE`) and opens another on the same order, and
+  Stripe keeps delivering events for the retired session. So a **LATE event about a dead attempt
+  landed on the live one**: a late `payment_intent.payment_failed` failed the customer's still-open
+  session, flipped the ORDER to `payment_failed` and released their stock; a late
+  `payment_intent.succeeded` recorded captured money against an attempt that was never charged (that
+  row is what a refund is built from). Both are Invariant F.
+- **The order-level half was NOT the bug and was NOT changed.** `payment_failed` is terminal for
+  payment by design — `PAYABLE_ORDER_STATUSES = ['pending','pending_payment']`, enforced at
+  `stripe.ts:886`, and `.ai/context/payment.md` says the answer is "buy again". **No retry policy
+  was invented**; the brief's "customer retries the same order" scenario is impossible here by
+  design. The supported retry is the one INSIDE the payment window — that is where the defect was.
+- **Solution:** NEW `resolvePaymentAttemptRow()` resolves the row by `provider_payment_id` OR
+  `provider_checkout_session_id` (order + `provider='stripe'` scoped), keeping the newest-row
+  heuristic ONLY as a fallback for an event carrying no stored identifier, so nothing that resolves
+  today changes. The terminal guards moved onto the **outer** UPDATE, and `markPaymentFailed` /
+  `markPaymentCanceled` now require **this attempt to have actually transitioned**
+  (`status NOT IN ('paid','failed','cancelled')`, read from `rowCount`) before the order moves and
+  stock is released — that is what stops the order-level damage.
+- **Inventory impact: none.** `commitOrderInventory()` / `releaseOrderInventory()` unmodified; no
+  new helper, no direct stock restore. `releaseOrderInventory` is simply no longer *reached* by an
+  event about a dead attempt. CRITICAL #1/#2 and HIGH #3 stand.
+- **Tests:** NEW `payment-attempt-identity.test.ts` — 7 DB-free contract tests (local proof; **4
+  failed before the fix**) + 6 DB-gated behavioural tests driving the real webhook with locally
+  signed events (CI-only). One pre-existing literal in `checkout-payment-flow.test.ts:425` became a
+  regex that ALSO now pins attempt scoping. Local full suite **867 pass / 168 skip / 0 fail**,
+  1035 tests / 48 files, exit 0 · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3.
+- **Full evidence (25 sections, state map, every command):**
+  [`.ai/tasks/completed/payment-failed-retry-2026-09-29.md`](tasks/completed/payment-failed-retry-2026-09-29.md)
+- **Recorded dependency (not fixed, deliberately):** a captured charge arriving for an attempt
+  already `failed` leaves the existing `console.warn` as the only operator signal — re-open vs
+  refund vs queue is **HIGH #5** and was not invented.
+- **Remaining blockers:** migration 048 **PRODUCTION BLOCKED** (owner, Neon quota) · Stripe E2E ⛔
+  · browser E2E ⛔ · MEDIUM #8–#11, LOW #12–#14 open. **Next task: HIGH #5.**
