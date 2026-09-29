@@ -162,3 +162,20 @@ Impossible transition **`paid → cancelled`** — refused 409 since §44.
 5. **Give late/refused payments an operator surface** instead of a `console.warn` (#4, #5).
 6. **Add the `orders.status` CHECK (#9)** and collapse the two urgency contracts (#8).
 7. **Remove the VelRepeat order-creation bypass (#10)** and the inventory-row deadlock (#11).
+
+---
+
+## §42.1 “Verdicts on the ten architecture questions” (moved 2026-09-29, edit headroom)
+
+**Verdicts on the ten architecture questions.** (1) reservation source of truth ✅ one
+(`backend/lib/payment-reservation.ts`) · (2) inventory source of truth ❌ variant vs `quantity - reserved`,
+and `quantity` is never consumed · (3) payment source of truth ✅ one · (4) order-state authority ✅ one
+(`backend/lib/order-fulfillment.ts`) · (5) lock strategy ✅ compatible — every writer of `orders` +
+`payments` takes `lockOrderRow()` (`backend/lib/order-lock.ts`) first (`stripe.ts:350/454/487/573`,
+`cart.ts:1350`, `payment-reservation-scheduler.ts:161`) · (6) double commit/release ❌ the seller path ·
+(7) an impossible transition exists: `paid → cancelled` · (8) dead code: `RELEASABLE_STATUSES."failed"`
+(`inventory.ts:73`) and the duplicated urgency model (#8) · (9) production schema mismatch ❌ (048 missing) ·
+(10) **no new authz hole** — the real exposure of this pass is integrity/financial, not access control.
+
+*These verdicts are a point-in-time reading of the audit at `2c52bfc`. Items 2, 6 and 7 were fixed by
+§43 and §44; item 5 is §47 (HIGH #5). Confirm against source before relying on any of them.*

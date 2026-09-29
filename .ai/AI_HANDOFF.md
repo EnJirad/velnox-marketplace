@@ -551,15 +551,11 @@ consumed) → **fixed §43** · **#12 / #6** migration 048 → **still PRODUCTIO
 workspace — #15 real Stripe E2E, #16 browser E2E, #17 DB-gated suites (no `postgres`/`psql`/`docker`
 here; CI is the only execution) — are restated in **§45**.
 
-**Verdicts on the ten architecture questions.** (1) reservation source of truth ✅ one
-(`backend/lib/payment-reservation.ts`) · (2) inventory source of truth ❌ variant vs `quantity - reserved`,
-and `quantity` is never consumed · (3) payment source of truth ✅ one · (4) order-state authority ✅ one
-(`backend/lib/order-fulfillment.ts`) · (5) lock strategy ✅ compatible — every writer of `orders` +
-`payments` takes `lockOrderRow()` (`backend/lib/order-lock.ts`) first (`stripe.ts:350/454/487/573`,
-`cart.ts:1350`, `payment-reservation-scheduler.ts:161`) · (6) double commit/release ❌ the seller path ·
-(7) an impossible transition exists: `paid → cancelled` · (8) dead code: `RELEASABLE_STATUSES."failed"`
-(`inventory.ts:73`) and the duplicated urgency model (#8) · (9) production schema mismatch ❌ (048 missing) ·
-(10) **no new authz hole** — the real exposure of this pass is integrity/financial, not access control.
+**Verdicts on the ten architecture questions — ARCHIVED 2026-09-29** → verbatim text in
+[`history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md)
+(§42.1). Headline only: authorities were each single-sourced, but `quantity` was never consumed,
+the seller path double-released, `paid → cancelled` existed, production schema mismatched.
+(2)+(6) ✅ §43 · (7) ✅ refused §44 · (5) ✅ §47.
 
 ### 42.2 PROBLEMS — severity ordered (index; full write-ups archived)
 
@@ -573,7 +569,7 @@ plus §42.3–§42.5). One line per finding, with its current status:
 | C2 | Seller cancellation was a SECOND release path (inline restore, no claim) → double release / phantom units | ✅ **FIXED** §43 |
 | H3 | A seller/center can cancel a PAID order: money kept, no refund, no alert | ✅ **FIXED** §44 |
 | H4 | `payment_intent.payment_failed` is per-ATTEMPT but terminal at ORDER level → a later successful retry is refused | ❌ **OPEN** |
-| H5 | A payment arriving after the order died has no auto-refund and no operator queue (only `console.warn`) | ❌ **OPEN** |
+| H5 | A payment arriving after the order died has no auto-refund and no operator queue (only `console.warn`) | ✅ **FIXED** §47 |
 | H6 | PRODUCTION BLOCKED: migration 048 unapplied (Neon quota) → Part 2 inert in production | ⛔ **OWNER ACTION** |
 | M7 | The payment-success path ignores variants | ✅ resolved by §43 (`commitOrderInventory` leaves `product_variants.stock` to the reservation) |
 | M8 | Two overlapping urgency contracts in `commerce.ts` (3-minute vs GREEN/YELLOW/RED) | ❌ **OPEN** |
@@ -803,6 +799,13 @@ inventory file, no frontend, no new business rule.
   list. Incidents are written **automatically** by the webhook, so all 13 pre-existing late-payment
   suites started failing too — in their own `finally` block, with all assertions passed. Fixed by
   adding the table to that loop; no assertion weakened, no test skipped, schema unchanged.
+- **⚠️ Second CI run FAILED (`36591311016`, `1050 pass / 2 fail`) — a test-fixture gap in THIS
+  task's own tests, not a product defect.** Both were `Expected: 200 / Received: 403`. The
+  fixture inserted only an `employees` row, but `resolvePermissions` takes the role from
+  **`users.role`** (default `'customer'`) and only reads the permission list for a `staff`
+  account — so both seeded "operators" resolved an empty permission list. `employees.role` is a
+  different column (the job title, `CHECK (role IN ('admin','manager','staff'))`). Fixed by
+  inserting the role on `users`; the 403 assertions were **not** weakened.
 - **Full evidence (28 sections):**
   [`.ai/tasks/completed/late-payment-operator-2026-09-29.md`](tasks/completed/late-payment-operator-2026-09-29.md)
 - **⚠️ OWNER DECISION, not solved here:** in Case A the charge sits on a `failed` row, so the

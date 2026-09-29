@@ -487,15 +487,19 @@ describeDb("late / unrecordable payment (requires TEST_DATABASE_URL)", () => {
   async function seedOperator(opts: { role: "staff" | "none"; permissions?: string[] }) {
     const { query } = await import("../db/index.js");
     const tag = `op-${crypto.randomUUID()}`;
-    const user = await query(`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`, [
+    // `resolvePermissions` reads the role from **users.role**, not from the
+    // employee row, and only a `staff` account has its codes read at all
+    // (owner/admin hold every code implicitly; anyone else holds none) —
+    // backend/lib/permissions.ts. An employees-only fixture therefore resolves
+    // an empty permission list and every endpoint answers 403.
+    const user = await query(`INSERT INTO users (email, name, role) VALUES ($1, $2, $3) RETURNING id`, [
       `${tag}@test.local`,
       "Center Operator",
+      opts.role,
     ]);
     const userId = user.rows[0].id as string;
     if (opts.role === "staff") {
-      // `employees.permissions` is a JSONB array, and only `staff` has its
-      // permissions read from the row (owner/admin hold every code implicitly,
-      // and a user with no employee row holds none) — backend/lib/permissions.ts.
+      // `employees.permissions` is a JSONB array.
       await query(
         `INSERT INTO employees (user_id, employee_id, role, permissions) VALUES ($1, $2, 'staff', $3::jsonb)`,
         [userId, `EMP-${tag.slice(-6).toUpperCase()}`, JSON.stringify(opts.permissions ?? [])],

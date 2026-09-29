@@ -358,6 +358,47 @@ settlement ∥ expiry, and so on) silently started producing one.
 assertion was weakened, no test was skipped, and the schema was left following the existing
 convention.
 
+### 25.1 Second CI run — `36591311016` on `2ad5735` FAILED — `1050 pass / 2 skip / 2 fail`
+
+Reported before fixing, as the rules require. The purge fix worked (19 → 2) and broke nothing
+outside this task; both remaining failures were in **this task's own new tests**.
+
+| | |
+|---|---|
+| Test | `orders.view may list; only orders.manage may resolve` → `Expected: 200 / Received: 403` at the **LIST** call |
+| Test | `resolving is idempotent and changes NOTHING but the incident` → `Expected: 200 / Received: 403` at the **PATCH** call |
+| Blast radius | 2 — both in `backend/tests/late-payment-incidents.test.ts` |
+
+The companion test that asserts a **403** (`the incident list is refused to an account without
+orders.view`) passed, which is what made the diagnosis unambiguous: the route was not rejecting
+operators in general, the *fixture* was not an operator.
+
+**Root cause — the fixture was not a staff account at all.** `seedOperator()` inserted only an
+`employees` row. But `backend/lib/permissions.ts` reads the role from **`users.role`**
+(`roleOf()` → `SELECT role FROM users WHERE id = $1`), and only a `staff` account has its codes read
+from the employee row:
+
+```ts
+const effectiveRole = role ?? (await roleOf(userId));
+if (effectiveRole === "owner" || effectiveRole === "admin") return [...ALL_PERMISSION_CODES];
+if (effectiveRole !== "staff") return [];
+const result = await query("SELECT permissions FROM employees WHERE user_id = $1 LIMIT 1", [userId]);
+```
+
+`users.role` defaults to `'customer'`, so both seeded "operators" resolved an **empty** permission
+list and both endpoints answered 403 — while `employees.permissions` sat unused. `employees.role`
+is a different column with a different `CHECK (role IN ('admin','manager','staff'))`; it is the
+*employee's* job title, not the account's authorization role.
+
+**Fix:** `seedOperator()` now inserts the role on `users` (`INSERT INTO users (email, name, role)`)
+and keeps the employee row for the permission list, with the reason written into the comment. The
+403 assertions were **not** weakened, and no test was skipped or deleted.
+
+Verified from source rather than assumed, alongside the fix: `employees.user_id` is
+`ON DELETE CASCADE` and `audit_logs.user_id` is `ON DELETE SET NULL`, so purging a seeded operator
+in the tests' own `finally` block cannot throw 23503 — which is exactly the failure shape that
+produced the first CI run.
+
 ## 26. Production status
 
 **NOT TESTED — no production action was taken, by design.** No production database write, no
