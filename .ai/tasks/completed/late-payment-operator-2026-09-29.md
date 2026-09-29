@@ -399,6 +399,17 @@ Verified from source rather than assumed, alongside the fix: `employees.user_id`
 in the tests' own `finally` block cannot throw 23503 — which is exactly the failure shape that
 produced the first CI run.
 
+### 25.2 Third CI run — `36592289354` on `b9551b8` **GREEN**
+
+| | |
+|---|---|
+| Workflow / job | `Tests` → `Typecheck + tests (disposable PostgreSQL)` · **success** |
+| Result | **1052 pass / 2 skip / 0 fail** — 1054 tests across 49 files |
+| DB-gated evidence | **all 18 tests of this file executed** against the disposable PostgreSQL (10 contract + 8 behavioural); the 8 behavioural cases — including the two authorization cases that returned 403 — all report `(pass)` |
+
+The 2 remaining skips are the R2-credential cases unrelated to this task. The purge fix and the
+`users.role` fixture fix are both confirmed by execution, not by reasoning.
+
 ## 26. Production status
 
 **NOT TESTED — no production action was taken, by design.** No production database write, no

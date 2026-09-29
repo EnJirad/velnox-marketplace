@@ -765,33 +765,33 @@ inventory file, no frontend, no new business rule.
 **No refund policy, no reopen policy, no order resurrection, no order-lifecycle change.**
 
 - **Root cause — "money arrived that the system cannot act on" was a `console.warn`, not a
-  record.** `markPaymentSucceeded` treated `!moved` as the only exceptional outcome. A log line
+  record.** `markPaymentSucceeded` treated `!moved` as the only exceptional outcome, and a log line
   cannot be listed, filtered, assigned or acknowledged. Worse, the sharpest case was **structurally
   invisible**: a captured charge for an attempt already recorded `failed` on an order that is
   still `pending_payment` **moves the order to `paid` and commits the stock** while the payment row
-  stays `failed` — and `POST /api/admin/orders/:orderId/refund` then refuses it, because that route
-  requires `status = 'paid'` (`409 PAYMENT_NOT_REFUNDABLE`). Reachable via `SESSION_NOT_REUSABLE`
-  (customer switches rail) followed by paying the old tab.
+  stays `failed` — and `POST /api/admin/orders/:orderId/refund` then refuses it (`409
+  PAYMENT_NOT_REFUNDABLE`, that route requires `status = 'paid'`). Reachable via
+  `SESSION_NOT_REUSABLE` (customer switches rail) followed by paying the old tab.
 - **Solution:** NEW `backend/lib/payment-incidents.ts` — the ONE authority — records
   `payment_incidents` (migration **049**) whenever money is received that cannot safely settle.
-  The detection widened from `!moved` to `!moved || !attemptRecorded`, **minus duplicate
-  deliveries** (Stripe fires two events per charge). The order guards, `commitOrderInventory` and
+  Detection widened from `!moved` to `!moved || !attemptRecorded`, **minus duplicate deliveries**
+  (Stripe fires two events per charge). Order guards, `commitOrderInventory` and
   `releaseOrderInventory` are untouched.
 - **No policy invented:** `.ai/context/payment.md` already fixes it — "never resurrect … No refund
   is invented in code — an operator decides". The resolve route updates only `payment_incidents`
-  (pinned by test: no `UPDATE orders/payments/refunds`, no inventory).
+  (pinned by test: no `UPDATE orders/payments/refunds`, no inventory work).
 - **Idempotency:** `dedupe_key` = `provider:orderId:attempt:reason`, UNIQUE, enforced by
   `ON CONFLICT DO NOTHING` (not check-then-insert) — 3 redeliveries leave exactly 1 row.
 - **Authorization:** `orders.view` to list, `orders.manage` to resolve — the **existing** catalog,
-  no new permission, no new auth. New VelCenter tab `incidents`; it has **no refund and no reopen
+  no new permission, no new auth. New VelCenter tab `incidents`, with **no refund and no reopen
   button**.
 - **Schema-tolerant on purpose:** 049 is unapplied in production for the same Neon-quota reason as
   048, so the write swallows `42P01`/`42703` and the list route answers `schemaMissing: true`
-  rather than 500-ing a webhook or the dashboard.
-- **Tests:** NEW `late-payment-incidents.test.ts` — 10 contract (local; **9 failed before**) +
-  8 behavioural (CI-only) covering cases A–D, dedupe, authorization, and that resolving changes
-  nothing but the incident. Local full suite **878 pass / 176 skip / 0 fail**, 1054 tests /
-  49 files · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3 · schema parity.
+  instead of 500-ing a webhook or the dashboard.
+- **Tests:** NEW `late-payment-incidents.test.ts` — 10 contract (local) + 8 behavioural, covering
+  cases A–D, dedupe, authorization, and that resolving changes nothing but the incident. Local full
+  suite **878 pass / 176 skip / 0 fail**, 1054 tests / 49 files · backend `tsc` 0 · `typecheck` 4/4 ·
+  `build:apps` 4/4 · i18n 1416×3 · schema parity.
 - **⚠️ First CI run FAILED (`36590962144`, `1033 pass / 19 fail`) — a test-helper gap, NOT a
   production defect.** `payment_incidents.order_id` is a NO ACTION FK on `orders` (the convention
   `payments`/`refunds` already follow), but `backend/tests/helpers/purge.ts` enumerates every NO
@@ -800,12 +800,15 @@ inventory file, no frontend, no new business rule.
   suites started failing too — in their own `finally` block, with all assertions passed. Fixed by
   adding the table to that loop; no assertion weakened, no test skipped, schema unchanged.
 - **⚠️ Second CI run FAILED (`36591311016`, `1050 pass / 2 fail`) — a test-fixture gap in THIS
-  task's own tests, not a product defect.** Both were `Expected: 200 / Received: 403`. The
-  fixture inserted only an `employees` row, but `resolvePermissions` takes the role from
-  **`users.role`** (default `'customer'`) and only reads the permission list for a `staff`
-  account — so both seeded "operators" resolved an empty permission list. `employees.role` is a
-  different column (the job title, `CHECK (role IN ('admin','manager','staff'))`). Fixed by
-  inserting the role on `users`; the 403 assertions were **not** weakened.
+  task's own tests, not a product defect.** Both were `Expected: 200 / Received: 403`: the fixture
+  inserted only an `employees` row, but `resolvePermissions` takes the role from **`users.role`**
+  (default `'customer'`) and reads the permission list only for a `staff` account, so both seeded
+  "operators" resolved an empty one. Fixed by inserting the role on `users`; the 403 assertions
+  were **not** weakened.
+- **✅ CI GREEN on the third run — `36592289354` (`b9551b8`): `1052 pass / 2 skip / 0 fail`,
+  1054 tests / 49 files, job success.** All 18 tests of the new file executed against the
+  disposable PostgreSQL (the 2 skips are the unrelated R2 cases). Both fixes are confirmed by
+  execution, not by reasoning.
 - **Full evidence (28 sections):**
   [`.ai/tasks/completed/late-payment-operator-2026-09-29.md`](tasks/completed/late-payment-operator-2026-09-29.md)
 - **⚠️ OWNER DECISION, not solved here:** in Case A the charge sits on a `failed` row, so the
