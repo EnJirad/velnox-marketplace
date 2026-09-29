@@ -563,11 +563,11 @@ parameters. Pool: exactly one `pg.Pool` (`max: 20`) shared by HTTP + WS + schedu
 **Housekeeping (do not grow this file).** Superseded records live in [`history/archive/`](history/archive/)
 with a dated index at [`.ai/history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md) — §5, §8, §10,
 §12, §14's TASK 004B narrative, §15–§19 (incl. §2's verification system → `.ai/context/verification.md` and
-§15–§16 → `.ai/context/payment.md`), §20–§36, §37–§41, and **§42.2–§42.5** (pointers above). The file-edit
+§15–§16 → `.ai/context/payment.md`), §20–§36, §37–§41, and **§42.1–§42.5** (pointers above). The file-edit
 tools stop matching past ~55 KB (measured 2026-09-26: ≤54.8 KB edits, ≥68.2 KB does not), so when appending
-a record, move a superseded one to `history/archive/` and point at it. **Done 2026-09-29:** §42.2–§42.5 →
-`AI_Handoff-2026-09-29-audit-findings-detail.md`, which is what made room for §44. Keep §6 (gaps), §9.4/§9.5,
-the §14 stub, §18's BLOCKED statements and §42's verdicts.
+a record, move a superseded one to `history/archive/` and point at it. **Done 2026-09-29:** §42.1–§42.5 →
+`AI_Handoff-2026-09-29-audit-findings-detail.md`, which is what made room for §44 and §45. Keep §6 (gaps),
+§9.4/§9.5, the §14 stub, §18's BLOCKED statements and §42's verdicts.
 
 **§27–§36 pointer (2026-09-27 → 2026-09-28).** Stripe sandbox audit; the velShop order-status contract +
 cart selection; one-press checkout; the PromptPay settlement diagnostic; the webhook stall + signature
@@ -619,41 +619,27 @@ is still open. **One correction to §38:** its "the ONE release path" holds for 
 ("feat(payment): implement reservation expiry and stock release") covering Part 1 (payment ↔ customer
 cancellation race hardening) and Part 2 (30-minute payment reservation + automatic expiry + stock
 release). **No code, schema, migration, API, state-machine or UI change was made by this pass.** Evidence
-tiers are used strictly: **LOCAL VERIFIED** = a command was executed in this sandbox and its output is
-quoted · **PRODUCTION VERIFIED** = a live production read · **PRODUCTION BLOCKED** = not observable from
-a workspace or blocked by a provider condition · **CODE-VERIFIED ONLY** = read from source, not executed.
+tiers used strictly: **LOCAL VERIFIED** (a command ran here, output quoted) · **PRODUCTION VERIFIED**
+(a live production read) · **PRODUCTION BLOCKED** (not observable from a workspace) · **CODE-VERIFIED
+ONLY** (read from source, not executed).
 
-**§0 startup sync — the sandbox was 34 commits stale.** `git status` showed `## main...origin/main` with
-local `9e7e178` (a stale remote-tracking ref). `git fetch origin` put `origin/main` at `2c52bfc` →
-**behind 34 / ahead 0**, so `git pull --ff-only origin main` was run: HEAD is now
-`2c52bfc734428232ed67dbde3a07b9985d4a506d` == `origin/main`, tree clean, no local work lost, and **no
-commit was created** (that fast-forward is the only workspace mutation of the audit). The 34 commits
-carry Part 1 (`d4e184d`, `a2eb2be` harden cancellation race; `ad7bae9` fulfilment state machine), Part 2
-(`34e8891`, `d7282bb`, `8261152`, `2c52bfc`) and the order surfaces (`31c0d19`, `dcceffd`). **Any handoff
-or context text written before `2c52bfc` is not verified against the audited code.**
+**§0 startup sync — the sandbox was 34 commits stale.** `git fetch` put `origin/main` at `2c52bfc`
+(**behind 34 / ahead 0**), so `git pull --ff-only` fast-forwarded HEAD to
+`2c52bfc734428232ed67dbde3a07b9985d4a506d` == `origin/main`, tree clean, no local work lost and **no
+commit created**. The 34 commits carry Part 1 (`d4e184d`, `a2eb2be`, `ad7bae9`), Part 2 (`34e8891`,
+`d7282bb`, `8261152`, `2c52bfc`) and the order surfaces (`31c0d19`, `dcceffd`). **Any handoff or context
+text written before `2c52bfc` is not verified against the audited code.**
 
 ### 42.1 What was checked, and the result
 
-| # | Checked | How | Result |
-|---|---|---|---|
-| 1 | Repo sync | `git fetch` / `git rev-parse` | ✅ local fast-forwarded 34 commits to `2c52bfc` |
-| 2 | Backend suite (sandbox) | `NODE_ENV=test bun test backend/tests` | ✅ **850 pass / 154 skip / 0 fail** (1004 tests, 46 files) |
-| 3 | CI on the audited SHA | Actions run `36551376766` | ✅ **1002 pass / 2 skip / 0 fail** (disposable `postgres:16`, no repo secrets) |
-| 4 | Backend types | `bunx tsc --noEmit` (backend) | ✅ exit 0 |
-| 5 | App types | `bun run typecheck` | ✅ 4/4 apps exit 0 |
-| 6 | i18n parity | `bun run i18n:check` | ✅ th = en = my = **1414** |
-| 7 | Hygiene | `git diff --check` · `bun run lint` | ✅ clean · ⚠️ `lint` is a placeholder ("Lint not yet configured") — no real linter exists |
-| 8 | Sources of truth | source read | ⚠️ PARTIAL — reservation ✅ one, payment ✅ one, order state ✅ one; **inventory ❌ two release paths and `quantity` never consumed (#1, #2)** |
-| 9 | Races: payment×cancel, payment×expiry, cancel×expiry, payment×payment, expiry×expiry | source + suites + CI | ✅ exactly-one-wins holds on all five |
-| 10 | Race: seller-cancel release × webhook release | source | ❌ **FAIL — double release (#2)** |
-| 11 | Stripe surface | source (`stripe.ts`) | ✅ 11 event types, signature via `constructEventAsync` + raw-body middleware, unverifiable → 503, per-event idempotency claim |
-| 12 | Production schema | `Migrate Neon Database` logs + `/api/_diag/schema` | ❌ **PRODUCTION BLOCKED — migration 048 never applied (#6)** |
-| 13 | Production payment config | `GET /api/stripe/configured` · `GET /api/payments/methods` | ✅ PRODUCTION VERIFIED — `{configured:true, mode:"test", webhookConfigured:true, webhookSecretHealth.present:true}`, `["CARD","PROMPTPAY"]`, **COD disabled**, THB |
-| 14 | Production health | `GET /api/health` | ✅ PRODUCTION VERIFIED — 200 |
-| 15 | Real Stripe E2E (PaymentIntent / PromptPay QR / webhook / refund) | — | ⛔ **BLOCKED** — no `STRIPE_*` keys, no `DATABASE_URL`, no session; never executed from this workspace |
-| 16 | Browser E2E of `/orders`, `/cart`, seller order pages | — | ⛔ **BLOCKED** — no signed-in session; layout pinned by contract tests only |
-| 17 | DB-gated suites locally | `bun test backend/tests` | ⚠️ SKIPPED locally (no `postgres`/`psql`/`docker`, no `TEST_DATABASE_URL`); the fail-closed guard refuses a production URL — proven: `NODE_ENV=test DATABASE_URL=…neon.tech… bun test backend/tests` → `REFUSING TEST AGAINST PRODUCTION DATABASE`, exit 2. These cases DO run in CI (#3) |
-| 18 | Migration numbering + schema drift | `migration-numbering` / `schema-drift` suites | ✅ PASS — `db/schema.sql` and `db/run-sqleditor.sql` byte-identical (`diff` empty); head `048` |
+**The 18-row audit table moved 2026-09-29 (edit headroom)** to
+[`history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md)
+(§42.1). What still binds today, restated: **#8/#10** (two release paths, `quantity` never
+consumed) → **fixed §43** · **#12 / #6** migration 048 → **still PRODUCTION BLOCKED** ·
+**#13** production Stripe is `mode:"test"` with **COD disabled** · **#18** `db/schema.sql` ↔
+`db/run-sqleditor.sql` byte-identical, head `048`. The three rows that cannot be claimed from a
+workspace — #15 real Stripe E2E, #16 browser E2E, #17 DB-gated suites (no `postgres`/`psql`/`docker`
+here; CI is the only execution) — are restated in **§45**.
 
 **Verdicts on the ten architecture questions.** (1) reservation source of truth ✅ one
 (`backend/lib/payment-reservation.ts`) · (2) inventory source of truth ❌ variant vs `quantity - reserved`,
@@ -726,10 +712,10 @@ reservation/policy/frontend change.**
   audited baseline (`1002`) are the NEW `backend/tests/inventory-settlement.test.ts` (Tests A–J +
   races), all individually `(pass)`. backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 0 ·
   `i18n:check` th=en=my=**1414** · `git diff --check` clean · `lint` = placeholder (no real linter).
-- **Wrong invariants corrected (the assertion, not the number):** `payment-reservation-expiry.test.ts`
-  `:979` (`quantity` stays 50 after selling 2 → now 48 + availability), `:1374`, `:1476`, and
-  `payment-cancellation-race.test.ts` `:834/:1149/:1177/:1203` now assert `quantity −N` on commit and
-  unchanged on release.
+- **Wrong invariants corrected (the assertion, not the number):** four tests in
+  `payment-reservation-expiry.test.ts` (`:979`/`:1374`/`:1476`) and `payment-cancellation-race.test.ts`
+  (`:834`/`:1149`/`:1177`/`:1203`) pinned the old "quantity is never consumed" bug; they now assert
+  `quantity −N` on commit and unchanged on release.
 - **Still blocked / open:** migration 048 **PRODUCTION BLOCKED** (§42 #6) · HIGH #4, #5 ·
   MEDIUM #8–#11 (VelRepeat is still the only non-lib stock writer).
   ~~HIGH #3~~ — fixed by §44 (a PAID order can no longer be cancelled) ·
@@ -790,3 +776,41 @@ Two commits because they are two independent defects.
   **LOW #12–#14** · **#6** migration 048, **PRODUCTION BLOCKED** on the Neon quota (owner action —
   never report Part 2 as live in production until it is applied). Full text of all fourteen findings:
   [`history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md`](history/archive/AI_Handoff-2026-09-29-audit-findings-detail.md).
+
+---
+
+## 45. CI follow-up — the paid-cancellation assertion was the bug, not the code (2026-09-29)
+
+**CI failure: FIXED.** Implementation changed: **NO** (zero source files touched).
+**Task** `test(orders): fix paid cancellation regression assertion` · start `08d6d68`.
+
+- **Root cause: a stale assertion that contradicted its own fixture.** The one failure left after §44
+  was in the DB-gated test §44 itself added —
+  `order-fulfillment-state-machine.test.ts` → `"a paid order is refused a staff cancellation; an
+  unpaid one is not"`. It seeds `paidRow` at `orders.status = 'paid'` on purpose (that is the fourth
+  case: the raw webhook-written status must be refused, not just a `paid` **payment row**), and then
+  three lines later swept **all** rows asserting `'confirmed'` — `Expected: "confirmed"` /
+  `Received: "paid"`. `assertNoSettledPaymentForCancellation` is a single `SELECT`
+  (`order-fulfillment.ts:311-319`, no write), so it could never restore `confirmed`; and no code
+  anywhere writes `confirmed` onto a `paid` order. The refusal assertion one line earlier
+  (`:769`, `ORDER_ALREADY_PAID`) **passed** — the gate was correct. Fix = compare each row against
+  **its own seeded status** (`paidRow` → `paid`, the other three → `confirmed`) and add `unpaid` to
+  the select so the ALLOWED path is covered too. No test deleted, no `.only`/`.skip`, no rule changed.
+- **The brief's filename was wrong, and I did not guess.** `backend/tests/fulfilment-gates-and-races.test.ts`
+  **does not exist**; the failure is the describe block `"fulfilment gates and races (requires
+  TEST_DATABASE_URL)"` at `order-fulfillment-state-machine.test.ts:414` (British spelling). Found by
+  grepping the describe title.
+- **Test result (real numbers):** targeted `24 pass / 5 skip / 0 fail` · 12 related files
+  `189 pass / 83 skip / 0 fail` · **full `bun test backend/tests` = `860 pass / 162 skip / 0 fail`,
+  1022 tests / 47 files, 4992 expect calls, exit 0 — identical to the §44 baseline** · backend `tsc` 0 ·
+  `typecheck` 4/4 · `build:apps` 4/4 · `i18n:check` th=en=my=**1416** · `git diff --check` clean ·
+  `lint` = placeholder. Full evidence: `.ai/tasks/completed/inventory-integrity-fix-2026-09-29.md`
+  → "CI Failure Follow-up".
+- **⚠️ Read this before trusting any DB-gated result.** That 5th skip IS the fixed test. It is
+  `test.skip` unless `TEST_DATABASE_URL` is set, and this workspace has no Postgres and no container
+  runtime (`docker`/`podman`/`pg_ctl`/`postgres`/`initdb`/`psql` all absent). So the local run proves
+  only that the file still parses and the other 24 tests pass — **the fix is verified by the CI run,
+  not locally.** This is the same LOCAL/CI split as audit row #17, and it is why the disposable
+  `postgres:16` job in `.github/workflows/test.yml` is the only real evidence.
+- **Still blocked (unchanged):** migration 048 **PRODUCTION BLOCKED** on the Neon quota (owner) ·
+  real Stripe E2E ⛔ · browser E2E ⛔ · audit HIGH #4/#5, MEDIUM #8–#11, LOW #12–#14 open (§44's list).

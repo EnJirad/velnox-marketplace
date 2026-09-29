@@ -388,3 +388,146 @@ Next recommended task: clear the Neon quota and apply migration 048 (owner), the
 ```
 
 Full evidence chain: this file + CI run `36564425934` on `8b89ecf`.
+
+---
+
+# CI Failure Follow-up — paid-cancellation regression assertion (2026-09-29)
+
+**Outcome: CI GREEN, implementation UNCHANGED.** The only failure left after §44
+(`895cebf` + `3d77254`) was a self-contradictory assertion in the test that §44 itself
+added. No production source file was touched.
+
+Start SHA `08d6d68` ("docs(ai): record the paid-order cancellation guard (audit HIGH #3)").
+Note: the brief named the failing file `backend/tests/fulfilment-gates-and-races.test.ts`.
+**That file does not exist.** The failure was in
+`backend/tests/order-fulfillment-state-machine.test.ts` — the describe block
+`"fulfilment gates and races (requires TEST_DATABASE_URL)"` at line 414 (British
+spelling `fulfilment`, hence the brief's spelling). Found by grepping the describe
+title, not by guessing the filename.
+
+## Before
+
+- **Exact failing command:** CI job `Tests` → `Typecheck + tests (disposable PostgreSQL)`
+  (`.github/workflows/test.yml`), step `bun test backend/tests`, against `3d77254`+.
+- **Exact failing test:** `fulfilment gates and races (requires TEST_DATABASE_URL) >
+  a paid order is refused a staff cancellation; an unpaid one is not`
+  (`backend/tests/order-fulfillment-state-machine.test.ts`, the DB-gated test added in §44).
+- **Expected value:** `"confirmed"`
+- **Received value:** `"paid"`
+- **Exit code:** 1
+- **Local reproduction is IMPOSSIBLE, and this is not a guess.** The test is
+  `testFn = hasDb ? test : test.skip` (`hasTestDatabase()`), so it only runs where
+  `TEST_DATABASE_URL` exists. This sandbox has no Postgres and no container runtime
+  (`command -v` for `docker`/`podman`/`pg_ctl`/`postgres`/`initdb`/`psql` → all absent).
+  Real local run, `bun test backend/tests/order-fulfillment-state-machine.test.ts`:
+  **24 pass / 5 skip / 0 fail, exit 0** — the failing test among the 5 skips.
+  The reproduction therefore happened in CI, and the verification of the fix is CI too.
+
+## Investigation
+
+Source files inspected before touching anything:
+
+| File | What it was read for |
+|---|---|
+| `backend/lib/order-fulfillment.ts` | `assertNoSettledPaymentForCancellation` (line 307) — whether the gate itself writes |
+| `backend/tests/order-fulfillment-state-machine.test.ts` | the whole test, lines 670–782 |
+| `backend/tests/order-fulfillment-state-machine.test.ts:414` | the `hasTestDatabase()` gate |
+| `.github/workflows/test.yml` | how CI provisions `postgres:16` and sets `TEST_DATABASE_URL` |
+| `backend/tsconfig.json` | whether `tsc` even covers `tests/` (it does not — `exclude: ["tests"]`) |
+| `backend/lib/order-lock.ts` | `PAYMENT_SETTLED_STATUSES` (unchanged, context only) |
+
+**Reason for the failure — a stale/incorrect assertion that contradicted its own
+fixture (category 1 + category 4, NOT a production defect).** The old code was:
+
+```ts
+const paidRow = await mkOrder();                                  // status 'confirmed'
+await query(`UPDATE orders SET status = 'paid' WHERE id = $1`, [paidRow]);   // ← the test sets 'paid'
+expect((await attemptCancel(paidRow))?.code).toBe("ORDER_ALREADY_PAID");
+
+// No refusal moved anything: every order is still `confirmed`.
+const rows = await query(`SELECT id, status FROM orders WHERE id = ANY($1::uuid[])`, [
+  [inFlight, paid, paidRow],
+]);
+expect(rows.rows.length).toBe(3);
+for (const row of rows.rows) expect(row.status).toBe("confirmed");  // ← asserts paidRow is 'confirmed'
+```
+
+The test deliberately seeds `paidRow` at `'paid'` — that is the whole point of the
+fourth case, proving the raw webhook-written order status is refused too, not just a
+`paid` **payment row**. Three lines later the same test asserted that row was still
+`'confirmed'`. The two statements cannot both hold, so the loop failed on `paidRow`
+with `Expected: "confirmed"` / `Received: "paid"`.
+
+The implementation is correct and was **not** changed, for three reasons proved from
+source:
+
+1. `assertNoSettledPaymentForCancellation` is a single `SELECT` (`order-fulfillment.ts:311-319`)
+   with no `UPDATE`/`INSERT`/`DELETE` — it is read-only by construction, so it cannot
+   move an order back to `confirmed`. The failing assertion was testing a write that
+   the gate never performs.
+2. The business rule is asserted correctly and DID pass in CI, at line 769
+   (`expect((await attemptCancel(paidRow))?.code).toBe("ORDER_ALREADY_PAID")`). CI
+   reported exactly one failure, and it was the later sweep, not the gate.
+3. `paid → confirmed` is not a transition any code performs. `mkOrder()` seeds
+   `'confirmed'`; nothing in `order-fulfillment.ts`, `seller-orders.ts` or `center.ts`
+   ever writes `'confirmed'` onto a `'paid'` order. "Fixing" the assertion to force a
+   pass would have required inventing a write that the code does not have.
+
+Verdict per the brief's four categories: **(1) stale assertion** and
+**(4) state the test did not account for** — the `paid` seed is the test's own fixture,
+not production state.
+
+## Fix
+
+- **Exact file changed:** `backend/tests/order-fulfillment-state-machine.test.ts`
+  (the ONLY file; `git diff --stat` = `1 file changed, 13 insertions(+), 4 deletions(-)`).
+- **Exact assertion corrected:** the blanket "every order is still `confirmed`" loop was
+  replaced with a per-order assertion of each row's **seeded** status, and `unpaid` was
+  added to the select so the ALLOWED path is covered too:
+
+```ts
+const rows = await query(`SELECT id, status FROM orders WHERE id = ANY($1::uuid[])`, [
+  [unpaid, inFlight, paid, paidRow],
+]);
+expect(rows.rows.length).toBe(4);
+const statusById = new Map<string, string>();
+for (const row of rows.rows) statusById.set(row.id as string, row.status as string);
+expect(statusById.get(unpaid)).toBe("confirmed");
+expect(statusById.get(inFlight)).toBe("confirmed");
+expect(statusById.get(paid)).toBe("confirmed");
+expect(statusById.get(paidRow)).toBe("paid");
+```
+
+- **Why this reflects the actual state machine:** the original intent — "no refusal
+  moved anything" — is a claim about *the gate not writing*, and the correct way to
+  express "nothing moved" is to compare each row against its own baseline, not against
+  a single hard-coded value that one fixture deliberately violates. The new form keeps
+  every original intent and ADDS coverage: `unpaid` (the allowed cancellation) is now
+  asserted to be unmoved as well, and the three refusals are each pinned individually
+  instead of by one shared loop.
+- **Constraints honoured:** no test deleted, no `.skip`/`.only` added (grep for
+  `\.only\|\.skip(` in the file → none), no assertion weakened, no business rule
+  touched. `backend/lib/inventory.ts`, `backend/routes/stripe.ts`, `releaseOrderInventory()`,
+  `commitOrderInventory()`, `inventory_released`, settlement, quantity/variant stock,
+  the cancellation rule, Stripe, the reservation system, migration 048, VelRepeat and the
+  frontend were all left byte-identical (`git diff` confirms the test file is the only change).
+
+## After (every number below is a real command result, not an estimate)
+
+| Check | Command | Result |
+|---|---|---|
+| Targeted | `bun test backend/tests/order-fulfillment-state-machine.test.ts` | **24 pass / 5 skip / 0 fail**, exit 0 (the fixed test is one of the 5 DB skips — see Before) |
+| Related (12 files) | `payment-cancellation-race`, `payment-reservation-expiry`, `inventory-race`, `inventory-settlement`, `customer-order-cancel`, `seller-orders`, `checkout-payment-flow`, `velrepeat-core`, `order-status-contract`, `seller-order-ux`, `webhook-resilience`, `stripe-webhook-raw-body` | **189 pass / 83 skip / 0 fail**, 272 tests / 12 files, exit 0 |
+| Full backend | `NODE_ENV=test bun test backend/tests` | **860 pass / 162 skip / 0 fail**, 1022 tests / 47 files, 4992 expect calls, exit 0 — identical to the §44 baseline |
+| Typecheck (apps) | `bun run typecheck` | 4/4 apps exit 0 |
+| Typecheck (backend) | `cd backend && bunx tsc --noEmit` | exit 0 |
+| Test-file types | `bunx tsc --noEmit … tests/order-fulfillment-state-machine.test.ts` | 4 errors, all pre-existing/environmental (`bun:test` types at :37, `ImportMeta.dir` at :62, `possibly undefined` at :305, `Bun` at :403) — **none in the edited range 771-782** |
+| Build | `bun run build:apps` | 4/4 built, exit 0 |
+| i18n | `bun run i18n:check` | th=1416 en=1416 my=1416, at parity, exit 0 |
+| Lint | `bun run lint` | placeholder (`Lint not yet configured`), exit 0 |
+| Diff check | `git diff --check` | clean, exit 0 |
+
+The locally-skipped DB gate is unchanged and still fails closed: no Postgres and no
+container runtime exist in this workspace, so the paid-cancellation test executes ONLY
+in CI, against the disposable `postgres:16` service container. That is the LOCAL tier
+recorded in the handoff, and it is why the CI run below is the proof of this fix.

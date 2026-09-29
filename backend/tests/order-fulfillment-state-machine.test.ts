@@ -768,12 +768,21 @@ describe("fulfilment gates and races (requires TEST_DATABASE_URL)", () => {
         await query(`UPDATE orders SET status = 'paid' WHERE id = $1`, [paidRow]);
         expect((await attemptCancel(paidRow))?.code).toBe("ORDER_ALREADY_PAID");
 
-        // No refusal moved anything: every order is still `confirmed`.
+        // The gate is READ-ONLY: neither the three refusals nor the one allowed
+        // cancellation moved an order. Each row must still hold the status it was
+        // SEEDED with — `confirmed` for the three `mkOrder()` rows, and `paid` for
+        // `paidRow`, whose `paid` is this test's own fixture (it proves the raw
+        // webhook-written status is refused too), not something the gate wrote.
         const rows = await query(`SELECT id, status FROM orders WHERE id = ANY($1::uuid[])`, [
-          [inFlight, paid, paidRow],
+          [unpaid, inFlight, paid, paidRow],
         ]);
-        expect(rows.rows.length).toBe(3);
-        for (const row of rows.rows) expect(row.status).toBe("confirmed");
+        expect(rows.rows.length).toBe(4);
+        const statusById = new Map<string, string>();
+        for (const row of rows.rows) statusById.set(row.id as string, row.status as string);
+        expect(statusById.get(unpaid)).toBe("confirmed");
+        expect(statusById.get(inFlight)).toBe("confirmed");
+        expect(statusById.get(paid)).toBe("confirmed");
+        expect(statusById.get(paidRow)).toBe("paid");
       } finally {
         await purgeUsers([userId]);
       }

@@ -91,6 +91,34 @@ expired.
 
 ---
 
+## §42.1 What was checked, and the result
+
+*Archived 2026-09-29 for edit headroom. The 18-row audit table; the architecture verdicts that
+follow it stayed inline in the handoff because the housekeeping rule keeps "§42's verdicts".
+Rows 8, 10 and 12 have since been resolved (#1/#2 by §43, #3 by §44); rows 15, 16 and 17 are
+still BLOCKED and are restated in the handoff's §45.*
+
+| # | Checked | How | Result |
+|---|---|---|---|
+| 1 | Repo sync | `git fetch` / `git rev-parse` | ✅ local fast-forwarded 34 commits to `2c52bfc` |
+| 2 | Backend suite (sandbox) | `NODE_ENV=test bun test backend/tests` | ✅ **850 pass / 154 skip / 0 fail** (1004 tests, 46 files) |
+| 3 | CI on the audited SHA | Actions run `36551376766` | ✅ **1002 pass / 2 skip / 0 fail** (disposable `postgres:16`, no repo secrets) |
+| 4 | Backend types | `bunx tsc --noEmit` (backend) | ✅ exit 0 |
+| 5 | App types | `bun run typecheck` | ✅ 4/4 apps exit 0 |
+| 6 | i18n parity | `bun run i18n:check` | ✅ th = en = my = **1414** |
+| 7 | Hygiene | `git diff --check` · `bun run lint` | ✅ clean · ⚠️ `lint` is a placeholder ("Lint not yet configured") — no real linter exists |
+| 8 | Sources of truth | source read | ⚠️ PARTIAL — reservation ✅ one, payment ✅ one, order state ✅ one; **inventory ❌ two release paths and `quantity` never consumed (#1, #2)** |
+| 9 | Races: payment×cancel, payment×expiry, cancel×expiry, payment×payment, expiry×expiry | source + suites + CI | ✅ exactly-one-wins holds on all five |
+| 10 | Race: seller-cancel release × webhook release | source | ❌ **FAIL — double release (#2)** |
+| 11 | Stripe surface | source (`stripe.ts`) | ✅ 11 event types, signature via `constructEventAsync` + raw-body middleware, unverifiable → 503, per-event idempotency claim |
+| 12 | Production schema | `Migrate Neon Database` logs + `/api/_diag/schema` | ❌ **PRODUCTION BLOCKED — migration 048 never applied (#6)** |
+| 13 | Production payment config | `GET /api/stripe/configured` · `GET /api/payments/methods` | ✅ PRODUCTION VERIFIED — `{configured:true, mode:"test", webhookConfigured:true, webhookSecretHealth.present:true}`, `["CARD","PROMPTPAY"]`, **COD disabled**, THB |
+| 14 | Production health | `GET /api/health` | ✅ PRODUCTION VERIFIED — 200 |
+| 15 | Real Stripe E2E (PaymentIntent / PromptPay QR / webhook / refund) | — | ⛔ **BLOCKED** — no `STRIPE_*` keys, no `DATABASE_URL`, no session; never executed from this workspace |
+| 16 | Browser E2E of `/orders`, `/cart`, seller order pages | — | ⛔ **BLOCKED** — no signed-in session; layout pinned by contract tests only |
+| 17 | DB-gated suites locally | `bun test backend/tests` | ⚠️ SKIPPED locally (no `postgres`/`psql`/`docker`, no `TEST_DATABASE_URL`); the fail-closed guard refuses a production URL — proven: `NODE_ENV=test DATABASE_URL=…neon.tech… bun test backend/tests` → `REFUSING TEST AGAINST PRODUCTION DATABASE`, exit 2. These cases DO run in CI (#3) |
+| 18 | Migration numbering + schema drift | `migration-numbering` / `schema-drift` suites | ✅ PASS — `db/schema.sql` and `db/run-sqleditor.sql` byte-identical (`diff` empty); head `048` |
+
 ## §42.3 Cancellation matrix (read from source — no invented cells)
 
 *Archived 2026-09-29. Since the move, `paid` × seller/center reads "cancel now refused 409 ✅ (#3 fixed,
