@@ -794,6 +794,15 @@ no Stripe semantics change, no production data touched.
   pass / +4 skip / +1 file over the `04ab7ea` baseline (`896/185`, 50 files) · backend `tsc` 0 ·
   `typecheck` 4/4 · `build:apps` 4/4 · i18n th=en=my=1416 · schema parity OK · `git diff --check`
   clean · `lint` = `echo 'Lint not yet configured'` (no real lint script in the repo).
+- **⚠️ First CI run FAILED (`36643103344`, `1106 pass / 3 fail`) — a defect in THIS task's own test
+  fixture, not the fix; no production file changed in response.** The `order_items` INSERT declares 4
+  placeholders (`product_name` is a literal) but the call passed 5 values
+  (`bind message supplies 5 parameters, but prepared statement requires 4`). DB-gated, so the local
+  suite could not catch it. Fixed in `b63610a`; **no assertion weakened, no test skipped.**
+- **✅ CI GREEN on `b63610a`: run `36643327528` → success, `1109 pass / 2 skip / 0 fail`**
+  (1111 tests / 51 files). **All 26 local + all 4 DB-gated LOW #12 tests report `(pass)`** — the
+  release-guard behaviour and the 23514 refusal of `orders.status = 'failed'` are confirmed by real
+  execution. `Migrate Neon Database` did not trigger (no migration file changed).
 - **Production:** **migrations 048/049/050 are all still NOT APPLIED** (Neon quota — **OWNER
   ACTION**). This commit changes no migration file, so `Migrate Neon Database` will not re-run and
   stays red for the same pre-existing reason. The change is safe to deploy before 050 exists: it only

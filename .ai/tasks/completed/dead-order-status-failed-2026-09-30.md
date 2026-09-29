@@ -191,6 +191,7 @@ guard status still releases its reserved stock *and* is still idempotent on a se
 non-releasable status (`paid`/`shipped`/`delivered`/`completed`/`confirmed`) still refuses; a
 settled payment still outranks the status guard; and **PostgreSQL refuses `orders.status =
 'failed'`** with 23514 on both INSERT and UPDATE, leaving the row untouched.
+**All four report `(pass)` in CI** against the disposable `postgres:16` — see §8b.
 
 **Mutation-checked (the tests are not vacuous):** re-inserting `"failed"` into the constant and
 re-running the file fails **6** tests, then reverted. Two bugs in my own new test were also caught
@@ -214,6 +215,31 @@ and fixed this way (a malformed assertion, a stray character) rather than by loo
 **The 4 DB-gated tests SKIP locally** — this sandbox has no PostgreSQL and no container runtime,
 so they are **not** claimed as passing here. They run in CI against the disposable `postgres:16`
 service (`.github/workflows/test.yml`).
+
+### 8b. CI
+
+| Run | Commit | Workflow | Conclusion |
+|---|---|---|---|
+| `36643103344` | `de0ce92` | Tests | ⚠️ **failure** — `1106 pass / 3 fail` |
+| `36643327528` | `b63610a` | Tests | ✅ **success** — `1109 pass / 2 skip / 0 fail` |
+
+`https://github.com/EnJirad/velnox-marketplace/actions/runs/36643327528`
+
+**⚠️ The first run FAILED — the cause was a defect in this task's OWN test fixture, not in the fix,
+and no production file changed in response.** Three DB-gated release-guard tests errored with
+`bind message supplies 5 parameters, but prepared statement "" requires 4`: the `order_items`
+INSERT declares four placeholders (`$1..$4`, with `product_name` as a literal) but the call passed
+five values. These tests are DB-gated, so the local suite could not catch it — CI is the only place
+they execute. Fixed in `b63610a` by dropping the extra argument; **no assertion was weakened and no
+test was skipped.**
+
+**✅ Second run GREEN on `b63610a`:** `1109 pass / 2 skip / 0 fail`, 1111 tests / 51 files, job
+success. All **26** local LOW #12 tests and all **4** DB-gated LOW #12 tests report `(pass)` — the
+release-guard behaviour and the 23514 refusal of `orders.status = 'failed'` are confirmed by real
+execution against PostgreSQL, not by reasoning. The 2 skips are the unrelated R2 cases.
+
+`Migrate Neon Database` did **not** trigger on either commit: it only runs when a file under
+`db/migrations/` changes, and this task changed none.
 
 ---
 
