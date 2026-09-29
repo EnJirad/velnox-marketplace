@@ -100,6 +100,11 @@ interface SellerAddressSnapshot {
  *     WITH the transition (ONE request, one transaction). A refusal comes back as
  *     `SHIPMENT_REQUIRED` / `PAYMENT_NOT_CONFIRMED` and is shown in the seller's
  *     own language.
+ *   • `cancelled` — the backend refuses it once the order is PAID (or its payment
+ *     is in flight) with `ORDER_ALREADY_PAID` / `PAYMENT_IN_PROGRESS`, because a
+ *     paid order is an operator refund, not a cancellation. The button is still
+ *     offered (the status table cannot know about money), so that refusal is
+ *     translated here too rather than surfacing a raw 409.
  */
 export default function SellerOrderDetail() {
   const { t } = useLanguage();
@@ -130,6 +135,11 @@ export default function SellerOrderDetail() {
       if (err instanceof ApiError) {
         if (err.code === "PAYMENT_NOT_CONFIRMED") return t("orderFulfillment.paymentNotConfirmed");
         if (err.code === "SHIPMENT_REQUIRED") return t("orderFulfillment.shipRequired");
+        // Money outranks a cancellation: the backend refuses to cancel a PAID
+        // order (the same codes the customer's own cancel answers with) because a
+        // refund is an operator flow. Say so instead of showing a raw 409.
+        if (err.code === "ORDER_ALREADY_PAID") return t("orderFulfillment.cancelPaidOrder");
+        if (err.code === "PAYMENT_IN_PROGRESS") return t("orderFulfillment.cancelPaymentInProgress");
       }
       return err instanceof Error ? err.message : fallback;
     },

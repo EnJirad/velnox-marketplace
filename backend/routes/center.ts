@@ -31,6 +31,7 @@ import { query, withTransaction } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import {
   FulfillmentError,
+  assertNoSettledPaymentForCancellation,
   assertPaymentConfirmedForConfirmation,
   canTransitionFulfillment,
   ensureShipmentForShipping,
@@ -498,6 +499,15 @@ export function setupCenterRoutes(app: Express): void {
           }
           if (to === "shipped" && to !== rawFrom) {
             await ensureShipmentForShipping(client, orderId, { carrier, trackingNumber });
+          }
+          // A PAID order may not be cancelled by an operator either: the same
+          // settled-payment gate the seller route applies, from the same module.
+          // Without it, `paid` (which normalizes to `pending`, and `pending` has
+          // an edge to `cancelled`) could be cancelled while the money stayed
+          // collected and the committed stock was never returned. A refund is
+          // the operator flow for that, not a status change.
+          if (to === "cancelled" && to !== rawFrom) {
+            await assertNoSettledPaymentForCancellation(client, orderId);
           }
 
           await client.query("UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2", [to, orderId]);

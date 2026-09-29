@@ -32,6 +32,7 @@ import {
   FULFILLMENT_STATUSES,
   FULFILLMENT_TRANSITIONS,
   FulfillmentError,
+  assertNoSettledPaymentForCancellation,
   assertPaymentConfirmedForConfirmation,
   canTransitionFulfillment,
   ensureShipmentForShipping,
@@ -517,6 +518,10 @@ export function setupSellerOrderRoutes(app: Express): void {
   //     `carrier` + `trackingNumber` (which are written to `shipments` here),
   //     otherwise the order must already have one with both values. `shipped`
   //     is never a placeholder.
+  //   • `cancelled` requires that the money has NOT settled: a `paid` order (or
+  //     one with a payment in flight) is refused with 409 `ORDER_ALREADY_PAID` /
+  //     `PAYMENT_IN_PROGRESS` — the same refusal the customer's own cancel gives
+  //     — because a refund is an operator flow, not a status change.
   //   • `packing` → `cancelled` is not in the table at all: once fulfilment has
   //     started neither side may cancel.
   app.patch("/api/seller/orders/:id/status", requireAuth, async (req: Request, res: Response) => {
@@ -597,6 +602,17 @@ export function setupSellerOrderRoutes(app: Express): void {
             await ensureShipmentForShipping(client, orderId, { carrier, trackingNumber });
           }
 
+          // Money outranks a cancellation, exactly as it outranks the
+          // customer's own: a `paid` order (raw `paid` normalizes to `pending`,
+          // which HAS an edge to `cancelled`) may not be cancelled here. Without
+          // this the order would be marked `cancelled` while the release
+          // authority below quietly keeps the money and the committed stock —
+          // the customer is left with neither the goods nor their money. The
+          // only safe outcome is a refund, which is an operator flow.
+          if (status === "cancelled") {
+            await assertNoSettledPaymentForCancellation(client, orderId);
+          }
+
           await client.query(
             `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2`,
             [status, orderId],
@@ -606,9 +622,9 @@ export function setupSellerOrderRoutes(app: Express): void {
           // authority (lib/inventory.ts), never inline. The status change above
           // already committed, so the `inventory_released` claim can win exactly
           // once here, and a concurrent webhook, sweep or customer cancel can
-          // never restore the same units a second time. The authority also
-          // refuses an order whose money has settled, so cancelling a `paid`
-          // order can never hand sold stock back to the shelf.
+          // never restore the same units a second time. Reaching it at all means
+          // the settled-payment gate above already passed, and the authority
+          // re-checks the same set, so a `paid` order never loses its stock.
           if (status === "cancelled") {
             await releaseOrderInventory(client, orderId);
           }

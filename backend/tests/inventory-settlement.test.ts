@@ -673,7 +673,11 @@ describeDb("inventory settlement & release (requires TEST_DATABASE_URL)", () => 
         withServer((base) => sellerCancel(base, order.orderId, shop.sellerUserId)),
       ]);
       expect(webhookStatus).toBe(200);
-      expect([200, 400]).toContain(sellerRes.status);
+      // 200 — the seller cancelled first, while the money was still pending.
+      // 400 — the state machine refused (the order had already moved on).
+      // 409 — the cancellation gate: the webhook committed `paid` first, so the
+      //        order may not be cancelled at all (a refund is an operator flow).
+      expect([200, 400, 409]).toContain(sellerRes.status);
 
       const after = await stateOf(order.orderId, shop.productId);
       // Exactly ONE terminal inventory transition for this reservation:

@@ -21,6 +21,10 @@ export const en: Dict = {
     shipConfirm: "Confirm shipment",
     shipRequired: "A carrier and a tracking number are required before an order can be marked as shipped.",
     paymentNotConfirmed: "This order has not been paid yet, so it cannot be confirmed.",
+    cancelPaidOrder:
+      "This order has already been paid and cannot be cancelled — ask the platform operator for a refund.",
+    cancelPaymentInProgress:
+      "A payment for this order is being processed. Please try again in a moment.",
     packing: "Packing",
   },
   /** Payment-reservation copy — see the Thai dictionary for why it lives here. */

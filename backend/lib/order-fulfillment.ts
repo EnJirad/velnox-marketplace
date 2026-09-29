@@ -48,12 +48,20 @@
  * Stripe webhook — the only authority on payment state). A seller can never mark
  * an order paid, and an unpaid order cannot enter fulfilment.
  *
+ * The same money outranks a CANCELLATION: an order whose payment has settled (or
+ * is in flight) may not be cancelled by a seller, an operator or the customer —
+ * `assertNoSettledPaymentForCancellation` below, answering with the same codes
+ * the customer's own cancel has always used. A paid order is a REFUND, which is
+ * an operator flow, never a status change: cancelling one would keep the money,
+ * hand the customer nothing, and leave the already-committed stock committed.
+ *
  * COD is settled by a carrier, not by a webhook, so its rule is different — but
  * COD is DISABLED (`isCodEnabled()` defaults to off, fails closed), and this
  * module does not enable it: the COD branch below can only open if a deployment
  * turns the rail on, exactly like `assertPaymentMethodUsable()`.
  */
 import type pg from "pg";
+import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js";
 import { isCodEnabled } from "./payment-config.js";
 
 // ─── The state machine ───────────────────────────────────────────────────────
@@ -267,6 +275,74 @@ export async function assertPaymentConfirmedForConfirmation(
     );
   }
   return { method: decision.method };
+}
+
+// ─── Cancellation gate (… → cancelled) ─────────────────────────────────────
+
+/**
+ * Refuse a SELLER or CENTER cancellation of an order whose money settled — or
+ * is still in flight.
+ *
+ * Why this gate exists: raw `paid` normalizes to `pending`, and `pending` has an
+ * edge to `cancelled`, so without this check a seller or an operator could
+ * cancel a PAID order. The status change alone would keep the money with no
+ * refund, and the stock release (`releaseOrderInventory`) silently refuses a
+ * settled order — an order marked `cancelled` whose units were already committed:
+ * money kept, stock gone, no refund, no alert. The CUSTOMER's cancel route has
+ * refused exactly this since day one (`ORDER_ALREADY_PAID` /
+ * `PAYMENT_IN_PROGRESS` in routes/cart.ts); the same rule now binds the two
+ * staff surfaces.
+ *
+ * The refusal is a 409 with the SAME codes the customer path answers with, so
+ * every surface already knows what they mean. The only safe outcome for a paid
+ * order is a refund — an operator flow — never a status change.
+ *
+ * Runs inside the caller's transaction, after the order row is locked, and
+ * BEFORE the status is written: a payment that settles while the request waits
+ * for the lock is visible here, so the outcome depends on the money, not on who
+ * won the race. `PAYMENT_SETTLED_STATUSES` (`paid`, `processing`) is the shared
+ * definition from lib/order-lock.ts — the release authority refuses the same
+ * set, so the gate and the release can never disagree.
+ */
+export async function assertNoSettledPaymentForCancellation(
+  client: pg.PoolClient,
+  orderId: string,
+): Promise<void> {
+  const res = await client.query(
+    `SELECT o.status AS order_status,
+            COALESCE(
+              (SELECT array_agg(p.status)
+                 FROM payments p
+                WHERE p.order_id = o.id
+                  AND p.status = ANY($2::text[])),
+              '{}'::text[]
+            ) AS settled_statuses
+       FROM orders o
+      WHERE o.id = $1`,
+    [orderId, [...PAYMENT_SETTLED_STATUSES]],
+  );
+  const row = res.rows[0];
+  // The caller locked and existence-checked the order already; a missing row
+  // here has nothing to protect, and the caller's own 404 has spoken.
+  if (!row) return;
+
+  const settled = (row.settled_statuses ?? []) as string[];
+  // `paid` on the ORDER row is written by the same webhook that writes the
+  // `paid` payment row — either evidence alone is enough to refuse.
+  if (row.order_status === "paid" || settled.includes("paid")) {
+    throw new FulfillmentError(
+      409,
+      "ORDER_ALREADY_PAID",
+      "This order has already been paid. Please request a refund instead of cancelling.",
+    );
+  }
+  if (settled.length > 0) {
+    throw new FulfillmentError(
+      409,
+      "PAYMENT_IN_PROGRESS",
+      "A payment for this order is being processed. Please try again in a moment.",
+    );
+  }
 }
 
 // ─── Shipment gate (packing → shipped) ───────────────────────────────────────

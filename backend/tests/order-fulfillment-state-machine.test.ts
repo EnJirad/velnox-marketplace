@@ -44,6 +44,7 @@ import {
   FULFILLMENT_TRANSITIONS,
   FulfillmentError,
   PAID_PAYMENT_STATUSES,
+  assertNoSettledPaymentForCancellation,
   assertPaymentConfirmedForConfirmation,
   canTransitionFulfillment,
   ensureShipmentForShipping,
@@ -701,4 +702,146 @@ describe("fulfilment gates and races (requires TEST_DATABASE_URL)", () => {
     },
     30_000,
   );
+
+  // ── The cancellation gate: money outranks a SELLER or CENTER cancel ───────
+
+  testFn(
+    "a paid order is refused a staff cancellation; an unpaid one is not",
+    async () => {
+      const { query, withTransaction } = await import("../db/index.js");
+      const { randomUUID } = await import("crypto");
+      const tag = `ful-${randomUUID().slice(0, 8)}`;
+      const user = await query(
+        `INSERT INTO users (email, name) VALUES ($1, 'Ful Test') RETURNING id`,
+        [`${tag}@test.local`],
+      );
+      const userId = user.rows[0].id as string;
+
+      /** The gate as a route calls it, returning the refusal instead of throwing. */
+      const attemptCancel = (orderId: string) =>
+        withTransaction((client) => assertNoSettledPaymentForCancellation(client, orderId))
+          .then(() => null)
+          .catch((err) => err as FulfillmentError);
+
+      const mkOrder = async () => {
+        const res = await query(
+          `INSERT INTO orders (user_id, status, total_amount, currency) VALUES ($1, 'confirmed', 100, 'THB') RETURNING id`,
+          [userId],
+        );
+        return res.rows[0].id as string;
+      };
+      const pay = (orderId: string, status: string) =>
+        query(
+          `INSERT INTO payments (order_id, provider, method, amount, currency, status)
+           VALUES ($1, 'stripe', 'CARD', 100, 'THB', $2)`,
+          [orderId, status],
+        );
+
+      try {
+        // Nobody paid yet — the "the shop cannot fill it" cancellation, which
+        // still releases the held stock.
+        const unpaid = await mkOrder();
+        await pay(unpaid, "pending");
+        expect(await attemptCancel(unpaid)).toBeNull();
+
+        // A charge in flight must be allowed to settle first, so it refuses —
+        // and it says WHICH state it is in, without touching the order.
+        const inFlight = await mkOrder();
+        await pay(inFlight, "processing");
+        const inFlightErr = await attemptCancel(inFlight);
+        expect(inFlightErr).toBeInstanceOf(FulfillmentError);
+        expect(inFlightErr?.code).toBe("PAYMENT_IN_PROGRESS");
+        expect(inFlightErr?.status).toBe(409);
+
+        // The money moved: a `paid` payment row is enough on its own, even
+        // though the order row still reads `confirmed`.
+        const paid = await mkOrder();
+        await pay(paid, "paid");
+        const paidErr = await attemptCancel(paid);
+        expect(paidErr).toBeInstanceOf(FulfillmentError);
+        expect(paidErr?.code).toBe("ORDER_ALREADY_PAID");
+
+        // …and so is the raw `paid` ORDER status — the row the webhook wrote.
+        // This is the case the audit found: `paid` normalizes to `pending`, and
+        // `pending` HAS an edge to `cancelled`.
+        const paidRow = await mkOrder();
+        await query(`UPDATE orders SET status = 'paid' WHERE id = $1`, [paidRow]);
+        expect((await attemptCancel(paidRow))?.code).toBe("ORDER_ALREADY_PAID");
+
+        // No refusal moved anything: every order is still `confirmed`.
+        const rows = await query(`SELECT id, status FROM orders WHERE id = ANY($1::uuid[])`, [
+          [inFlight, paid, paidRow],
+        ]);
+        expect(rows.rows.length).toBe(3);
+        for (const row of rows.rows) expect(row.status).toBe("confirmed");
+      } finally {
+        await purgeUsers([userId]);
+      }
+    },
+    30_000,
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. Cancellation gate — a PAID order is a refund, not a cancellation
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("cancellation gate — money outranks a staff cancellation", () => {
+  test("it answers with the SAME codes the customer's own cancel already uses", () => {
+    const lib = read(FULFILLMENT_LIB);
+    expect(lib).toContain('"ORDER_ALREADY_PAID"');
+    expect(lib).toContain('"PAYMENT_IN_PROGRESS"');
+    // The same settled-payment definition the release authority uses, so the
+    // gate and `releaseOrderInventory` can never disagree about "the money
+    // moved" — and it is read under the caller's lock, never from a fast path.
+    expect(lib).toContain('import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js"');
+    expect(lib).toContain("[...PAYMENT_SETTLED_STATUSES]");
+    expect(lib).toContain("FROM orders o");
+    // The customer route keeps its own copy of these two codes — one meaning,
+    // one vocabulary, across every surface that can cancel an order.
+    expect(read(CANCEL_ROUTE)).toContain('code: "ORDER_ALREADY_PAID"');
+    expect(read(CANCEL_ROUTE)).toContain('code: "PAYMENT_IN_PROGRESS"');
+  });
+
+  test("both staff routes run it under the lock, BEFORE the status changes", () => {
+    const seller = read(SELLER_ROUTE);
+    const route = seller.slice(seller.indexOf('app.patch("/api/seller/orders/:id/status"'));
+    const lock = route.indexOf("FOR UPDATE");
+    const gate = route.indexOf("await assertNoSettledPaymentForCancellation(client, orderId)");
+    const update = route.indexOf("UPDATE orders SET status = $1, updated_at = NOW()");
+    expect(lock).toBeGreaterThan(-1);
+    expect(gate).toBeGreaterThan(lock);
+    expect(update).toBeGreaterThan(gate);
+    expect(route).toContain('if (status === "cancelled") {');
+
+    const center = read(CENTER_ROUTE);
+    const admin = center.slice(center.indexOf('app.patch("/api/admin/orders/:orderId/status"'));
+    const adminLock = admin.indexOf("FOR UPDATE");
+    const adminGate = admin.indexOf("await assertNoSettledPaymentForCancellation(client, orderId)");
+    const adminUpdate = admin.indexOf("UPDATE orders SET status = $1, updated_at = NOW()");
+    expect(adminLock).toBeGreaterThan(-1);
+    expect(adminGate).toBeGreaterThan(adminLock);
+    expect(adminUpdate).toBeGreaterThan(adminGate);
+    // Re-selecting the CURRENT status stays the no-op it always was.
+    expect(admin).toContain('to === "cancelled" && to !== rawFrom');
+
+    // Neither route writes money state: the gate only reads `payments`.
+    for (const src of [seller, center]) {
+      expect(src).not.toContain("INSERT INTO payments");
+      expect(src).not.toMatch(/UPDATE payments/);
+    }
+  });
+
+  test("the seller page translates the refusal, in all three locales", () => {
+    const detail = read(SELLER_DETAIL_PAGE);
+    expect(detail).toContain('err.code === "ORDER_ALREADY_PAID"');
+    expect(detail).toContain('err.code === "PAYMENT_IN_PROGRESS"');
+    expect(detail).toContain('t("orderFulfillment.cancelPaidOrder")');
+    expect(detail).toContain('t("orderFulfillment.cancelPaymentInProgress")');
+    for (const lang of ["th", "en", "my"] as const) {
+      const fulfillment = translations[lang].orderFulfillment;
+      expect(fulfillment.cancelPaidOrder.trim().length).toBeGreaterThan(0);
+      expect(fulfillment.cancelPaymentInProgress.trim().length).toBeGreaterThan(0);
+    }
+  });
 });
