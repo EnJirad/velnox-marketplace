@@ -180,6 +180,13 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-28-migration-048-read-path.md`](./archive/AI_Handoff-2026-09-28-migration-048-read-path.md) | handoff §37 — production checkout down: migration 048 never applied | The two independent causes (the `Migrate Neon Database` run dying on the §22 Neon quota, and the checkout READ naming `payment_expires_at` so a missing deadline took checkout down instead of being unenforced), the `selectOrderPaymentRow()` fix (`to_jsonb(o) ->> 'payment_expires_at'`, chosen over "catch 42703 and retry" because pg poisons the whole transaction), the repair of the pre-existing red `main` (two HTTP harnesses that had never mounted `stripeWebhookRawBody` / `cookieParser`), and the disposable-PostgreSQL verification. Moved out on 2026-09-29 for edit headroom so §41 (order UX refactor) could be appended; §40 restates the same root cause with the resolution, and the OWNER SQL stayed inline in the handoff |
 
+### 2026-09-29 — the §39/§40 split (order UX polish; countdown invisible in production)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-29-countdown-invisible-in-production.md`](./archive/AI_Handoff-2026-09-29-countdown-invisible-in-production.md) | handoff §40 — countdown invisible in production | The root cause (production Neon has no `orders.payment_expires_at`, three failed `Migrate Neon Database` runs on the Neon quota, the deploy-order guard skipping the write, `paymentExpiresAt: null`) and the tier UI shipped anyway. Moved out on 2026-09-29 for edit headroom so §42 (order fulfilment — payment gate, address snapshot, cancellation cutoff) could be appended; the owner action (apply 048) stays in handoff §37, and the handoff keeps a pointer to this file |
+| [`archive/AI_Handoff-2026-09-29-order-ux-polish.md`](./archive/AI_Handoff-2026-09-29-order-ux-polish.md) | handoff §39 — order UX polish (status, progress, address, language) | The order-status i18n mapping (`orderStatusI18nKey` + the `orderStatus` namespace), the single `ORDER_PROGRESS_STAGES` progress line, the per-card countdowns, the order's OWN address snapshot in the delivery section and the `payment_failed` notice. Moved out on 2026-09-29 because §41 rebuilt the same two surfaces on top of these pieces and §42 extended them; everything it introduced is still live |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

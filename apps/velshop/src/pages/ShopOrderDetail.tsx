@@ -34,6 +34,7 @@ import {
   formatIsoDateTime,
   formatPaymentCountdown,
   getPaymentStatusBadge,
+  orderPaymentSummary,
   ORDER_PROGRESS_STAGES,
   orderCustomerCancelability,
   orderProgressStageIndex,
@@ -477,6 +478,13 @@ export default function ShopOrderDetail() {
   const payability = orderStripePayability(order);
 
   /**
+   * How this order is being paid (`💵 COD` vs paid / awaiting) — the same shared
+   * rule the seller sees, so the two surfaces can never describe one order
+   * differently.
+   */
+  const payment = orderPaymentSummary(order);
+
+  /**
    * The SAME rule the backend enforces, from the shared contract: the cancel
    * button cannot appear where `PATCH /api/customer/orders/:orderId/cancel`
    * would answer `INVALID_STATUS`/`ORDER_ALREADY_PAID`, and cannot disappear for
@@ -582,11 +590,17 @@ export default function ShopOrderDetail() {
                 <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
                   {t("orderDetail.paymentStatus")}
                 </p>
+                {/*
+                  The LABEL comes from the shared payment summary, so a COD order reads
+                  "Cash on delivery" instead of "Awaiting payment" — its payment row is
+                  `pending` for the whole delivery, which is normal, not a delay. The
+                  method itself is spelled out again in the Payments block below.
+                */}
                 <Badge
                   className={`gap-1.5 rounded-full font-semibold ring-1 ring-inset ${paymentBadge.badge}`}
                 >
                   <span className={`size-1.5 rounded-full ${paymentBadge.dot}`} />
-                  {paymentLabel(order.paymentStatus)}
+                  {t(payment.i18nKey)}
                 </Badge>
               </div>
             </div>
@@ -935,8 +949,15 @@ export default function ShopOrderDetail() {
                 <p className="mt-1 text-sm font-semibold break-words text-slate-900">
                   {address.recipientName || t("orderDetail.recipientFallback")}
                 </p>
-                {address.phone && (
+                {/*
+                  The order's OWN phone. A legacy order whose snapshot has no phone
+                  says so — the phone on the account is never substituted, because the
+                  address on an order must not change when the profile does.
+                */}
+                {address.phone ? (
                   <p className="text-sm tabular-nums break-words text-slate-500">{address.phone}</p>
+                ) : (
+                  <p className="text-sm text-amber-600">{t("orderDetail.phoneUnavailable")}</p>
                 )}
                 {addressLines.length > 0 && (
                   <p className="mt-2 text-sm leading-6 break-words text-slate-600">
@@ -1134,6 +1155,19 @@ export default function ShopOrderDetail() {
               </Button>
             )}
           </div>
+
+          {/*
+            Why there is no cancel button. The cutoff is FULFILMENT, not order
+            status: once the shop has created the shipment (`orderCustomerCancelability`
+            reads the same evidence the backend does) the customer cannot cancel any
+            more, and saying so is better than removing the button silently.
+          */}
+          {!cancelability.cancelable && cancelability.reason === "shipping_started" && (
+            <p className="mt-3 flex items-start gap-2 rounded-[10px] bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
+              <Truck className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
+              {t("orderDetail.cancelBlockedShipping")}
+            </p>
+          )}
         </section>
       </main>
 

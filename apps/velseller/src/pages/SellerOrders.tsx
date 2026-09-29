@@ -14,6 +14,7 @@ import {
   formatBaht,
   formatIsoDate,
   formatIsoDateTime,
+  orderPaymentSummary,
   orderStatusI18nKey,
   shortOrderNumber,
   type StoreOrder,
@@ -22,8 +23,10 @@ import {
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
+  Banknote,
   CalendarClock,
   ChevronRight,
+  CreditCard,
   Inbox,
   Loader2,
   PackageSearch,
@@ -60,6 +63,29 @@ const FILTERABLE_STATUSES: StoreOrderStatus[] = [
 ];
 
 type StatusFilter = "all" | StoreOrderStatus;
+
+/**
+ * The payment state of one order, as a badge: `💵 COD`, `Paid`, `Awaiting payment`.
+ *
+ * The KIND comes from `orderPaymentSummary()` (the shared rule), because the payment
+ * STATUS alone cannot describe an order: a COD order's payment row is `pending`
+ * until the parcel is delivered, so a status-only label would call every COD order
+ * "awaiting payment" as if something were wrong. The label is always rendered — a
+ * badge must never communicate by colour alone.
+ */
+function SellerPaymentBadge({ order }: { order: StoreOrder }) {
+  const { t } = useLanguage();
+  const summary = orderPaymentSummary(order);
+  const Icon = summary.kind === "cod" ? Banknote : CreditCard;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${summary.badge.badge}`}
+    >
+      <Icon className="size-3.5 shrink-0" />
+      {t(summary.i18nKey)}
+    </span>
+  );
+}
 
 export default function SellerOrders() {
   const { t } = useLanguage();
@@ -138,16 +164,6 @@ export default function SellerOrders() {
       setProcessing(false);
     }
   };
-
-  /** Translated label for the order's payment status, falling back to the raw value. */
-  const paymentLabel = useCallback(
-    (status: string) => {
-      const key = `paymentLabels.${status.toLowerCase()}`;
-      const value = t(key);
-      return value === key ? status : value;
-    },
-    [t],
-  );
 
   /** Translated label for the shipment status, falling back to the raw value. */
   const trackingLabel = useCallback(
@@ -400,7 +416,7 @@ export default function SellerOrders() {
                           </p>
                         </TableCell>
                         <TableCell>
-                          <p className="text-sm text-slate-600">{paymentLabel(order.paymentStatus)}</p>
+                          <SellerPaymentBadge order={order} />
                         </TableCell>
                         <TableCell>
                           <p className="text-sm text-slate-600">{trackingLabel(order.shippingStatus)}</p>
@@ -446,13 +462,22 @@ export default function SellerOrders() {
                     <dl className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
                       <div className="flex items-center justify-between gap-3">
                         <dt className="text-slate-400">{t("sellerOrders.customerTitle")}</dt>
-                        <dd className="min-w-0 truncate font-medium text-slate-700">
+                        <dd className="min-w-0 truncate text-right font-medium text-slate-700">
                           {order.customerName || "—"}
+                          {/* The order's OWN shipping phone (the snapshot's), one per
+                              order — an account phone would be the wrong number. */}
+                          {order.customerPhone && (
+                            <span className="block truncate text-xs font-normal tabular-nums text-slate-400">
+                              {order.customerPhone}
+                            </span>
+                          )}
                         </dd>
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <dt className="text-slate-400">{t("sellerOrders.colPayment")}</dt>
-                        <dd className="text-slate-600">{paymentLabel(order.paymentStatus)}</dd>
+                        <dd className="text-slate-600">
+                          <SellerPaymentBadge order={order} />
+                        </dd>
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <dt className="text-slate-400">{t("sellerOrders.colShipping")}</dt>

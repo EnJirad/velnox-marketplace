@@ -603,6 +603,15 @@ export const en: Dict = {
     noOrdersTitle: "No orders yet",
     noOrdersDesc: "When a customer buys from the velshop storefront, the order appears here.",
     noOrdersFiltered: "No orders with this status",
+    paymentLockTitle: "Awaiting payment",
+    paymentLockDesc: "The customer has not completed payment, so this order cannot be confirmed yet — it unlocks automatically once the payment succeeds.",
+    addressTitle: "Shipping address",
+    copyPhone: "Copy phone",
+    copyAddress: "Copy address",
+    copied: "Copied",
+    callPhone: "Call",
+    phoneUnavailable: "No phone number in this order's shipping details",
+    codNote: "Cash on delivery — the payment is collected when the parcel arrives",
   },
 
   shopDetail: {
@@ -839,6 +848,8 @@ export const en: Dict = {
     noAccessDesc: "This order isn't yours, or your session has ended — sign in again with the account that placed it.",
     notFoundDesc: "This order may not belong to you",
     review: "Review",
+    phoneUnavailable: "Phone number unavailable for this order",
+    cancelBlockedShipping: "This order can no longer be cancelled — the shop has already started shipping it",
   },
 
   trackingLabels: {

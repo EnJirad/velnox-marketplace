@@ -159,19 +159,30 @@ describe("backend contract — the cancel endpoint", () => {
   });
 
   test("state and payment state are refused before anything is written", () => {
-    expect(cancelBody).toContain('code: "INVALID_STATUS"');
-    expect(cancelBody).toContain('code: "ORDER_ALREADY_PAID"');
-    expect(cancelBody).toContain('code: "PAYMENT_IN_PROGRESS"');
-    // The refusals all `return` before the transaction.
-    const guard = cancelBody.indexOf('code: "ORDER_ALREADY_PAID"');
-    expect(guard).toBeGreaterThan(-1);
-    expect(cancelBody.indexOf("await withTransaction(")).toBeGreaterThan(guard);
+    // The codes are declared ONCE, in the shared rule the route reads twice.
+    const rule = cartSrc.slice(
+      cartSrc.indexOf("export function cancellationDecision("),
+      cartSrc.indexOf("const CANCELLATION_STATE_SELECT"),
+    );
+    expect(rule).toContain('code: "INVALID_STATUS"');
+    expect(rule).toContain('code: "ORDER_ALREADY_PAID"');
+    expect(rule).toContain('code: "PAYMENT_IN_PROGRESS"');
+    // The route refuses from that rule BEFORE the provider call and before any
+    // transaction — an order that must not be cancelled never reaches Stripe.
+    const preflight = cancelBody.indexOf("cancellationDecision(order)");
+    expect(preflight).toBeGreaterThan(-1);
+    expect(cancelBody.indexOf("expireStripeCheckoutSession(")).toBeGreaterThan(preflight);
+    expect(cancelBody.indexOf("await withTransaction(")).toBeGreaterThan(preflight);
+    expect(cancelBody).toContain("error: { code: preflight.code, message: preflight.message }");
   });
 
   test("the transition, the payment invalidation and the stock release share one transaction", () => {
     expect(cancelBody).toContain("const outcome = await withTransaction(async (client) => {");
     expect(cancelBody).toContain("await releaseOrderInventory(client, orderId);");
-    expect(cancelBody).toContain("return { moved, released };");
+    expect(cancelBody).toContain('return { outcome: "settled" as const, moved, released };');
+    // The decision is re-taken INSIDE that transaction, under the order row lock.
+    expect(cancelBody).toContain("cancellationDecision(live)");
+    expect(cancelBody.indexOf("FOR UPDATE")).toBeLessThan(cancelBody.indexOf("cancellationDecision(live)"));
     // The order must be `cancelled` BEFORE the release, because
     // releaseOrderInventory only releases for a releasable status.
     expect(cancelBody.indexOf("SET status = 'cancelled'")).toBeLessThan(

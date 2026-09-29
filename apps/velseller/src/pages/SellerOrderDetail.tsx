@@ -16,8 +16,9 @@ import { ApiError, api, useAction } from "@velnox/shared/lib/api-routes";
 import {
   formatBaht,
   formatIsoDateTime,
-  getPaymentStatusBadge,
   NEXT_ORDER_STATUSES,
+  orderFulfillmentPaymentGate,
+  orderPaymentSummary,
   orderStatusI18nKey,
   type StoreOrder,
   type StoreOrderStatus,
@@ -26,13 +27,17 @@ import { useLanguage } from "@velnox/shared/lib/i18n";
 import { SITE_URLS, joinUrl } from "@velnox/shared/lib/sites";
 import {
   ArrowLeft,
+  Check,
+  Copy,
   CreditCard,
   ExternalLink,
   ImageOff,
   Loader2,
+  Lock,
   MapPin,
   Package,
   PackageSearch,
+  Phone,
   RefreshCw,
   Truck,
   User,
@@ -63,6 +68,25 @@ interface SellerAddressSnapshot {
 }
 
 /**
+ * A `tel:` link for a phone number that can actually be dialled, or `null`.
+ *
+ * Only digits (and a leading `+`) survive, and a value with too few digits is not
+ * treated as a phone number — the seller gets no dial link for it rather than a
+ * link that opens an empty dialler. A number stored by a legacy order that has no
+ * phone at all never reaches this: the address block says the order has no
+ * shipping phone instead.
+ */
+function phoneTelHref(phone: string | null | undefined): string | null {
+  if (typeof phone !== "string") return null;
+  const trimmed = phone.trim();
+  if (!trimmed) return null;
+  const dialable = trimmed.replace(/[^\d+]/g, "");
+  const digitCount = dialable.replace(/\D/g, "").length;
+  if (digitCount < 9 || digitCount > 15) return null;
+  return `tel:${dialable}`;
+}
+
+/**
  * Seller order detail — the seller's ONE place to inspect an order and move it on.
  *
  * WHAT IT READS
@@ -80,6 +104,22 @@ interface SellerAddressSnapshot {
  * move the API will accept (`canTransitionOrderStatus`). A terminal order
  * (`completed`, `cancelled`) gets an explanation instead of an empty control, and
  * cancelling — which restores the seller's stock server-side — asks first.
+ *
+ * PAYMENT vs FULFILMENT
+ * ---------------------
+ * Starting fulfilment (`ยืนยันคำสั่งซื้อ` / confirm) is locked until the money is
+ * really there when the order was paid online: `orderFulfillmentPaymentGate()` — the
+ * mirror of the backend's own rule — returns `canConfirm: false` for a CARD /
+ * PROMPTPAY order whose payment has not succeeded, and the button is disabled with
+ * the reason on screen. COD is the deliberate exception (the carrier collects, so a
+ * `pending` payment row is normal). The seller is never offered an action that
+ * marks a Stripe payment paid — that is the webhook's job, not a fulfilment action.
+ *
+ * ADDRESS
+ * -------
+ * The shipping block renders the order's OWN checkout snapshot, phone included, with
+ * copy/call actions so the seller can actually fulfil from it. There is no fallback
+ * to the customer's account phone: an order with no snapshot phone says so.
  */
 export default function SellerOrderDetail() {
   const { t } = useLanguage();
@@ -93,6 +133,8 @@ export default function SellerOrderDetail() {
   const [busyStatus, setBusyStatus] = useState<StoreOrderStatus | null>(null);
   /** The status awaiting confirmation in the dialog (cancelling restores stock). */
   const [confirmStatus, setConfirmStatus] = useState<StoreOrderStatus | null>(null);
+  /** Which shipping detail was just copied, for the button's own feedback. */
+  const [copied, setCopied] = useState<"phone" | "address" | null>(null);
 
   /** Translated label for a payment status, falling back to the raw value. */
   const paymentLabel = useCallback(
@@ -209,13 +251,25 @@ export default function SellerOrderDetail() {
   }
 
   const statusLabel = t(orderStatusI18nKey(order.status));
-  const paymentBadge = getPaymentStatusBadge(order.paymentStatus);
   const items = order.items ?? [];
   const shipments = order.shipments ?? [];
   const payments = order.payments ?? [];
   const address = order.addressSnapshot as SellerAddressSnapshot | null | undefined;
   const nextStatuses = NEXT_ORDER_STATUSES[order.status] ?? [];
   const storeTotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+
+  /**
+   * How this order is being paid — the SAME rule the backend enforces, so the
+   * badge can never claim "paid" on an order the API would refuse to confirm.
+   */
+  const payment = orderPaymentSummary(order);
+  const paymentBadge = payment.badge;
+  /** May the seller start fulfilment right now? (COD always may.) */
+  const paymentGate = orderFulfillmentPaymentGate(order);
+  const confirmLocked = !paymentGate.canConfirm;
+  /** The customer's phone exactly as the order recorded it — never the profile's. */
+  const shippingPhone = address?.phone?.trim() ? address.phone.trim() : null;
+  const telHref = phoneTelHref(shippingPhone);
 
   /** One line per real address field; absent fields are omitted, never invented. */
   const addressLines: string[] = address
@@ -231,6 +285,29 @@ export default function SellerOrderDetail() {
       ? t("orderDetail.countryTH")
       : address.country
     : "";
+
+  /** The whole shipping address as one copyable block (blank lines are dropped). */
+  const addressCopyText = address
+    ? [address.recipientName, shippingPhone, ...addressLines, addressCountry]
+        .filter((line): line is string => Boolean(line && String(line).trim()))
+        .join("\n")
+    : "";
+
+  /** Copy one shipping detail, with the button reporting its own success. */
+  const copyToClipboard = async (what: "phone" | "address", value: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(what);
+      toast.success(t("sellerOrders.copied"));
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      // A browser that refuses clipboard access (insecure origin, denied
+      // permission) must not look like a success — the seller can still select
+      // the text by hand.
+      toast.error(t("common.error"));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -270,6 +347,26 @@ export default function SellerOrderDetail() {
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
               {t("sellerOrders.statusChange")}
             </p>
+            {/*
+              Payment lock: while an online payment has not succeeded the seller
+              cannot start fulfilment. The reason is stated BEFORE the control, and
+              the confirm button stays visible but disabled — so the seller learns
+              WHY, instead of wondering where the button went.
+            */}
+            {confirmLocked && nextStatuses.includes("confirmed") && (
+              <div className="mt-3 flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3">
+                <Lock className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-amber-800">
+                    {t("sellerOrders.paymentLockTitle")}
+                  </p>
+                  <p className="mt-0.5 text-xs leading-5 text-amber-700">
+                    {t("sellerOrders.paymentLockDesc")}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {nextStatuses.length === 0 ? (
               <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
                 <XCircle className="size-4 shrink-0 text-slate-300" />
@@ -280,6 +377,8 @@ export default function SellerOrderDetail() {
                 {nextStatuses.map((next) => {
                   const destructive = next === "cancelled";
                   const busy = busyStatus === next;
+                  /** Starting fulfilment is gated on the payment rail. */
+                  const locked = next === "confirmed" && confirmLocked;
                   return (
                     <Button
                       key={next}
@@ -289,10 +388,15 @@ export default function SellerOrderDetail() {
                           : "gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
                       }
                       variant={destructive ? "outline" : "default"}
-                      disabled={busyStatus !== null}
+                      disabled={busyStatus !== null || locked}
+                      title={locked ? t("sellerOrders.paymentLockDesc") : undefined}
                       onClick={() => (destructive ? setConfirmStatus(next) : void handleStatusChange(next))}
                     >
-                      {busy && <Loader2 className="size-4 animate-spin" />}
+                      {busy ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : locked ? (
+                        <Lock className="size-3.5" />
+                      ) : null}
                       {t(orderStatusI18nKey(next))}
                     </Button>
                   );
@@ -417,9 +521,9 @@ export default function SellerOrderDetail() {
           {address ? (
             <div className="mt-4 flex gap-3">
               <MapPin className="mt-0.5 size-4 shrink-0 text-slate-300" />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                  {t("orderDetail.shipTo")}
+                  {t("sellerOrders.addressTitle")}
                 </p>
                 {address.label && (
                   <p className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
@@ -429,8 +533,26 @@ export default function SellerOrderDetail() {
                 <p className="mt-1 text-sm font-semibold break-words text-slate-900">
                   {address.recipientName || t("orderDetail.recipientFallback")}
                 </p>
-                {address.phone && (
-                  <p className="text-sm tabular-nums break-words text-slate-500">{address.phone}</p>
+                {/*
+                  The shipping phone is the number on THIS order's snapshot. When a
+                  legacy order has none the line says so — the customer's account
+                  phone is deliberately never substituted for it.
+                */}
+                {shippingPhone ? (
+                  <p className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="tabular-nums break-words text-slate-600">{shippingPhone}</span>
+                    {telHref && (
+                      <a
+                        href={telHref}
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 transition-colors hover:border-[#10B981] hover:text-[#10B981]"
+                      >
+                        <Phone className="size-3" />
+                        {t("sellerOrders.callPhone")}
+                      </a>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-sm text-amber-600">{t("sellerOrders.phoneUnavailable")}</p>
                 )}
                 {addressLines.length > 0 && (
                   <p className="mt-2 text-sm leading-6 break-words text-slate-600">
@@ -442,6 +564,32 @@ export default function SellerOrderDetail() {
                   </p>
                 )}
                 {addressCountry && <p className="mt-1 text-sm break-words text-slate-500">{addressCountry}</p>}
+
+                {/* Fulfilment actions: hand the carrier or the phone exactly this. */}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {shippingPhone && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 border-slate-200 text-slate-700"
+                      onClick={() => void copyToClipboard("phone", shippingPhone)}
+                    >
+                      {copied === "phone" ? <Check className="size-3.5 text-[#10B981]" /> : <Copy className="size-3.5" />}
+                      {t("sellerOrders.copyPhone")}
+                    </Button>
+                  )}
+                  {addressCopyText && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 border-slate-200 text-slate-700"
+                      onClick={() => void copyToClipboard("address", addressCopyText)}
+                    >
+                      {copied === "address" ? <Check className="size-3.5 text-[#10B981]" /> : <Copy className="size-3.5" />}
+                      {t("sellerOrders.copyAddress")}
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           ) : (
@@ -524,12 +672,22 @@ export default function SellerOrderDetail() {
             </div>
             <div className="rounded-xl border border-slate-100 p-3">
               <p className="text-xs text-slate-400">{t("orderDetail.paymentStatus")}</p>
+              {/*
+                One badge that answers "how is this being paid, and has it been?":
+                COD reads as COD (its `pending` row is normal), an online order reads
+                as paid / awaiting / failed. The raw status is still shown beside the
+                payment rows below, so nothing is hidden — it is just not the only
+                word on screen.
+              */}
               <span
                 className={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${paymentBadge.badge}`}
               >
                 <span className={`size-1.5 rounded-full ${paymentBadge.dot}`} />
-                {paymentLabel(order.paymentStatus)}
+                {t(payment.i18nKey)}
               </span>
+              {payment.kind === "cod" && (
+                <p className="mt-1.5 text-[11px] text-slate-400">{t("sellerOrders.codNote")}</p>
+              )}
             </div>
           </div>
           {payments.length > 0 && (

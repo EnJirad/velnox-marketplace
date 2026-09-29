@@ -22,11 +22,32 @@
  *     orders; anyone else gets 403.
  *   - Order access is scoped through order_items.shop_id → shops.seller_id,
  *     so a seller can never see or mutate another seller's order.
+ *
+ * FULFILMENT vs PAYMENT — the rule this module enforces
+ * -----------------------------------------------------
+ * The seller's status action is a FULFILMENT action; it is never a way to say
+ * "the customer paid". Starting fulfilment (`pending` → `confirmed`) is gated:
+ *
+ *   COD                → confirmation allowed. The carrier collects, so a
+ *                        `pending` payment row is the NORMAL state for COD.
+ *   CARD / PROMPTPAY   → allowed only once a payment has actually SUCCEEDED
+ *                        (`payments.status = 'paid'`, written by the Stripe
+ *                        webhook — no seller action can mark a Stripe payment
+ *                        paid, by design).
+ *   no recorded method → refused. Nothing proves the money arrived, and the
+ *                        customer can still pay, so the seller waits (and may
+ *                        still cancel the order).
+ *
+ * A refusal is `409 PAYMENT_REQUIRED`. The customer details a seller is shown come
+ * from the order's OWN shipping snapshot (`orders.shipping_address`) — including
+ * the phone number; the account's phone is never substituted for it.
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { processPlan } from "../jobs/velrepeat-scheduler.js";
+import { releaseOrderInventory } from "../lib/inventory.js";
+import { normalizePaymentMethod } from "../lib/payment-config.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 
 function param(req: Request, key: string): string {
@@ -79,6 +100,43 @@ export function canTransitionOrderStatus(from: string, to: string): boolean {
  * there is nothing left to fulfil — and treating it as `pending` would offer
  * the seller a transition that silently un-refunds the order's status.
  */
+// ─── Fulfilment payment gate (the ONE rule) ──────────────────────────────────
+// Mirrors `orderFulfillmentPaymentGate()` in packages/shared/src/lib/commerce.ts,
+// which the seller UI reads to lock its own confirm button. The backend copy is
+// the authority: a client that skips the UI still cannot confirm an unpaid order.
+
+export const PAYMENT_REQUIRED_CODE = "PAYMENT_REQUIRED";
+
+export interface FulfillmentPaymentGate {
+  ok: boolean;
+  /** Non-null exactly when `ok` is false. */
+  code: string | null;
+}
+
+/**
+ * Decide whether the recorded payment state allows starting fulfilment.
+ *
+ * Deliberately takes BOTH the method and the status. `pending` means "waiting for
+ * the customer" on a card and "normal" on COD, so the status alone can never
+ * answer this question (and `unpaid` — the value for an order with no payment row
+ * at all — always blocks). The method is normalized through the canonical
+ * `normalizePaymentMethod()`, so `online`, `qr` and `cash_on_delivery` are judged
+ * as the rails they mean.
+ */
+export function sellerConfirmationPaymentGate(
+  method: unknown,
+  paymentStatus: unknown,
+): FulfillmentPaymentGate {
+  const rail = normalizePaymentMethod(method);
+  const status = typeof paymentStatus === "string" ? paymentStatus.trim().toLowerCase() : "";
+
+  // COD is settled by the carrier: fulfilment starts now, and the payment row's
+  // `pending` status is the normal state for the whole delivery.
+  if (rail === "COD") return { ok: true, code: null };
+
+  return status === "paid" ? { ok: true, code: null } : { ok: false, code: PAYMENT_REQUIRED_CODE };
+}
+
 export function normalizeSellerOrderStatus(dbStatus: string): SellerOrderStatus {
   switch (dbStatus) {
     case "pending":
@@ -166,6 +224,22 @@ function parseShippingAddress(raw: unknown): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The order's shipping contact, taken ONLY from the checkout snapshot.
+ *
+ * WHY THE PROFILE IS NOT A FALLBACK: a customer may keep several addresses, each
+ * with its own recipient and phone. The snapshot is the pair chosen at checkout —
+ * the parcel is addressed to it — so filling a missing snapshot phone from
+ * `users.phone` would print a number the customer never gave for this order, and
+ * would silently rewrite an old order whenever the profile is edited. A legacy
+ * order with no phone therefore reports NO phone, and the seller UI says so.
+ */
+function shippingContact(snapshot: Record<string, unknown> | null): { name: string | null; phone: string | null } {
+  const text = (value: unknown): string | null =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+  return { name: text(snapshot?.recipientName), phone: text(snapshot?.phone) };
 }
 
 /**
@@ -340,6 +414,7 @@ export function setupSellerOrderRoutes(app: Express): void {
                 o.shipping_address, o.notes, o.created_at, o.updated_at,
                 sh.name AS shop_name, sh.slug AS shop_slug,
                 COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                (SELECT method FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS payment_method,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          JOIN order_items oi ON oi.order_id = o.id
@@ -354,22 +429,23 @@ export function setupSellerOrderRoutes(app: Express): void {
       const orderIds = rows.map((r: any) => r.id as string);
       const itemsByOrder = await fetchSellerItemsForOrders(orderIds, sellerId);
 
-      // Batch customer info (name/phone are already visible on orders via the
-      // shipping snapshot; returning the account name/phone is what the seller
-      // UI already renders today).
+      // Batch the ACCOUNT NAME only — the phone number a seller needs is the one
+      // on the order's shipping snapshot, never the account's.
       const userIds = [...new Set(rows.map((r: any) => r.user_id).filter(Boolean))];
-      const customers = new Map<string, { name: string | null; phone: string | null }>();
+      const customers = new Map<string, { name: string | null }>();
       if (userIds.length > 0) {
         const uRes = await query(
-          `SELECT id, name, phone FROM users WHERE id = ANY($1)`,
+          `SELECT id, name FROM users WHERE id = ANY($1)`,
           [userIds],
         );
-        for (const u of uRes.rows) customers.set(u.id, { name: u.name, phone: u.phone });
+        for (const u of uRes.rows) customers.set(u.id, { name: u.name });
       }
 
       const orders = rows.map((r: any) => {
         const items = itemsByOrder[r.id] ?? [];
         const customer = customers.get(r.user_id);
+        const snapshot = parseShippingAddress(r.shipping_address);
+        const contact = shippingContact(snapshot);
         return {
           id: r.id,
           orderNumber: r.order_number || r.id,
@@ -377,6 +453,9 @@ export function setupSellerOrderRoutes(app: Express): void {
           customerUserId: r.user_id,
           status: normalizeSellerOrderStatus(r.status),
           paymentStatus: r.payment_status,
+          // The rail the customer chose — needed to tell "waiting for a card"
+          // from "COD, nothing owed yet" (see `sellerConfirmationPaymentGate`).
+          paymentMethod: r.payment_method ?? null,
           shippingStatus: r.shipping_status,
           shippingMethod: null,
           trackingNumber: null,
@@ -385,13 +464,15 @@ export function setupSellerOrderRoutes(app: Express): void {
           shippingFee: parseFloat(r.shipping_fee) || 0,
           total: parseFloat(r.total_amount) || 0,
           currency: r.currency ?? "THB",
-          addressSnapshot: parseShippingAddress(r.shipping_address),
+          addressSnapshot: snapshot,
           note: r.notes,
           shopId: r.shop_id,
           shopName: r.shop_name,
           shopSlug: r.shop_slug,
-          customerName: customer?.name ?? null,
-          customerPhone: customer?.phone ?? null,
+          // Recipient first (the shipping name), account name only as a label —
+          // and NEVER an account phone in place of the snapshot's.
+          customerName: contact.name ?? customer?.name ?? null,
+          customerPhone: contact.phone,
           createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
           updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
           items,
@@ -421,6 +502,7 @@ export function setupSellerOrderRoutes(app: Express): void {
       const orderRes = await query(
         `SELECT DISTINCT o.*, sh.name AS shop_name, sh.slug AS shop_slug,
                 COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                (SELECT method FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS payment_method,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          JOIN order_items oi ON oi.order_id = o.id
@@ -443,10 +525,13 @@ export function setupSellerOrderRoutes(app: Express): void {
            WHERE order_id = $1 ORDER BY created_at DESC`,
           [orderId],
         ),
-        query(`SELECT name, phone FROM users WHERE id = $1`, [order.user_id]),
+        // Account NAME only: the shipping phone comes from the order snapshot.
+        query(`SELECT name FROM users WHERE id = $1`, [order.user_id]),
       ]);
       const items = itemsByOrder[orderId] ?? [];
       const customer = customerRes.rows[0];
+      const snapshot = parseShippingAddress(order.shipping_address);
+      const contact = shippingContact(snapshot);
 
       res.json({
         success: true,
@@ -457,6 +542,7 @@ export function setupSellerOrderRoutes(app: Express): void {
           customerUserId: order.user_id,
           status: normalizeSellerOrderStatus(order.status),
           paymentStatus: order.payment_status,
+          paymentMethod: order.payment_method ?? null,
           shippingStatus: order.shipping_status,
           shippingMethod: null,
           trackingNumber: shipments[0]?.trackingNumber ?? null,
@@ -465,13 +551,13 @@ export function setupSellerOrderRoutes(app: Express): void {
           shippingFee: parseFloat(order.shipping_fee) || 0,
           total: parseFloat(order.total_amount) || 0,
           currency: order.currency ?? "THB",
-          addressSnapshot: parseShippingAddress(order.shipping_address),
+          addressSnapshot: snapshot,
           note: order.notes,
           shopId: order.shop_id,
           shopName: order.shop_name,
           shopSlug: order.shop_slug,
-          customerName: customer?.name ?? null,
-          customerPhone: customer?.phone ?? null,
+          customerName: contact.name ?? customer?.name ?? null,
+          customerPhone: contact.phone,
           createdAt: order.created_at ? new Date(order.created_at).getTime() : Date.now(),
           updatedAt: order.updated_at ? new Date(order.updated_at).getTime() : Date.now(),
           items,
@@ -492,9 +578,11 @@ export function setupSellerOrderRoutes(app: Express): void {
   });
 
   // ── PATCH /api/seller/orders/:id/status ──────────────────────────────────
-  // Transition an order status. Backend enforces the state machine; the
-  // seller must own (at least one item of) the order. Cancelling restores
-  // that seller's stock inside the same transaction.
+  // Transition an order status. Backend enforces the state machine; the seller
+  // must own (at least one item of) the order. Starting fulfilment is gated on
+  // the payment rail (409 PAYMENT_REQUIRED for an unpaid CARD/PROMPTPAY order —
+  // see `sellerConfirmationPaymentGate`), and cancelling returns the stock
+  // through the canonical `releaseOrderInventory()` inside the same transaction.
   app.patch("/api/seller/orders/:id/status", requireAuth, async (req: Request, res: Response) => {
     try {
       const sellerId = await resolveApprovedSellerId(req.user!.userId);
@@ -556,33 +644,47 @@ export function setupSellerOrderRoutes(app: Express): void {
             );
           }
 
+          // ── FULFILMENT IS GATED ON PAYMENT ────────────────────────────────
+          // Starting fulfilment (`pending` → `confirmed`) is the seller's promise
+          // to ship, and for a card/PromptPay order that promise may only be made
+          // once the money has actually arrived. Read under the row lock taken
+          // above, so a webhook that marks the payment `paid` at the same instant
+          // is serialized with this decision rather than racing it. COD passes
+          // unconditionally (the carrier collects), and a seller has no action
+          // anywhere that could mark a Stripe payment paid — the webhook is the
+          // only writer of `paid`.
+          if (status === "confirmed") {
+            const paymentRes = await client.query(
+              `SELECT method, status FROM payments
+                WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`,
+              [orderId],
+            );
+            const payment = paymentRes.rows[0];
+            const gate = sellerConfirmationPaymentGate(payment?.method, payment?.status);
+            if (!gate.ok) {
+              throw new HttpError(
+                409,
+                gate.code ?? PAYMENT_REQUIRED_CODE,
+                "This order cannot be confirmed until payment is completed.",
+              );
+            }
+          }
+
           await client.query(
             `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2`,
             [status, orderId],
           );
 
-          // Cancellation restores the seller's stock (mirrors the customer
-          // cancel flow) — atomic with the status change.
+          // Cancellation restores the stock through the ONE release path
+          // (`releaseOrderInventory`) — the same function the customer cancel,
+          // the payment-failure and the reservation-expiry paths use. It claims
+          // the order's `inventory_released` flag atomically inside THIS
+          // transaction, so a seller cancel that races a customer cancel (or a
+          // retried request) restores stock at most once, and never invents a
+          // second stock-adjustment system. Checkout creates ONE order per shop,
+          // so the order's items are exactly this seller's items.
           if (status === "cancelled") {
-            const items = await client.query(
-              `SELECT product_id, variant_id, quantity FROM order_items oi
-               JOIN shops sh ON oi.shop_id = sh.id
-               WHERE oi.order_id = $1 AND sh.seller_id = $2`,
-              [orderId, sellerId],
-            );
-            for (const item of items.rows) {
-              if (item.variant_id) {
-                await client.query(
-                  `UPDATE product_variants SET stock = stock + $1, updated_at = NOW() WHERE id = $2`,
-                  [item.quantity, item.variant_id],
-                );
-              } else {
-                await client.query(
-                  `UPDATE inventory SET reserved = GREATEST(0, reserved - $1) WHERE product_id = $2`,
-                  [item.quantity, item.product_id],
-                );
-              }
-            }
+            await releaseOrderInventory(client, orderId);
           }
         });
       } catch (err) {

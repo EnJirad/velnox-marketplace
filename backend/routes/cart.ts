@@ -251,6 +251,105 @@ function formatCartRow(r: any) {
   };
 }
 
+// ─── Customer cancellation rule (the ONE decision) ───────────────────────────
+// Shared by the two enforcement points in `PATCH /api/customer/orders/:orderId/cancel`:
+// a fast refusal before the provider call, and the AUTHORITATIVE one inside the
+// transaction while the order row is locked. Splitting it out is what keeps the
+// two from drifting apart — the fast answer can never accept what the locked one
+// would refuse.
+
+/** The statuses a customer may cancel FROM (pinned to the shared contract by tests). */
+const CANCELABLE_STATUSES = ["pending", "pending_payment", "confirmed"];
+/** Dead ends: the order can no longer be paid, so there is nothing left to release. */
+const TERMINAL_STATUSES = ["cancelled", "payment_failed", "expired"];
+
+/** The live state of an order the cancellation decision needs. */
+export interface CancellationStateRow {
+  status: string;
+  latest_payment_status?: string | null;
+  has_shipment?: boolean | null;
+}
+
+export type CancellationDecision =
+  /** The order is already over — report its state, change nothing. */
+  | { outcome: "terminal"; status: string }
+  /** Nothing may be written. `status`/`code`/`message` are the HTTP answer. */
+  | { outcome: "refused"; status: number; code: string; message: string }
+  /** The caller may claim the cancellation. */
+  | { outcome: "cancelable" };
+
+/**
+ * Decide whether this order may be cancelled right now.
+ *
+ * THE CUTOFF IS FULFILMENT, NOT THE WORD `confirmed`. `confirmed` means the shop
+ * ACCEPTED the order — nothing has moved yet, so the customer may still call it
+ * off. The moment a shipment exists (the shop created the parcel and holds a
+ * tracking number) fulfilment has started and the order is no longer the
+ * customer's to cancel, whatever the status column currently says. That is what
+ * `has_shipment` is for: it survives a shop whose status write lagged, and it is
+ * the reason the check is server-side rather than a rule the UI applies.
+ *
+ * Payment state is checked FIRST: money already taken (or being authorised) must
+ * never be "cancelled" — that is a refund, and the webhook remains the only
+ * authority on payment state.
+ */
+export function cancellationDecision(order: CancellationStateRow): CancellationDecision {
+  if (TERMINAL_STATUSES.includes(order.status)) {
+    return { outcome: "terminal", status: order.status };
+  }
+
+  if (!CANCELABLE_STATUSES.includes(order.status)) {
+    return {
+      outcome: "refused",
+      status: 400,
+      code: "INVALID_STATUS",
+      message: "Order can only be cancelled before it ships",
+    };
+  }
+
+  if (order.latest_payment_status === "paid") {
+    return {
+      outcome: "refused",
+      status: 409,
+      code: "ORDER_ALREADY_PAID",
+      message: "This order has already been paid. Please request a refund instead of cancelling.",
+    };
+  }
+
+  if (order.latest_payment_status === "processing") {
+    return {
+      outcome: "refused",
+      status: 409,
+      code: "PAYMENT_IN_PROGRESS",
+      message: "A payment for this order is being processed. Please try again in a moment.",
+    };
+  }
+
+  // The shop has started fulfilment: a shipment/tracking number exists, so the
+  // parcel is on its way to being sent and cancelling would strand it.
+  if (order.has_shipment) {
+    return {
+      outcome: "refused",
+      status: 409,
+      code: "ORDER_ALREADY_SHIPPING",
+      message: "The shop has already started shipping this order.",
+    };
+  }
+
+  return { outcome: "cancelable" };
+}
+
+/**
+ * The order state a cancellation decision needs, as ONE read.
+ * `has_shipment` is the fulfilment evidence; ownership is part of the WHERE, so
+ * another customer's order simply does not come back (404, never a 403 that would
+ * confirm the order exists to someone who does not own it).
+ */
+const CANCELLATION_STATE_SELECT = `SELECT o.id, o.status,
+                (SELECT status FROM payments
+                  WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS latest_payment_status,
+                EXISTS (SELECT 1 FROM shipments WHERE order_id = o.id) AS has_shipment`;
+
 // ─── CART ─────────────────────────────────────────────────────────────────────
 
 export function setupCartRoutes(app: Express): void {
@@ -1227,35 +1326,41 @@ export function setupCartRoutes(app: Express): void {
   });
 
   // ── PATCH /api/customer/orders/:orderId/cancel ────────────────────────────
-  // The customer cancels their own order before it ships; reserved stock goes
+  // The customer cancels their own order BEFORE FULFILMENT STARTS; reserved stock goes
   // back to the shelves. `pending_payment` IS cancelable (2026-09-28): that is
   // the status an order carries while it has a Stripe Checkout Session —
   // exactly where a customer lands after abandoning Stripe — and the previous
   // list (`pending`, `confirmed`) refused it, so the order page could offer only
   // "continue payment" and the customer had no way to call the order off.
+  //
+  // THE CUTOFF IS FULFILMENT, NOT THE WORD `confirmed` (2026-09-29): `confirmed` is
+  // the shop ACCEPTING the order, which is not yet a parcel, so it stays cancelable.
+  // The moment a shipment/tracking number exists the shop has started fulfilling it
+  // and the customer loses the right to cancel — 409 `ORDER_ALREADY_SHIPPING`, not
+  // just a status check, so a shop whose status write lagged cannot lose its parcel.
+  //
+  // RACES: the decision is re-taken inside the transaction with the order row
+  // locked (`FOR UPDATE`) using the SAME rule function as the pre-flight read, so a
+  // cancellation racing a seller confirmation, a shipment or a Stripe webhook
+  // resolves to exactly one outcome.
   app.patch("/api/customer/orders/:orderId/cancel", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
       const orderId = param(req, "orderId");
 
-      // The statuses a customer may cancel FROM. Deliberately literal: this route
-      // is the server-side authority that the storefront's shared contract
-      // (`CUSTOMER_CANCELABLE_ORDER_STATUSES` in packages/shared) is pinned
-      // against by backend/tests/customer-order-cancel.test.ts, so a divergence
-      // becomes a failing test instead of a button the server refuses.
-      const CANCELABLE_STATUSES = ["pending", "pending_payment", "confirmed"];
-      // Already dead ends: the order can no longer be paid, so there is nothing
-      // to release and a repeat request is answered with the current state
-      // instead of an error (a double click or a retried request is harmless).
-      const TERMINAL_STATUSES = ["cancelled", "payment_failed", "expired"];
+      // The statuses a customer may cancel FROM live ONCE for this module
+      // (`CANCELABLE_STATUSES` / `TERMINAL_STATUSES` above the route). They are
+      // deliberately literal: this route is the server-side authority that the
+      // storefront's shared contract (`CUSTOMER_CANCELABLE_ORDER_STATUSES` in
+      // packages/shared) is pinned against by
+      // backend/tests/customer-order-cancel.test.ts, so a divergence becomes a
+      // failing test instead of a button the server refuses.
 
-      // Order + live payment state in ONE read. Ownership is part of the WHERE,
-      // so another customer's order is a 404 — never a 403 that would confirm the
-      // order exists to someone who does not own it.
+      // Order + live payment state + FULFILMENT EVIDENCE in ONE read. Ownership is
+      // part of the WHERE, so another customer's order is a 404 — never a 403 that
+      // would confirm the order exists to someone who does not own it.
       const orderRes = await query(
-        `SELECT o.id, o.status,
-                (SELECT status FROM payments
-                  WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS latest_payment_status,
+        `${CANCELLATION_STATE_SELECT},
                 (SELECT provider_checkout_session_id FROM payments
                   WHERE order_id = o.id AND provider = 'stripe'
                     AND status IN ('pending', 'requires_action')
@@ -1270,51 +1375,29 @@ export function setupCartRoutes(app: Express): void {
       }
       const order = orderRes.rows[0];
 
-      if (TERMINAL_STATUSES.includes(order.status)) {
+      // First pass with the SAME rule the locked transaction re-runs below. It is
+      // here for two reasons: a caller gets the real answer without opening a
+      // transaction, and — importantly — an order that must NOT be cancelled never
+      // reaches the provider call below (an in-flight payment must not have its
+      // abandoned Checkout Session expired under it).
+      const preflight = cancellationDecision(order);
+      if (preflight.outcome === "terminal") {
         res.json({
           success: true,
           data: {
             id: orderId,
-            status: order.status,
-            cancelled: order.status === "cancelled",
+            status: preflight.status,
+            cancelled: preflight.status === "cancelled",
             alreadyFinal: true,
             stockReleased: false,
           },
         });
         return;
       }
-
-      // The order state decides: a paid, shipped, delivered or completed order is
-      // not the customer's to cancel any more (a refund is a different flow).
-      if (!CANCELABLE_STATUSES.includes(order.status)) {
-        res.status(400).json({
+      if (preflight.outcome === "refused") {
+        res.status(preflight.status).json({
           success: false,
-          error: { code: "INVALID_STATUS", message: "Order can only be cancelled before it ships" },
-        });
-        return;
-      }
-
-      // Payment state is checked BEFORE the order is moved. A `paid` payment on an
-      // order row that lags one transition behind must never be "cancelled", and a
-      // charge already in flight must be allowed to settle first — money taken for
-      // a cancelled order is a refund problem, not a cancellation.
-      if (order.latest_payment_status === "paid") {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: "ORDER_ALREADY_PAID",
-            message: "This order has already been paid. Please request a refund instead of cancelling.",
-          },
-        });
-        return;
-      }
-      if (order.latest_payment_status === "processing") {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: "PAYMENT_IN_PROGRESS",
-            message: "A payment for this order is being processed. Please try again in a moment.",
-          },
+          error: { code: preflight.code, message: preflight.message },
         });
         return;
       }
@@ -1330,11 +1413,38 @@ export function setupCartRoutes(app: Express): void {
       }
 
       const outcome = await withTransaction(async (client) => {
-        // One guarded UPDATE is the race gate. Under READ COMMITTED a concurrent
-        // cancel blocks on the row lock and then re-evaluates the WHERE clause
-        // against the committed row, where the status is no longer cancelable —
-        // so of two simultaneous requests exactly one actually moves the order,
-        // and the loser cannot release stock a second time.
+        // ── LOCK THE ORDER ROW FIRST ────────────────────────────────────────
+        // This is the row every fulfilment writer takes (the seller status route
+        // locks it the same way with `FOR UPDATE`), so a cancellation that races a
+        // seller confirmation, a payment landing, or a shipment is decided in ONE
+        // order: whoever holds the lock reads the other's committed state, and the
+        // decision below is taken against it. These re-checks are not a duplicate of
+        // the pre-flight read — they are the AUTHORITATIVE ones, and they call the
+        // same rule function, so the two can never disagree.
+        const locked = await client.query(
+          `${CANCELLATION_STATE_SELECT}
+             FROM orders o
+            WHERE o.id = $1 AND o.user_id = $2
+            FOR UPDATE`,
+          [orderId, userId],
+        );
+        if (locked.rows.length === 0) {
+          return { outcome: "not_found" as const };
+        }
+
+        const live = locked.rows[0];
+        const decision = cancellationDecision(live);
+        if (decision.outcome === "terminal") {
+          return { outcome: "terminal" as const, status: decision.status };
+        }
+        if (decision.outcome === "refused") {
+          return { outcome: "refused" as const, refusal: decision };
+        }
+
+        // The outcome can only be "cancelable" here. The guarded UPDATE stays as
+        // belt and braces: it can still lose to a writer that moved the order after
+        // the locked read (a `paid` payment, a shipment), which is exactly the
+        // disagreement for which stock must never be released.
         const claim = await client.query(
           `UPDATE orders SET status = 'cancelled', updated_at = NOW()
             WHERE id = $1 AND status = ANY($2::text[])
@@ -1368,8 +1478,41 @@ export function setupCartRoutes(app: Express): void {
         // releaseOrderInventory), so stock is never handed back for an order that
         // is going to ship.
         const released = await releaseOrderInventory(client, orderId);
-        return { moved, released };
+        return { outcome: "settled" as const, moved, released };
       });
+
+      if (outcome.outcome === "not_found") {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Order not found" } });
+        return;
+      }
+
+      if (outcome.outcome === "terminal") {
+        // The order reached a dead end while we were deciding (another request
+        // cancelled it, the reservation expired, a payment failed): report THAT
+        // state instead of claiming a cancellation that did not happen.
+        res.json({
+          success: true,
+          data: {
+            id: orderId,
+            status: outcome.status,
+            cancelled: outcome.status === "cancelled",
+            alreadyFinal: true,
+            stockReleased: false,
+          },
+        });
+        return;
+      }
+
+      if (outcome.outcome === "refused") {
+        // The world moved while we were deciding — money landed, or the shop
+        // created the shipment. The decision taken under the row lock is the
+        // authoritative answer.
+        res.status(outcome.refusal.status).json({
+          success: false,
+          error: { code: outcome.refusal.code, message: outcome.refusal.message },
+        });
+        return;
+      }
 
       if (!outcome.moved) {
         // Lost the race (a concurrent cancel already did the work) or the order

@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-28 · **Branch:** `main` · **Latest pass:** Fixed 30-minute payment reservation + countdown + pay-again UX — the reservation is a constant 30 min and both order surfaces count it down (§38, supersedes §36)
+**Last updated:** 2026-09-29 · **Branch:** `main` · **Latest pass:** Order fulfilment — the payment gate (`409 PAYMENT_REQUIRED`), the address/phone snapshot as the only shipping source, and the cancellation cutoff at fulfilment start (`409 ORDER_ALREADY_SHIPPING`) (§42)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -673,80 +673,22 @@ SQL Editor).
 **Still open (owner-side).** (1) A browser pass over the new order page, the list countdown and the
 method chooser in th/en/my. (2) The production migration above.
 
-## 39. Order UX polish — status, progress, address, language (2026-09-28)
+## 39. Order UX polish — status, progress, address, language (2026-09-28) — archived
 
-**Reported (ORDER UX FINAL POLISH — the last task before VelRepeat).** Make the order list and order
-page clear, consistent and multilingual for every unpaid order: per-order countdowns, readable
-status, ONE simple progress line, the ORDER's own address, a clearer retry, and no hard-coded Thai.
-The 30-minute reservation, the sweep and the release path are untouched.
+Full record: [`archive/AI_Handoff-2026-09-29-order-ux-polish.md`](./history/archive/AI_Handoff-2026-09-29-order-ux-polish.md)
+(the order surfaces §41 then rebuilt). Short version: `orderStatusI18nKey()` + the `orderStatus`
+namespace replaced the Thai-only `ORDER_STATUS_META.label`; `ORDER_PROGRESS_STAGES` /
+`orderProgressStageIndex()` replaced the old five-icon stepper; the delivery section began rendering
+`orders.shipping_address` exactly as stored; per-card countdowns and the `payment_failed` notice round
+it out. All of it is still live — §41 and §42 extended it.
 
-**Countdown position + states.** Each list card keeps its OWN countdown, placed at the bottom-left of
-THAT card (status badge, then the countdown, then one hurry note inside the last 3 minutes) so a
-running clock is never ambiguous. ONE presentation clock per page: every card derives its own
-remaining time from its own `paymentExpiresAt`. A lapsed card shows the expired state and refetches
-once (the sweep may already have released the stock); `visibilitychange` still re-reads the API.
-Nothing in the browser writes an order status or a deadline.
+## 40. Countdown invisible in production — migration 048 never applied (2026-09-28) — archived
 
-**Readable, localized status.** The order-status text came from `ORDER_STATUS_META.label`, which is
-Thai-only — so English/Myanmar rendered Thai on both surfaces. NEW `orderStatusI18nKey()` (shared)
-maps `orders.status` → `orderStatus.*`, NEW `orderStatus` namespace (th/en/my) covers all 11
-statuses + `unknown`, and both pages render the translated label. The payment pill now uses the
-semantic badge tokens (`getPaymentStatusBadge`) instead of a white-on-white badge. The Burmese table
-also gained the six order-page strings that were still English (`myOrderPatch.orderDetail` in
-`locales/index.ts`; that patch object can no longer carry the outer `satisfies Partial<Dict>`,
-which a partially-filled namespace cannot satisfy).
-
-**ONE progress line, real statuses.** The old five-icon stepper (no payment stage) is replaced by
-`ORDER_PROGRESS_STAGES` = placed → payment → processing → shipped → delivered, with
-`orderProgressStageIndex()` as the single mapping (`pending`/`pending_payment` → 1,
-`paid`/`confirmed` → 2, `shipped` → 3, `delivered`/`completed` → 4). Terminal orders
-(`cancelled`, `expired`, `payment_failed`, `refunded`) return -1 and get the notice that explains
-them instead of a line implying progress. One `<ol>`, no nested bars; on a narrow screen only the
-current stage label shows (all five names stay in the DOM for screen readers) and
-`aria-current="step"` marks the stage. Order status and payment status are separate concepts, each
-with its own visible caption.
-
-**Address = the order's snapshot.** The delivery section renders `orders.shipping_address` exactly as
-stored (`addressSnapshot`), one line per real field, omitting fields the snapshot lacks, with a
-labelled recipient and the country translated only for `TH`. It never reads the profile/address
-book, so changing the default address later cannot rewrite an existing order.
-
-**Retry + terminal states.** `ResumePaymentButton` reads "Pay again" (`orderReservation.payAgain`)
-and still opens the chooser from `GET /api/payments/methods`. A `payment_failed` order gets its own
-notice and NO countdown and NO pay button — the backend released the stock at that point, so a
-deadline or a pay button would promise a payment the server refuses; "buy again" is the way forward.
-
-**Verified here.** `typecheck` 4/4 · backend `tsc` 0 · `build:velshop` 0 · `i18n:check`
-th=en=my=**1369** · `git diff --check` clean · NEW `backend/tests/order-ux-polish.test.ts`
-**10 pass / 0 fail** (one-line progress contract + stage mapping, terminal → -1, a localized label
-for every status in all three locales, readable badge tokens incl. the unknown case, both surfaces
-render the localized label, the detail page uses the order's OWN snapshot and never a profile
-address, a failed payment keeps the original deadline and no fabricated one, per-card countdown) ·
-reservation + checkout suites **97 pass / 23 skip / 0 fail** · full backend suite **799 pass /
-119 skip / 1 fail**, the same pre-existing `test-database-isolation` sandbox probe (it re-reads this
-workspace's `.env`; CI, with no `.env`, passes).
-
-**Still open (owner-side).** (1) The browser pass over both order surfaces and the method chooser in
-th/en/my. (2) The production migration (§37): without `payment_expires_at` there is no countdown in
-production, and the polish only changes what is rendered when the column exists.
-
-## 40. Countdown invisible in production — migration 048 never applied (2026-09-28)
-
-**Root cause: production Neon has no `orders.payment_expires_at`.** Three migration runs died on
-`exceeded the quota` (02:57Z, 14:38Z, 16:56Z); last success 2026-09-25, before 048 existed. The write
-is then skipped by the deploy-order guard, `SELECT o.*` maps the absent column to
-`paymentExpiresAt: null`, phase `none`, both pages render nothing — silent by design (§37's net).
-Logic, API mapping and
-deploy ruled out (the bundle carries the code); CI `d7282bb` green with the regression tests. Full
-trace + owner check: `.ai/context/payment.md` → *Countdown not visible in production*.
-
-**Shipped anyway:** the tier UI (`8261152`) — GREEN >15:00, YELLOW ≤15:00, RED ≤5:00, dark expired —
-plus a bar measured against `orders.reservation_policy.reservationMinutes` (now on both read routes),
-never a hard-coded 30; deployed on Vercel (chunks carry `reservationMinutes`/`progressbar`/
-`criticalNote`).
-
-**Owner action:** clear the quota → apply 048 (re-queued as `d7282bb`, comment-only, still failing)
-→ place a NEW order. Rows created earlier keep `NULL` by design and will never show a countdown.
+Full record: [`archive/AI_Handoff-2026-09-29-countdown-invisible-in-production.md`](./history/archive/AI_Handoff-2026-09-29-countdown-invisible-in-production.md).
+Short version: production Neon still has no `orders.payment_expires_at` (the `Migrate Neon Database`
+runs die on the §22 Neon quota), so `paymentExpiresAt` maps to null and no countdown renders anywhere.
+The tier UI (§39/§38) is deployed and correct — the missing COLUMN is the whole story. **Owner action:
+clear the quota → apply 048 (SQL inline in §37) → place a NEW order.** Older rows keep `NULL` by design.
 
 ## 41. Order UX refactor — customer + seller order surfaces (2026-09-29)
 
@@ -808,3 +750,67 @@ session and no dev server is started per policy, so layout is pinned by contract
 where `payment_expires_at` exists. (3) The seller list no longer carries an inline status dropdown —
 status changes are made on the order detail page, which is the redesigned flow (list → detail → change →
 back).
+
+## 42. Order fulfilment — payment gate, address snapshot, cancellation cutoff (2026-09-29)
+
+**The rule.** Fulfilment and payment stay separate, and starting fulfilment is gated:
+`canConfirm = (rail === "COD") || (payments.status === "paid")`. CARD/PROMPTPAY need a payment that
+really SUCCEEDED (the webhook's `paid` — no seller action can write it); a COD order may always start
+(its `pending` row is the normal state for the whole delivery); an absent/unrecognised method fails
+CLOSED unless a payment provably succeeded — which is also what keeps a genuinely paid order from being
+stranded, since `paid` refuses the customer's cancel too. Refusal: **409 `PAYMENT_REQUIRED`**
+(machine-readable; the seller UI locks its own confirm button and explains why from
+`sellerOrders.paymentLock*`). `stripe.ts` remains the only module that may write `paid` (pinned by a
+source scan in the new suite).
+
+**One rule, two copies, held together.** `orderFulfillmentPaymentGate()` (shared — the seller UI reads
+it) ⇄ `sellerConfirmationPaymentGate()` (backend — it enforces it), asserted equal across the whole
+method × status matrix in `backend/tests/order-fulfillment.test.ts`.
+
+**Address + phone.** The shipping contact comes ONLY from the order's `orders.shipping_address`
+snapshot: the seller endpoints stopped selecting `users.phone`, return `customerPhone` from the snapshot
+(`shippingContact()`), and now carry `paymentMethod` too. A legacy order with no snapshot phone reports
+NO phone (seller `sellerOrders.phoneUnavailable`, customer `orderDetail.phoneUnavailable`) — the profile
+is never substituted, so editing it cannot rewrite history. The seller detail renders the snapshot with
+copy-phone / copy-address / `tel:` actions, and BOTH order surfaces badge the money through
+`orderPaymentSummary()` (a COD order reads as COD, not "awaiting payment").
+
+**Cancellation cutoff = FULFILMENT, not the word `confirmed`.** `pending`, `pending_payment` and
+`confirmed` stay cancelable (confirmed = the shop ACCEPTED the order, no parcel yet); the moment a
+`shipments` row exists → **409 `ORDER_ALREADY_SHIPPING`** (`hasShipmentEvidence()`;
+`orderCustomerCancelability()` reason `shipping_started`). No `packing` state was invented: the schema
+has none, `confirmed → shipped` is the existing equivalent, and the shipment row is the real
+fulfilment-start evidence.
+
+**Races + inventory.** The cancel route re-takes the decision INSIDE the transaction with the order row
+locked (`FOR UPDATE`) through ONE rule function (`cancellationDecision()`): pre-flight for the fast
+answer and the Stripe-expiry gate, locked for the authority. Seller cancellation now releases stock via
+the canonical `releaseOrderInventory()` (the route's hand-rolled `stock + qty` / `reserved - qty` math is
+gone), so a seller cancel, a customer cancel and a late webhook can each release at most once.
+
+**Tests.** NEW `backend/tests/order-fulfillment.test.ts` — 33 pass / 13 DB-gated skips: gate matrix on
+both sides, payment badges + every badge label resolving in th/en/my, the four-endpoint
+`addressSnapshot` contract, `cancellationDecision` cases, the `paid`-writer scan, order number ≠
+tracking number, and the canonical-release assertion. DB-gated (CI, postgres:16): CARD / PROMPTPAY / COD
+× unpaid / paid / failed, no-method fail-closed, shipping a confirmed order NOT gated, cross-seller 404,
+a shipment blocking cancellation, cancel-vs-confirm consistency, the snapshot phone surviving a profile
+change (0811111111 stays on the old order, 0822222222 on the new one) and a legacy no-phone order.
+`customer-order-cancel.test.ts` updated: its guards now run under the row lock.
+
+**Verified here.** full backend suite **863 pass / 132 skip / 1 fail** · `typecheck` 4/4 ·
+backend `tsc` 0 · `i18n:check` th=en=my=**1415** · `build:velshop` + `build:velseller` green ·
+`git diff --check` clean. The one failure is the §41 sandbox artifact, now diagnosed precisely:
+the Freebuff sandbox defines `DATABASE_URL` (the production Neon string) in the **repo-root
+`.env`**, and bun auto-loads that file for any process whose cwd is the repo root. So the
+isolation suite's spawned probe (`cwd=repoRoot`, minimal env `{PATH,HOME,NODE_ENV}`) still
+inherits `DATABASE_URL` and is refused — while the test expects "no database configured →
+exit 0". Proven by running the same probe with `cwd=/tmp` or `cwd=backend/` (both see NO
+`DATABASE_URL` and exit 0) and with cwd=repoRoot (sees it, refuses). CI is unaffected — it
+sets `TEST_DATABASE_URL` at job level and defines no repo-root `.env` — so this stays a
+sandbox-only artifact, not a code bug.
+
+**Not verified here.** (1) The 13 DB-gated tests need `TEST_DATABASE_URL`; they run in CI, not in this
+sandbox (no local Postgres). (2) No browser pass (no session, and no dev server is started per policy).
+(3) There is still NO shipment-creation endpoint: the shipment row is inserted by no HTTP route today, so
+the cancel lock guards against it rather than coordinating with it. If one is ever added it must take the
+same `orders` row lock and may not move an order the customer just cancelled.

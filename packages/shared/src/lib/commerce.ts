@@ -222,14 +222,33 @@ export type StorePaymentStatus =
   | "refunded"
   | "failed";
 
+/**
+ * The shipping snapshot copied onto an order at checkout (`orders.shipping_address`).
+ *
+ * This object is the ONLY shipping address an order ever has: it is written once
+ * by `orderAddressSnapshot()` (`backend/routes/cart.ts`) from the address the
+ * customer SELECTED in checkout, and it is never re-read from the profile. Editing
+ * a saved address (or the default address) afterwards must not change an order
+ * that already exists — which is also why `phone` lives here and not on `users`.
+ *
+ * The Thai address parts (`subdistrict`/`district`/`province`) are the real stored
+ * fields; `city`/`state` are kept for older rows and other locales. A legacy order
+ * may have an EMPTY `phone` — the surfaces then say the order has no phone rather
+ * than falling back to the account's phone number.
+ */
 export interface StoreAddressSnapshot {
+  /** The saved-address label the customer chose ("Home", "Office", …). */
+  label?: string;
   recipientName: string;
   phone: string;
   line1: string;
-  line2?: string;
+  line2?: string | null;
+  subdistrict?: string | null;
+  district?: string | null;
+  province?: string | null;
   city?: string;
   state?: string;
-  postalCode?: string;
+  postalCode?: string | null;
   country?: string;
 }
 
@@ -501,6 +520,179 @@ export function stripeMethodForPaymentMethod(method: unknown): StripeResumableMe
  * would charge the customer for an order they chose to pay on delivery.
  */
 const NON_STRIPE_PAYMENT_METHODS = new Set(["cod", "cash_on_delivery"]);
+
+/**
+ * Is this `payments.method` the cash-on-delivery rail?
+ *
+ * COD is settled by the carrier, so it has no online payment to wait for — and
+ * (unlike a card) an unpaid COD row is NORMAL, not a blocker. The flag that
+ * decides whether COD exists at all is server-side (`COD_ENABLED` in
+ * `backend/lib/payment-config.ts`, off by default); this only classifies a method
+ * a row actually carries.
+ */
+export function isCodPaymentMethod(method: unknown): boolean {
+  return typeof method === "string" && NON_STRIPE_PAYMENT_METHODS.has(method.trim().toLowerCase());
+}
+
+/**
+ * How an order's money is expected to arrive:
+ *
+ *   ONLINE  a Stripe rail (CARD / PROMPTPAY) — fulfilment waits for `paid`;
+ *   COD     collected by the carrier on delivery — fulfilment may start at once;
+ *   UNKNOWN no method is recorded, so nothing may be assumed.
+ */
+export type OrderSettlementRail = "ONLINE" | "COD" | "UNKNOWN";
+
+/** Classify the rail of a stored `payments.method` (alias-tolerant). */
+export function orderSettlementRail(method: unknown): OrderSettlementRail {
+  if (isCodPaymentMethod(method)) return "COD";
+  return stripeMethodForPaymentMethod(method) ? "ONLINE" : "UNKNOWN";
+}
+
+/**
+ * The machine-readable code the backend answers a refused seller confirmation
+ * with: `PATCH /api/seller/orders/:id/status` → 409 `PAYMENT_REQUIRED`.
+ */
+export const PAYMENT_REQUIRED_CODE = "PAYMENT_REQUIRED";
+
+/**
+ * The machine-readable code the customer cancel endpoint answers when the shop
+ * has already created a shipment (a tracking number exists): 409.
+ */
+export const ORDER_ALREADY_SHIPPING_CODE = "ORDER_ALREADY_SHIPPING";
+
+/**
+ * The FULFILMENT gate: may the seller move this order from `pending` to
+ * `confirmed`?
+ *
+ * The two state machines are deliberately separate (see `StoreOrderStatus`), and
+ * this is where they meet:
+ *
+ *   COD          → yes. Nothing is owed online; the money is collected on
+ *                  delivery. The row's `pending` payment status is the NORMAL
+ *                  state for COD and must not be read as "unpaid, so blocked".
+ *   ONLINE       → only when a payment has actually SUCCEEDED (`paid`, written
+ *                  by the Stripe webhook — never by a seller).
+ *   UNKNOWN      → only when a payment PROVABLY succeeded. An unrecognised or
+ *                  absent rail is never assumed to be payable-on-delivery, so the
+ *                  seller waits (and may still cancel); a `paid` row, though, is
+ *                  provider-confirmed money and must not strand the order — `paid`
+ *                  refuses the customer's cancel too, so blocking it would leave the
+ *                  order unable to move at all without an operator.
+ *
+ * IN ONE LINE: `canConfirm = (rail === "COD") || (paymentStatus === "paid")`.
+ *
+ * `paymentStatus` alone can never decide this: a `pending` status means "waiting"
+ * for a card and "normal" for COD. The method decides which of those it is.
+ */
+export interface OrderFulfillmentGateInput {
+  status?: unknown;
+  /** Latest payment status, as the order list/detail return it. */
+  paymentStatus?: unknown;
+  /** Latest payment method, as the order list/detail return it. */
+  paymentMethod?: unknown;
+  /** The order detail's full payment rows, newest first. */
+  payments?: Array<{ method?: unknown; status?: unknown }> | null;
+}
+
+export interface OrderFulfillmentPaymentGate {
+  /** The seller may confirm the order right now. */
+  canConfirm: boolean;
+  /** How the money is expected to arrive. */
+  rail: OrderSettlementRail;
+  /** `"PAYMENT_REQUIRED"` when confirmation is blocked, else null. */
+  code: string | null;
+}
+
+/**
+ * Decide the fulfilment gate for an order, mirroring the backend rule in
+ * `PATCH /api/seller/orders/:id/status`. Returns the decision only — it never
+ * writes anything and never changes an order's status.
+ */
+export function orderFulfillmentPaymentGate(
+  order: OrderFulfillmentGateInput | null | undefined,
+): OrderFulfillmentPaymentGate {
+  const latestMethod = order?.paymentMethod ?? order?.payments?.[0]?.method ?? null;
+  const rail = orderSettlementRail(latestMethod);
+  const statuses = [order?.paymentStatus, order?.payments?.[0]?.status]
+    .filter((s): s is string => typeof s === "string")
+    .map((s) => s.trim().toLowerCase());
+
+  if (rail === "COD") return { canConfirm: true, rail, code: null };
+  if (statuses.includes("paid")) return { canConfirm: true, rail, code: null };
+  return { canConfirm: false, rail, code: PAYMENT_REQUIRED_CODE };
+}
+
+/** The badge "kinds" a seller sees for an order's money. */
+export type OrderPaymentSummaryKind =
+  | "cod"
+  | "paid"
+  | "awaiting"
+  | "failed"
+  | "refunded"
+  | "cancelled"
+  | "unpaid";
+
+export interface OrderPaymentSummary {
+  kind: OrderPaymentSummaryKind;
+  /** i18n key for the badge label (existing `paymentMethods.*`/`paymentLabels.*`). */
+  i18nKey: string;
+  badge: { badge: string; dot: string };
+  /**
+   * True when this order still needs a successful online payment before the
+   * seller may confirm it — the same condition as the fulfilment gate, expressed
+   * for the list badge.
+   */
+  awaitingOnlinePayment: boolean;
+}
+
+/** The i18n label key per kind. No new copy is invented: these keys already exist. */
+const PAYMENT_SUMMARY_I18N_KEY: Record<OrderPaymentSummaryKind, string> = {
+  cod: "paymentMethods.cod",
+  paid: "paymentLabels.paid",
+  awaiting: "paymentLabels.pending",
+  failed: "paymentLabels.failed",
+  refunded: "paymentLabels.refunded",
+  cancelled: "paymentLabels.cancelled",
+  unpaid: "paymentLabels.unpaid",
+};
+
+/**
+ * One badge for "how is this order being paid, and has it been?" for the seller's
+ * order list — `💵 COD` / `Paid` / `Awaiting payment` / `Payment failed`.
+ *
+ * WHY THE METHOD MATTERS: a COD order's payment row is `pending` until the parcel
+ * is delivered, so a status-only badge would label every COD order "Awaiting
+ * payment" and read as a problem. The method decides the KIND; the status only
+ * refines an ONLINE order.
+ */
+export function orderPaymentSummary(order: OrderFulfillmentGateInput | null | undefined): OrderPaymentSummary {
+  const latestMethod = order?.paymentMethod ?? order?.payments?.[0]?.method ?? null;
+  const rail = orderSettlementRail(latestMethod);
+  const status =
+    typeof order?.paymentStatus === "string"
+      ? order.paymentStatus.trim().toLowerCase()
+      : typeof order?.payments?.[0]?.status === "string"
+        ? String(order.payments[0].status).trim().toLowerCase()
+        : "";
+
+  let kind: OrderPaymentSummaryKind;
+  if (rail === "COD") kind = "cod";
+  else if (status === "paid") kind = "paid";
+  else if (status === "pending" || status === "requires_action" || status === "processing") kind = "awaiting";
+  else if (status === "failed") kind = "failed";
+  else if (status === "refunded" || status === "partially_refunded") kind = "refunded";
+  else if (status === "cancelled") kind = "cancelled";
+  else kind = "unpaid";
+
+  const badgeStatus = kind === "cod" ? "pending" : kind === "awaiting" ? "pending" : kind;
+  return {
+    kind,
+    i18nKey: PAYMENT_SUMMARY_I18N_KEY[kind],
+    badge: getPaymentStatusBadge(badgeStatus),
+    awaitingOnlinePayment: kind !== "cod" && kind !== "paid" && rail !== "COD",
+  };
+}
 
 // ---------------------------------------------------------------------------
 // payment-status tokens — the sibling of ORDER_STATUS_META
@@ -887,6 +1079,13 @@ export function paymentReservationPhase(
  * `backend/tests/customer-order-cancel.test.ts` pins this list against the
  * literal list in `backend/routes/cart.ts`, so the storefront can never offer a
  * cancel the server would refuse (or hide one it would accept).
+ *
+ * THE CUTOFF IS FULFILMENT, NOT THE WORD `confirmed`: a customer may cancel until
+ * the shop starts fulfilling the order. `confirmed` therefore stays cancelable —
+ * it means "the shop accepted this order", which is not yet a parcel — and the
+ * cutoff is the SHIPMENT: as soon as a `shipments` row (a tracking number)
+ * exists, or the order reached `shipped`, the customer can no longer cancel
+ * (`hasShipmentEvidence()` / the backend's 409 `ORDER_ALREADY_SHIPPING`).
  */
 export const CUSTOMER_CANCELABLE_ORDER_STATUSES = ["pending", "pending_payment", "confirmed"] as const;
 export type CustomerCancelableOrderStatus = (typeof CUSTOMER_CANCELABLE_ORDER_STATUSES)[number];
@@ -913,18 +1112,48 @@ export interface OrderCancelabilityInput {
   paymentStatus?: unknown;
   /** `orders` detail exposes every payment, newest first. */
   payments?: Array<{ status?: unknown }> | null;
+  /** The latest shipment's status, or `"none"` when the order has no shipment. */
+  shippingStatus?: unknown;
+  /** `orders` detail exposes the order's shipments. */
+  shipments?: unknown[] | null;
 }
+
+/**
+ * Has fulfilment actually STARTED for this order?
+ *
+ * The trigger is real evidence, not a status word: a `shipments` row exists for
+ * the order (the shop created the parcel and therefore has a tracking number).
+ * Both order endpoints already carry that evidence — the list as
+ * `shippingStatus` (`"none"` until a shipment exists) and the detail as
+ * `shipments` — so both surfaces can answer it without another request.
+ */
+export function hasShipmentEvidence(
+  order: Pick<OrderCancelabilityInput, "shippingStatus" | "shipments"> | null | undefined,
+): boolean {
+  if (!order) return false;
+  if (Array.isArray(order.shipments) && order.shipments.length > 0) return true;
+  const shippingStatus =
+    typeof order.shippingStatus === "string" ? order.shippingStatus.trim().toLowerCase() : "";
+  return shippingStatus !== "" && shippingStatus !== "none";
+}
+
+/** Why a customer cannot cancel (see `orderCustomerCancelability`). */
+export type OrderCancellationBlockReason =
+  /** Money is paid or being authorized — a cancellation would need a refund. */
+  | "payment_in_progress"
+  /** The shop created a shipment (a tracking number exists). */
+  | "shipping_started"
+  /** The status is outside the cancelable set, or already terminal. */
+  | "not_cancelable";
 
 export interface OrderCustomerCancelability {
   /** The backend would cancel this order right now. */
   cancelable: boolean;
   /**
-   * Why not — `"payment_in_progress"` when money is paid or being authorized,
-   * `"not_cancelable"` when the order status is outside the cancelable set
-   * (paid, shipped, or already terminal). Callers show a reason instead of a
-   * button that would be refused.
+   * Why not. Callers show the reason instead of a button the server would refuse
+   * (`"shipping_started"` gets its own copy: the shop is already shipping).
    */
-  reason: "payment_in_progress" | "not_cancelable" | null;
+  reason: OrderCancellationBlockReason | null;
 }
 
 /**
@@ -948,6 +1177,15 @@ export function orderCustomerCancelability(
   ].filter((s): s is string => typeof s === "string");
   if (statuses.some((s) => PAYMENT_BLOCKS_CANCELLATION.has(s.trim().toLowerCase()))) {
     return { cancelable: false, reason: "payment_in_progress" };
+  }
+
+  // Fulfilment evidence beats the status word. `confirmed` means the shop
+  // ACCEPTED the order (it is still cancelable — the customer changed their
+  // mind before anything moved); the moment a shipment exists the shop has
+  // started fulfilment and the order is no longer the customer's to cancel,
+  // even if the status column has not caught up to `shipped` yet.
+  if (hasShipmentEvidence(order)) {
+    return { cancelable: false, reason: "shipping_started" };
   }
 
   return isOrderCancelableByCustomer(order.status)

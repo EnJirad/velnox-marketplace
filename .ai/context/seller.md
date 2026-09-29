@@ -58,12 +58,31 @@ PATCH /api/seller/orders/:id/status               transition — enforced by can
 - `normalizeSellerOrderStatus()` maps the payment-lifecycle values stripe.ts writes onto the six
   fulfilment statuses: `pending_payment`/`paid` → `pending`, `expired`/`refunded`/`payment_failed` →
   `cancelled`. The list's filter chips are exactly those six.
+- **Starting fulfilment is GATED on payment** (`sellerConfirmationPaymentGate()`, 2026-09-29):
+  `pending → confirmed` is refused with **409 `PAYMENT_REQUIRED`** for CARD / PROMPTPAY until a payment
+  really SUCCEEDED (`payments.status = 'paid'`, written by the Stripe webhook only). There is
+  deliberately NO seller action that marks a Stripe payment paid — the status button is a FULFILMENT
+  action, not a payment one. COD may always start (the carrier collects, so a `pending` payment row is
+  normal for the whole delivery); an absent/unrecognised method fails CLOSED unless a payment provably
+  succeeded. `SellerOrderDetail` mirrors the same rule through `orderFulfillmentPaymentGate()` and
+  disables the confirm button with the `sellerOrders.paymentLock*` reason instead of letting the API
+  refuse silently.
+- **The shipping contact comes from the order's OWN snapshot** — `orders.shipping_address`, read through
+  `shippingContact()`: `customerPhone` is `addressSnapshot.phone`, NEVER `users.phone` (the seller
+  queries no longer select it at all). A legacy order whose snapshot has no phone reports NO phone
+  (`sellerOrders.phoneUnavailable`) rather than borrowing today's profile, so editing a profile can
+  never rewrite an order's history. Both seller endpoints also return `paymentMethod`, and the list's
+  payment badge comes from `orderPaymentSummary()` — a COD order reads as COD, not "awaiting payment".
+- **Cancellation is locked by fulfilment evidence** (see `checkout.md`): a `shipments` row ⇒ **409
+  `ORDER_ALREADY_SHIPPING`** for the customer, and this route takes the same `orders` row lock, so a
+  seller confirm racing a customer cancel resolves to exactly one outcome. Seller cancellation releases
+  stock through the canonical `releaseOrderInventory()`, never a hand-rolled `stock + qty`.
 - The order-status badge and the progress-stage icons live in
   `packages/shared/src/components/order/OrderStatusBadge.tsx` — ONE mapping shared with VelShop.
 
 ## Common Failure Modes
 
-- `seller === null` conflated with loading (use `sellerLoaded`); missing ownership check on presign/confirm; shop `category`/`address` fields not persisted; offering a status transition the backend refuses (read `NEXT_ORDER_STATUSES`, never a hand-written list).
+- `seller === null` conflated with loading (use `sellerLoaded`); missing ownership check on presign/confirm; shop `category`/`address` fields not persisted; offering a status transition the backend refuses (read `NEXT_ORDER_STATUSES`, never a hand-written list); confirming an unpaid CARD/PROMPTPAY order (the server answers 409 `PAYMENT_REQUIRED` — treat the seller status button as FULFILMENT, never as a way to mark a Stripe payment paid); showing `users.phone` or the current profile address as the shipping contact instead of the order's `shipping_address` snapshot.
 
 ## Verification
 

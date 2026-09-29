@@ -37,18 +37,34 @@ Session exists — i.e. after an abandoned/failed payment) and `confirmed`, by:
 
 1. 404 for a non-owner (ownership is in the `WHERE` — never a 403 that confirms existence);
 2. refusing `paid`/`shipped`/`delivered`/`completed`/`refunded` (`400 INVALID_STATUS`),
-   a `paid` payment on a lagging order row (`409 ORDER_ALREADY_PAID`) and a payment being
-   authorised (`409 PAYMENT_IN_PROGRESS`);
+   a `paid` payment on a lagging order row (`409 ORDER_ALREADY_PAID`), a payment being
+   authorised (`409 PAYMENT_IN_PROGRESS`) and an order the shop has started shipping
+   (`409 ORDER_ALREADY_SHIPPING`);
 3. expiring the abandoned Stripe session FIRST (`expireStripeCheckoutSession()` in
    `stripe.ts`) so the old Stripe tab cannot charge a cancelled order;
-4. one transaction: guarded `UPDATE … status = ANY($2)` claim (the race gate) → abandon the
+4. one transaction: the order row locked (`SELECT … FOR UPDATE`), the decision re-taken under
+   that lock, the guarded `UPDATE … status = ANY($2)` claim → abandon the
    `pending`/`requires_action` payment row → `releaseOrderInventory()`. Terminal states
    (`cancelled`, `payment_failed`, `expired`) answer **200 as an idempotent no-op**.
 
+**The cutoff is FULFILMENT, not the word `confirmed`** (2026-09-29). `confirmed` means the shop
+ACCEPTED the order — no parcel exists yet — so it stays cancelable. The moment a `shipments` row
+exists (the shop created the parcel and holds a tracking number) the order is out of the customer's
+hands: `409 ORDER_ALREADY_SHIPPING`, even if the status column has not caught up to `shipped`.
+There is no `packing` status in this schema and none was invented — `confirmed → shipped` is the
+existing equivalent and the shipment row is the real evidence.
+
+Both enforcement points call ONE rule function, `cancellationDecision(order)` (module scope in
+`cart.ts`): a pre-flight pass (fast answer, and the gate that keeps the Stripe session from being
+expired under an in-flight payment) and the authoritative pass inside the transaction under the row
+lock. The seller status route takes the same `orders` row lock, so a cancel racing a confirmation, a
+shipment or a webhook resolves to exactly one outcome.
+
 The rule the storefront reads is `orderCustomerCancelability()` /
-`CUSTOMER_CANCELABLE_ORDER_STATUSES` (`packages/shared/src/lib/commerce.ts`) — one list for
-button and server, pinned by `backend/tests/customer-order-cancel.test.ts`. Copy lives in the
-`orderCancel` i18n namespace.
+`CUSTOMER_CANCELABLE_ORDER_STATUSES` / `hasShipmentEvidence()`
+(`packages/shared/src/lib/commerce.ts`) — one list for button and server, pinned by
+`backend/tests/customer-order-cancel.test.ts` and `backend/tests/order-fulfillment.test.ts`. Copy
+lives in the `orderCancel` i18n namespace (`orderDetail.cancelBlockedShipping` explains the cutoff).
 
 ## Payment reservation window (Dynamic Payment Reservation V1)
 
@@ -88,6 +104,30 @@ The order page counts down from the API's `paymentExpiresAt` (ms) via
 an expired order cannot resurrect it or reclaim stock: `markPaymentSucceeded` requires a
 pre-payment status AND `inventory_released = FALSE`, records the money on the payment row and logs
 `manual review/refund required` (no refund is invented in code).
+
+## Payment gate on seller fulfilment (`PATCH /api/seller/orders/:id/status`)
+
+Fulfilment and payment are separate state machines, and starting fulfilment is gated:
+
+```
+canConfirm = (rail === "COD") || (payments.status === "paid")
+```
+
+- **CARD / PROMPTPAY** need a payment that really SUCCEEDED. `paid` is written by the Stripe
+  webhook only (`backend/routes/stripe.ts` — a source scan in `order-fulfillment.test.ts` pins that
+  no other module writes it), and for PromptPay a `checkout.session.completed` with
+  `payment_status != "paid"` is NOT success. There is deliberately **no seller action that marks a
+  Stripe payment paid** — the seller's status button is a FULFILMENT action.
+- **COD** may always start fulfilment: the carrier collects, so a `pending` payment row is the
+  normal state for the whole delivery. (COD itself stays behind `COD_ENABLED`, off by default —
+  `403 PAYMENT_METHOD_DISABLED` at checkout.)
+- **No recorded method** fails CLOSED unless a payment provably succeeded — which also stops a
+  genuinely paid order from being stranded, since `paid` refuses the customer's cancel too.
+
+Refusal is **409 `PAYMENT_REQUIRED`**, read under the order row lock. The seller UI mirrors it with
+`orderFulfillmentPaymentGate()` so the confirm button is disabled with the reason on screen instead
+of the API silently refusing. The two implementations are asserted equal across the whole
+method × status matrix in `backend/tests/order-fulfillment.test.ts`.
 
 ## Endpoints (payment)
 
