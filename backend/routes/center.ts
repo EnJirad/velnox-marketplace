@@ -39,6 +39,7 @@ import {
   normalizeOrderStatusToFulfillment,
 } from "../lib/order-fulfillment.js";
 import { hashPassword, isPasswordHashFormat } from "../lib/password.js";
+import { releaseOrderInventory } from "../lib/inventory.js";
 import { PERMISSION_CATALOG, isCenterMember, userHasPermission } from "../lib/permissions.js";
 import { invalidateCachedProfile } from "./auth.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
@@ -511,6 +512,22 @@ export function setupCenterRoutes(app: Express): void {
           }
 
           await client.query("UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2", [to, orderId]);
+
+          // A cancellation ends the reservation too, and it must go through the
+          // ONE release authority (lib/inventory.ts) exactly as the seller's and
+          // the customer's do. Without it an operator cancelling an UNPAID order
+          // left the held units on the shelf forever: the customer's cancel
+          // refuses an already-cancelled order and the expiry sweep only ever
+          // claims `PAYMENT_RESERVATION_EXPIRABLE_STATUSES`, so nothing else
+          // would ever return them. The status change above has already
+          // committed, so the atomic `inventory_released` claim can win exactly
+          // once — a concurrent webhook, sweep or customer cancel loses to it
+          // and cannot release the same units again. The settled-payment gate
+          // above already refused a paid order, which the authority refuses too.
+          if (to === "cancelled") {
+            await releaseOrderInventory(client, orderId);
+          }
+
           return { from: rawFrom, to };
         });
       } catch (err) {

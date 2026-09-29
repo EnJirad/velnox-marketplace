@@ -825,6 +825,19 @@ describe("cancellation gate — money outranks a staff cancellation", () => {
     // Re-selecting the CURRENT status stays the no-op it always was.
     expect(admin).toContain('to === "cancelled" && to !== rawFrom');
 
+    // A cancellation ends the reservation on BOTH staff routes, through the ONE
+    // release authority — the admin route used to release nothing at all, so an
+    // operator cancelling an unpaid order stranded the held units (the customer
+    // can no longer cancel it and the sweep only claims expirable statuses).
+    for (const src of [seller, center]) {
+      expect(src).toContain("import { releaseOrderInventory } from \"../lib/inventory.js\";");
+      expect(src).toContain("await releaseOrderInventory(client, orderId);");
+    }
+    const adminRelease = admin.indexOf("await releaseOrderInventory(client, orderId);");
+    expect(adminRelease).toBeGreaterThan(adminUpdate);
+    const sellerRelease = route.indexOf("await releaseOrderInventory(client, orderId);");
+    expect(sellerRelease).toBeGreaterThan(update);
+
     // Neither route writes money state: the gate only reads `payments`.
     for (const src of [seller, center]) {
       expect(src).not.toContain("INSERT INTO payments");
