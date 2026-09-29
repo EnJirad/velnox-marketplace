@@ -474,6 +474,30 @@ CREATE TABLE IF NOT EXISTS payment_events (
 CREATE INDEX IF NOT EXISTS idx_payment_events_provider ON payment_events (provider);
 CREATE INDEX IF NOT EXISTS idx_payment_events_type ON payment_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_payment_events_processed ON payment_events (processed_at);
+CREATE TABLE IF NOT EXISTS payment_incidents (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  dedupe_key TEXT NOT NULL UNIQUE,
+  provider TEXT NOT NULL DEFAULT 'stripe',
+  order_id UUID NOT NULL REFERENCES orders(id),
+  payment_id UUID REFERENCES payments(id) ON DELETE SET NULL,
+  provider_payment_intent_id TEXT,
+  provider_checkout_session_id TEXT,
+  event_id TEXT,
+  reason TEXT NOT NULL,
+  order_status TEXT,
+  amount NUMERIC(12, 2),
+  currency TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  resolution_note TEXT,
+  resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_payment_incidents_order ON payment_incidents (order_id);
+CREATE INDEX IF NOT EXISTS idx_payment_incidents_status ON payment_incidents (status);
+CREATE INDEX IF NOT EXISTS payment_incidents_dedupe_key ON payment_incidents (dedupe_key);
+CREATE INDEX IF NOT EXISTS idx_payment_incidents_intent ON payment_incidents (provider_payment_intent_id);
 CREATE TABLE IF NOT EXISTS refunds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),

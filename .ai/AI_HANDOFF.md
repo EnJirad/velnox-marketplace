@@ -758,8 +758,49 @@ inventory file, no frontend, no new business rule.
   DB-gated attempt-identity tests report `(pass)` — the only place they can execute.
 - **Full evidence (25 sections, state map, every command):**
   [`.ai/tasks/completed/payment-failed-retry-2026-09-29.md`](tasks/completed/payment-failed-retry-2026-09-29.md)
-- **Recorded dependency (not fixed, deliberately):** a captured charge arriving for an attempt
-  already `failed` leaves the existing `console.warn` as the only operator signal — re-open vs
-  refund vs queue is **HIGH #5** and was not invented.
 - **Remaining blockers:** migration 048 **PRODUCTION BLOCKED** (owner, Neon quota) · Stripe E2E ⛔
-  · browser E2E ⛔ · MEDIUM #8–#11, LOW #12–#14 open. **Next task: HIGH #5.**
+  · browser E2E ⛔ · MEDIUM #8–#11, LOW #12–#14 open.
+
+---
+
+## 47. HIGH #5 — late / unrecordable payment operator flow (2026-09-29)
+
+**Status: FIXED** · `fix(payment): add operator handling for late payments` · start `fd4ba52`.
+**No refund policy, no reopen policy, no order resurrection, no order-lifecycle change.**
+
+- **Root cause — "money arrived that the system cannot act on" was a `console.warn`, not a
+  record.** `markPaymentSucceeded` treated `!moved` as the only exceptional outcome. A log line
+  cannot be listed, filtered, assigned or acknowledged. Worse, the sharpest case was **structurally
+  invisible**: a captured charge for an attempt already recorded `failed` on an order that is
+  still `pending_payment` **moves the order to `paid` and commits the stock** while the payment row
+  stays `failed` — and `POST /api/admin/orders/:orderId/refund` then refuses it, because that route
+  requires `status = 'paid'` (`409 PAYMENT_NOT_REFUNDABLE`). Reachable via `SESSION_NOT_REUSABLE`
+  (customer switches rail) followed by paying the old tab.
+- **Solution:** NEW `backend/lib/payment-incidents.ts` — the ONE authority — records
+  `payment_incidents` (migration **049**) whenever money is received that cannot safely settle.
+  The detection widened from `!moved` to `!moved || !attemptRecorded`, **minus duplicate
+  deliveries** (Stripe fires two events per charge). The order guards, `commitOrderInventory` and
+  `releaseOrderInventory` are untouched.
+- **No policy invented:** `.ai/context/payment.md` already fixes it — "never resurrect … No refund
+  is invented in code — an operator decides". The resolve route updates only `payment_incidents`
+  (pinned by test: no `UPDATE orders/payments/refunds`, no inventory).
+- **Idempotency:** `dedupe_key` = `provider:orderId:attempt:reason`, UNIQUE, enforced by
+  `ON CONFLICT DO NOTHING` (not check-then-insert) — 3 redeliveries leave exactly 1 row.
+- **Authorization:** `orders.view` to list, `orders.manage` to resolve — the **existing** catalog,
+  no new permission, no new auth. New VelCenter tab `incidents`; it has **no refund and no reopen
+  button**.
+- **Schema-tolerant on purpose:** 049 is unapplied in production for the same Neon-quota reason as
+  048, so the write swallows `42P01`/`42703` and the list route answers `schemaMissing: true`
+  rather than 500-ing a webhook or the dashboard.
+- **Tests:** NEW `late-payment-incidents.test.ts` — 10 contract (local; **9 failed before**) +
+  8 behavioural (CI-only) covering cases A–D, dedupe, authorization, and that resolving changes
+  nothing but the incident. Local full suite **878 pass / 176 skip / 0 fail**, 1054 tests /
+  49 files · backend `tsc` 0 · `typecheck` 4/4 · `build:apps` 4/4 · i18n 1416×3 · schema parity.
+- **Full evidence (28 sections):**
+  [`.ai/tasks/completed/late-payment-operator-2026-09-29.md`](tasks/completed/late-payment-operator-2026-09-29.md)
+- **⚠️ OWNER DECISION, not solved here:** in Case A the charge sits on a `failed` row, so the
+  existing refund route still cannot move it. What a captured charge on a failed attempt **is**
+  (refund, or keep against a delivered order) is a refund policy no source or doc states — the
+  reason this task stops at recording the case.
+- **Remaining blockers:** migrations 048 **and 049 PRODUCTION BLOCKED** (owner, Neon quota) ·
+  Stripe E2E ⛔ · browser E2E ⛔ · MEDIUM #8–#11, LOW #12–#14 open.

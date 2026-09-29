@@ -8,6 +8,8 @@
  *   GET  /api/admin/orders              — all orders (center view)
  *   PATCH /api/admin/orders/:orderId/status — transition an order
  *   GET  /api/admin/audit-logs          — append-only audit trail
+ *   GET  /api/admin/payment-incidents  — money received that could not settle
+ *   PATCH /api/admin/payment-incidents/:incidentId — acknowledge/resolve it
  *   GET  /api/admin/permissions         — static permission catalog
  *   GET  /api/admin/users               — users list (staff table)
  *   PATCH /api/admin/users/:userId/access — set role/department
@@ -29,6 +31,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
+import { isUndefinedTableError } from "../lib/payment-incidents.js";
 import {
   FulfillmentError,
   assertNoSettledPaymentForCancellation,
@@ -649,6 +652,203 @@ export function setupCenterRoutes(app: Express): void {
     } catch (err) {
       console.error("[center] audit logs error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch audit logs" } });
+    }
+  });
+
+  // ── GET /api/admin/payment-incidents ───────────────────────────────────
+  // MONEY RECEIVED THAT COULD NOT BE SETTLED (audit HIGH #5).
+  //
+  // A Stripe capture for an attempt already recorded `failed`, or for an order
+  // that is cancelled / expired and whose stock has been released, cannot go
+  // through the normal lifecycle. `.ai/context/payment.md` already fixes what
+  // happens then: the order is NOT resurrected, and an OPERATOR decides. This
+  // endpoint is the "decides" half — a durable, deduplicated queue of those
+  // cases, so they are queryable instead of being one `console.warn` line that
+  // rolls off the log.
+  //
+  // Authorization is the EXISTING catalog, not a new one: `orders.view` to read
+  // (the same code GET /api/admin/orders checks — these are order-adjacent
+  // money cases), `orders.manage` to acknowledge. No new permission code, no
+  // new role, no bypass: a hidden VelCenter tab is UX, this is the boundary.
+  app.get("/api/admin/payment-incidents", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await userHasPermission(req.user!.userId, "orders.view"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "orders.view permission required" } });
+        return;
+      }
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 500);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      const where: string[] = [];
+      const params: unknown[] = [];
+      const addParam = (value: unknown): string => {
+        params.push(value);
+        return `$${params.length}`;
+      };
+      if (typeof req.query.status === "string" && req.query.status.trim()) {
+        where.push(`pi.status = ${addParam(req.query.status.trim())}`);
+      }
+      if (typeof req.query.reason === "string" && req.query.reason.trim()) {
+        where.push(`pi.reason = ${addParam(req.query.reason.trim())}`);
+      }
+      if (typeof req.query.orderId === "string" && req.query.orderId.trim()) {
+        where.push(`pi.order_id = ${addParam(req.query.orderId.trim())}`);
+      }
+      if (typeof req.query.q === "string" && req.query.q.trim()) {
+        const like = `%${req.query.q.trim()}%`;
+        const p = addParam(like);
+        where.push(
+          `(pi.provider_payment_intent_id ILIKE ${p} OR pi.provider_checkout_session_id ILIKE ${p} OR pi.event_id ILIKE ${p} OR o.order_number ILIKE ${p})`,
+        );
+      }
+      const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+
+      const limitParam = addParam(limit);
+      const offsetParam = addParam(offset);
+
+      let rows: any[] = [];
+      let total = 0;
+      try {
+        const result = await query(
+          `SELECT pi.*, o.order_number, o.status AS current_order_status,
+                  rby.name AS resolved_by_name, rby.email AS resolved_by_email
+             FROM payment_incidents pi
+             LEFT JOIN orders o ON o.id = pi.order_id
+             LEFT JOIN users rby ON rby.id = pi.resolved_by
+             ${whereSql}
+             ORDER BY pi.created_at DESC
+             LIMIT ${limitParam} OFFSET ${offsetParam}`,
+          params,
+        );
+        rows = result.rows;
+        const totalResult = await query(
+          `SELECT COUNT(*)::int AS total
+             FROM payment_incidents pi
+             LEFT JOIN orders o ON o.id = pi.order_id
+             ${whereSql}`,
+          params.slice(0, params.length - 2),
+        );
+        total = totalResult.rows[0]?.total ?? 0;
+      } catch (err) {
+        // Migration 049 is not applied in production yet. An operator screen
+        // must still ANSWER there — a 500 would read as a broken dashboard
+        // rather than an unapplied migration.
+        if (isUndefinedTableError(err)) {
+          res.json({ success: true, data: { total: 0, limit, offset, rows: [], schemaMissing: true } });
+          return;
+        }
+        throw err;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          total,
+          limit,
+          offset,
+          rows: rows.map((r: any) => ({
+            id: r.id,
+            orderId: r.order_id,
+            orderNumber: r.order_number ?? null,
+            orderStatus: r.order_status ?? null,
+            currentOrderStatus: r.current_order_status ?? null,
+            reason: r.reason,
+            status: r.status,
+            provider: r.provider,
+            providerPaymentIntentId: r.provider_payment_intent_id ?? null,
+            providerCheckoutSessionId: r.provider_checkout_session_id ?? null,
+            eventId: r.event_id ?? null,
+            amount: r.amount != null ? Number(r.amount) : null,
+            currency: r.currency ?? null,
+            resolutionNote: r.resolution_note ?? null,
+            resolvedBy: r.resolved_by ?? null,
+            resolvedByName: r.resolved_by_name ?? null,
+            resolvedAt: r.resolved_at ? new Date(r.resolved_at).getTime() : null,
+            createdAt: r.created_at ? new Date(r.created_at).getTime() : null,
+          })),
+        },
+      });
+    } catch (err) {
+      console.error("[center] payment incidents error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch payment incidents" } });
+    }
+  });
+
+  // ── PATCH /api/admin/payment-incidents/:incidentId ──────────────────────
+  // ACKNOWLEDGE / RESOLVE — and nothing else.
+  //
+  // This route deliberately cannot touch `orders`, `payments`, `refunds` or
+  // any inventory column. There is no documented policy for automatically
+  // refunding a late capture or reopening a dead order, so this endpoint does
+  // not offer either: `status = 'resolved'` is a bookkeeping acknowledgement
+  // that a human has looked at the case and taken whatever action the existing
+  // operator process requires (for a captured charge that is refundable through
+  // POST /api/admin/orders/:orderId/refund, that route is still the only way to
+  // move money, and it still applies its own guards).
+  app.patch("/api/admin/payment-incidents/:incidentId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await userHasPermission(req.user!.userId, "orders.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "orders.manage permission required" } });
+        return;
+      }
+      const incidentId = param(req, "incidentId");
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const note =
+        typeof body.note === "string" && body.note.trim() ? body.note.trim().slice(0, 500) : null;
+      // `reopen` is accepted in the body for forward compatibility but is NOT
+      // implemented: nothing here may move an order back to an active state.
+      const reopen = body.reopen === true;
+
+      const current = await query(
+        `SELECT id, status, reason, order_id FROM payment_incidents WHERE id = $1`,
+        [incidentId],
+      );
+      if (current.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Payment incident not found" } });
+        return;
+      }
+
+      // Idempotent by construction: resolving an already-resolved incident is a
+      // no-op that still answers 200, and never re-stamps resolved_at/resolved_by.
+      const updated = await query(
+        `UPDATE payment_incidents
+            SET status = 'resolved',
+                resolution_note = COALESCE($2, resolution_note),
+                resolved_by = COALESCE(resolved_by, $3),
+                resolved_at = COALESCE(resolved_at, NOW()),
+                updated_at = NOW()
+          WHERE id = $1`,
+        [incidentId, note, req.user!.userId],
+      );
+      void updated;
+
+      await writeAuditLog(
+        req.user!.userId,
+        "ORDER_PAYMENT_INCIDENT_RESOLVE",
+        "payment_incident",
+        incidentId,
+        {
+          orderId: current.rows[0].order_id,
+          reason: current.rows[0].reason,
+          previousStatus: current.rows[0].status,
+          note,
+          // Recorded so a reader can see the option was deliberately NOT taken.
+          reopenRequestedButUnsupported: reopen,
+        },
+        auditClientIp(req),
+      );
+
+      res.json({ success: true, data: { id: incidentId, status: "resolved" } });
+    } catch (err) {
+      if (isUndefinedTableError(err)) {
+        res.status(503).json({
+          success: false,
+          error: { code: "SCHEMA_UNAVAILABLE", message: "Payment incidents require migration 049." },
+        });
+        return;
+      }
+      console.error("[center] resolve payment incident error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to resolve payment incident" } });
     }
   });
 

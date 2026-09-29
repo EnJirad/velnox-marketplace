@@ -2,6 +2,7 @@ import { Logo } from "@velnox/shared/components/Logo";
 // Mobile navigation removed — VelCenter uses top tab strip on all breakpoints
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
+import PaymentIncidentTab from "../components/PaymentIncidentTab";
 import { openOrderShipDialog } from "../components/OrderShipDialog";
 import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 // VerificationReviewDialog is now used inside SellerVerificationQueue component
@@ -96,7 +97,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "orders" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings";
+type Tab = "overview" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings";
 
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
@@ -180,6 +181,11 @@ function canSeeTab(
     // when the account holds its code. The endpoint re-checks regardless, so a
     // hidden tab is UX, never the authorization.
     case "orders":
+      return holds("orders.view");
+    // Money Stripe captured that the order lifecycle could not settle (audit
+    // HIGH #5). The same `orders.view` code the orders tab already uses, and
+    // the endpoints re-check it — a hidden tab is UX, never the authorization.
+    case "incidents":
       return holds("orders.view");
     case "products":
       return holds("products.moderate");
@@ -1038,6 +1044,11 @@ export default function Center() {
             {canSee("audit") && (
               <TabsTrigger value="audit" className="gap-1.5 rounded-[10px]">
                 <History className="size-4" /> Audit Logs
+              </TabsTrigger>
+            )}
+            {canSee("incidents") && (
+              <TabsTrigger value="incidents" className="gap-1.5 rounded-[10px]">
+                <AlertTriangle className="size-4" /> ตรวจสอบยอดเงิน
               </TabsTrigger>
             )}
             {canSee("settings") && (
@@ -2098,6 +2109,13 @@ export default function Center() {
 
           {/* ============ Audit Logs (spec §44) ============ */}
           <AuditLogTab />
+
+          {/* ============ Late / unrecordable payments (audit HIGH #5) ====
+              Money Stripe captured that the order lifecycle could not settle.
+              Deliberately offers NO refund and NO reopen control: those are
+              business decisions this platform has not documented, and money
+              still moves only through the existing operator refund route. */}
+          <PaymentIncidentTab />
 
           {/* ============ Company / System Settings =========================
               VelCenter is the company control plane, so this screen configures

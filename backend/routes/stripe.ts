@@ -41,6 +41,7 @@ import { commitOrderInventory, releaseOrderInventory } from "../lib/inventory.js
 // `payments`/`refunds` takes it FIRST, so a customer cancellation and a webhook
 // take the same two rows in the same order and cannot deadlock (lib/order-lock.ts).
 import { lockOrderRow } from "../lib/order-lock.js";
+import { recordLatePaymentIncident, type LatePaymentReason } from "../lib/payment-incidents.js";
 // The ONE order-number generator; stripe.ts used to carry a second, unused copy.
 import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
@@ -417,6 +418,7 @@ async function resolvePaymentAttemptRow(
 async function markPaymentSucceeded(
   orderId: string,
   attempt: PaymentAttemptRef,
+  eventId: string | null = null,
 ): Promise<SyncResult> {
   return withTransaction(async (client) => {
     // ORDER ROW FIRST (lib/order-lock.ts). The order row is the single
@@ -446,12 +448,13 @@ async function markPaymentSucceeded(
       : { rows: [] as Array<{ status: string }> };
     const priorPaymentStatus: string | null = priorPayment.rows[0]?.status ?? null;
 
+    let attemptRecorded = false;
     if (attemptRowId) {
       // `status <> 'failed'` is the terminal guard, now on the outer UPDATE, so
       // it protects the resolved row itself: a success can never resurrect an
       // attempt already recorded as failed, and a repeat re-stamps nothing
       // (`paid_at = COALESCE(paid_at, NOW())`).
-      await client.query(
+      const attemptWrite = await client.query(
         `UPDATE payments
             SET status = 'paid',
                 paid_at = COALESCE(paid_at, NOW()),
@@ -462,30 +465,57 @@ async function markPaymentSucceeded(
           WHERE id = $1 AND status <> 'failed'`,
         [attemptRowId, attempt.providerPaymentId ?? null],
       );
+      attemptRecorded = (attemptWrite.rowCount ?? 0) > 0;
     }
 
     const moved = (updated.rowCount ?? 0) > 0;
-    if (!moved && priorPaymentStatus !== "paid") {
-      // Money arrived for an order that is no longer payable: the customer
-      // cancelled it while the rail was still open, its payment reservation
-      // window lapsed and the expiry sweep released the stock, or it is already
-      // terminal. The order is deliberately NOT resurrected — the guard above
-      // accepts only a pre-payment status, and `inventory_released = FALSE`
-      // additionally refuses the case where the units were already returned to
-      // the shelf and may now belong to another customer's order. The payment
-      // row still records the money, which is exactly what makes the case
-      // refundable; this line is what makes it visible to an operator.
-      // Order id, status and two booleans only: no payload, no signature, no
-      // customer or payment identifier, no secret.
-      // Same schema-tolerant read as checkout: a webhook must never fail
-      // because this backend is newer than the database. Naming the reservation
-      // column here would abort the whole sync transaction with
-      // `undefined_column`, and Stripe would retry a payment that has in fact
-      // already been recorded.
+
+    // ── Normal settlement ────────────────────────────────────────────────
+    // `moved` means the order was still payable and its stock is now committed
+    // through the ONE settlement authority. `attemptRecorded` means the money
+    // is recorded against the attempt that was actually charged — which is the
+    // row a refund is later built from, and the row the operator refund route
+    // requires (`status = 'paid'`).
+    //
+    // `!moved && priorPaymentStatus === 'paid'` is a DUPLICATE delivery of a
+    // charge already settled — Stripe fires `checkout.session.completed` AND
+    // `payment_intent.succeeded` for one charge. Nothing is wrong, so nothing
+    // is reported; treating it as an incident would bury the real cases.
+    const duplicateDelivery = !moved && priorPaymentStatus === "paid";
+
+    // Everything else is money received that this system could not safely
+    // settle, and it becomes a durable operator incident (HIGH #5). The old
+    // `!moved && priorPaymentStatus !== 'paid'` warning covered only the FIRST
+    // half — so the sharpest case, where the order DID move but the attempt
+    // could not be recorded (it was already `failed`), was completely silent
+    // while the order went to `paid` and the stock was committed.
+    const lateReason: LatePaymentReason | null = duplicateDelivery
+      ? null
+      : !moved
+        ? "ORDER_NOT_SETTLEABLE"
+        : !attemptRecorded
+          ? "ATTEMPT_NOT_RECORDED"
+          : null;
+
+    if (lateReason) {
+      // Read the order + the amount from OUR rows: a trusted source, never the
+      // provider payload, and never a number the client could have influenced.
+      // `selectOrderPaymentRow` tolerates a database older than this backend
+      // (`orders.payment_expires_at` is migration 048, unapplied in production),
+      // so this read cannot abort the transaction with `undefined_column` —
+      // which would make Stripe redeliver a payment already recorded.
       const row = await selectOrderPaymentRow(
         (sql, params) => client.query(sql, params),
         orderId,
       );
+      const attemptRow = attemptRowId
+        ? (
+            await client.query(
+              `SELECT amount, currency FROM payments WHERE id = $1`,
+              [attemptRowId],
+            )
+          ).rows[0]
+        : null;
       const reservationExpired =
         row?.payment_expires_at !== null &&
         row?.payment_expires_at !== undefined &&
@@ -493,6 +523,26 @@ async function markPaymentSucceeded(
       const why = reservationExpired
         ? "its payment reservation had already expired and the stock was released"
         : `the order status is '${row?.status ?? "unknown"}'`;
+
+      // The durable record. Deduplicated on provider + order + attempt +
+      // reason, so any number of redeliveries leaves exactly one row. It is
+      // written INSIDE this transaction, so it can never outlive a settlement
+      // that rolled back — and it never throws, because a webhook that failed
+      // here would be redelivered forever for an operator nicety.
+      await recordLatePaymentIncident(client, {
+        orderId,
+        paymentId: attemptRowId,
+        providerPaymentIntentId: attempt.providerPaymentId ?? null,
+        checkoutSessionId: attempt.checkoutSessionId ?? null,
+        eventId,
+        reason: lateReason,
+        orderStatus: (row?.status as string | undefined) ?? null,
+        amount: attemptRow?.amount != null ? String(attemptRow.amount) : null,
+        currency: (attemptRow?.currency as string | undefined) ?? null,
+      });
+
+      // Order id, status and reason only: no payload, no signature, no
+      // customer or payment identifier, no secret.
       console.warn(
         `[stripe webhook] payment received for order ${orderId} that is no longer payable (${why}) — manual review/refund required`,
       );
@@ -770,10 +820,14 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : (session.payment_intent?.id ?? null);
-      const result = await markPaymentSucceeded(orderId, {
-        providerPaymentId: intentId,
-        checkoutSessionId: session.id,
-      });
+      const result = await markPaymentSucceeded(
+        orderId,
+        {
+          providerPaymentId: intentId,
+          checkoutSessionId: session.id,
+        },
+        event.id,
+      );
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
@@ -788,10 +842,14 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : (session.payment_intent?.id ?? null);
-      const result = await markPaymentSucceeded(orderId, {
-        providerPaymentId: intentId,
-        checkoutSessionId: session.id,
-      });
+      const result = await markPaymentSucceeded(
+        orderId,
+        {
+          providerPaymentId: intentId,
+          checkoutSessionId: session.id,
+        },
+        event.id,
+      );
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
@@ -841,7 +899,11 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         console.warn(`[stripe webhook] ${event.id} payment_intent.succeeded has no resolvable order — ignored`);
         return;
       }
-      const result = await markPaymentSucceeded(orderId, { providerPaymentId: paymentIntent.id });
+      const result = await markPaymentSucceeded(
+        orderId,
+        { providerPaymentId: paymentIntent.id },
+        event.id,
+      );
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
