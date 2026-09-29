@@ -97,6 +97,35 @@ owner-only. Hiding a tab is UX only; every endpoint re-checks.
 
 ## 5. Latest passes
 
+### 2026-09-29 — fulfilment state machine hardened: `packing` + payment/shipment gates
+
+ONE authority: `backend/lib/order-fulfillment.ts` — `pending → confirmed → packing →
+shipped → delivered → completed` + terminal `cancelled`. `confirmed` = the shop accepted the
+order (packing NOT started, the customer may still cancel); `packing` = fulfilment started
+(NOBODY may cancel: the table has no `packing → cancelled` edge). The seller route and the
+VelCenter admin route both apply it, each under `FOR UPDATE` on the order row. Two gates now
+run inside that transaction: shifting to `confirmed` needs a SETTLED payment (`paid`
+`payments` row — the Stripe webhook is the only writer; COD passes only while its disabled
+rail is on), and `packing → shipped` needs a `shipments` row carrying a carrier + tracking
+number (the seller ship dialog and VelCenter's collect them and send them WITH the
+transition, so status + shipment are one transaction). Customer cancellation is unchanged
+(`pending|pending_payment|confirmed`, still the guarded `UPDATE` in `cart.ts`) and the two
+paths serialize on the row. Seller reads now take the recipient name/phone from
+`orders.shipping_address` (account row = legacy fallback only). **NO schema change:**
+`orders.status` has no CHECK constraint, so `packing` needs no migration.
+
+Evidence: `backend/tests/order-fulfillment-state-machine.test.ts` (24 cases — real DB for
+both gates and for the cancel-vs-packing race in both orders), full backend suite **973
+pass / 0 fail**, `bun run typecheck` (4 apps) + `bun run build:apps` + `i18n:check`
+(th=en=my=1414) green. i18n note: the `packing` label lives in the new top-region
+`orderFulfillment` namespace because th/my's `orderStatus`/`orderSteps` blocks sit past the
+safe edit window; `orderStatusI18nKey()` / `orderProgressStageI18nKey()` are the ONE mapping.
+
+**Measured correction to the workspace rule:** the file-edit window is the first
+**32 768 bytes** (~32 KB), not ~55 KB — a match at byte 32 748 succeeds, one at 35 778 is
+"not found", so this handoff's own sections past ~32 KB (§37+) are no longer editable in
+place. Archive/split before growing further.
+
 ### 2026-09-22 — two superseded passes
 
 **Archived** (closed records, both pushed at the time) →

@@ -2,6 +2,7 @@ import { Logo } from "@velnox/shared/components/Logo";
 // Mobile navigation removed — VelCenter uses top tab strip on all breakpoints
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
+import { openOrderShipDialog } from "../components/OrderShipDialog";
 import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 // VerificationReviewDialog is now used inside SellerVerificationQueue component
 import CategoriesManagement from "../components/CategoriesManagement";
@@ -761,11 +762,15 @@ export default function Center() {
   const dueCount = intelRows.filter((r: any) => r.info.status === "due").length;
   const pendingOrders = (ordersData ?? []).filter((o) => o.status === "pending").length;
 
-  // Next valid statuses per the Neon state machine (mirrors backend
-  // ORDER_STATUS_TRANSITIONS) — center can only move an order forward.
+  // Next valid statuses per the Neon fulfilment state machine (mirrors
+  // FULFILLMENT_TRANSITIONS in backend/lib/order-fulfillment.ts) — center can
+  // only move an order forward. `packing` is the point of no return: `confirmed`
+  // → `packing` is offered, and `packing` only offers `shipped`, so neither side
+  // can cancel an order that is already being packed.
   const NEXT_STATUS: Record<string, string[]> = {
     pending: ["confirmed", "cancelled"],
-    confirmed: ["shipped", "cancelled"],
+    confirmed: ["packing", "cancelled"],
+    packing: ["shipped"],
     shipped: ["delivered"],
     delivered: ["completed"],
     completed: [],
@@ -778,6 +783,14 @@ export default function Center() {
 
   const handleOrderStatus = async (orderId: string, status: string) => {
     if (!canManageOrders) return;
+    // `shipped` means the parcel really exists: it requires a shipment with a
+    // carrier and a tracking number, so those are collected first and sent WITH
+    // the transition (see components/OrderShipDialog.tsx). The backend refuses
+    // `packing → shipped` without them no matter what this UI offers.
+    if (status === "shipped") {
+      openOrderShipDialog(orderId);
+      return;
+    }
     try {
       await updateOrderStatusAction({ orderId, status });
       toast.success("อัปเดตสถานะออเดอร์แล้ว");

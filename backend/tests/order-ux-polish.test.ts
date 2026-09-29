@@ -36,6 +36,7 @@ import {
   getPaymentStatusBadge,
   ORDER_PROGRESS_STAGES,
   ORDER_STATUS_META,
+  orderProgressStageI18nKey,
   orderProgressStageIndex,
   orderStatusI18nKey,
   paymentReservationPhase,
@@ -58,16 +59,41 @@ const LOCALES = ["th", "en", "my"] as const;
 const locale = (lang: (typeof LOCALES)[number]) =>
   translations[lang] as unknown as Record<string, Record<string, string>>;
 
+/**
+ * Resolve a dotted i18n key in one dictionary (`orderFulfillment.packing`).
+ *
+ * The order copy is split across two namespaces on purpose — the `packing` label
+ * lives in `orderFulfillment`, because the `orderStatus` / `orderSteps` blocks of
+ * the large th/my dictionaries sit past those files' safe edit window — so a test
+ * that only indexed `orderStatus[status]` would miss the one status that moved.
+ */
+const lookup = (lang: (typeof LOCALES)[number], key: string): unknown =>
+  key
+    .split(".")
+    .reduce<unknown>((acc, part) => (acc as Record<string, unknown> | undefined)?.[part], locale(lang));
+
 describe("order UX — the progress line", () => {
-  test("is one line of five REAL statuses, in lifecycle order", () => {
-    expect(ORDER_PROGRESS_STAGES).toEqual(["placed", "payment", "processing", "shipped", "delivered"]);
-    // Every stage label already exists in every dictionary.
+  test("is one line of six REAL statuses, in lifecycle order", () => {
+    expect(ORDER_PROGRESS_STAGES).toEqual([
+      "placed",
+      "payment",
+      "processing",
+      "packing",
+      "shipped",
+      "delivered",
+    ]);
+    // Every stage label exists in every dictionary — `packing` resolves through
+    // `orderProgressStageI18nKey()`, the ONE mapping, instead of being assumed
+    // to live in `orderSteps`.
     for (const lang of LOCALES) {
       const steps = locale(lang).orderSteps;
       expect(steps).toBeDefined();
       for (const stage of ORDER_PROGRESS_STAGES) {
-        expect(typeof steps[stage]).toBe("string");
-        expect(steps[stage].trim().length).toBeGreaterThan(0);
+        const key = orderProgressStageI18nKey(stage);
+        expect(key).toBe(stage === "packing" ? "orderFulfillment.packing" : `orderSteps.${stage}`);
+        const label = lookup(lang, key);
+        expect(typeof label).toBe("string");
+        expect(String(label).trim().length).toBeGreaterThan(0);
       }
     }
   });
@@ -79,9 +105,12 @@ describe("order UX — the progress line", () => {
     // Settled money, and everything downstream of the store's work.
     expect(orderProgressStageIndex("paid")).toBe(2);
     expect(orderProgressStageIndex("confirmed")).toBe(2);
-    expect(orderProgressStageIndex("shipped")).toBe(3);
-    expect(orderProgressStageIndex("delivered")).toBe(4);
-    expect(orderProgressStageIndex("completed")).toBe(4);
+    // `packing` is a REAL stage of its own: the shop has started fulfilling the
+    // order, which is why the customer can no longer cancel from it.
+    expect(orderProgressStageIndex("packing")).toBe(3);
+    expect(orderProgressStageIndex("shipped")).toBe(4);
+    expect(orderProgressStageIndex("delivered")).toBe(5);
+    expect(orderProgressStageIndex("completed")).toBe(5);
     // Terminal or unknown: no stage, so the page shows the notice instead.
     for (const status of ["cancelled", "expired", "payment_failed", "refunded", "who-knows", "", null, undefined]) {
       expect(orderProgressStageIndex(status)).toBe(-1);
@@ -142,11 +171,14 @@ describe("order UX — the progress line", () => {
 describe("order UX — status text and tokens", () => {
   test("every order status has a localized label in all three languages", () => {
     for (const status of Object.keys(ORDER_STATUS_META)) {
-      expect(orderStatusI18nKey(status)).toBe(`orderStatus.${status}`);
+      const key = orderStatusI18nKey(status);
+      // `packing` is the one status that reads from another namespace — see the
+      // comment at the top of the Thai dictionary (and `orderStatusI18nKey`).
+      expect(key).toBe(status === "packing" ? "orderFulfillment.packing" : `orderStatus.${status}`);
       for (const lang of LOCALES) {
-        const label = locale(lang).orderStatus[status];
+        const label = lookup(lang, key);
         expect(typeof label).toBe("string");
-        expect(label.trim().length).toBeGreaterThan(0);
+        expect(String(label).trim().length).toBeGreaterThan(0);
       }
     }
     // An unknown status resolves to a real key rather than a missing one.

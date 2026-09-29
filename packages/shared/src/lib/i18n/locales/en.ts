@@ -9,6 +9,20 @@ export const en: Dict = {
       "Once cancelled this order can no longer be paid, and the stock held for it is released back for sale",
     cancelledNotice: "This order was cancelled — it can no longer be paid",
   },
+  /** Fulfilment copy for the `packing` state — see the Thai dictionary for why it lives here. */
+  orderFulfillment: {
+    shipTitle: "Confirm shipment",
+    shipDesc:
+      "Enter the carrier and the tracking number to confirm dispatch — the order gets its real shipment record right away.",
+    carrier: "Carrier",
+    carrierPlaceholder: "e.g. Kerry, Flash, Thailand Post",
+    trackingField: "Tracking number",
+    trackingPlaceholder: "e.g. TH123456789",
+    shipConfirm: "Confirm shipment",
+    shipRequired: "A carrier and a tracking number are required before an order can be marked as shipped.",
+    paymentNotConfirmed: "This order has not been paid yet, so it cannot be confirmed.",
+    packing: "Packing",
+  },
   /** Payment-reservation copy — see the Thai dictionary for why it lives here. */
   orderReservation: {
     payWithin: "Please pay within {time}",

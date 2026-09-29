@@ -28,84 +28,58 @@ import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { processPlan } from "../jobs/velrepeat-scheduler.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
+import {
+  FULFILLMENT_STATUSES,
+  FULFILLMENT_TRANSITIONS,
+  FulfillmentError,
+  assertPaymentConfirmedForConfirmation,
+  canTransitionFulfillment,
+  ensureShipmentForShipping,
+  isFulfillmentStatus,
+  normalizeOrderStatusToFulfillment,
+  type FulfillmentStatus,
+} from "../lib/order-fulfillment.js";
 
 function param(req: Request, key: string): string {
   return (req.params as Record<string, string>)[key] ?? "";
 }
 
-// ─── Order status state machine (single source of truth) ─────────────────────
-// Mirrors NEXT_ORDER_STATUSES in packages/shared/src/lib/commerce.ts — the
-// backend enforces the same transitions so the client can never skip states.
-export const SELLER_ORDER_STATUSES = [
-  "pending",
-  "confirmed",
-  "shipped",
-  "delivered",
-  "completed",
-  "cancelled",
-] as const;
+// ─── Order fulfilment state machine ──────────────────────────────────────────
+// The machine itself (statuses, transitions, the payment gate for a
+// confirmation and the shipment gate for a dispatch) lives in
+// `backend/lib/order-fulfillment.ts`, the ONE authority the seller route, the
+// VelCenter route and their tests all read. These names are the seller-side view
+// of it and are re-exported so the existing importers keep working; the seller UI
+// mirrors the same table as NEXT_ORDER_STATUSES in
+// packages/shared/src/lib/commerce.ts, so a button can never propose a move the
+// API refuses.
+export const SELLER_ORDER_STATUSES = FULFILLMENT_STATUSES;
 
-export type SellerOrderStatus = (typeof SELLER_ORDER_STATUSES)[number];
+export type SellerOrderStatus = FulfillmentStatus;
 
-export const SELLER_ORDER_STATUS_TRANSITIONS: Record<SellerOrderStatus, SellerOrderStatus[]> = {
-  pending: ["confirmed", "cancelled"],
-  confirmed: ["shipped", "cancelled"],
-  shipped: ["delivered"],
-  delivered: ["completed"],
-  completed: [],
-  cancelled: [],
-};
+export const SELLER_ORDER_STATUS_TRANSITIONS = FULFILLMENT_TRANSITIONS;
 
-export function isSellerOrderStatus(value: unknown): value is SellerOrderStatus {
-  return typeof value === "string" && (SELLER_ORDER_STATUSES as readonly string[]).includes(value);
-}
+export const isSellerOrderStatus = isFulfillmentStatus;
 
 /** Whether an order may move from `from` to `to` under the business rules. */
 export function canTransitionOrderStatus(from: string, to: string): boolean {
-  if (!isSellerOrderStatus(from) || !isSellerOrderStatus(to)) return false;
-  return SELLER_ORDER_STATUS_TRANSITIONS[from].includes(to);
+  return canTransitionFulfillment(from, to);
 }
 
 /**
- * Map a raw orders.status value to the seller-facing status set.
- * The Stripe flow writes its own lifecycle statuses ('pending_payment',
- * 'paid', 'payment_failed', 'refunded') that are NOT part of the fulfillment
- * state machine — the seller UI and `canTransitionOrderStatus()` understand
- * only the six fulfillment statuses, so a raw value must be translated before
- * it is displayed or validated.
+ * Map a raw `orders.status` value to the seller-facing (fulfilment) status set.
  *
- * `refunded` is grouped with `cancelled`: stripe.ts only marks the order
- * `refunded` on a FULL refund ("a full refund is terminal for the order"), so
- * there is nothing left to fulfil — and treating it as `pending` would offer
- * the seller a transition that silently un-refunds the order's status.
+ * The Stripe flow writes its own lifecycle statuses ('pending_payment', 'paid',
+ * 'payment_failed', 'refunded') that are NOT part of the fulfilment state
+ * machine, so a raw value must be translated before it is displayed or
+ * validated. `paid` is judged as `pending` because money is a SEPARATE axis
+ * (the payment state lives in `payments`) — the fulfilment machine then decides
+ * what the order may still do. `refunded` and `expired` are grouped with
+ * `cancelled`: a full refund is terminal for the order, and an `expired` order's
+ * reserved stock was already returned by the payment-reservation sweep, so
+ * neither has anything left to fulfil.
  */
-export function normalizeSellerOrderStatus(dbStatus: string): SellerOrderStatus {
-  switch (dbStatus) {
-    case "pending":
-    case "pending_payment":
-    case "paid":
-      return "pending"; // awaiting seller confirmation (payment state lives in payments)
-    case "confirmed":
-      return "confirmed";
-    case "shipped":
-      return "shipped";
-    case "delivered":
-      return "delivered";
-    case "completed":
-      return "completed";
-    case "cancelled":
-    case "payment_failed":
-    case "refunded":
-    case "expired":
-      // `expired` is the payment reservation window lapsing (its stock was
-      // released by the expiry sweep): the seller has nothing to fulfil, and
-      // falling through to `pending` would invite a confirmation of an order
-      // that can never be paid.
-      return "cancelled"; // nothing to fulfill
-    default:
-      return "pending";
-  }
-}
+export const normalizeSellerOrderStatus = normalizeOrderStatusToFulfillment;
 
 // ─── Subscription (VelRepeat plan) display mapping ───────────────────────────
 // velrepeat_plans.status → the compact status the seller UI understands.
@@ -166,6 +140,34 @@ function parseShippingAddress(raw: unknown): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/** A non-empty trimmed string, or null. */
+function text(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * The customer contact a SELLER sees for one order.
+ *
+ * The order's OWN snapshot (`orders.shipping_address.recipientName` / `.phone`)
+ * wins over the account row. The seller uses these values to pack and hand the
+ * parcel over, so they must be the details the customer entered FOR THIS ORDER:
+ * if the customer later changes their phone or display name, an order placed
+ * last week must still show the recipient and number it was placed with. The
+ * account values remain as a fallback for legacy orders written before the
+ * snapshot carried them — never as the source of truth.
+ */
+export function orderContact(
+  address: Record<string, unknown> | null,
+  account: { name?: string | null; phone?: string | null } | undefined,
+): { name: string | null; phone: string | null } {
+  return {
+    name: text(address?.recipientName) ?? text(account?.name),
+    phone: text(address?.phone) ?? text(account?.phone),
+  };
 }
 
 /**
@@ -370,6 +372,10 @@ export function setupSellerOrderRoutes(app: Express): void {
       const orders = rows.map((r: any) => {
         const items = itemsByOrder[r.id] ?? [];
         const customer = customers.get(r.user_id);
+        const addressSnapshot = parseShippingAddress(r.shipping_address);
+        // The order's snapshot decides the contact shown to the seller — see
+        // `orderContact()`. `orders.shipping_address` is selected above.
+        const contact = orderContact(addressSnapshot, customer);
         return {
           id: r.id,
           orderNumber: r.order_number || r.id,
@@ -385,13 +391,13 @@ export function setupSellerOrderRoutes(app: Express): void {
           shippingFee: parseFloat(r.shipping_fee) || 0,
           total: parseFloat(r.total_amount) || 0,
           currency: r.currency ?? "THB",
-          addressSnapshot: parseShippingAddress(r.shipping_address),
+          addressSnapshot,
           note: r.notes,
           shopId: r.shop_id,
           shopName: r.shop_name,
           shopSlug: r.shop_slug,
-          customerName: customer?.name ?? null,
-          customerPhone: customer?.phone ?? null,
+          customerName: contact.name,
+          customerPhone: contact.phone,
           createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
           updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
           items,
@@ -447,6 +453,10 @@ export function setupSellerOrderRoutes(app: Express): void {
       ]);
       const items = itemsByOrder[orderId] ?? [];
       const customer = customerRes.rows[0];
+      const addressSnapshot = parseShippingAddress(order.shipping_address);
+      // Same rule as the list: the order's snapshot is the recipient the seller
+      // must actually ship to, and it never follows a later profile edit.
+      const contact = orderContact(addressSnapshot, customer);
 
       res.json({
         success: true,
@@ -465,13 +475,13 @@ export function setupSellerOrderRoutes(app: Express): void {
           shippingFee: parseFloat(order.shipping_fee) || 0,
           total: parseFloat(order.total_amount) || 0,
           currency: order.currency ?? "THB",
-          addressSnapshot: parseShippingAddress(order.shipping_address),
+          addressSnapshot,
           note: order.notes,
           shopId: order.shop_id,
           shopName: order.shop_name,
           shopSlug: order.shop_slug,
-          customerName: customer?.name ?? null,
-          customerPhone: customer?.phone ?? null,
+          customerName: contact.name,
+          customerPhone: contact.phone,
           createdAt: order.created_at ? new Date(order.created_at).getTime() : Date.now(),
           updatedAt: order.updated_at ? new Date(order.updated_at).getTime() : Date.now(),
           items,
@@ -492,9 +502,22 @@ export function setupSellerOrderRoutes(app: Express): void {
   });
 
   // ── PATCH /api/seller/orders/:id/status ──────────────────────────────────
-  // Transition an order status. Backend enforces the state machine; the
+  // Transition an order status. The backend enforces the state machine; the
   // seller must own (at least one item of) the order. Cancelling restores
   // that seller's stock inside the same transaction.
+  //
+  // Two extra gates ride on top of the transition table, both inside the same
+  // transaction and both after the order row is locked:
+  //   • `confirmed` requires the payment to be SETTLED (a `paid` payment row,
+  //     written by the Stripe webhook — a seller can never mark an order paid),
+  //     so an unpaid Card/PromptPay order cannot enter fulfilment. COD only
+  //     passes while its (disabled-by-default) rail is actually enabled.
+  //   • `shipped` requires a real shipment: the request may carry
+  //     `carrier` + `trackingNumber` (which are written to `shipments` here),
+  //     otherwise the order must already have one with both values. `shipped`
+  //     is never a placeholder.
+  //   • `packing` → `cancelled` is not in the table at all: once fulfilment has
+  //     started neither side may cancel.
   app.patch("/api/seller/orders/:id/status", requireAuth, async (req: Request, res: Response) => {
     try {
       const sellerId = await resolveApprovedSellerId(req.user!.userId);
@@ -504,6 +527,8 @@ export function setupSellerOrderRoutes(app: Express): void {
       }
       const orderId = param(req, "id");
       const status = req.body?.status;
+      const carrier = req.body?.carrier;
+      const trackingNumber = req.body?.trackingNumber;
 
       if (!isSellerOrderStatus(status)) {
         res.status(400).json({
@@ -556,6 +581,21 @@ export function setupSellerOrderRoutes(app: Express): void {
             );
           }
 
+          // Payment is a SEPARATE axis from fulfilment, but it gates the move
+          // that starts fulfilment: an order may only be confirmed once money
+          // has actually moved (or, only while the COD rail is on, when the
+          // order's own rail is COD).
+          if (status === "confirmed") {
+            await assertPaymentConfirmedForConfirmation(client, orderId);
+          }
+
+          // `shipped` means the parcel exists: it requires a shipment carrying
+          // a carrier and a tracking number, created here in the SAME
+          // transaction as the status change.
+          if (status === "shipped") {
+            await ensureShipmentForShipping(client, orderId, { carrier, trackingNumber });
+          }
+
           await client.query(
             `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2`,
             [status, orderId],
@@ -587,6 +627,13 @@ export function setupSellerOrderRoutes(app: Express): void {
         });
       } catch (err) {
         if (err instanceof HttpError) {
+          res.status(err.status).json({ success: false, error: { code: err.code, message: err.message } });
+          return;
+        }
+        // A refused payment/shipment gate answers with its own code so the
+        // seller UI can say WHY (pay first / add a tracking number) instead of
+        // showing a generic failure.
+        if (err instanceof FulfillmentError) {
           res.status(err.status).json({ success: false, error: { code: err.code, message: err.message } });
           return;
         }

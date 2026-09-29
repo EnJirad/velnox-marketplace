@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Clock3,
   PackageCheck,
+  PackageOpen,
   Truck,
   XCircle,
   type LucideIcon,
@@ -16,6 +17,8 @@ export type OrderStatus = Order["status"];
 export type CenterOrderStatus =
   | "pending"
   | "confirmed"
+  /** The shop has started fulfilling the order (being packed). */
+  | "packing"
   | "shipped"
   | "delivered"
   | "completed"
@@ -34,6 +37,11 @@ export const ORDER_STATUS_META: Record<
     label: "ยืนยันแล้ว",
     badge: "bg-sky-50 text-sky-700 ring-sky-600/15 hover:bg-sky-50",
     dot: "bg-sky-500",
+  },
+  packing: {
+    label: "กำลังแพ็กสินค้า",
+    badge: "bg-lime-50 text-lime-700 ring-lime-600/15 hover:bg-lime-50",
+    dot: "bg-lime-500",
   },
   shipped: {
     label: "จัดส่งแล้ว",
@@ -60,6 +68,7 @@ export const ORDER_STATUS_META: Record<
 export const ORDER_STATUS_ICONS: Record<CenterOrderStatus, LucideIcon> = {
   pending: Clock3,
   confirmed: PackageCheck,
+  packing: PackageOpen,
   shipped: Truck,
   delivered: PackageCheck,
   completed: CheckCircle2,

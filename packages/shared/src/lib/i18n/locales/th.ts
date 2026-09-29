@@ -39,6 +39,29 @@ export const th = {
     expiredDesc:
       "ออเดอร์นี้หมดเวลาชำระเงินแล้ว และสินค้าที่กันไว้ถูกคืนกลับสู่การขายแล้ว หากยังต้องการสินค้า กรุณาสั่งซื้อใหม่",
   },
+  /**
+   * Fulfilment copy for the `packing` state.
+   *
+   * Same reason as `orderCancel` for living here: the `orderStatus` / `orderSteps`
+   * blocks sit past the safe edit window of this large dictionary, so the label
+   * for the new fulfilment status — and for its progress step — is added where it
+   * can be. `orderStatusI18nKey()` and `orderProgressStageI18nKey()` in
+   * `commerce.ts` are the ONE place that resolves `packing` to this namespace, so
+   * no surface has to know about the split.
+   */
+  orderFulfillment: {
+    shipTitle: "ยืนยันการจัดส่ง",
+    shipDesc:
+      "กรอกบริษัทขนส่งและเลขพัสดุก่อนยืนยัน ระบบจะบันทึกข้อมูลการจัดส่งของออเดอร์นี้ทันที",
+    carrier: "บริษัทขนส่ง",
+    carrierPlaceholder: "เช่น Kerry, Flash, ไปรษณีย์ไทย",
+    trackingField: "เลขพัสดุ",
+    trackingPlaceholder: "เช่น TH123456789",
+    shipConfirm: "ยืนยันจัดส่ง",
+    shipRequired: "ต้องกรอกบริษัทขนส่งและเลขพัสดุก่อนจึงจะแจ้งว่าจัดส่งแล้วได้",
+    paymentNotConfirmed: "ออเดอร์นี้ยังไม่ได้รับการชำระเงิน จึงยังยืนยันไม่ได้",
+    packing: "กำลังแพ็กสินค้า",
+  },
   common: {
     loading: "กำลังโหลด...",
     error: "มีบางอย่างผิดพลาด",

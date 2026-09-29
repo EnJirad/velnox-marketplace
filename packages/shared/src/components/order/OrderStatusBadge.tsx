@@ -12,6 +12,7 @@ import {
   CreditCard,
   Package,
   PackageCheck,
+  PackageOpen,
   RotateCcw,
   Truck,
   XCircle,
@@ -49,6 +50,7 @@ const ORDER_STATUS_ICONS: Record<StoreOrderStatus, LucideIcon> = {
   pending_payment: Clock3,
   paid: CreditCard,
   confirmed: CheckCircle2,
+  packing: PackageOpen,
   shipped: Truck,
   delivered: PackageCheck,
   completed: CheckCircle2,
@@ -80,6 +82,7 @@ export const ORDER_PROGRESS_STAGE_ICONS: Record<OrderProgressStage, LucideIcon> 
   placed: ClipboardList,
   payment: CreditCard,
   processing: Package,
+  packing: PackageOpen,
   shipped: Truck,
   delivered: PackageCheck,
 };

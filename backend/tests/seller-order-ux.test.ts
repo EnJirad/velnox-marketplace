@@ -26,7 +26,11 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-import { NEXT_ORDER_STATUSES, ORDER_STATUS_META } from "../../packages/shared/src/lib/commerce.ts";
+import {
+  NEXT_ORDER_STATUSES,
+  ORDER_STATUS_META,
+  orderStatusI18nKey,
+} from "../../packages/shared/src/lib/commerce.ts";
 import { translations } from "../../packages/shared/src/lib/i18n/locales/index";
 import {
   SELLER_ORDER_STATUSES,
@@ -46,6 +50,12 @@ const LOCALES = ["th", "en", "my"] as const;
 
 const locale = (lang: (typeof LOCALES)[number]) =>
   translations[lang] as unknown as Record<string, Record<string, string>>;
+
+/** Resolve a dotted i18n key in one dictionary (`orderFulfillment.packing`). */
+const lookup = (lang: (typeof LOCALES)[number], key: string): unknown =>
+  key
+    .split(".")
+    .reduce<unknown>((acc, part) => (acc as Record<string, unknown> | undefined)?.[part], locale(lang));
 
 describe("seller orders — routing and access", () => {
   test("the detail page is routed under RequireRole(seller)", () => {
@@ -87,9 +97,13 @@ describe("seller orders — routing and access", () => {
 
 describe("seller orders — the status state machine", () => {
   test("the seller statuses are the fulfilment set, and nothing else", () => {
+    // `packing` sits BETWEEN `confirmed` and `shipped`: `confirmed` means the
+    // shop accepted the order (packing has not started, the customer may still
+    // cancel), `packing` means fulfilment has started (nobody may cancel).
     expect([...SELLER_ORDER_STATUSES]).toEqual([
       "pending",
       "confirmed",
+      "packing",
       "shipped",
       "delivered",
       "completed",
@@ -98,6 +112,7 @@ describe("seller orders — the status state machine", () => {
     // A payment-lifecycle row is judged by what it MEANS for fulfilment.
     expect(normalizeSellerOrderStatus("paid")).toBe("pending");
     expect(normalizeSellerOrderStatus("pending_payment")).toBe("pending");
+    expect(normalizeSellerOrderStatus("packing")).toBe("packing");
     expect(normalizeSellerOrderStatus("expired")).toBe("cancelled");
     expect(normalizeSellerOrderStatus("refunded")).toBe("cancelled");
     expect(normalizeSellerOrderStatus("payment_failed")).toBe("cancelled");
@@ -132,8 +147,16 @@ describe("seller orders — the status state machine", () => {
     expect(detail).toContain("<AlertDialog");
     // A terminal order explains itself instead of showing an empty control.
     expect(detail).toContain('t("sellerOrders.statusTerminal")');
-    // The transition is sent with the order id and the target status only.
-    expect(detail).toContain("setOrderStatus({ orderId: order.id, status: next })");
+    // The transition is sent with the order id and the target status…
+    expect(detail).toContain("orderId: order.id,");
+    expect(detail).toContain("status: next,");
+    // …and `shipped` carries the shipment with it, because the backend refuses
+    // the move without a carrier and a tracking number.
+    expect(detail).toContain("handleStatusChange(\"shipped\", {");
+    expect(detail).toContain("carrier: shipment.carrier, trackingNumber: shipment.trackingNumber");
+    expect(detail).toContain('t("orderFulfillment.shipTitle")');
+    expect(detail).toContain('t("orderFulfillment.shipRequired")');
+    expect(detail).toContain("setShipDialogOpen(true)");
   });
 });
 
@@ -224,10 +247,16 @@ describe("seller orders — list, filters and i18n", () => {
     for (const lang of LOCALES) {
       expect(locale(lang).trackingLabels.none.trim().length).toBeGreaterThan(0);
     }
-    // Every status a seller surface can label exists in all three languages.
+    // Every status a seller surface can label exists in all three languages —
+    // resolved through `orderStatusI18nKey()`, so the one status whose copy lives
+    // in another namespace (`orderFulfillment.packing`) is covered too.
     for (const status of Object.keys(ORDER_STATUS_META)) {
+      const key = orderStatusI18nKey(status);
+      expect(key).toBe(status === "packing" ? "orderFulfillment.packing" : `orderStatus.${status}`);
       for (const lang of LOCALES) {
-        expect(locale(lang).orderStatus[status].trim().length).toBeGreaterThan(0);
+        const label = lookup(lang, key);
+        expect(typeof label).toBe("string");
+        expect(String(label).trim().length).toBeGreaterThan(0);
       }
     }
   });

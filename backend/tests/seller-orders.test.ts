@@ -25,26 +25,45 @@ describe("canTransitionOrderStatus", () => {
   test("allows the documented forward transitions", () => {
     expect(canTransitionOrderStatus("pending", "confirmed")).toBe(true);
     expect(canTransitionOrderStatus("pending", "cancelled")).toBe(true);
-    expect(canTransitionOrderStatus("confirmed", "shipped")).toBe(true);
+    expect(canTransitionOrderStatus("confirmed", "packing")).toBe(true);
     expect(canTransitionOrderStatus("confirmed", "cancelled")).toBe(true);
+    expect(canTransitionOrderStatus("packing", "shipped")).toBe(true);
     expect(canTransitionOrderStatus("shipped", "delivered")).toBe(true);
     expect(canTransitionOrderStatus("delivered", "completed")).toBe(true);
   });
 
   test("rejects skipping required states", () => {
+    expect(canTransitionOrderStatus("pending", "packing")).toBe(false);
     expect(canTransitionOrderStatus("pending", "shipped")).toBe(false);
     expect(canTransitionOrderStatus("pending", "delivered")).toBe(false);
     expect(canTransitionOrderStatus("pending", "completed")).toBe(false);
+    // `confirmed` no longer jumps straight to `shipped`: fulfilment has to be
+    // STARTED (`packing`) before a parcel can exist.
+    expect(canTransitionOrderStatus("confirmed", "shipped")).toBe(false);
     expect(canTransitionOrderStatus("confirmed", "delivered")).toBe(false);
     expect(canTransitionOrderStatus("confirmed", "completed")).toBe(false);
+    expect(canTransitionOrderStatus("packing", "delivered")).toBe(false);
+    expect(canTransitionOrderStatus("packing", "completed")).toBe(false);
     expect(canTransitionOrderStatus("shipped", "completed")).toBe(false);
+  });
+
+  test("nothing may cancel once fulfilment has started", () => {
+    // The point of no return: `packing` has no edge to `cancelled`, and the
+    // states after it have none either.
+    expect(canTransitionOrderStatus("packing", "cancelled")).toBe(false);
+    expect(canTransitionOrderStatus("shipped", "cancelled")).toBe(false);
+    expect(canTransitionOrderStatus("delivered", "cancelled")).toBe(false);
+    expect(canTransitionOrderStatus("completed", "cancelled")).toBe(false);
   });
 
   test("terminal states cannot be changed", () => {
     expect(canTransitionOrderStatus("completed", "delivered")).toBe(false);
     expect(canTransitionOrderStatus("completed", "cancelled")).toBe(false);
+    expect(canTransitionOrderStatus("completed", "packing")).toBe(false);
     expect(canTransitionOrderStatus("cancelled", "pending")).toBe(false);
     expect(canTransitionOrderStatus("cancelled", "confirmed")).toBe(false);
+    expect(canTransitionOrderStatus("cancelled", "packing")).toBe(false);
+    expect(canTransitionOrderStatus("cancelled", "shipped")).toBe(false);
   });
 
   test("rejects arbitrary/unknown status values", () => {
@@ -61,6 +80,7 @@ describe("normalizeSellerOrderStatus", () => {
     expect(normalizeSellerOrderStatus("pending_payment")).toBe("pending");
     expect(normalizeSellerOrderStatus("paid")).toBe("pending");
     expect(normalizeSellerOrderStatus("confirmed")).toBe("confirmed");
+    expect(normalizeSellerOrderStatus("packing")).toBe("packing");
     expect(normalizeSellerOrderStatus("shipped")).toBe("shipped");
     expect(normalizeSellerOrderStatus("delivered")).toBe("delivered");
     expect(normalizeSellerOrderStatus("completed")).toBe("completed");
@@ -74,7 +94,7 @@ describe("normalizeSellerOrderStatus", () => {
   });
 
   test("normalized statuses all have state-machine metadata", () => {
-    for (const s of ["pending", "confirmed", "shipped", "delivered", "completed", "cancelled"]) {
+    for (const s of ["pending", "confirmed", "packing", "shipped", "delivered", "completed", "cancelled"]) {
       expect(isSellerOrderStatus(s)).toBe(true);
     }
   });
@@ -82,7 +102,7 @@ describe("normalizeSellerOrderStatus", () => {
 
 describe("isSellerOrderStatus", () => {
   test("accepts canonical statuses only", () => {
-    for (const s of ["pending", "confirmed", "shipped", "delivered", "completed", "cancelled"]) {
+    for (const s of ["pending", "confirmed", "packing", "shipped", "delivered", "completed", "cancelled"]) {
       expect(isSellerOrderStatus(s)).toBe(true);
     }
     expect(isSellerOrderStatus("paid")).toBe(false);

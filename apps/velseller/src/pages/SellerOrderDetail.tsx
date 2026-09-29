@@ -11,6 +11,16 @@ import {
   AlertDialogTitle,
 } from "@velnox/shared/components/ui/alert-dialog";
 import { Button } from "@velnox/shared/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@velnox/shared/components/ui/dialog";
+import { Input } from "@velnox/shared/components/ui/input";
+import { Label } from "@velnox/shared/components/ui/label";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { ApiError, api, useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -75,11 +85,21 @@ interface SellerAddressSnapshot {
  *
  * WHICH TRANSITIONS IT OFFERS
  * ---------------------------
- * `NEXT_ORDER_STATUSES` — the same table the backend's
- * `SELLER_ORDER_STATUS_TRANSITIONS` encodes, so the buttons can only ever propose a
- * move the API will accept (`canTransitionOrderStatus`). A terminal order
- * (`completed`, `cancelled`) gets an explanation instead of an empty control, and
- * cancelling — which restores the seller's stock server-side — asks first.
+ * `NEXT_ORDER_STATUSES` — the same table the backend's fulfilment state machine
+ * (`backend/lib/order-fulfillment.ts`) encodes, so the buttons can only ever
+ * propose a move the API will accept. A terminal order (`completed`, `cancelled`)
+ * gets an explanation instead of an empty control, and cancelling — which restores
+ * the seller's stock server-side — asks first.
+ *
+ * The two moves that carry a SERVER-SIDE precondition are handled here too:
+ *
+ *   • `packing` — the point of no return. `confirmed` → `packing` is offered and
+ *     `packing` offers only `shipped`, so the seller cannot cancel after it.
+ *   • `shipped` — the backend refuses it without a real shipment, so the button
+ *     opens a dialog that collects the carrier and tracking number and sends them
+ *     WITH the transition (ONE request, one transaction). A refusal comes back as
+ *     `SHIPMENT_REQUIRED` / `PAYMENT_NOT_CONFIRMED` and is shown in the seller's
+ *     own language.
  */
 export default function SellerOrderDetail() {
   const { t } = useLanguage();
@@ -93,6 +113,28 @@ export default function SellerOrderDetail() {
   const [busyStatus, setBusyStatus] = useState<StoreOrderStatus | null>(null);
   /** The status awaiting confirmation in the dialog (cancelling restores stock). */
   const [confirmStatus, setConfirmStatus] = useState<StoreOrderStatus | null>(null);
+  /**
+   * The ship dialog. `shipped` needs a carrier + tracking number, so it is
+   * collected BEFORE the request — the server refuses the move without them.
+   */
+  const [shipDialogOpen, setShipDialogOpen] = useState(false);
+  const [shipCarrier, setShipCarrier] = useState("");
+  const [shipTracking, setShipTracking] = useState("");
+
+  /**
+   * The refusal codes the fulfilment state machine answers with, said in the
+   * seller's language. Any other failure keeps the server's own message.
+   */
+  const fulfillmentErrorMessage = useCallback(
+    (err: unknown, fallback: string): string => {
+      if (err instanceof ApiError) {
+        if (err.code === "PAYMENT_NOT_CONFIRMED") return t("orderFulfillment.paymentNotConfirmed");
+        if (err.code === "SHIPMENT_REQUIRED") return t("orderFulfillment.shipRequired");
+      }
+      return err instanceof Error ? err.message : fallback;
+    },
+    [t],
+  );
 
   /** Translated label for a payment status, falling back to the raw value. */
   const paymentLabel = useCallback(
@@ -150,20 +192,46 @@ export default function SellerOrderDetail() {
     void load();
   }, [load]);
 
-  const handleStatusChange = async (next: StoreOrderStatus) => {
+  const handleStatusChange = async (
+    next: StoreOrderStatus,
+    shipment?: { carrier: string; trackingNumber: string },
+  ) => {
     if (!order) return;
     setBusyStatus(next);
     try {
-      await setOrderStatus({ orderId: order.id, status: next });
+      // The shipment details ride along with the transition: the backend writes
+      // the `shipments` row in the SAME transaction that moves the order, so a
+      // refused move can never leave a half-created shipment behind.
+      await setOrderStatus({
+        orderId: order.id,
+        status: next,
+        ...(shipment ? { carrier: shipment.carrier, trackingNumber: shipment.trackingNumber } : {}),
+      });
       toast.success(t("sellerOrders.statusUpdated"));
       setConfirmStatus(null);
+      setShipDialogOpen(false);
+      setShipCarrier("");
+      setShipTracking("");
       await load();
     } catch (err) {
       console.error("Update order status error:", err);
-      toast.error(err instanceof Error ? err.message : t("sellerOrders.statusUpdateFailed"));
+      toast.error(fulfillmentErrorMessage(err, t("sellerOrders.statusUpdateFailed")));
     } finally {
       setBusyStatus(null);
     }
+  };
+
+  /** `shipped` gets the shipment dialog; every other move goes straight out. */
+  const handleTransition = (next: StoreOrderStatus) => {
+    if (next === "cancelled") {
+      setConfirmStatus(next);
+      return;
+    }
+    if (next === "shipped") {
+      setShipDialogOpen(true);
+      return;
+    }
+    void handleStatusChange(next);
   };
 
   if (loading) {
@@ -290,7 +358,7 @@ export default function SellerOrderDetail() {
                       }
                       variant={destructive ? "outline" : "default"}
                       disabled={busyStatus !== null}
-                      onClick={() => (destructive ? setConfirmStatus(next) : void handleStatusChange(next))}
+                      onClick={() => handleTransition(next)}
                     >
                       {busy && <Loader2 className="size-4 animate-spin" />}
                       {t(orderStatusI18nKey(next))}
@@ -600,6 +668,75 @@ export default function SellerOrderDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/*
+        Marking an order as shipped requires a REAL shipment: the backend refuses
+        `packing → shipped` without a carrier and a tracking number, because
+        "shipped" is what tells the customer their parcel is on its way. The two
+        values are sent with the transition, so the status change and the shipment
+        row are written in one transaction.
+      */}
+      <Dialog
+        open={shipDialogOpen}
+        onOpenChange={(open) => {
+          if (open) return;
+          setShipDialogOpen(false);
+          setShipCarrier("");
+          setShipTracking("");
+        }}
+      >
+        <DialogContent className="bg-white sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("orderFulfillment.shipTitle")}</DialogTitle>
+            <DialogDescription>{t("orderFulfillment.shipDesc")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="ship-carrier">{t("orderFulfillment.carrier")}</Label>
+              <Input
+                id="ship-carrier"
+                value={shipCarrier}
+                onChange={(e) => setShipCarrier(e.target.value)}
+                placeholder={t("orderFulfillment.carrierPlaceholder")}
+                disabled={busyStatus !== null}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ship-tracking">{t("orderFulfillment.trackingField")}</Label>
+              <Input
+                id="ship-tracking"
+                value={shipTracking}
+                onChange={(e) => setShipTracking(e.target.value)}
+                placeholder={t("orderFulfillment.trackingPlaceholder")}
+                disabled={busyStatus !== null}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="border-slate-200 text-slate-700"
+              onClick={() => setShipDialogOpen(false)}
+              disabled={busyStatus !== null}
+            >
+              {t("orderCancel.back")}
+            </Button>
+            <Button
+              className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+              disabled={busyStatus !== null || !shipCarrier.trim() || !shipTracking.trim()}
+              onClick={() =>
+                void handleStatusChange("shipped", {
+                  carrier: shipCarrier.trim(),
+                  trackingNumber: shipTracking.trim(),
+                })
+              }
+            >
+              {busyStatus === "shipped" && <Loader2 className="size-4 animate-spin" />}
+              {t("orderFulfillment.shipConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

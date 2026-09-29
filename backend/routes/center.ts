@@ -27,8 +27,16 @@
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
-import { query } from "../db/index.js";
+import { query, withTransaction } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
+import {
+  FulfillmentError,
+  assertPaymentConfirmedForConfirmation,
+  canTransitionFulfillment,
+  ensureShipmentForShipping,
+  isFulfillmentStatus,
+  normalizeOrderStatusToFulfillment,
+} from "../lib/order-fulfillment.js";
 import { hashPassword, isPasswordHashFormat } from "../lib/password.js";
 import { PERMISSION_CATALOG, isCenterMember, userHasPermission } from "../lib/permissions.js";
 import { invalidateCachedProfile } from "./auth.js";
@@ -61,16 +69,6 @@ async function canReadCenter(userId: string): Promise<boolean> {
 async function isOwner(userId: string): Promise<boolean> {
   return (await roleOf(userId)) === "owner";
 }
-
-// Order status transitions the center UI offers (mirror of the frontend map).
-const ORDER_NEXT_STATUS: Record<string, string[]> = {
-  pending: ["confirmed", "cancelled"],
-  confirmed: ["shipped", "cancelled"],
-  shipped: ["delivered"],
-  delivered: ["completed"],
-  completed: [],
-  cancelled: [],
-};
 
 const DEPARTMENTS = ["general", "marketing", "sales", "operations", "finance"];
 
@@ -454,31 +452,70 @@ export function setupCenterRoutes(app: Express): void {
       }
       const orderId = param(req, "orderId");
       const to = typeof req.body?.status === "string" ? req.body.status : "";
-      if (!(to in ORDER_NEXT_STATUS)) {
+      if (!isFulfillmentStatus(to)) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid order status" } });
         return;
       }
+      const carrier = req.body?.carrier;
+      const trackingNumber = req.body?.trackingNumber;
 
-      const current = await query("SELECT status FROM orders WHERE id = $1", [orderId]);
-      if (current.rows.length === 0) {
-        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Order not found" } });
-        return;
-      }
-      const from = current.rows[0].status;
-      if (to !== from && !(ORDER_NEXT_STATUS[from] ?? []).includes(to)) {
-        res.status(409).json({
-          success: false,
-          error: { code: "INVALID_TRANSITION", message: `Cannot move order from ${from} to ${to}` },
+      // The order row is locked for the whole check-and-move, so this route and
+      // the seller route (and a concurrent cancel) serialize on the same row:
+      // the loser re-reads the committed state and is refused.
+      let outcome: { from: string; to: string };
+      try {
+        outcome = await withTransaction(async (client) => {
+          const current = await client.query(
+            `SELECT status FROM orders WHERE id = $1 FOR UPDATE`,
+            [orderId],
+          );
+          if (current.rows.length === 0) {
+            throw new FulfillmentError(404, "NOT_FOUND", "Order not found");
+          }
+          const rawFrom: string = current.rows[0].status;
+          const from = normalizeOrderStatusToFulfillment(rawFrom);
+
+          // The transitions come from `backend/lib/order-fulfillment.ts` — the
+          // ONE authority, shared with the seller route — so the admin surface
+          // can never offer a move the seller route refuses, or vice versa.
+          // `pending_payment` / `paid` rows are normalized to `pending` before
+          // the move is judged (payment is a separate axis in `payments`), which
+          // is what lets an admin move a PAID order on at all.
+          // Re-selecting the current status is a no-op, not an error.
+          if (to !== rawFrom && !canTransitionFulfillment(from, to)) {
+            throw new FulfillmentError(
+              409,
+              "INVALID_TRANSITION",
+              `Cannot move order from ${from} to ${to}`,
+            );
+          }
+
+          // Same two gates the seller route applies, from the same module:
+          // confirming requires a settled payment, shipping requires a real
+          // shipment with a carrier and a tracking number.
+          if (to === "confirmed" && to !== rawFrom) {
+            await assertPaymentConfirmedForConfirmation(client, orderId);
+          }
+          if (to === "shipped" && to !== rawFrom) {
+            await ensureShipmentForShipping(client, orderId, { carrier, trackingNumber });
+          }
+
+          await client.query("UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2", [to, orderId]);
+          return { from: rawFrom, to };
         });
-        return;
+      } catch (err) {
+        if (err instanceof FulfillmentError) {
+          res.status(err.status).json({ success: false, error: { code: err.code, message: err.message } });
+          return;
+        }
+        throw err;
       }
 
-      await query("UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2", [to, orderId]);
-      await writeAuditLog(req.user!.userId, "ORDER_STATUS_UPDATE", "order", orderId, { from, to }, auditClientIp(req));
+      await writeAuditLog(req.user!.userId, "ORDER_STATUS_UPDATE", "order", orderId, outcome, auditClientIp(req));
       // The VelCenter orders tab subscribes to `order:updated` — publish it so
       // every open session follows the status, not only the one that acted.
-      try { broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, from, to }); } catch { /* best-effort */ }
-      res.json({ success: true, data: { id: orderId, status: to } });
+      try { broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, from: outcome.from, to: outcome.to }); } catch { /* best-effort */ }
+      res.json({ success: true, data: { id: orderId, status: outcome.to } });
     } catch (err) {
       console.error("[center] order status error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update order status" } });

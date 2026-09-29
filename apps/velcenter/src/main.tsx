@@ -1,4 +1,5 @@
 import { Toaster } from "@velnox/shared/components/ui/sonner";
+import { OrderShipDialogHost } from "@/components/OrderShipDialog";
 import { RequireRole } from "@velnox/shared/components/RequireRole";
 import {
   RootErrorBoundary,
@@ -41,6 +42,9 @@ createRoot(document.getElementById("root")!).render(
       </SiteSuspense>
       </div>
     </BrowserRouter>
+    {/* The fulfilment ship dialog: `packing → shipped` needs a carrier + tracking
+        number, and the orders table cannot own the dialog (see the component). */}
+    <OrderShipDialogHost />
     <Toaster />
   </RootErrorBoundary>,
 );

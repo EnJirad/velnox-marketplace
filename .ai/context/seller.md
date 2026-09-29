@@ -52,12 +52,29 @@ PATCH /api/seller/orders/:id/status               transition — enforced by can
   selected (`fetchSellerItemsForOrders`) — another seller's portion of a shared order is never exposed.
   Unknown and foreign orders answer the SAME 404, so existence does not leak.
 - **The status buttons come from `NEXT_ORDER_STATUSES`** in `commerce.ts`, which mirrors
-  `SELLER_ORDER_STATUS_TRANSITIONS` in `backend/routes/seller-orders.ts`
+  `FULFILLMENT_TRANSITIONS` in `backend/lib/order-fulfillment.ts` — the ONE authority for the
+  fulfilment state machine, shared with the VelCenter admin route (`backend/routes/center.ts`)
   (`backend/tests/seller-order-ux.test.ts` pins the two together). Terminal statuses offer nothing.
   Cancelling restores the seller's stock server-side and is confirmed first.
-- `normalizeSellerOrderStatus()` maps the payment-lifecycle values stripe.ts writes onto the six
+- **The chain is `pending → confirmed → packing → shipped → delivered → completed`, plus terminal
+  `cancelled`.** `confirmed` means the shop ACCEPTED the order — packing has not started, so the
+  customer may still cancel. `packing` means fulfilment has STARTED (items being picked/packed):
+  from there NEITHER side may cancel (there is no `packing → cancelled` edge) and the only move is
+  `shipped`. Two gates are enforced inside the seller route's transaction, under `FOR UPDATE` on
+  the order row: shifting to `confirmed` requires a SETTLED payment (a `paid` `payments` row — the
+  Stripe webhook is the only writer; COD passes only while its disabled rail is on), and
+  `packing → shipped` requires a `shipments` row with a carrier AND a tracking number, sent with
+  the transition (`carrier` + `trackingNumber` in the request body) so the status change and the
+  shipment are one transaction. The seller's ship dialog and VelCenter's
+  (`apps/velcenter/src/components/OrderShipDialog.tsx`) collect those two values.
+- `normalizeSellerOrderStatus()` maps the payment-lifecycle values stripe.ts writes onto the seven
   fulfilment statuses: `pending_payment`/`paid` → `pending`, `expired`/`refunded`/`payment_failed` →
-  `cancelled`. The list's filter chips are exactly those six.
+  `cancelled`. The list's filter chips are exactly those seven. Payment state stays a SEPARATE axis
+  exposed as `paymentStatus` — a fulfilment status never stands in for it.
+- **Contact details come from the ORDER, not the profile:** the seller list/detail read
+  `orders.shipping_address.recipientName` / `.phone` (`orderContact()` in `seller-orders.ts`) and
+  fall back to the account row only when a legacy order's snapshot lacks them, so a customer who
+  edits their name or phone later never rewrites an order that was already placed.
 - The order-status badge and the progress-stage icons live in
   `packages/shared/src/components/order/OrderStatusBadge.tsx` — ONE mapping shared with VelShop.
 

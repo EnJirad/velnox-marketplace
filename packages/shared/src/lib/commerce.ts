@@ -182,14 +182,21 @@ export interface SellerProfile {
  * Canonical order lifecycle. It is a SUPERSET of two state machines that both
  * write `orders.status`:
  *
- *  • fulfilment — `pending` → `confirmed` → `shipped` → `delivered` →
- *    `completed`, plus terminal `cancelled`. Enforced by
- *    `backend/routes/seller-orders.ts` (SELLER_ORDER_STATUSES) and
- *    `backend/routes/center.ts` (ORDER_NEXT_STATUS).
+ *  • fulfilment — `pending` → `confirmed` → `packing` → `shipped` →
+ *    `delivered` → `completed`, plus terminal `cancelled`. The ONE authority is
+ *    `backend/lib/order-fulfillment.ts`; the seller route and the VelCenter route
+ *    both apply it under a `FOR UPDATE` lock on the order row.
+ *
+ *    `confirmed` means the shop ACCEPTED the order — packing has not started, so
+ *    the customer may still cancel. `packing` means fulfilment has STARTED, the
+ *    point of no return for both sides: from there the order can only go out.
  *  • payment — `pending_payment` → `paid` | `payment_failed`, plus terminal
  *    `refunded`. Written by `backend/routes/stripe.ts`: `pending_payment` when a
  *    Checkout Session is created, `paid` on the confirming webhook,
  *    `payment_failed` on a failed charge, `refunded` after a full refund.
+ *    Payment is a SEPARATE axis from fulfilment — `paymentStatus` never stands in
+ *    for a fulfilment status, and only a `paid` payment lets an order be
+ *    confirmed (enforced server-side).
  *
  * `orders.status` is free text with no CHECK constraint, so a row can carry
  * either family — and a future backend release may add another value this build
@@ -202,6 +209,12 @@ export type StoreOrderStatus =
   | "pending_payment"
   | "paid"
   | "confirmed"
+  /**
+   * The shop has STARTED fulfilling the order (items picked/packed). Written by
+   * the seller/center transition route; a customer can no longer cancel from
+   * here on, and the next move is `shipped`.
+   */
+  | "packing"
   | "shipped"
   | "delivered"
   | "completed"
@@ -334,6 +347,11 @@ export const ORDER_STATUS_META: Record<StoreOrderStatus, OrderStatusMeta> = {
     badge: "bg-sky-50 text-sky-700 ring-sky-600/15 hover:bg-sky-50",
     dot: "bg-sky-500",
   },
+  packing: {
+    label: "กำลังแพ็กสินค้า",
+    badge: "bg-lime-50 text-lime-700 ring-lime-600/15 hover:bg-lime-50",
+    dot: "bg-lime-500",
+  },
   shipped: {
     label: "กำลังจัดส่ง",
     badge: "bg-indigo-50 text-indigo-700 ring-indigo-600/15 hover:bg-indigo-50",
@@ -421,9 +439,15 @@ export function getOrderStatusMeta(status: unknown): OrderStatusMeta {
  * rather than a missing key.
  */
 export function orderStatusI18nKey(status: unknown): string {
-  return typeof status === "string" && Object.prototype.hasOwnProperty.call(ORDER_STATUS_META, status)
-    ? `orderStatus.${status}`
-    : "orderStatus.unknown";
+  const known =
+    typeof status === "string" && Object.prototype.hasOwnProperty.call(ORDER_STATUS_META, status);
+  if (!known) return "orderStatus.unknown";
+  // `packing` is the one status whose copy lives in the `orderFulfillment`
+  // namespace: the `orderStatus` block of the large th/my dictionaries sits past
+  // those files' safe edit window (see the comment at the top of th.ts), so its
+  // label is added where it can be — and resolved through this ONE mapping, so
+  // no surface has to know about the split.
+  return status === "packing" ? "orderFulfillment.packing" : `orderStatus.${status}`;
 }
 
 /**
@@ -438,7 +462,8 @@ export const NEXT_ORDER_STATUSES: Record<StoreOrderStatus, StoreOrderStatus[]> =
   pending: ["confirmed", "cancelled"],
   pending_payment: ["confirmed", "cancelled"],
   paid: ["confirmed", "cancelled"],
-  confirmed: ["shipped", "cancelled"],
+  confirmed: ["packing", "cancelled"],
+  packing: ["shipped"],
   shipped: ["delivered"],
   delivered: ["completed"],
   completed: [],
@@ -599,7 +624,8 @@ export function getPaymentStatusBadge(status: unknown): { badge: string; dot: st
  *
  *   placed     ← `pending`            the order exists, payment not started
  *   payment    ← `pending_payment`    waiting at Stripe / the webhook
- *   processing ← `confirmed`          the store accepted and is preparing it
+ *   processing ← `confirmed`          the store accepted it and has not packed yet
+ *   packing    ← `packing`            fulfilment has started (being packed)
  *   shipped    ← `shipped`
  *   delivered  ← `delivered` | `completed`
  *
@@ -607,7 +633,7 @@ export function getPaymentStatusBadge(status: unknown): { badge: string; dot: st
  * store); a terminal order (`cancelled`, `expired`, `payment_failed`, `refunded`)
  * has NO stage — the page replaces the line with the notice that explains it.
  */
-export const ORDER_PROGRESS_STAGES = ["placed", "payment", "processing", "shipped", "delivered"] as const;
+export const ORDER_PROGRESS_STAGES = ["placed", "payment", "processing", "packing", "shipped", "delivered"] as const;
 
 export type OrderProgressStage = (typeof ORDER_PROGRESS_STAGES)[number];
 
@@ -623,14 +649,29 @@ export function orderProgressStageIndex(status: unknown): number {
     case "paid":
     case "confirmed":
       return 2;
-    case "shipped":
+    case "packing":
       return 3;
+    case "shipped":
+      return 4;
     case "delivered":
     case "completed":
-      return 4;
+      return 5;
     default:
       return -1;
   }
+}
+
+/**
+ * The i18n key that names a progress STAGE.
+ *
+ * `orderSteps.*` is the canonical home, except for `packing`, whose copy lives in
+ * `orderFulfillment` for the same reason `orderStatusI18nKey()` sends the
+ * `packing` STATUS there: the `orderSteps` block of the large th/my dictionaries
+ * is past their safe edit window. ONE mapping, so the progress line never has to
+ * know about the split.
+ */
+export function orderProgressStageI18nKey(stage: OrderProgressStage): string {
+  return stage === "packing" ? "orderFulfillment.packing" : `orderSteps.${stage}`;
 }
 
 /** The smallest order shape the payability decision needs. */
@@ -880,9 +921,11 @@ export function paymentReservationPhase(
  * `pending` is an order that was created but never taken to Stripe;
  * `pending_payment` is one that HAS a (possibly abandoned) Checkout Session —
  * the state a customer lands in after leaving Stripe, and the one that used to
- * offer only "continue payment"; `confirmed` is accepted by the seller and not
- * yet shipped. Everything else is either paid/shipped (the seller now owns the
- * decision) or already terminal.
+ * offer only "continue payment"; `confirmed` is accepted by the seller and NOT
+ * yet packed. `packing` is deliberately absent: once the shop has started
+ * fulfilling the order, cancelling it is no longer a business the marketplace can
+ * honour — the backend refuses it (`FULFILLMENT_TRANSITIONS` in
+ * `backend/lib/order-fulfillment.ts`), so the button must not be offered either.
  *
  * `backend/tests/customer-order-cancel.test.ts` pins this list against the
  * literal list in `backend/routes/cart.ts`, so the storefront can never offer a

@@ -36,6 +36,7 @@ import {
   getPaymentStatusBadge,
   ORDER_PROGRESS_STAGES,
   orderCustomerCancelability,
+  orderProgressStageI18nKey,
   orderProgressStageIndex,
   orderStatusI18nKey,
   orderStripePayability,
@@ -809,14 +810,14 @@ export default function ShopOrderDetail() {
                         )}
                       </div>
                       {/* The stage name always exists for assistive tech. */}
-                      <span className="sr-only">{t(`orderSteps.${stage}`)}</span>
+                      <span className="sr-only">{t(orderProgressStageI18nKey(stage))}</span>
                       <span
                         aria-current={current ? "step" : undefined}
                         className={`truncate pb-4 text-xs sm:mt-2 sm:pb-0 sm:text-[11px] ${
                           current ? "font-semibold text-slate-900" : done ? "text-slate-500" : "text-slate-400"
                         }`}
                       >
-                        {t(`orderSteps.${stage}`)}
+                        {t(orderProgressStageI18nKey(stage))}
                       </span>
                     </li>
                   );

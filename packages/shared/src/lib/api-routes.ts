@@ -54,11 +54,20 @@ function invalidateGetCache(prefix?: string) {
  */
 export class ApiError extends Error {
   readonly status: number;
+  /**
+   * The server's machine-readable `error.code` when it sent one (`INVALID_TRANSITION`,
+   * `PAYMENT_NOT_CONFIRMED`, `SHIPMENT_REQUIRED`, …), else null.
+   *
+   * The message is for humans and may be English-only; the CODE is what a
+   * localized surface branches on to say WHY in the reader's own language.
+   */
+  readonly code: string | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -69,7 +78,8 @@ export class ApiError extends Error {
 async function throwApiError(res: Response, fallback: string): Promise<never> {
   const data = await res.json().catch(() => ({ error: fallback }));
   const errMsg = data.error?.message || data.error || fallback;
-  throw new ApiError(res.status, typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
+  const errCode = typeof data.error?.code === "string" ? data.error.code : null;
+  throw new ApiError(res.status, typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg), errCode);
 }
 
 async function apiPost(path: string, args?: any): Promise<any> {

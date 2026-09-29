@@ -15,6 +15,21 @@ export const my = {
     cancelledNotice:
       "ဤမှာယူမှုကို ဖျက်သိမ်းလိုက်ပြီ — ဤမှာယူမှုအတွက် ငွေပေးချေနိုင်တော့မည် မဟုတ်ပါ",
   },
+  /** Fulfilment copy for the `packing` state — see the Thai dictionary for why it lives here. */
+  orderFulfillment: {
+    shipTitle: "ပို့ဆောင်မှု အတည်ပြုပါ",
+    shipDesc:
+      "ပို့ဆောင်ရေးကုမ္ပဏီနှင့် ပါဆယ်နံပါတ် ဖြည့်ပြီး အတည်ပြုပါ — ဤမှာယူမှုအတွက် ပို့ဆောင်မှုမှတ်တမ်းကို ချက်ချင်း သိမ်းဆည်းပါမည်။",
+    carrier: "ပို့ဆောင်ရေးကုမ္ပဏီ",
+    carrierPlaceholder: "ဥပမာ Kerry, Flash, မြန်မာစာတိုက်",
+    trackingField: "ပါဆယ်နံပါတ်",
+    trackingPlaceholder: "ဥပမာ TH123456789",
+    shipConfirm: "ပို့ဆောင်မှု အတည်ပြုပါ",
+    shipRequired:
+      "ပို့ဆောင်ရေးကုမ္ပဏီနှင့် ပါဆယ်နံပါတ် ဖြည့်ပြီးမှသာ ပို့ဆောင်ပြီးဟု သတ်မှတ်နိုင်ပါသည်။",
+    paymentNotConfirmed: "ဤမှာယူမှုအတွက် ငွေမပေးချေရသေးပါ၊ ထို့ကြောင့် အတည်ပြု၍ မရပါ။",
+    packing: "ထုပ်ပိုးနေသည်",
+  },
   /** Payment-reservation copy — see the Thai dictionary for why it lives here. */
   orderReservation: {
     payWithin: "ငွေပေးချေရန် {time} အတွင်း",
