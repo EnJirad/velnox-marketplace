@@ -39,6 +39,7 @@ import {
   normalizeOrderStatusToFulfillment,
   type FulfillmentStatus,
 } from "../lib/order-fulfillment.js";
+import { releaseOrderInventory } from "../lib/inventory.js";
 
 function param(req: Request, key: string): string {
   return (req.params as Record<string, string>)[key] ?? "";
@@ -601,28 +602,15 @@ export function setupSellerOrderRoutes(app: Express): void {
             [status, orderId],
           );
 
-          // Cancellation restores the seller's stock (mirrors the customer
-          // cancel flow) — atomic with the status change.
+          // Cancellation restores the seller's stock — through the ONE release
+          // authority (lib/inventory.ts), never inline. The status change above
+          // already committed, so the `inventory_released` claim can win exactly
+          // once here, and a concurrent webhook, sweep or customer cancel can
+          // never restore the same units a second time. The authority also
+          // refuses an order whose money has settled, so cancelling a `paid`
+          // order can never hand sold stock back to the shelf.
           if (status === "cancelled") {
-            const items = await client.query(
-              `SELECT product_id, variant_id, quantity FROM order_items oi
-               JOIN shops sh ON oi.shop_id = sh.id
-               WHERE oi.order_id = $1 AND sh.seller_id = $2`,
-              [orderId, sellerId],
-            );
-            for (const item of items.rows) {
-              if (item.variant_id) {
-                await client.query(
-                  `UPDATE product_variants SET stock = stock + $1, updated_at = NOW() WHERE id = $2`,
-                  [item.quantity, item.variant_id],
-                );
-              } else {
-                await client.query(
-                  `UPDATE inventory SET reserved = GREATEST(0, reserved - $1) WHERE product_id = $2`,
-                  [item.quantity, item.product_id],
-                );
-              }
-            }
+            await releaseOrderInventory(client, orderId);
           }
         });
       } catch (err) {

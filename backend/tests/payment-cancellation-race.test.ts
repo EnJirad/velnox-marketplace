@@ -831,7 +831,9 @@ describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => 
         // Whatever happened, the reservation was released exactly once OR
         // committed exactly once — never both, never neither.
         expect(after.reserved).toBe(0);
-        expect(after.quantity).toBe(50); // stock never goes negative
+        // COMMITTED and the 3 units left the shelf; RELEASED and `quantity`
+        // is untouched (release only returns the hold). Either way non-negative.
+        expect(after.quantity).toBe(paymentWon ? 47 : 50);
         expect(after.soldCount).toBe(paymentWon ? 3 : 0);
         expect(after.inventoryReleased).toBe(!paymentWon);
 
@@ -1146,7 +1148,9 @@ describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => 
       expect(after.inventoryReleased).toBe(false); // committed stock never released
       expect(after.reserved).toBe(0);
       expect(after.soldCount).toBe(3); // exactly one commit at settlement
-      expect(after.quantity).toBe(50);
+      // …and the commit CONSUMED the units: on-hand dropped by the 3 sold,
+      // which is what keeps them off every other customer's shelf.
+      expect(after.quantity).toBe(47);
     } finally {
       await purgeUsers([seed.ownerId, seed.sellerUserId]);
     }
@@ -1174,7 +1178,9 @@ describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => 
       const released = after.status === "expired";
       expect(committed || released).toBe(true);
       expect(after.reserved).toBe(0);
-      expect(after.quantity).toBe(50); // never negative, never double-touched
+      // −3 exactly ONCE when committed, untouched when released: never
+      // negative and never double-touched either way.
+      expect(after.quantity).toBe(committed ? 47 : 50);
       expect(after.soldCount).toBe(committed ? 3 : 0);
       expect(after.inventoryReleased).toBe(released);
       expect(after.payments.filter((p) => p.status === "paid")).toHaveLength(1); // money recorded once
@@ -1200,7 +1206,7 @@ describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => 
       const expired = after.status === "expired";
       expect(paid || expired).toBe(true);
       expect(after.reserved).toBe(0);
-      expect(after.quantity).toBe(50);
+      expect(after.quantity).toBe(paid ? 47 : 50);
       if (paid) {
         // The charge won: committed once, and the worker refuses to touch it.
         expect(expiry.outcome).toBe("skipped");

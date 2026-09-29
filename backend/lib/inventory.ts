@@ -1,5 +1,7 @@
 import type pg from "pg";
 
+import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js";
+
 /**
  * Sanity cap for a single order line. Checkout / VelRepeat orders are not
  * allowed to reserve more than this many units of one product per line.
@@ -65,6 +67,88 @@ export async function reserveInventoryStock(
   }
 }
 
+// ─── Order inventory settlement (the COMMIT path) ──────────────────────────
+
+/**
+ * Atomically COMMIT the inventory reserved by an order: the hold becomes a
+ * completed sale. This is the SETTLEMENT authority — the mirror image of
+ * `releaseOrderInventory` and the only place an order's stock is consumed:
+ *
+ *   reserve (checkout) → commit (payment settled)  xor  release (order ended)
+ *
+ * EXACTLY-ONCE. The caller's status claim (`orders.status → 'paid'`, taken
+ * under `lockOrderRow`, requiring `inventory_released = FALSE`) is the gate: a
+ * repeated or concurrent settlement moves no row and never reaches this
+ * function, so `quantity` / `reserved` / `sold_count` change at most once. The
+ * other half of the invariant is enforced in `releaseOrderInventory`, which
+ * refuses to release an order whose money settled — so COMMIT+RELEASE and
+ * RELEASE+COMMIT are both impossible for one reservation.
+ *
+ * WHAT THE FIELDS MEAN (`db/schema.sql`) — non-variant product:
+ *
+ *   quantity   on-hand units; units held by an open order are still counted
+ *   reserved   units currently held by open orders
+ *   available  = quantity - reserved   ← what checkout guards on
+ *
+ * So a completed sale drops BOTH: the units leave the shelf (`quantity`) and
+ * stop being held (`reserved`). Neither alone is enough — only `reserved` and
+ * availability returns the sold units to every other customer; only
+ * `quantity` and the hold never ends. `GREATEST(0, …)` keeps stock at zero
+ * rather than negative when a seller has meanwhile edited `quantity` by hand.
+ *
+ * A VARIANT has no inventory columns of its own — `product_variants.stock`
+ * already IS that product's availability, and checkout decremented it for this
+ * order (`stock = stock - $1 … WHERE stock >= $1`). Leaving it decremented IS
+ * the consumption, so settlement deliberately does not touch it, and above all
+ * must not touch the PARENT product's `inventory` row, which never held these
+ * units (the pre-fix code did exactly that, releasing someone else's hold).
+ *
+ * `products.sold_count` is a sales counter: +quantity here, once.
+ *
+ * MUST be called inside an existing `withTransaction` block, in the SAME
+ * transaction as the caller's order claim, so a settlement can never be half
+ * applied (money recorded with stock untouched, or stock consumed with the
+ * order still unpaid).
+ *
+ * Returns the number of order lines settled.
+ */
+export async function commitOrderInventory(
+  client: pg.PoolClient,
+  orderId: string,
+): Promise<number> {
+  const items = await client.query(
+    `SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1`,
+    [orderId],
+  );
+
+  for (const item of items.rows) {
+    if (!item.variant_id) {
+      // Non-variant: convert this order's hold into a completed sale.
+      await client.query(
+        `UPDATE inventory
+            SET quantity = GREATEST(0, quantity - $1),
+                reserved = GREATEST(0, reserved - $1),
+                updated_at = NOW()
+          WHERE product_id = $2`,
+        [item.quantity, item.product_id],
+      );
+    }
+    // Variant: `product_variants.stock` was decremented at reserve time and
+    // stays decremented — see the header. Never fall back to the parent's
+    // `inventory` row: that row never held this order's units.
+
+    await client.query(
+      `UPDATE products SET sold_count = sold_count + $1 WHERE id = $2`,
+      [item.quantity, item.product_id],
+    );
+  }
+
+  console.log(
+    `[inventory] commitOrderInventory: order ${orderId} — settled ${items.rows.length} item(s)`,
+  );
+  return items.rows.length;
+}
+
 // ─── Order inventory release ───────────────────────────────────────────────
 
 /**
@@ -124,21 +208,39 @@ export async function releaseOrderInventory(
       WHERE id = $1
         AND inventory_released = FALSE
         AND status = ANY($2::text[])
+        AND NOT EXISTS (
+          SELECT 1 FROM payments p
+           WHERE p.order_id = orders.id
+             AND p.status = ANY($3::text[])
+        )
       RETURNING id`,
-    [orderId, RELEASABLE_STATUSES],
+    [orderId, RELEASABLE_STATUSES, [...PAYMENT_SETTLED_STATUSES]],
   );
 
   if (claim.rows.length === 0) {
-    // The claim lost. Report why for the log (best effort — this read happens
+    // The claim lost. Report WHY for the log (best effort — this read happens
     // after the deciding UPDATE, so it can never change the outcome).
     const orderRes = await client.query(
-      `SELECT status, inventory_released FROM orders WHERE id = $1`,
-      [orderId],
+      `SELECT o.status, o.inventory_released,
+              EXISTS (SELECT 1 FROM payments p
+                       WHERE p.order_id = o.id AND p.status = ANY($2::text[])) AS settled
+         FROM orders o
+        WHERE o.id = $1`,
+      [orderId, [...PAYMENT_SETTLED_STATUSES]],
     );
     const order = orderRes.rows[0];
     if (!order) return false;
     if (order.inventory_released) {
       console.log(`[inventory] releaseOrderInventory: order ${orderId} already released — skipping`);
+    } else if (order.settled) {
+      // A settled payment outranks a cancellation: those units were already
+      // COMMITTED by commitOrderInventory, so restoring them would be a SECOND
+      // terminal transition on one reservation (COMMIT + RELEASE) and would
+      // hand sold stock back to the shelf. Refund is the operator's flow; the
+      // stock is never returned by a status change.
+      console.log(
+        `[inventory] releaseOrderInventory: order ${orderId} has a settled payment — stock already committed, refusing a second terminal transition`,
+      );
     } else {
       console.log(`[inventory] releaseOrderInventory: order ${orderId} status '${order.status}' not releasable — skipping`);
     }

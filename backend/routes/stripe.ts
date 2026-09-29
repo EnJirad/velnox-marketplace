@@ -36,7 +36,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
-import { releaseOrderInventory } from "../lib/inventory.js";
+import { commitOrderInventory, releaseOrderInventory } from "../lib/inventory.js";
 // The ONE order-row lock. Every transaction below that writes both `orders` and
 // `payments`/`refunds` takes it FIRST, so a customer cancellation and a webhook
 // take the same two rows in the same order and cannot deadlock (lib/order-lock.ts).
@@ -418,22 +418,15 @@ async function markPaymentSucceeded(
       );
     }
     if (moved) {
-      // Reserved stock becomes sold stock exactly once, because only the
-      // request that actually moved the order reaches here.
-      const items = await client.query(
-        `SELECT product_id, quantity FROM order_items WHERE order_id = $1`,
-        [orderId],
-      );
-      for (const item of items.rows) {
-        await client.query(
-          `UPDATE inventory SET reserved = GREATEST(0, reserved - $1) WHERE product_id = $2`,
-          [item.quantity, item.product_id],
-        );
-        await client.query(
-          `UPDATE products SET sold_count = sold_count + $1 WHERE id = $2`,
-          [item.quantity, item.product_id],
-        );
-      }
+      // Reserved stock becomes SOLD stock exactly once — only the request that
+      // actually moved the order reaches here. The consumption itself lives in
+      // lib/inventory.ts (the ONE settlement authority, mirror image of
+      // releaseOrderInventory): non-variant lines drop `quantity` AND
+      // `reserved` (the hold becomes a completed sale) and variant lines stay
+      // decremented where checkout already took them; `sold_count` increments
+      // once per unit. Running it in THIS transaction is what makes
+      // "money recorded" and "stock consumed" a single atomic step.
+      await commitOrderInventory(client, orderId);
     }
 
     return { orderId, moved, inventoryReleased: false };

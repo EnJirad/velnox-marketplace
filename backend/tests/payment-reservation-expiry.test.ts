@@ -976,7 +976,12 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       const after = await stateOf(seed.orderId, seed.productId);
       expect(after.status).toBe("paid");
       expect(after.reserved).toBe(0);
-      expect(after.quantity).toBe(50);
+      // The 2 paid units left the shelf — `quantity` is on-hand stock, so a
+      // completed sale must drop it (availability = quantity - reserved stays
+      // 48 either way: 50−2 held before, 48−0 after). The old expectation
+      // ("quantity remains 50") pinned the audit's CRITICAL #1 defect: sold
+      // units became purchasable again the moment the payment settled.
+      expect(after.quantity).toBe(48);
     } finally {
       await purgeUsers([seed.ownerId, seed.sellerUserId]);
     }
@@ -1371,7 +1376,10 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       expect(after.inventoryReleased).toBe(false);
       expect(after.reserved).toBe(0);
       expect(after.soldCount).toBe(2); // still exactly ONE commit
-      expect(after.quantity).toBe(50); // available stock untouched
+      // The 2 units are gone from on-hand (50 → 48) but availability is
+      // unchanged: quantity - reserved = 48 both before and after settlement.
+      expect(after.quantity).toBe(48);
+      expect(after.quantity - after.reserved).toBe(48);
     } finally {
       await purgeUsers([seed.ownerId, seed.sellerUserId]);
     }
@@ -1473,13 +1481,13 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       expect(a.soldCount).toBe(q); // committed ONCE
       expect(a.inventoryReleased).toBe(false); // and never released
       expect(a.reserved).toBe(0); // reserved → committed
-      expect(a.quantity).toBe(50);
+      expect(a.quantity).toBe(48); // …and the units left the shelf (50 − 2)
 
       const b = await stateOf(lapsed.orderId, lapsed.productId);
       expect(b.soldCount).toBe(0); // never committed
       expect(b.inventoryReleased).toBe(true); // released ONCE
       expect(b.reserved).toBe(0); // reserved → available
-      expect(b.quantity).toBe(50); // stock never went negative
+      expect(b.quantity).toBe(50); // released: on-hand untouched, never negative
       // The late money is RECORDED on the payment row (that is what makes it
       // refundable) but it never flips the order back to paid:
       expect(b.status).toBe("expired");
