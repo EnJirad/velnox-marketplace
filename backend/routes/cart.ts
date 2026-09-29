@@ -21,6 +21,14 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
+// The ONE order-row lock and the money-outranks-cancel rule (see the module
+// header: every transaction writing orders + payments takes the order lock
+// first, so cancellation and the Stripe webhook can never deadlock).
+import {
+  latestPaymentStatusForOrder,
+  lockOrderRow,
+  paymentBlocksCancellation,
+} from "../lib/order-lock.js";
 import { applyPaymentReservationPolicy } from "../lib/payment-reservation.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { normalizePaymentMethod, assertPaymentMethodUsable, PAYMENT_METHOD, type PaymentMethodId } from "../lib/payment-config.js";
@@ -1330,6 +1338,27 @@ export function setupCartRoutes(app: Express): void {
       }
 
       const outcome = await withTransaction(async (client) => {
+        // ── Lock the ORDER row first ─────────────────────────────────────────
+        // Every transaction that writes both `orders` and `payments` takes this
+        // lock as its FIRST statement (lib/order-lock.ts). The Stripe webhook's
+        // failure/cancel handlers used to touch `payments` first and `orders`
+        // second while this route did the opposite, which is an AB-BA deadlock:
+        // PostgreSQL aborts one side after `deadlock_timeout`, making the winner
+        // depend on lock timing instead of on the business rule. One shared lock
+        // order removes the cycle entirely.
+        const locked = await lockOrderRow(client, orderId);
+
+        // Money outranks a cancellation, and this re-check runs UNDER the lock.
+        // The read before this transaction is only a fast path (it also answers
+        // 404/409 without taking a lock); a payment that settled, or went into
+        // flight, while this request waited for the row is only visible here.
+        if (locked) {
+          const paymentStatus = await latestPaymentStatusForOrder(client, orderId);
+          if (paymentBlocksCancellation(paymentStatus)) {
+            return { moved: false, released: false, blockedBy: paymentStatus };
+          }
+        }
+
         // One guarded UPDATE is the race gate. Under READ COMMITTED a concurrent
         // cancel blocks on the row lock and then re-evaluates the WHERE clause
         // against the committed row, where the status is no longer cancelable —
@@ -1368,8 +1397,33 @@ export function setupCartRoutes(app: Express): void {
         // releaseOrderInventory), so stock is never handed back for an order that
         // is going to ship.
         const released = await releaseOrderInventory(client, orderId);
-        return { moved, released };
+        return { moved, released, blockedBy: null as string | null };
       });
+
+      // A payment that settled (or is settling) while this request waited for the
+      // order lock. The order was NOT moved and no stock was released; answer
+      // with the same refusal the fast path above would have given, so the
+      // outcome depends on the payment state and not on who won the lock.
+      if (outcome.blockedBy === "paid") {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: "ORDER_ALREADY_PAID",
+            message: "This order has already been paid. Please request a refund instead of cancelling.",
+          },
+        });
+        return;
+      }
+      if (outcome.blockedBy === "processing") {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: "PAYMENT_IN_PROGRESS",
+            message: "A payment for this order is being processed. Please try again in a moment.",
+          },
+        });
+        return;
+      }
 
       if (!outcome.moved) {
         // Lost the race (a concurrent cancel already did the work) or the order

@@ -97,6 +97,32 @@ owner-only. Hiding a tab is UX only; every endpoint re-checks.
 
 ## 5. Latest passes
 
+### 2026-09-29 — payment ↔ customer-cancellation race hardened (shared LOCK ORDER)
+
+The contradiction was already unreachable (the guarded `UPDATE orders … status = ANY(…)`
+claims plus the `inventory_released` flag made exactly one writer win), but the two sides
+took the rows in OPPOSITE orders: cancel = `orders` → `payments`, while
+`markPaymentFailed` / `markPaymentCanceled` = `payments` → `orders` — an AB-BA deadlock
+PostgreSQL breaks by aborting one side (a 500 on the customer's cancel, or a `failed` event
+Stripe redelivers, with the winner decided by lock timing). `backend/lib/order-lock.ts` now
+defines the ONE order: the order row is locked FIRST by the cancel route,
+`markPaymentSucceeded`, `markPaymentFailed`, `markPaymentCanceled`, `syncRefundFromStripe`
+and the reservation sweep. The cancel route also re-reads the payment state UNDER that lock,
+so `paid`/`processing` still refuse (`ORDER_ALREADY_PAID` / `PAYMENT_IN_PROGRESS`) instead of
+trusting a pre-transaction read. A settlement after a cancellation is still recorded on the
+payment row (refunding it) and never resurrects the order, re-reserves stock, or commits it.
+No schema change; Stripe webhook architecture untouched.
+
+Evidence: `backend/tests/payment-cancellation-race.test.ts` (12 cases — structural lock-order
+contract; forced-interleave probes proving both sides wait on the order row AND that no path
+holds the `payments` row while waiting; cancel→settlement; settlement→cancel; duplicate event
+id; `checkout.session.completed` + `payment_intent.succeeded`; cancel-vs-expiry sweep;
+`reserved`/`sold_count` exactly-once), plus a new `cancel vs shipment` race in
+`order-fulfillment-state-machine.test.ts`. Full backend suite **986 pass / 0 fail**;
+`tsc --noEmit`, `bun run typecheck` (4 apps) and `bun run build:apps` green; `git diff
+--check` clean. The probe was proven to have teeth: removing the lock from
+`markPaymentCanceled` makes it fail with PostgreSQL `55P03`.
+
 ### 2026-09-29 — fulfilment state machine hardened: `packing` + payment/shipment gates
 
 ONE authority: `backend/lib/order-fulfillment.ts` — `pending → confirmed → packing →
@@ -174,30 +200,11 @@ at every persistence point). The still-open catalog read stayed in §9.4.
   parses it. After editing a test, run that file; a green `bun run typecheck`
   says nothing about it.
 
-- ~~**`PATCH /api/admin/verifications/seller/:id` has no self-action guard.**~~
-  **CLOSED.** The approval path now refuses a reviewer who owns the shop under
-  review (`403 SELF_ACTION_FORBIDDEN` + `ROLLBACK`, before any write). The rule
-  lives in `backend/lib/verification-guard.ts` (`isSelfApproval`) so it is a pure,
-  exhaustively testable function, and `isSelfApproval` is the ONLY gate on the
-  one write that sets `sellers.verification_status = 'verified'`. Covered by
-  `backend/tests/verification-self-approval.test.ts` — the last two of its 12
-  cases are the interesting ones: the guard must run *before* the status write,
-  and no route may grant the badge with a literal `SET verification_status =
-  'verified'`.
-- ~~**`GET /api/admin/verifications` is unpaginated** (`LIMIT 200`).~~ **CLOSED**
-  — see §5 (b) 2. It returns `pagination` ({page, limit, total, totalPages,
-  hasMore}) and the queue has previous/next controls; `limit=1` is the exact-count
-  read.
-- ~~**`GET /api/admin/products/moderation` is still fully unbounded**~~ **CLOSED
-  (2026-09-26, §20).** Bounded via `backend/lib/pagination.ts` (default 25 / max 100,
-  `p.created_at DESC, p.id DESC`, exact `pagination.total`, fallback count past the
-  end); the queue renders one page with previous/next controls, and the executed
-  evidence (9 real-DB/HTTP cases + 9 static guards) is in §20.
-- ~~**`GET /api/admin/sellers` is unbounded too.**~~ **CLOSED (2026-09-26, §19).**
-  The endpoint is bounded (default 25 / max 100, exact `pagination.total`, fallback
-  count for a page past the end) and its only consumer — the VelCenter overview
-  counter — reads that count instead of measuring a fetched list. Executed:
-  `backend/tests/admin-sellers-pagination.test.ts` (8 cases, real DB + real HTTP).
+- ~~**Closed gap records moved out of this file.**~~ **ARCHIVED 2026-09-29** →
+  [`history/archive/AI_Handoff-closed-gaps-2026-09-29.md`](history/archive/AI_Handoff-closed-gaps-2026-09-29.md)
+  (verification self-action guard, unbounded admin product/seller lists,
+  unpaginated verification queue, DB constraint repairs, non-idempotent fixtures,
+  the corrupted revoke string). Closed items are neither current state nor a gap.
 - **`shops.seller_id` is not UNIQUE** (`idx_shops_seller` is a plain index), so a
   seller with two shops would make the verification queue list one verification
   twice — and `COUNT(*) OVER()` would count it twice, consistently. The app
@@ -208,20 +215,9 @@ at every persistence point). The still-open catalog read stayed in §9.4.
   the existing `review.*` namespace (24 keys added to `thReview`/`enReview`/`myReview`;
   `i18n:check` **th=en=my=1319**). `ProductModerationQueue.tsx`'s copy is still
   hardcoded Thai (pre-existing; §20 added only its pagination bar).
-- ~~**The DB constraint repairs must reach the deployed database.**~~ **CLOSED
-  (2026-09-23):** production applied 043 (`under_review` / `needs_correction` on
-  `sellers.status`) at 2026-09-16T14:41:27Z and 044 (`item_unavailable` on both
-  `velrepeat_plans.status` and `velrepeat_runs.status`) at 14:43:58Z — both
-  recorded in the production ledger and both observable in the runner log; 045
-  restored the canonical `media` column names in the same window. See §9.
 - **Migration numbering has duplicates** (029, 030, 034, 035). A prefix-keyed
   runner applied only one file per number, which is exactly how the V0035 repair
   was skipped. New migrations must use an unused number; consider renumbering.
-- ~~**Non-idempotent integration fixtures.**~~ **CLOSED** (2026-09-23):
-  unique per-seed emails/tags everywhere, FK-ordered cleanup via
-  `backend/tests/helpers/purge.ts`, and two consecutive full runs on the same
-  database are green — `23505 … users_email_key` and the `23503` teardown
-  failures are gone.
 - **Channels with no publisher.** `cart:updated`, `order:created` and
   `inventory:updated` are in the subscribe allowlist but nothing broadcasts them.
   **Confirmed by measurement (2026-09-26, §19):** 0 `CHANNELS.*` publisher sites
@@ -233,10 +229,6 @@ at every persistence point). The still-open catalog read stayed in §9.4.
   references `*.velnox.com` — but the `sites.ts` defaults point at dead hosts.
   Owner action: fix the NS delegation or stop treating those defaults as live.
   See §19 finding 1.
-- ~~**One corrupted UI string:** `SellerVerificationQueue.tsx:177`~~ **CLOSED
-  (2026-09-26, §20).** Now `review.revokeSuccess` — `ระงับและลบร้านค้าแล้ว`
-  ("Shop suspended and removed"): the revoke action's own copy names the **shop**
-  (`ร้านค้า`), not a transliterated "retailer".
 ### Known-accepted (deliberate, not to "fix" casually)
 
 - **Legacy DB objects retained on purpose:** `product_verifications`,

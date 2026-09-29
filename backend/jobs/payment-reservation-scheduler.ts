@@ -15,6 +15,10 @@
  * timer is PRESENTATION ONLY — it never decides anything.
  *
  * CONCURRENCY
+ *  0. The transaction takes the ORDER row lock FIRST (`lib/order-lock.ts`), the
+ *     same first statement every other order/payment writer uses. A shared lock
+ *     ORDER — not just a shared row — is what keeps {sweep, payment webhook,
+ *     customer cancel} from deadlocking on `orders` + `payments`.
  *  1. The claim is `UPDATE orders … WHERE status = ANY(expirable) AND
  *     inventory_released = FALSE AND payment_expires_at <= NOW()`. PostgreSQL
  *     serialises the two writers on the row lock; the loser re-evaluates its
@@ -35,6 +39,10 @@
  */
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+// The ONE order-row lock: this sweep runs concurrently with the customer's own
+// cancel and with the Stripe webhook, so it enters the same lock order as they
+// do (order row first) and none of the three can deadlock (lib/order-lock.ts).
+import { lockOrderRow } from "../lib/order-lock.js";
 import {
   isUndefinedColumnError,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
@@ -132,6 +140,11 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
   }
 
   const claimed = await withTransaction(async (client) => {
+    // ORDER ROW FIRST (lib/order-lock.ts). A concurrent cancel does the same,
+    // so the two serialise on one row in one order and the guarded claim below
+    // is evaluated against a row nobody else can be moving.
+    await lockOrderRow(client, orderId);
+
     const claim = await client.query(
       `UPDATE orders
           SET status = $2, updated_at = NOW()

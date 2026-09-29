@@ -1,0 +1,751 @@
+/**
+ * Payment ↔ customer cancellation race hardening.
+ *
+ * WHY THIS FILE EXISTS
+ * -------------------
+ * A customer cancellation and a Stripe settlement/failure/expiry webhook can
+ * arrive for the same order at the same moment. Two things must hold:
+ *
+ *   1. NOTHING CONTRADICTORY IS REACHABLE. Exactly one writer moves the order.
+ *      The pair {order = cancelled, stock committed} and the pair
+ *      {order = paid, stock released} must both be impossible, and a settlement
+ *      that arrives after a cancellation must never resurrect the order, never
+ *      re-reserve stock and never release it twice — while the money is still
+ *      RECORDED (a `paid` payment row is what makes it refundable).
+ *
+ *   2. NEITHER SIDE DEADLOCKS. The guarded `UPDATE orders … WHERE status = ANY(…)`
+ *      claims already made the winner deterministic under READ COMMITTED. What
+ *      was missing was a shared LOCK ORDER: the cancellation invalidated
+ *      `payments` after moving `orders` (orders → payments) while the
+ *      failure/expiry webhook handlers updated `payments` FIRST and `orders`
+ *      second (payments → orders). Two transactions taking the same two rows in
+ *      opposite orders is an AB-BA deadlock that PostgreSQL breaks after
+ *      `deadlock_timeout` by aborting one side — a 500 on the customer's cancel,
+ *      or a `failed` event Stripe has to redeliver. `lib/order-lock.ts` now
+ *      defines the ONE order: the order row is locked first, by every writer.
+ *
+ * The lock-order half is pinned twice: structurally (the lock must precede the
+ * first `payments`/`refunds` write inside each transaction) and at runtime (both
+ * requests must demonstrably WAIT on the order row — which is only possible if
+ * neither is holding a `payments` lock while it waits).
+ *
+ * The DB-gated cases run against `TEST_DATABASE_URL` and skip when it is not
+ * configured, exactly like the rest of this suite. No real Stripe call is made:
+ * webhook cases sign a payload locally with Stripe's own scheme.
+ */
+import { afterEach, describe, expect, test } from "bun:test";
+import { createHmac } from "crypto";
+import express from "express";
+import cookieParser from "cookie-parser";
+import { readFileSync } from "fs";
+import jwt from "jsonwebtoken";
+import { join } from "path";
+
+import { expirePaymentReservation } from "../jobs/payment-reservation-scheduler.js";
+import {
+  PAYMENT_SETTLED_STATUSES,
+  paymentBlocksCancellation,
+} from "../lib/order-lock.js";
+import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
+import { setupCartRoutes } from "../routes/cart.js";
+import { setupStripeRoutes } from "../routes/stripe.js";
+import { hasTestDatabase } from "./helpers/test-db.js";
+import { purgeUsers } from "./helpers/purge.js";
+
+if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "test-secret-for-unit-tests-only-32chars!!";
+
+const root = join(import.meta.dir, "..", "..");
+const read = (rel: string) => readFileSync(join(root, rel), "utf8");
+
+const CART_ROUTE = "backend/routes/cart.ts";
+const STRIPE_ROUTE = "backend/routes/stripe.ts";
+const SWEEP_JOB = "backend/jobs/payment-reservation-scheduler.ts";
+const ORDER_LOCK_LIB = "backend/lib/order-lock.ts";
+
+/**
+ * The body of one top-level declaration, sliced from its opening text to the
+ * next declaration — enough to assert an ORDERING inside a single function
+ * without parsing TypeScript.
+ */
+function bodyOf(source: string, startMarker: string): string {
+  const start = source.indexOf(startMarker);
+  expect(start, `missing declaration: ${startMarker}`).toBeGreaterThanOrEqual(0);
+  const rest = source.slice(start + startMarker.length);
+  const next = rest.search(/\n(export )?(async )?function |\napp\.(get|post|patch|put|delete)\(/);
+  return next < 0 ? rest : rest.slice(0, next);
+}
+
+/**
+ * The `withTransaction(async (client) => { … })` block of a body, from its
+ * opening to the end of the declaration.
+ *
+ * The lock order is a contract about ONE transaction: a statement that runs
+ * outside it (e.g. the single-row `refunds` write syncRefundFromStripe does
+ * before it opens its transaction) holds no order/payment lock and therefore
+ * cannot take part in an order↔payments cycle. Only the transaction's own
+ * statement order can.
+ */
+/** Index of the first fragment, or Infinity when it is absent. */
+function firstIndexOf(source: string, ...needles: string[]): number {
+  const found = needles.map((n) => source.indexOf(n)).filter((i) => i >= 0);
+  return found.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...found);
+}
+
+function transactionOf(body: string, marker: string): string {
+  const start = body.indexOf("withTransaction(async (client) => {");
+  expect(start, `${marker} opens no transaction`).toBeGreaterThanOrEqual(0);
+  return body.slice(start);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. The lock-order contract (structural — no database)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("order-row concurrency — one lock, one order", () => {
+  test("the money-outranks-cancellation rule lives in one place", () => {
+    expect([...PAYMENT_SETTLED_STATUSES]).toEqual(["paid", "processing"]);
+    expect(paymentBlocksCancellation("paid")).toBe(true);
+    expect(paymentBlocksCancellation("processing")).toBe(true);
+    // Everything that leaves the order cancelable.
+    expect(paymentBlocksCancellation("pending")).toBe(false);
+    expect(paymentBlocksCancellation("requires_action")).toBe(false);
+    expect(paymentBlocksCancellation("failed")).toBe(false);
+    expect(paymentBlocksCancellation("cancelled")).toBe(false);
+    expect(paymentBlocksCancellation(null)).toBe(false);
+    expect(paymentBlocksCancellation(undefined)).toBe(false);
+    expect(paymentBlocksCancellation({ status: "paid" })).toBe(false);
+  });
+
+  test("the lock is defined once, and its module states the rule", () => {
+    const lib = read(ORDER_LOCK_LIB);
+    expect(lib).toContain("export async function lockOrderRow(");
+    expect(lib).toContain("FOR UPDATE");
+    // The rule is a comment-as-contract: a future editor who reorders the two
+    // statements must be told why it matters.
+    expect(lib).toContain("deadlock");
+
+    const cart = read(CART_ROUTE);
+    const stripe = read(STRIPE_ROUTE);
+    const sweep = read(SWEEP_JOB);
+    // Exactly one definition of the lock, imported everywhere it is used.
+    expect((lib.match(/FROM orders WHERE id = \$1 FOR UPDATE/g) ?? []).length).toBe(1);
+    expect((cart.match(/FOR UPDATE/g) ?? []).length).toBe(0);
+    expect(cart).toContain("lockOrderRow(client, orderId)");
+    expect(stripe).toContain("lockOrderRow(client, orderId)");
+    expect(sweep).toContain("lockOrderRow(client, orderId)");
+  });
+
+  test("every order+payment transaction takes the ORDER lock before any payment write", () => {
+    const stripe = read(STRIPE_ROUTE);
+    const cases: Array<[string, string, string]> = [
+      [STRIPE_ROUTE, stripe, "async function markPaymentSucceeded("],
+      [STRIPE_ROUTE, stripe, "async function markPaymentFailed("],
+      [STRIPE_ROUTE, stripe, "async function markPaymentCanceled("],
+      [STRIPE_ROUTE, stripe, "async function syncRefundFromStripe("],
+      [
+        CART_ROUTE,
+        read(CART_ROUTE),
+        'app.patch("/api/customer/orders/:orderId/cancel"',
+      ],
+      [
+        SWEEP_JOB,
+        read(SWEEP_JOB),
+        "export async function expirePaymentReservation(",
+      ],
+    ];
+
+    for (const [file, source, marker] of cases) {
+      const tx = transactionOf(bodyOf(source, marker), `${file} — ${marker}`);
+      const lockAt = tx.indexOf("lockOrderRow(");
+      expect(lockAt, `${file} — ${marker} never takes the order lock`).toBeGreaterThanOrEqual(0);
+      // The lock is the transaction's FIRST statement: nothing may be read or
+      // written through a pool client before it.
+      const firstStatementAt = tx.indexOf("client.query(");
+      expect(
+        lockAt < firstStatementAt,
+        `${file} — ${marker} runs a statement before locking the order`,
+      ).toBe(true);
+      // …and specifically before any payment/refund write. The inverse order is
+      // what produced the deadlock this file exists to pin.
+      const paymentWriteAt = firstIndexOf(tx, "UPDATE payments", "INSERT INTO payments", "INSERT INTO refunds", "UPDATE refunds");
+      expect(
+        lockAt < paymentWriteAt,
+        `${file} — ${marker} touches payments/refunds before locking the order`,
+      ).toBe(true);
+    }
+  });
+
+  test("the cancellation reads the payment state UNDER the lock, not just before it", () => {
+    const cart = read(CART_ROUTE);
+    const body = bodyOf(cart, 'app.patch("/api/customer/orders/:orderId/cancel"');
+    const lockAt = body.indexOf("lockOrderRow(");
+    const authoritativeReadAt = body.indexOf("latestPaymentStatusForOrder(");
+    const claimAt = body.indexOf("UPDATE orders SET status = 'cancelled'");
+    // The pre-transaction read is only a fast path: it answers 404/409 without a
+    // lock. The gate that decides must sit between the lock and the claim, so a
+    // payment that settled while this request waited for the row is still seen.
+    expect(lockAt).toBeGreaterThanOrEqual(0);
+    expect(authoritativeReadAt).toBeGreaterThan(lockAt);
+    expect(authoritativeReadAt).toBeLessThan(claimAt);
+    expect(body).toContain("paymentBlocksCancellation(paymentStatus)");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. Database-gated: the real races, with real assertions
+// ═══════════════════════════════════════════════════════════════════════════
+
+const describeDb = hasTestDatabase() ? describe : describe.skip;
+
+describeDb("payment ↔ cancellation races (requires TEST_DATABASE_URL)", () => {
+  const PAYMENT_ENV_KEYS = [
+    "STRIPE_SECRET_KEY",
+    "STRIPE_PUBLISHABLE_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_MODE",
+  ] as const;
+  const WEBHOOK_SECRET = "whsec_000000000000000000000000";
+  const JWT_SECRET = process.env.JWT_SECRET!;
+
+  afterEach(() => {
+    for (const key of PAYMENT_ENV_KEYS) delete process.env[key];
+  });
+
+  function token(userId: string): string {
+    return jwt.sign({ userId, email: `${userId}@test.local` }, JWT_SECRET, { expiresIn: "1h" });
+  }
+
+  /** Stripe's own signature scheme, computed locally — no network, no SDK. */
+  function stripeSignature(payload: string, secret: string, timestamp = Math.floor(Date.now() / 1000)): string {
+    const signature = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
+    return `t=${timestamp},v1=${signature}`;
+  }
+
+  function buildApp(): express.Express {
+    const app = express();
+    app.use(stripeWebhookRawBody);
+    app.use(express.json());
+    app.use(cookieParser());
+    setupCartRoutes(app);
+    setupStripeRoutes(app);
+    return app;
+  }
+
+  async function withServer<T>(fn: (base: string) => Promise<T>): Promise<T> {
+    const server = buildApp().listen(0);
+    const port = (server.address() as { port: number }).port;
+    try {
+      return await fn(`http://127.0.0.1:${port}`);
+    } finally {
+      server.close();
+    }
+  }
+
+  interface SeedOptions {
+    status: string;
+    quantity?: number;
+    /** Units this order has reserved — what a cancellation/expiry must give back. */
+    reserved?: number;
+    soldCount?: number;
+    inventoryReleased?: boolean;
+    payment?: { status: string; sessionId?: string | null } | null;
+  }
+
+  /**
+   * Seed owner → seller → shop → product → inventory → order (+ item).
+   * Stock is seeded the way checkout reserves it (`inventory.reserved += qty`),
+   * so a correct cancellation must bring `reserved` back to 0 — and a second
+   * release, or a settlement, would be visible as a wrong `reserved`/`sold_count`.
+   */
+  async function seedOrder(opts: SeedOptions) {
+    const { query } = await import("../db/index.js");
+    const quantity = opts.quantity ?? 3;
+    const reserved = opts.reserved ?? quantity;
+    const tag = `race-${crypto.randomUUID()}`;
+
+    const owner = await query(`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`, [
+      `${tag}-owner@test.local`,
+      "Race Owner",
+    ]);
+    const ownerId = owner.rows[0].id as string;
+    const sellerUser = await query(`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`, [
+      `${tag}-seller@test.local`,
+      "Race Seller",
+    ]);
+    const sellerUserId = sellerUser.rows[0].id as string;
+    const seller = await query(`INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id`, [sellerUserId]);
+    const shop = await query(`INSERT INTO shops (seller_id, name, slug) VALUES ($1, $2, $3) RETURNING id`, [
+      seller.rows[0].id,
+      `${tag} shop`,
+      tag,
+    ]);
+    const product = await query(
+      `INSERT INTO products (shop_id, name, slug, price, status, sold_count)
+       VALUES ($1, $2, $3, 120.00, 'published', $4) RETURNING id`,
+      [shop.rows[0].id, `${tag} product`, `${tag}-p`, opts.soldCount ?? 0],
+    );
+    const productId = product.rows[0].id as string;
+    await query(`INSERT INTO inventory (product_id, quantity, reserved) VALUES ($1, 50, $2)`, [productId, reserved]);
+
+    const order = await query(
+      `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency, inventory_released)
+       VALUES ($1, $2, $3, $4, 360.00, 'THB', $5) RETURNING id`,
+      [ownerId, shop.rows[0].id, `RC-${tag.slice(-12)}`, opts.status, opts.inventoryReleased ?? false],
+    );
+    const orderId = order.rows[0].id as string;
+    await query(
+      `INSERT INTO order_items (order_id, product_id, shop_id, product_name, quantity, price, subtotal)
+       VALUES ($1, $2, $3, $4, $5, 120.00, $6)`,
+      [orderId, productId, shop.rows[0].id, `${tag} product`, quantity, quantity * 120],
+    );
+    if (opts.payment) {
+      await query(
+        `INSERT INTO payments (order_id, provider, method, amount, currency, status, provider_checkout_session_id)
+         VALUES ($1, 'stripe', 'CARD', 360.00, 'THB', $2, $3)`,
+        [orderId, opts.payment.status, opts.payment.sessionId ?? null],
+      );
+    }
+    return { orderId, ownerId, sellerUserId, productId, quantity };
+  }
+
+  /** Everything a cancellation, a settlement or an expiry can change. */
+  async function stateOf(orderId: string, productId: string) {
+    const { query } = await import("../db/index.js");
+    const order = (await query(`SELECT status, inventory_released FROM orders WHERE id = $1`, [orderId])).rows[0];
+    const inventory = (await query(`SELECT quantity, reserved FROM inventory WHERE product_id = $1`, [productId])).rows[0];
+    const product = (await query(`SELECT sold_count FROM products WHERE id = $1`, [productId])).rows[0];
+    const payments = (
+      await query(`SELECT status, failure_code FROM payments WHERE order_id = $1 ORDER BY created_at ASC`, [orderId])
+    ).rows as Array<{ status: string; failure_code: string | null }>;
+    return {
+      status: order.status as string,
+      inventoryReleased: order.inventory_released as boolean,
+      reserved: Number(inventory.reserved),
+      quantity: Number(inventory.quantity),
+      soldCount: Number(product.sold_count),
+      payments,
+    };
+  }
+
+  async function cancel(base: string, orderId: string, asUserId: string) {
+    const res = await fetch(`${base}/api/customer/orders/${orderId}/cancel`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: `velnox_session=${token(asUserId)}` },
+    });
+    const body = (await res.json()) as {
+      data?: { status?: string; cancelled?: boolean; stockReleased?: boolean };
+      error?: { code?: string };
+    };
+    return { status: res.status, body };
+  }
+
+  /** Deliver a locally signed Stripe event to the real webhook route. */
+  async function deliverWebhook(event: Record<string, unknown>): Promise<number> {
+    process.env.STRIPE_SECRET_KEY = "sk_test_000000000000000000000000";
+    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    const payload = JSON.stringify(event);
+    return withServer(async (base) => {
+      const res = await fetch(`${base}/api/payments/stripe/webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "stripe-signature": stripeSignature(payload, WEBHOOK_SECRET) },
+        body: payload,
+      });
+      return res.status;
+    });
+  }
+
+  function succeededEvent(orderId: string, intentId = `pi_${crypto.randomUUID()}`) {
+    return {
+      id: `evt_${crypto.randomUUID()}`,
+      object: "event",
+      type: "payment_intent.succeeded",
+      data: { object: { id: intentId, object: "payment_intent", metadata: { orderId } } },
+    };
+  }
+
+  function paidSessionEvent(orderId: string) {
+    return {
+      id: `evt_${crypto.randomUUID()}`,
+      object: "event",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: `cs_test_${crypto.randomUUID()}`,
+          object: "checkout.session",
+          payment_status: "paid",
+          payment_intent: `pi_${crypto.randomUUID()}`,
+          metadata: { orderId },
+        },
+      },
+    };
+  }
+
+  /** The provider closing the abandoned session — a `payments`-then-`orders` path. */
+  function expiredSessionEvent(orderId: string) {
+    return {
+      id: `evt_${crypto.randomUUID()}`,
+      object: "event",
+      type: "checkout.session.expired",
+      data: { object: { id: `cs_test_${crypto.randomUUID()}`, object: "checkout.session", metadata: { orderId } } },
+    };
+  }
+
+  /**
+   * Hold the order row's exclusive lock in a SEPARATE connection, so a test can
+   * put two real requests in flight and observe that they both wait on the very
+   * same row — i.e. that neither is holding a `payments` lock while it waits.
+   */
+  async function holdOrderLock<T>(orderId: string, fn: (release: () => Promise<void>) => Promise<T>): Promise<T> {
+    const { getClient } = await import("../db/index.js");
+    const holder = await getClient();
+    let released = false;
+    await holder.query("BEGIN");
+    await holder.query(`SELECT id FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);
+    const release = async () => {
+      released = true;
+      await holder.query("COMMIT");
+      holder.release();
+    };
+    try {
+      return await fn(release);
+    } finally {
+      if (!released) {
+        try {
+          await holder.query("ROLLBACK");
+        } catch {
+          /* the connection is being discarded either way */
+        }
+        holder.release();
+      }
+    }
+  }
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // ── §8 cancel → payment success ──────────────────────────────────────────
+
+  test("a settlement after the cancellation is RECORDED but never resurrects the order", async () => {
+    const seed = await seedOrder({
+      status: "pending_payment",
+      quantity: 3,
+      payment: { status: "requires_action" },
+    });
+    try {
+      await withServer(async (base) => {
+        const res = await cancel(base, seed.orderId, seed.ownerId);
+        expect(res.status).toBe(200);
+        expect(res.body.data?.cancelled).toBe(true);
+      });
+
+      // A real, correctly signed settlement for the order the customer just called off.
+      expect(await deliverWebhook(succeededEvent(seed.orderId))).toBe(200);
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      // The order is NOT resurrected and stays terminal.
+      expect(after.status).toBe("cancelled");
+      // Stock was released once and is NOT re-reserved.
+      expect(after.inventoryReleased).toBe(true);
+      expect(after.reserved).toBe(0);
+      // …and is NOT committed: nothing shipped, so nothing was sold.
+      expect(after.soldCount).toBe(0);
+      // The money is not lost: the payment row carries it, which is exactly what
+      // makes the case refundable by an operator.
+      expect(after.payments).toHaveLength(1);
+      expect(after.payments[0].status).toBe("paid");
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  // ── §9 payment success → cancel ──────────────────────────────────────────
+
+  test("the settlement that lands first wins: the later cancellation is refused and releases nothing", async () => {
+    const seed = await seedOrder({
+      status: "pending_payment",
+      quantity: 3,
+      payment: { status: "requires_action" },
+    });
+    try {
+      // 1. The money commits.
+      expect(await deliverWebhook(succeededEvent(seed.orderId))).toBe(200);
+      const paid = await stateOf(seed.orderId, seed.productId);
+      expect(paid.status).toBe("paid");
+      expect(paid.inventoryReleased).toBe(false);
+      expect(paid.reserved).toBe(0); // reserved → committed
+      expect(paid.soldCount).toBe(3); // exactly once
+
+      // 2. The customer tries to cancel afterwards.
+      const refused = await withServer((base) => cancel(base, seed.orderId, seed.ownerId));
+      // Refused — never treated as the cancellation of an unpaid order. A fully
+      // paid order is outside the cancelable set (`400 INVALID_STATUS`), which is
+      // the state machine's own answer; `409 ORDER_ALREADY_PAID` is the answer for
+      // a payment that settled while the order row lagged. Either way it refused.
+      expect([400, 409]).toContain(refused.status);
+      expect(["INVALID_STATUS", "ORDER_ALREADY_PAID"]).toContain(refused.body.error?.code ?? "");
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("paid");
+      // Not released: the units are sold now, and a "cancellation" must not hand
+      // them back to the shelf.
+      expect(after.inventoryReleased).toBe(false);
+      expect(after.reserved).toBe(0);
+      expect(after.soldCount).toBe(3);
+      expect(after.payments[0].status).toBe("paid");
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  // ── §10 duplicate webhooks ───────────────────────────────────────────────
+
+  test("a duplicate payment_intent.succeeded settles exactly once", async () => {
+    const seed = await seedOrder({
+      status: "pending_payment",
+      quantity: 2,
+      payment: { status: "requires_action" },
+    });
+    try {
+      const event = succeededEvent(seed.orderId);
+      expect(await deliverWebhook(event)).toBe(200);
+      // The same event id again — Stripe's own redelivery.
+      expect(await deliverWebhook(event)).toBe(200);
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("paid");
+      expect(after.soldCount).toBe(2); // NOT 4
+      expect(after.reserved).toBe(0); // NOT -2
+      expect(after.payments.filter((p) => p.status === "paid")).toHaveLength(1);
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("checkout.session.completed + payment_intent.succeeded settle one order exactly once", async () => {
+    const seed = await seedOrder({
+      status: "pending_payment",
+      quantity: 2,
+      payment: { status: "requires_action" },
+    });
+    try {
+      // Two DIFFERENT event ids for the same charge: both are authoritative and
+      // carry `paid`, so the second must be an idempotent no-op on the order.
+      expect(await deliverWebhook(paidSessionEvent(seed.orderId))).toBe(200);
+      expect(await deliverWebhook(succeededEvent(seed.orderId))).toBe(200);
+
+      const after = await stateOf(seed.orderId, seed.productId);
+      expect(after.status).toBe("paid");
+      expect(after.soldCount).toBe(2);
+      expect(after.reserved).toBe(0);
+      expect(after.inventoryReleased).toBe(false);
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  // ── §5/§6 the concurrent cases ───────────────────────────────────────────
+
+  test("a concurrent cancellation and settlement both WAIT on the order row, and exactly one wins", async () => {
+    const seed = await seedOrder({
+      status: "pending_payment",
+      quantity: 3,
+      payment: { status: "requires_action" },
+    });
+    try {
+      await holdOrderLock(seed.orderId, async (release) => {
+        // Fire both real requests while the order row is locked elsewhere.
+        let cancelDone = false;
+        let webhookDone = false;
+        const cancelPromise = withServer((base) => cancel(base, seed.orderId, seed.ownerId)).then((r) => {
+          cancelDone = true;
+          return r;
+        });
+        const webhookPromise = deliverWebhook(succeededEvent(seed.orderId)).then((s) => {
+          webhookDone = true;
+          return s;
+        });
+
+        await sleep(600);
+        // BOTH are blocked on the same row. This is the runtime proof of the lock
+        // order: the webhook's failure/cancel handlers used to touch `payments`
+        // first, which would have let it proceed (holding the payment row) and
+        // deadlock against the cancellation. A path that never locks the order
+        // row would simply have completed here.
+        expect(cancelDone).toBe(false);
+        expect(webhookDone).toBe(false);
+
+        await release();
+
+        const [cancelled, webhookStatus] = await Promise.all([cancelPromise, webhookPromise]);
+        // Both requests resolved — no `deadlock detected` (40P01) 500, no 503.
+        expect(webhookStatus).toBe(200);
+        expect([200, 409]).toContain(cancelled.status);
+
+        const after = await stateOf(seed.orderId, seed.productId);
+        // Exactly one of the two legal outcomes — never a mixture.
+        const cancelledWon = after.status === "cancelled";
+        const paidWon = after.status === "paid";
+        expect(cancelledWon || paidWon).toBe(true);
+
+        if (cancelledWon) {
+          expect(after.inventoryReleased).toBe(true);
+          expect(after.reserved).toBe(0);
+          expect(after.soldCount).toBe(0); // never committed for a cancelled order
+        } else {
+          expect(after.inventoryReleased).toBe(false);
+          expect(after.reserved).toBe(0);
+          expect(after.soldCount).toBe(3); // committed exactly once
+        }
+      });
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("a concurrent cancellation and expiry sweep end the order once and release the stock once", async () => {
+    const seed = await seedOrder({
+      status: "pending_payment",
+      quantity: 4,
+      payment: { status: "requires_action" },
+    });
+    // Make the reservation due so the sweep is a live writer.
+    const { query } = await import("../db/index.js");
+    await query(
+      `UPDATE orders SET payment_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+      [seed.orderId],
+    );
+    try {
+      await holdOrderLock(seed.orderId, async (release) => {
+        let cancelDone = false;
+        let sweepDone = false;
+        const cancelPromise = withServer((base) => cancel(base, seed.orderId, seed.ownerId)).then((r) => {
+          cancelDone = true;
+          return r;
+        });
+        const sweepPromise = expirePaymentReservation(seed.orderId).then((r) => {
+          sweepDone = true;
+          return r;
+        });
+
+        await sleep(600);
+        expect(cancelDone).toBe(false);
+        expect(sweepDone).toBe(false);
+
+        await release();
+        const [cancelled, sweep] = await Promise.all([cancelPromise, sweepPromise]);
+        expect([200, 409]).toContain(cancelled.status);
+        // Loser or winner, the sweep itself never reports a contradiction.
+        expect(sweep.outcome === "expired" || sweep.outcome === "skipped" || sweep.outcome === "missing").toBe(true);
+
+        const after = await stateOf(seed.orderId, seed.productId);
+        expect(["cancelled", "expired"]).toContain(after.status);
+        // Released exactly once, by whichever side moved the order.
+        expect(after.inventoryReleased).toBe(true);
+        expect(after.reserved).toBe(0);
+        expect(after.soldCount).toBe(0);
+        // An expired reservation is never a captured payment.
+        expect(after.payments.every((p) => p.status !== "paid")).toBe(true);
+
+        // A repeated sweep after the fact stays a no-op — the stock is never
+        // returned twice, whichever writer won.
+        const repeat = await expirePaymentReservation(seed.orderId);
+        expect(repeat.outcome).not.toBe("expired");
+        const settled = await stateOf(seed.orderId, seed.productId);
+        expect(settled.reserved).toBe(0);
+        expect(settled.quantity).toBe(50);
+      });
+    } finally {
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("the expiry webhook waits on the ORDER row and never holds the payments row while it waits", async () => {
+    // The discriminating case for the lock ORDER, not just the lock target: this
+    // is the handler that used to run `UPDATE payments` BEFORE `UPDATE orders`,
+    // inverting the order against the cancellation route. A transaction that
+    // holds the payment row while it waits for the order row is one half of an
+    // AB-BA deadlock; proving it holds NEITHER is what makes the fix real.
+    const seed = await seedOrder({ status: "pending_payment", quantity: 2, payment: { status: "requires_action" } });
+    const { getClient, query } = await import("../db/index.js");
+    const event = expiredSessionEvent(seed.orderId);
+    try {
+      await holdOrderLock(seed.orderId, async (release) => {
+        let webhookDone = false;
+        const webhookPromise = deliverWebhook(event).then((s) => {
+          webhookDone = true;
+          return s;
+        });
+
+        // Wait until the event is CLAIMED — the handler is past signature
+        // verification and about to enter the order/payment transaction.
+        let claimed = false;
+        for (let i = 0; i < 60 && !claimed; i++) {
+          claimed = (await query(`SELECT id FROM payment_events WHERE event_id = $1`, [event.id])).rows.length > 0;
+          if (!claimed) await sleep(25);
+        }
+        expect(claimed).toBe(true);
+        await sleep(150);
+        expect(webhookDone).toBe(false); // still inside the transaction, blocked
+
+        // Probe the payments row from a third connection. If the webhook had
+        // taken `payments` before `orders` (the old order) it would be holding
+        // this row right now, and NOWAIT would raise 55P03.
+        const probe = await getClient();
+        try {
+          await probe.query("BEGIN");
+          await probe.query(`SELECT id FROM payments WHERE order_id = $1 FOR UPDATE NOWAIT`, [seed.orderId]);
+          await probe.query("ROLLBACK");
+        } finally {
+          probe.release();
+        }
+
+        await release();
+        expect(await webhookPromise).toBe(200);
+
+        const after = await stateOf(seed.orderId, seed.productId);
+        expect(after.status).toBe("cancelled");
+        expect(after.inventoryReleased).toBe(true);
+        expect(after.reserved).toBe(0);
+      });
+    } finally {
+      await query(`DELETE FROM payment_events WHERE event_id = $1`, [event.id]);
+      await purgeUsers([seed.ownerId, seed.sellerUserId]);
+    }
+  });
+
+  test("a settlement can never release, and a release can never settle, on the same order", async () => {
+    // The two invariants, pinned directly against the guard each writer uses.
+    const paidSeed = await seedOrder({
+      status: "paid",
+      quantity: 2,
+      reserved: 0,
+      soldCount: 2,
+      payment: { status: "paid" },
+    });
+    const releasedSeed = await seedOrder({
+      status: "cancelled",
+      quantity: 2,
+      reserved: 0,
+      inventoryReleased: true,
+      payment: { status: "cancelled" },
+    });
+    try {
+      // A settlement for an already-paid order is a no-op on the stock.
+      expect(await deliverWebhook(succeededEvent(paidSeed.orderId))).toBe(200);
+      const paid = await stateOf(paidSeed.orderId, paidSeed.productId);
+      expect(paid.soldCount).toBe(2); // exactly once
+      expect(paid.inventoryReleased).toBe(false);
+      expect(paid.reserved).toBe(0);
+
+      // A settlement for an order whose stock was already released is recorded
+      // and reported, never committed.
+      expect(await deliverWebhook(succeededEvent(releasedSeed.orderId))).toBe(200);
+      const released = await stateOf(releasedSeed.orderId, releasedSeed.productId);
+      expect(released.status).toBe("cancelled");
+      expect(released.soldCount).toBe(0);
+      expect(released.reserved).toBe(0); // never re-reserved
+      expect(released.inventoryReleased).toBe(true);
+    } finally {
+      await purgeUsers([paidSeed.ownerId, paidSeed.sellerUserId, releasedSeed.ownerId, releasedSeed.sellerUserId]);
+    }
+  });
+});

@@ -37,6 +37,10 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+// The ONE order-row lock. Every transaction below that writes both `orders` and
+// `payments`/`refunds` takes it FIRST, so a customer cancellation and a webhook
+// take the same two rows in the same order and cannot deadlock (lib/order-lock.ts).
+import { lockOrderRow } from "../lib/order-lock.js";
 // The ONE order-number generator; stripe.ts used to carry a second, unused copy.
 import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
@@ -339,6 +343,12 @@ async function markPaymentSucceeded(
   providerPaymentId: string | null,
 ): Promise<SyncResult> {
   return withTransaction(async (client) => {
+    // ORDER ROW FIRST (lib/order-lock.ts). The order row is the single
+    // serialisation point for settlement, cancellation and expiry; taking it
+    // before `payments` means a concurrent cancel and this delivery queue behind
+    // one lock in one order instead of forming an AB-BA deadlock.
+    await lockOrderRow(client, orderId);
+
     const updated = await client.query(
       `UPDATE orders SET status = 'paid', updated_at = NOW()
        WHERE id = $1 AND status IN ('pending', 'pending_payment')
@@ -437,6 +447,12 @@ async function markPaymentFailed(
   failureMessage: string,
 ): Promise<SyncResult> {
   return withTransaction(async (client) => {
+    // ORDER ROW FIRST. This handler used to touch `payments` before `orders`,
+    // which inverted the lock order against the cancellation route (orders →
+    // payments) and made the two deadlock-able. The order row is taken first
+    // here too, so every writer shares one order (lib/order-lock.ts).
+    await lockOrderRow(client, orderId);
+
     await client.query(
       `UPDATE payments
           SET status = 'failed', failure_code = $2, failure_message = $3, updated_at = NOW()
@@ -464,6 +480,12 @@ async function markPaymentFailed(
  */
 async function markPaymentCanceled(orderId: string, reason: string): Promise<SyncResult> {
   return withTransaction(async (client) => {
+    // ORDER ROW FIRST — same reason as markPaymentFailed above: this path runs
+    // concurrently with the customer's own cancel for exactly the same order
+    // (“the buyer pressed cancel while the session expired”), so the two must
+    // not take `orders`/`payments` in opposite orders (lib/order-lock.ts).
+    await lockOrderRow(client, orderId);
+
     await client.query(
       `UPDATE payments
           SET status = 'cancelled', failure_code = $2, failure_message = $3, updated_at = NOW()
@@ -544,6 +566,12 @@ async function syncRefundFromStripe(
   let resolvedStatus: string | null = null;
 
   await withTransaction(async (client) => {
+    // ORDER ROW FIRST, for the same reason as the settlement and cancellation
+    // paths: this transaction writes `refunds`, `payments` and (on a full refund)
+    // the order itself, so it must enter the same lock order as every other
+    // order writer (lib/order-lock.ts).
+    await lockOrderRow(client, payment!.order_id);
+
     await client.query(
       `INSERT INTO refunds
          (order_id, payment_id, provider, provider_refund_id, amount, reason, status, refunded_at)

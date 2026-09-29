@@ -171,7 +171,14 @@ describe("backend contract — the cancel endpoint", () => {
   test("the transition, the payment invalidation and the stock release share one transaction", () => {
     expect(cancelBody).toContain("const outcome = await withTransaction(async (client) => {");
     expect(cancelBody).toContain("await releaseOrderInventory(client, orderId);");
-    expect(cancelBody).toContain("return { moved, released };");
+    // The transaction's FIRST statement is the order-row lock, so a concurrent
+    // Stripe webhook serialises behind the same row in the same lock order
+    // (`backend/tests/payment-cancellation-race.test.ts` pins that contract
+    // across every order/payment writer). The result carries the refusal the
+    // in-lock money gate can produce, which is answered above this block.
+    expect(cancelBody).toContain("const locked = await lockOrderRow(client, orderId);");
+    expect(cancelBody).toContain("return { moved, released, blockedBy: null as string | null };");
+    expect(cancelBody).toContain("if (outcome.blockedBy === \"paid\") {");
     // The order must be `cancelled` BEFORE the release, because
     // releaseOrderInventory only releases for a releasable status.
     expect(cancelBody.indexOf("SET status = 'cancelled'")).toBeLessThan(

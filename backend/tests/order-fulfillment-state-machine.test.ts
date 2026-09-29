@@ -611,4 +611,94 @@ describe("fulfilment gates and races (requires TEST_DATABASE_URL)", () => {
     },
     30_000,
   );
+
+  testFn(
+    "cancel vs shipment: whoever commits first wins, the loser is refused",
+    async () => {
+      const { query, withTransaction } = await import("../db/index.js");
+      const { randomUUID } = await import("crypto");
+      const tag = `ful-${randomUUID().slice(0, 8)}`;
+      const user = await query(
+        `INSERT INTO users (email, name) VALUES ($1, 'Ful Test') RETURNING id`,
+        [`${tag}@test.local`],
+      );
+      const userId = user.rows[0].id as string;
+      const CANCELABLE = ["pending", "pending_payment", "confirmed"];
+
+      const mkOrder = async (status: string) => {
+        const res = await query(
+          `INSERT INTO orders (user_id, status, total_amount, currency) VALUES ($1, $2, 100, 'THB') RETURNING id`,
+          [userId, status],
+        );
+        return res.rows[0].id as string;
+      };
+
+      try {
+        // ── Case A: the shipment commits first ──────────────────────────────
+        const shipped = await mkOrder("packing");
+        await withTransaction((client) =>
+          ensureShipmentForShipping(client, shipped, { carrier: "Kerry", trackingNumber: "TH111" }),
+        );
+        const sellerWon = await withTransaction(async (client) => {
+          const current = await client.query(`SELECT status FROM orders WHERE id = $1 FOR UPDATE`, [shipped]);
+          const from = normalizeOrderStatusToFulfillment(current.rows[0].status);
+          expect(canTransitionFulfillment(from, "shipped")).toBe(true);
+          await client.query(`UPDATE orders SET status = 'shipped', updated_at = NOW() WHERE id = $1`, [shipped]);
+          return true;
+        });
+        expect(sellerWon).toBe(true);
+
+        // The customer's cancel now matches no row — `shipped` is outside the
+        // cancelable set — so the order stays shipped and the stock is never
+        // released a second time.
+        const cancelOutcome = await withTransaction(async (client) => {
+          const claim = await client.query(
+            `UPDATE orders SET status = 'cancelled', updated_at = NOW()
+              WHERE id = $1 AND status = ANY($2::text[])
+              RETURNING id`,
+            [shipped, CANCELABLE],
+          );
+          return claim.rows.length > 0;
+        });
+        expect(cancelOutcome).toBe(false);
+        let status = await query(`SELECT status FROM orders WHERE id = $1`, [shipped]);
+        expect(status.rows[0].status).toBe("shipped");
+        let rows = await query(`SELECT id FROM shipments WHERE order_id = $1`, [shipped]);
+        expect(rows.rows.length).toBe(1);
+
+        // ── Case B: the cancel commits first ────────────────────────────────
+        const cancelled = await mkOrder("confirmed");
+        const customerWon = await withTransaction(async (client) => {
+          const claim = await client.query(
+            `UPDATE orders SET status = 'cancelled', updated_at = NOW()
+              WHERE id = $1 AND status = ANY($2::text[])
+              RETURNING id`,
+            [cancelled, CANCELABLE],
+          );
+          return claim.rows.length > 0;
+        });
+        expect(customerWon).toBe(true);
+
+        // The seller's `shipped` is refused under the row lock — and because the
+        // transition table is checked BEFORE the shipment is written, a cancelled
+        // order never gains a tracking row for a shipment that will not happen.
+        const sellerRefused = await withTransaction(async (client) => {
+          const current = await client.query(`SELECT status FROM orders WHERE id = $1 FOR UPDATE`, [cancelled]);
+          const from = normalizeOrderStatusToFulfillment(current.rows[0].status);
+          if (canTransitionFulfillment(from, "shipped")) {
+            await ensureShipmentForShipping(client, cancelled, { carrier: "Kerry", trackingNumber: "TH222" });
+          }
+          return !canTransitionFulfillment(from, "shipped");
+        });
+        expect(sellerRefused).toBe(true);
+        rows = await query(`SELECT id FROM shipments WHERE order_id = $1`, [cancelled]);
+        expect(rows.rows.length).toBe(0);
+        status = await query(`SELECT status FROM orders WHERE id = $1`, [cancelled]);
+        expect(status.rows[0].status).toBe("cancelled");
+      } finally {
+        await purgeUsers([userId]);
+      }
+    },
+    30_000,
+  );
 });

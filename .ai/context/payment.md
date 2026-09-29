@@ -110,6 +110,22 @@ is the backend's promise:
   abandoned Checkout Session first** (`expireStripeCheckoutSession()`), so the old Stripe tab
   cannot charge an order that is no longer payable. The cancel endpoint itself is documented
   in `checkout.md`; its rule is `orderCustomerCancelability()` in `packages/shared`.
+- **One lock order — the ORDER row is locked FIRST, by every writer.**
+  `backend/lib/order-lock.ts` defines the contract: any transaction that writes more than one
+  of `{orders, payments, refunds, order_items}` opens with
+  `SELECT … FROM orders WHERE id = $1 FOR UPDATE`. Cancellation (`cart.ts`), settlement
+  (`markPaymentSucceeded`), failure/expiry webhooks (`markPaymentFailed`,
+  `markPaymentCanceled`), the refund sync and the reservation sweep all obey it. It matters
+  because those transactions used to take the two rows in OPPOSITE orders (cancel =
+  `orders` → `payments`; the failure/cancel handlers = `payments` → `orders`), which is an
+  AB-BA deadlock PostgreSQL breaks by aborting one side — a 500 on the customer's cancel, or
+  a `failed` event Stripe must redeliver, with the winner decided by lock timing rather than
+  by the business rule. The cancel route ALSO re-reads the payment state **under** that lock
+  (`paymentBlocksCancellation` → `paid`/`processing` still refuse with `ORDER_ALREADY_PAID` /
+  `PAYMENT_IN_PROGRESS`), so its money gate is authoritative instead of a read-then-write
+  check. Pinned by `backend/tests/payment-cancellation-race.test.ts` (structural contract +
+  forced-interleave probes, including a `FOR UPDATE NOWAIT` read of `payments` that fails
+  with `55P03` if any path locks the rows in the wrong order).
 - **Order ↔ payment are separate lifecycles.** Payment states: `pending`,
   `requires_action`, `processing`, `paid`, `failed`, `cancelled`, plus
   `refunded_amount` / `refund_status`. Paired transitions only: `paid`→`paid`,
