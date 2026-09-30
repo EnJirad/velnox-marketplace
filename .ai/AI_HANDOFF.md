@@ -653,7 +653,9 @@ prepaid fulfillment failure) + §60.3 **Q13–Q17** + Q2 residual (`sold_count` 
 **1A–7B**. The three structural blockers (§51) remain and are folded into contract §61.
 
 **Verification:** `git diff --check` clean · docs-only (no typecheck/test impact; DB-gated tests still
-skip locally) · **PRODUCTION = BLOCKED** (Neon quota; migrations 048/049/050 unapplied).
+skip locally) · remote `main` = `94888dc` (push verified) · CI **Tests** run
+[`36665766003`](https://github.com/EnJirad/velnox-marketplace/actions/runs/36665766003) **success**
+(1m11s) · **PRODUCTION = BLOCKED** (Neon quota; migrations 048/049/050 unapplied).
 
 **Next step:** owner answers A–I (+Q13–Q17) → then contract §62 **Phase 1** (domain + schema) may
 start; nothing before.
