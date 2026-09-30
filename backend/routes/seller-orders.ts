@@ -749,9 +749,20 @@ export function setupSellerOrderRoutes(app: Express): void {
   });
 
   // ── POST /api/subscriptions/process-due ───────────────────────────────────
-  // Manually run the due-plan worker (the same engine the VelRepeat scheduler
-  // polls). Reuses processPlan from jobs/velrepeat-scheduler.ts — one order
-  // per shop, idempotent runs, no duplicate subscription systems.
+  // Force-run the due-plan worker (the same engine the VelRepeat scheduler
+  // polls) — for THIS SELLER's plans only. Reuses processPlan from
+  // jobs/velrepeat-scheduler.ts — one order per shop, idempotent runs, no
+  // duplicate subscription systems.
+  //
+  // OWNERSHIP (owner decision, 2026-09-30 — contract §35): the CENTRAL
+  // SCHEDULER owns global due-plan processing. A seller must never trigger a
+  // customer's plan that is not theirs. The selection below is therefore scoped
+  // with the SAME ownership predicate the read path already uses
+  // (`GET /api/seller/subscriptions`, `WHERE vi.seller_id = $1`): a plan is
+  // only eligible when at least one of its items belongs to the calling
+  // seller. Before this change the query had no user scope at all, so any
+  // approved seller could force-run any customer's due plans — a cross-tenant
+  // side-effect trigger.
   app.post("/api/subscriptions/process-due", requireAuth, async (req: Request, res: Response) => {
     try {
       const sellerRes = await query(
@@ -766,11 +777,15 @@ export function setupSellerOrderRoutes(app: Express): void {
 
       const limit = Math.min(Math.max(parseInt(req.body?.limit as string) || 25, 1), 100);
       const due = await query(
-        `SELECT id FROM velrepeat_plans
-         WHERE status = 'active' AND next_run_at <= NOW()
-         ORDER BY next_run_at ASC
-         LIMIT $1`,
-        [limit],
+        `SELECT vp.id FROM velrepeat_plans vp
+         WHERE vp.status = 'active' AND vp.next_run_at <= NOW()
+           AND EXISTS (
+             SELECT 1 FROM velrepeat_items vi
+              WHERE vi.plan_id = vp.id AND vi.seller_id = $1
+           )
+         ORDER BY vp.next_run_at ASC
+         LIMIT $2`,
+        [seller.id, limit],
       );
 
       let created = 0;

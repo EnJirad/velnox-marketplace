@@ -7,7 +7,14 @@
  * concurrent processPlan calls for the same plan produce exactly one
  * run row and one order.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import type { Server } from "http";
+import type { AddressInfo } from "net";
+import { readFileSync } from "fs";
+import { join } from "path";
+import cookieParser from "cookie-parser";
+import express from "express";
+import jwt from "jsonwebtoken";
 import {
   calculateNextRunAt,
   currentPriceOf,
@@ -16,6 +23,11 @@ import {
 } from "../jobs/velrepeat-scheduler.js";
 import { purgeUsers } from "./helpers/purge.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
+
+if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "test-secret-for-unit-tests-only-32chars!!";
+
+const root = join(import.meta.dir, "..", "..");
+const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
 // ─── calculateNextRunAt ──────────────────────────────────────────────────────
 
@@ -244,4 +256,213 @@ describe("scheduler idempotency (integration)", () => {
     },
     30_000,
   );
+});
+
+// ─── Scheduler ownership: a seller may only trigger THEIR OWN plans ──────────
+//
+// Owner decision 2026-09-30 (contract §35): the CENTRAL SCHEDULER owns global
+// due-plan processing. Before this was enforced,
+// `POST /api/subscriptions/process-due` selected due plans with NO user scope,
+// so any approved seller could force-run ANY customer's due plans — a
+// cross-tenant side-effect trigger. The selection is now scoped with the same
+// ownership predicate the read path already uses
+// (`GET /api/seller/subscriptions`, `WHERE vi.seller_id = $1`).
+
+describe("seller-triggered due-plan processing is ownership-scoped (structural)", () => {
+  const src = read("backend/routes/seller-orders.ts");
+
+  test("the due-plan selection is scoped to the calling seller's items", () => {
+    // The predicate itself — an item of the caller's seller must exist.
+    expect(src).toContain("AND EXISTS (");
+    expect(src).toContain("SELECT 1 FROM velrepeat_items vi");
+    expect(src).toContain("WHERE vi.plan_id = vp.id AND vi.seller_id = $1");
+    // …and the seller id is a bound parameter, never interpolated.
+    expect(src).toContain("[seller.id, limit]");
+  });
+
+  test("the unscoped selection that let a seller run any customer's plan is gone", () => {
+    expect(src).not.toContain("SELECT id FROM velrepeat_plans");
+    expect(src).not.toMatch(/FROM velrepeat_plans\s*\n\s*WHERE status = 'active'/);
+  });
+
+  test("the read path and the trigger path use the same ownership predicate", () => {
+    expect(src).toContain("WHERE vi.seller_id = $1");
+  });
+});
+
+describe("seller-triggered due-plan processing over HTTP (integration)", () => {
+  const hasDb = hasTestDatabase();
+  const testFn = hasDb ? test : test.skip;
+
+  let server: Server | undefined;
+  let base = "";
+  const createdUserIds: string[] = [];
+
+  beforeAll(async () => {
+    if (!hasDb) return;
+    const { setupSellerOrderRoutes } = await import("../routes/seller-orders.js");
+    const app = express();
+    app.use(cookieParser());
+    app.use(express.json({ limit: "1mb" }));
+    setupSellerOrderRoutes(app);
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    if (hasDb && createdUserIds.length > 0) await purgeUsers(createdUserIds);
+    if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
+  });
+
+  function cookie(userId: string, email: string): string {
+    return `velnox_session=${jwt.sign({ userId, email }, process.env.JWT_SECRET as string, { expiresIn: "5m" })}`;
+  }
+
+  /** user → approved seller → shop → published, VelRepeat-enabled product with stock. */
+  async function seedSellerWithProduct(tag: string) {
+    const { query } = await import("../db/index.js");
+    const { randomUUID } = await import("crypto");
+
+    const email = `${tag}-${randomUUID().slice(0, 8)}@test.invalid`;
+    const user = await query(
+      "INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id",
+      [email, "VelRepeat Scope Fixture"],
+    );
+    const userId = user.rows[0].id as string;
+    createdUserIds.push(userId);
+
+    const seller = await query(
+      "INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id",
+      [userId],
+    );
+    const sellerId = seller.rows[0].id as string;
+
+    const shop = await query(
+      "INSERT INTO shops (seller_id, name, slug) VALUES ($1, $2, $3) RETURNING id",
+      [sellerId, `${tag} shop`, `${tag}-${randomUUID().slice(0, 8)}`],
+    );
+    const shopId = shop.rows[0].id as string;
+
+    const product = await query(
+      `INSERT INTO products (shop_id, name, slug, price, status, vrepeat_enabled)
+       VALUES ($1, $2, $3, 100, 'published', TRUE) RETURNING id`,
+      [shopId, `${tag} product`, `${tag}-p-${randomUUID().slice(0, 8)}`],
+    );
+    const productId = product.rows[0].id as string;
+    await query(`INSERT INTO inventory (product_id, quantity, reserved) VALUES ($1, 100, 0)`, [productId]);
+
+    return { userId, email, sellerId, shopId, productId };
+  }
+
+  /** A due, active plan holding one item of `sellerId`'s product. */
+  async function seedDuePlan(ownerUserId: string, item: { shopId: string; sellerId: string; productId: string }) {
+    const { query } = await import("../db/index.js");
+    const plan = await query(
+      `INSERT INTO velrepeat_plans (user_id, status, frequency_type, interval_value, next_run_at)
+       VALUES ($1, 'active', 'days', 7, NOW()) RETURNING id`,
+      [ownerUserId],
+    );
+    const planId = plan.rows[0].id as string;
+    await query(
+      `INSERT INTO velrepeat_items (plan_id, product_id, shop_id, seller_id, quantity, unit_price)
+       VALUES ($1, $2, $3, $4, 1, 100)`,
+      [planId, item.productId, item.shopId, item.sellerId],
+    );
+    return planId;
+  }
+
+  async function postProcessDue(userId: string, email: string) {
+    return fetch(`${base}/api/subscriptions/process-due`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie(userId, email) },
+      body: JSON.stringify({}),
+    });
+  }
+
+  testFn(
+    "a seller CANNOT force-run a due plan that contains none of their products",
+    async () => {
+      const { query } = await import("../db/index.js");
+      const owner = await seedSellerWithProduct("vr-own");
+      const intruder = await seedSellerWithProduct("vr-intruder");
+
+      const planId = await seedDuePlan(owner.userId, {
+        shopId: owner.shopId,
+        sellerId: owner.sellerId,
+        productId: owner.productId,
+      });
+
+      const res = await postProcessDue(intruder.userId, intruder.email);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      // Nothing was due FOR THIS SELLER, so nothing ran.
+      expect(body.data.due).toBe(0);
+      expect(body.data.created).toBe(0);
+
+      // The cross-tenant side effect did not happen: no run, no order.
+      const runs = await query(
+        `SELECT COUNT(*)::int AS count FROM velrepeat_runs WHERE plan_id = $1`,
+        [planId],
+      );
+      expect(runs.rows[0].count).toBe(0);
+      const orders = await query(
+        `SELECT COUNT(*)::int AS count FROM orders WHERE user_id = $1`,
+        [owner.userId],
+      );
+      expect(orders.rows[0].count).toBe(0);
+
+      // …and the plan is still due, so the central scheduler can pick it up.
+      const stillDue = await query(
+        `SELECT next_run_at <= NOW() AS due FROM velrepeat_plans WHERE id = $1`,
+        [planId],
+      );
+      expect(stillDue.rows[0].due).toBe(true);
+
+      await query(`DELETE FROM velrepeat_plans WHERE id = $1`, [planId]);
+    },
+    30_000,
+  );
+
+  testFn("a seller CAN still force-run a due plan that contains their product", async () => {
+    const { query } = await import("../db/index.js");
+    const seller = await seedSellerWithProduct("vr-own-run");
+
+    const planId = await seedDuePlan(seller.userId, {
+      shopId: seller.shopId,
+      sellerId: seller.sellerId,
+      productId: seller.productId,
+    });
+
+    const res = await postProcessDue(seller.userId, seller.email);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.due).toBe(1);
+    expect(body.data.created).toBe(1);
+
+    const runs = await query(
+      `SELECT COUNT(*)::int AS count FROM velrepeat_runs WHERE plan_id = $1`,
+      [planId],
+    );
+    expect(runs.rows[0].count).toBe(1);
+
+    await query(`DELETE FROM velrepeat_plans WHERE id = $1`, [planId]);
+  }, 30_000);
+
+  testFn("an unapproved user is refused before any selection happens", async () => {
+    const { query } = await import("../db/index.js");
+    const { randomUUID } = await import("crypto");
+
+    const email = `vr-noapp-${randomUUID().slice(0, 8)}@test.invalid`;
+    const user = await query("INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id", [
+      email,
+      "No Seller",
+    ]);
+    const userId = user.rows[0].id as string;
+    createdUserIds.push(userId);
+
+    const res = await postProcessDue(userId, email);
+    expect(res.status).toBe(403);
+  });
 });
