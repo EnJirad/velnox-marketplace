@@ -87,5 +87,6 @@ See `.ai/context/database.md`.
 | Uploads/images | `.ai/context/media.md` → `backend/routes/upload.ts` |
 | Orders/checkout | `.ai/context/checkout.md` → `backend/routes/cart.ts`, `backend/routes/stripe.ts` |
 | Payments / Stripe / COD flags | `.ai/context/payment.md` → `backend/lib/payment-config.ts`, `backend/routes/stripe.ts` |
+| **VelRepeat (recurring commerce)** | **`.ai/context/velrepeat-contract.md`** (authoritative contract, 2026-09-30) → `backend/jobs/velrepeat-scheduler.ts`, `backend/routes/velrepeat-plans.ts` |
 | Seller verification / V badge | `.ai/context/verification.md` → `backend/routes/verification.ts`, `backend/lib/verification-guard.ts` |
 | Styling/theme | `.ai/context/frontend.md` → `VELNOX_DESIGN_THEME.md`, `packages/shared/src/index.css` |
