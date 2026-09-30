@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-30 · **Branch:** `main` · **Latest pass:** VelRepeat **Prepaid Repeat Commerce** analysis + owner-approved scheduler-ownership fix (**§51**) — the prepaid financial/inventory model is **STOPPED** on 17 owner decisions
+**Last updated:** 2026-09-30 · **Branch:** `main` · **Latest pass:** VelRepeat **V2 Prepaid Repeat Commerce contract** (**§52**) — V2 specification **COMPLETE** (design only); implementation **NOT STARTED** and gated on decisions **A–I** + Q13–Q17
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -626,3 +626,34 @@ th=en=my=1416 · `git diff --check` clean. **DB-gated tests skip locally** — n
 available; CI's `postgres:16` is the only real execution. **PRODUCTION = BLOCKED** (Neon quota;
 migrations 048/049/050 still unapplied). `bun run lint` is `echo 'Lint not yet configured'` — no
 lint script exists.
+
+---
+
+## 52. VelRepeat **V2 — Prepaid Repeat Commerce Contract** (2026-09-30) — CONTRACT COMPLETE (design only)
+
+**What was done:** `.ai/context/velrepeat-contract.md` upgraded in place to the **V2 contract**
+(Revision 2.0) preserving Parts I–II and adding **Part III §39–§64**: business definition; Product /
+Package / Repeat Plan / Delivery Cycle / Order / Payment / Fulfillment distinctions; quantity per cycle
+vs total commitment; schedule + explicit timezone semantics; commitment vs schedule; pricing pipeline
+(tiers in data — no hardcoded percentages); immutable price snapshot; one prepaid payment per plan
+(฿93 × 4 = ฿372 once); payment authority (1A/2A/5A); payment vs fulfillment; plan → Cycle 1..N → per-cycle
+order(s); inventory Model A/B comparison (not chosen); `sold_count` invariants (3A); cancellation /
+pause / skip / modification with owner decisions reserved; B2C+B2B single model; authorization (7B);
+idempotency incl. *same Plan + Cycle + execution ⇒ one Order*; HIGH #5 incidents; **V2 OWNER DECISIONS**
+(approved 1A–7B + new **A–I** + Q13–Q17); 14-area gap analysis; Phases 1–10 roadmap; acceptance
+criteria; prohibited actions. Audit: `.ai/tasks/audits/velrepeat-v2-contract-2026-09-30.md`.
+
+**Files changed:** `.ai/context/velrepeat-contract.md`,
+`.ai/tasks/audits/velrepeat-v2-contract-2026-09-30.md`, `.ai/AI_HANDOFF.md`. **No production code,
+schema, migration, payment, inventory or scheduler change.**
+
+**Gates for implementation (NOT STARTED):** §60.2 decisions **A–I** (inventory model; prepaid
+cancellation; skip; pause; future price change; out-of-stock cycle; modification; B2B stacking;
+prepaid fulfillment failure) + §60.3 **Q13–Q17** + Q2 residual (`sold_count` moment). Approved:
+**1A–7B**. The three structural blockers (§51) remain and are folded into contract §61.
+
+**Verification:** `git diff --check` clean · docs-only (no typecheck/test impact; DB-gated tests still
+skip locally) · **PRODUCTION = BLOCKED** (Neon quota; migrations 048/049/050 unapplied).
+
+**Next step:** owner answers A–I (+Q13–Q17) → then contract §62 **Phase 1** (domain + schema) may
+start; nothing before.

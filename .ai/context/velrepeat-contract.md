@@ -1,14 +1,21 @@
-# VelRepeat Business & Payment Contract
+# VelRepeat V2 — Prepaid Repeat Commerce Contract
 
-**Status:** AUTHORITATIVE CONTRACT
-**Created:** 2026-09-30 · **Baseline:** `9780aa1` (= `origin/main`)
+**Status:** AUTHORITATIVE CONTRACT — **V2** (design only; implementation **NOT STARTED**)
+**Created:** 2026-09-30 · **Baselines:** `9780aa1` (Part I) → `6f5a998` (Part II) → `00986be` (Part III draft)
+**Revision 2.0 — 2026-09-30.** The owner supplied the full **Prepaid Repeat Commerce** model and approved
+decisions **1A–7B**; the V2 business model adds nine owner decisions (**A–I**, §60) that are still
+required before any financial, inventory or lifecycle implementation starts.
 **Part I (§0–§22):** created 2026-09-30 from the MEDIUM #10 audit — the recurring-commerce contract.
-**Part II (§23–§38):** added 2026-09-30 from source at `6f5a998` for the owner-supplied
-**Prepaid Repeat Commerce** business model. Decision #1 and #7 are now **RESOLVED**.
+**Part II (§23–§38):** added 2026-09-30 from source at `6f5a998` for the owner-supplied prepaid model.
+Decisions #1 and #7 are **RESOLVED**.
+**Part III (§39–§64):** added 2026-09-30 — the **normative V2 specification**. Part III states
+requirements and decisions and references Parts I–II for the source evidence; it never restates current
+behavior as a proposal, or a proposal as current behavior.
 **Supersedes for VelRepeat:** nothing. **Governs:** all future VelRepeat implementation, tests,
-inventory behavior, payment behavior and operator behavior.
-**Primary evidence:** `.ai/tasks/audits/medium-10-velrepeat-commerce-lifecycle-2026-09-30.md` (MEDIUM #10
-audit), plus the source it cites.
+inventory behavior, payment behavior and operator behavior. Where Part III is more specific than a
+Part I/II rule, **Part III governs**.
+**Primary evidence:** `.ai/tasks/audits/medium-10-velrepeat-commerce-lifecycle-2026-09-30.md` (MEDIUM #10),
+`.ai/tasks/audits/velrepeat-v2-contract-2026-09-30.md` (V2 contract audit), plus the source they cite.
 
 > **This document invents no policy.** Every statement is tagged with an evidence class. Where the
 > repository cannot prove a business answer, the row says **OWNER DECISION REQUIRED** and the
@@ -18,12 +25,21 @@ audit), plus the source it cites.
 
 ## 0. How to read this document
 
+**V2 evidence classes** — the authoritative vocabulary. Part III uses these; Parts I–II keep the
+shorthand below and are preserved verbatim.
+
 | Tag | Meaning |
 |---|---|
-| **[PROVEN]** | Read directly from source at `9780aa1`; file:line cited. |
-| **[INTENT]** | Documented in source comments, `.ai/`, or an audit — but not enforced by a test. |
-| **[DECISION]** | A **proposed** rule that follows from the canonical authorities. Not yet owner-approved. |
-| **[OWNER DECISION REQUIRED]** | No source, doc, or test answers it. **Implementation must not guess.** |
+| **[PROVEN FROM SOURCE]** | Read directly from source at the cited baseline (`9780aa1` / `6f5a998` / `00986be`); `file:line` cited. |
+| **[CURRENT IMPLEMENTATION]** | How the system actually works today — an aggregate of proven facts. Never a proposal. |
+| **[APPROVED BUSINESS RULE]** | Explicitly approved by the owner (decisions 1A–7B, #1, #7). Binding. |
+| **[V2 BUSINESS REQUIREMENT]** | A normative requirement derived from the owner's V2 business model. |
+| **[PROPOSED DESIGN]** | A suggested design. **Not** current behavior and **not** yet ratified by implementation. |
+| **[OWNER DECISION REQUIRED]** | No source, doc, test or owner statement answers it. **Implementation must NOT guess.** |
+
+**Part I/II shorthand:** `[PROVEN]` = PROVEN FROM SOURCE · `[INTENT]` = documented intent (treated as
+PROPOSED DESIGN where it becomes normative) · `[DECISION]` = a proposed rule, re-classified in Part III
+as V2 BUSINESS REQUIREMENT or PROPOSED DESIGN · `[OWNER DECISION REQUIRED]` = unchanged.
 
 Authority order for anything this document touches: `AGENTS.md` → `.ai/AI_RULES.md` →
 `.ai/context/<subsystem>.md` → **this file** → source. When this contract and source disagree, the
@@ -572,9 +588,10 @@ These **cannot** be proven from the repository. Implementation MUST stop at each
 - It does **not** claim production verification. Migrations **048/049/050 remain unapplied** (Neon
   quota); no Stripe or browser E2E has ever run.
 
-**Implementation status: PARTIAL — see §23–§38. §23–§38 were added 2026-09-30 (owner-supplied
-Prepaid Repeat Commerce business model). Decisions #1 and #7 are RESOLVED; the prepaid payment,
-inventory and sold-recognition semantics remain blocked on §38.**
+**Implementation status: PARTIAL — see §23–§38 and Part III (§39–§64). §23–§38 were added 2026-09-30
+(owner-supplied Prepaid Repeat Commerce business model); Part III is the normative V2 specification.
+Decisions #1 and #7 are RESOLVED and 1A–7B are approved; the prepaid payment, inventory,
+sold-recognition and lifecycle semantics remain blocked on §38 Q1–Q17 and §60 Decisions A–I.**
 
 ---
 
@@ -1010,3 +1027,847 @@ a hard **STOP** for the code it gates.
 
 **Implementation status after Part II:** contract complete; **no** prepaid financial or inventory
 behavior implemented. Only the owner-approved authorization fix (§35) has been written.
+
+> **Part III added 2026-09-30 (V2 normative specification, §39–§64).** Parts I–II remain the evidence
+> base. Where Part II labeled a rule **[DECISION]** (proposed, not owner-approved), Part III
+> re-classifies it as **[V2 BUSINESS REQUIREMENT]** or **[PROPOSED DESIGN]**, and keeps everything
+> financial the owner has not answered at **[OWNER DECISION REQUIRED]**. **Read Part III before
+> implementing anything.**
+
+---
+
+# PART III — V2 NORMATIVE SPECIFICATION (added 2026-09-30)
+
+**This is the part to implement against.** It states what VelRepeat V2 must be, using the six evidence
+classes from §0. Every statement below is a requirement, an approved rule, a proposal, or an explicit
+owner question. Where Parts I–II carry the source evidence, Part III references them instead of
+re-deriving it. **No behavior in this part is implemented** (see §64).
+
+**V2 one-line model:** `Product/Package → quantity per cycle → schedule → commitment → tiered pricing →
+ONE prepaid payment → Repeat Plan → N delivery cycles → one fulfillment order per cycle (per seller)`.
+
+---
+
+## 39. Business definition (V2)
+
+> «VelRepeat คือระบบ Prepaid Repeat Commerce ที่ให้ลูกค้าเลือกสินค้าเดี่ยวหรือ Package กำหนด quantity
+> ต่อ delivery cycle เลือกความถี่และจำนวนรอบ รับราคาตาม commitment และชำระเงินล่วงหน้าครั้งเดียว
+> จากนั้นระบบจัดการ delivery cycles แยกกัน โดยแต่ละ cycle สามารถสร้าง fulfillment order ของตัวเองได้»
+> — owner brief, 2026-09-30. **[APPROVED BUSINESS RULE]**
+
+**English (binding reading of the same statement):** VelRepeat is a Prepaid Repeat Commerce system:
+the customer chooses a single product or a Package, sets a quantity per delivery cycle, chooses a
+frequency and a number of cycles, receives commitment-based pricing, and pays **once up front**; the
+system then manages **separate delivery cycles**, where each cycle can produce **its own fulfillment
+order**.
+
+### 39.1 The seven entities — definitions and non-equivalences
+
+| Entity | V2 definition | Current reality at `00986be` | Class |
+|---|---|---|---|
+| **Product** | The catalog item that is stocked and shipped: `products` + `product_variants` + `inventory`. The **only** stock authority. | Exists fully (§23). | **[CURRENT IMPLEMENTATION]** |
+| **Package** | A **commercial composition** of ≥1 real product/variant with a quantity per cycle. Carries **no stock of its own**. | **Does not exist** for V2; `vrepeat_packages` is V1 single-product with zero commerce writes (§23/§24). | **[V2 BUSINESS REQUIREMENT]** + [PROVEN] ABSENT |
+| **Repeat Plan** | The customer's **prepaid commercial agreement**: composition, quantity per cycle, schedule, commitment (number of cycles), pricing snapshot, total prepaid, address. | `velrepeat_plans` exists as a pay-per-run recurring intent; no commitment, no prepaid total, no snapshot (§23). | **[V2 BUSINESS REQUIREMENT]** + [PROVEN] partial |
+| **Delivery Cycle** | One delivery instance inside the plan, ordinal **1..N**, with scheduled instant, quantity snapshot, price snapshot, status, and order reference(s). | No cycle entity; implicit in `velrepeat_runs` (no ordinal, no per-cycle status — §26). | **[V2 BUSINESS REQUIREMENT]** + [PROVEN] insufficient |
+| **Order** | The **fulfillment artifact** of one cycle (one per shop in a multi-shop plan). The only object that moves goods and inventory. | `orders`/`order_items` exist and are reused; cycle link incomplete (§26). | **[V2 BUSINESS REQUIREMENT]** + [CURRENT IMPLEMENTATION] |
+| **Payment** | **One prepaid charge for the whole plan commitment**, via the canonical payment authority (Stripe rail; COD only per canonical config). Never per cycle; never per order. | Order-scoped only: `payments.order_id NOT NULL` (§25). | **[V2 BUSINESS REQUIREMENT]** + [PROVEN] blocker |
+| **Fulfillment** | Per-cycle physical execution (pick/pack/ship, COD collection) under the canonical order state machine. Independent of payment settlement. | `order-fulfillment.ts` governs per-order status + transitions (§8). | **[CURRENT IMPLEMENTATION]** + [V2 BUSINESS REQUIREMENT] for the cycle axis |
+
+**Non-equivalences (binding):**
+
+- Product ≠ Package (a package is not a product; it owns no stock).
+- Package ≠ Repeat Plan (a package is reusable commercial content; a plan is one customer's agreement).
+- Repeat Plan ≠ Order (a plan spans N cycles; an order covers one cycle's goods).
+- Delivery Cycle ≠ Order (one cycle may produce more than one order when a plan spans shops/sellers).
+- Payment ≠ Fulfillment (paid does not mean delivered; delivered does not mean settled — §48).
+
+---
+
+## 40. Product and Package
+
+**Requirements:**
+
+1. A Repeat Plan starts from **either** a single product **or** a Package; both reduce to the same plan
+   lines so the run engine stays single-path (§27(3)). **[V2 BUSINESS REQUIREMENT]**
+2. A Package references **real** `products.id` / `product_variants.id` rows and never duplicates
+   product data. **[V2 BUSINESS REQUIREMENT]** (§27(1))
+3. A Package is a **commercial composition, not an inventory source.** It owns no stock; all
+   reservation/settlement flows through the existing `inventory` / `product_variants` rows (§9). A
+   package-level stock column must not be introduced. **[V2 BUSINESS REQUIREMENT]** — the current
+   source has **no** package inventory model to preserve, so nothing legitimises a package stock
+   authority.
+4. A package price may exist, but it is a **pricing input only** — never an inventory input (§27(4)).
+   **[PROPOSED DESIGN]** until the pricing engine (§44) and Q15 are resolved.
+
+**Illustrative composition (example only — not catalog data, not a policy):**
+
+```
+Daily Care Package
+  Toothpaste × 1
+  Soap       × 2
+  Shampoo    × 1
+```
+
+**[CURRENT IMPLEMENTATION] (absence):** no V2 package entity exists (§23). A new composition structure
+is required and, when implemented, must land in **both** `db/schema.sql` and `db/run-sqleditor.sql`
+(additively) — never in `db/run-update.sql` (§18.8). `vrepeat_packages` V1 is single-product and NOT
+reusable as-is (§24). **[OWNER DECISION REQUIRED] — Q15:** supersede `vrepeat_packages` with the V2
+package concept, or leave it untouched as legacy.
+
+---
+
+## 41. Quantity per cycle vs. total commitment quantity
+
+**Two different numbers per line; both must be expressible and snapshotted.** **[V2 BUSINESS
+REQUIREMENT]**
+
+- `quantity_per_cycle` — what one delivery cycle contains.
+- `total_commitment_quantity` — `quantity_per_cycle × commitment`; the total contracted units.
+
+**Illustrative example (arithmetic only — the numbers are examples, not policy):**
+
+```
+commitment = 16 cycles
+  Toothpaste × 20 per cycle → total  320 units
+  Soap       × 30 per cycle → total  480 units
+  Shampoo    × 10 per cycle → total  160 units
+```
+
+**[CURRENT IMPLEMENTATION]:** `velrepeat_items.quantity` already stores a per-line quantity with
+`CHECK (quantity > 0)` (`run-sqleditor.sql:851`) and the scheduler consumes it per run; no total exists
+anywhere. Quantity bounds exist only via the V1 `products.vrepeat_min_qty / vrepeat_max_qty`
+(`velrepeat-plans.ts:68,85-92`) which carry **no pricing consequence** (§23).
+
+**Binding:** 320 toothpaste units means **16 deliveries of 20** — not one delivery of 320. Total
+commitment quantity is a **contract total**, not a single fulfillment quantity. Any other behavior
+would contradict the stated model and is **[OWNER DECISION REQUIRED]** before it could exist.
+
+---
+
+## 42. Schedule semantics
+
+**Owner requirement:** support schedules such as **every 7 days / every 14 days / every 30 days** — but
+this list is **examples, not final business policy**; the source does not yet fix a policy, so the
+implementation must not hardcode a closed set. **[V2 BUSINESS REQUIREMENT]**
+
+**A schedule is the pair `(interval, cycle position)` plus an explicit timezone.** Each cycle must be
+addressable by:
+
+- **schedule** — the stored interval/frequency on the plan;
+- **cycle number** — the ordinal 1..N (§49);
+- **next delivery date** — the plan's next `scheduled_at`; the source for that cycle's order creation.
+
+**[CURRENT IMPLEMENTATION]:** `velrepeat_plans.frequency_type` (`days`/`weeks`/`months`) +
+`interval_value > 0` (`run-sqleditor.sql:827-828`) already express `days/7`, `days/14`, `days/30`; the
+single schedule authority is `calculateNextRunAt()` (`velrepeat-scheduler.ts:38-65`), used by both the
+route (`velrepeat-plans.ts:255`) and the run engine (`velrepeat-scheduler.ts:358`). Month-length and
+day-clamping behavior belongs to that helper and is **preserved, not duplicated** (§29(2)).
+
+**Timezone semantics (must be explicit — no implicit server-local timezone):** **[V2 BUSINESS
+REQUIREMENT]**
+
+1. All scheduling math today is UTC (`setUTC*`, `NOW()`) and `velrepeat_plans.timezone` is **inert** —
+   the column is only echoed back at `velrepeat-plans.ts:153`; nothing writes it, nothing reads it
+   (§23). **[PROVEN FROM SOURCE]**
+2. V2 requires either (a) the plan timezone becomes **load-bearing** (a real timezone-aware scheduling
+   decision, including what “the delivery date” means in that timezone), or (b) VelRepeat scheduling is
+   **defined as UTC** and documented as such. **[OWNER DECISION REQUIRED] — Q16.** Until then, no
+   implementation may silently inherit the server's local timezone.
+3. A cycle's scheduled instant is **immutable once the plan is prepaid** (§26(5), §29(4));
+   otherwise prepaid delivery dates silently move a sold commitment.
+
+---
+
+## 43. Commitment vs. schedule
+
+**Commitment is the number of delivery cycles the customer buys — not a number of months.**
+**[V2 BUSINESS REQUIREMENT]**
+
+```
+every 7  days × 4 cycles   → 4 cycles, ~28 days of plan
+every 30 days × 4 cycles   → 4 cycles, ~120 days of plan
+```
+
+Both plans have **commitment = 4**; their **durations differ** because the schedule differs. The
+commitment price ladder indexes on the **cycle count** (§44), and a cycle number is always interpreted
+within the plan's commitment (cycle N of N).
+
+**[CURRENT IMPLEMENTATION]:** no commitment column, no cycle counter, and no end-of-commitment
+computation exist; `velrepeat_plans.status` permits `'completed'` but nothing ever writes it (§23).
+**[V2 BUSINESS REQUIREMENT]:** commitment is stored on the plan; the set of cycles equals it (cycle
+count = commitment); plan completion semantics (all cycles terminal) are **[PROPOSED DESIGN]** for
+Phase 3 — not current behavior.
+
+---
+
+## 44. Pricing model
+
+**Pipeline (normative shape):** **[V2 BUSINESS REQUIREMENT]**
+
+```
+Base Product Price
+        ↓
+Package Composition
+        ↓
+Quantity
+        ↓
+Commitment
+        ↓
+Discount / Pricing Tier
+        ↓
+Cycle Price
+        ↓
+Total Prepaid Price
+```
+
+- The engine accepts **`minimum_cycles`, `maximum_cycles`, `discount_type`, `discount_value`,
+  `eligibility`** (§30 requirement). Tier ladder examples: **1 / 2 / 4 / 8 / 16** cycles.
+- **Discount numbers such as 3% / 7% / 10% / 15% are examples only.** No discount percentage may be
+  hardcoded as production policy before the owner approves it (§30(3), §38 Q11).
+- **Tier rules live in data, not in business logic** — changing a tier must not require editing
+  `processPlan` or any route (§30(3)). Where the data lives (platform-level `platform_settings` vs.
+  seller-owned fields, or both) is **[OWNER DECISION REQUIRED] — Q11**, because it decides who may
+  change prices baked into prepaid commitments.
+- **Eligibility inputs** may include: quantity, commitment, package, seller pricing rules and customer
+  eligibility (§34/§56). Eligibility is **never** `role = "seller"`.
+- **Cycle price** is a pricing output (base ฿100 / cycle with a commitment tier applied → ฿93 / cycle,
+  illustrative only) and is **snapshotted** (§45).
+- If a different architecture (e.g. explicit price-rule rows instead of tier tables) proves better, it
+  must be proposed as **[PROPOSED DESIGN]** and ratify the same pipeline — the stages are the contract,
+  the storage is not.
+
+**[CURRENT IMPLEMENTATION]:** no tier table and no discount logic exist anywhere; the V1
+`products.vrepeat_weekly_price / vrepeat_monthly_price` fields are priced only by V1
+`velrepeat.ts:138-143` (zero commerce writes) and are NOT a V2 pricing engine (§23).
+
+---
+
+## 45. Price snapshot
+
+**At checkout the system must snapshot, and thereafter never recompute from the live catalog:**
+**[V2 BUSINESS REQUIREMENT]**
+
+| Snapshot field (per plan, and per line where applicable) |
+|---|
+| product price |
+| variant price |
+| package composition |
+| quantity (per cycle) |
+| cycle price |
+| discount (type / value / applied amount) |
+| commitment (cycle count) |
+| total prepaid price |
+| currency |
+| pricing rule id + rule version |
+
+**Immutability rule:** after purchase, a future product/variant price change must **never** change the
+plan's historical financial commitment; historical plans are **never** repriced from current product
+prices (§28). **[V2 BUSINESS REQUIREMENT]**
+
+**[PROVEN FROM SOURCE] current conflict:** `processPlan` deliberately re-prices **every cycle against
+the live server price**, overwrites `velrepeat_items.unit_price` and notifies the customer
+(`velrepeat-scheduler.ts:229-249`). That is correct for pay-per-cycle and **wrong for prepaid** — it is
+the opposite of this requirement, and it must stop being possible for a prepaid plan (Phase 4/5).
+`order_items.price/subtotal` already snapshot what a cycle actually cost and are **reused, not
+duplicated** (§28(2)).
+
+**[OWNER DECISION REQUIRED] — Decision E (Q9):** future seller price changes leave the plan **locked
+at purchase** (A) or future cycles **reprice** (B). No default may be assumed.
+
+---
+
+## 46. Prepaid payment (one plan, one charge)
+
+**Model:** **one Repeat Plan → one prepaid financial commitment → one payment.** **[V2 BUSINESS
+REQUIREMENT]**
+
+**Illustrative arithmetic (examples only — no percentages are fixed by this contract):**
+
+```
+฿100  / cycle  (base)
+× 4  cycles   (commitment)
+commitment tier → ฿93 / cycle
+──────────────────────────────
+Total prepaid = ฿372, paid ONCE
+```
+
+**Explicitly not:** 4 separate payments; nor 1 order containing all 4 deliveries. Payment, Repeat Plan,
+Delivery Cycle and Order are four distinct entities (§39.1); the payment funds the **plan**, the plan
+contains **cycles**, and each cycle produces its **own order(s)** (§50).
+
+**Structural blocker (unresolved): [PROVEN FROM SOURCE]** `payments.order_id UUID NOT NULL
+REFERENCES orders(id)` (`db/run-sqleditor.sql:441`) — there is no plan-level payment row, and a payment
+for N cycles has **no canonical home** today. Shapes (§25): **A** attach to cycle 1's order (coherence
+problems — one settled payment makes cycle 1 un-cancellable/un-releasable while cycles 2..N carry no
+money), **B** make `payments.order_id` nullable + add `velrepeat_plan_id` (a real canonical change,
+reviewable — not a duplicate authority), **C** a new `velrepeat_plan_payments` table — **rejected**
+(second payment authority, §18.4/§18.10). Choosing between A and B is **[OWNER DECISION REQUIRED] —
+Q13.**
+
+**Also unresolved: [PROVEN FROM SOURCE]** `POST /api/stripe/checkout` derives the amount from
+`orders.total_amount` and only accepts orders in `pending`/`pending_payment` (`stripe.ts:1095`), so a
+prepaid plan has no payable object until Q13 is decided. **[OWNER DECISION REQUIRED] — Q14:** one large
+canonical Stripe charge at plan creation (what the architecture supports), or true Stripe Subscriptions
+(a new provider integration, not a VelRepeat change).
+
+**Approved elements: [APPROVED BUSINESS RULE]** 2A (Stripe is the rail), 5A (a customer can pay a
+VelRepeat plan with Stripe), 4A (the standard 30-minute payment reservation applies **where
+applicable** — its mapping to a plan-level charge is part of Phase 4 design, not assumed here).
+
+---
+
+## 47. Payment authority
+
+**Approved rules (binding):**
+
+1. **[APPROVED BUSINESS RULE — 2A / 5A]** Stripe is the VelRepeat payment rail; a customer can pay a
+   VelRepeat plan with Stripe.
+2. **[APPROVED BUSINESS RULE — 1A]** COD must respect the canonical COD configuration. Every VelRepeat
+   payment path must go through `assertPaymentMethodUsable()` / `isCodEnabled()` /
+   `isCodCustomerSelectable()` (`payment-config.ts:313/325/387`). **No VelRepeat-specific bypass may
+   exist**, and COD must **never** be enabled just to make VelRepeat work.
+3. The canonical payment authority is **exactly one system** — `payments` / `payment_events` /
+   `refunds` + `payment-config.ts`. VelRepeat adds **no** second payment authority, method or rail.
+
+**[CURRENT IMPLEMENTATION] (for the gap record, not a design):** the create path hard-rejects any
+method other than `'cod'` (`velrepeat-plans.ts:224-227`) **without consulting the canonical gate**;
+the scheduler writes settlement-less per-order rows `method='cod', status='pending', provider='cod'`
+(`velrepeat-scheduler.ts:350-354`) even though `'cod'` is not a member of the `PaymentProvider` union
+(`payment-config.ts:26`). **[PROVEN FROM SOURCE]** — pre-existing behavior; the prepaid wiring is
+Phase 4 and may not reproduce these shortcuts.
+
+---
+
+## 48. Payment vs. fulfillment
+
+**Rule:** payment success **≠** all delivery cycles completed. **[V2 BUSINESS REQUIREMENT]**
+
+Example (state-axis separation, not a UI spec):
+
+```
+after the prepaid payment settles:  plan = PAID
+                                    Cycle 1 = scheduled
+                                    Cycle 2 = scheduled
+                                    Cycle 3 = scheduled
+                                    Cycle 4 = scheduled
+
+after Cycle 1 is fulfilled:         Cycle 1 = completed
+                                    Cycle 2–4 = still NOT completed
+```
+
+Three independent status axes exist and none implies another:
+
+1. **Payment status** — settled / pending / failed / expired (canonical `payments` semantics).
+2. **Plan / cycle status** — the plan and each delivery cycle progress on their own axis (§49).
+3. **Order status** — the canonical order statuses (`orders_status_check`) + fulfillment transitions
+   (`order-fulfillment.ts:89-97`, `FULFILLMENT_STATUSES`), unchanged.
+
+**[CURRENT IMPLEMENTATION]:** per-order confirmation is gated by `paymentAllowsConfirmation()`
+(`order-fulfillment.ts:218-235`) — a settled payment row allows confirmation; a COD row allows it only
+while `isCodEnabled()`. Under prepaid Stripe the settled money belongs to the **plan**, not to the
+cycle's order (§46); how a cycle order is legitimately confirmed in that situation is Phase 5/8
+**[PROPOSED DESIGN]** and is gated by Q13/Q14. It must not weaken the canonical gate — COD confirmation
+still requires `isCodEnabled()`.
+
+---
+
+## 49. Repeat Plan vs. Delivery Cycle (hierarchy)
+
+**Normative hierarchy:** **[V2 BUSINESS REQUIREMENT]**
+
+```
+Repeat Plan
+ ├── Cycle 1
+ ├── Cycle 2
+ ├── Cycle 3
+ └── Cycle N            (N = commitment)
+```
+
+**Every cycle must carry:**
+
+| Cycle field | Meaning |
+|---|---|
+| `cycle_number` | ordinal 1..N, unique within the plan |
+| `scheduled_at` | the cycle's delivery instant (§42) |
+| `status` | the cycle's own lifecycle state (not an order status) |
+| `quantity snapshot` | per-line quantity contracted for this cycle (§41) |
+| `price snapshot` | per-line/cycle pricing frozen at checkout (§45) |
+| `order reference(s)` | the order(s) generated for this cycle (§50) |
+| `fulfillment state` | derived from its order(s)' fulfillment progress |
+
+**Rules:**
+
+1. Cycle status advances on its **own axis** (scheduled → order generated → fulfilled →
+   completed/skipped/cancelled) and is **not** an `orders.status` value; the canonical order statuses
+   are not extended (§26(2)). **[V2 BUSINESS REQUIREMENT]**
+2. Completed cycles are **immutable** (§26(3), §55). **[V2 BUSINESS REQUIREMENT]**
+3. One cycle may span several orders (one per shop/seller) — existing proven behavior, preserved; what
+   V2 adds is the cycle identity that binds them (§26(4)). **[V2 BUSINESS REQUIREMENT]**
+4. `Cycle 2` must never become `completed` because `Cycle 1` did (§26(5)). **[V2 BUSINESS REQUIREMENT]**
+
+**[CURRENT IMPLEMENTATION] — the gap:** no cycle entity exists. `velrepeat_runs` is the nearest
+structure: `UNIQUE (plan_id, scheduled_for)` (`run-sqleditor.sql:877`), a status CHECK with 8 values of
+which only `processing / success / out_of_stock / item_unavailable` are ever written, `order_id`
+holding only the **first** order while the rest survive in `metadata.orderIds`
+(`velrepeat-scheduler.ts:361-364`). No ordinal, and no agreement between “cycle N” and any stored key
+(§23/§26). **[PROVEN FROM SOURCE]**
+
+**Contract direction [PROPOSED DESIGN]:** make the cycle first-class by **extending `velrepeat_runs`**
+(add `cycle_number` + snapshot fields + multi-order linkage) **or** by introducing one cycle table that
+`velrepeat_runs` references — exactly one of the two, chosen in Phase 5 design. Either shape must keep
+`UNIQUE` identity for `(plan, cycle_number)` so “same plan + same cycle + same execution ⇒ one order”
+(§58) is provable, and must not create a second authority for “did cycle N happen”.
+
+---
+
+## 50. Order (the fulfillment artifact)
+
+**Model: one cycle → its own order(s); no new charge per cycle.** **[V2 BUSINESS REQUIREMENT]**
+
+```
+Repeat Plan RP-001
+  Cycle 1 → Order O-001
+  Cycle 2 → Order O-002
+  Cycle 3 → Order O-003
+  Cycle 4 → Order O-004
+```
+
+**Rules:**
+
+1. An order is created **for a cycle**, as its fulfillment artifact — never as a re-charge of the plan.
+   Under prepaid, **no payment charge may be created per cycle**; the canonical payment is the single
+   plan-level charge (§46). **[V2 BUSINESS REQUIREMENT]**
+2. **[PROVEN FROM SOURCE] current conflict:** the scheduler currently inserts a per-order pseudo-payment
+   row (`velrepeat-scheduler.ts:350-354`) and one order per shop per run (`:262`). The per-order payment
+   row may not survive into the prepaid model — except as the canonical COD-at-delivery flow (**only**
+   while COD is enabled per the canonical config). Its removal/replacement is Phase 8 design.
+3. **Traceability (binding):** `Order → Cycle → Repeat Plan → Customer → Payment`. Today:
+   `orders.velrepeat_run_id` (FK, `run-sqleditor.sql:380`, `:883`), `velrepeat_runs.plan_id`,
+   `velrepeat_plans.user_id` carry the first half; the payment leg requires Q13 to become traceable
+   for prepaid. **[V2 BUSINESS REQUIREMENT]**
+4. Orders reuse the canonical `orders` + `order_items` tables — no repeat-specific order table (§24).
+   **[V2 BUSINESS REQUIREMENT]**
+
+---
+
+## 51. Inventory — do not decide without the owner
+
+**Five distinct moments must never be conflated:** **[V2 BUSINESS REQUIREMENT]**
+
+1. **Payment commitment** — the customer has paid for N cycles (money).
+2. **Inventory reservation** — stock is held (reserved) but not yet sold.
+3. **Inventory commitment** — stock is definitively consumed for a sale (`commitOrderInventory`).
+4. **Sold recognition** — the sales counter (`products.sold_count`) is incremented; canonical writer only.
+5. **Fulfillment** — physical pick/pack/ship for a cycle's order.
+
+**The two candidate models (comparison — NOT a choice):**
+
+| Axis | **Model A — reserve the whole commitment at prepaid payment** | **Model B — reserve per cycle, just before fulfillment** |
+|---|---|---|
+| **Stock locking** | locks `qty × commitment` at payment | locks `qty` per cycle |
+| **Overselling** | hides N cycles of demand; 16 × qty can silently exhaust a catalog | bounded to one cycle at a time |
+| **Long-term plan** | hold spans up to 16 intervals — no existing concept models a months-long hold | hold behaves exactly like today's order-level reservation |
+| **Cancellation** | releasing a plan releases a hold that may already be spoken for by future cycles — entwined with the refund decision (Decision B) | release is local to one cycle |
+| **Expiry** | the 30-minute window (`payment-reservation.ts:44`) is meaningless for a long hold; a new expiry policy would be required | per-cycle window behaves like today (canonical policy) |
+| **Future stock** | the seller must have/commit stock for future cycles **now** | uses whatever stock exists at each cycle |
+| **Warehouse availability** | needs `qty × commitment` on hand now | needs only `qty` now, again later |
+
+**Contract either way (binding invariants):** **[V2 BUSINESS REQUIREMENT]**
+
+1. Every reservation reaches **exactly one** terminal outcome: commit **or** release (§9).
+2. **No negative inventory, no double release, no double commit, no double `sold_count`.** The existing
+   guards are reused, not re-implemented.
+3. Variant and non-variant lines **must behave identically**. **[PROVEN FROM SOURCE] today they do
+   not**: the scheduler decrements `product_variants.stock` directly (`velrepeat-scheduler.ts:326-335`)
+   while the non-variant line uses `reserveInventoryStock` (`:341`) — an asymmetry that must be
+   resolved one way, and **which way is part of Decision A**.
+4. The canonical inventory machinery is the only authority: `reserveInventoryStock` (`inventory.ts:54`),
+   `commitOrderInventory` (`:115`), `releaseOrderInventory` (`:209`, atomic claim `:221-233`) —
+   **no second reservation concept** may be introduced unless Model A explicitly requires a plan-level
+   reservation record, which is part of the decision, not an implementation detail.
+
+**[OWNER DECISION REQUIRED] — Decision A (Q1):** Model **A** (reserve the entire commitment at prepaid
+payment) or Model **B** (reserve per cycle). **This is STOP #2.** No inventory code is written before it
+is answered.
+
+---
+
+## 52. `sold_count` invariants
+
+**The invariants (binding):** **[APPROVED BUSINESS RULE — 3A] + [V2 BUSINESS REQUIREMENT]**
+
+- Repeat Plan creation **≠** sold
+- Payment pending **≠** sold
+- Payment failure **≠** sold
+- Payment expiry **≠** sold
+- Reservation **≠** sold
+- No `sold_count` increment at plan creation, cycle creation or reservation; **no VelRepeat-specific
+  counter of any kind**.
+
+**Canonical writer relationship:** `commitOrderInventory` (`inventory.ts:115`, `sold_count` at `:141`)
+is the canonical sales-counter writer, reached from exactly one place: `stripe.ts:559` inside
+`markPaymentSucceeded` — i.e. **only when an order's payment settles** (§32). **[PROVEN FROM SOURCE]**
+
+**Approved mechanism (3A):** `sold_count` is recognized via the **canonical settlement path**, never via
+ad-hoc counters. **[APPROVED BUSINESS RULE]**
+
+**Still open:** under prepaid the settlement happens **once at plan level before any cycle order
+exists**, so the canonical authority is currently **unreachable** for prepaid cycles; the recognition
+**moment** (plan settlement vs. per-cycle settlement) is not yet fixed by the owner — **[OWNER DECISION
+REQUIRED] (Q2 residual; related to Decisions A/F).** Whatever the moment, exactly-once behavior is
+mandatory and **test-enforced**, not asserted.
+
+**[PROVEN FROM SOURCE] current defect (must not be reproduced):** `velrepeat-scheduler.ts:343-346`
+writes `sold_count = sold_count + $1` directly at cycle creation and nothing ever reverses it; the
+structural guard in `inventory-settlement.test.ts:95-121` names `velrepeat-scheduler.ts` the known
+exception (`:98-99`). Extending that guard to the VelRepeat path is part of Phase 6/10 (§20).
+
+---
+
+## 53. Cancellation — three levels
+
+**Three distinct operations; their impacts must be designed, not invented:** **[V2 BUSINESS
+REQUIREMENT]**
+
+| Level | What it is | Impacts to resolve |
+|---|---|---|
+| **Cancel Repeat Plan** | ends the whole agreement (all remaining cycles) | future cycles; prepaid balance; payment; refund; inventory; seller; customer |
+| **Cancel Future Cycle** | removes one upcoming cycle | commitment arithmetic; schedule of the rest; money; stock |
+| **Cancel Current Order** | cancels the fulfillment artifact of a cycle already generated | canonical order cancellation rules (§12); stock release; no independent charge exists under prepaid |
+
+**Impact matrix (what the design must answer — not guessed here):**
+
+| Impact | Cancel Plan | Cancel Future Cycle | Cancel Current Order |
+|---|---|---|---|
+| future cycles | stop all remaining | remove one, keep the rest | unaffected |
+| prepaid balance | money for undelivered cycles → **Decision B** | value of one cycle → **Decision B** | no order-level money exists (§46) |
+| payment | single plan charge (§46); partial-refund path is unrepresentable today (§33) | same | no change to the plan charge |
+| refund | **no refund policy exists for prepaid**; the only refund machinery is order-scoped + Stripe-confirmed (§33) | same | canonical order-level rules only |
+| inventory | release depends on Model A/B (**Decision A**) | release the affected hold | canonical `releaseOrderInventory` |
+| seller | seller's future fulfillment obligations stop; a seller still may not cancel other customers' plans (7B) | the cycle's seller affected | canonical seller rules |
+| customer | plan ends; remaining value per Decision B | one delivery skipped per Decision B/C | order canceled per canonical rules |
+
+**[CURRENT IMPLEMENTATION]:** plan cancel sets `status='cancelled'`, `ended_at`, and a
+`PLAN_CANCELLED` event — and touches **no order, no payment, no inventory** (`velrepeat-plans.ts:529-537`).
+**[PROVEN FROM SOURCE]** — with prepaid money that is a money-handling hole, not a policy.
+
+**[OWNER DECISION REQUIRED] — Decision B (Q3):** prepaid cancellation is **A** refundable future cycles ·
+**B** non-refundable · **C** credit · **D** policy varies by seller. **No refund policy may be
+invented.** STOP #1 gates it.
+
+---
+
+## 54. Pause / Skip / Reschedule
+
+**Three scheduling-lifecycle concepts; their financial behavior must not be chosen here.**
+**[V2 BUSINESS REQUIREMENT]**
+
+| Concept | Meaning | The unanswered question |
+|---|---|---|
+| **Pause** | temporarily stop cycle generation | does the commitment **end date extend**, do consumed dates **count against commitment**, or is it **seller-defined**? → **Decision D** |
+| **Skip** | customer declines one cycle | does the cycle **move to the end** (postpone), is it **consumed without delivery**, or does it become **credit/refund**? → **Decision C** |
+| **Reschedule** | move a future cycle's `scheduled_at` | permitted or not; whether it affects subsequent cycles; no financial behavior defined |
+
+**[CURRENT IMPLEMENTATION] (evidence):** pause/resume exist and are **purely scheduling** — resume
+runs `GREATEST(next_run_at, NOW())` (`velrepeat-plans.ts:520`), i.e. a **silent one-interval deferral
+with no commitment accounting**; **no skip endpoint exists at all** (§23/§33). **[PROVEN FROM SOURCE]**
+
+**Binding rules whichever the owner chooses:** **[V2 BUSINESS REQUIREMENT]**
+
+1. Completed cycles stay immutable; skip/pause/reschedule may only touch **future** cycles.
+2. Idempotency: applying the same skip/pause twice must behave as once (§58).
+3. No invented financial behavior: if the chosen option moves money (credit/refund), it must be an
+   owner decision (**C**/**I**) that also resolves how a prepaid charge is partially returned (§46/§53).
+
+**[OWNER DECISION REQUIRED] — Decision C (Q4):** skip = **A** postpone · **B** consume · **C**
+credit/refund. **[OWNER DECISION REQUIRED] — Decision D (Q5):** pause = **A** extend end date · **B**
+consume commitment dates · **C** seller-defined. **STOP #3.**
+
+---
+
+## 55. Plan modification
+
+**Principles (immutable history):** **[V2 BUSINESS REQUIREMENT]**
+
+- **Completed cycle = immutable.** No edit, no re-price, no delete.
+- **Historical price = immutable** (the snapshot is the financial record — §45).
+- **Historical quantity = immutable.**
+
+**Changing package / quantity / schedule after purchase:**
+
+1. May affect only **future, not-yet-generated cycles** (at most). **[V2 BUSINESS REQUIREMENT]**
+2. Optionally **versioned**: a plan can gain a new future-cycle version while every earlier cycle keeps
+   the old composition/snapshot — proposed alternatives: a version row on `velrepeat_plans`, or
+   version-tagged cycles. Choose in Phase 9 design. **[PROPOSED DESIGN]**
+3. **No charge/refund difference may be invented** — whether a modification costs/refunds money is an
+   owner decision. **[OWNER DECISION REQUIRED] — Decision G (Q6/Q7):** **A** future cycles only ·
+   **B** prohibited · **C** versioned plan. **STOP #4.**
+
+**[CURRENT IMPLEMENTATION] — the conflict:** `PATCH` destroys history: `DELETE FROM velrepeat_items`
+then re-insert (`velrepeat-plans.ts:444-453`) loses item identity and every prior-cycle snapshot. Under
+this contract that mutation must become impossible for a prepaid plan (§26(3), §28(4)).
+**[PROVEN FROM SOURCE]**
+
+---
+
+## 56. B2C and B2B — one domain model
+
+**Rule:** one plan type, one engine, one pricing pipeline. **No separate B2B Repeat subsystem.**
+**[V2 BUSINESS REQUIREMENT]**
+
+**Examples (illustrative — not catalog data, not policy):**
+
+```
+B2C:  Toothpaste × 1      Soap × 1                  every 30 days   × 4 cycles
+B2B:  Toothpaste × 20     Soap × 30    Shampoo × 10 every 7  days   × 16 cycles
+```
+
+The difference between the two is **quantity, package, commitment and pricing rules** — never
+`role = "seller"`. **[V2 BUSINESS REQUIREMENT]**
+
+**Pricing eligibility may consider:** quantity · commitment · package · seller pricing · customer
+eligibility. Each input and its precedence must be **specified** before implementation (§34(3)); the
+interaction between a quantity tier and a commitment tier is currently **unspecified** → **Decision
+H**.
+
+**[CURRENT IMPLEMENTATION]:** one model exists; the only quantity lever is
+`products.vrepeat_min_qty / vrepeat_max_qty` (bounds only, **no pricing consequence**,
+`velrepeat-plans.ts:85-92`); there is no quantity pricing and no commitment pricing (§23/§34).
+**[PROVEN FROM SOURCE]**
+
+**[OWNER DECISION REQUIRED] — Decision H (Q11):** B2B stacking = **A** commitment + quantity discounts
+stack · **B** one pricing tier wins · **C** seller-defined. (Q11's second half — **who owns the tier
+data** — must be answered with it.)
+
+---
+
+## 57. Seller authorization
+
+**Approved rule (7B, binding):** the **central scheduler owns global due-plan processing**. A seller
+must **not** trigger due plans belonging to other customers. Every seller-scoped operation must be
+**ownership-enforced**. **[APPROVED BUSINESS RULE]**
+
+**[CURRENT IMPLEMENTATION] (already fixed — commit `2567707`):**
+
+- `POST /api/subscriptions/process-due` (`seller-orders.ts:751-800`) now selects only plans containing
+  at least one item of the calling seller —
+  `EXISTS (SELECT 1 FROM velrepeat_items vi WHERE vi.plan_id = vp.id AND vi.seller_id = $1)` — the same
+  ownership predicate the read path `GET /api/seller/subscriptions` already used
+  (`WHERE vi.seller_id = $1`, `:695`). **[PROVEN FROM SOURCE]**
+- Tests: 3 structural + 3 DB-gated (intruder cannot trigger; owner seller can; unapproved seller gets
+  403) in `backend/tests/velrepeat-core.test.ts`.
+
+**Residual [PROVEN FROM SOURCE]:** a plan that mixes several sellers' products is still processed as a
+**whole plan** — a seller who matches part of it triggers the customer's other lines too. Fully removing
+that requires per-seller plan splitting, which changes plan semantics. **[OWNER DECISION REQUIRED] —
+Q17:** may a seller trigger a multi-seller plan at all?
+
+**V2 requirement:** any future surface (cycle generation triggers, fulfillment endpoints, modification
+endpoints) must adopt the same ownership predicate. **No code change in this contract phase.**
+**[V2 BUSINESS REQUIREMENT]**
+
+---
+
+## 58. Idempotency at every level
+
+**Required invariant (STOP #12):** *same Repeat Plan + same Cycle + same execution ⇒ no duplicate
+Order.* **[V2 BUSINESS REQUIREMENT]**
+
+| Level | **[CURRENT IMPLEMENTATION]** mechanism | V2 requirement / gap |
+|---|---|---|
+| **Payment webhook** | `payment_events.event_id UNIQUE` + `ON CONFLICT DO NOTHING` (`stripe.ts:1536-1541`) | reuse unchanged; plan-level events join the same store |
+| **Payment settlement** | order row locked first (`stripe.ts:428`), `inventory_released = FALSE` guard (`:432-433`), attempt guards (`:457-467`) | plan-level settlement needs the same locks/guards on the plan row (Phase 4) |
+| **Scheduler** | `SELECT … FOR UPDATE` re-check (`velrepeat-scheduler.ts:113-120`) | keep |
+| **`process-due`** | same `processPlan` path per plan | must remain concurrency-safe under concurrent triggers (§37) |
+| **Cycle generation** | the run row **is** the cycle key, implicitly (`UNIQUE (plan_id, scheduled_for)`, `ON CONFLICT DO NOTHING` `:126-132`) | must become an **explicit** cycle identity with a unique `(plan, cycle_number)` (§49) |
+| **Order generation** | keyed to the run; one order per shop (`:262`); `order_id` = first order only | **cycle-scoped claim required**; one cycle must never create two orders (§37) |
+| **Inventory commit** | single canonical `commitOrderInventory` via settlement | reuse; extend guard coverage to VelRepeat (§52) |
+| **Inventory release** | atomic `inventory_released` claim (`inventory.ts:221-233`) | reuse unchanged |
+
+**Not automated today:** `sold_count` has **no idempotency** (`velrepeat-scheduler.ts:343-346`) — must
+become exactly-once and test-enforced (§52). **[PROVEN FROM SOURCE]**
+
+**Provability requirement:** the “one order per cycle” invariant must be **provable by test** (unit and
+DB-gated under CI's `postgres:16`) before implementation is accepted — not asserted. **STOP #12.**
+
+---
+
+## 59. Payment incident (HIGH #5 policy)
+
+**Preserved policy (approved 6A):** if a payment succeeds but the settlement cannot be performed safely,
+create a **durable payment incident** and route it to **VelCenter operator review**. **[APPROVED
+BUSINESS RULE]**
+
+```
+Stripe payment succeeds
+        ↓
+payment attempt identified
+        ↓
+cannot safely settle (order/plan/cycle state mismatch, guard failure)
+        ↓
+durable payment incident (payment_incidents)
+        ↓
+VelCenter operator review
+```
+
+**Never automatic:** refund · reopen · retry · inventory mutation — unless an approved policy says
+otherwise. **[APPROVED BUSINESS RULE + V2 BUSINESS REQUIREMENT]**
+
+**Reuse (no VelRepeat incident table):** `payment_incidents` + `payment-incidents.ts` + the VelCenter
+tab (§36); `dedupe_key UNIQUE` so a replayed webhook cannot create a second incident. Identity must
+eventually include **plan identity and cycle identity** once they exist (§26/§36). **[V2 BUSINESS
+REQUIREMENT]**
+
+**[CURRENT IMPLEMENTATION]:** the mechanism exists in-repo; `payment_incidents` arrives with migration
+`049`, which is **not applied to production** (Neon quota — owner action). Under prepaid, the plan-level
+charge produces a Stripe webhook, so this safety net applies **provided** Q13/Q14 resolve the plan-level
+attempt identity the same way the order-level one works. **[PROVEN FROM SOURCE]**
+
+---
+
+## 60. V2 OWNER DECISIONS
+
+### 60.1 Approved (owner, 2026-09-30) — binding
+
+| ID | Decision | Effect |
+|---|---|---|
+| **1A** | **Respect `COD_ENABLED`** — no VelRepeat bypass | COD stays off until an operator enables it; VelRepeat never overrides it |
+| **2A** | **Stripe is the VelRepeat payment rail** | the prepaid charge is a Stripe charge |
+| **3A** | **`sold_count` via canonical settlement** | no ad-hoc counters; canonical writers only (the recognition *moment* is still §52's open item) |
+| **4A** | **30-minute payment reservation where applicable** | the canonical reservation policy applies to VelRepeat wherever it applies at all; mapping to a plan-level charge is Phase 4 design |
+| **5A** | **Customer can pay VelRepeat with Stripe** | Stripe checkout for plans is in scope |
+| **6A** | **Durable payment incident** | unsafe settlement ⇒ incident ⇒ VelCenter (never auto refund/retry/etc.) |
+| **7B** | **Central scheduler only** | sellers cannot trigger other customers' plans; ownership-enforced (fix `2567707`, §57) |
+
+These are **not** proposals: they are binding statements made by the owner on 2026-09-30, supplementing
+§21's resolved #1/#7.
+
+### 60.2 New — [OWNER DECISION REQUIRED] (raised by the V2 business model)
+
+| ID | Decision | Options | Gates (contract refs) |
+|---|---|---|---|
+| **A** | Inventory reservation | **A** reserve the entire commitment at prepaid payment · **B** reserve per cycle | §51, Q1 · STOP #2 |
+| **B** | Prepaid cancellation | **A** refundable future cycles · **B** non-refundable · **C** credit · **D** seller-defined | §53, Q3 · STOP #1 |
+| **C** | Skip | **A** postpone cycle · **B** consume commitment cycle · **C** credit/refund | §54, Q4 · STOP #3 |
+| **D** | Pause | **A** extend end date · **B** consume commitment dates · **C** seller-defined | §54, Q5 · STOP #3 |
+| **E** | Future price change | **A** locked at purchase · **B** future cycles reprice | §45, Q9 · STOP #4 |
+| **F** | Out-of-stock future cycle | **A** postpone · **B** substitute · **C** cancel/refund/credit · **D** seller policy | §51/§53, Q8/Q10 · STOP #2 |
+| **G** | Plan modification | **A** future cycles only · **B** prohibited · **C** versioned plan | §55, Q6/Q7 · STOP #4 |
+| **H** | B2B pricing stacking | **A** commitment + quantity discounts stack · **B** one tier wins · **C** seller-defined | §56, Q11 · STOP #4 |
+| **I** | Prepaid + future fulfillment failure | **A** credit · **B** refund · **C** retry/reschedule · **D** seller policy | §53/§59, Q12 · STOP #1 |
+
+**No option in §60.2 may be chosen by the implementation.** Where a chosen option conflicts with an
+earlier STOP, the STOP wins until the owner-provided policy is written into this contract.
+
+### 60.3 Open architecture decisions (from Part II — still unanswered)
+
+| ID | Question (see §38) | Gates |
+|---|---|---|
+| **Q13** | Prepaid payment shape — **A** (attach to cycle 1's order) vs **B** (`payments.order_id` nullable + `velrepeat_plan_id`); C rejected as a second authority | Phase 4 |
+| **Q14** | One large Stripe charge vs true Stripe Subscriptions | Phase 4 |
+| **Q15** | `vrepeat_packages` (V1): supersede or leave as legacy | Phase 2 |
+| **Q16** | Plan timezone load-bearing vs UTC | Phase 1/3 |
+| **Q17** | Per-seller plan splitting | Phase 7 |
+
+### 60.4 Decision → contract-question map (nothing lost)
+
+Q1→A · Q2→(3A mechanism; recognition moment still open, §52) · Q3→B · Q4→C · Q5→D · Q6/Q7→G ·
+Q8→F · Q9→E · Q10→F · Q11→H · Q12→I · Q13–Q17→§60.3.
+
+---
+
+## 61. Architecture gap analysis
+
+Read every row as: **CURRENT SYSTEM → V2 REQUIREMENT → GAP → PROPOSED SOLUTION → OWNER DECISION**.
+No row with an unanswered decision may be implemented.
+
+| Area | Current system (evidence) | V2 requirement | Gap | Proposed solution | Owner decision |
+|---|---|---|---|---|---|
+| **Database** | `payments.order_id NOT NULL` (`:441`); no cycle ordinal (`velrepeat_runs`); no commitment/snapshot fields; migrations 048–050 unapplied in production | express plan-level payment, cycles, commitment, snapshots, package composition | no existing shape can store a prepaid plan's money or its cycles | Phase 1 additive schema design in **both** `db/schema.sql` + `db/run-sqleditor.sql` | **Q13** shape; production application blocked (Neon quota — owner action) |
+| **Payment** | order-scoped authority; checkout derives from `orders.total_amount`; scheduler writes per-order `'cod'` rows (`:350-354`) | one Stripe charge per plan; COD only per canonical config | no payable object for a plan; per-cycle pseudo-payments conflict with prepaid | Phase 4: plan checkout + webhook settlement + incident path | **Q13** / **Q14** |
+| **Inventory** | canonical reserve/commit/release; variant vs non-variant asymmetry (`:326-335` vs `:341`); no plan-level reservation | Model A or B; exactly one terminal outcome per reservation | cannot hold a commitment; asymmetry must be resolved | Phase 6 per Decision A | **A** (Q1) · STOP #2 |
+| **Order** | one order per shop per run (`:262`); cycle link partial (`order_id` = first; `metadata.orderIds`) | per-cycle order(s), no per-cycle charge, full trace | no cycle-scoped idempotent claim; payment leg untraceable | Phase 5/8: cycle-scoped order claim + trace fields | **Q13** (trace leg); **F** (stock failure path) |
+| **Scheduler** | central scheduler; UTC math; ownership-scoped seller trigger (`2567707`); multi-seller whole-plan residual | central-only, cycle-aware, explicit timezone | no cycle generation semantics; timezone inert | Phase 7 | **Q16** / **Q17** |
+| **Pricing** | none for V2; V1 seller price fields only (§23) | pipeline with tier data, min/max cycles, discount_type/value, eligibility, snapshot | engine and tier data absent; percentages must not be hardcoded | Phase 2 | **H** (Q11) · **E** (Q9) |
+| **Package** | absent for V2; `vrepeat_packages` V1 single-product, zero-commerce | composition of real products/variants, no stock of its own | no entity; V1 not reusable | Phase 2: new composition structure (both schema files) | **Q15** |
+| **Cycle** | implicit in `velrepeat_runs`; no ordinal/status; `order_id` first-only | first-class cycles 1..N with snapshot, status, order refs | blocker #3 — no provable cycle identity (“cycle N ⇒ one order” unprovable) | Phase 5: extend `velrepeat_runs` **or** one cycle table (pick exactly one) | identity design (Phase 5) — must be ratified before code |
+| **Authorization** | 7B fix landed; read path already scoped; residual multi-seller whole-plan run | keep central scheduler; every seller surface ownership-enforced | future surfaces do not exist yet; residual remains | Phase 7 enforcement + tests | **Q17** |
+| **Refund** | order-scoped, Stripe-confirmed only; no plan-level representation | only if owner chooses refundable options | partial-commitment refunds unrepresentable | Phase 9, conditional on **B** / **I** | **B** / **I** |
+| **Cancellation** | status-only; touches no order/payment/inventory (`:529-537`) | 3-level matrix (§53) | money/stock semantics absent | Phase 9 | **B** (Q3) |
+| **Pause** | silent one-interval deferral (`:520`); no accounting | explicit pause semantics (§54) | no commitment accounting | Phase 9 | **D** (Q5) |
+| **Modification** | destructive PATCH (`:444-453`) | future-only / versioned; immutable history | snapshot destruction; no versioning | Phase 9 | **G** (Q6/Q7) |
+| **Observability** | `velrepeat_events`; `payment_incidents` (repo; prod pending 049); VelCenter surfaces | plan/cycle visibility; incident identity incl. plan/cycle | no cycle-level events; incident key lacks plan/cycle | Phases 5/10 + incident key extension | 6A governs; none new |
+
+---
+
+## 62. Implementation roadmap (NOT STARTED — gates shown per phase)
+
+> **This task implements nothing.** Each phase below starts only after its owner decisions are answered
+> in §60 (and §60.3). The phase order is fixed by the contract; phases may not skip their gates.
+
+| Phase | Scope | Exit criteria | Gates |
+|---|---|---|---|
+| **1. Domain + schema** | Finalize the V2 entity model (plan/commitment/cycles/package lines/snapshots/payment linkage); additive schema design in **both** SQL files | reviewed schema design; cycle identity chosen (§49); no migration until owner + Neon quota | Q13, Q16 |
+| **2. Package + pricing** | Package composition structure; pricing engine (§44 pipeline); tier data store; snapshot write path | tier changes need no code edit; snapshot fields test-proven | H, E, Q15 |
+| **3. Repeat Plan** | Prepaid plan creation/read: commitment, schedule, snapshot, total prepaid; versioning hook | a contract-shaped plan can be created (staging) with no cycle generation yet | E, Q16 |
+| **4. Prepaid payment** | Plan-level Stripe charge (Q13/Q14 shape); webhook settlement; incident on unsafe settle; COD only per canonical config | one charge per plan; no per-cycle charge; incident proven | Q13, Q14 |
+| **5. Delivery Cycle** | Cycle rows: ordinal, `scheduled_at`, status, quantity/price snapshot, order refs | cycle count = commitment; unique `(plan, cycle_number)` enforced | identity design; F |
+| **6. Inventory** | Chosen Model A/B; single reservation authority; resolve variant/non-variant asymmetry; `sold_count` exactly-once | no double commit/release; guard extended to VelRepeat; tests | A, Q2 moment |
+| **7. Scheduler** | Central-only due processing for cycles; timezone semantics; ownership predicate on any seller surface | ownership tests; timezone explicit | Q16, Q17 |
+| **8. Order fulfillment** | Cycle → order(s) idempotent claim; fulfillment state per cycle; trace `Order→Cycle→Plan→Customer→Payment` | same plan + cycle + execution ⇒ one order (DB-gated test) | Q13 (trace), F |
+| **9. Cancellation / pause / modification** | Implement owner decisions B/C/D/G/I minimally; immutability enforced | completed cycles immutable; no invented refunds | B, C, D, G, I |
+| **10. Tests + E2E** | Unit + DB-gated + CI `postgres:16`; extend `inventory-settlement` guard to VelRepeat; idempotency proof | all §63 criteria green in CI; production migration plan | all above |
+
+**Stop conditions are cumulative:** no phase may be merged while any gate it touches is unanswered.
+
+---
+
+## 63. Acceptance criteria (contract completeness)
+
+The V2 contract is complete when all of the following hold — **all are satisfied by this document as a
+specification; none are satisfied in code**:
+
+| # | Criterion | Where |
+|---|---|---|
+| 1 | business model described without ambiguity | §39 |
+| 2 | Package vs Product clearly separated | §39.1/§40 |
+| 3 | quantity per cycle separated from total commitment | §41 |
+| 4 | schedule separated from commitment | §42/§43 |
+| 5 | prepaid payment separated from fulfillment | §46/§48 |
+| 6 | Repeat Plan separated from Order | §49/§50 |
+| 7 | Cycle separated from Order | §49/§50 |
+| 8 | pricing pipeline + snapshot defined | §44/§45 |
+| 9 | inventory semantics explicitly identified (A vs B, not chosen) | §51 |
+| 10 | `sold_count` invariant defined | §52 |
+| 11 | payment incident defined | §59 |
+| 12 | authorization defined | §57/§60.1 |
+| 13 | idempotency defined | §58 |
+| 14 | cancellation identified | §53 |
+| 15 | pause/skip identified | §54 |
+| 16 | modification identified | §55 |
+| 17 | B2C/B2B identified | §56 |
+| 18 | unresolved financial decisions explicitly listed | §60.2/§60.3 (A–I, Q13–Q17) |
+| 19 | **no production code changed** | §64 + audit `velrepeat-v2-contract-2026-09-30.md` |
+
+---
+
+## 64. V2 prohibited actions (this phase, and until gates close)
+
+- Do **not** modify production code, database schema, migrations, frontends or packages on account of
+  this contract. (Only `.ai/` documentation changed — audit `velrepeat-v2-contract-2026-09-30.md`.)
+- Do **not** create migrations, fake APIs, fake schemas, or duplicate inventory/payment systems.
+- Do **not** enable COD, change Stripe mode, or bypass `assertPaymentMethodUsable()` /
+  `isCodEnabled()` / `isCodCustomerSelectable()`.
+- Do **not** increment `sold_count` at plan creation, cycle creation, or reservation; no
+  VelRepeat-specific counter.
+- Do **not** decide refund, inventory-reservation, pause/skip, modification-pricing, or out-of-stock
+  policy — those are §60.2 decisions.
+- Do **not** delete important content from Parts I–II, and never write proposed behavior as current
+  behavior (or vice versa).
+
+---
+
+**V2 CONTRACT STATUS: specification complete (design only).**
+**IMPLEMENTATION STATUS: NOT STARTED — CONTRACT PHASE ONLY.**
+Gates: §60.1 approved (1A–7B) · §60.2 Decisions A–I [OWNER DECISION REQUIRED] · §60.3 Q13–Q17
+[MIXED: architecture/owner] · STOP #1/#2/#3/#4/#12 remain in force (§18, §32, §37, §51, §53, §54, §55).
