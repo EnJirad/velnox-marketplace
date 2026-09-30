@@ -816,22 +816,22 @@ export function formatPaymentCountdown(remainingMs: number): string {
 }
 
 /**
- * A reservation inside this much of its deadline is "almost over": the UI
- * emphasises it (warmer colour, an explicit "hurry" note) without any animation.
- *
- * Three minutes: the last tenth of the 30-minute window. It is what makes a
- * countdown like `02:13` render as the urgent state rather than an ordinary one.
- */
-export const PAYMENT_RESERVATION_URGENT_MS = 3 * 60_000;
-
-/**
  * The urgency tiers the storefront colours a running countdown with.
  *
  *   GREEN   more than `PAYMENT_RESERVATION_YELLOW_MS` left — an ordinary window
  *   YELLOW  15:00 … 5:01 — the window is closing, make the clock noticeable
- *   RED      5:00 … 0:01 — pay now (the last three minutes stay "urgent" too,
- *            which is what turns the hurry note on)
+ *   RED      5:00 … 0:01 — pay now; the "hurry" note turns on here
  *   EXPIRED 0 or less — the clock reads 00:00 and the dark notice takes over
+ *
+ * This is THE urgency authority for the storefront. It used to sit beside a
+ * second, independent scale — a `PAYMENT_RESERVATION_URGENT_MS = 3 min`
+ * threshold that made `paymentReservationPhase()` answer `urgent` in the last
+ * three minutes. That tier was a leftover of the ORIGINAL single-scale design
+ * and is gone (audit MEDIUM #8): no consumer ever distinguished `urgent` from
+ * `active`, so it could not change a single pixel, while these tiers do all the
+ * real work (colour + the translated note). Do not reintroduce a second
+ * threshold here — the note keys `orderReservation.windowNote` /
+ * `urgentNote` / `criticalNote` are selected from this tier alone.
  *
  * Boundaries are inclusive of the tier they name, matching the spec's
  * 15:00 → YELLOW, 05:00 → RED, 00:01 → RED, 00:00 → EXPIRED.
@@ -879,18 +879,22 @@ export function paymentReservationProgress(
 }
 
 /** How the reservation must be presented for one order. */
-export type PaymentReservationPhase = "none" | "active" | "urgent" | "expired";
+export type PaymentReservationPhase = "none" | "active" | "expired";
 
 /**
- * The ONE presentation phase both order surfaces (list + detail) read, so the
- * same order can never look "active" in one place and "expired" in the other.
+ * The ONE window-state both order surfaces (list + detail) read, so the same
+ * order can never look "active" in one place and "expired" in the other.
  *
- *   `active`   — a window is open, comfortably more than the urgent threshold left
- *   `urgent`   — a window is open but nearly over (`PAYMENT_RESERVATION_URGENT_MS`)
+ *   `active`   — a countdown belongs here: a window is open and not yet past
  *   `expired`  — the deadline has passed, or the expiry sweep already moved the
  *                order to `expired`
  *   `none`     — no countdown belongs here: a COD or legacy order with no stored
  *                deadline, or an order that was paid/cancelled/shipped
+ *
+ * This answers ONLY "is there a countdown, and has it lapsed". It carries no
+ * urgency scale: how alarming the clock looks is `paymentReservationTone()`'s
+ * single authority. The old `urgent` phase (a 3-minute threshold) was removed in
+ * audit MEDIUM #8 because no consumer ever read it apart from `active`.
  *
  * PRESENTATION ONLY. The backend deadline is the source of truth and the backend
  * enforces it; a wrong client clock can mis-render a number, never change state.
@@ -902,7 +906,7 @@ export function paymentReservationPhase(
   const state = paymentReservationState(order, now);
   if (state.hasWindow) {
     if (state.expired) return "expired";
-    return state.remainingMs <= PAYMENT_RESERVATION_URGENT_MS ? "urgent" : "active";
+    return "active";
   }
   // No countdown for an order that is no longer waiting to be paid. The ONE
   // exception is an order the sweep already ended: its window really did lapse,

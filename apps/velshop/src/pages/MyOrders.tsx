@@ -161,7 +161,7 @@ export default function MyOrders() {
     () =>
       orders.some((order: StoreOrder) => {
         const phase = paymentReservationPhase(order, now);
-        return phase === "active" || phase === "urgent";
+        return phase === "active";
       }),
     [orders, now],
   );
@@ -504,7 +504,7 @@ export default function MyOrders() {
                       */}
                       <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 px-5 pb-5 pt-4">
                         <div className="min-w-0">
-                          {(reservationPhase === "active" || reservationPhase === "urgent") && (
+                          {reservationPhase === "active" && (
                             <>
                               <p
                                 role="timer"

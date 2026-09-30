@@ -320,10 +320,12 @@ describe("order UX — the reservation deadline must reach the screen (regressio
     expect(later.remainingMs).toBe(1_740_000);
     expect(formatPaymentCountdown(later.remainingMs)).toBe("29:00");
 
-    // The last seconds are the urgent state, not an anomaly.
+    // The last seconds are still a running window, not an anomaly — the phase
+    // carries no urgency scale (audit MEDIUM #8), the TONE does.
     expect(
       paymentReservationPhase({ status: "pending", paymentExpiresAt: now + 10_000 }, now),
-    ).toBe("urgent");
+    ).toBe("active");
+    expect(paymentReservationTone(10_000)).toBe("red");
 
     // One second past the deadline: expired, zero left, and the clock reads 00:00.
     const lapsed = paymentReservationState(
@@ -371,9 +373,7 @@ describe("order UX — the reservation deadline must reach the screen (regressio
     // The reservation is about held stock, not about Stripe's rail: a CARD order,
     // a PromptPay order and an order with no recorded method all count down.
     const detail = read(ORDER_DETAIL_PAGE);
-    expect(detail).toContain(
-      'const reservationOpen = reservationPhase === "active" || reservationPhase === "urgent";',
-    );
+    expect(detail).toContain('const reservationOpen = reservationPhase === "active";');
     expect(detail).not.toMatch(/reservationOpen\s*=.*paymentMethod/);
     const list = read(MY_ORDERS_PAGE);
     expect(list).not.toMatch(/reservationPhase.*paymentMethod/);

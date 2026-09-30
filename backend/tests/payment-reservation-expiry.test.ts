@@ -40,9 +40,9 @@ import {
   getOrderStatusMeta,
   NEXT_ORDER_STATUSES,
   orderStripePayability,
-  PAYMENT_RESERVATION_URGENT_MS,
   paymentReservationPhase,
   paymentReservationState,
+  paymentReservationTone,
 } from "../../packages/shared/src/lib/commerce.ts";
 import { translations } from "../../packages/shared/src/lib/i18n/locales/index";
 import {
@@ -228,9 +228,9 @@ describe("payment reservation — the countdown the order page renders", () => {
     // One presentation clock, ticking only while a window is open.
     expect(page).toContain("setInterval(() => setNow(Date.now()), 1000)");
     expect(page).toContain("hasOpenReservation");
-    // The countdown block is gated on the OPEN phases, so a paid order (whose
+    // The countdown block is gated on the OPEN phase, so a paid order (whose
     // phase is "none") can never render one.
-    expect(page).toContain('reservationPhase === "active" || reservationPhase === "urgent"');
+    expect(page).toContain('reservationPhase === "active"');
     expect(page).toContain('reservationPhase === "expired"');
     // A stale list is refreshed by the server, never patched locally.
     expect(page).toContain('window.addEventListener("visibilitychange"');
@@ -288,14 +288,31 @@ describe("payment reservation — the countdown states", () => {
     expect(formatPaymentCountdown(PAYMENT_RESERVATION_MS - 13_000)).toBe("29:47");
   });
 
-  test("only the last three minutes are urgent", () => {
-    expect(PAYMENT_RESERVATION_URGENT_MS).toBe(3 * 60_000);
-    expect(paymentReservationPhase(at(PAYMENT_RESERVATION_URGENT_MS + 1), now)).toBe("active");
-    expect(paymentReservationPhase(at(PAYMENT_RESERVATION_URGENT_MS), now)).toBe("urgent");
-    // The documented "almost expired" example.
-    expect(paymentReservationPhase(at(2 * 60_000 + 13_000), now)).toBe("urgent");
+  test("the phase carries NO urgency scale — a running window is simply `active`", () => {
+    // Audit MEDIUM #8: the old 3-minute `PAYMENT_RESERVATION_URGENT_MS` tier made
+    // this answer "urgent" in the last three minutes, but no consumer ever read
+    // "urgent" apart from "active", so it could not change a single pixel. The
+    // urgency scale is `paymentReservationTone()`'s alone. What is pinned here is
+    // that the countdown is rendered CONTINUOUSLY from 30:00 down to 00:01 — the
+    // clock keeps ticking, and the note/colour escalate instead.
+    for (const remainingMs of [
+      PAYMENT_RESERVATION_MS,
+      15 * 60_000 + 1,
+      5 * 60_000 + 1,
+      3 * 60_000,
+      2 * 60_000 + 13_000,
+      1_000,
+    ]) {
+      expect(paymentReservationPhase(at(remainingMs), now)).toBe("active");
+    }
+    // The documented "almost expired" example still formats identically.
     expect(formatPaymentCountdown(2 * 60_000 + 13_000)).toBe("02:13");
-    expect(paymentReservationPhase(at(1_000), now)).toBe("urgent");
+    // …and the urgency it used to encode is carried by the tone instead.
+    expect(paymentReservationTone(PAYMENT_RESERVATION_MS)).toBe("green");
+    expect(paymentReservationTone(15 * 60_000)).toBe("yellow");
+    expect(paymentReservationTone(5 * 60_000)).toBe("red");
+    expect(paymentReservationTone(2 * 60_000 + 13_000)).toBe("red");
+    expect(paymentReservationTone(1_000)).toBe("red");
   });
 
   test("a lapsed window is expired, and never renders a negative clock", () => {

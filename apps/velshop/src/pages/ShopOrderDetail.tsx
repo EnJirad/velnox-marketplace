@@ -506,7 +506,7 @@ export default function ShopOrderDetail() {
     : "";
 
   const payTargetOrderId = order.parentOrderId || order.id;
-  const reservationOpen = reservationPhase === "active" || reservationPhase === "urgent";
+  const reservationOpen = reservationPhase === "active";
   /** Which urgency tier the clock is in (green / yellow / red). */
   const reservationTone = paymentReservationTone(reservation.remainingMs);
   const toneStyle = RESERVATION_TONE_STYLES[reservationTone];
