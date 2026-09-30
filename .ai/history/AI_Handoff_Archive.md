@@ -198,6 +198,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-29-latest-passes.md`](./archive/AI_Handoff-2026-09-29-latest-passes.md) | handoff §5 "Latest passes" — the chronological narrative of completed work | Every finished pass in one place: the payment ↔ cancellation lock-order hardening and the 30-minute reservation lifecycle (2026-09-29), and the earlier payment-foundation, catalog, R2/media and realtime passes. **Completed work only — it lists no open gap.** Moved out on 2026-09-29 so §43 (CRITICAL #1/#2), §44 (HIGH #3), §45 (the CI follow-up) and §46 (HIGH #4 payment attempt identity) could be appended. The live list of what is still open is **§6 "Remaining gaps / open items"**, which deliberately stayed inline in the handoff |
 
+### 2026-09-30 — the §37–§48 split (payments + audit record, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-30-payments-and-audit-record.md`](./archive/AI_Handoff-2026-09-30-payments-and-audit-record.md) | handoff §37–§48 — migration 048's read-path repair, the Stripe TEST-mode E2E attempts (TASK 006/007) and their BLOCKED verdicts, the CI guard fix, the §42 full-system audit narrative, §43 inventory CRITICAL #1/#2, §44 the paid-order cancellation guard, §46 HIGH #4 payment attempt identity, §47 HIGH #5 late-payment operator flow, §48 MEDIUM #9 `orders.status` CHECK | Moved **verbatim** on 2026-09-30 so the live handoff could return under its ~40 KB edit ceiling while the VelRepeat **Prepaid Repeat Commerce** pass (**§51**) was appended. Several of these were already superseded by earlier archive files (§42.1–§42.5 in `AI_Handoff-2026-09-29-audit-findings-detail.md`, §38–§41 in `AI_Handoff-2026-09-29-part2-and-order-surfaces.md`). The live status of every finding is the compact index in **§51**; what remains true of them is restated there and in §6 "Remaining gaps / open items" |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

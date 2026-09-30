@@ -1,7 +1,10 @@
 # VelRepeat Business & Payment Contract
 
-**Status:** AUTHORITATIVE CONTRACT (design only — no implementation)
+**Status:** AUTHORITATIVE CONTRACT
 **Created:** 2026-09-30 · **Baseline:** `9780aa1` (= `origin/main`)
+**Part I (§0–§22):** created 2026-09-30 from the MEDIUM #10 audit — the recurring-commerce contract.
+**Part II (§23–§38):** added 2026-09-30 from source at `6f5a998` for the owner-supplied
+**Prepaid Repeat Commerce** business model. Decision #1 and #7 are now **RESOLVED**.
 **Supersedes for VelRepeat:** nothing. **Governs:** all future VelRepeat implementation, tests,
 inventory behavior, payment behavior and operator behavior.
 **Primary evidence:** `.ai/tasks/audits/medium-10-velrepeat-commerce-lifecycle-2026-09-30.md` (MEDIUM #10
@@ -520,10 +523,13 @@ A future implementation is complete only when **all** of these are true and demo
 
 These **cannot** be proven from the repository. Implementation MUST stop at each one rather than guess.
 
-> **OWNER DECISION #1 — Does VelRepeat respect `COD_ENABLED`?**
-> Today it does not (`processPlan` never calls `isCodEnabled()`). Should a run be refused while the COD
-> rail is off, or is VelRepeat deliberately exempt? If exempt, the exemption must be documented,
-> because it contradicts `payment-config.ts`'s fail-closed design.
+> ✅ **RESOLVED 2026-09-30 (owner): Decision #1 — Does VelRepeat respect `COD_ENABLED`?**
+> **YES — no exemption.** `COD_ENABLED=false` must never be bypassed to create a VelRepeat COD
+> transaction. Every VelRepeat payment path goes through the canonical
+> `assertPaymentMethodUsable()` / `isCodEnabled()` / `isCodCustomerSelectable()` in
+> `payment-config.ts`. **No VelRepeat-specific bypass may exist.**
+> **This decision does NOT enable COD** — the rail stays off until an operator turns it on, and it
+> also does not, by itself, wire Stripe: the prepaid Stripe model is blocked on **§38 Q1–Q12**.
 
 > **OWNER DECISION #2 — What payment rail is officially supported for VelRepeat, and what settles it?**
 > A COD payment has **no** settlement mechanism: no carrier webhook, no settlement job, no writer of
@@ -547,9 +553,12 @@ These **cannot** be proven from the repository. Implementation MUST stop at each
 > HIGH #5's `payment_incidents` fires from the Stripe webhook only, so a COD recurring order produces no
 > incident. Without this, money is owed invisibly.
 
-> **OWNER DECISION #7 — May an approved seller trigger due plans that are not theirs?**
-> `POST /api/subscriptions/process-due` (`seller-orders.ts:755`) runs any customer's due plans with no
-> user scope. Scope it, restrict it, or retire it in favour of the scheduler?
+> ✅ **RESOLVED 2026-09-30 (owner): Decision #7 — May an approved seller trigger due plans that are not
+> theirs?**
+> **NO.** The **central scheduler owns global due-plan processing**. A seller must never force-run a
+> customer's plan that is not theirs. Seller-scoped operations must be **ownership-enforced** — the
+> due-plan query is restricted to plans that contain at least one item belonging to the calling
+> seller. Implemented 2026-09-30 (see §35).
 
 ---
 
@@ -563,4 +572,441 @@ These **cannot** be proven from the repository. Implementation MUST stop at each
 - It does **not** claim production verification. Migrations **048/049/050 remain unapplied** (Neon
   quota); no Stripe or browser E2E has ever run.
 
-**Implementation status: NOT STARTED — blocked on Owner Decisions #1–#7.**
+**Implementation status: PARTIAL — see §23–§38. §23–§38 were added 2026-09-30 (owner-supplied
+Prepaid Repeat Commerce business model). Decisions #1 and #7 are RESOLVED; the prepaid payment,
+inventory and sold-recognition semantics remain blocked on §38.**
+
+---
+
+# PART II — PREPAID REPEAT COMMERCE (added 2026-09-30)
+
+**Added because** the owner defined VelRepeat as a **Prepaid Repeat Commerce** system, not a
+subscription that re-orders. The model the owner requires:
+
+```
+Customer → Product or Package → quantity per cycle → delivery schedule
+        → commitment (cycles) → tiered price → ONE prepaid payment
+        → Repeat Plan → N Delivery Cycles → one order per cycle
+```
+
+Everything below is re-derived from source at `6f5a998`. The same tag rules as §0 apply:
+**[PROVEN]** / **[INTENT]** / **[DECISION]** / **[OWNER DECISION REQUIRED]**.
+
+---
+
+## 23. Current facts for each business-model concept (STEP-3 table)
+
+| Concept | Exists today? | Evidence at `6f5a998` | Class |
+|---|---|---|---|
+| **Product** | Yes, fully. | `products` `run-sqleditor.sql:207+`, variants `product_variants`, inventory `inventory:322`. | **[PROVEN]** |
+| **Package** (multi-item commercial composition) | **No.** No table, no route, no type. `velrepeat_items` is *already* multi-item per plan (`:846`) — it is the nearest thing, but it is a plan line, not a reusable/sellable composition, and it carries no package price of its own. | grep `package` in VelRepeat V2 files → only `Package` word usage in V1 `vrepeat_packages`. | **[PROVEN] ABSENT** |
+| **Repeat Plan** | Yes. | `velrepeat_plans` `:823-842`. | **[PROVEN]** |
+| **Plan Item** | Yes. `quantity` already exists per line. | `velrepeat_items` `:846-857`, `quantity INTEGER CHECK (quantity > 0)` `:851`. | **[PROVEN]** |
+| **Pricing snapshot** | **No.** `velrepeat_items.unit_price` is a *mutable running snapshot* — `processPlan` **overwrites it** on every run when the product price moves (`:244-248`) and notifies the customer. That is the exact opposite of an immutable prepaid snapshot. | `velrepeat-scheduler.ts:233-249`. | **[PROVEN] ABSENT / actively contradicted** |
+| **Schedule** | Partially. `frequency_type` (`days`/`weeks`/`months`) + `interval_value > 0` **already covers 7 / 14 / 30 days** (`days/7`, `days/14`, `days/30`). No constraint ties the two together, and the schedule is **not** stored per cycle. | `run-sqleditor.sql:827-828`; `calculateNextRunAt` `:38-65`. | **[PROVEN] present, under-specified** |
+| — timezone | **Column exists and is decorative.** `velrepeat_plans.timezone` is only echoed back to the API (`velrepeat-plans.ts:153`); **no code writes it and no code uses it**. All schedule math is UTC (`setUTCDate`, `NOW()`). | `:829`; `:114-123`; `:358`. | **[PROVEN] inert → timezone correctness is ABSENT** |
+| **Commitment** (number of prepaid cycles) | **No.** No column, no counter, no end-of-commitment computation. `velrepeat_plans.status` allows `'completed'` and **nothing ever writes it** — a plan is only ever `active`/`paused`/failure-status/`cancelled`. | `:826` (status CHECK); grep shows no writer of `'completed'` for a plan. | **[PROVEN] ABSENT** |
+| **Tiered pricing by commitment** | **No.** No tier table, no discount logic anywhere. The illustrative 0/3/7/10/15 % in the owner brief has **no source and must not be hardcoded**. | absence across `backend/`. | **[PROVEN] ABSENT** |
+| — existing quantity pricing | Partial, and **belonging to V1 only**: `products.vrepeat_weekly_price / vrepeat_monthly_price / vrepeat_weekly_qty / vrepeat_monthly_qty / vrepeat_min_qty / vrepeat_max_qty` exist (`:224-232`). They are read by `velrepeat-plans.ts:68,85-92` **only to bound quantity**, and priced by `velrepeat.ts:138-143` (**V1**, zero commerce writes). | verified above | **[PROVEN] partial, unused for V2 pricing** |
+| **Prepaid payment** | **No — and structurally impossible today.** `payments.order_id` is `NOT NULL REFERENCES orders(id)`. There is no plan-level payment row, and no column anywhere points a payment at a plan. | `run-sqleditor.sql:441`. | **[PROVEN] ABSENT + structural blocker (§25)** |
+| **Delivery cycle** | **No cycle entity.** `velrepeat_runs` is keyed `UNIQUE (plan_id, scheduled_for)` — structurally the natural cycle key — but it has **no cycle number, no commitment boundary, no per-cycle status of its own**, and `velrepeat_runs.order_id` holds only the **first** order id while the rest live in `metadata.orderIds`. | `run-sqleditor.sql:865-882`; `:361-364`. | **[PROVEN] nearest thing, insufficient** |
+| **Order per cycle** | One order **per shop per run** — so a multi-shop plan produces **N orders for one cycle**, and a cycle has no identity. | `:262`, `:252-258`; `velrepeat-core.test.ts:223-228`. | **[PROVEN] 1 cycle : N orders** |
+| **Inventory reserve / commit / release** | Yes, canonical — but VelRepeat calls only **reserve**, and does it at *cycle creation* only. | §9; `velrepeat-scheduler.ts:341`. | **[PROVEN] partial** |
+| **`sold_count`** | **Violating.** Written directly at order creation (`:343-346`), bypassing `commitOrderInventory`. | §10. | **[PROVEN] defect** |
+| **Pause / skip** | Pause/resume exist (`velrepeat-plans.ts:495-528`) and are **purely scheduling**: resume does `GREATEST(next_run_at, NOW())`, i.e. a **silent deferral of one interval with no commitment accounting**. There is **no skip** endpoint at all. | `:495-528` | **[PROVEN] pause exists, skip ABSENT** |
+| **Modification** | PATCH exists but **destroys history**: `DELETE FROM velrepeat_items WHERE plan_id = $1` then re-inserts (`:445-452`), so item identity and the price snapshot of every prior cycle are lost. No versioning. | `:444-453` | **[PROVEN] exists, unsafe for prepaid** |
+| **Cancellation** | Plan cancel sets `status='cancelled'` and touches **no order, no payment, no inventory** (`:529-537`). With a prepaid payment that is a money-handling hole. | `:529-537` | **[PROVEN] incomplete for prepaid** |
+| **B2C / B2B** | One model. `vrepeat_min_qty` / `vrepeat_max_qty` are the only quantity lever and are set per product by the seller; there is **no pricing consequence** attached to quantity. | `:85-92` | **[PROVEN] single model, no quantity pricing** |
+| **Scheduler ownership** | Central scheduler exists (`server.ts:519` → `startVelRepeatScheduler`, `:467-487`), **but a seller route can also run it globally** — see §35. | `:444-458`, `:467-487` | **[PROVEN] + defect (now fixed)** |
+
+---
+
+## 24. Existing tables vs. required concepts (PHASE 19 check — do not duplicate)
+
+| Required concept | Reuse this | Do **not** create |
+|---|---|---|
+| Product / variant / stock | `products`, `product_variants`, `inventory` — canonical | a package-level stock column |
+| Repeat Plan | `velrepeat_plans` (extend: commitment, schedule, prepaid total) | a second plan table |
+| Plan Item | `velrepeat_items` | a second item table |
+| Package composition | **[PROVEN] nothing exists** — a new composition table is genuinely required, and it must reference real `products.id` / `product_variants.id` and carry **no inventory of its own** | `vrepeat_packages` is **NOT** reusable: it is the V1 single-product package (one `product_id`, `quantity_total`), it has **zero commerce writes**, and reusing it would collide conceptually. **Decision required** on whether to supersede it or leave it untouched. |
+| Delivery cycle | `velrepeat_runs` is the nearest structural fit (`UNIQUE(plan_id, scheduled_for)`) but is insufficient (§23) | a duplicate run table |
+| Order | `orders` + `order_items` — canonical, plus `orders.velrepeat_run_id` (`:380`, FK `:883`) | a repeat-specific order |
+| Payment | `payments`, `payment_events`, `refunds` — canonical, **but order-scoped** (§25) | a VelRepeat payment table (would be a **second payment authority**) |
+| Payment attempt | no dedicated table; attempt identity is `payments.provider_payment_id` / `provider_checkout_session_id` + `resolvePaymentAttemptRow` (`stripe.ts:386-415`) | a duplicate attempt store |
+| Payment incident | `payment_incidents` (`:477`), `payment-incidents.ts`, VelCenter tab — reuse | a VelRepeat incident table |
+
+---
+
+## 25. Prepaid payment model — the structural blocker
+
+> Owner model: 4 cycles × ฿93 = **฿372 paid once**, meaning *a prepaid commitment for 4 delivery
+> cycles* — **not** 4 payments, and **not** one order holding 4 cycles.
+
+**[PROVEN] the canonical payment authority is order-scoped.** `payments.order_id UUID NOT NULL
+REFERENCES orders(id)` (`run-sqleditor.sql:441`). Every payment row the platform has ever created
+belongs to exactly one order; the Stripe webhook resolves the order first and then the attempt
+(`stripe.ts:428` `lockOrderRow` → `:440` `resolvePaymentAttemptRow`); `payment_incidents.order_id` is
+likewise `NOT NULL` (`:481`).
+
+**Consequence [PROVEN]:** a payment for N cycles has **no canonical home today**. Three shapes are
+possible and **none may be chosen without the owner**:
+
+| Shape | What it means | Why it is not silently acceptable |
+|---|---|---|
+| **A. Payment on cycle 1's order** | The plan's money sits on one cycle's `orders` row. | Every downstream rule reads "the money on this order pays for this order": `releaseOrderInventory` refuses to release an order whose payment settled (`:227-231`), `assertNoSettledPaymentForCancellation` refuses to cancel it, and `commitOrderInventory` settles **that order's lines only** (`:119-122`). One prepaid payment would therefore make cycle 1 un-cancellable and un-releasable while cycles 2..N have no money at all — an incoherent split of one payment across N orders. |
+| **B. Make `payments.order_id` nullable + add `velrepeat_plan_id`** | The payment belongs to the plan. | This changes the **canonical payment table** that every payment route, webhook, incident, refund and settlement test reads. It is a real, reviewable change — **not** a duplicate authority — but it must be designed and approved, not improvised. |
+| **C. A new `velrepeat_plan_payments` table** | Plan payments live apart from order payments. | **Forbidden by §18.4/§18.10** — it is a **second payment authority**, with its own settlement, refund and incident semantics. Not offered as a recommendation; listed only because the shape is obvious and must be named as rejected. |
+
+**Additional hard constraint [PROVEN]:** `assertPaymentMethodUsable()` gates a *method*, and the
+owner has fixed the rail as **Stripe** (§21 #1 resolved). But `POST /api/stripe/checkout` reads the
+amount from **`orders.total_amount`** (`buildCheckoutLineItems`) and refuses any order whose status is
+not `pending`/`pending_payment` (`:1095`). A prepaid plan therefore has **no payable order to point a
+Stripe Session at** until a shape above is chosen.
+
+**Also blocking [PROVEN]:** Stripe Checkout supports single charges and *Subscriptions*. This system
+has **no subscription billing object**, no price/product in Stripe, and no recurring-charge job —
+`payments` records one settled amount per order. Prepaid-commitment billing is therefore
+**one large Stripe charge at plan creation**, not Stripe Subscriptions. **[DECISION]** — it follows
+from what exists; **[OWNER DECISION REQUIRED]** if the owner wants true Stripe Subscriptions
+instead, because that is a new provider integration, not a VelRepeat change.
+
+---
+
+## 26. Delivery cycles and the order relationship
+
+**Owner model:** `Repeat Plan → Cycle 1 → Order A … Cycle N → Order N`, each cycle with **its own
+lifecycle**, and **plan status ≠ order status**.
+
+**[PROVEN] today there is no cycle entity and no cycle → order identity:**
+
+- a "cycle" is implicit in `velrepeat_runs.scheduled_for`;
+- a run creates **one order per shop** (`:262`) and can therefore create **several orders for one
+  cycle**;
+- `velrepeat_runs.order_id` records only the **first** order; the rest survive only inside
+  `metadata.orderIds` (`:361-364`);
+- cycle 2's status is not derivable from anything except "did a run happen".
+
+**Contract:**
+
+1. A cycle is a first-class row with an **ordinal**, a **scheduled instant**, its **own status**, and
+   its **own link to its order(s)**. **[DECISION]**
+2. Cycle status is **not** an `orders.status` value — it is a plan-side axis (scheduled → order
+   generated → fulfilled → completed/skipped/cancelled). **[DECISION]** — the canonical 12 order
+   statuses (§8) keep their exact meaning and are not extended.
+3. **Completed cycles are immutable.** No edit, no re-price, no delete. **[PROVEN] this is already
+   violated by `PATCH` (`:445`)** — it must stop being possible for a prepaid plan.
+4. One cycle may span several orders (multi-shop) — that is existing, proven behavior and is **not**
+   a defect; what is missing is the cycle identity that binds them. **[DECISION]**
+5. `Cycle 2` must never become `completed` because `Cycle 1` did. **[DECISION]**
+
+---
+
+## 27. Package
+
+**Owner model:** a package is a commercial composition (Toothpaste ×1, Soap ×2, Shampoo ×1) that
+references real products/variants and **carries no inventory of its own**.
+
+**Contract:**
+
+1. A package references **real** `products.id` / `product_variants.id` rows. It never duplicates
+   product data. **[DECISION]**
+2. A package **never** owns stock. Reservation/settlement flow through the existing
+   `inventory` / `product_variants` rows for the referenced products — there is exactly one stock
+   authority (§9). **[DECISION]** — this is what makes "package does not duplicate product inventory"
+   enforceable rather than aspirational.
+3. A plan is composed from **either** a single product **or** a package; both reduce to the same
+   plan items so the run engine stays single-path. **[DECISION]**
+4. Packages may have their **own** price, but the package price must be a **pricing input**, never an
+   inventory input. **[DECISION]** — the tier/price model is §30 and is **[OWNER DECISION REQUIRED]**
+   as to who may author package prices.
+
+**[PROVEN] no package concept exists today** (§23). A new composition table is required. Per §18.8 it
+must land in **both** `db/schema.sql` and `db/run-sqleditor.sql`, additively, and **never** in
+`db/run-update.sql`. **[OWNER DECISION REQUIRED]** — see §38 Q11 and the `vrepeat_packages` question
+in §24.
+
+---
+
+## 28. Price snapshot (owner requirement)
+
+> The system must snapshot the price actually used so that *what / quantity / base price / package
+> pricing / discount / commitment / price per cycle / total prepaid* is auditable forever, and a later
+> product price change must never re-price an already-bought plan.
+
+**[PROVEN] This is the opposite of today's behavior.** `processPlan` deliberately re-prices **every
+cycle against the live server price**, overwrites `velrepeat_items.unit_price`, and tells the customer
+the price changed (`:229-249`). That is correct for *pay-per-cycle* and **wrong for prepaid**.
+
+**Contract (applies to the prepaid model):**
+
+1. The price used at checkout is frozen on the plan (and, per cycle, on the cycle's order lines).
+2. `order_items.price` / `subtotal` already snapshot what a cycle actually cost —
+   `run-sqleditor.sql` `order_items`. **[PROVEN]** reused, not duplicated.
+3. A seller's later price change **MUST NOT** alter an existing prepaid plan (owner rule).
+   Whether a *new* plan sees the new price is obvious (it does).
+4. Historical cycles are immutable. **[PROVEN] today `PATCH` deletes and rewrites `velrepeat_items`**
+   (`:445`) — under this contract that is forbidden once a plan is prepaid.
+5. Money arithmetic is derived from the snapshot; it is **never recomputed from the live catalog**.
+   **[DECISION]** — follows from (3) and the owner's "no historical repricing" rule.
+
+**[OWNER DECISION REQUIRED]** — see §38 Q9/Q10 (seller price change, delisted product).
+
+---
+
+## 29. Schedule
+
+**Owner model:** at least 7 / 14 / 30 days, **stored as plan data**, and the logic must not be
+hardcoded per route.
+
+**Contract:**
+
+1. The schedule lives on the plan, not in a route. **[PROVEN] already true** —
+   `frequency_type` + `interval_value` (`:827-828`), computed once in `calculateNextRunAt`
+   (`velrepeat-scheduler.ts:38-65`), which is the single schedule authority already used by both the
+   route (`:255`) and the run engine (`:358`).
+2. 7/14/30 need **no new vocabulary** — `days/7`, `days/14`, `days/30` express all three. Existing
+   values are **preserved** (`months` with day clamping must keep working). **[DECISION]**
+3. **All schedule math is UTC today and the plan's own timezone is inert** (§23). The owner requires
+   timezone correctness. Either the timezone becomes load-bearing (requires a timezone library and a
+   decision on what "09:00 in the customer's timezone" even means for a delivery date), or the plan is
+   defined as UTC. **[OWNER DECISION REQUIRED]** — not guessed.
+4. A cycle's scheduled instant is **immutable once prepaid**, otherwise the prepaid commitment's
+   delivery dates silently move. **[DECISION]** — follows from §25(4).
+
+---
+
+## 30. Commitment and tiered pricing
+
+**Owner model:** commitment = number of **prepaid delivery cycles** (1 / 2 / 4 / 8 / 16 …). Longer
+commitment = lower price. The percentage table in the brief is **illustrative only** and **must not
+be hardcoded**.
+
+**Contract:**
+
+1. Commitment is stored on the plan as a number, and the set of cycles equals it. **[DECISION]**
+2. Price inputs are **separable**: base price → package price → quantity → commitment → discount rule
+   → unit price → cycle price → **total prepaid**. Each is snapshotted (§28). **[DECISION]**
+3. **Tier rules live in data, not in business logic** — changing a tier must not require editing
+   `processPlan` or any route. **[DECISION]** — the owner's explicit requirement.
+4. **[PROVEN] no tier data exists today.** `platform_settings` (`run-sqleditor.sql`, key/value) is the
+   existing platform-configuration store and `products.vrepeat_*_price` are the existing *seller* price
+   fields. **Which one owns commitment tiers — platform, seller, or both — is an owner decision**
+   (§38 Q11), because it determines who may change prices that are baked into prepaid commitments.
+
+---
+
+## 31. Inventory — plan level vs. cycle level
+
+**Owner requirement:** make this explicit, with a comparison, and **do not choose silently.**
+
+| Axis | **Reserve the whole commitment at payment** | **Reserve per cycle, just before fulfillment** |
+|---|---|---|
+| Stock | hides N cycles of demand from ordinary shoppers for up to 16 cycles | only 1 cycle is hidden at a time |
+| Warehouse availability | needs `qty × commitment` on hand now; a seller cannot sell what is already spoken for | needs only `qty` now, `qty` again later |
+| Cancellation | releasing a plan means releasing a hold that may already be committed to later cycles — and it interacts with §38 Q3 (refund) | release is local to one cycle |
+| Expiry | the 30-minute window (`payment-reservation.ts:44`) is meaningless for a months-long hold; a new expiry policy is needed | per-cycle window behaves like today |
+| Long commitments | overselling risk is structurally high — 16 × qty can silently exhaust a catalog | risk is bounded by one cycle |
+| Overselling | requires a new plan-level reservation record (a second reservation concept) | reuses the existing order-level hold unchanged |
+
+**Contract (either way):**
+
+1. Every reservation reaches **exactly one** terminal outcome: commit **or** release (§9). **[PROVEN]**
+   invariant, preserved.
+2. **No negative inventory, no double release, no double commit, no double `sold_count`.**
+   **[PROVEN]** guards exist and must be reused, not re-implemented.
+3. The variant line and the non-variant line **must behave identically**. **[PROVEN] today they do
+   not** — the variant is *consumed* (`:326-335`) while the non-variant is *held* (`:341`) inside the
+   same loop. Under either option this asymmetry must be resolved one way, and **which way is part of
+   the reserve decision**.
+4. **[OWNER DECISION REQUIRED]** — §38 Q1. This is a hard **STOP** condition (STOP #2). No inventory
+   code is written before it is answered.
+
+---
+
+## 32. sold_count under the prepaid model
+
+**Owner invariant, stated verbatim in the brief:** `sold_count` must **never** be incremented merely
+because a Repeat Plan was created.
+
+**[PROVEN] the canonical authority remains `commitOrderInventory`** (`inventory.ts:115`, `sold_count`
+at `:141`), enforced for every other order path by `inventory-settlement.test.ts:95-121`, which names
+`velrepeat-scheduler.ts` the **known exception** (`:98-99`).
+
+**The prepaid design conflict, stated plainly [PROVEN]:**
+
+> `commitOrderInventory` is reached from exactly **one** place — `stripe.ts:559`, inside
+> `markPaymentSucceeded`, i.e. **when an order's payment settles**. Under the prepaid model the money
+> settles **once, at plan level, before any cycle order exists**, and later cycles produce orders with
+> **no payment event at all**. So the canonical settlement authority becomes **unreachable** for every
+> prepaid cycle, while the current VelRepeat path increments `sold_count` at *cycle creation* with no
+> guard (`:343-346`) and nothing ever reverses it on cancellation.
+
+Those are the only two behaviors the repository currently exhibits, and **neither is acceptable**:
+
+- settlement-at-payment ⇒ a prepaid plan would never count a single sale;
+- increment-at-cycle-creation ⇒ counting happens for an unpaid/unfulfilled cycle and is never undone.
+
+Three candidate designs exist (settle the whole commitment once; settle per cycle via a **new,
+non-payment** settlement trigger; or redefine "sold" for recurring units). Each changes canonical
+inventory semantics. **[OWNER DECISION REQUIRED]** — §38 Q2, and **STOP** condition (STOP #7).
+
+**Non-negotiable regardless of the answer [PROVEN + owner rule]:**
+
+- exactly **one** increment per unit, enforced by a **test**, not by convention;
+- plan creation, cycle creation, payment pending, payment failed, payment expired ⇒ **`sold_count`
+  unchanged**;
+- successful settlement ⇒ **+exactly once**; a duplicate event ⇒ **no additional increment**;
+- no VelRepeat-specific `sold_count++` anywhere.
+
+---
+
+## 33. Cancellation, pause, skip and modification
+
+| Operation | **[PROVEN]** today | Under prepaid it must additionally answer |
+|---|---|---|
+| **Cancel plan** | sets `status='cancelled'`; touches **no** order, **no** payment, **no** inventory (`:529-537`) | what happens to the **remaining cycles** and to the **prepaid balance** → §38 Q3 |
+| **Cancel one cycle** | **no such concept** | does the money move? is stock released? → §38 Q4 |
+| **Cancel the order** | canonical rules apply (§12) | the order holds no money of its own, so "money settled" means "the plan settled" — **[PROVEN] this is the `assertNoSettledPaymentForCancellation` interaction** |
+| **Pause** | pure scheduling: resume does `GREATEST(next_run_at, NOW())` (`:520`) — a silent one-interval deferral | does the commitment **end date** move? do consumed cycles still count? → §38 Q5 |
+| **Skip next cycle** | **no endpoint exists** | does the cycle shift later, or is it dropped and the commitment reduced? → §38 Q4 |
+| **Modify** | `DELETE FROM velrepeat_items` then re-insert (`:445-452`) — **destroys** item identity and the price snapshot | existing/completed cycles immutable; only future cycles change; is the price difference charged or refunded? → §38 Q6/Q7 |
+
+**Absolute rules for all four [owner]:** no invented refund policy, no invented skip/pause financial
+behavior, no invented modification pricing, no editing completed cycles, no editing historical
+financial records. **STOP** conditions 1, 3, 4.
+
+**[PROVEN] note on refunds:** the only refund machinery is Stripe-confirmed (`refunds` table,
+`stripe.ts:764+`, `payment.md`), and it is **order-scoped**. A prepaid balance spans N orders, so
+"refund cycles 3–4" has **no canonical representation** until §25 is resolved. This is a second,
+independent reason the prepaid model cannot be implemented before §38 Q3.
+
+---
+
+## 34. B2C and B2B — one model
+
+**Owner rule:** no separate B2B system. The same model serves both; the difference is **quantity,
+package, commitment and pricing rules** — **not** `role = "seller"`.
+
+**Contract:**
+
+1. One plan type, one engine, one pricing pipeline. **[DECISION]**
+2. Quantity is bounded today only by `vrepeat_min_qty` / `vrepeat_max_qty`, which have **no price
+   consequence** (`:85-92`). B2B quantity pricing therefore does not exist. **[PROVEN] ABSENT**
+3. Pricing eligibility may consider quantity, commitment, package and seller rules — but each input
+   and its precedence must be **specified**, and the interaction between a quantity tier and a
+   commitment tier is unspecified. **[OWNER DECISION REQUIRED]** — §38 Q11.
+
+---
+
+## 35. Scheduler ownership and authorization — ✅ OWNER-APPROVED
+
+> **Owner decision (PHASE 15):** the **central scheduler owns global due-plan processing**. A seller
+> must **not** trigger due plans belonging to other customers. Seller-scoped operations must be
+> ownership-enforced.
+
+**State at `6f5a998` [PROVEN]:**
+
+- the central scheduler exists and runs unconditionally (`server.ts:519` → `startVelRepeatScheduler`,
+  `velrepeat-scheduler.ts:467-487` → `processDuePlans` `:444-458`);
+- **[PROVEN] defect:** `POST /api/subscriptions/process-due` (`seller-orders.ts:755-788`) let **any
+  approved seller** force-run **any** customer's due plans, with no user scope;
+- **[PROVEN] the read path was already correct:** `GET /api/seller/subscriptions` scopes with
+  `WHERE vi.seller_id = $1` (`:695`), so the seller only ever sees their own lines. Only the **write**
+  trigger was unscoped.
+
+**Implemented 2026-09-30 [OWNER-APPROVED]:** the due-plan selection is restricted to plans containing
+at least one item belonging to the calling seller — the exact ownership predicate the read path
+already uses. A seller can therefore trigger only plans that include their own products; the global
+scan stays with the central scheduler.
+
+**Residual, recorded not hidden [PROVEN]:** a plan that mixes several sellers' products is still
+processed as a **whole plan**, so a seller who matches part of such a plan triggers the customer's
+other lines too. Fully removing that would require splitting a plan per seller, which changes plan
+semantics. **[OWNER DECISION REQUIRED]** if the owner wants per-seller splitting.
+
+---
+
+## 36. Payment incidents (HIGH #5 policy)
+
+**Owner rule:** Stripe succeeded but the payment / order / cycle cannot settle safely ⇒ **durable
+incident → VelCenter review**. Never automatic refund, reopen, inventory mutation or retry.
+
+**Contract:**
+
+1. Reuse `payment_incidents` + `payment-incidents.ts` + the VelCenter tab. **No VelRepeat incident
+   table.** **[PROVEN]** mechanism exists (`:477`, migration 049).
+2. **Dedupe** on a deterministic key so a replayed webhook cannot create a second incident
+   (`dedupe_key UNIQUE`, `:479`). **[PROVEN]**
+3. Identity preserved across webhook retry: provider event id (`payment_events.event_id UNIQUE`,
+   `stripe.ts:1536-1541`), payment attempt identity (`stripe.ts:386-415`), order identity
+   (`lockOrderRow`), **plus plan identity and cycle identity** — which do not exist yet (§26) and must
+   be part of the incident key once they do. **[DECISION]**
+4. **"[PROVEN] gap that prepaid closes":** a COD recurring order never reaches the Stripe webhook, so
+   `payment-incidents.ts` never fires for it (§15). Under a prepaid Stripe plan the plan-level charge
+   *does* produce a webhook, so the safety net applies — **provided** the plan-level payment shape of
+   §25 resolves the same way the order-level one does.
+5. **[OWNER DECISION REQUIRED]** — contract #6 remains open: what operator surface exists for money
+   that is prepaid but can never be fulfilled (§38 Q12).
+
+---
+
+## 37. Idempotency at every level
+
+**Owner rule:** duplicate execution at every level must be impossible — webhook, scheduler, retry,
+concurrent `process-due`, cycle creation, order creation, payment settlement, inventory commit.
+
+| Level | **[PROVEN]** mechanism today | Prepaid requirement |
+|---|---|---|
+| Plan run | `SELECT … FOR UPDATE` re-check (`:113-120`) + `UNIQUE (plan_id, scheduled_for)` + `ON CONFLICT DO NOTHING` (`:126-132`) | keep, unchanged |
+| Cycle creation | the run row **is** the cycle key, but only implicitly | must become an explicit cycle identity (§26) |
+| Order creation | keyed to the run; one order per shop (`:262`) | **Cycle N must not create two orders.** Needs a cycle-scoped claim. **[DECISION]** |
+| Payment settlement | order row locked first (`stripe.ts:428`), `inventory_released = FALSE` guard (`:432-433`), attempt guards (`:457-467`) | plan-level payment needs the same three guards on the plan row |
+| Inventory commit / release | atomic `inventory_released` claim (`inventory.ts:221-233`) | reuse unchanged |
+| `sold_count` | **no idempotency today** (`:343-346`) | **must be exactly-once**, test-enforced (§32) |
+| Webhook delivery | `payment_events.event_id UNIQUE` + `ON CONFLICT DO NOTHING` (`stripe.ts:1536-1541`) | reuse unchanged |
+| Checkout request | `checkout_requests UNIQUE (user_id, scope, request_key)` | reuse; prepaid needs its own `scope` |
+
+**Required [owner]:** *same plan + same cycle + same execution key ⇒ never two orders.* This is
+**STOP** condition 12 — it must be **provable by test** before implementation, not asserted.
+
+---
+
+## 38. OWNER DECISIONS REQUIRED — prepaid model
+
+These are the owner's own PHASE 26 questions. **None may be answered by the implementation.** Each is
+a hard **STOP** for the code it gates.
+
+| # | Question | Gates | Stop |
+|---|---|---|---|
+| **Q1** | On successful prepaid payment, is inventory reserved for the **whole commitment** or **per cycle**? | schema + inventory code | #2 |
+| **Q2** | Is `sold_count` recognised at **cycle/order settlement** or at **prepaid payment**? | `commitOrderInventory` trigger | #7 |
+| **Q3** | If a prepaid plan is cancelled, is the money for **future cycles refunded**? | refunds, `releaseOrderInventory` | #1 |
+| **Q4** | Does a **skipped** cycle shift later, or does it **reduce the commitment**? | skip endpoint | #3 |
+| **Q5** | Does **pause** move the commitment end date? | pause/resume | #3 |
+| **Q6** | May a customer change package/quantity mid-plan? | PATCH safety | #4 |
+| **Q7** | If the price differs after a change, how is the difference **charged / refunded**? | money movement | #4 |
+| **Q8** | A future cycle is **out of stock** — what happens to that cycle and to the money? | cycle failure path | #2 |
+| **Q9** | Seller changes the price after purchase — do future cycles use the **original** price? | price snapshot | #4 |
+| **Q10** | A package item is **removed / delisted** — what happens to future cycles? | validation | #2 |
+| **Q11** | How do **B2B quantity pricing** and **commitment discount** combine, and who owns the tier data? | pricing engine | #4 |
+| **Q12** | Payment succeeded but a future cycle can never be fulfilled — what is the state of the **prepaid funds**? | incident policy, #6 | #1 |
+
+**Plus, raised by the source inspection of Part II:**
+
+> **Q13 — prepaid payment shape.** `payments.order_id` is `NOT NULL` (§25). Does the prepaid charge
+> attach to a plan (shape A, with the coherence problems listed), or does `payments` gain a nullable
+> `order_id` plus `velrepeat_plan_id` (shape B)? Shape C is rejected by §18.
+
+> **Q14 — plan-level commit.** Prepaid commitment billing as one large Stripe charge (no Stripe
+> Subscriptions object exists), or true Stripe Subscriptions (a new provider integration)?
+
+> **Q15 — `vrepeat_packages` (V1).** It is a single-product, zero-commerce, unreferenced-by-V2 table
+> (§24). Supersede it with the new package concept, or leave it untouched as legacy?
+
+> **Q16 — plan timezone.** §29(3): make `velrepeat_plans.timezone` load-bearing, or declare all
+> VelRepeat scheduling UTC?
+
+> **Q17 — per-seller plan splitting.** §35 residual: may a seller trigger a multi-seller plan at all?
+
+**Implementation status after Part II:** contract complete; **no** prepaid financial or inventory
+behavior implemented. Only the owner-approved authorization fix (§35) has been written.
