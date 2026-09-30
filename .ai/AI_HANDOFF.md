@@ -712,3 +712,35 @@ typecheck 4/4 · build:apps 4/4 · `git diff --check` clean · schema files iden
 `db/run-update.sql` still absent. Audit: `.ai/tasks/audits/velrepeat-v2-g1-g3-implementation-2026-09-30.md`.
 Docs + code only; **DB-gated tests SKIPPED locally (no PostgreSQL)** — CI postgres:16 is the only real
 DB execution. **Production untouched: V2 tables still do not exist there** (048–050 unapplied).
+
+## 58. VelRepeat **V2 Phase 3 — BLOCKED before implementation** (2026-09-30)
+
+**Package → Repeat Plan purchase-time pricing snapshot was not started.** The brief's §4 inspection
+found the phase hits its own §21 stop conditions; no code, schema, migration, or production behavior
+changed. Audit: `.ai/tasks/audits/velrepeat-v2-phase3-pricing-snapshot-2026-09-30.md`.
+
+**Blocker A — plan initial status [OWNER DECISION REQUIRED].** The owner's machine
+`draft → pending_payment → active → paused → completed/cancelled` (owner-decision-closure §5.1) needs
+`pending_payment`, absent from `velrepeat_plans.status` (`db/run-sqleditor.sql:827`); LS.1/LS.4
+unanswered; the binding gate table already marks **Phase 3 Repeat Plan [BLOCKED] (shape + eligibility)**
+(§10.2). Creating the plan `active` (DEFAULT; the only status any writer produces) hands it to the live
+V1 engine — `processDuePlans` sweeps `status='active' AND next_run_at <= NOW()`
+(`velrepeat-scheduler.ts:444-451`), then live re-price `:245`, orders `:270`, stock `:328`,
+`reserveInventoryStock` `:341`, `sold_count` `:344`, COD pseudo-payment `:351` — every one forbidden by
+Phase 3. `draft`/`pending_payment` are the unanswered shape, and adding either (or a `package_id`
+marker) to `velrepeat_plans` needs migration 051 on a production table (forbidden). The snapshot cannot
+decouple: `velrepeat_pricing_snapshots.plan_id NOT NULL REFERENCES velrepeat_plans(id)` (`:923`).
+
+**Blocker B — seller eligibility for repeat commerce [OWNER DECISION REQUIRED]** (which sellers may
+appear in a plan/package; G3=B made packages seller-scoped, removing the Phase-2 exemption — closure
+§12 item 4 / §11.2 item 6).
+
+**Also open (recorded, not the stopper):** the shared creation route is COD-only
+(`velrepeat-plans.ts:223`, `:836`) so `payment_method` needs the Phase-4 rail decision; plan creation
+has no canonical idempotency (`checkout_requests` is checkout/payment-scoped); `PRICING_CAP_POLICY`
+stays inherited-open from Phase 2.
+
+**Verified clean:** HEAD `356c640` == `origin/main`; tree clean before the docs record; no change to
+payment / inventory / fulfillment / `sold_count` / COD / V1 / schema; `db/migrations` still ends at
+`050`; `db/run-update.sql` still absent; V2 tables still absent in production (048–050 unapplied).
+**Next:** owner answers Q-A/Q-B (audit §5) before Phase 3 (or Phase 4) starts.
