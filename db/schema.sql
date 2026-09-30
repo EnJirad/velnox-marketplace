@@ -897,6 +897,7 @@ CREATE INDEX IF NOT EXISTS idx_velrepeat_events_type ON velrepeat_events (event_
 CREATE INDEX IF NOT EXISTS idx_velrepeat_events_run ON velrepeat_events (run_id) WHERE run_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS velrepeat_packages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   description TEXT,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -905,6 +906,7 @@ CREATE TABLE IF NOT EXISTS velrepeat_packages (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_active ON velrepeat_packages (is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_seller ON velrepeat_packages (seller_id);
 CREATE TABLE IF NOT EXISTS velrepeat_package_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   package_id UUID NOT NULL REFERENCES velrepeat_packages(id) ON DELETE CASCADE,

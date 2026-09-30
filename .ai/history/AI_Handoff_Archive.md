@@ -209,3 +209,9 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
 `.ai/AI_HANDOFF.md` section becomes superseded, append it here as an index row and
 (if it is long) move its full text into `.ai/history/archive/`.
+
+### 2026-09-30 — the §49–§50 split (LOW #12 + MEDIUM #8, edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-09-30-low12-medium8.md`](./archive/AI_Handoff-2026-09-30-low12-medium8.md) | handoff §49–§50 — the dead `failed` order status removed, and the duplicated reservation-urgency contracts consolidated | Moved **verbatim** on 2026-09-30 after the G1/G2/G3 implementation pass pushed `.ai/AI_HANDOFF.md` to ~55 KB, the point at which the file-edit tools stop matching and the handoff could no longer be updated at all. Both passes are COMPLETE and their findings are closed; what remains true of them is restated in **§6 "Remaining gaps / open items"** |

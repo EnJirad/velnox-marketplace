@@ -8,6 +8,10 @@
  *     inventory authority: reservation/settlement keep flowing through the
  *     canonical `inventory` / `product_variants` rows for the referenced
  *     products (velrepeat-contract.md §40).
+ *     `velrepeat_packages.seller_id` is NOT NULL (owner decision G3 = B,
+ *     seller-owned packages): the package has exactly one owning seller, so a
+ *     multi-seller package is impossible by construction. See
+ *     `velrepeat-packages-ownership.test.ts`.
  *   • `velrepeat_plans.commitment_cycles` — the number of delivery cycles the
  *     customer buys (NULL for the pre-V2 pay-per-run plans that already exist;
  *     never defaulted, so no legacy row is silently reinterpreted).
@@ -102,6 +106,15 @@ describe("velrepeat v2 phase-1 schema — canonical files", () => {
       expect(sql.slice(start, end)).not.toContain("stock");
     }
   });
+
+  test("G3=B — a package has exactly one owning seller and cannot exist without one", () => {
+    for (const sql of [schema, bootstrap]) {
+      expect(sql).toContain("seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE");
+      expect(sql).toContain(
+        "CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_seller ON velrepeat_packages (seller_id)",
+      );
+    }
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -116,6 +129,7 @@ describe("velrepeat v2 phase-1 schema — integration (needs a test database)", 
   let shopId: string | null = null;
   let productAId: string | null = null;
   let productBId: string | null = null;
+  let sellerId: string | null = null;
   const packageIds: string[] = [];
   let tag = "";
 
@@ -135,7 +149,7 @@ describe("velrepeat v2 phase-1 schema — integration (needs a test database)", 
       `INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id`,
       [userId],
     );
-    const sellerId = seller.rows[0].id as string;
+    sellerId = seller.rows[0].id as string;
 
     const shop = await query(
       `INSERT INTO shops (seller_id, name, slug) VALUES ($1, $2, $3) RETURNING id`,
@@ -171,8 +185,8 @@ describe("velrepeat v2 phase-1 schema — integration (needs a test database)", 
     const { query } = await import("../db/index.js");
 
     const pkg = await query(
-      `INSERT INTO velrepeat_packages (name, description) VALUES ($1, $2) RETURNING id`,
-      [`${tag} package`, "integration fixture — composition only"],
+      `INSERT INTO velrepeat_packages (seller_id, name, description) VALUES ($1, $2, $3) RETURNING id`,
+      [sellerId, `${tag} package`, "integration fixture — composition only"],
     );
     const packageId = pkg.rows[0].id as string;
     packageIds.push(packageId);
