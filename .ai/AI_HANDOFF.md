@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-30 · **Branch:** `main` · **Latest pass:** VelRepeat **V2 Prepaid Repeat Commerce contract** (**§52**) — V2 specification **COMPLETE** (design only); implementation **NOT STARTED** and gated on decisions **A–I** + Q13–Q17
+**Last updated:** 2026-09-30 · **Branch:** `main` · **Latest pass:** VelRepeat **V2 Phase 1 — domain + schema implemented** (**§53**) — additive only; payment linkage (Q13) + decisions **A–I** still BLOCKED; no migration file (auto-apply hazard)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -659,3 +659,33 @@ skip locally) · remote `main` = `94888dc` (push verified) · CI **Tests** run
 
 **Next step:** owner answers A–I (+Q13–Q17) → then contract §62 **Phase 1** (domain + schema) may
 start; nothing before.
+
+---
+
+## 53. VelRepeat **V2 Phase 1 — domain + schema implemented** (2026-09-30)
+
+**What was done (additive, both canonical SQL files, byte-identical).** `velrepeat_packages` +
+`velrepeat_package_items` (composition of real products/variants; owns no stock);
+`velrepeat_plans.commitment_cycles` (nullable, CHECK > 0); `velrepeat_pricing_snapshots` +
+`velrepeat_pricing_snapshot_items` (append-only checkout snapshot: commitment, currency, discount,
+totals, rule key/version, per-line qty/price); `velrepeat_cycles` (**UNIQUE (plan_id, cycle_number)** —
+the idempotency key for “same plan + cycle ⇒ one order”); `orders.velrepeat_cycle_id` + FK + partial
+index. Tests: `backend/tests/velrepeat-v2-domain-schema.test.ts` (structural everywhere + DB-gated, run
+by CI’s `postgres:16`). Analysis/audit:
+`.ai/tasks/audits/velrepeat-v2-phase1-dependency-analysis-2026-09-30.md`.
+
+**No migration file** — deliberately. `.github/workflows/migrate-neon.yml` applies **all pending
+migrations** (048–050 still unapplied — owner action, Neon quota) on any push touching
+`db/migrations/*.sql`; adding Phase 1 as `051` would trigger unattended production DDL. Next number: `051`.
+
+**BLOCKED — OWNER DECISION REQUIRED (unchanged):** Q13 payment linkage (no payment DDL) · Decision A
+inventory (Phase 6) · H/Q11 pricing rules (Phase 2) · plan prepaid statuses Q13/Q14 (Phase 4) ·
+B/C/D/G/I lifecycle (Phase 9) · Q15–Q17. Nothing was guessed.
+
+**Verification:** `bun run test` **968 pass / 196 skip / 0 fail** (1164 tests, 53 files) · backend tsc 0 ·
+typecheck 4/4 · build:apps 4/4 · `git diff --check` clean · `cmp` schema files identical · **PRODUCTION =
+BLOCKED** (Neon quota; migrations 048/049/050 unapplied — the new objects are absent in prod and unread
+by any code, so behavior is unchanged).
+
+**Next step:** Phase 2 (Package + Pricing) is **gated on H/Q11** and the package-authoring ownership
+question; Phase 3/4 additionally on Q13/Q14. Do not start a phase whose gates are open.

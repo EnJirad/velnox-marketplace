@@ -1,7 +1,11 @@
 # VelRepeat V2 — Prepaid Repeat Commerce Contract
 
-**Status:** AUTHORITATIVE CONTRACT — **V2** (design only; implementation **NOT STARTED**)
-**Created:** 2026-09-30 · **Baselines:** `9780aa1` (Part I) → `6f5a998` (Part II) → `00986be` (Part III draft)
+**Status:** AUTHORITATIVE CONTRACT — **V2** (**Phase 1 implemented**: additive domain + schema; Phases 2–10 **NOT STARTED**)
+**Created:** 2026-09-30 · **Baselines:** `9780aa1` (Part I) → `6f5a998` (Part II) → `00986be` (Part III) → Phase 1 (2026-09-30)
+**Revision 2.1 — 2026-09-30.** Phase 1 (domain + schema) implemented additively in both canonical SQL
+files — see the closing status block and
+`.ai/tasks/audits/velrepeat-v2-phase1-dependency-analysis-2026-09-30.md`. Payment linkage, inventory,
+pricing rules and lifecycle behavior remain gated by §60.
 **Revision 2.0 — 2026-09-30.** The owner supplied the full **Prepaid Repeat Commerce** model and approved
 decisions **1A–7B**; the V2 business model adds nine owner decisions (**A–I**, §60) that are still
 required before any financial, inventory or lifecycle implementation starts.
@@ -1853,8 +1857,10 @@ specification; none are satisfied in code**:
 
 ## 64. V2 prohibited actions (this phase, and until gates close)
 
-- Do **not** modify production code, database schema, migrations, frontends or packages on account of
-  this contract. (Only `.ai/` documentation changed — audit `velrepeat-v2-contract-2026-09-30.md`.)
+- Do **not** modify production code, database schema, migrations, frontends or packages beyond
+  owner-approved phase work. (The contract phase changed only `.ai/` — audit
+  `velrepeat-v2-contract-2026-09-30.md`; **Phase 1** changed only the two canonical SQL files + one test
+  file — audit `velrepeat-v2-phase1-dependency-analysis-2026-09-30.md`.)
 - Do **not** create migrations, fake APIs, fake schemas, or duplicate inventory/payment systems.
 - Do **not** enable COD, change Stripe mode, or bypass `assertPaymentMethodUsable()` /
   `isCodEnabled()` / `isCodCustomerSelectable()`.
@@ -1867,7 +1873,13 @@ specification; none are satisfied in code**:
 
 ---
 
-**V2 CONTRACT STATUS: specification complete (design only).**
-**IMPLEMENTATION STATUS: NOT STARTED — CONTRACT PHASE ONLY.**
+**V2 CONTRACT STATUS: specification complete.**
+**IMPLEMENTATION STATUS: PHASE 1 COMPLETE (2026-09-30) — additive domain + schema only.**
+`velrepeat_packages` / `velrepeat_package_items` · `velrepeat_plans.commitment_cycles` ·
+`velrepeat_pricing_snapshots` / `velrepeat_pricing_snapshot_items` · `velrepeat_cycles`
+(`UNIQUE (plan_id, cycle_number)`) · `orders.velrepeat_cycle_id` + FK. Tests:
+`backend/tests/velrepeat-v2-domain-schema.test.ts`. **No migration file** — `migrate-neon.yml`
+auto-applies all pending migrations (048–050 owner-blocked); next number `051`.
+**Phases 2–10 NOT STARTED.**
 Gates: §60.1 approved (1A–7B) · §60.2 Decisions A–I [OWNER DECISION REQUIRED] · §60.3 Q13–Q17
 [MIXED: architecture/owner] · STOP #1/#2/#3/#4/#12 remain in force (§18, §32, §37, §51, §53, §54, §55).
