@@ -378,6 +378,7 @@ CREATE TABLE IF NOT EXISTS orders (
   payment_expires_at TIMESTAMPTZ,
   reservation_policy JSONB,
   velrepeat_run_id UUID,
+  velrepeat_cycle_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -826,6 +827,7 @@ CREATE TABLE IF NOT EXISTS velrepeat_plans (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'cancelled', 'completed')),
   frequency_type TEXT NOT NULL CHECK (frequency_type IN ('days', 'weeks', 'months')),
   interval_value INTEGER NOT NULL DEFAULT 30 CHECK (interval_value > 0),
+  commitment_cycles INTEGER CHECK (commitment_cycles IS NULL OR commitment_cycles > 0),
   next_run_at TIMESTAMPTZ NOT NULL,
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ended_at TIMESTAMPTZ,
@@ -893,6 +895,76 @@ CREATE TABLE IF NOT EXISTS velrepeat_events (
 CREATE INDEX IF NOT EXISTS idx_velrepeat_events_plan ON velrepeat_events (plan_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_events_type ON velrepeat_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_events_run ON velrepeat_events (run_id) WHERE run_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS velrepeat_packages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  description TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_active ON velrepeat_packages (is_active) WHERE is_active = TRUE;
+CREATE TABLE IF NOT EXISTS velrepeat_package_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  package_id UUID NOT NULL REFERENCES velrepeat_packages(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_package_items_package ON velrepeat_package_items (package_id);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_package_items_product ON velrepeat_package_items (product_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_package_items_unique_variant ON velrepeat_package_items (package_id, product_id, variant_id) WHERE variant_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_package_items_unique_no_variant ON velrepeat_package_items (package_id, product_id) WHERE variant_id IS NULL;
+CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshots (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
+  commitment_cycles INTEGER NOT NULL CHECK (commitment_cycles > 0),
+  currency TEXT NOT NULL DEFAULT 'THB',
+  subtotal_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (subtotal_amount >= 0),
+  discount_type TEXT,
+  discount_value NUMERIC(12, 2),
+  discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
+  total_amount NUMERIC(12, 2) NOT NULL CHECK (total_amount >= 0),
+  pricing_rule_key TEXT,
+  pricing_rule_version TEXT,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshots_plan ON velrepeat_pricing_snapshots (plan_id, created_at);
+CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshot_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  snapshot_id UUID NOT NULL REFERENCES velrepeat_pricing_snapshots(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price NUMERIC(12, 2) NOT NULL CHECK (unit_price >= 0),
+  line_total NUMERIC(12, 2) NOT NULL CHECK (line_total >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_snapshot ON velrepeat_pricing_snapshot_items (snapshot_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_unique_variant ON velrepeat_pricing_snapshot_items (snapshot_id, product_id, variant_id) WHERE variant_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_unique_no_variant ON velrepeat_pricing_snapshot_items (snapshot_id, product_id) WHERE variant_id IS NULL;
+CREATE TABLE IF NOT EXISTS velrepeat_cycles (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
+  cycle_number INTEGER NOT NULL CHECK (cycle_number > 0),
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'ordered', 'completed', 'skipped', 'cancelled', 'out_of_stock', 'item_unavailable')),
+  scheduled_at TIMESTAMPTZ NOT NULL,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  pricing_snapshot_id UUID REFERENCES velrepeat_pricing_snapshots(id) ON DELETE SET NULL,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (plan_id, cycle_number)
+);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_cycles_plan ON velrepeat_cycles (plan_id);
+CREATE INDEX IF NOT EXISTS idx_velrepeat_cycles_due ON velrepeat_cycles (status, scheduled_at);
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_velrepeat_cycle_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_velrepeat_cycle_id_fkey FOREIGN KEY (velrepeat_cycle_id) REFERENCES velrepeat_cycles(id) ON DELETE SET NULL; END IF; END $$;
+CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_cycle ON orders (velrepeat_cycle_id) WHERE velrepeat_cycle_id IS NOT NULL;
 INSERT INTO platform_settings (key, value, description) VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto') ON CONFLICT (key) DO NOTHING;
 INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, description, description_names, image_url, is_active) VALUES
 ('c0000001-0000-0000-0000-000000000001', 'Electronics', 'electronics', 'cpu', NULL, 1, '{"th":"อิเล็กทรอนิกส์","en":"Electronics","my":"အီလက်ထရွန်နစ်ပစ္စည်းများ"}', 'Audio, cameras, wearable tech and electronic accessories', '{"th":"อุปกรณ์เสียง กล้อง อุปกรณ์สวมใส่ และอุปกรณ์เสริมอิเล็กทรอนิกส์","en":"Audio, cameras, wearable tech and electronic accessories","my":"အသံပစ္စည်း၊ ကင်မရာ၊ ဝတ်ဆင်နည်းပညာနှင့်အီလက်ထရွန်နစ် ဖြည့်စွက်ပစ္စည်းများ"}', NULL, true),
