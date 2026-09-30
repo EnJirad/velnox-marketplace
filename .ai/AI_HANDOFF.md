@@ -689,3 +689,30 @@ by any code, so behavior is unchanged).
 
 **Next step:** Phase 2 (Package + Pricing) is **gated on H/Q11** and the package-authoring ownership
 question; Phase 3/4 additionally on Q13/Q14. Do not start a phase whose gates are open.
+
+---
+
+## 54. VelRepeat **V2 Decision Closure + Architecture Gate** (2026-09-30)
+
+**What was done (analysis only — no code, no schema, no migration, no decision answered).** New audit
+`.ai/tasks/audits/velrepeat-v2-decision-closure-2026-09-30.md` (20 sections): Q13 options A/B/C with
+Option B's full surface (payments + refunds + incidents + reservation mapping; 88 `payments` occurrences
+across 13 backend non-test files — 44 SQL lines; **Option B does not create a second payment authority**
+— finding, not implementation); Q14 (one large canonical charge per plan; not per-cycle; not Stripe
+Subscriptions unless the owner redefines); inventory Model A/B across all 15 required axes
+(variant/non-variant asymmetry `velrepeat-scheduler.ts:328` vs `:341`; 30-min window meaningless for a
+long hold `payment-reservation.ts:44`); pricing as rule rows (no hardcoded 1/2/4/8/16 → 0/3/7/10/15 %);
+Q15–Q17; lifecycle decision matrix with **separate Plan / Payment / Cycle / Order / Fulfillment axes**
+(PAID PLAN ≠ FULFILLED PLAN; PAID CYCLE ≠ DELIVERED ORDER); invariants with proof (cycle uniqueness
+implemented; one-order-per-cycle still unprovable; `sold_count` violation `:344`); migration safety;
+dependency graph; Decision Matrix (15 rows, every one `OWNER DECISION REQUIRED`). Contract Revision 2.2
+pointer added. **No migration 051; no production source changes; Phases 2–10 still NOT STARTED.**
+
+**Outcome:** all gates stay open (A–I, Q13–Q17, Q2 residual, package-authoring ownership, cycle-identity
+reconciliation, rounding). The audit states the recommendation **and** the owner decision for each —
+never presenting one as the other.
+
+**Verification:** `bun run test` **968 pass / 196 skip / 0 fail** (1164 tests, 53 files) · backend tsc 0 ·
+typecheck 4/4 · build:apps 4/4 · `git diff --check` clean. Docs-only — DB-gated tests skip locally (no
+PostgreSQL); CI's `postgres:16` remains the only real DB execution. **PRODUCTION = BLOCKED** (Neon
+quota; 048–050 unapplied; new objects absent in prod and unread by any code).

@@ -2,6 +2,12 @@
 
 **Status:** AUTHORITATIVE CONTRACT — **V2** (**Phase 1 implemented**: additive domain + schema; Phases 2–10 **NOT STARTED**)
 **Created:** 2026-09-30 · **Baselines:** `9780aa1` (Part I) → `6f5a998` (Part II) → `00986be` (Part III) → Phase 1 (2026-09-30)
+**Revision 2.2 — 2026-09-30.** Decision Closure + Architecture Gate complete — analysis only, **no
+decision answered, no code changed**: `.ai/tasks/audits/velrepeat-v2-decision-closure-2026-09-30.md`
+(20 sections; Q13 options A/B/C with Option B's full surface; Q14 recomposition; inventory A/B across all
+15 axes; pricing rules; Q15–Q17; the lifecycle matrix on separate Plan/Payment/Cycle/Order/Fulfillment
+axes; invariants; migration safety; dependency graph; the closing Decision Matrix — every row
+`OWNER DECISION REQUIRED`). The §60 register is unchanged and remains the gate.
 **Revision 2.1 — 2026-09-30.** Phase 1 (domain + schema) implemented additively in both canonical SQL
 files — see the closing status block and
 `.ai/tasks/audits/velrepeat-v2-phase1-dependency-analysis-2026-09-30.md`. Payment linkage, inventory,
