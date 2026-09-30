@@ -760,3 +760,25 @@ each other and `orders` references both → the dual cycle-identity hazard.
 · typecheck 4/4 · build:apps 4/4 · `git diff --check` clean · `cmp` schema files identical ·
 `db/migrations/` still ends at `050`. Docs-only — DB-gated tests skip locally (no PostgreSQL); CI's
 `postgres:16` is the only real DB execution. **PRODUCTION = BLOCKED** (Neon quota; 048–050 unapplied).
+
+---
+
+## 56. VelRepeat **V2 — Remaining Owner Decisions Sheet** (2026-09-30)
+
+**Docs only — no code, no schema, no migration 051, no production behavior change.** New audit
+`.ai/tasks/audits/velrepeat-v2-owner-decisions-pending-2026-09-30.md` (20 sections, 17 decisions) is a
+**human-answerable sheet**: every question carries ID, source evidence, why it matters, the exact
+question, choices, the phase it blocks, and the source files affected after approval. §18 is the fill-in
+answer form (`G1: B`, `Q2: A`, …) so the owner need not read the codebase.
+
+**No answer was chosen for the owner.** Items: **G1** rule stacking/cap · **G2** rounding+currency
+(incl. the per-cycle formula, remainder side, discount allocation) · **G3** package authoring · **Q2**
+`sold_count` recognition moment · **B/C/D/F** refund · skip · pause · out-of-stock money · **MS**
+multi-seller attribution (payout flagged as a separate architecture decision, not designed) · **PS** package↔seller ·
+**LS/CS** plan + cycle status vocabularies · **RW** reservation window · **SE** seller eligibility ·
+**CI** cycle identity approval · **PX** snapshot confirmation · **V1V2** compatibility.
+
+**`PHASE 2 = BLOCKED`** on G1, G2, G3. Explicitly NOT defaulted: `total_amount / commitment_cycles`,
+the current retry-forever out-of-stock behaviour, and the current silent pause deferral
+(`velrepeat-plans.ts:520`). **One citation corrected:** `commissions.order_id` is at
+`db/run-sqleditor.sql:522` (not `:521`). Next action = obtain the owner answers; **do not start Phase 2**.
