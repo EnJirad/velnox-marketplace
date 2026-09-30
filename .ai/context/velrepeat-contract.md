@@ -2,6 +2,16 @@
 
 **Status:** AUTHORITATIVE CONTRACT — **V2** (**Phase 1 implemented**: additive domain + schema; Phases 2–10 **NOT STARTED**)
 **Created:** 2026-09-30 · **Baselines:** `9780aa1` (Part I) → `6f5a998` (Part II) → `00986be` (Part III) → Phase 1 (2026-09-30)
+**Revision 2.3 — 2026-09-30.** Owner Decision Closure + Architecture Consistency Gate — the owner
+supplied binding answers for **Q13=B, Q14, A/Q1=B, Q2, B, C, D, E, F, G, H/Q11, Q15, Q16, Q17** and the
+cycle-identity direction. **`PHASE 2 = BLOCKED`** on three remaining customer-visible money /
+authority questions (pricing-rule resolution, rounding/currency, package-authoring ownership) plus
+`OWNER FORMULA REQUIRED` for the B/C/D/F monetary formulas. **No production code, no schema, no
+migration**:
+`.ai/tasks/audits/velrepeat-v2-owner-decision-closure-2026-09-30.md` (12 sections; the Q2 conflict check
+against existing commerce semantics; the five state machines mapped onto the vocabulary that actually
+exists; payment / inventory / multi-seller flows; the required cycle-identity transition; the exact
+Phase 2 gates).
 **Revision 2.2 — 2026-09-30.** Decision Closure + Architecture Gate complete — analysis only, **no
 decision answered, no code changed**: `.ai/tasks/audits/velrepeat-v2-decision-closure-2026-09-30.md`
 (20 sections; Q13 options A/B/C with Option B's full surface; Q14 recomposition; inventory A/B across all
@@ -1887,5 +1897,8 @@ specification; none are satisfied in code**:
 `backend/tests/velrepeat-v2-domain-schema.test.ts`. **No migration file** — `migrate-neon.yml`
 auto-applies all pending migrations (048–050 owner-blocked); next number `051`.
 **Phases 2–10 NOT STARTED.**
-Gates: §60.1 approved (1A–7B) · §60.2 Decisions A–I [OWNER DECISION REQUIRED] · §60.3 Q13–Q17
-[MIXED: architecture/owner] · STOP #1/#2/#3/#4/#12 remain in force (§18, §32, §37, §51, §53, §54, §55).
+Gates: §60.1 approved (1A–7B) · §60.2 Decisions A–I **[OWNER DECISION] — answered 2026-09-30; B, C, D,
+F still need an exact monetary formula** · §60.3 Q13–Q17 **[OWNER DECISION] — all answered
+2026-09-30** · **PHASE 2 = BLOCKED** (pricing-rule resolution · rounding/currency · package-authoring
+ownership) · STOP #1/#2/#3/#4/#12 remain in force (§18, §32, §37, §51, §53, §54, §55).
+Full record: `.ai/tasks/audits/velrepeat-v2-owner-decision-closure-2026-09-30.md`.

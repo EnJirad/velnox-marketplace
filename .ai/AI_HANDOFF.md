@@ -716,3 +716,47 @@ never presenting one as the other.
 typecheck 4/4 · build:apps 4/4 · `git diff --check` clean. Docs-only — DB-gated tests skip locally (no
 PostgreSQL); CI's `postgres:16` remains the only real DB execution. **PRODUCTION = BLOCKED** (Neon
 quota; 048–050 unapplied; new objects absent in prod and unread by any code).
+
+---
+
+## 55. VelRepeat **V2 Owner Decision Closure + Architecture Consistency Gate** (2026-09-30)
+
+**Docs only — no code, no schema, no migration 051, no production behavior change.** New audit
+`.ai/tasks/audits/velrepeat-v2-owner-decision-closure-2026-09-30.md` (12 sections) records the owner's
+binding decisions: **Q13=B** (plan-level linkage inside the existing `payments` authority),
+**Q14** (one canonical Stripe prepaid charge per plan, not Subscriptions), **A/Q1=B** (reserve per
+cycle), **Q2** (`sold_count` on actual cycle settlement, canonical writer only), **B/C/D/E/F/G**
+(refund future unfulfilled only · skip future only · pause future only · price snapshot at purchase ·
+no oversell / no auto-substitute), **H/Q11** (platform-controlled, data-driven pricing; the
+1/2/4/8/16 → 0/3/7/10/15 % ladder is examples only), **Q15** (V1 coexists as legacy), **Q16**
+(scheduling = UTC, `timezone` is display-only), **Q17** (multi-seller plan, one payment, per-seller
+fulfillment), plus the cycle-identity direction (`velrepeat_cycles` = identity, `velrepeat_runs` =
+execution attempt). Contract Revision 2.3 pointer added.
+
+**Verdict: `PHASE 2 = BLOCKED`** on three customer-visible money / authority questions — pricing-rule
+resolution (stack vs one-wins), rounding & currency, package-authoring ownership.
+
+**Stop tokens issued (nothing guessed):** `OWNER FORMULA REQUIRED` for the **B** refund formula, **C**
+skip monetary consequence, **D** paused-cycle monetary consequence, **F** out-of-stock monetary
+consequence → **Phase 9 STOPPED** (the repository has no per-cycle amount or discount allocation to
+refund from). `OWNER DECISION REQUIRED` for the **Q2 recognition moment**, multi-seller money
+attribution, seller eligibility, plan status `pending_payment`, cycle status `due`/`reserved`/
+`fulfilled`, and the 4A plan-level reservation-window mapping.
+
+**New source-verified findings:** (1) **Q2 conflicts with existing commerce semantics** — canonical
+`sold_count` is committed at *payment settlement* (`inventory.ts:141` ← `stripe.ts:559`, gated by
+`orders.status → 'paid'`), and a prepaid cycle order never has one, so the recognition moment is
+ambiguous → reported and STOPPED, not resolved. (2) The release guard's "settled payment outranks
+cancellation" protection is keyed to per-order payments (`inventory.ts:226-232`) and disappears for
+cycle orders under Q14 → a cycle-state claim is required in Phase 6. (3) `paymentAllowsConfirmation`
+(`order-fulfillment.ts:218-235`) would refuse every cycle order, because it looks only at that order's
+payment history → Phase 8 must extend the gate, not bypass it. (4) Per-seller money attribution is
+**unrepresentable today**: `commissions.order_id NOT NULL`, `settlements` has no plan/cycle reference,
+neither table has any backend writer, and there is no Stripe Connect / payout rail
+(`.ai/context/payment.md:239-250`). (5) `velrepeat_runs` and `velrepeat_cycles` have **no relation** to
+each other and `orders` references both → the dual cycle-identity hazard.
+
+**Verification:** `bun run test` **968 pass / 196 skip / 0 fail** (1164 tests, 53 files) · backend tsc 0
+· typecheck 4/4 · build:apps 4/4 · `git diff --check` clean · `cmp` schema files identical ·
+`db/migrations/` still ends at `050`. Docs-only — DB-gated tests skip locally (no PostgreSQL); CI's
+`postgres:16` is the only real DB execution. **PRODUCTION = BLOCKED** (Neon quota; 048–050 unapplied).
