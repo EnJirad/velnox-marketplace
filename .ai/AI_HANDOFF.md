@@ -804,6 +804,9 @@ no new status, no i18n key, no change to the 30-minute policy.
   commands are **NOT AVAILABLE** — this is a `bun` workspace (`bun.lock`, no `packageManager`);
   the repository's real commands were run per `.ai/context/testing.md`. No new DB-gated test (pure
   presentation logic, no SQL); the 189 skips are the pre-existing suites, unchanged.
+- **✅ CI GREEN — `36648719460` (code `fcf250b`) and `36648733866` (final HEAD `fa10c52`), both
+  success; `1143 pass / 2 skip / 0 fail`, 1145 tests / 52 files.** All **34** MEDIUM #8 tests report
+  `(pass)`, zero failures. `Migrate Neon Database` did not trigger (no migration file changed).
 - **Production: BLOCKED, unchanged by this task.** Migrations **048/049/050 are still NOT APPLIED**
   (Neon quota — **OWNER ACTION**), so production has no `orders.payment_expires_at` and **no
   countdown renders at all**; these tiers are only reachable once 048 lands. No migration file

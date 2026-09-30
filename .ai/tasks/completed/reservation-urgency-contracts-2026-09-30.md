@@ -177,6 +177,20 @@ deadline passed to a function that reads the wall clock) — both fixed properly
 **No DB-gated test was added** — this change is pure presentation logic with no SQL. The 189 skips
 are the pre-existing DB/R2-gated suites, unchanged from baseline.
 
+### CI
+
+| Run | Commit | Workflow | Conclusion |
+|---|---|---|---|
+| `36648719460` | `fcf250b` (code) | Tests | ✅ **success** |
+| `36648733866` | `fa10c52` (docs, final HEAD) | Tests | ✅ **success** — `1143 pass / 2 skip / 0 fail`, 1145 tests / 52 files |
+
+`https://github.com/EnJirad/velnox-marketplace/actions/runs/36648733866`
+
+**All 34 MEDIUM #8 tests report `(pass)` in CI and zero tests failed.** `Migrate Neon Database` did
+**not** trigger — this task changes no migration file. Local HEAD == `origin/main` == `fa10c52`; the
+working tree is clean.
+
+
 ## 8. Production
 
 **BLOCKED / not verified, and nothing new is blocked by this change.**
