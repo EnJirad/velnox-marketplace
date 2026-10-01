@@ -869,15 +869,18 @@ describe("Phase 3 — V1 regression (structural)", () => {
   test("no V1 → V2 migration or rewrite was introduced", () => {
     const migrations = readdirSync(join(root, "db", "migrations"));
     // 024 is the legacy V1 buy-ahead migration; 034/035/044 are the V2 plan
-    // migrations. Phase 3 adds none of them. V0051 is Phase 4's plan-payment
-    // parent (Q13=B) and is the only later addition to this list — it adds a
-    // parent to `payments`, and rewrites no VelRepeat V1 table.
+    // migrations. Phase 3 adds none of them. The two later additions are
+    // additive columns on tables Phase 3 itself introduced or already owns:
+    // V0051 adds a parent to `payments` (Phase 4, Q13=B) and V0052 adds the
+    // per-cycle `cycle_price` to the pricing snapshot (the total-prepaid
+    // correction). Neither rewrites a VelRepeat V1 table.
     expect(migrations.filter((name) => /velrepeat/i.test(name)).sort()).toEqual([
       "024_velrepeat_packages_deliveries_customer_events.sql",
       "034_velrepeat_v2.sql",
       "035_velrepeat_plans_status_fix.sql",
       "044_velrepeat_plans_status_constraint.sql",
       "051_payments_velrepeat_v2_plan_parent.sql",
+      "052_velrepeat_pricing_cycle_price.sql",
     ]);
   });
 });
@@ -1260,7 +1263,10 @@ describe("Phase 3 — package → draft plan → snapshot (integration)", () => 
       currency: "THB",
       basePrice: "320.00",
       discountAmount: "37.28",
-      finalPrice: "282.72",
+      // 320 → 7% → 5% gives 282.72 for ONE cycle …
+      cyclePrice: "282.72",
+      // … and the prepaid customer owes that price for all 4 committed cycles.
+      totalPrepaidAmount: "1130.88",
       effectiveDiscountPercent: "11.65",
     });
     expect(typeof body.data.snapshotId).toBe("string");
@@ -1547,9 +1553,11 @@ describe("Phase 3 — package → draft plan → snapshot (integration)", () => 
         intervalValue: 1,
       } satisfies PurchaseRequest),
     );
-    // 50.00 × 1 + 60.00 × 2 = 170.00 → 7% → 5% → 150.20
+    // 50.00 × 1 + 60.00 × 2 = 170.00 → 7% → 5% → 150.20 for ONE cycle, and
+    // 150.20 × 3 = 450.60 for the whole prepaid commitment.
     expect(created.basePrice).toBe("170.00");
-    expect(created.finalPrice).toBe("150.20");
+    expect(created.cyclePrice).toBe("150.20");
+    expect(created.totalPrepaidAmount).toBe("450.60");
 
     const beforeSnapshot = await query(`SELECT * FROM velrepeat_pricing_snapshots WHERE plan_id = $1`, [
       created.planId,

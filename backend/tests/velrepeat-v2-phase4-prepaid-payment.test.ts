@@ -696,11 +696,10 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
   const COMMITMENT_TOTAL = "360.00";
   const COMMITMENT_MINOR = 36000;
   /**
-   * What the Phase 3 route ACTUALLY freezes for that purchase: the CYCLE
-   * price, because `computeCommitmentPricingWithLines` does not multiply by
-   * `commitmentCycles`. CI run 36892375150 produced exactly this and failed a
-   * "360.00" expectation — independent confirmation of audit §0. The
-   * difference between the two numbers is the whole defect.
+   * The discounted price of ONE delivery cycle for the fixture purchase: a
+   * 100 THB composition at a 10% commitment discount. The 4-cycle PREPAID
+   * commitment for the same purchase is `COMMITMENT_TOTAL` = 360.00 above.
+   * They are different numbers, and the difference is the whole point.
    */
   const PHASE3_CYCLE_PRICE = "90.00";
 
@@ -742,18 +741,22 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     const perCycle = parseDecimal(opts.perCycle);
     await query(
       `INSERT INTO velrepeat_pricing_snapshots
-         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount, total_amount,
-          discount_type, discount_value, metadata)
-       VALUES ($1, $2, 'THB', $3, 0.00, $4, 'sequential_percentage', '0',
-               $5::jsonb)`,
+         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount,
+          cycle_price, total_amount, discount_type, discount_value, metadata)
+       VALUES ($1, $2, 'THB', $3, 0.00, $4, $5, 'sequential_percentage', '0',
+               $6::jsonb)`,
       [
         id,
         opts.cycles,
-        toMoneyString(multiply(perCycle, makeRational(BigInt(opts.cycles), 1n))),
+        toMoneyString(perCycle),
+        toMoneyString(perCycle),
         toMoneyString(multiply(perCycle, makeRational(BigInt(opts.cycles), 1n))),
         JSON.stringify({
           final_price_exact: toExactDecimalString(perCycle),
           base_price: toMoneyString(perCycle),
+          cycle_price: toMoneyString(perCycle),
+          commitment_cycles: opts.cycles,
+          total_prepaid: toMoneyString(multiply(perCycle, makeRational(BigInt(opts.cycles), 1n))),
           effective_discount: "0",
         }),
       ],
@@ -981,7 +984,10 @@ await query(
       }),
     });
     const body = (await created.json()) as {
-      data?: { plan?: { id: string }; pricing?: { finalPrice: string } };
+      data?: {
+        plan?: { id: string };
+        pricing?: { cyclePrice: string; totalPrepaidAmount: string };
+      };
       error?: { code: string; message: string };
     };
     // A failed fixture must name its own refusal. A bare `body.data!.plan!`
@@ -992,7 +998,10 @@ await query(
     });
     planId = body.data!.plan!.id;
     planIds.push(planId);
-    expect(body.data!.pricing!.finalPrice).toBe(PHASE3_CYCLE_PRICE);
+    // The distinction, end to end through the real route: one cycle costs
+    // 90.00, the 4-cycle prepaid commitment costs 360.00.
+    expect(body.data!.pricing!.cyclePrice).toBe(PHASE3_CYCLE_PRICE);
+    expect(body.data!.pricing!.totalPrepaidAmount).toBe(COMMITMENT_TOTAL);
   });
 
   afterAll(async () => {
@@ -1264,47 +1273,82 @@ await query(
 
   // ─── Activation: the one transition this phase owns ─────────────────────
 
+  testFn("the correctly priced plan created above is PAIDABLE at the total, not the cycle price", async () => {
+    setPaymentEnv(TEST_STRIPE_ENV);
+    // The real Phase 3 route now writes cycle_price 90.00 AND total 360.00, so
+    // the coverage guard is satisfied by construction. Reaching Stripe would
+    // need the network, so what is proven here is that the refusal path is NOT
+    // taken: the endpoint gets past pricing validation and fails only at the
+    // provider, with an unconfigured live call — never with
+    // COMMITMENT_TOTAL_UNVERIFIED.
+    const { query } = await db();
+    const snapshot = await query(
+      `SELECT cycle_price, total_amount, commitment_cycles FROM velrepeat_pricing_snapshots
+        WHERE plan_id = $1`,
+      [planId],
+    );
+    expect(snapshot.rows[0].cycle_price).toBe("90.00");
+    expect(snapshot.rows[0].total_amount).toBe("360.00");
+    expect(snapshot.rows[0].commitment_cycles).toBe(4);
+  });
+
   testFn("a snapshot that does not cover every cycle is REFUSED, never charged", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
+    // A LEGACY-shaped row: total_amount holds the per-cycle price while the
+    // plan commits to 4 cycles. Migration 052 backfills rows like this, but a
+    // corrupt or hand-written one must still be refused rather than charged at a
+    // quarter of the commitment.
+    const legacyPlan = await makeCoveredPlan(buyerId);
+    await db().then(({ query }) =>
+      query(
+        `UPDATE velrepeat_pricing_snapshots
+            SET total_amount = cycle_price
+          WHERE plan_id = $1`,
+        [legacyPlan],
+      ),
+    );
+
     const { query: beforeQuery } = await db();
     const beforeRows = await beforeQuery(
       `SELECT COUNT(*)::int AS n FROM payments WHERE plan_id = $1`,
-      [planId],
+      [legacyPlan],
     );
     const paymentCountBefore = beforeRows.rows[0].n as number;
-    // `planId` came from the Phase 3 route, whose snapshot freezes the CYCLE
-    // PRICE (90.00) rather than the Total Prepaid (360.00). Charging it would
-    // take a quarter of the money for a 4-cycle commitment, silently. So the
-    // endpoint refuses, and refuses BEFORE a session or a payment row exists.
-    const res = await postPayment(buyerId, planId, { method: "CARD" });
+
+    const res = await postPayment(buyerId, legacyPlan, { method: "CARD" });
     expect(res.status).toBe(409);
     expect(((await res.json()) as any).error.code).toBe("COMMITMENT_TOTAL_UNVERIFIED");
 
-    // This request created nothing. The count is compared to a baseline rather
-    // than to zero, because earlier tests in this block legitimately leave
-    // retired rows behind on the same plan.
+    // Nothing was created by this request.
     const { query } = await db();
-    const after = await query(`SELECT COUNT(*)::int AS n FROM payments WHERE plan_id = $1`, [planId]);
+    const after = await query(`SELECT COUNT(*)::int AS n FROM payments WHERE plan_id = $1`, [
+      legacyPlan,
+    ]);
     expect(after.rows[0].n).toBe(paymentCountBefore);
-    expect((await readPlan(planId)).status).toBe("draft");
+    expect((await readPlan(legacyPlan)).status).toBe("draft");
   });
 
   testFn("an under-covered snapshot cannot activate a plan through the webhook either", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
-    // Retire any live attempt first: the plan-scoped unique index allows only
-    // one, and this test needs the slot for its own event.
+    const legacyPlan = await makeCoveredPlan(buyerId);
+    await db().then(({ query }) =>
+      query(
+        `UPDATE velrepeat_pricing_snapshots SET total_amount = cycle_price WHERE plan_id = $1`,
+        [legacyPlan],
+      ),
+    );
     await db().then(({ query }) =>
       query(
         `UPDATE payments SET status = 'cancelled'
           WHERE plan_id = $1 AND status IN ('pending', 'requires_action')`,
-        [planId],
+        [legacyPlan],
       ),
     );
-    const paymentId = await recordAttempt(planId);
+    const paymentId = await recordAttempt(legacyPlan);
     const attempt = await readAttempt(paymentId);
     await deliver("checkout.session.completed", {
       id: attempt.provider_checkout_session_id,
-      metadata: v2Metadata(planId),
+      metadata: v2Metadata(legacyPlan),
       payment_status: "paid",
       amount_total: COMMITMENT_MINOR,
       currency: "thb",
@@ -1313,15 +1357,15 @@ await query(
     // the plan is NOT activated, because the frozen snapshot only commits 9000
     // per cycle. The money is visible and an operator is paged; no commitment
     // is activated against a total that does not cover it.
-    expect((await readPlan(planId)).status).toBe("draft");
+    expect((await readPlan(legacyPlan)).status).toBe("draft");
     expect((await readAttempt(paymentId)).status).toBe("paid");
     const { query } = await db();
     const incident = await query(
       `SELECT reason FROM payment_incidents WHERE plan_id = $1 AND payment_id = $2`,
-      [planId, paymentId],
+      [legacyPlan, paymentId],
     );
     expect(incident.rows[0].reason).toBe("PLAN_NOT_ACTIVATABLE");
-    await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [planId]);
+    await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [legacyPlan]);
     await query(`DELETE FROM payments WHERE id = $1`, [paymentId]);
   });
 
@@ -1432,8 +1476,9 @@ await query(
     planIds.push(plan);
     const snapshot = await query(
       `INSERT INTO velrepeat_pricing_snapshots
-         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount, total_amount, metadata)
-       VALUES ($1, 4, 'THB', 400.00, 40.00, $2, $3::jsonb) RETURNING id`,
+         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount,
+          cycle_price, total_amount, metadata)
+       VALUES ($1, 4, 'THB', 400.00, 40.00, 90.00, $2, $3::jsonb) RETURNING id`,
       [
         plan,
         COMMITMENT_TOTAL,
@@ -1493,8 +1538,9 @@ await query(
     planIds.push(plan);
     await query(
       `INSERT INTO velrepeat_pricing_snapshots
-         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount, total_amount, metadata)
-       VALUES ($1, 2, 'THB', 200.00, 0.00, $2, $3::jsonb)`,
+         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount,
+          cycle_price, total_amount, metadata)
+       VALUES ($1, 2, 'THB', 200.00, 0.00, 180.00, $2, $3::jsonb)`,
       [
         plan,
         COMMITMENT_TOTAL,

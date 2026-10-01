@@ -38,8 +38,20 @@
  *   • WHICH rules apply to which package. This module receives the applicable
  *     rule set as an argument and never decides scope itself; see
  *     `loadPricingRuleSet()`.
- *   • Per-cycle price derivation, refunds, skip/pause/out-of-stock money. None
- *     of those are decided; see the G1/G2 audit.
+ *   • Refunds, skip/pause/out-of-stock money, and how a prepaid commitment is
+ *     drawn down across its cycles. None of those are decided; see the G1/G2
+ *     audit.
+ *
+ * ── WHAT IS DECIDED HERE: CYCLE PRICE vs TOTAL PREPAID ──────────────────────
+ * A V2 plan is PREPAID. The rule chain above produces the price of ONE
+ * delivery cycle; the customer owes that price for EVERY cycle they committed
+ * to. So this module produces and persists BOTH, and never conflates them:
+ *
+ *   cycle_price   = the discounted price of one cycle
+ *   total_amount  = cycle_price × commitment_cycles  ← what is charged
+ *
+ * See `computeTotalPrepaid()`. The cycle price is kept UNROUNDED through the
+ * chain and the total is rounded EXACTLY ONCE at the end (G2).
  */
 import type { PoolClient } from "pg";
 
@@ -50,11 +62,13 @@ import {
   add,
   compare,
   divide,
+  formatScaled,
   isNegative,
   makeRational,
   multiply,
   parseDecimal,
   parseDecimalInput,
+  roundHalfUp,
   subtract,
   toExactDecimalString,
   toMoneyString,
@@ -184,6 +198,51 @@ export interface CommitmentPricingRequest {
   readonly basePrice: Rational;
   readonly rules: readonly PricingRule[];
   readonly currency?: string;
+  /**
+   * How many delivery cycles the customer committed to.
+   *
+   * A V2 plan is PREPAID, so this is what turns a per-cycle price into the sum
+   * the customer actually owes. It defaults to 1 — the degenerate commitment in
+   * which "per cycle" and "total prepaid" are the same number by definition —
+   * so a caller that only wants to price one cycle keeps its old meaning and a
+   * commitment is never silently priced as a single delivery.
+   */
+  readonly commitmentCycles?: number;
+}
+
+/**
+ * THE PREPAID COMMITMENT TOTAL — the invariant this phase exists to establish.
+ *
+ *   total_prepaid = cycle_price × commitment_cycles
+ *
+ * `cyclePrice` is the EXACT, still-unrounded price of one delivery cycle (the
+ * output of the G1 rule chain). It is multiplied as a bigint rational and
+ * rounded EXACTLY ONCE, at the end (G2).
+ *
+ * Two rules this deliberately does NOT break:
+ *
+ *   • the cycle price is NOT rounded first. Rounding it to 2dp and then
+ *     multiplying would charge a different total whenever the exact cycle price
+ *     carries more than two decimals — 93.4444… × 3 is 280.33 once rounded at
+ *     the end, but 93.44 × 3 = 280.32. One rounding, on the number that is
+ *     actually charged, is the only self-consistent rule;
+ *   • no IEEE-754 value participates. `multiply` and `roundHalfUp` are
+ *     bigint-rational operations throughout (`backend/lib/money.ts`).
+ *
+ * @throws InvalidPricingInputError when `commitmentCycles` is not a positive integer
+ */
+export function computeTotalPrepaid(
+  cyclePrice: Rational,
+  commitmentCycles: number,
+): Rational {
+  if (!Number.isInteger(commitmentCycles) || commitmentCycles <= 0) {
+    throw new InvalidPricingInputError("Commitment cycles must be a positive integer");
+  }
+  const scaled = roundHalfUp(
+    multiply(cyclePrice, makeRational(BigInt(commitmentCycles), 1n)),
+    2,
+  );
+  return makeRational(scaled, 100n);
 }
 
 export interface CommitmentPricing {
@@ -192,6 +251,21 @@ export interface CommitmentPricing {
   readonly basePrice: Rational;
   /** Exact price after the full sequential chain, still UNROUNDED. */
   readonly finalPrice: Rational;
+  /**
+   * The price of ONE delivery cycle, after the rule chain, at 2dp.
+   * NOT what the customer pays — see `totalPrepaid`.
+   */
+  readonly cyclePrice: string;
+  /** How many cycles this commitment covers. */
+  readonly commitmentCycles: number;
+  /**
+   * THE amount a prepaid customer owes for the WHOLE commitment: the exact
+   * cycle price × the cycle count, rounded once. This is the value the Stripe
+   * charge is derived from.
+   */
+  readonly totalPrepaid: Rational;
+  /** `totalPrepaid` at 2dp — the authoritative monetary total. */
+  readonly totalPrepaidString: string;
   /** `1 - finalPrice / basePrice`, exact. Zero when the base is zero. */
   readonly effectiveDiscount: Rational;
   /** Ordered, for the snapshot's audit trail. */
@@ -219,6 +293,7 @@ export interface CommitmentPricing {
 export function computeCommitmentPricing(request: CommitmentPricingRequest): CommitmentPricing {
   const { basePrice, rules } = request;
   const currency = request.currency ?? VELREPEAT_CURRENCY;
+  const commitmentCycles = request.commitmentCycles ?? 1;
 
   if (isNegative(basePrice)) {
     throw new InvalidPricingInputError("Base price must not be negative");
@@ -227,6 +302,11 @@ export function computeCommitmentPricing(request: CommitmentPricingRequest): Com
     throw new InvalidPricingInputError(
       `VelRepeat V2 prices in ${VELREPEAT_CURRENCY} only; received "${currency}"`,
     );
+  }
+  // Validated HERE, before any rule runs, so an impossible commitment can never
+  // produce a partially priced result.
+  if (!Number.isInteger(commitmentCycles) || commitmentCycles <= 0) {
+    throw new InvalidPricingInputError("Commitment cycles must be a positive integer");
   }
 
   const ordered = orderPricingRules(rules);
@@ -272,14 +352,24 @@ export function computeCommitmentPricing(request: CommitmentPricingRequest): Com
 
   const discountAmount = subtract(basePrice, running);
 
+  // ── Cycle price vs TOTAL PREPAID — the distinction this module now owns ───
+  // `running` is the price of ONE delivery cycle. Because a V2 plan is prepaid,
+  // the customer owes that price for EVERY cycle they committed to.
+  const cyclePrice = toMoneyString(running);
+  const totalPrepaid = computeTotalPrepaid(running, commitmentCycles);
+
   return {
     currency,
     basePrice,
     finalPrice: running,
+    cyclePrice,
+    commitmentCycles,
+    totalPrepaid,
+    totalPrepaidString: toMoneyString(totalPrepaid),
     effectiveDiscount,
     appliedRules,
     basePriceString: toMoneyString(basePrice),
-    finalPriceString: toMoneyString(running),
+    finalPriceString: cyclePrice,
     discountAmountString: toMoneyString(discountAmount),
     effectiveDiscountPercentString: toMoneyString(multiply(effectiveDiscount, makeRational(100n, 1n))),
   };
@@ -466,6 +556,7 @@ export function computeCommitmentPricingWithLines(
       basePrice: subtotal,
       rules: request.rules,
       currency: request.currency,
+      commitmentCycles: request.commitmentCycles,
     }),
     subtotal,
     lines: request.lines,
@@ -491,6 +582,14 @@ function ruleSetIdentity(appliedRules: readonly AppliedRule[]): { key: string; v
  *
  * Must be called inside the caller's transaction so the plan and its snapshot
  * commit together.
+ *
+ * WHAT THE PERSISTED ROW NOW SAYS, unambiguously:
+ *   cycle_price  = the discounted price of ONE delivery cycle
+ *   total_amount = cycle_price × commitment_cycles — the TOTAL PREPAID amount,
+ *                  which is the number a prepaid customer is charged
+ * `metadata.final_price_exact` keeps the exact, unrounded cycle price, and
+ * `metadata.total_prepaid_exact` the exact total, so the relationship can be
+ * re-proven from the row alone rather than inferred.
  */
 export async function insertPricingSnapshot(
   client: PoolClient,
@@ -502,8 +601,8 @@ export async function insertPricingSnapshot(
   const snapshot = await client.query(
     `INSERT INTO velrepeat_pricing_snapshots
        (plan_id, commitment_cycles, currency, subtotal_amount, discount_type, discount_value,
-        discount_amount, total_amount, pricing_rule_key, pricing_rule_version, metadata)
-     VALUES ($1, $2, $3, $4, 'sequential_percentage', $5, $6, $7, $8, $9, $10::jsonb)
+        discount_amount, cycle_price, total_amount, pricing_rule_key, pricing_rule_version, metadata)
+     VALUES ($1, $2, $3, $4, 'sequential_percentage', $5, $6, $7, $8, $9, $10, $11::jsonb)
      RETURNING id`,
     [
       request.planId,
@@ -512,7 +611,12 @@ export async function insertPricingSnapshot(
       pricing.basePriceString,
       pricing.effectiveDiscountPercentString,
       pricing.discountAmountString,
-      pricing.finalPriceString,
+      // The price of ONE delivery cycle …
+      pricing.cyclePrice,
+      // … and the TOTAL the prepaid customer owes for all of them. These are
+      // different numbers whenever commitment_cycles > 1, and the Stripe charge
+      // is derived from this second one.
+      pricing.totalPrepaidString,
       identity.key,
       identity.version,
       JSON.stringify({
@@ -520,9 +624,15 @@ export async function insertPricingSnapshot(
         package_id: request.packageId,
         applied_rules: pricing.appliedRules,
         base_price: pricing.basePriceString,
-        // The exact, unrounded result: proof that nothing in the pipeline
-        // rounded before the single final 2dp charge.
+        // The exact, unrounded PER-CYCLE price: proof that nothing in the
+        // pipeline rounded before the single final 2dp charge, and the value the
+        // total is derived from.
         final_price_exact: toExactDecimalString(pricing.finalPrice),
+        cycle_price: pricing.cyclePrice,
+        commitment_cycles: pricing.commitmentCycles,
+        total_prepaid: pricing.totalPrepaidString,
+        // The exact, unrounded commitment total.
+        total_prepaid_exact: toExactDecimalString(pricing.totalPrepaid),
         effective_discount: toExactDecimalString(pricing.effectiveDiscount),
         max_effective_discount: toExactDecimalString(MAX_EFFECTIVE_DISCOUNT),
         cap_enforced: true,

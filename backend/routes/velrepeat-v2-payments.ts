@@ -50,13 +50,20 @@
  * MONEY IS DERIVED, NEVER ACCEPTED
  * ────────────────────────────────
  * The charged amount is `velrepeat_pricing_snapshots.total_amount` — the
- * immutable Phase 3 snapshot — read inside the same transaction that validates
+ * immutable pricing snapshot — read inside the same transaction that validates
  * the plan, and converted to minor units through the exact bigint-rational
  * money module. The request body carries a method and a request key; it carries
  * no amount, no currency, no price, no seller and no status, and none of those
  * are read from anywhere else. At settlement the amount and currency Stripe
  * reports are compared against that snapshot; a mismatch records the money,
  * refuses to activate, and raises a durable operator incident.
+ *
+ * `total_amount` is the TOTAL PREPAID commitment — `cycle_price ×
+ * commitment_cycles` — because V2 is prepaid. `cycle_price`, the price of ONE
+ * delivery cycle, is a DIFFERENT number whenever the commitment covers more
+ * than one cycle, and this module never charges it: a 90.00 THB cycle over a
+ * 4-cycle commitment charges 360.00 THB. Both figures are returned to the
+ * caller, named, so no UI can mistake one for the other.
  *
  * WHY THIS FILE NEVER CREATES AN ORDER, CYCLE, RESERVATION OR SHIPMENT
  * ────────────────────────────────────────────────────────────────────
@@ -224,6 +231,9 @@ export interface PlanCommitment {
   readonly intervalValue: number;
   readonly currency: string;
   readonly snapshotId: string;
+  /** The price of ONE delivery cycle. Reported, never charged. */
+  readonly cyclePrice: string | null;
+  /** `cycle_price × commitment_cycles` — the authoritative prepaid total. */
   readonly totalAmount: string;
   readonly amountMinor: number;
 }
@@ -247,13 +257,16 @@ export interface PlanCommitment {
  * perfectly well-formed snapshot total.
  *
  * WHY A GUARD AND NOT A SILENT FIX
- * The formula is not in doubt; correcting the Phase 3 engine would change the
- * money an already-approved, CI-verified phase produces, which is an owner
- * decision, not this phase's to take. So this phase does not invent a pricing
- * model and does not quietly repair another phase. It REFUSES to charge a
- * commitment whose snapshot total does not cover all of its cycles, which means
- * the defect cannot reach a customer. Single-cycle commitments are unaffected:
- * the guard is exactly satisfied when `commitment_cycles = 1`.
+ * The formula was not in doubt; the engine that produces `total_amount` was
+ * wrong, and changing the money an approved, CI-verified phase produces was an
+ * owner decision. That decision has now been taken (migration 052 + the pricing
+ * engine), and the snapshot carries `cycle_price` and the commitment
+ * `total_amount` separately — so the writer now satisfies this guard by
+ * construction. The guard REMAINS as the settlement-time proof that the row
+ * this process is about to charge really does cover every cycle, whatever
+ * wrote it: a corrupt or hand-edited snapshot is still refused. Single-cycle
+ * commitments are unaffected — the guard is exactly satisfied when
+ * `commitment_cycles = 1`.
  *
  * The arithmetic is exact: Phase 3 stored the UNROUNDED per-cycle final as
  * `metadata.final_price_exact`, so the expected total is that value times the
@@ -294,9 +307,16 @@ export function assertCommitmentCoversEveryCycle(snapshot: {
 export async function readCommitmentSnapshot(
   client: PoolClient,
   planId: string,
-): Promise<{ id: string; currency: string; totalAmount: string; commitmentCycles: number; finalPriceExact: string | null }> {
+): Promise<{
+  id: string;
+  currency: string;
+  cyclePrice: string | null;
+  totalAmount: string;
+  commitmentCycles: number;
+  finalPriceExact: string | null;
+}> {
   const result = await client.query(
-    `SELECT id, currency, total_amount, commitment_cycles, metadata
+    `SELECT id, currency, cycle_price, total_amount, commitment_cycles, metadata
        FROM velrepeat_pricing_snapshots
       WHERE plan_id = $1
       ORDER BY created_at DESC, id DESC
@@ -310,6 +330,7 @@ export async function readCommitmentSnapshot(
   return {
     id: String(row.id),
     currency: String(row.currency ?? "").toUpperCase(),
+    cyclePrice: row.cycle_price == null ? null : String(row.cycle_price),
     totalAmount: String(row.total_amount),
     commitmentCycles: Number(row.commitment_cycles),
     finalPriceExact: typeof exact === "string" && exact.trim() !== "" ? exact.trim() : null,
@@ -395,6 +416,7 @@ export async function loadPayableCommitment(
     intervalValue: Number(plan.interval_value),
     currency: snapshotCurrency,
     snapshotId: snapshot.id,
+    cyclePrice: snapshot.cyclePrice,
     totalAmount: snapshot.totalAmount,
     amountMinor,
   };
@@ -552,6 +574,9 @@ export interface PlanPaymentSession {
   readonly url: string | null;
   readonly method: PaymentMethodId;
   readonly currency: string;
+  /** The discounted price of ONE delivery cycle. Reported for display only. */
+  readonly cyclePrice: string | null;
+  /** THE amount charged: the whole prepaid commitment. */
   readonly amount: string;
   readonly amountMinor: number;
   readonly status: string;
@@ -627,6 +652,7 @@ async function openPlanPaymentSession(
           url: open.url,
           method,
           currency: commitment.currency,
+          cyclePrice: commitment.cyclePrice,
           amount: commitment.totalAmount,
           amountMinor,
           status: attempt.status,
@@ -747,6 +773,7 @@ async function openPlanPaymentSession(
             url: winnerSession.url,
             method,
             currency: commitment.currency,
+            cyclePrice: commitment.cyclePrice,
             amount: commitment.totalAmount,
             amountMinor,
             status: PAYMENT_STATUS.REQUIRES_ACTION,
@@ -779,6 +806,7 @@ async function openPlanPaymentSession(
     url: session.url,
     method,
     currency: commitment.currency,
+    cyclePrice: commitment.cyclePrice,
     amount: commitment.totalAmount,
     amountMinor,
     status: PAYMENT_STATUS.REQUIRES_ACTION,
@@ -1443,7 +1471,11 @@ export function setupVelRepeatV2PaymentRoutes(app: Express): void {
           provider: "stripe",
           stripeMode: "test",
           currency: session.currency,
-          amount: session.amount,
+          // Both figures, explicitly named, so no caller can mistake the
+          // per-cycle price for the amount being charged. They are equal only
+          // when the commitment is a single delivery.
+          cyclePrice: session.cyclePrice,
+          totalPrepaidAmount: session.amount,
           amountMinor: session.amountMinor,
           paymentStatus: session.status,
           reused: session.reused,

@@ -403,7 +403,14 @@ export interface CreatedDraftPlan {
   readonly currency: string;
   readonly basePrice: string;
   readonly discountAmount: string;
-  readonly finalPrice: string;
+  /** The discounted price of ONE delivery cycle. */
+  readonly cyclePrice: string;
+  /**
+   * THE amount a prepaid customer owes for the WHOLE commitment:
+   * cyclePrice × commitmentCycles, rounded once. This is the number a future
+   * UI must display as "you will be charged", and the number Phase 4 charges.
+   */
+  readonly totalPrepaidAmount: string;
   readonly effectiveDiscountPercent: string;
 }
 
@@ -510,7 +517,8 @@ export async function createDraftPlanFromPackage(
     currency: pricing.currency,
     basePrice: pricing.basePriceString,
     discountAmount: pricing.discountAmountString,
-    finalPrice: pricing.finalPriceString,
+    cyclePrice: pricing.cyclePrice,
+    totalPrepaidAmount: pricing.totalPrepaidString,
     effectiveDiscountPercent: pricing.effectiveDiscountPercentString,
   };
 }
@@ -668,7 +676,7 @@ export function setupVelRepeatV2PlanRoutes(app: Express): void {
       console.log(
         `[velrepeat-v2] draft plan created: ${created.planId} package=${request.packageId} ` +
           `user=${userId} cycles=${created.commitmentCycles} snapshot=${created.snapshotId} ` +
-          `total=${created.finalPrice} ${created.currency}`,
+          `cycle=${created.cyclePrice} totalPrepaid=${created.totalPrepaidAmount} ${created.currency}`,
       );
 
       res.status(201).json({
@@ -686,7 +694,11 @@ export function setupVelRepeatV2PlanRoutes(app: Express): void {
             currency: created.currency,
             basePrice: created.basePrice,
             discountAmount: created.discountAmount,
-            finalPrice: created.finalPrice,
+            // The price of ONE delivery cycle …
+            cyclePrice: created.cyclePrice,
+            // … and what is actually charged for the whole prepaid commitment.
+            // They are equal only when commitmentCycles is 1.
+            totalPrepaidAmount: created.totalPrepaidAmount,
             effectiveDiscountPercent: created.effectiveDiscountPercent,
           },
           snapshotId: created.snapshotId,

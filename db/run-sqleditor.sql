@@ -946,6 +946,7 @@ CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshots (
   discount_type TEXT,
   discount_value NUMERIC(12, 2),
   discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
+  cycle_price NUMERIC(12, 2) CHECK (cycle_price IS NULL OR cycle_price >= 0),
   total_amount NUMERIC(12, 2) NOT NULL CHECK (total_amount >= 0),
   pricing_rule_key TEXT,
   pricing_rule_version TEXT,
@@ -953,6 +954,10 @@ CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshots (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshots_plan ON velrepeat_pricing_snapshots (plan_id, created_at);
+ALTER TABLE velrepeat_pricing_snapshots DROP CONSTRAINT IF EXISTS velrepeat_pricing_snapshots_cycle_price_not_null;
+ALTER TABLE velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_cycle_price_not_null CHECK (cycle_price IS NOT NULL);
+ALTER TABLE velrepeat_pricing_snapshots DROP CONSTRAINT IF EXISTS velrepeat_pricing_snapshots_total_not_below_cycle;
+ALTER TABLE velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_total_not_below_cycle CHECK (cycle_price IS NULL OR total_amount >= cycle_price);
 CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshot_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   snapshot_id UUID NOT NULL REFERENCES velrepeat_pricing_snapshots(id) ON DELETE CASCADE,

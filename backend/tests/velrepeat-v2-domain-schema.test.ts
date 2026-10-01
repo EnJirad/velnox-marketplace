@@ -363,8 +363,8 @@ describe("velrepeat v2 phase-1 schema — integration (needs a test database)", 
 
     const snapshot = await query(
       `INSERT INTO velrepeat_pricing_snapshots
-         (plan_id, commitment_cycles, currency, subtotal_amount, discount_type, discount_value, discount_amount, total_amount, pricing_rule_key, pricing_rule_version)
-       VALUES ($1, 4, 'THB', 400, 'commitment_tier', 7, 28, 372, 'velrepeat_commitment_v1', '1')
+         (plan_id, commitment_cycles, currency, subtotal_amount, discount_type, discount_value, discount_amount, cycle_price, total_amount, pricing_rule_key, pricing_rule_version)
+       VALUES ($1, 4, 'THB', 400, 'commitment_tier', 7, 28, 93, 372, 'velrepeat_commitment_v1', '1')
        RETURNING id`,
       [planId],
     );
@@ -391,12 +391,13 @@ describe("velrepeat v2 phase-1 schema — integration (needs a test database)", 
     );
     expect(lineItems.rows[0].count).toBe(2);
 
-    // Negative money is refused.
+    // Negative money is refused. `cycle_price` is supplied so the refusal is
+    // genuinely about the negative TOTAL and not merely the NOT NULL rule.
     let moneyErr: { code?: string } | null = null;
     try {
       await query(
-        `INSERT INTO velrepeat_pricing_snapshots (plan_id, commitment_cycles, total_amount)
-         VALUES ($1, 1, -1)`,
+        `INSERT INTO velrepeat_pricing_snapshots (plan_id, commitment_cycles, cycle_price, total_amount)
+         VALUES ($1, 1, 0, -1)`,
         [planId],
       );
     } catch (e) {
@@ -404,10 +405,25 @@ describe("velrepeat v2 phase-1 schema — integration (needs a test database)", 
     }
     expect(moneyErr?.code).toBe("23514");
 
+    // A snapshot with no per-cycle price at all is refused too: every V2
+    // snapshot must be able to say what ONE cycle costs as well as what the
+    // whole commitment costs.
+    let cyclePriceErr: { code?: string } | null = null;
+    try {
+      await query(
+        `INSERT INTO velrepeat_pricing_snapshots (plan_id, commitment_cycles, total_amount)
+         VALUES ($1, 4, 372)`,
+        [planId],
+      );
+    } catch (e) {
+      cyclePriceErr = e as { code?: string };
+    }
+    expect(cyclePriceErr?.code).toBe("23514");
+
     // Append-only: a later snapshot for the same plan is allowed.
     await query(
-      `INSERT INTO velrepeat_pricing_snapshots (plan_id, commitment_cycles, total_amount)
-       VALUES ($1, 4, 372)`,
+      `INSERT INTO velrepeat_pricing_snapshots (plan_id, commitment_cycles, cycle_price, total_amount)
+       VALUES ($1, 4, 93, 372)`,
       [planId],
     );
     const snapshots = await query(
