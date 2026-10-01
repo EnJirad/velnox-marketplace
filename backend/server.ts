@@ -20,6 +20,7 @@ import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
 import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
 import { setupVelRepeatPackageRoutes } from "./routes/velrepeat-packages.js";
+import { setupVelRepeatV2PlanRoutes } from "./routes/velrepeat-v2-plans.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupCenterRoutes } from "./routes/center.js";
@@ -477,6 +478,9 @@ setupVelRepeatPlanRoutes(app);
 
 // ─── VelRepeat Packages (V2 — seller package authoring, G3=B) ───
 setupVelRepeatPackageRoutes(app);
+
+// ─── VelRepeat V2 (package → draft plan → pricing snapshot, Phase 3) ───
+setupVelRepeatV2PlanRoutes(app);
 
 // ─── Chat, Messaging & Notifications ────────────────────
 setupChatRoutes(app);

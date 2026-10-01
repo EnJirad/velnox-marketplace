@@ -744,3 +744,34 @@ stays inherited-open from Phase 2.
 payment / inventory / fulfillment / `sold_count` / COD / V1 / schema; `db/migrations` still ends at
 `050`; `db/run-update.sql` still absent; V2 tables still absent in production (048–050 unapplied).
 **Next:** owner answers Q-A/Q-B (audit §5) before Phase 3 (or Phase 4) starts.
+
+## 59. VelRepeat **V2 Phase 3 — package → draft plan → immutable snapshot** (2026-10-01)
+
+**Implemented** (base `47badf0`; commit `feat(velrepeat): integrate v2 package pricing snapshots`):
+`GET /api/velrepeat/v2/packages/:packageId` (customer read) + `POST /api/velrepeat/v2/plans` (draft plan +
+snapshot) in the new `backend/routes/velrepeat-v2-plans.ts`, mounted additively in `server.ts`; Phase 2's
+`ValidatedPackageItem` gained `shopId` (additive, `velrepeat-packages.ts`). The `/v2/` namespace exists
+because `GET /api/velrepeat/packages/:packageId` is already V1's (`velrepeat.ts:252`) — no duplicate
+endpoint, no V1 path touched. Owner decisions: **Q-A** the plan starts `draft` (never `active`, no
+scheduler workaround), **Q-B** `approved` seller = eligible (no new tier/table/flag), **Q-C** plan before
+payment. G1/G1.1/G2/G3/E preserved: `computeCommitmentPricingWithLines` + `insertPricingSnapshot` (now
+actually wired), catalog `NUMERIC` strings parsed exactly, 30% cap fails CLOSED, THB, one final 2dp round.
+Plan + lines + snapshot + items + `PLAN_CREATED` event are ONE `withTransaction`; a cap breach and a
+genuine snapshot `NUMERIC(12,2)` overflow each leave **no plan and no snapshot**. Snapshot `metadata`
+carries seller/package identity + the ordered rule trail — **no `package_id` column, no schema change**
+(both SQL files byte-identical, no 051, `db/run-update.sql` still absent).
+
+**Deliberately NOT written (Phase 4 owns):** `payment_method`/`payment_method_ref`, `started_at`
+(DEFAULT kept), re-anchoring `next_run_at` at activation, plan-creation idempotency (no canonical
+mechanism exists and Phase 3 has no irreversible effect). **Flagged decision:** V1's
+`products.vrepeat_enabled` is NOT part of the V2 purchase gate (Phase 2's canonical eligibility is) —
+Phase 5/7 must decide whether V2 fulfillment honors it; pinned by a test so it cannot drift silently.
+
+**Verification:** `bun run test` **1501 pass / 220 skip / 0 fail** (1721 tests, 57 files) · phase-3 suite
+**56 pass / 13 skip** (69 tests) · backend tsc 0 · typecheck 4/4 · build:apps 4/4 · `git diff --check`
+clean · SQL files identical · only the 4 intended files changed (no protected file touched).
+**DB-gated tests SKIPPED locally (no PostgreSQL)** — CI `postgres:16` is the only real DB execution.
+**Production untouched:** V2 tables still absent (048–050 unapplied), nothing to migrate, **not
+production-ready**. Audit: `.ai/tasks/audits/velrepeat-v2-phase3-pricing-snapshot-2026-10-01.md`.
+**Next: Phase 4 = Stripe prepaid payment** (PaymentIntent, plan payment linkage, payment idempotency,
+`draft → active` on confirmed payment, re-anchor `started_at`/`next_run_at`).

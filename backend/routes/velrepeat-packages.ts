@@ -78,11 +78,17 @@ export interface PackageItemInput {
   quantity: number;
 }
 
-/** A validated line plus the catalog price it will be snapshotted at. */
+/** A validated line plus the catalog facts a writer needs for it. */
 export interface ValidatedPackageItem extends PackageItemInput {
   /** `product_variants.price` when a variant is named, else `products.price`. */
   unitPrice: string;
   productName: string;
+  /**
+   * The owning shop, resolved from the same ownership chain the check used.
+   * `velrepeat_items.shop_id` is NOT NULL, so a plan line needs it; carrying it
+   * here keeps the ownership resolution in one query instead of a second read.
+   */
+  shopId: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -198,7 +204,7 @@ export async function authorizePackageComposition(
 
   for (const item of items) {
     const result = await client.query(
-      `SELECT p.id, p.name, p.price, p.status,
+      `SELECT p.id, p.name, p.price, p.status, p.shop_id,
               sh.seller_id AS owner_seller_id,
               pv.id AS variant_id, pv.price AS variant_price, pv.status AS variant_status
          FROM products p
@@ -263,6 +269,7 @@ export async function authorizePackageComposition(
       ...item,
       unitPrice,
       productName: product.name as string,
+      shopId: product.shop_id as string,
     });
   }
 
