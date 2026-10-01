@@ -238,6 +238,52 @@ Inspected before migrating, as required:
 **Safety verdict:** proceed. No stop condition from brief §20 is met. The gate is enforced in SQL
 rather than by assumption.
 
+### 10.1 PRODUCTION MIGRATION — BLOCKED (and why it is NOT this phase's fault)
+
+The push that carried 052 triggered `Migrate Neon Database` (run `36902790862`). Neon was reachable
+and 052 was the only pending migration. It failed:
+
+```
+🔄 Applying: 052_velrepeat_pricing_cycle_price
+psql:db/migrations/052_velrepeat_pricing_cycle_price.sql:38:
+      ERROR:  relation "velrepeat_pricing_snapshots" does not exist
+❌ 052_velrepeat_pricing_cycle_price FAILED.
+```
+
+**Root cause — a pre-existing gap from Phase 1, not from this phase.** The whole VelRepeat V2 prepaid
+domain schema was added to `db/schema.sql` and `db/run-sqleditor.sql` and **never given a
+`db/migrations/*.sql` file**:
+
+```
+$ grep -rl velrepeat_pricing_snapshots db/ --include=*.sql
+db/migrations/052_velrepeat_pricing_cycle_price.sql     ← this task
+db/run-sqleditor.sql
+db/schema.sql
+
+$ git log --oneline -S velrepeat_pricing_snapshots -- db/schema.sql
+f0cc464  fix(velrepeat): persist total prepaid commitment amount
+ea79277  feat(velrepeat): implement prepaid repeat domain    ← Phase 1, schema files only
+```
+
+`034_velrepeat_v2` (applied 2026-09-15) is the **per-run-order** design that predates the prepaid
+contract — it creates `velrepeat_plans` / `velrepeat_items` / `velrepeat_runs`, not
+`velrepeat_pricing_snapshots`. So the statement in the Phase 4 handoff that “the V2 tables exist” in
+production is **wrong**: the V1-shaped tables exist; the V2 prepaid domain tables do not. Every V2
+test so far passed locally and in CI only because CI bootstraps from `db/run-sqleditor.sql`, which
+does have them.
+
+**Consequence to be aware of:** 052 was not recorded, so it stays pending and the
+`Migrate Neon Database` workflow will fail on **every** push until the prerequisite exists.
+
+**Not fixed here, deliberately.** Writing a migration that creates the V2 domain tables would deploy
+roughly eight new tables to production. That is a deployment/business decision about VelRepeat V2
+as a whole — distinct from correcting one pricing invariant — and brief §17 says to stop the
+production portion and report rather than guess. Migration 052 itself is correct SQL and will apply
+cleanly the moment the prerequisite is satisfied.
+
+**Safe next action:** create the missing VelRepeat V2 domain migration (the 72 lines Phase 1 already
+put in `db/schema.sql`), renumber it ahead of the pricing change, land it, and let 052 follow.
+
 ## 11. Tests
 
 New suite `backend/tests/velrepeat-v2-pricing-total-prepaid.test.ts` — **31 tests, 7 blocks**:
@@ -284,6 +330,8 @@ exercised.
 ## 12. Typecheck / builds
 
 - `cd backend && bunx tsc --noEmit` — **0 errors**.
+- Locally the corrected Phase 3 assertions are DB-gated and therefore skip; the engine values they
+  assert were verified directly against `computeCommitmentPricing` (see *CI*).
 - `bun run typecheck` — velshop, velseller, velcenter, velnox — **4/4 exit 0**.
 - `bun run build:apps` — **4/4 built**.
 - `bun run test` — **1566 pass / 248 skip / 0 fail** (1814 tests, 59 files).
@@ -292,13 +340,33 @@ exercised.
 
 ## 13. CI
 
-Workflows are triggered by the push; see the final report for the run ID and conclusion. The material
-difference from Phase 4's local runs is that **CI owns a disposable `postgres:16`**
-(`.github/workflows/test.yml`, `TEST_DATABASE_URL`), so the 4 DB-gated integration tests and every
-other DB suite actually execute there. A local 0-fail does **not** prove the schema migration runs
-against a real PostgreSQL 16 — only CI does. The `Migrate Neon Database` workflow applies 052 to
-production; its log is the evidence of how many snapshots the backfill touched and how many it left
-untouched because of the settled-payment gate.
+The material difference from a local run is that **CI owns a disposable `postgres:16`**
+(`.github/workflows/test.yml`, `TEST_DATABASE_URL`) bootstrapped from `db/run-sqleditor.sql`, so the
+4 DB-gated integration tests and every other DB suite actually execute there. A local 0-fail does
+**not** prove anything about the DB path — only CI does. That was borne out:
+
+**Run 1 on `f0cc464` — `Tests` FAILED, and both failures were real.**
+
+| Test | Expected | Received | Verdict |
+|---|---|---|---|
+| Phase 3 → *a valid package creates a DRAFT plan, its snapshot and its snapshot items* | `total_amount` 282.72 | 1130.88 | stale test assertion — the row now separates `cycle_price` 282.72 from `total_amount` 1130.88 |
+| Phase 3 → *the snapshot is IMMUTABLE against price, composition and rule changes* | `450.60` | **450.59** | **the test's expected value was wrong, the engine was right** |
+
+The second one is worth stating plainly, because it is the whole point of this phase. That
+commitment is 170.00 → ×0.93 → ×0.95, so the **exact** per-cycle price is **150.195**, which displays
+as `150.20`. The commitment total is rounded once from the *exact* price: 150.195 × 3 = 450.585 →
+**450.59**. The test had been written as `150.20 × 3 = 450.60` — the round-first mistake, made in the
+test rather than the product, in a real pipeline case where the two differ by a satang. A third stale
+assertion at the end of the same test (`total_amount === 150.2`) was hidden behind the earlier
+failure and was fixed in the same pass. All three are corrected, with the reasoning left in the test
+as the regression.
+
+**Local runs could not have caught any of this**: those tests are DB-gated and skip without a
+PostgreSQL. The pure-engine equivalents do run locally and agreed with CI (`93.4444… × 3 = 280.33`
+vs `93.44 × 3 = 280.32`; `150.195 × 3 = 450.59`).
+
+**Run 1 on `f0cc464` — `Migrate Neon Database` FAILED.** See *Production DB status* below. This is a
+pre-existing deployment gap that only the production run could reveal.
 
 ## 14. Known limitations (honest list)
 
@@ -326,6 +394,12 @@ untouched because of the settled-payment gate.
 7. **Migration 052 assumes `final_price_exact` is present for legacy rows**; the `COALESCE` falls back
    to the already-2dp `cycle_price` in that case, reproducing the old number rather than inventing a
    new one. The NOTICE in the migration reports counts either way.
+8. **The VelRepeat V2 prepaid domain tables have never been migrated to production Neon** — they
+   exist only in `db/schema.sql` / `db/run-sqleditor.sql`. See §10.1. This is the single largest open
+   item and it predates this task.
+9. **`Migrate Neon Database` is currently red** on `main` as a direct consequence of 8. It is a true
+   signal (the prerequisite is missing), not a flake, and it will stay red until the domain migration
+   lands.
 
 ## 15. What was NOT done
 

@@ -1293,7 +1293,13 @@ describe("Phase 3 — package → draft plan → snapshot (integration)", () => 
     expect(snap.currency).toBe("THB");
     expect(Number(snap.subtotal_amount)).toBe(320);
     expect(Number(snap.discount_amount)).toBe(37.28);
-    expect(Number(snap.total_amount)).toBe(282.72);
+    // The row now separates the two prices: `cycle_price` is ONE delivery
+    // (282.72) and `total_amount` is the whole 4-cycle prepaid commitment
+    // (282.72 × 4 = 1130.88). Before the correction the single column held
+    // 282.72 for four cycles.
+    expect(Number(snap.cycle_price)).toBe(282.72);
+    expect(Number(snap.total_amount)).toBe(1130.88);
+    expect(Number(snap.total_amount)).not.toBe(Number(snap.cycle_price));
     expect(snap.discount_type).toBe("sequential_percentage");
     expect(snap.pricing_rule_key).toBe("commitment_4_cycles+package_loyalty");
     expect(snap.pricing_rule_version).toBe("2026-09-30+2");
@@ -1553,11 +1559,17 @@ describe("Phase 3 — package → draft plan → snapshot (integration)", () => 
         intervalValue: 1,
       } satisfies PurchaseRequest),
     );
-    // 50.00 × 1 + 60.00 × 2 = 170.00 → 7% → 5% → 150.20 for ONE cycle, and
-    // 150.20 × 3 = 450.60 for the whole prepaid commitment.
+    // 50.00 × 1 + 60.00 × 2 = 170.00 → ×0.93 → ×0.95 → the EXACT per-cycle price
+    // is 150.195, which displays as 150.20.
+    //
+    // The commitment total is rounded ONCE from the EXACT price: 150.195 × 3 =
+    // 450.585 → 450.59 — NOT 150.20 × 3 = 450.60. Multiplying the already-rounded
+    // cycle price is the mistake the single-rounding rule (G2) exists to prevent,
+    // and this is a real pipeline case where the two differ.
     expect(created.basePrice).toBe("170.00");
     expect(created.cyclePrice).toBe("150.20");
-    expect(created.totalPrepaidAmount).toBe("450.60");
+    expect(created.totalPrepaidAmount).toBe("450.59");
+    expect(created.totalPrepaidAmount).not.toBe("450.60");
 
     const beforeSnapshot = await query(`SELECT * FROM velrepeat_pricing_snapshots WHERE plan_id = $1`, [
       created.planId,
@@ -1609,7 +1621,11 @@ describe("Phase 3 — package → draft plan → snapshot (integration)", () => 
       );
       expect(afterSnapshot.rows).toEqual(beforeSnapshot.rows);
       expect(afterItems.rows).toEqual(beforeItems.rows);
-      expect(Number(afterSnapshot.rows[0].total_amount)).toBe(150.2);
+      // Still the purchase-time money: one cycle at 150.20, three cycles at
+      // 450.59. The new rule set would have produced a completely different
+      // price, and the immutable snapshot does not care.
+      expect(Number(afterSnapshot.rows[0].cycle_price)).toBe(150.2);
+      expect(Number(afterSnapshot.rows[0].total_amount)).toBe(450.59);
       expect(afterSnapshot.rows[0].pricing_rule_key).toBe("commitment_4_cycles+package_loyalty");
 
       // Nothing in the module recomputes on read: the plan's own lines are the

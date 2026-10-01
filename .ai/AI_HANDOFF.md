@@ -838,8 +838,20 @@ DB-gated → SKIP locally, run in CI. `bun run test` **1566 pass / 0 fail**; bac
 build:apps 4/4; `git diff --check` clean. No V1 file touched.
 Audit: `.ai/tasks/audits/velrepeat-v2-pricing-total-prepaid-2026-10-01.md`.
 
+> **PRODUCTION DB: BLOCKED — and the cause predates this phase.** `Migrate Neon Database`
+> (`36902790862`) applied nothing: `052` failed with `relation "velrepeat_pricing_snapshots" does not
+> exist`. **The entire VelRepeat V2 prepaid domain schema has no `db/migrations/*.sql` file** — Phase 1
+> (`ea79277`) added it to `db/schema.sql` + `db/run-sqleditor.sql` ONLY. `034_velrepeat_v2` is the
+> older per-run-order design, not the prepaid tables. So §60's “the V2 tables exist” claim in Neon is
+> **WRONG**; V2 is CI-only. 052 is not recorded, so the Neon workflow stays **red on every push** until
+> the domain migration exists. Do NOT paper over it — 052 is correct SQL.
+> **Safe next action:** land the missing V2 domain migration (the 72 schema lines Phase 1 wrote),
+> numbered ahead of the pricing change, then 052 applies. That deploys ~8 new tables to production and
+> is an OWNER decision, not this phase's.
+
 **Known limits:** the `cycle_price IS NOT NULL` "constraint" is a CHECK, which SQL satisfies with
 NULL — convert to a real `NOT NULL` once settled rows are confirmed empty. No Stripe E2E credential.
 Refunds still order-scoped (Phase 9). No UI touched.
-**Next safe phase: 5 — V2 plan lifecycle routes** (pause/resume/cancel/read for an *active* V2 plan,
-which V1's routes can now reach). NOT cycles, inventory or fulfillment.
+**Next safe phase:** the V2 domain migration above — then 5, V2 plan lifecycle routes
+(pause/resume/cancel/read for an *active* V2 plan, which V1's routes can now reach). NOT cycles,
+inventory or fulfillment.
