@@ -1283,7 +1283,9 @@ describe("Phase 3 — package → draft plan → snapshot (integration)", () => 
     expect(snap.metadata.seller_id).toBe(sellerAId);
     expect(snap.metadata.package_id).toBe(packageValidId);
     expect(snap.metadata.cap_enforced).toBe(true);
-    expect(snap.metadata.max_effective_discount).toBe("0.30");
+    // The cap travels as its exact canonical decimal form: one tenth-style
+    // rational (0.3), never a 2-decimal rendering of it.
+    expect(snap.metadata.max_effective_discount).toBe("0.3");
     expect(snap.metadata.applied_rules.map((r: any) => [r.key, r.version, r.factor])).toEqual([
       ["commitment_4_cycles", "2026-09-30", "0.93"],
       ["package_loyalty", "2", "0.95"],

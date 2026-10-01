@@ -188,6 +188,12 @@ succeeds, snapshot INSERT fails" scenario, and it also documents a genuine limit
   `payment*`, inventory, orders or cycles, and cannot read a seller or a price from the request; the V2
   paths cannot collide with V1's; mounts are additive; V1's create/`repeat-now`/COD guard/float path and
   the scheduler's reprice-order-stock-COD statements are unchanged; the migration set is unchanged.
+* **CI (first run for this commit, `36797879884`):** 1718 pass / 2 skip / **1 fail** — and the failure was a
+  **test-side** assertion, not a behavior: the snapshot's `metadata.max_effective_discount` is the
+  canonical exact decimal of the cap (`"0.3"`), not a 2-decimal rendering (`"0.30"`). The production path
+  was correct; the assertion was corrected in the follow-up commit (`fix(velrepeat): correct a phase 3
+  cap assertion`). **The other 12 integration tests passed on CI's `postgres:16`** — including the
+  immutability proof, both atomicity proofs, the scheduler refusal and the V1 regression.
 * **Integration (DB + real HTTP, CI):** read (200, validated composition, subtotal 320.00, nothing
   internal; 401 anonymous; any customer may read); create (201 draft + snapshot + items + plan lines +
   event; `payment_method_ref` NULL; plan `metadata` `{}`); six refusals (missing, inactive, cross-seller,
