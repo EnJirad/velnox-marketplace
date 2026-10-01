@@ -5,7 +5,8 @@
   refused, not charged** — see §0. Stripe E2E NOT executed.
 - **Date:** 2026-10-01
 - **Starting commit SHA:** `0cb29aa9819e4eaafa915c44f9864cb99b672291`
-- **Implementation commit SHA:** _(see §16)_
+- **Implementation commit SHA:** `5bf4a49` (+ `435f0ec`, `ea24e8b`, `2583c68`, `e9d5ed9` — the blocking-finding
+  guard and the four CI-driven corrections; final `e9d5ed9d7b575563e609c29854cc1d185bbe15e3`)
 
 ---
 
@@ -333,8 +334,9 @@ Plus two suites updated (§14) and the whole repository suite.
 
 | Check | Result |
 |---|---|
-| `bun run test` | **1537 pass / 243 skip / 0 fail** (1780 tests, 58 files) |
+| `bun run test` | **1538 pass / 243 skip / 0 fail** (1781 tests, 58 files) |
 | phase-4 suite (local) | **35 pass / 23 skip / 0 fail** (58 tests) |
+| **CI `36898374341` (disposable `postgres:16`)** | **1779 pass / 2 skip / 0 fail** — all 23 DB-gated Phase 4 tests ran |
 | `cd backend && bunx tsc --noEmit` | clean |
 | `bun run typecheck` | **4/4** (velshop, velseller, velcenter, velnox) |
 | `bun run build:apps` | **4/4** |
@@ -349,7 +351,23 @@ CI's disposable `postgres:16` (`.github/workflows/test.yml`, `TEST_DATABASE_URL`
 
 ## 13. CI
 
-_(filled in by the delivery commit / §16)_
+**Final: run `36898374341` on `e9d5ed9` — SUCCESS. 1779 pass / 2 skip / 0 fail** on the disposable
+`postgres:16` service. All 23 DB-gated Phase 4 tests executed against a real database there.
+
+The DB half was reached only after four CI iterations, and **each failure was a real finding** — this
+is the strongest evidence in this audit, because a local run cannot execute any of it:
+
+| Run | Result | What it found |
+|---|---|---|
+| `36890777033` | fail (1) | The pricing-rule fixture used the wrong shape, so the Phase 3 purchase refused. Also revealed `Expected "360.00" / Received "90.00"` — **the §0 defect, independently observed in CI**. |
+| `36892375150` | fail (1) | Same, after the fixture was corrected — proving 90.00 is what the engine produces. |
+| `36892848162` | fail (6) | **Two production bugs**: `payment_intent.*` events never resolved their attempt (the id is `object.id`, not `object.payment_intent`), and the pricing guards ran *before* the ownership check, leaking another customer's pricing state via 409. Plus 4 fixture-hygiene failures. |
+| `36893743408` | fail (1) | A fixture recorded two attempts for one plan — `idx_payments_one_active_stripe_plan` doing its job. |
+| `36898374341` | **success** | 1779 pass / 2 skip / 0 fail. |
+
+**Production migrations:** run `36890776967` — **success**; see §15.
+
+**Vercel checks:** none triggered by these commits (no app files changed — Phase 4 is backend + DB only).
 
 ---
 

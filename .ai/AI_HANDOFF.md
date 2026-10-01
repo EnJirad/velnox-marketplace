@@ -781,13 +781,18 @@ payment row re-reads `paid` AND amount/currency verify AND the recorded method i
 `calculateNextRunAt(started_at, …)` (same canonical derivation V1 uses); a duplicate delivery does not
 re-stamp them. **0 orders, 0 cycles, 0 reservations, 0 fulfillment.**
 
-**Verified:** `bun run test` 1537 pass / 243 skip / 0 fail (1780 tests, 58 files); phase-4 suite 35 pass /
+**Verified:** `bun run test` 1538 pass / 243 skip / 0 fail (1781 tests, 58 files); phase-4 suite 35 pass /
 23 skip (58 tests) locally; backend tsc 0; typecheck 4/4; build:apps 4/4; `git diff --check` clean; SQL
-files identical. DB-gated tests SKIP locally (no PostgreSQL) — CI `postgres:16` is the only real DB
-execution. **PRODUCTION DB: APPLIED** — the Neon quota blocker has cleared; CI run `36890776967`
-applied 048, 049, 050 and **051** (`schema_migrations` id 67, 2026-10-01 16:17 UTC), and the list
-confirms `034_velrepeat_v2` was already there, so the V2 tables exist. **Stripe E2E NOT executed** (no
-test credential anywhere). **NOT production-ready** — see the blocker below.
+files identical. **CI `36898374341` on `e9d5ed9`: SUCCESS — 1779 pass / 2 skip / 0 fail** on the
+disposable `postgres:16`, so all 23 DB-gated phase-4 tests really executed. It took four iterations and
+**each failure was a real finding** — two of them production bugs no local run could reach:
+`payment_intent.*` events never resolved their attempt (Stripe puts the intent id on `object.id`, not
+`object.payment_intent`, so the plan silently never activated), and the pricing guards ran BEFORE the
+ownership check, answering 409 to a non-owner and leaking another customer's pricing state. **PRODUCTION
+DB: APPLIED** — the Neon quota blocker has cleared; CI run `36890776967` applied 048, 049, 050 and
+**051** (`schema_migrations` id 67, 2026-10-01 16:17 UTC), and `034_velrepeat_v2` was already there, so
+the V2 tables exist. **Stripe E2E NOT executed** (no test credential anywhere). **NOT production-ready**
+— see the blocker below.
 Audit: `.ai/tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md`.
 
 > **BLOCKER — Phase 3 froze the CYCLE PRICE, not the TOTAL PREPAID (owner decision required).**
