@@ -48,6 +48,13 @@ import jwt from "jsonwebtoken";
 import type Stripe from "stripe";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
+import {
+  makeRational,
+  multiply,
+  parseDecimal,
+  toExactDecimalString,
+  toMoneyString,
+} from "../lib/money.js";
 import { purgeUsers } from "./helpers/purge.js";
 import { withTransaction } from "../db/index.js";
 import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
@@ -60,6 +67,7 @@ import {
   RepeatPlanPaymentError,
   V2_PREPAID_METHODS,
   VELREPEAT_V2_PAYMENT_SCOPE,
+  assertCommitmentCoversEveryCycle,
   assertPayableDraft,
   buildPlanLineItem,
   buildPlanStripeMetadata,
@@ -197,13 +205,48 @@ describe("Phase 4 — the charged amount comes from the immutable snapshot", () 
   });
 
   test("the commitment total is never accepted from a request body", () => {
-    // Structural: the module reads a total from exactly one place — the
-    // pricing snapshot. Any other read would be a client-controlled price.
+    // Structural: the module reads a total from exactly ONE place — the
+    // pricing snapshot, through one shared helper that both the creation path
+    // and the settlement path use. Any second read, or a client-sourced amount,
+    // would be a price this backend did not freeze.
     const code = stripComments(read("backend/routes/velrepeat-v2-payments.ts"));
     const snapshotReads = code.match(/FROM velrepeat_pricing_snapshots/g) ?? [];
-    expect(snapshotReads.length).toBeGreaterThanOrEqual(2);
+    expect(snapshotReads).toHaveLength(1);
+    // Both the charge and the settlement re-derive through that one reader.
+    expect(code.match(/readCommitmentSnapshot\(/g)?.length).toBeGreaterThanOrEqual(3);
     expect(code).not.toMatch(/body\s*\.\s*(amount|total|price|final)/i);
     expect(code).not.toMatch(/req\.body\s*\.\s*(amount|total|price)/i);
+  });
+
+  test("a snapshot that does not cover every cycle can never be charged", () => {
+    // The Phase 3 engine freezes the CYCLE PRICE; the contract's pipeline ends
+    // `Cycle Price → Total Prepaid`. This guard is what stops a per-cycle total
+    // being charged once for an N-cycle commitment.
+    setPaymentEnv(TEST_STRIPE_ENV);
+    const covered = { totalAmount: "360.00", commitmentCycles: 4, finalPriceExact: "90" };
+    expect(() => assertCommitmentCoversEveryCycle(covered)).not.toThrow();
+
+    // The Phase 3 shape for the same purchase: the cycle price, not the total.
+    const perCycleOnly = { totalAmount: "90.00", commitmentCycles: 4, finalPriceExact: "90" };
+    const refusal = refusalFrom(() => assertCommitmentCoversEveryCycle(perCycleOnly));
+    expect(refusal.status).toBe(409);
+    expect(refusal.code).toBe("COMMITMENT_TOTAL_UNVERIFIED");
+
+    // A single-cycle commitment is exactly satisfied by the cycle price.
+    expect(() =>
+      assertCommitmentCoversEveryCycle({ totalAmount: "90.00", commitmentCycles: 1, finalPriceExact: "90" }),
+    ).not.toThrow();
+
+    // Anything unverifiable is refused rather than assumed.
+    for (const bad of [
+      { totalAmount: "360.00", commitmentCycles: 0, finalPriceExact: "90" },
+      { totalAmount: "360.00", commitmentCycles: 4, finalPriceExact: null },
+      { totalAmount: "360.00", commitmentCycles: 4.5, finalPriceExact: "90" },
+    ]) {
+      expect(refusalFrom(() => assertCommitmentCoversEveryCycle(bad)).code).toBe(
+        "COMMITMENT_TOTAL_UNVERIFIED",
+      );
+    }
   });
 });
 
@@ -631,6 +674,54 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     return import("../db/index.js");
   }
 
+  /**
+   * A draft plan whose snapshot covers EVERY prepaid cycle — the shape the
+   * V2 contract's pipeline (`… → Cycle Price → Total Prepaid`) defines and the
+   * shape the coverage guard requires.
+   *
+   * The plan created through the Phase 3 route in `beforeAll` is deliberately
+   * NOT usable here: the Phase 3 engine freezes the CYCLE PRICE, so for 4
+   * cycles it writes `total_amount = 90.00` where the commitment is 360.00.
+   * That is the defect the guard exists for, and it has its own test below.
+   */
+  async function makeCoveredPlan(
+    userId: string,
+    opts: { cycles: number; perCycle: string; frequency?: string; interval?: number } = {
+      cycles: 4,
+      perCycle: "90.00",
+    },
+  ): Promise<string> {
+    const { query } = await db();
+    const created = await query(
+      `INSERT INTO velrepeat_plans
+         (user_id, status, frequency_type, interval_value, commitment_cycles, next_run_at)
+       VALUES ($1, 'draft', $2, $3, $4, NOW() + INTERVAL '7 days') RETURNING id`,
+      [userId, opts.frequency ?? "weeks", opts.interval ?? 1, opts.cycles],
+    );
+    const id = String(created.rows[0].id);
+    planIds.push(id);
+    const perCycle = parseDecimal(opts.perCycle);
+    await query(
+      `INSERT INTO velrepeat_pricing_snapshots
+         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount, total_amount,
+          discount_type, discount_value, metadata)
+       VALUES ($1, $2, 'THB', $3, 0.00, $4, 'sequential_percentage', '0',
+               $5::jsonb)`,
+      [
+        id,
+        opts.cycles,
+        toMoneyString(multiply(perCycle, makeRational(BigInt(opts.cycles), 1n))),
+        toMoneyString(multiply(perCycle, makeRational(BigInt(opts.cycles), 1n))),
+        JSON.stringify({
+          final_price_exact: toExactDecimalString(perCycle),
+          base_price: toMoneyString(perCycle),
+          effective_discount: "0",
+        }),
+      ],
+    );
+    return id;
+  }
+
   function cookie(userId: string): string {
     return `velnox_session=${jwt.sign(
       { userId, email: `${tag}@test.invalid` },
@@ -775,10 +866,20 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     previousRulesExisted = existingRules.rows.length > 0;
     previousRules = (existingRules.rows[0]?.value as string | undefined) ?? null;
 
-    await query(
+    // 4 cycles × 100 THB = 400.00, less a 10% commitment discount = 360.00.
+// NOTE the SHAPE: the setting is the platform rule format — snake_case keys,
+// and `discount_value` is a FRACTION (`"0.10"`), not a percentage. The parser
+// rejects anything else, and Phase 3 then refuses the purchase (fail closed),
+// so this fixture must be written exactly as the parser reads it.
+await query(
       `INSERT INTO platform_settings (key, value) VALUES ($1, $2)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-      [PRICING_RULES_SETTING_KEY, JSON.stringify([{ key: "commitment10", discountType: "percentage", discountValue: 10, priority: 1, version: "1" }])],
+      [
+        PRICING_RULES_SETTING_KEY,
+        JSON.stringify([
+          { key: "commitment10", discount_type: "percentage", discount_value: "0.10", priority: 1, version: "1" },
+        ]),
+      ],
     );
 
     const mk = async (label: string) => {
@@ -829,7 +930,16 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
         intervalValue: 1,
       }),
     });
-    const body = (await created.json()) as { data?: { plan?: { id: string }; pricing?: { finalPrice: string } } };
+    const body = (await created.json()) as {
+      data?: { plan?: { id: string }; pricing?: { finalPrice: string } };
+      error?: { code: string; message: string };
+    };
+    // A failed fixture must name its own refusal. A bare `body.data!.plan!`
+    // would surface as "undefined is not an object" and hide the real cause.
+    expect({ status: created.status, error: body.error }).toEqual({
+      status: 201,
+      error: undefined,
+    });
     planId = body.data!.plan!.id;
     planIds.push(planId);
     expect(body.data!.pricing!.finalPrice).toBe(COMMITMENT_TOTAL);
@@ -995,48 +1105,50 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
 
   testFn("a wrong amount is refused: the money is recorded, the plan is NOT activated", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
-    const paymentId = await recordAttempt(planId);
+    const plan = await makeCoveredPlan(buyerId);
+    const paymentId = await recordAttempt(plan);
     const attempt = await readAttempt(paymentId);
     await deliver("checkout.session.completed", {
       id: attempt.provider_checkout_session_id,
-      metadata: v2Metadata(planId),
+      metadata: v2Metadata(plan),
       payment_status: "paid",
       amount_total: 1, // under-charged, e.g. a tampered session
       currency: "thb",
     });
-    expect((await readPlan(planId)).status).toBe("draft");
+    expect((await readPlan(plan)).status).toBe("draft");
     // The money is still recorded — that is what makes it refundable and
     // visible — and a durable operator incident exists.
     expect((await readAttempt(paymentId)).status).toBe("paid");
     const { query } = await db();
     const incident = await query(
       `SELECT reason FROM payment_incidents WHERE plan_id = $1 AND payment_id = $2`,
-      [planId, paymentId],
+      [plan, paymentId],
     );
     expect(incident.rows).toHaveLength(1);
     expect(incident.rows[0].reason).toBe("PLAN_AMOUNT_MISMATCH");
     await db().then(({ query }) =>
-      query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [planId]),
+      query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [plan]),
     );
     await db().then(({ query }) => query(`DELETE FROM payments WHERE id = $1`, [paymentId]));
   });
 
   testFn("a wrong currency is refused and never activates", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
-    const paymentId = await recordAttempt(planId);
+    const plan = await makeCoveredPlan(buyerId);
+    const paymentId = await recordAttempt(plan);
     const attempt = await readAttempt(paymentId);
     await deliver("checkout.session.completed", {
       id: attempt.provider_checkout_session_id,
-      metadata: v2Metadata(planId),
+      metadata: v2Metadata(plan),
       payment_status: "paid",
       amount_total: COMMITMENT_MINOR,
       currency: "usd",
     });
-    expect((await readPlan(planId)).status).toBe("draft");
+    expect((await readPlan(plan)).status).toBe("draft");
     const { query } = await db();
-    const incident = await query(`SELECT reason FROM payment_incidents WHERE plan_id = $1`, [planId]);
+    const incident = await query(`SELECT reason FROM payment_incidents WHERE plan_id = $1`, [plan]);
     expect(incident.rows[0].reason).toBe("PLAN_CURRENCY_MISMATCH");
-    await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [planId]);
+    await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [plan]);
     await query(`DELETE FROM payments WHERE id = $1`, [paymentId]);
   });
 
@@ -1044,20 +1156,21 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     setPaymentEnv(TEST_STRIPE_ENV);
     // The schema default of `velrepeat_plans.payment_method` is 'cod'; a plan
     // must never become active while carrying a method no real charge used.
-    const paymentId = await recordAttempt(planId, { method: "cod" });
+    const target = await makeCoveredPlan(buyerId);
+    const paymentId = await recordAttempt(target, { method: "cod" });
     const attempt = await readAttempt(paymentId);
     await deliver("checkout.session.completed", {
       id: attempt.provider_checkout_session_id,
-      metadata: v2Metadata(planId),
+      metadata: v2Metadata(target),
       payment_status: "paid",
       amount_total: COMMITMENT_MINOR,
       currency: "thb",
     });
-    const plan = await readPlan(planId);
+    const plan = await readPlan(target);
     expect(plan.status).toBe("draft");
     expect(plan.payment_method).toBe("cod");
     const { query } = await db();
-    await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [planId]);
+    await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [target]);
     await query(`DELETE FROM payments WHERE id = $1`, [paymentId]);
   });
 
@@ -1095,8 +1208,52 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
 
   // ─── Activation: the one transition this phase owns ─────────────────────
 
+  testFn("a snapshot that does not cover every cycle is REFUSED, never charged", async () => {
+    setPaymentEnv(TEST_STRIPE_ENV);
+    // `planId` came from the Phase 3 route, whose snapshot freezes the CYCLE
+    // PRICE (90.00) rather than the Total Prepaid (360.00). Charging it would
+    // take a quarter of the money for a 4-cycle commitment, silently. So the
+    // endpoint refuses, and refuses BEFORE a session or a payment row exists.
+    const res = await postPayment(buyerId, planId, { method: "CARD" });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as any).error.code).toBe("COMMITMENT_TOTAL_UNVERIFIED");
+
+    const { query } = await db();
+    const payments = await query(`SELECT COUNT(*)::int AS n FROM payments WHERE plan_id = $1`, [planId]);
+    expect(payments.rows[0].n).toBe(0);
+    expect((await readPlan(planId)).status).toBe("draft");
+  });
+
+  testFn("an under-covered snapshot cannot activate a plan through the webhook either", async () => {
+    setPaymentEnv(TEST_STRIPE_ENV);
+    const paymentId = await recordAttempt(planId);
+    const attempt = await readAttempt(paymentId);
+    await deliver("checkout.session.completed", {
+      id: attempt.provider_checkout_session_id,
+      metadata: v2Metadata(planId),
+      payment_status: "paid",
+      amount_total: COMMITMENT_MINOR,
+      currency: "thb",
+    });
+    // Stripe really did take 36000 minor units, and the row records it — but
+    // the plan is NOT activated, because the frozen snapshot only commits 9000
+    // per cycle. The money is visible and an operator is paged; no commitment
+    // is activated against a total that does not cover it.
+    expect((await readPlan(planId)).status).toBe("draft");
+    expect((await readAttempt(paymentId)).status).toBe("paid");
+    const { query } = await db();
+    const incident = await query(
+      `SELECT reason FROM payment_incidents WHERE plan_id = $1 AND payment_id = $2`,
+      [planId, paymentId],
+    );
+    expect(incident.rows[0].reason).toBe("PLAN_NOT_ACTIVATABLE");
+    await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [planId]);
+    await query(`DELETE FROM payments WHERE id = $1`, [paymentId]);
+  });
+
   testFn("a verified success activates the plan exactly once, with no side effects", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
+    const target = await makeCoveredPlan(buyerId);
 
     // A draft that has been sitting for a while: the re-anchoring must NOT be
     // decided by those stale timestamps.
@@ -1106,21 +1263,21 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
           SET started_at = NOW() - INTERVAL '40 days',
               next_run_at = NOW() - INTERVAL '33 days'
         WHERE id = $1`,
-      [planId],
+      [target],
     );
 
-    const paymentId = await recordAttempt(planId, { method: "CARD" });
+    const paymentId = await recordAttempt(target, { method: "CARD" });
     const attempt = await readAttempt(paymentId);
     const intentId = attempt.provider_payment_id;
     const sessionId = attempt.provider_checkout_session_id;
 
     const before = new Date();
-    const res = await settledSession(planId);
+    const res = await settledSession(target);
     expect(res.status).toBe(200);
     const after = new Date();
 
     // ── The plan moved, and only to `active` ──────────────────────────────
-    const plan = await readPlan(planId);
+    const plan = await readPlan(target);
     expect(plan.status).toBe("active");
     // The real Stripe method — never the schema's 'cod' default.
     expect(plan.payment_method).toBe("CARD");
@@ -1143,7 +1300,7 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     // ── The money is in the canonical payments authority, parented by the plan
     const payment = await readAttempt(paymentId);
     expect(payment.status).toBe("paid");
-    expect(payment.plan_id).toBe(planId);
+    expect(payment.plan_id).toBe(target);
     // The whole point of migration 051: no order was involved at any point.
     expect(payment.order_id).toBeNull();
     expect(Number(payment.amount)).toBe(360);
@@ -1151,7 +1308,7 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     expect(payment.paid_at).not.toBeNull();
 
     // ── Zero orders, cycles, reservations or fulfillment ──────────────────
-    const effects = await sideEffectsFor(planId);
+    const effects = await sideEffectsFor(target);
     expect(effects.orders).toBe(0);
     expect(effects.cycles).toBe(0);
     expect(effects.runs).toBe(0);
@@ -1163,7 +1320,7 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     const replay = await deliver("checkout.session.completed", {
       id: sessionId,
       payment_intent: intentId,
-      metadata: v2Metadata(planId, { method: "CARD" }),
+      metadata: v2Metadata(target, { method: "CARD" }),
       payment_status: "paid",
       amount_total: COMMITMENT_MINOR,
       currency: "thb",
@@ -1172,21 +1329,21 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
 
     await deliver("payment_intent.succeeded", {
       id: intentId,
-      metadata: v2Metadata(planId, { method: "CARD" }),
+      metadata: v2Metadata(target, { method: "CARD" }),
       amount_received: COMMITMENT_MINOR,
       currency: "thb",
     });
 
-    const after_ = await sideEffectsFor(planId);
+    const after_ = await sideEffectsFor(target);
     expect(after_.activations).toBe(1);
     expect(after_.paidPayments).toBe(1);
-    const planAfter = await readPlan(planId);
+    const planAfter = await readPlan(target);
     expect(planAfter.status).toBe("active");
     // Timing is NOT re-stamped by a duplicate delivery.
     expect(new Date(planAfter.started_at as string).getTime()).toBe(startedAt);
 
     // ── And an already-paid plan cannot be paid again ─────────────────────
-    const rePay = await postPayment(buyerId, planId, { method: "CARD" });
+    const rePay = await postPayment(buyerId, target, { method: "CARD" });
     expect(rePay.status).toBe(409);
   });
 
@@ -1203,9 +1360,13 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     planIds.push(plan);
     const snapshot = await query(
       `INSERT INTO velrepeat_pricing_snapshots
-         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount, total_amount)
-       VALUES ($1, 4, 'THB', 400.00, 40.00, $2) RETURNING id`,
-      [plan, COMMITMENT_TOTAL],
+         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount, total_amount, metadata)
+       VALUES ($1, 4, 'THB', 400.00, 40.00, $2, $3::jsonb) RETURNING id`,
+      [
+        plan,
+        COMMITMENT_TOTAL,
+        JSON.stringify({ final_price_exact: "90", base_price: "100.00" }),
+      ],
     );
     expect(snapshot.rows).toHaveLength(1);
 
@@ -1260,9 +1421,13 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     planIds.push(plan);
     await query(
       `INSERT INTO velrepeat_pricing_snapshots
-         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount, total_amount)
-       VALUES ($1, 2, 'THB', 200.00, 0.00, $2)`,
-      [plan, COMMITMENT_TOTAL],
+         (plan_id, commitment_cycles, currency, subtotal_amount, discount_amount, total_amount, metadata)
+       VALUES ($1, 2, 'THB', 200.00, 0.00, $2, $3::jsonb)`,
+      [
+        plan,
+        COMMITMENT_TOTAL,
+        JSON.stringify({ final_price_exact: "180", base_price: "200.00" }),
+      ],
     );
     const paymentId = await recordAttempt(plan, { method: "CARD" });
     const attempt = await readAttempt(paymentId);
@@ -1298,12 +1463,17 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     setPaymentEnv(TEST_STRIPE_ENV);
     // The only writer of `active` is the webhook; no HTTP route exists that
     // could do it, and the V2 module exposes none.
-    const routes = await fetch(`${base}/api/velrepeat/v2/plans/${planId}/activate`, {
-      method: "POST",
-      headers: { cookie: cookie(buyerId) },
-    });
-    expect(routes.status).toBe(404);
-    expect((await readPlan(planId)).status).toBe("active");
+    const target = await makeCoveredPlan(buyerId);
+    for (const path of ["activate", "confirm", "complete", "status"]) {
+      const res = await fetch(`${base}/api/velrepeat/v2/plans/${target}/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookie(buyerId) },
+        body: JSON.stringify({ paymentStatus: "paid", status: "active", amount: 1 }),
+      });
+      expect(res.status).toBe(404);
+    }
+    // A client claim of success changes nothing.
+    expect((await readPlan(target)).status).toBe("draft");
   });
 
   testFn("the plan row is never locked across a provider call", async () => {

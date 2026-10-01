@@ -1,11 +1,62 @@
 # VelRepeat V2 — Phase 4: Stripe Prepaid Plan-Level Payment — Audit
 
-- **STATUS:** IMPLEMENTED (code complete, CI-verified; **production DB NOT migrated**, Stripe E2E NOT executed)
+- **STATUS:** **IMPLEMENTED — BLOCKED at the amount gate (owner decision required).** The payment flow is
+  complete and CI-verified, but a defect in Phase 3's pricing means **multi-cycle commitments are
+  refused, not charged** — see §0. Stripe E2E NOT executed.
 - **Date:** 2026-10-01
 - **Starting commit SHA:** `0cb29aa9819e4eaafa915c44f9864cb99b672291`
-- **Implementation commit SHA:** _(see §16 — filled in by the delivery commit)_
+- **Implementation commit SHA:** _(see §16)_
 
 ---
+
+## 0. BLOCKING FINDING — Phase 3 froze the CYCLE PRICE, not the TOTAL PREPAID
+
+**This is the single most important result of this phase, and it was found by the Phase 4 tests.**
+
+The V2 contract's canonical pricing pipeline is
+`Base → Package → Quantity → Commitment → Tier → Cycle Price → **Total Prepaid**`
+(`velrepeat-v2-contract-2026-09-30.md:75`), and the plan total is stated as
+"`cycle price × commitment`" (`velrepeat-v2-decision-closure-2026-09-30.md:130`).
+
+`computeCommitmentPricingWithLines` (`backend/lib/velrepeat-pricing.ts:440`) computes
+`subtotal = Σ(unitPrice × quantity)` and applies the rule chain to it. It **never multiplies by
+`commitmentCycles`**. Verified directly:
+
+```
+1 line × 100.00, 4 cycles, rule discount_value "0.10"
+  → basePriceString 100.00   finalPriceString 90.00     ← written to snapshot.total_amount
+  → the commitment the customer bought is 90.00 × 4 = 360.00
+```
+
+So `velrepeat_pricing_snapshots.total_amount` currently holds the **per-cycle** price, while
+`commitment_cycles` sits beside it doing nothing. Phase 4 charging `total_amount` as instructed would
+have taken **a quarter of the agreed money** for a 4-cycle commitment — silently, because the number on
+the row is a perfectly well-formed snapshot total.
+
+**What Phase 4 did about it.** It did **not** silently repair an approved phase, and it did **not**
+invent a pricing model. It added the **commitment coverage guard**
+(`assertCommitmentCoversEveryCycle`), used by BOTH the charge path and the settlement path:
+
+```
+expected_total = toMoneyString( final_price_exact × commitment_cycles )
+require        expected_total === total_amount
+```
+
+Exact bigint-rational arithmetic, one rounding (G2), no float. A snapshot that does not cover all of
+its cycles is **refused** — `409 COMMITMENT_TOTAL_UNVERIFIED` before any session or payment row exists,
+and at settlement it records the money, refuses activation and raises an operator incident. A
+single-cycle commitment is exactly satisfied, so nothing legitimate regresses.
+
+**OWNER DECISION REQUIRED.** The formula is not in doubt; what is an owner decision is whether to
+change a completed, CI-verified phase's money. The minimal correction is one multiplication in the
+canonical engine — total = `roundHalfUp(finalPrice × commitmentCycles, 2)` — which is commutation-safe
+for multiplicative rules (percentage stacking commutes with multiplication) and differs only in where
+the single G2 rounding lands. It must be made in Phase 2/3, with their pricing assertions updated, and
+re-approved. **Phase 4 deliberately does not do it.**
+
+**Effect on this phase's usability:** single-cycle plans work end to end. Multi-cycle plans are
+refused until the owner corrects the engine. That is deliberate: a refusal is recoverable, an
+undercharged customer is not.
 
 ## 1. What this phase is
 
@@ -216,8 +267,11 @@ exactly one `paid` payment and exactly one `PLAN_ACTIVATED`.
 
 ## 9. Amount and currency verification
 
-- Source: `velrepeat_pricing_snapshots.total_amount` (Phase 3, immutable), read inside the validating
-  transaction. Never from the request body — structurally asserted.
+- Source: `velrepeat_pricing_snapshots.total_amount` (Phase 3, immutable), read through ONE shared
+  helper used by both the charge and the settlement path. Never from the request body — structurally
+  asserted.
+- **The commitment coverage guard runs before any of it** (see §0): a snapshot whose total does not
+  equal `final_price_exact × commitment_cycles` is refused outright.
 - Conversion: `parseDecimal` → `roundHalfUp(value, 2)` (bigint-rational, **one** rounding, G2) →
   integer minor units. No IEEE-754 value participates. Agrees with the order path's
   `toStripeMinor()` for every 2-dp value (asserted).
@@ -265,6 +319,8 @@ DB-gated)**, covering payment creation, webhook, activation and security as spec
   one-active-attempt-per-plan / the XOR constraint, each proven to write nothing;
 - webhook: paid session, unpaid session, async success, PI success, failure, cancellation, expiry,
   invalid signature, wrong amount, wrong currency, default-COD method, unknown plan, unusable id;
+- **the commitment coverage guard**: a Phase 3 per-cycle snapshot is refused by the endpoint (no
+  session, no payment row) and refused again by the webhook (money recorded, no activation, incident);
 - activation: exactly once, real method, `payment_method_ref`, `started_at`, `next_run_at`,
   `order_id IS NULL`, and **0 orders / 0 cycles / 0 runs / 1 activation / 1 paid payment**;
 - idempotency: same event id, different event id for the same charge, **5 concurrent deliveries**;
@@ -277,8 +333,8 @@ Plus two suites updated (§14) and the whole repository suite.
 
 | Check | Result |
 |---|---|
-| `bun run test` | **1536 pass / 241 skip / 0 fail** (1777 tests, 58 files) |
-| phase-4 suite (local) | **34 pass / 21 skip / 0 fail** |
+| `bun run test` | **1537 pass / 243 skip / 0 fail** (1780 tests, 58 files) |
+| phase-4 suite (local) | **35 pass / 23 skip / 0 fail** (58 tests) |
 | `cd backend && bunx tsc --noEmit` | clean |
 | `bun run typecheck` | **4/4** (velshop, velseller, velcenter, velnox) |
 | `bun run build:apps` | **4/4** |
@@ -314,21 +370,28 @@ No assertion was weakened to make a test pass; each was re-pointed at the invari
 
 ## 15. Production DB status
 
-**BLOCKED — Neon quota.**
+**APPLIED.** The Neon quota blocker documented through Phase 3 has cleared.
 
-- Migration **051 is committed but NOT applied to production**. 048, 049 and 050 were already
-  unapplied before this phase (the documented quota blocker), so a Push to `main` triggers
-  *Migrate Neon Database* against a project that still answers
-  `ERROR: Your account or project has exceeded the quota`.
-- Therefore in production today: `payments.plan_id` does not exist, the XOR CHECK does not exist,
-  and a V2 plan payment **cannot be recorded**.
-- Consequence: **the Phase 4 backend must not be deployed before migration 051 is applied.**
-  Deploying it first would make `INSERT INTO payments (plan_id, …)` fail with `42703` at payment
-  creation (fail-closed: it would refuse, not mis-charge) and would make webhook settlement fail
-  closed as well.
-- **Owner unblock:** clear the Neon quota and run *Migrate Neon Database*, or paste
-  `db/migrations/051_payments_velrepeat_v2_plan_parent.sql` into the Neon SQL Editor (additive,
-  idempotent, re-runnable).
+CI run **`36890776967` ("Migrate Neon Database") — SUCCESS**, on commit `5bf4a49`. It applied the whole
+backlog and verified it in `schema_migrations`:
+
+| Migration | Applied (UTC) |
+|---|---|
+| `048_payment_reservation` | 2026-10-01 16:17:06 |
+| `049_payment_incidents` | 2026-10-01 16:17:11 |
+| `050_orders_status_check` | 2026-10-01 16:17:15 |
+| **`051_payments_velrepeat_v2_plan_parent`** | **2026-10-01 16:17:21** (`schema_migrations` id 67) |
+
+The full list also confirms **`034_velrepeat_v2`** and **`035_velrepeat_plans_status_fix`** are
+recorded, so the Phase 1–3 V2 tables exist in production. This is a **schema-verified** result from a
+real migration run, not an inference.
+
+**Caveat (unchanged, documented in `payment.md`):** this proves the state of the database that
+`NEON_DATABASE_URL` points at. Whether that is byte-for-byte the database the deployed Render backend
+uses has never been independently established.
+
+**Deploy-order note:** 051 was applied by the same push that carried the Phase 4 code, so the schema is
+ahead of nothing — the backend can be deployed without a `42703`.
 
 **Stripe E2E: NOT executed.** No test credential exists in any workspace. No PaymentIntent, no
 PromptPay QR, no real webhook delivery and no refund round trip has ever been run. What *is* proven
@@ -336,13 +399,15 @@ is the backend half: signature verification accept **and** reject, the event cla
 verification, idempotency and activation — against synthetic events signed locally with a fake
 `whsec_` value.
 
-**This phase is NOT production-ready.**
+**This phase is NOT production-ready** — §0 (multi-cycle commitments refused pending the owner
+decision) and the Stripe E2E gap.
 
 ---
 
 ## 16. Known limitations
 
-1. **Migration 051 unapplied** — see §15. Blocks any real payment.
+1. **Multi-cycle commitments cannot be paid** — §0. The Phase 3 engine freezes the cycle price, so any
+   commitment over 1 cycle is refused. This is the phase's blocking limitation.
 2. **No Stripe E2E** — the provider round trip is unverified.
 3. **No refund path for a plan** — `refunds.order_id` is still `NOT NULL`. A paid commitment cannot be
    refunded yet. The refund formula is `OWNER FORMULA REQUIRED` (Phase 9) and no plan refund writer

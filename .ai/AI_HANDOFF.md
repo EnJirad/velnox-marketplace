@@ -781,14 +781,28 @@ payment row re-reads `paid` AND amount/currency verify AND the recorded method i
 `calculateNextRunAt(started_at, …)` (same canonical derivation V1 uses); a duplicate delivery does not
 re-stamp them. **0 orders, 0 cycles, 0 reservations, 0 fulfillment.**
 
-**Verified:** `bun run test` 1536 pass / 241 skip / 0 fail (1777 tests, 58 files); phase-4 suite 34 pass /
-21 skip (55 tests) locally; backend tsc 0; typecheck 4/4; build:apps 4/4; `git diff --check` clean; SQL
-files identical. The 21 DB-gated tests SKIP locally (no PostgreSQL) — CI `postgres:16` is the only real
-DB execution. **PRODUCTION DB: BLOCKED — Neon quota.** 051 is committed but NOT applied (048–050 were
-already unapplied); deploying the backend before the migration makes payment creation and settlement
-fail closed on `42703`. No backend route deletes users or plans, so the NO ACTION plan FK blocks
-nothing today. **Stripe E2E NOT executed** (no test credential anywhere). **NOT production-ready.**
+**Verified:** `bun run test` 1537 pass / 243 skip / 0 fail (1780 tests, 58 files); phase-4 suite 35 pass /
+23 skip (58 tests) locally; backend tsc 0; typecheck 4/4; build:apps 4/4; `git diff --check` clean; SQL
+files identical. DB-gated tests SKIP locally (no PostgreSQL) — CI `postgres:16` is the only real DB
+execution. **PRODUCTION DB: APPLIED** — the Neon quota blocker has cleared; CI run `36890776967`
+applied 048, 049, 050 and **051** (`schema_migrations` id 67, 2026-10-01 16:17 UTC), and the list
+confirms `034_velrepeat_v2` was already there, so the V2 tables exist. **Stripe E2E NOT executed** (no
+test credential anywhere). **NOT production-ready** — see the blocker below.
 Audit: `.ai/tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md`.
+
+> **BLOCKER — Phase 3 froze the CYCLE PRICE, not the TOTAL PREPAID (owner decision required).**
+> The contract pipeline ends `… → Cycle Price → **Total Prepaid**` (`velrepeat-v2-contract-2026-09-30.md:75`)
+> and the plan total is `cycle price × commitment` (`velrepeat-v2-decision-closure-2026-09-30.md:130`),
+> but `computeCommitmentPricingWithLines` (`lib/velrepeat-pricing.ts:440`) **never multiplies by
+> `commitmentCycles`**. Proven: 1 line × 100.00, 4 cycles, 10% rule → `total_amount = 90.00` where the
+> commitment is 360.00 — charging it would take **a quarter** of the money, silently. Phase 4 added
+> `assertCommitmentCoversEveryCycle` (`total == final_price_exact × commitment_cycles`, exact, one
+> rounding) used by BOTH the charge and the settlement path: an under-covered snapshot is **refused**
+> (409 `COMMITMENT_TOTAL_UNVERIFIED`) before any session/payment row, and at settlement the money is
+> recorded, activation refused and an incident raised. **Multi-cycle plans therefore cannot be paid
+> until the owner fixes Phase 2/3**; single-cycle plans work end to end. The fix is one multiplication
+> in the canonical engine (commutation-safe for multiplicative rules) + Phase 3 assertion updates —
+> Phase 4 deliberately did not make it, because it changes an approved phase's money.
 
 **Carried into later phases:** V1 `pause/resume/cancel` + `GET /api/velrepeat/plans` can now reach an
 **active** V2 plan (they cannot touch a `draft`) → V2 lifecycle routes are Phase 5/9 work. Phase 8 must

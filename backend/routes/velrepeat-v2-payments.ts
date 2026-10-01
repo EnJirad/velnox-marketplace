@@ -81,7 +81,15 @@ import Stripe from "stripe";
 import { query, withTransaction } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calculateNextRunAt, type FrequencyType } from "../jobs/velrepeat-scheduler.js";
-import { parseDecimal, roundHalfUp, isNegative, isZero } from "../lib/money.js";
+import {
+  isNegative,
+  isZero,
+  makeRational,
+  multiply,
+  parseDecimal,
+  roundHalfUp,
+  toMoneyString,
+} from "../lib/money.js";
 import {
   PAYMENT_METHOD,
   PAYMENT_STATUS,
@@ -221,6 +229,94 @@ export interface PlanCommitment {
 }
 
 /**
+ * THE COMMITMENT COVERAGE GUARD — the one check that stops this phase from
+ * charging the wrong amount.
+ *
+ * WHAT IT CATCHES
+ * The canonical pricing pipeline ends `… → Cycle Price → Total Prepaid`
+ * (`velrepeat-v2-contract-2026-09-30.md:75`), and the plan total is
+ * "`cycle price × commitment`" (decision closure `:130`). The Phase 3 engine
+ * currently freezes only the CYCLE PRICE: `total_amount` is the composition's
+ * price after the commitment rules, with NO multiplication by
+ * `commitment_cycles`. For a 100 THB cycle at a 10% commitment discount over 4
+ * cycles it writes `total_amount = 90.00` where the commitment the customer
+ * bought is `360.00`.
+ *
+ * Charging that snapshot as-is would take a quarter of the money the customer
+ * agreed to pay — and it would be silent, because the number on the row is a
+ * perfectly well-formed snapshot total.
+ *
+ * WHY A GUARD AND NOT A SILENT FIX
+ * The formula is not in doubt; correcting the Phase 3 engine would change the
+ * money an already-approved, CI-verified phase produces, which is an owner
+ * decision, not this phase's to take. So this phase does not invent a pricing
+ * model and does not quietly repair another phase. It REFUSES to charge a
+ * commitment whose snapshot total does not cover all of its cycles, which means
+ * the defect cannot reach a customer. Single-cycle commitments are unaffected:
+ * the guard is exactly satisfied when `commitment_cycles = 1`.
+ *
+ * The arithmetic is exact: Phase 3 stored the UNROUNDED per-cycle final as
+ * `metadata.final_price_exact`, so the expected total is that value times the
+ * cycle count with ONE rounding at the end (G2) — no float, no drift.
+ */
+export function assertCommitmentCoversEveryCycle(snapshot: {
+  readonly totalAmount: string;
+  readonly commitmentCycles: number;
+  readonly finalPriceExact: string | null;
+}): void {
+  const cycles = snapshot.commitmentCycles;
+  if (!Number.isInteger(cycles) || cycles <= 0) {
+    throw new RepeatPlanPaymentError(
+      409,
+      "COMMITMENT_TOTAL_UNVERIFIED",
+      "This plan's commitment size cannot be verified, so it cannot be paid.",
+    );
+  }
+  if (snapshot.finalPriceExact === null) {
+    throw new RepeatPlanPaymentError(
+      409,
+      "COMMITMENT_TOTAL_UNVERIFIED",
+      "This plan's committed total cannot be verified, so it cannot be paid.",
+    );
+  }
+  const perCycle = parseDecimal(snapshot.finalPriceExact);
+  const expectedTotal = toMoneyString(multiply(perCycle, makeRational(BigInt(cycles), 1n)));
+  if (expectedTotal !== toMoneyString(parseDecimal(snapshot.totalAmount))) {
+    throw new RepeatPlanPaymentError(
+      409,
+      "COMMITMENT_TOTAL_UNVERIFIED",
+      "This plan's committed total does not cover every prepaid cycle, so it cannot be paid.",
+    );
+  }
+}
+
+/** Read the Phase 3 snapshot fields the coverage guard needs. */
+export async function readCommitmentSnapshot(
+  client: PoolClient,
+  planId: string,
+): Promise<{ id: string; currency: string; totalAmount: string; commitmentCycles: number; finalPriceExact: string | null }> {
+  const result = await client.query(
+    `SELECT id, currency, total_amount, commitment_cycles, metadata
+       FROM velrepeat_pricing_snapshots
+      WHERE plan_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+    [planId],
+  );
+  const row = result.rows[0];
+  if (!row) return null as never;
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  const exact = metadata.final_price_exact;
+  return {
+    id: String(row.id),
+    currency: String(row.currency ?? "").toUpperCase(),
+    totalAmount: String(row.total_amount),
+    commitmentCycles: Number(row.commitment_cycles),
+    finalPriceExact: typeof exact === "string" && exact.trim() !== "" ? exact.trim() : null,
+  };
+}
+
+/**
  * Load the plan and the ONE amount it may ever be charged, under the plan
  * row lock.
  *
@@ -247,15 +343,7 @@ export async function loadPayableCommitment(
   // The newest snapshot is the commitment of record. Phase 3 writes exactly
   // one per plan; ordering is defensive so a future re-quote cannot silently
   // change what an existing draft is charged.
-  const snapshotResult = await client.query(
-    `SELECT id, currency, total_amount
-       FROM velrepeat_pricing_snapshots
-      WHERE plan_id = $1
-      ORDER BY created_at DESC, id DESC
-      LIMIT 1`,
-    [planId],
-  );
-  const snapshot = snapshotResult.rows[0];
+  const snapshot = await readCommitmentSnapshot(client, planId);
   if (!snapshot) {
     throw new RepeatPlanPaymentError(
       409,
@@ -264,7 +352,12 @@ export async function loadPayableCommitment(
     );
   }
 
-  const snapshotCurrency = String(snapshot.currency ?? "").toUpperCase();
+  // REFUSE rather than charge a quarter of a commitment (see the guard's
+  // documentation). This is the check that makes it impossible for the Phase 3
+  // per-cycle snapshot to be charged as if it were the whole commitment.
+  assertCommitmentCoversEveryCycle(snapshot);
+
+  const snapshotCurrency = snapshot.currency;
   const planCurrency = String(plan.currency ?? "").toUpperCase();
   if (snapshotCurrency !== VELREPEAT_CURRENCY || planCurrency !== snapshotCurrency) {
     throw new RepeatPlanPaymentError(
@@ -274,7 +367,7 @@ export async function loadPayableCommitment(
     );
   }
 
-  const amountMinor = planTotalToStripeMinor(snapshot.total_amount);
+  const amountMinor = planTotalToStripeMinor(snapshot.totalAmount);
   if (amountMinor === null) {
     throw new RepeatPlanPaymentError(
       409,
@@ -290,8 +383,8 @@ export async function loadPayableCommitment(
     frequencyType: String(plan.frequency_type) as FrequencyType,
     intervalValue: Number(plan.interval_value),
     currency: snapshotCurrency,
-    snapshotId: String(snapshot.id),
-    totalAmount: String(snapshot.total_amount),
+    snapshotId: snapshot.id,
+    totalAmount: snapshot.totalAmount,
     amountMinor,
   };
 }
@@ -988,15 +1081,7 @@ export async function settlePlanCharge(charge: PlanChargeEvent): Promise<Settlem
     }
 
     // ── Settlement ─────────────────────────────────────────────────────────
-    const snapshotResult = await client.query(
-      `SELECT id, currency, total_amount
-         FROM velrepeat_pricing_snapshots
-        WHERE plan_id = $1
-        ORDER BY created_at DESC, id DESC
-        LIMIT 1`,
-      [charge.planId],
-    );
-    const snapshot = snapshotResult.rows[0];
+    const snapshot = await readCommitmentSnapshot(client, charge.planId);
     if (!snapshot) {
       throw new RepeatPlanPaymentError(
         409,
@@ -1004,8 +1089,20 @@ export async function settlePlanCharge(charge: PlanChargeEvent): Promise<Settlem
         "This plan has no pricing snapshot and cannot be settled.",
       );
     }
-    const expectedMinor = planTotalToStripeMinor(snapshot.total_amount);
-    const snapshotCurrency = String(snapshot.currency ?? "").toUpperCase();
+    // The SAME coverage guard the creation path runs. A settlement must not be
+    // able to activate a plan whose committed total does not cover every cycle
+    // just because the row was written by something other than this endpoint.
+    // It is caught here, refused, and recorded — never thrown, because Stripe
+    // cannot fix bad data by redelivering.
+    let coverageRefusal: string | null = null;
+    try {
+      assertCommitmentCoversEveryCycle(snapshot);
+    } catch (error) {
+      if (!(error instanceof RepeatPlanPaymentError)) throw error;
+      coverageRefusal = error.code;
+    }
+    const expectedMinor = planTotalToStripeMinor(snapshot.totalAmount);
+    const snapshotCurrency = snapshot.currency;
 
     const amountMatches = expectedMinor !== null && charge.amountMinor === expectedMinor;
     const currencyMatches =
@@ -1030,9 +1127,10 @@ export async function settlePlanCharge(charge: PlanChargeEvent): Promise<Settlem
       charge,
       attempt,
       planStatus: String(plan.status),
-      snapshotId: String(snapshot.id),
+      snapshotId: snapshot.id,
       amountMatches,
       currencyMatches,
+      coverageRefusal,
     });
     if (refusal) return refusal;
 
@@ -1110,7 +1208,7 @@ export async function settlePlanCharge(charge: PlanChargeEvent): Promise<Settlem
           method: attempt.method,
           provider_payment_id: charge.intentId ?? null,
           checkout_session_id: charge.sessionId,
-          snapshot_id: String(snapshot.id),
+          snapshot_id: snapshot.id,
           amount: attempt.amount,
           currency: attempt.currency,
           commitment_cycles: null,
@@ -1143,17 +1241,20 @@ async function refuseUnverifiedCharge(
     readonly snapshotId: string;
     readonly amountMatches: boolean;
     readonly currencyMatches: boolean;
+    readonly coverageRefusal: string | null;
   },
 ): Promise<SettlementResult | null> {
   const { charge, attempt, planStatus, amountMatches, currencyMatches } = input;
 
-  const reason: LatePaymentReason | null = !amountMatches
-    ? "PLAN_AMOUNT_MISMATCH"
-    : !currencyMatches
-      ? "PLAN_CURRENCY_MISMATCH"
-      : attempt.method === null || !isPrepaidStripeMethod(attempt.method)
-        ? "PLAN_NOT_ACTIVATABLE"
-        : null;
+  const reason: LatePaymentReason | null = input.coverageRefusal
+    ? "PLAN_NOT_ACTIVATABLE"
+    : !amountMatches
+      ? "PLAN_AMOUNT_MISMATCH"
+      : !currencyMatches
+        ? "PLAN_CURRENCY_MISMATCH"
+        : attempt.method === null || !isPrepaidStripeMethod(attempt.method)
+          ? "PLAN_NOT_ACTIVATABLE"
+          : null;
 
   if (!reason) return null;
 
@@ -1172,16 +1273,19 @@ async function refuseUnverifiedCharge(
 
   console.error(
     `[velrepeat-v2] REFUSED activation of plan ${charge.planId}: ${reason} ` +
-      `(payment ${attempt.id}, expected snapshot ${input.snapshotId}). ` +
+      `(payment ${attempt.id}, expected snapshot ${input.snapshotId}` +
+      `${input.coverageRefusal ? `, ${input.coverageRefusal}` : ""}). ` +
       "Money recorded; manual review required.",
   );
 
   return {
-    outcome: !amountMatches
-      ? "rejected_amount"
-      : !currencyMatches
-        ? "rejected_currency"
-        : "rejected_method",
+    outcome: input.coverageRefusal
+      ? "rejected_state"
+      : !amountMatches
+        ? "rejected_amount"
+        : !currencyMatches
+          ? "rejected_currency"
+          : "rejected_method",
     paymentId: attempt.id,
     planId: charge.planId,
   };
