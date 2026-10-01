@@ -661,9 +661,17 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
   let packageId = "";
   let planId = "";
 
-  /** 4 cycles × 100 THB with a 10% commitment discount = 360.00 THB. */
+  /** 4 cycles × 100 THB with a 10% commitment discount = 360.00 THB prepaid. */
   const COMMITMENT_TOTAL = "360.00";
   const COMMITMENT_MINOR = 36000;
+  /**
+   * What the Phase 3 route ACTUALLY freezes for that purchase: the CYCLE
+   * price, because `computeCommitmentPricingWithLines` does not multiply by
+   * `commitmentCycles`. CI run 36892375150 produced exactly this and failed a
+   * "360.00" expectation — independent confirmation of audit §0. The
+   * difference between the two numbers is the whole defect.
+   */
+  const PHASE3_CYCLE_PRICE = "90.00";
 
   let previousRules: string | null = null;
   let previousRulesExisted = false;
@@ -942,7 +950,7 @@ await query(
     });
     planId = body.data!.plan!.id;
     planIds.push(planId);
-    expect(body.data!.pricing!.finalPrice).toBe(COMMITMENT_TOTAL);
+    expect(body.data!.pricing!.finalPrice).toBe(PHASE3_CYCLE_PRICE);
   });
 
   afterAll(async () => {
