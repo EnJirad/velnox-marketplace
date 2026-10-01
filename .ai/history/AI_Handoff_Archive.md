@@ -204,6 +204,12 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-30-payments-and-audit-record.md`](./archive/AI_Handoff-2026-09-30-payments-and-audit-record.md) | handoff §37–§48 — migration 048's read-path repair, the Stripe TEST-mode E2E attempts (TASK 006/007) and their BLOCKED verdicts, the CI guard fix, the §42 full-system audit narrative, §43 inventory CRITICAL #1/#2, §44 the paid-order cancellation guard, §46 HIGH #4 payment attempt identity, §47 HIGH #5 late-payment operator flow, §48 MEDIUM #9 `orders.status` CHECK | Moved **verbatim** on 2026-09-30 so the live handoff could return under its ~40 KB edit ceiling while the VelRepeat **Prepaid Repeat Commerce** pass (**§51**) was appended. Several of these were already superseded by earlier archive files (§42.1–§42.5 in `AI_Handoff-2026-09-29-audit-findings-detail.md`, §38–§41 in `AI_Handoff-2026-09-29-part2-and-order-surfaces.md`). The live status of every finding is the compact index in **§51**; what remains true of them is restated there and in §6 "Remaining gaps / open items" |
 
+### 2026-10-01 — VelRepeat V2 Phase 4 (Stripe prepaid plan-level payment)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`.ai/tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md`](../tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md) | handoff **§60** — the prepaid PLAN payment, migration 051 (`payments.plan_id` + exactly-one-parent), webhook settlement and the payment-gated `draft → active` | Q13=B/Q14 implemented. Current state is restated in **§60**; production DB remains **BLOCKED — Neon quota** (051 committed, not applied), so this is **not production-ready** |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an

@@ -708,9 +708,20 @@ describe("Phase 3 — the schema and the V1 scheduler (structural)", () => {
     }
   });
 
-  test("no migration 051 was created and db/run-update.sql was not recreated", () => {
+  test("Phase 3 introduced no migration of its own; V0051 belongs to Phase 4", () => {
     const migrations = readdirSync(join(root, "db", "migrations"));
-    expect(migrations.filter((name) => name.startsWith("051"))).toEqual([]);
+    // Phase 3 wrote only columns that already existed. The single migration
+    // above its baseline is V0051 — the VelRepeat V2 PLAN PAYMENT parent
+    // (Phase 4, owner decision Q13=B) — and it touches ONLY the payment
+    // tables: it does not alter `velrepeat_plans`, a pricing snapshot, or any
+    // other table Phase 3 reads or writes.
+    expect(migrations.filter((name) => name.startsWith("051"))).toEqual([
+      "051_payments_velrepeat_v2_plan_parent.sql",
+    ]);
+    const v51 = read("db/migrations/051_payments_velrepeat_v2_plan_parent.sql");
+    expect(v51).not.toMatch(/ALTER TABLE velrepeat_plans/i);
+    expect(v51).not.toMatch(/velrepeat_pricing_snapshots/i);
+    expect(v51).not.toMatch(/velrepeat_items/i);
     expect(existsSync(join(root, "db", "run-update.sql"))).toBe(false);
   });
 });
@@ -858,12 +869,15 @@ describe("Phase 3 — V1 regression (structural)", () => {
   test("no V1 → V2 migration or rewrite was introduced", () => {
     const migrations = readdirSync(join(root, "db", "migrations"));
     // 024 is the legacy V1 buy-ahead migration; 034/035/044 are the V2 plan
-    // migrations. Phase 3 adds none of them — and creates no 051.
+    // migrations. Phase 3 adds none of them. V0051 is Phase 4's plan-payment
+    // parent (Q13=B) and is the only later addition to this list — it adds a
+    // parent to `payments`, and rewrites no VelRepeat V1 table.
     expect(migrations.filter((name) => /velrepeat/i.test(name)).sort()).toEqual([
       "024_velrepeat_packages_deliveries_customer_events.sql",
       "034_velrepeat_v2.sql",
       "035_velrepeat_plans_status_fix.sql",
       "044_velrepeat_plans_status_constraint.sql",
+      "051_payments_velrepeat_v2_plan_parent.sql",
     ]);
   });
 });

@@ -45,6 +45,13 @@ import { recordLatePaymentIncident, type LatePaymentReason } from "../lib/paymen
 // The ONE order-number generator; stripe.ts used to carry a second, unused copy.
 import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
+// The VelRepeat V2 prepaid plan-payment dispatcher. It is imported here (and
+// only its exported entry point is used) so the webhook stays ONE endpoint with
+// ONE signature check, ONE event claim and ONE redelivery policy. The module
+// in turn uses this file's `stripeServerClient()` / `sessionConfirmsPayment`,
+// so the two modules form a cycle whose references are ALL inside function
+// bodies — nothing is read from either module at module-evaluation time.
+import { handleVelRepeatV2PaymentEvent } from "./velrepeat-v2-payments.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { writeAuditLog, auditClientIp } from "../lib/audit-log.js";
@@ -85,6 +92,23 @@ function getStripe(): Stripe | null {
   const client = new Stripe(key, { apiVersion: "2025-08-27.basil" as never });
   cachedClient = { key, client };
   return client;
+}
+
+/**
+ * The ONE Stripe client this process uses, for callers outside this module.
+ *
+ * VelRepeat V2's prepaid PLAN payment (routes/velrepeat-v2-payments.ts) needs
+ * the same test-mode client and the same lazy, key-derived caching this module
+ * owns. Exporting the accessor keeps that a single client instead of a second
+ * configuration: a deployment therefore still has exactly one Stripe
+ * credential, one mode decision (`lib/payment-config.ts`) and one key cache.
+ *
+ * It returns `null` whenever `stripeStatus()` is not usable, so a caller can
+ * never reach Stripe with a live key or without a webhook secret. The secret
+ * itself is never returned — only the client.
+ */
+export function stripeServerClient(): Stripe | null {
+  return getStripe();
 }
 
 /**
@@ -194,8 +218,14 @@ function fail(res: Response, status: number, code: string, message: string): voi
   res.status(status).json({ success: false, error: { code, message } });
 }
 
-/** Money → Stripe minor units. `NaN` when the value is not a usable number. */
-function toMinor(amount: unknown): number {
+/**
+ * Money → Stripe minor units. `NaN` when the value is not a usable number.
+ *
+ * Exported so the VelRepeat V2 plan payment derives its charge the same way an
+ * order does (there is one rule for THB ↔ minor units, not two). THB is a
+ * two-decimal Stripe currency, so one baht is 100 minor units.
+ */
+export function toStripeMinor(amount: unknown): number {
   const n = Number(amount);
   if (!Number.isFinite(n)) return Number.NaN;
   return Math.round(n * 100);
@@ -266,7 +296,7 @@ export function buildCheckoutLineItems(
   let lineItemsMinor = 0;
 
   for (const item of items) {
-    const unitAmount = toMinor(item.price);
+    const unitAmount = toStripeMinor(item.price);
     const quantity = Number(item.quantity);
     if (!Number.isFinite(unitAmount) || unitAmount <= 0) continue;
     if (!Number.isInteger(quantity) || quantity <= 0) continue;
@@ -318,8 +348,8 @@ export function buildCheckoutLineItems(
  * amount against this value and refuses anything larger.
  */
 export function refundableMinorFor(paidAmount: unknown, alreadyRefunded: unknown): number {
-  const paid = toMinor(paidAmount);
-  const refunded = toMinor(alreadyRefunded ?? 0);
+  const paid = toStripeMinor(paidAmount);
+  const refunded = toStripeMinor(alreadyRefunded ?? 0);
   if (!Number.isFinite(paid) || !Number.isFinite(refunded)) return 0;
   return Math.max(0, paid - refunded);
 }
@@ -782,6 +812,17 @@ async function syncRefundFromStripe(
  * — a sync that did not happen must never be acknowledged as if it did.
  */
 async function handleStripeEvent(event: Stripe.Event): Promise<void> {
+  // ── VelRepeat V2 prepaid PLAN payments ─────────────────────────────────
+  // Dispatched FIRST, before any order logic. A V2 plan charge carries its own
+  // scope marker and its own parent (`payments.plan_id`), so it is NOT an order
+  // payment: letting it fall through would find no `metadata.orderId`, log
+  // "no resolvable order" and silently drop a verified commitment payment.
+  //
+  // The marker is only ever written by our own session-creation code, and only
+  // events carrying it divert — every V1 event takes exactly the path it took
+  // before this module existed.
+  if (await handleVelRepeatV2PaymentEvent(event)) return;
+
   switch (event.type) {
     // ── Checkout Session ────────────────────────────────────────────────────
     case "checkout.session.completed": {
@@ -1130,7 +1171,7 @@ export function setupStripeRoutes(app: Express): void {
         return;
       }
 
-      const expectedMinor = toMinor(order.total_amount);
+      const expectedMinor = toStripeMinor(order.total_amount);
       if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
         fail(res, 400, "INVALID_AMOUNT", "The order total is not payable.");
         return;
@@ -1637,7 +1678,7 @@ export function setupStripeRoutes(app: Express): void {
         return;
       }
 
-      const alreadyRefundedMinor = toMinor(payment.refunded_amount ?? 0);
+      const alreadyRefundedMinor = toStripeMinor(payment.refunded_amount ?? 0);
       const refundableMinor = refundableMinorFor(payment.amount, payment.refunded_amount ?? 0);
       if (refundableMinor <= 0) {
         fail(res, 409, "NOTHING_TO_REFUND", "This payment has already been fully refunded.");
@@ -1646,7 +1687,7 @@ export function setupStripeRoutes(app: Express): void {
 
       let requestedMinor = refundableMinor;
       if (body.amount !== undefined && body.amount !== null && body.amount !== "") {
-        requestedMinor = toMinor(body.amount);
+        requestedMinor = toStripeMinor(body.amount);
       }
       if (!Number.isFinite(requestedMinor) || !Number.isInteger(requestedMinor) || requestedMinor <= 0) {
         fail(res, 400, "VALIDATION_ERROR", "amount must be a positive number.");
@@ -1937,4 +1978,4 @@ export function setupStripeRoutes(app: Express): void {
 }
 
 /** Exported for tests: the reconciler that guarantees the charged sum. */
-export const __testOnly = { toMinor, orderNumber: generateOrderNumber };
+export const __testOnly = { toMinor: toStripeMinor, orderNumber: generateOrderNumber };

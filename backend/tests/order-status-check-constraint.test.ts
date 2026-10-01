@@ -221,12 +221,14 @@ describe("order status CHECK — declared in both canonical files and in its mig
     expect(adding).toEqual(["050_orders_status_check.sql"]);
   });
 
-  test("V0050 is the highest migration number, taken from an unused one", () => {
+  test("V0050 took the next free number, and later migrations did not reuse it", () => {
     // The number was read from the repository, not assumed: 049 was the highest
-    // before this task, so the constraint took the next free number.
+    // before this task, so the constraint took the next free number. V0051
+    // (VelRepeat V2 plan payment parent) was added by a later task and takes
+    // the number after it — what must never happen is a REUSED number.
     const files = readdirSync(join(root, "db/migrations")).filter((f) => /^\d{3}_/.test(f));
     const numbers = files.map((f) => Number(f.slice(0, 3)));
-    expect(Math.max(...numbers)).toBe(50);
+    expect(Math.max(...numbers)).toBeGreaterThanOrEqual(50);
     // 050 must be used exactly once — a second 050 would be skipped by a
     // prefix-keyed runner, which is the V0035 failure mode.
     expect(numbers.filter((n) => n === 50).length).toBe(1);

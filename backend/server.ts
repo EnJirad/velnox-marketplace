@@ -21,6 +21,7 @@ import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
 import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
 import { setupVelRepeatPackageRoutes } from "./routes/velrepeat-packages.js";
 import { setupVelRepeatV2PlanRoutes } from "./routes/velrepeat-v2-plans.js";
+import { setupVelRepeatV2PaymentRoutes } from "./routes/velrepeat-v2-payments.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupCenterRoutes } from "./routes/center.js";
@@ -481,6 +482,13 @@ setupVelRepeatPackageRoutes(app);
 
 // ─── VelRepeat V2 (package → draft plan → pricing snapshot, Phase 3) ───
 setupVelRepeatV2PlanRoutes(app);
+
+// ─── VelRepeat V2 (prepaid plan-level Stripe payment, Phase 4) ───
+// Only the payment-initiation endpoint is mounted here. The settlement half of
+// this phase runs inside the EXISTING /api/payments/stripe/webhook handler
+// (routes/stripe.ts), so there is still exactly one signature check, one event
+// claim and one redelivery policy for all Stripe events.
+setupVelRepeatV2PaymentRoutes(app);
 
 // ─── Chat, Messaging & Notifications ────────────────────
 setupChatRoutes(app);

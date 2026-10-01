@@ -38,10 +38,12 @@
  *   • Any FX conversion. G2 fixes the V2 currency to THB.
  *   • Any currency table. `currency` is a plain TEXT column with a 'THB'
  *     default and no exponent metadata anywhere in the schema.
- *   • Any Stripe-boundary conversion. `backend/routes/stripe.ts` owns its own
- *     `toMinor()` and this module does not replace it — payment-boundary code
- *     is out of scope for the VelRepeat pricing work, and touching it would be
- *     a payment-architecture change. See the G1/G2 audit for the note.
+ *   • Any Stripe-boundary conversion. `backend/routes/stripe.ts` owns
+ *     `toStripeMinor()` (and the VelRepeat V2 plan payment derives its charge
+ *     through the exact rational arithmetic of THIS module before handing the
+ *     result to that one rule) — this module does not replace it, because
+ *     payment-boundary code belongs to the payment architecture. See the G1/G2
+ *     audit for the note.
  *
  * @see .ai/tasks/audits/velrepeat-v2-g1-g3-implementation-2026-09-30.md
  */

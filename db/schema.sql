@@ -439,7 +439,8 @@ CREATE TABLE IF NOT EXISTS tracking_events (
 CREATE INDEX IF NOT EXISTS idx_tracking_events_shipment ON tracking_events (shipment_id, occurred_at);
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id UUID NOT NULL REFERENCES orders(id),
+  order_id UUID REFERENCES orders(id),
+  plan_id UUID,
   amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'THB',
   method TEXT NOT NULL DEFAULT 'cod',
@@ -454,12 +455,18 @@ CREATE TABLE IF NOT EXISTS payments (
   failure_message TEXT,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT payments_exactly_one_parent_check CHECK (
+    (order_id IS NOT NULL AND plan_id IS NULL)
+    OR (order_id IS NULL AND plan_id IS NOT NULL)
+  )
 );
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_plan ON payments (plan_id) WHERE plan_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payments_provider_session ON payments (provider_checkout_session_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_payment ON payments (provider_payment_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe ON payments (order_id) WHERE provider = 'stripe' AND status IN ('pending', 'requires_action');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe_plan ON payments (plan_id) WHERE provider = 'stripe' AND plan_id IS NOT NULL AND status IN ('pending', 'requires_action');
 CREATE TABLE IF NOT EXISTS payment_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   provider TEXT NOT NULL,
@@ -479,7 +486,8 @@ CREATE TABLE IF NOT EXISTS payment_incidents (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   dedupe_key TEXT NOT NULL UNIQUE,
   provider TEXT NOT NULL DEFAULT 'stripe',
-  order_id UUID NOT NULL REFERENCES orders(id),
+  order_id UUID REFERENCES orders(id),
+  plan_id UUID,
   payment_id UUID REFERENCES payments(id) ON DELETE SET NULL,
   provider_payment_intent_id TEXT,
   provider_checkout_session_id TEXT,
@@ -493,9 +501,14 @@ CREATE TABLE IF NOT EXISTS payment_incidents (
   resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
   resolved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT payment_incidents_exactly_one_parent_check CHECK (
+    (order_id IS NOT NULL AND plan_id IS NULL)
+    OR (order_id IS NULL AND plan_id IS NOT NULL)
+  )
 );
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_order ON payment_incidents (order_id);
+CREATE INDEX IF NOT EXISTS idx_payment_incidents_plan ON payment_incidents (plan_id) WHERE plan_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_status ON payment_incidents (status);
 CREATE INDEX IF NOT EXISTS payment_incidents_dedupe_key ON payment_incidents (dedupe_key);
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_intent ON payment_incidents (provider_payment_intent_id);
@@ -845,6 +858,10 @@ CREATE TABLE IF NOT EXISTS velrepeat_plans (
 CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user ON velrepeat_plans (user_id);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user_status ON velrepeat_plans (user_id, status);
 CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_due ON velrepeat_plans (status, next_run_at) WHERE status = 'active';
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_plan_id_fkey;
+ALTER TABLE payments ADD CONSTRAINT payments_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES velrepeat_plans(id);
+ALTER TABLE payment_incidents DROP CONSTRAINT IF EXISTS payment_incidents_plan_id_fkey;
+ALTER TABLE payment_incidents ADD CONSTRAINT payment_incidents_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES velrepeat_plans(id);
 CREATE TABLE IF NOT EXISTS velrepeat_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
