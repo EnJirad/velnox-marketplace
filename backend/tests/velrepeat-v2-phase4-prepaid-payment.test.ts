@@ -471,6 +471,37 @@ describe("Phase 4 — reading a Stripe event", () => {
     expect(charge?.amountMinor).toBe(36000);
   });
 
+  test("each event carries the identifier its own object actually has", () => {
+    // A PaymentIntent IS the intent and points at no session; a Checkout
+    // Session IS the session and points at its PaymentIntent. Reading the wrong
+    // field yields null, the attempt cannot be resolved, and the plan silently
+    // never activates — Stripe fires `payment_intent.succeeded` for EVERY
+    // charge, so this is the event that matters most.
+    const intentEvent = readPlanChargeEvent(
+      v2Event("payment_intent.succeeded", {
+        id: "pi_direct",
+        metadata: v2Metadata(PLAN_A),
+        amount_received: 36000,
+        currency: "thb",
+      }),
+    );
+    expect(intentEvent?.intentId).toBe("pi_direct");
+    expect(intentEvent?.sessionId).toBeNull();
+
+    const sessionEvent = readPlanChargeEvent(
+      v2Event("checkout.session.completed", {
+        id: "cs_direct",
+        payment_intent: "pi_child",
+        metadata: v2Metadata(PLAN_A),
+        payment_status: "paid",
+        amount_total: 36000,
+        currency: "thb",
+      }),
+    );
+    expect(sessionEvent?.sessionId).toBe("cs_direct");
+    expect(sessionEvent?.intentId).toBe("pi_child");
+  });
+
   test("an unusable plan reference yields no charge at all", () => {
     for (const planId of [undefined, "", "not-a-uuid", 42, null]) {
       const charge = readPlanChargeEvent(
@@ -1189,14 +1220,20 @@ await query(
       ["checkout.session.expired", "cancelled"],
       ["payment_intent.canceled", "cancelled"],
     ] as const) {
-      const paymentId = await recordAttempt(planId);
+      const plan = await makeCoveredPlan(buyerId);
+      const paymentId = await recordAttempt(plan);
       const attempt = await readAttempt(paymentId);
+      // Each event must name the identifier ITS object actually has: a
+      // PaymentIntent event carries the intent id, a session event the session
+      // id. Sending the wrong one resolves no attempt and proves nothing.
+      const isCheckout = type.startsWith("checkout.");
       await deliver(type, {
-        id: attempt.provider_checkout_session_id,
-        metadata: v2Metadata(planId),
+        id: isCheckout ? attempt.provider_checkout_session_id : attempt.provider_payment_id,
+        payment_intent: isCheckout ? attempt.provider_payment_id : undefined,
+        metadata: v2Metadata(plan),
         currency: "thb",
       });
-      expect((await readPlan(planId)).status).toBe("draft");
+      expect((await readPlan(plan)).status).toBe("draft");
       expect((await readAttempt(paymentId)).status).toBe(expected);
       await db().then(({ query }) => query(`DELETE FROM payments WHERE id = $1`, [paymentId]));
     }
@@ -1218,6 +1255,12 @@ await query(
 
   testFn("a snapshot that does not cover every cycle is REFUSED, never charged", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
+    const { query: beforeQuery } = await db();
+    const beforeRows = await beforeQuery(
+      `SELECT COUNT(*)::int AS n FROM payments WHERE plan_id = $1`,
+      [planId],
+    );
+    const paymentCountBefore = beforeRows.rows[0].n as number;
     // `planId` came from the Phase 3 route, whose snapshot freezes the CYCLE
     // PRICE (90.00) rather than the Total Prepaid (360.00). Charging it would
     // take a quarter of the money for a 4-cycle commitment, silently. So the
@@ -1226,14 +1269,26 @@ await query(
     expect(res.status).toBe(409);
     expect(((await res.json()) as any).error.code).toBe("COMMITMENT_TOTAL_UNVERIFIED");
 
+    // This request created nothing. The count is compared to a baseline rather
+    // than to zero, because earlier tests in this block legitimately leave
+    // retired rows behind on the same plan.
     const { query } = await db();
-    const payments = await query(`SELECT COUNT(*)::int AS n FROM payments WHERE plan_id = $1`, [planId]);
-    expect(payments.rows[0].n).toBe(0);
+    const after = await query(`SELECT COUNT(*)::int AS n FROM payments WHERE plan_id = $1`, [planId]);
+    expect(after.rows[0].n).toBe(paymentCountBefore);
     expect((await readPlan(planId)).status).toBe("draft");
   });
 
   testFn("an under-covered snapshot cannot activate a plan through the webhook either", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
+    // Retire any live attempt first: the plan-scoped unique index allows only
+    // one, and this test needs the slot for its own event.
+    await db().then(({ query }) =>
+      query(
+        `UPDATE payments SET status = 'cancelled'
+          WHERE plan_id = $1 AND status IN ('pending', 'requires_action')`,
+        [planId],
+      ),
+    );
     const paymentId = await recordAttempt(planId);
     const attempt = await readAttempt(paymentId);
     await deliver("checkout.session.completed", {

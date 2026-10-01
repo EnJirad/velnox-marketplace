@@ -320,6 +320,12 @@ export async function readCommitmentSnapshot(
  * Load the plan and the ONE amount it may ever be charged, under the plan
  * row lock.
  *
+ * `expectedUserId` is checked IMMEDIATELY after the plan is read and BEFORE the
+ * snapshot is read or any pricing guard runs. That ordering is deliberate: a
+ * pricing refusal (no snapshot, wrong currency, a commitment that does not
+ * cover its cycles) is a fact about ANOTHER CUSTOMER'S PLAN, so answering 403
+ * first is what keeps it from becoming an oracle.
+ *
  * The amount comes from the newest pricing snapshot and from nowhere else:
  * the client's body, the plan's own columns and the live catalog are all
  * irrelevant to it. A snapshot whose currency is not the committed currency, or
@@ -329,6 +335,7 @@ export async function readCommitmentSnapshot(
 export async function loadPayableCommitment(
   client: PoolClient,
   planId: string,
+  expectedUserId?: string,
 ): Promise<PlanCommitment> {
   const planResult = await client.query(
     `SELECT id, user_id, status, frequency_type, interval_value, currency
@@ -338,6 +345,10 @@ export async function loadPayableCommitment(
   const plan = planResult.rows[0];
   if (!plan) {
     throw new RepeatPlanPaymentError(404, "PLAN_NOT_FOUND", "Plan not found");
+  }
+  // Ownership FIRST — before any pricing state is read, let alone refused.
+  if (expectedUserId !== undefined && String(plan.user_id) !== expectedUserId) {
+    throw new RepeatPlanPaymentError(403, "FORBIDDEN", "This plan is not yours.");
   }
 
   // The newest snapshot is the commitment of record. Phase 3 writes exactly
@@ -581,12 +592,8 @@ async function openPlanPaymentSession(
 
   // ── Validation under the plan lock ───────────────────────────────────────
   const existing = await withTransaction(async (client) => {
-    const commitment = await loadPayableCommitment(client, planId);
-    if (commitment.userId !== userId) {
-      // Ownership is checked BEFORE any state is reported, and the plan is
-      // indistinguishable from one that does not exist for the caller.
-      throw new RepeatPlanPaymentError(403, "FORBIDDEN", "This plan is not yours.");
-    }
+    // Ownership is settled inside the loader, before any pricing state is read.
+    const commitment = await loadPayableCommitment(client, planId, userId);
     assertPayableDraft(commitment);
 
     const paid = await client.query(
@@ -850,8 +857,15 @@ export function readPlanChargeEvent(event: Stripe.Event): PlanChargeEvent | null
     last_payment_error?: { code?: string; message?: string };
   };
 
-  const sessionId = event.type.startsWith("checkout.") ? idOf(object) ?? null : null;
-  const intentId = idOf(object.payment_intent);
+  // WHICH identifier the object carries depends on the object: a Checkout
+  // Session IS the session and points at its PaymentIntent, while a
+  // PaymentIntent IS the intent and carries no session. Reading the intent id
+  // from `payment_intent` on a `payment_intent.*` event would yield null and
+  // the attempt could never be resolved — so the event would be acknowledged
+  // and the plan would silently never activate.
+  const isCheckoutEvent = event.type.startsWith("checkout.");
+  const sessionId = isCheckoutEvent ? (idOf(object) ?? null) : null;
+  const intentId = isCheckoutEvent ? idOf(object.payment_intent) : idOf(object);
   const currency = typeof object.currency === "string" ? object.currency.toUpperCase() : null;
   const failureCode = object.last_payment_error?.code ?? null;
   const failureMessage = object.last_payment_error?.message ?? null;
