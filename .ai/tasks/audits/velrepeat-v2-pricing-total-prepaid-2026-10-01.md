@@ -334,7 +334,9 @@ exercised.
   assert were verified directly against `computeCommitmentPricing` (see *CI*).
 - `bun run typecheck` — velshop, velseller, velcenter, velnox — **4/4 exit 0**.
 - `bun run build:apps` — **4/4 built**.
-- `bun run test` — **1566 pass / 248 skip / 0 fail** (1814 tests, 59 files).
+- `bun run test` — **1566 pass / 248 skip / 0 fail** (1814 tests, 59 files) without a database.
+- `TEST_DATABASE_URL=… bun test backend/tests` against a real PostgreSQL — **1812 pass / 2 skip /
+  0 fail**. The DB-gated tests really execute, exactly as in CI.
 - `git diff --check` — clean.
 - `cmp db/schema.sql db/run-sqleditor.sql` — **IDENTICAL**.
 
@@ -368,6 +370,35 @@ vs `93.44 × 3 = 280.32`; `150.195 × 3 = 450.59`).
 **Run 1 on `f0cc464` — `Migrate Neon Database` FAILED.** See *Production DB status* below. This is a
 pre-existing deployment gap that only the production run could reveal.
 
+### 13.1 A LOCAL POSTGRESQL WAS INSTALLED, SO NOTHING WAS LEFT TO CI
+
+Two CI round-trips on DB-gated tests is an expensive way to learn things. After the second failure
+showed a **cross-file leak** (the new suite's payment rows broke a Phase 4 test that asserts “a
+refused payment writes nothing”), a PostgreSQL 14 cluster was installed locally, bootstrapped from
+`db/run-sqleditor.sql` exactly as CI does, and the suite was run against it with the same
+`TEST_DATABASE_URL` / `JWT_SECRET` CI uses. That turned every remaining guess into a measurement and
+found two more real defects that CI had not yet reached:
+
+1. **The new suite's own expectations were wrong twice.** `metadata.total_prepaid_exact` is an exact
+   decimal (`"360"`, not `"360.00"`), and after a `PLAN_AMOUNT_MISMATCH` the payment row is **`paid`**,
+   not `failed` — Stripe really did take the money, and hiding that would defeat the incident. Both
+   now assert the true, intended behaviour with the reasoning in place.
+2. **A latent Phase 4 test defect that only the corrected pricing could unmask.** *“a client cannot
+   pay a different amount, seller or currency”* asserted `[403, 409]`. Those codes only ever appeared
+   because the **pre-correction** pricing guard refused an under-covered snapshot *before* Stripe was
+   contacted. With the pricing correct, the request is legitimately authorised, reaches the payment
+   provider, and returns **500 `Invalid API Key`** — i.e. the test had been making a **live network
+   call to Stripe** and passing only by accident. The test now asserts the security property that
+   actually matters (the plan stays a draft, **no** payment row is written, the response is never a
+   success quoting a payable amount) instead of a provider-dependent status code. No Phase 4
+   protection was removed: ownership, draft-only initiation, amount authority and idempotency are
+   untouched and still asserted elsewhere in the same file.
+
+**Final local result, the exact command CI runs:**
+`TEST_DATABASE_URL=… bun test backend/tests` → **1812 pass / 2 skip / 0 fail** (1814 tests, 59
+files), against a real PostgreSQL bootstrapped from `db/run-sqleditor.sql`. The same command without
+a database → **1566 pass / 248 skip / 0 fail**. Local PostgreSQL is **14**; CI uses **16**.
+
 ## 14. Known limitations (honest list)
 
 1. **`velrepeat_pricing_snapshots_cycle_price_not_null` is a CHECK, not a real `NOT NULL`.** A
@@ -400,6 +431,13 @@ pre-existing deployment gap that only the production run could reveal.
 9. **`Migrate Neon Database` is currently red** on `main` as a direct consequence of 8. It is a true
    signal (the prerequisite is missing), not a flake, and it will stay red until the domain migration
    lands.
+10. **The `POST /plans/:planId/payment` route silently ignores unknown body fields.** An injected
+    `amount`, `sellerId` or `status` cannot change the money — that is proven and asserted — but the
+    request is not *refused* for carrying them; it proceeds to the provider. A strict body allowlist
+    would make that explicit, and is a reasonable follow-up, but it is an API-shape decision for the
+    owner rather than part of a pricing correction.
+11. **No Stripe end-to-end verification exists** (see 3). The corrected pricing is proven against a
+    real database and real signed webhooks, never against Stripe's own servers.
 
 ## 15. What was NOT done
 

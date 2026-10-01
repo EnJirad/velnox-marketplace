@@ -1064,10 +1064,20 @@ await query(
       { method: "CARD", paymentStatus: "paid" },
     ]) {
       const res = await postPayment(buyerId, planId, attack);
-      // Every one of these is refused for a reason that has nothing to do with
-      // the injected field — the request never reaches an unowned plan — and
-      // the plan stays a draft, unmoved and unpaid.
-      expect([403, 409]).toContain(res.status);
+      // The property under test is that an injected field changes NOTHING: the
+      // plan stays a draft, no payment row is written, and the response is
+      // never a success that quotes a payable amount.
+      //
+      // The STATUS deliberately is not asserted. This request belongs to the
+      // plan's real owner, so it is NOT refused at the ownership or pricing
+      // gates — it legitimately reaches the payment provider, which is a live
+      // network call this suite must not depend on. It used to assert
+      // `[403, 409]`, but that only ever held because the pre-correction
+      // pricing guard refused an under-covered snapshot before Stripe was
+      // contacted. Asserting the outcome instead of a provider-dependent code
+      // keeps the security claim honest and the test deterministic.
+      expect(res.status).not.toBe(200);
+      expect(res.status).not.toBe(201);
       const plan = await readPlan(planId);
       expect(plan.status).toBe("draft");
       const { query } = await db();

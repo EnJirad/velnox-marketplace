@@ -790,13 +790,10 @@ activated), and the pricing guards ran BEFORE the ownership check, answering 409
 credential anywhere). **NOT production-ready**
 Audit: `.ai/tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md`.
 
-> **RESOLVED in §61.** The blocker this section carried: Phase 3 froze the CYCLE PRICE, not the TOTAL
-> PREPAID — `computeCommitmentPricingWithLines` never multiplied by `commitmentCycles`, so 1 line ×
-> 100.00 over 4 cycles with a 10% rule persisted `total_amount = 90.00` where the commitment was
-> 360.00. Phase 4's `assertCommitmentCoversEveryCycle` REFUSED such a snapshot, so no customer could
-> be charged a quarter of the agreed money — but multi-cycle plans were unpayable. Correcting an
-> approved phase's money was an owner decision; it is approved, implemented and merged in §61. The
-> guard is KEPT as a settlement-time proof.
+> **RESOLVED in §61.** The blocker this section carried — Phase 3 froze the CYCLE PRICE, not the
+> TOTAL PREPAID, so `total_amount` held 90.00 where a 4-cycle commitment was 360.00, and multi-cycle
+> plans were unpayable — is an owner decision, now approved, implemented and merged in §61. The
+> `assertCommitmentCoversEveryCycle` guard is KEPT as a settlement-time proof.
 
 **Carried into later phases:** V1 `pause/resume/cancel` + `GET /api/velrepeat/plans` can now reach an
 **active** V2 plan (they cannot touch a `draft`) → V2 lifecycle routes are Phase 5/9 work. Phase 8 must
@@ -834,8 +831,17 @@ NOTICE reports rows skipped. `db/schema.sql` ≡ `db/run-sqleditor.sql`; `db/run
 
 **Verified:** new suite `velrepeat-v2-pricing-total-prepaid.test.ts` = **31 tests** (Examples A–F,
 cycle≠total, Stripe-amount, no-float structural, schema, V1 protection, HTTP+DB integration), 4
-DB-gated → SKIP locally, run in CI. `bun run test` **1566 pass / 0 fail**; backend tsc 0; typecheck 4/4;
+DB-gated → SKIP locally, run in CI. A **local PostgreSQL was installed** and the suite bootstrapped
+from `db/run-sqleditor.sql`, so the DB path is no longer left to CI: **1812 pass / 2 skip / 0 fail**
+(the exact CI command), and 1566 pass / 0 fail without a database. backend tsc 0; typecheck 4/4;
 build:apps 4/4; `git diff --check` clean. No V1 file touched.
+Three real findings came out of it, none of them product bugs: two stale expectations in the new
+suite (`total_prepaid_exact` is an exact decimal `"360"`; a mismatched payment is recorded **`paid`**
+— Stripe took the money, which is what makes it refundable), and one **latent Phase 4 defect** — *“a
+client cannot pay a different amount…”* asserted `[403,409]`, which only held because the
+pre-correction pricing guard short-circuited **before** the live Stripe call. With the pricing fixed
+it returned 500 `Invalid API Key`. It now asserts the property that matters (plan stays draft, no
+payment row, never a success quoting an amount). No protection was removed.
 Audit: `.ai/tasks/audits/velrepeat-v2-pricing-total-prepaid-2026-10-01.md`.
 
 > **PRODUCTION DB: BLOCKED — and the cause predates this phase.** `Migrate Neon Database`

@@ -673,6 +673,18 @@ describe("TOTAL PREPAID — create → pay → verify → activate (integration)
           "velrepeat_pricing_rules",
         ]);
       }
+      // Plan-scoped money is purged HERE, before the users, and this fixture
+      // owns its own cleanup rather than borrowing the shared order-scoped
+      // helper: `payments.plan_id` is a NO ACTION foreign key, so a payment that
+      // outlives its plan would block the cascade that removes the plan. That
+      // is deliberate — a paid commitment must never be silently deleted by a
+      // test. Leaving these rows behind would also make another suite's
+      // "a refused payment writes nothing" count wrong, which is exactly the
+      // kind of cross-file leak this comment exists to prevent.
+      if (planId) {
+        await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [planId]);
+        await query(`DELETE FROM payments WHERE plan_id = $1`, [planId]);
+      }
       await purgeUsers(userIds);
     }
     setPaymentEnv();
@@ -698,7 +710,9 @@ describe("TOTAL PREPAID — create → pay → verify → activate (integration)
     expect(metadata.cycle_price).toBe(CYCLE);
     expect(metadata.commitment_cycles).toBe(4);
     expect(metadata.total_prepaid).toBe(TOTAL);
-    expect(metadata.total_prepaid_exact).toBe(TOTAL);
+    // The exact total is stored as an exact decimal, not as a 2dp money string:
+    // 90 × 4 is exactly 360, so there is nothing to round and nothing to pad.
+    expect(metadata.total_prepaid_exact).toBe("360");
     expect(metadata.final_price_exact).toBe("90");
 
     // And it satisfies the settlement guard by construction.
@@ -727,6 +741,13 @@ describe("TOTAL PREPAID — create → pay → verify → activate (integration)
   testFn("a webhook carrying the CYCLE price is REJECTED for a 4-cycle commitment", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
     const { query } = await db();
+    // The identifiers the settlement path will look the attempt up by. It
+    // resolves on `object.id` (the Checkout Session id) and on
+    // `object.payment_intent`, so the delivered event must carry THESE ids —
+    // an event naming ids the row does not have resolves nothing and would
+    // prove nothing about amount verification.
+    const sessionId = `cs_${randomUUID()}`;
+    const intentId = `pi_${randomUUID()}`;
     const payment = await query(
       `INSERT INTO payments
          (plan_id, provider, method, status, amount, currency,
@@ -736,8 +757,8 @@ describe("TOTAL PREPAID — create → pay → verify → activate (integration)
       [
         planId,
         TOTAL,
-        `cs_${randomUUID()}`,
-        `pi_${randomUUID()}`,
+        sessionId,
+        intentId,
         JSON.stringify({ scope: VELREPEAT_V2_PAYMENT_SCOPE }),
       ],
     );
@@ -745,8 +766,8 @@ describe("TOTAL PREPAID — create → pay → verify → activate (integration)
 
     // Stripe reports ONE cycle's worth of money for a FOUR cycle commitment.
     const res = await deliver("checkout.session.completed", {
-      id: `cs_x`,
-      payment_intent: `pi_x`,
+      id: sessionId,
+      payment_intent: intentId,
       metadata: {
         scope: VELREPEAT_V2_PAYMENT_SCOPE,
         planId,
@@ -761,12 +782,19 @@ describe("TOTAL PREPAID — create → pay → verify → activate (integration)
 
     const plan = await query(`SELECT status FROM velrepeat_plans WHERE id = $1`, [planId]);
     expect(plan.rows[0].status).toBe("draft");
-    const row = await query(`SELECT status FROM payments WHERE id = $1`, [paymentId]);
-    expect(row.rows[0].status).toBe("failed");
+    // The money IS recorded as paid — Stripe really took it, and pretending
+    // otherwise would hide it from the operator. What is refused is the
+    // ACTIVATION, and it is refused durably so the money is visible and
+    // refundable. This is the same contract Phase 4 pins for an under-charged
+    // session.
+    const row = await query(`SELECT status, amount FROM payments WHERE id = $1`, [paymentId]);
+    expect(row.rows[0].status).toBe("paid");
+    expect(Number(row.rows[0].amount)).toBe(360);
     const incident = await query(
       `SELECT reason FROM payment_incidents WHERE plan_id = $1 AND payment_id = $2`,
       [planId, paymentId],
     );
+    expect(incident.rows).toHaveLength(1);
     expect(incident.rows[0].reason).toBe("PLAN_AMOUNT_MISMATCH");
 
     await query(`DELETE FROM payment_incidents WHERE plan_id = $1`, [planId]);
