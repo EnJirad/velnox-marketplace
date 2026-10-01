@@ -847,18 +847,29 @@ describe("Phase 4 — payment creation and verified activation (integration)", (
     return result.rows[0];
   }
 
-  async function settledSession(plan: string, over: Record<string, unknown> = {}) {
-    const paymentId = await recordAttempt(plan);
+  /**
+   * Record ONE attempt and deliver its paid session. It returns the attempt so
+   * the caller can assert against it — a caller that ALSO recorded an attempt
+   * would collide with `idx_payments_one_active_stripe_plan`, which is the
+   * database doing exactly what it exists to do.
+   */
+  async function settledSession(
+    plan: string,
+    over: Record<string, unknown> = {},
+    method = "CARD",
+  ): Promise<{ res: Response; paymentId: string; attempt: any }> {
+    const paymentId = await recordAttempt(plan, { method });
     const attempt = await readAttempt(paymentId);
-    return deliver("checkout.session.completed", {
+    const res = await deliver("checkout.session.completed", {
       id: attempt.provider_checkout_session_id,
       payment_intent: attempt.provider_payment_id,
-      metadata: v2Metadata(plan, { method: attempt.method }),
+      metadata: v2Metadata(plan, { method }),
       payment_status: "paid",
       amount_total: COMMITMENT_MINOR,
       currency: "thb",
       ...over,
     });
+    return { res, paymentId, attempt };
   }
 
   async function sideEffectsFor(plan: string) {
@@ -1329,13 +1340,11 @@ await query(
       [target],
     );
 
-    const paymentId = await recordAttempt(target, { method: "CARD" });
-    const attempt = await readAttempt(paymentId);
+    // The window the settlement must fall inside, captured around the delivery.
+    const before = new Date();
+    const { res, paymentId, attempt } = await settledSession(target, {}, "CARD");
     const intentId = attempt.provider_payment_id;
     const sessionId = attempt.provider_checkout_session_id;
-
-    const before = new Date();
-    const res = await settledSession(target);
     expect(res.status).toBe(200);
     const after = new Date();
 
