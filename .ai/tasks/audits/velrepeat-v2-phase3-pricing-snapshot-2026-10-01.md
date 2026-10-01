@@ -194,6 +194,10 @@ succeeds, snapshot INSERT fails" scenario, and it also documents a genuine limit
   was correct; the assertion was corrected in the follow-up commit (`fix(velrepeat): correct a phase 3
   cap assertion`). **The other 12 integration tests passed on CI's `postgres:16`** — including the
   immutability proof, both atomicity proofs, the scheduler refusal and the V1 regression.
+* **CI rerun `36798105378` (follow-up commit `aeb7204`): 1719 pass / 2 skip / 0 fail** (1721 tests, 57
+  files) — every DB-gated test in the repository, **all 13 of this phase's integration tests included**,
+  executed against the disposable `postgres:16`. This is the only place the DB half runs: the workspace
+  has no PostgreSQL, so those 13 report as skipped in a local run.
 * **Integration (DB + real HTTP, CI):** read (200, validated composition, subtotal 320.00, nothing
   internal; 401 anonymous; any customer may read); create (201 draft + snapshot + items + plan lines +
   event; `payment_method_ref` NULL; plan `metadata` `{}`); six refusals (missing, inactive, cross-seller,
@@ -284,8 +288,8 @@ index). **No claim of a working production feature is made here.**
 ## 13. Verification performed (this commit)
 
 ```
-bun run test                 → 1501 pass / 220 skip / 0 fail   (1721 tests, 57 files)
-bun test <phase 3 suite>     → 56 pass / 13 skip / 0 fail       (69 tests)
+bun run test                 → 1501 pass / 220 skip / 0 fail   (1721 tests, 57 files, local)
+bun test <phase 3 suite>     → 56 pass / 13 skip / 0 fail       (69 tests, local)
 cd backend && bunx tsc --noEmit → clean
 bun run typecheck            → 4/4 apps clean
 bun run build:apps           → 4/4 apps built
@@ -293,6 +297,17 @@ git diff --check             → clean
 cmp db/schema.sql db/run-sqleditor.sql → identical
 git status                   → only the 4 files in §1 (no protected file touched)
 ```
+
+**CI / deployment evidence:**
+
+```
+run 36797879884 (19ad419) → failure: 1718 pass / 2 skip / 1 fail   (one test-side assertion, fixed)
+run 36798105378 (aeb7204) → success: 1719 pass / 2 skip / 0 fail   (postgres:16, all DB suites)
+commit status for aeb7204 → 4/4 Vercel checks success (velnox, velseller, velshop, velcenter)
+```
+
+No backend (Render) deployment was verified, and no migration ran: this change touches no
+`db/migrations/*.sql` file, so `migrate-neon.yml` did not fire.
 
 **Explicit non-claims:** not production-ready; no production deployment verified; no Stripe integration;
 no inventory, fulfillment, order, cycle or payment behavior; DB-gated tests not executed locally.

@@ -767,9 +767,12 @@ mechanism exists and Phase 3 has no irreversible effect). **Flagged decision:** 
 `products.vrepeat_enabled` is NOT part of the V2 purchase gate (Phase 2's canonical eligibility is) —
 Phase 5/7 must decide whether V2 fulfillment honors it; pinned by a test so it cannot drift silently.
 
-**Verification:** `bun run test` **1501 pass / 220 skip / 0 fail** (1721 tests, 57 files) · phase-3 suite
-**56 pass / 13 skip** (69 tests) · backend tsc 0 · typecheck 4/4 · build:apps 4/4 · `git diff --check`
-clean · SQL files identical · only the 4 intended files changed (no protected file touched).
+**Verification:** `bun run test` **1501 pass / 220 skip / 0 fail** (1721 tests, 57 files, local) · phase-3
+suite **56 pass / 13 skip** (69 tests) · backend tsc 0 · typecheck 4/4 · build:apps 4/4 · `git diff --check`
+clean · SQL files identical · only the 4 intended files changed (no protected file touched). **CI `36798105378`
+(`aeb7204`) success: 1719 pass / 2 skip / 0 fail on `postgres:16` — all 13 DB-gated phase-3 tests pass
+(the first run, `36797879884`, failed on one test-side assertion, fixed in `aeb7204`).** Vercel checks 4/4
+success on `aeb7204`.
 **DB-gated tests SKIPPED locally (no PostgreSQL)** — CI `postgres:16` is the only real DB execution.
 **Production untouched:** V2 tables still absent (048–050 unapplied), nothing to migrate, **not
 production-ready**. Audit: `.ai/tasks/audits/velrepeat-v2-phase3-pricing-snapshot-2026-10-01.md`.
