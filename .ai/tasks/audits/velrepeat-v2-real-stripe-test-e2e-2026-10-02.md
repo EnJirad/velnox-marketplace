@@ -43,6 +43,31 @@ Re-run at this HEAD: **1853 pass / 2 skip / 0 fail** · backend `tsc` 0 · `bun 
 secret is missing*. Per §25 the run stops immediately. **No Stripe object was created, no Stripe
 webhook was received, and no simulated substitute was reported as an E2E pass.**
 
+### THIRD PASS — re-checked again at `0d09e50b0a4e934de04aa4ade2aa03b4dec19e5d`
+
+Run once more in case credentials had been added since. **Still blocked, identical result.**
+
+| Gate | Output |
+|---|---|
+| `stripeStatus().usable` | `false` |
+| `stripeStatus().mode` | `null` |
+| `stripeStatus().publishableKeyMatchesMode` | `false` |
+| `stripeStatus().webhookConfigured` | `false` |
+| `stripeStatus().reason` | `STRIPE_NOT_CONFIGURED` |
+| `webhookSecretHealth().present` | `false` |
+| `stripeSecretKey() !== null` | `false` |
+| `freebuff-deploy env list` | `{"keys":[]}` |
+
+**Required for entry: `usable = true`, `mode = "test"`, `publishableKeyMatchesMode = true`,
+`webhookConfigured = true`. None is met.** Production re-confirmed unchanged: `Migrate Neon
+Database` `36944070061` **success**, ledger rows 64–68 = `048_payment_reservation`,
+`049_payment_incidents`, `050_orders_status_check`, `051_payments_velrepeat_v2_plan_parent`,
+`052_velrepeat_pricing_cycle_price`. Re-run at this HEAD: **1853 pass / 2 skip / 0 fail** · backend
+`tsc` 0 · typecheck 4/4 · build 4/4 · `git diff --check` clean · tree clean.
+
+**REAL STRIPE E2E: BLOCKED.** The blockers are unchanged across three passes; the only thing that
+clears them is the owner adding the TEST credentials. Nothing in the repository needs to change.
+
 ---
 
 ## 1. Git state
