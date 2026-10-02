@@ -459,71 +459,17 @@ browser E2E have **never** run · the current status of every audit finding is t
 
 ---
 
-## 51. VelRepeat — Prepaid Repeat Commerce (2026-09-30) — CONTRACT COMPLETE, IMPLEMENTATION STOPPED
+## 51. VelRepeat — Prepaid Repeat Commerce (2026-09-30) — CONTRACT COMPLETE, IMPLEMENTATION STOPPED — **ARCHIVED**
 
-### Audit-finding index (current)
+The audit-finding index and the three structural facts that stopped the prepaid implementation at
+this point are archived verbatim in
+`.ai/history/archive/AI_Handoff-2026-09-30-velrepeat-prepaid-contract-stopped.md`.
 
-| Finding | State |
-|---|---|
-| HIGH #4 payment attempt identity | ✅ fixed (§46) |
-| HIGH #5 late/unrecordable payment operator flow | ✅ fixed (§47) — `payment_incidents` (migration **049**) |
-| MEDIUM #8 duplicated reservation-urgency contracts | ✅ fixed (§50) |
-| MEDIUM #9 `orders.status` CHECK | ✅ fixed (§48) — migration **050** |
-| LOW #12 dead `failed` order status | ✅ fixed (§49) |
-| MEDIUM #10 VelRepeat commerce lifecycle | ⚠️ **audit DONE, fix BLOCKED** — see below |
-| MEDIUM #11 · LOW #13 · LOW #14 · HIGH #4 residual | ⬜ open |
-
-### What was done
-
-1. **PHASE 0–2** — re-read every `.ai` doc and re-inspected the named source at `6f5a998`;
-   full grep list run. **PHASE 25** — `.ai/context/velrepeat-contract.md` gained **Part II (§23–§38)**:
-   a current-facts table for every business-model concept, the existing-tables-vs-required-concepts
-   check, the prepaid-payment blocker, delivery cycles, package, price snapshot, schedule, commitment
-   and tiering, the plan-vs-cycle inventory comparison, `sold_count` under prepaid, cancellation /
-   pause / skip / modification, B2C/B2B, scheduler ownership, incidents and idempotency. Every row is
-   tagged **[PROVEN]** / **[INTENT]** / **[DECISION]** / **[OWNER DECISION REQUIRED]** with `file:line`.
-2. **One code change only** — the owner-approved PHASE 15 fix. `POST /api/subscriptions/process-due`
-   (`backend/routes/seller-orders.ts`) selected due plans with **no user scope**, so any approved
-   seller could force-run **any** customer's due plans. It is now scoped with the same ownership
-   predicate the read path already uses (`EXISTS … velrepeat_items vi WHERE vi.plan_id = vp.id AND
-   vi.seller_id = $1`). Tests: 3 structural + 3 DB-gated in `backend/tests/velrepeat-core.test.ts`.
-3. **Housekeeping** — §37–§48 moved verbatim to
-   `.ai/history/archive/AI_Handoff-2026-09-30-payments-and-audit-record.md` (this file 56.4 KB → 36.8 KB).
-
-### Why the prepaid model is NOT implemented (STOP)
-
-Three **structural** facts found in source, each of which alone blocks it:
-
-- **`payments.order_id` is `NOT NULL`** (`db/run-sqleditor.sql:441`). There is no plan-level payment,
-  and `POST /api/stripe/checkout` derives its amount from `orders.total_amount`. A charge for
-  **N** cycles has **no canonical home**. The obvious "new VelRepeat payments table" is a **second
-  payment authority** and is forbidden.
-- **`commitOrderInventory` — the ONE `sold_count` authority — is reached only from the Stripe
-  webhook** (`stripe.ts:559`), i.e. on payment settlement. Under prepaid, money settles **once at
-  plan level, before any cycle order exists**, so the canonical authority becomes **unreachable**.
-- **`velrepeat_runs` has no cycle identity** (`UNIQUE (plan_id, scheduled_for)` but no ordinal, no
-  commitment, and one run creates **one order per shop**). "Cycle N ⇒ exactly one order" cannot be
-  idempotently proven today.
-
-Owner decisions resolved by the owner: **#1 Stripe is the VelRepeat rail and COD must respect
-`COD_ENABLED`** (no VelRepeat bypass), **#7 the central scheduler owns global due-plan processing
-and a seller may not trigger other customers' plans**. Note that #1 does **not** by itself wire
-Stripe, and it does **not** enable COD.
-
-**17 open owner decisions** — the owner's own PHASE 26 Q1–Q12 plus Q13 prepaid payment shape,
-Q14 Stripe charge vs Stripe Subscriptions, Q15 the V1 `vrepeat_packages` table, Q16 plan timezone,
-Q17 per-seller plan splitting — are listed in **contract §38**. Q1, Q2, Q3 and Q7 are the ones that
-gate all financial/inventory code. **No financial, inventory, `sold_count`, payment-rail or schema
-change was made.**
-
-### Verification at this pass
-
-`bun run test` **959 pass / 192 skip / 0 fail** (1151 tests, 52 files) · `cd backend && bunx tsc
---noEmit` 0 errors · `bun run typecheck` 4/4 · `bun run build:apps` 4/4 · `bun run i18n:check`
-th=en=my=1416 · `git diff --check` clean. **DB-gated tests skip locally** — no PostgreSQL is
-available; CI's `postgres:16` is the only real execution. **PRODUCTION = BLOCKED** (Neon quota;
-migrations 048/049/050 still unapplied). `bun run lint` is `echo 'Lint not yet configured'` — no
-lint script exists.
+**Superseded, do not read as current:** all three blockers listed there were closed by §52–§58
+(contract), Phase 3 (plan creation + pricing snapshot), Phase 4 (prepaid Stripe settlement) and
+§62 (production migration). Its "migrations 048/049/050 still unapplied" line is **stale** —
+production is at 051 (§62). Its MEDIUM #10 lifecycle blocker is now Phase 5, which is the next
+safe phase.
 
 ---
 
@@ -745,119 +691,112 @@ payment / inventory / fulfillment / `sold_count` / COD / V1 / schema; `db/migrat
 `050`; `db/run-update.sql` still absent; V2 tables still absent in production (048–050 unapplied).
 **Next:** owner answers Q-A/Q-B (audit §5) before Phase 3 (or Phase 4) starts.
 
-## 59. VelRepeat **V2 Phase 3 — package → draft plan → immutable snapshot** (2026-10-01)
+## 59. VelRepeat **V2 Phase 3 — package → draft plan → immutable snapshot** (2026-10-01) — ARCHIVED
 
-**Superseded by §60; moved here 2026-10-01 to keep the current-state file small.** Phase 3 delivered
-`GET /api/velrepeat/v2/packages/:packageId` + `POST /api/velrepeat/v2/plans` (draft plan + immutable
-snapshot) in `backend/routes/velrepeat-v2-plans.ts`, with owner decisions **Q-A** (plan starts `draft`),
-**Q-B** (`approved` seller = eligible), **Q-C** (plan before payment). G1/G1.1/G2/G3/E preserved: 30%
-cap fails CLOSED, THB, one final 2dp round, catalog `NUMERIC` parsed exactly; plan + lines + snapshot +
-items + `PLAN_CREATED` are ONE transaction. No schema change (that arrived in Phase 4 as migration 051).
-Full record + the Phase-4 handover items it left behind:
-`.ai/tasks/audits/velrepeat-v2-phase3-pricing-snapshot-2026-10-01.md`. Still-relevant flag: V1's
-`products.vrepeat_enabled` is NOT part of the V2 purchase gate (Phase 5/7 must decide).
+Implemented + CI-verified: `createDraftPlanFromPackage`, the G1/G1.1/G2/G3 pricing engine, and the
+immutable `velrepeat_pricing_snapshots` / `_items` write inside the purchase transaction.
+**Archived verbatim to `.ai/history/archive/AI_Handoff-2026-10-01-velrepeat-v2-phase3.md`; audit at
+`.ai/tasks/audits/velrepeat-v2-phase3-pricing-snapshot-2026-10-01.md`.** Its pricing output was
+corrected by §61 and its production state re-measured by §62 — read those, not this.
 
-## 60. VelRepeat **V2 Phase 4 — Stripe prepaid plan-level payment** (2026-10-01)
+## 60. VelRepeat **V2 Phase 4 — Stripe prepaid plan-level payment** (2026-10-01) — ARCHIVED
 
-**Implemented** (base `0cb29aa`): `POST /api/velrepeat/v2/plans/:planId/payment` in the new
-`backend/routes/velrepeat-v2-payments.ts` opens ONE Stripe Checkout Session for the whole commitment;
-settlement runs inside the **existing** `/api/payments/stripe/webhook` (dispatched from
-`handleStripeEvent` before any order logic) via `VELREPEAT_V2_PAYMENT_SCOPE` metadata. Same Stripe
-client, same `payment-config` gate, same `payments` table, no second ledger.
+Implemented + CI-verified: the V2 payment endpoint, migration 051 (`payments.plan_id` +
+exactly-one-parent), webhook settlement and the payment-gated `draft → active`.
+**Archived verbatim to `.ai/history/archive/AI_Handoff-2026-10-01-velrepeat-v2-phase4.md`; audit at
+`.ai/tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md`.** Note the original "V2 tables
+exist in Neon" claim in that audit is **WRONG** — disproved by §62. Its money semantics are
+corrected by §61 and re-verified by §62 — read those, not this.
 
-**Q13=B solved by migration `051_payments_velrepeat_v2_plan_parent.sql`** (additive, idempotent):
-`payments.order_id` loses NOT NULL, `payments.plan_id` FK → `velrepeat_plans(id)`, CHECK **exactly one
-parent**, plus `idx_payments_one_active_stripe_plan` (the order-scoped index cannot constrain NULL
-`order_id` rows). `payment_incidents` gets the same rule. `refunds.order_id` stays NOT NULL (no plan
-refund writer; formula still OWNER FORMULA REQUIRED). No fake order, no Cycle-1 money.
+## 61. VelRepeat **V2 — TOTAL PREPAID correction** (2026-10-01) — ARCHIVED
 
-**Money** = `velrepeat_pricing_snapshots.total_amount` → `parseDecimal` + one `roundHalfUp(_,2)` →
-integer minor units (agrees with the order path's `toStripeMinor`, asserted). Never from the body.
-`allow_promotion_codes` is NOT set. **Activation** = one `SET status='active' … WHERE id=$1 AND
-status='draft'`, reached only after the payment row re-reads `paid` AND amount/currency verify AND the
-recorded method is a real Stripe rail (never the schema default `'cod'`). `started_at` = settlement
-instant, `next_run_at` = `calculateNextRunAt(started_at, …)`; a duplicate delivery does not re-stamp
-them. **0 orders, 0 cycles, 0 reservations, 0 fulfillment.**
+Implemented and CI-verified: the V2 prepaid invariant
+`total_prepaid = roundHalfUp(EXACT post-rule cycle price × commitment_cycles, 2)`, a new
+`velrepeat_pricing_snapshots.cycle_price NUMERIC(12,2)` separate from `total_amount`, migration 052
+(additive, idempotent, excluding settled payments), the `TOTAL_ACTIVATED` response keys, and a
+31-test suite. **Full text archived verbatim to
+`.ai/history/archive/AI_Handoff-2026-10-01-velrepeat-v2-total-prepaid.md`; the superseding,
+measured state is in §62.** The production blocker it raised is CONFIRMED and WIDENED by §62:
+the V2 domain schema still has no `db/migrations/*.sql` file, and the production ledger holds
+only `001_initial`.
 
-**Verified:** locally 1538 pass / 0 fail, backend tsc 0, typecheck 4/4, build:apps 4/4. **CI
-`36898374341` on `e9d5ed9`: SUCCESS — 1779 pass / 2 skip / 0 fail** on the disposable `postgres:16`, so
-all 23 DB-gated phase-4 tests really executed. Four iterations, **each failure a real finding** — two
-production bugs no local run could reach: `payment_intent.*` events never resolved their attempt
-(Stripe puts the intent id on `object.id`, not `object.payment_intent`, so the plan silently never
-activated), and the pricing guards ran BEFORE the ownership check, answering 409 to a non-owner.
-**PRODUCTION DB: APPLIED** — CI run `36890776967` applied 048–**051** (`schema_migrations` id 67,
-2026-10-01 16:17 UTC); `034_velrepeat_v2` was already there. **Stripe E2E NOT executed** (no test
-credential anywhere). **NOT production-ready**
-Audit: `.ai/tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md`.
+## 62. VelRepeat **V2 — production migration + Stripe TEST E2E verification** (2026-10-01)
 
-> **RESOLVED in §61.** The blocker this section carried — Phase 3 froze the CYCLE PRICE, not the
-> TOTAL PREPAID, so `total_amount` held 90.00 where a 4-cycle commitment was 360.00, and multi-cycle
-> plans were unpayable — is an owner decision, now approved, implemented and merged in §61. The
-> `assertCommitmentCoversEveryCycle` guard is KEPT as a settlement-time proof.
+**STATUS: the production-migration blocker is FIXED IN REPOSITORY; Stripe TEST E2E still NOT
+EXECUTED.** Everything verifiable without a Stripe credential passed.
+Audit: `.ai/tasks/audits/velrepeat-v2-production-migration-stripe-e2e-2026-10-01.md`.
 
-**Carried into later phases:** V1 `pause/resume/cancel` + `GET /api/velrepeat/plans` can now reach an
-**active** V2 plan (they cannot touch a `draft`) → V2 lifecycle routes are Phase 5/9 work. Phase 8 must
-teach `paymentAllowsConfirmation()` that a cycle order is covered by a paid **plan** (closure §5.7), or
-no cycle order can ever be confirmed. Phase 9 needs `refunds.plan_id` + the owner refund formula.
+**The production finding, corrected.** `Migrate Neon Database` run `36902790862` (on `f0cc464`)
+printed `Already applied: 001_initial` — but that echo is **multi-line**: 001–051 are ALL applied
+and recorded, and the run's pending list held only `052_velrepeat_pricing_cycle_price.sql`. (An
+earlier note here read that line as a one-row ledger and wrongly called 048–051 unapplied; the full
+run log corrects it.) 052 failed on its first statement, `relation "velrepeat_pricing_snapshots"
+does not exist`: the V2 prepaid **domain** schema had no `db/migrations/*.sql` file at all.
 
-## 61. VelRepeat **V2 — TOTAL PREPAID correction** (2026-10-01)
+**The fix (owner-authorised 2026-10-01).** §0 of `db/migrations/052_velrepeat_pricing_cycle_price.sql`
+now creates the prepaid pricing domain — `velrepeat_pricing_snapshots`,
+`velrepeat_pricing_snapshot_items`, `velrepeat_plans.commitment_cycles` + indexes — *before* the
+`cycle_price` ALTER, both table bodies copied verbatim from `db/schema.sql`. One file, because
+`migration-numbering.test.ts` forbids reusing the 052 prefix and `053_*` would sort after the ALTER;
+`orders.velrepeat_cycle_id` is excluded because `velrepeat-v2-pricing-total-prepaid.test.ts`
+forbids `ALTER TABLE orders` in 052. Verified on a DB rebuilt to production's exact starting state:
+applies clean, idempotent on re-run, and `pg_dump` matches a `db/run-sqleditor.sql` bootstrap
+except three **deliberate** divergences — `velrepeat_cycles` and `orders.velrepeat_cycle_id` (both
+Phase 5 substrate, zero non-test references) plus the column ordering an `ALTER` always causes.
+**The push triggers the canonical workflow and applies 052 to production for the first time.**
+The production DB was unreachable from this environment (env lists empty, `gh secret list` /
+`workflow_dispatch` 403), so **no post-push production state is claimed from here.**
 
-Closes the §60 blocker. **The invariant:** V2 is prepaid, so
-`total_prepaid = roundHalfUp(EXACT post-rule cycle price × commitment_cycles, 2)` — the exact cycle
-price, never the 2dp one (93.4444… × 3 = **280.33**; 93.44 × 3 = 280.32). `commitment_cycles` is
-validated (positive integer) **before any rule runs** → fail closed.
-**Pricing** (`lib/velrepeat-pricing.ts`): `CommitmentPricingRequest.commitmentCycles?` (defaults 1);
-new exported `computeTotalPrepaid()` = `roundHalfUp(multiply(cyclePrice, rational), 2)` — bigint only,
-**no float**; `CommitmentPricing` gained `cyclePrice`/`commitmentCycles`/`totalPrepaid`/
-`totalPrepaidString`; `finalPriceString` is now an alias of `cyclePrice`; `insertPricingSnapshot`
-writes **both** columns plus `metadata.cycle_price` / `commitment_cycles` / `total_prepaid` /
-`total_prepaid_exact` (keeps `final_price_exact`). G1 ordering, the G1.1 30% cap and rule identity
-are untouched.
+**Verified locally against a real PostgreSQL** (14, bootstrapped from `db/run-sqleditor.sql`):
+048–052 each apply clean, and 052 is idempotent on re-run. 052's backfill was exercised on real
+pre-052 data with both safety branches: an UNSETTLED plan went `93.44 → cycle_price 93.44 /
+total_amount 280.33` (exact 93.4444×3, **not** 93.44×3=280.32), while a plan with a `paid` payment
+was left **completely untouched** and the `NOT NULL` constraint was **declined, not forced**. No
+settled payment, order, balance, Stripe record or transaction was modified; nothing deleted.
+`db/schema.sql` ≡ `db/run-sqleditor.sql`; `db/run-update.sql` still absent.
 
-**Snapshot:** new `cycle_price NUMERIC(12,2)` = one delivery; `total_amount` = the commitment total
-(the charge). Two constraints: `cycle_price IS NOT NULL` and `total_amount >= cycle_price`. SQL cannot
-express the exact relationship (`final_price_exact` lives in jsonb), so the exact proof runs in
-TypeScript at charge and settlement.
+**Pricing:** contract re-proved from source + DB. 1/2/4/8 cycles → 90.00 / 180.00 / **360.00** /
+720.00; 30% cap accepted at exactly the boundary and **refused** (never clamped) above it; G1
+sequential (7% then 5% on 170.00 → 150.195, not a 12% sum); `commitment_cycles` validated before
+any rule; one final 2dp rounding (150.195×3 = **450.59**, not 450.60); bigint only, no float.
+NUMERIC(12,2) overflow is **refused, not clamped** — the engine emits the exact value and
+PostgreSQL rejects it with `22003 numeric field overflow`.
 
-**Stripe:** unchanged code path — `planTotalToStripeMinor(snapshot.total_amount)` via `toStripeMinor`.
-What changed is what `total_amount` *means*. Responses return both, named: `{ cyclePrice,
-totalPrepaidAmount, amountMinor }` on payment (`amount` renamed) and `{ cyclePrice,
-totalPrepaidAmount }` on plan creation. A webhook carrying the **cycle** amount is rejected
-`PLAN_AMOUNT_MISMATCH`; the correct total activates once, 0 orders/cycles/runs. All Phase 4 protections
-untouched. **Migration 052** (additive, idempotent) backfills `cycle_price` from the old `total_amount`,
-recomputes `total_amount`, and **excludes any plan with a settled payment**
-(`payments.status IN ('paid','processing')`) — settled financial history is never rewritten, and the
-NOTICE reports rows skipped. `db/schema.sql` ≡ `db/run-sqleditor.sql`; `db/run-update.sql` still absent.
+**Stripe: test mode is structurally enforced, but a real E2E was NOT run.** `stripeStatus()` is a
+single gate that refuses rather than degrades: `sk_live_…` → `STRIPE_LIVE_KEY_REFUSED`,
+unrecognized → `STRIPE_KEY_UNRECOGNIZED`, `STRIPE_MODE=live` → `STRIPE_MODE_MISMATCH`, test key
+without a webhook secret → `STRIPE_WEBHOOK_NOT_CONFIGURED`. Amount comes from the persisted
+snapshot's `total_amount` only; ownership is checked *before* the snapshot is read, so a pricing
+refusal cannot become an oracle.
+**No Stripe credential exists in any reachable environment** (env empty, no key literal outside
+test files, secret names 403), so the outbound charge-creation call and any real Stripe-side
+confirmation are **unverified**. Not simulated, not faked.
 
-**Verified:** new suite `velrepeat-v2-pricing-total-prepaid.test.ts` = **31 tests** (Examples A–F,
-cycle≠total, Stripe-amount, no-float structural, schema, V1 protection, HTTP+DB integration), 4
-DB-gated → SKIP locally, run in CI. A **local PostgreSQL was installed** and the suite bootstrapped
-from `db/run-sqleditor.sql`, so the DB path is no longer left to CI: **1812 pass / 2 skip / 0 fail**
-(the exact CI command), and 1566 pass / 0 fail without a database. backend tsc 0; typecheck 4/4;
-build:apps 4/4; `git diff --check` clean. No V1 file touched.
-Three real findings came out of it, none of them product bugs: two stale expectations in the new
-suite (`total_prepaid_exact` is an exact decimal `"360"`; a mismatched payment is recorded **`paid`**
-— Stripe took the money, which is what makes it refundable), and one **latent Phase 4 defect** — *“a
-client cannot pay a different amount…”* asserted `[403,409]`, which only held because the
-pre-correction pricing guard short-circuited **before** the live Stripe call. With the pricing fixed
-it returned 500 `Invalid API Key`. It now asserts the property that matters (plan stays draft, no
-payment row, never a success quoting an amount). No protection was removed.
-Audit: `.ai/tasks/audits/velrepeat-v2-pricing-total-prepaid-2026-10-01.md`.
+**What the new matrix suite does prove** (41 tests, `backend/tests/velrepeat-v2-verification-
+matrix.test.ts`, full row-by-row detail in the audit §13): the whole server-side settlement
+contract through the **real webhook endpoint** with a **real HMAC-SHA256 signature** against a
+**real database**. Mismatch (90.00 attempted vs 360.00 expected): plan stays `draft`, payment row
+**retained as `paid`** (never hidden — Stripe took it), 1 `PLAN_AMOUNT_MISMATCH` incident, no fake
+success. Replay → exactly 1 `PLAN_ACTIVATED`, 0 cycles/orders/runs/inventory, `order_id` NULL.
+Activation re-anchors `started_at` to the settlement instant, `next_run_at` to +1 week. Payment
+success creates **no** order, cycle, run, stock decrement or fulfillment. Injected `seller_id`/
+`cycle_price`/`total_amount`/`discount`/`pricing_rule`/`amount`/`payment_status`/`plan_status`/
+`user_id`/`plan_id` change nothing. **No production runtime code changed** — only
+`db/migrations/052_velrepeat_pricing_cycle_price.sql` (§0) and a test.
 
-> **PRODUCTION DB: BLOCKED — and the cause predates this phase.** `Migrate Neon Database`
-> (`36902790862`) applied nothing: `052` failed with `relation "velrepeat_pricing_snapshots" does not
-> exist`. **The entire VelRepeat V2 prepaid domain schema has no `db/migrations/*.sql` file** — Phase 1
-> (`ea79277`) added it to `db/schema.sql` + `db/run-sqleditor.sql` ONLY. `034_velrepeat_v2` is the
-> older per-run-order design, not the prepaid tables. So §60's “the V2 tables exist” claim in Neon is
-> **WRONG**; V2 is CI-only. 052 is not recorded, so the Neon workflow stays **red on every push** until
-> the domain migration exists. Do NOT paper over it — 052 is correct SQL.
-> **Safe next action:** land the missing V2 domain migration (the 72 schema lines Phase 1 wrote),
-> numbered ahead of the pricing change, then 052 applies. That deploys ~8 new tables to production and
-> is an OWNER decision, not this phase's.
+**Results:** 1853 pass / 2 skip / 0 fail (1855 tests, 60 files) = +41 over the 1812 baseline, 0
+regressions. backend tsc 0; `bun run typecheck` 4/4; `build:apps` 4/4; `git diff --check` clean;
+**no V1 protected file in the diff.** Nine first-run failures were all bugs in the new test (a
+`Date.toString()` millisecond blind spot, a stray SQL parameter, two bad destructures, two
+miscomputed totals, a comment-matched keyword); each was fixed by making the assertion stricter.
+**No assertion was weakened to get green.** Three pre-existing guards (migration numbering, the
+Phase 3 migration inventory, "052 changes no V1 table") shaped the migration's shape and were all
+left intact rather than edited.
 
-**Known limits:** the `cycle_price IS NOT NULL` "constraint" is a CHECK, which SQL satisfies with
-NULL — convert to a real `NOT NULL` once settled rows are confirmed empty. No Stripe E2E credential.
-Refunds still order-scoped (Phase 9). No UI touched.
-**Next safe phase:** the V2 domain migration above — then 5, V2 plan lifecycle routes
-(pause/resume/cancel/read for an *active* V2 plan, which V1's routes can now reach). NOT cycles,
-inventory or fulfillment.
+**Unblock, one owner action remains:** supply a **TEST** `STRIPE_SECRET_KEY` + **TEST**
+`STRIPE_WEBHOOK_SECRET` (+ `NEON_DATABASE_URL` to verify production state after the push). Until
+a real Stripe TEST E2E is run, **do not call VelRepeat V2 production ready.**
+
+**Next safe phase:** 5 (V2 plan lifecycle routes for an *active* plan, which V1's routes can now
+reach) — and that migration must also carry `velrepeat_cycles` + `orders.velrepeat_cycle_id`,
+the two Phase 5 objects §0 of 052 deliberately leaves out. NOT inventory or fulfillment.

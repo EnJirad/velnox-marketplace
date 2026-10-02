@@ -210,6 +210,20 @@ this was a documentation move only, verified by the full test suite (`.ai/AI_HAN
 |---|---|---|
 | [`.ai/tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md`](../tasks/audits/velrepeat-v2-phase4-stripe-prepaid-2026-10-01.md) | handoff **§60** — the prepaid PLAN payment, migration 051 (`payments.plan_id` + exactly-one-parent), webhook settlement and the payment-gated `draft → active` | Q13=B/Q14 implemented. Current state is restated in **§60**; production DB remains **BLOCKED — Neon quota** (051 committed, not applied), so this is **not production-ready** |
 
+### 2026-10-01 — VelRepeat V2 Phase 3/4 + the TOTAL PREPAID correction (edit-headroom housekeeping)
+
+Archived on 2026-10-01 while adding handoff **§62** (production-migration + Stripe TEST E2E
+verification), which pushed `.ai/AI_HANDOFF.md` back over its ~55 KB edit ceiling. §§59–61 are
+COMPLETE and CI-verified; their live status is restated in the compact pointers left in place and
+in **§62**.
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-01-velrepeat-v2-phase3.md`](./archive/AI_Handoff-2026-10-01-velrepeat-v2-phase3.md) | handoff **§59** — Phase 3, package → draft plan → immutable snapshot | G1/G1.1/G2/G3 engine + `velrepeat_pricing_snapshots` write. Pricing output **corrected by §61**; production state **re-measured by §62** |
+| [`archive/AI_Handoff-2026-10-01-velrepeat-v2-phase4.md`](./archive/AI_Handoff-2026-10-01-velrepeat-v2-phase4.md) | handoff **§60** — Phase 4, Stripe prepaid plan-level payment | V2 payment endpoint, migration 051, webhook settlement, `draft → active`. Its audit's "V2 tables exist in Neon" claim is **disproved by §62** |
+| [`archive/AI_Handoff-2026-10-01-velrepeat-v2-total-prepaid.md`](./archive/AI_Handoff-2026-10-01-velrepeat-v2-total-prepaid.md) | handoff **§61** — the TOTAL PREPAID correction | `cycle_price` vs `total_amount`, migration 052. Its production blocker is **confirmed and fixed by §62** — and its "048–052 all unapplied" reading is **wrong**: production is at 051 |
+| [`archive/AI_Handoff-2026-09-30-velrepeat-prepaid-contract-stopped.md`](./archive/AI_Handoff-2026-09-30-velrepeat-prepaid-contract-stopped.md) | handoff **§51** — prepaid contract complete, implementation stopped on three structural blockers | Moved **verbatim** on 2026-10-01 when adding §62 pushed the handoff back over its ~55 KB budget. All three blockers it records were closed by §52–§58, Phase 3, Phase 4 and §62; its "048/049/050 unapplied" line is stale (production is at 051) |
+
 ### Beyond the archive
 
 Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. When an
