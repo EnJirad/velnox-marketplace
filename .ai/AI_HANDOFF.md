@@ -722,7 +722,7 @@ only `001_initial`.
 
 ## 62. VelRepeat **V2 — production migration + Stripe TEST E2E verification** (2026-10-01)
 
-**STATUS: the production-migration blocker is FIXED IN REPOSITORY; Stripe TEST E2E still NOT
+**STATUS: the production migration is APPLIED and its workflow is GREEN; Stripe TEST E2E still NOT
 EXECUTED.** Everything verifiable without a Stripe credential passed.
 Audit: `.ai/tasks/audits/velrepeat-v2-production-migration-stripe-e2e-2026-10-01.md`.
 
@@ -743,9 +743,14 @@ forbids `ALTER TABLE orders` in 052. Verified on a DB rebuilt to production's ex
 applies clean, idempotent on re-run, and `pg_dump` matches a `db/run-sqleditor.sql` bootstrap
 except three **deliberate** divergences — `velrepeat_cycles` and `orders.velrepeat_cycle_id` (both
 Phase 5 substrate, zero non-test references) plus the column ordering an `ALTER` always causes.
-**The push triggers the canonical workflow and applies 052 to production for the first time.**
-The production DB was unreachable from this environment (env lists empty, `gh secret list` /
-`workflow_dispatch` 403), so **no post-push production state is claimed from here.**
+**The push triggered the canonical workflow: `Migrate Neon Database` run `36944070061` concluded
+SUCCESS** — green on `main` for the first time since `f0cc464` — and its own log ends
+`V0052: 0 snapshot(s) given a cycle_price` with ledger row 68
+`052_velrepeat_pricing_cycle_price`. **0 rows touched in production**: the strongest possible proof
+that no settled payment, order, balance or financial record was rewritten. `Tests` on the same
+commit: 1853/2/0, identical to local. The production DB was still unreachable from this
+environment (env lists empty, `gh secret list` / `workflow_dispatch` 403), so **no production
+contents beyond that log are claimed.**
 
 **Verified locally against a real PostgreSQL** (14, bootstrapped from `db/run-sqleditor.sql`):
 048–052 each apply clean, and 052 is idempotent on re-run. 052's backfill was exercised on real
