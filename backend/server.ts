@@ -27,6 +27,7 @@ import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupCenterRoutes } from "./routes/center.js";
 import { registerVerificationRoutes } from "./routes/verification.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
+import { startVelRepeatV2CycleScheduler } from "./jobs/velrepeat-v2-cycle-scheduler.js";
 import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupChatRoutes } from "./routes/chat.js";
@@ -532,7 +533,17 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`[bootstrap] BOOTSTRAP_OWNER_SECRET configured: ${Boolean(process.env.BOOTSTRAP_OWNER_SECRET)}`);
 
   // ─── VelRepeat V2 Scheduler (recurring commerce worker) ────────────
+  // The V1 pay-per-run worker above. Untouched by Phase 5.
   startVelRepeatScheduler();
+
+  // ─── VelRepeat V2 due-cycle worker (Phase 5) ───────────────────────
+  // Generates a cycle's order when the cycle reaches its `scheduled_at`. A
+  // separate worker from the V1 one on purpose: V1 claims PLAN rows by
+  // `next_run_at` and writes `velrepeat_runs`; this one claims CYCLE rows by
+  // `scheduled_at` and writes no run row. They never contend for the same row,
+  // and the exactly-once guarantee for a cycle is the database's, not this
+  // process's — so running two instances of either is safe.
+  startVelRepeatV2CycleScheduler();
 
   // ─── Payment reservation sweep (FIXED 30-minute window) ──────────────
   // Ends unpaid orders whose reservation window has lapsed and returns their

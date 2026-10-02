@@ -804,13 +804,20 @@ describe("MATRIX — §15 payment + security (integration)", () => {
     // And the replay created no downstream work of any kind. Each count is a
     // SEPARATE statement: a UNION would return one row, and a stray positional
     // argument on a statement with no placeholder is a protocol error.
-    const cycles = await query(`SELECT COUNT(*)::int AS n FROM velrepeat_cycles WHERE plan_id = $1`, [planId]);
+    const cycles = await query(
+      `SELECT status, COUNT(*)::int AS n FROM velrepeat_cycles WHERE plan_id = $1 GROUP BY status`,
+      [planId],
+    );
     const runs = await query(`SELECT COUNT(*)::int AS n FROM velrepeat_runs WHERE plan_id = $1`, [planId]);
     const orders = await query(
       `SELECT COUNT(*)::int AS n FROM orders WHERE velrepeat_cycle_id = $1`,
       [randomUUID()],
     );
-    expect(cycles.rows[0].n).toBe(0);
+    // Phase 5 (owner §10): activation mints the cycle SCHEDULE, so the
+    // commitment's cycles now exist — and the replay must not have added a
+    // second set. Before Phase 5 this asserted 0. Runs and orders are still 0:
+    // a schedule is not fulfillment.
+    expect(cycles.rows).toEqual([{ status: "scheduled", n: 4 }]);
     expect(runs.rows[0].n).toBe(0);
     expect(orders.rows[0].n).toBe(0);
   });
@@ -1033,7 +1040,7 @@ describe("MATRIX — §15 payment + security (integration)", () => {
 
   // ── §13 NO PREMATURE FULFILLMENT ───────────────────────────────────────
 
-  testFn("payment success creates no order, cycle, run or inventory movement", async () => {
+  testFn("payment success creates no order, run or inventory movement — only the cycle schedule", async () => {
     setPaymentEnv(TEST_STRIPE_ENV);
     const { query } = await db();
     const planId = await createPlan(buyerId, 4);
@@ -1059,7 +1066,19 @@ describe("MATRIX — §15 payment + security (integration)", () => {
       [planId],
     );
     expect(after.rows[0].orders).toBe(before.rows[0].orders);
-    expect(after.rows[0].cycles).toBe(before.rows[0].cycles);
+    // Phase 5 (owner §10): the ONLY thing activation now adds is the cycle
+    // schedule, so the cycle count rises by exactly the commitment — and every
+    // one of them is `scheduled`, i.e. none of them has been worked. Before
+    // Phase 5 this asserted the count was unchanged. The property this test
+    // exists to protect — payment success performs NO fulfillment — is carried
+    // by the unchanged order count, the zero runs, and the untouched stock.
+    expect(after.rows[0].cycles).toBe(before.rows[0].cycles + 4);
+    const cycleStates = await query(
+      `SELECT status, COUNT(*)::int AS n FROM velrepeat_cycles
+        WHERE plan_id = $1 GROUP BY status`,
+      [planId],
+    );
+    expect(cycleStates.rows).toEqual([{ status: "scheduled", n: 4 }]);
     expect(after.rows[0].runs).toBe(0);
     expect(after.rows[0].stock).toBe(stockBefore);
   });

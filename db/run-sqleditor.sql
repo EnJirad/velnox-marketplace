@@ -989,6 +989,7 @@ CREATE INDEX IF NOT EXISTS idx_velrepeat_cycles_plan ON velrepeat_cycles (plan_i
 CREATE INDEX IF NOT EXISTS idx_velrepeat_cycles_due ON velrepeat_cycles (status, scheduled_at);
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_velrepeat_cycle_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_velrepeat_cycle_id_fkey FOREIGN KEY (velrepeat_cycle_id) REFERENCES velrepeat_cycles(id) ON DELETE SET NULL; END IF; END $$;
 CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_cycle ON orders (velrepeat_cycle_id) WHERE velrepeat_cycle_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_velrepeat_cycle_seller_unique ON orders (velrepeat_cycle_id, shop_id) WHERE velrepeat_cycle_id IS NOT NULL AND shop_id IS NOT NULL;
 INSERT INTO platform_settings (key, value, description) VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto') ON CONFLICT (key) DO NOTHING;
 INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, description, description_names, image_url, is_active) VALUES
 ('c0000001-0000-0000-0000-000000000001', 'Electronics', 'electronics', 'cpu', NULL, 1, '{"th":"อิเล็กทรอนิกส์","en":"Electronics","my":"အီလက်ထရွန်နစ်ပစ္စည်းများ"}', 'Audio, cameras, wearable tech and electronic accessories', '{"th":"อุปกรณ์เสียง กล้อง อุปกรณ์สวมใส่ และอุปกรณ์เสริมอิเล็กทรอนิกส์","en":"Audio, cameras, wearable tech and electronic accessories","my":"အသံပစ္စည်း၊ ကင်မရာ၊ ဝတ်ဆင်နည်းပညာနှင့်အီလက်ထရွန်နစ် ဖြည့်စွက်ပစ္စည်းများ"}', NULL, true),

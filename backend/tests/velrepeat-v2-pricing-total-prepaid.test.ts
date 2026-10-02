@@ -858,10 +858,16 @@ describe("TOTAL PREPAID — create → pay → verify → activate (integration)
       [planId],
     );
     expect(activations.rows[0].n).toBe(1);
-    const cycles = await query(`SELECT COUNT(*)::int AS n FROM velrepeat_cycles WHERE plan_id = $1`, [
-      planId,
-    ]);
-    expect(cycles.rows[0].n).toBe(0);
+    // Phase 5 (owner §10): activation now mints the cycle SCHEDULE, so the
+    // commitment's cycles exist and are all `scheduled`. Before Phase 5 this
+    // asserted 0. The properties this test exists to protect are untouched and
+    // still asserted below: no run, and therefore no order.
+    const cycles = await query(
+      `SELECT status, COUNT(*)::int AS n FROM velrepeat_cycles
+        WHERE plan_id = $1 GROUP BY status`,
+      [planId],
+    );
+    expect(cycles.rows).toEqual([{ status: "scheduled", n: 4 }]);
     const runs = await query(`SELECT COUNT(*)::int AS n FROM velrepeat_runs WHERE plan_id = $1`, [
       planId,
     ]);

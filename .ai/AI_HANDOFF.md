@@ -722,99 +722,91 @@ only `001_initial`.
 
 ## 62. VelRepeat **V2 — production migration + Stripe TEST E2E verification** (2026-10-01)
 
-**STATUS: the production migration is APPLIED and its workflow is GREEN; Stripe TEST E2E still NOT
-EXECUTED.** Everything verifiable without a Stripe credential passed.
-Audit: `.ai/tasks/audits/velrepeat-v2-production-migration-stripe-e2e-2026-10-01.md`.
-**Re-attempted 2026-10-02** for the real TEST payment itself: **hard stop #2**, no TEST credential
-exists anywhere reachable. Production re-confirmed 001–052 all applied (ledger rows 1–68); suite
-still 1853/2/0; no code, test or assertion changed. Audit:
-`.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-02.md`.
+<!-- ARCHIVED VERBATIM 2026-10-02 (Phase 5 pass, edit-headroom housekeeping).
+     Full original text: .ai/history/archive/AI_Handoff-2026-10-02-velrepeat-v2-production-migration.md
+     The superseding current state is §63 (Phase 5) below; the four Stripe TEST
+     credential re-attempts and the 052 production-failure investigation are
+     history and are NOT repeated here. -->
 
-**Re-attempted a second, third and fourth time** at HEADs `eae65e3`, `0d09e50`, `3b728b3`: gate
-still `usable=false / mode=null / reason=STRIPE_NOT_CONFIGURED`, webhook secret absent,
-`freebuff-deploy env list` `{"keys":[]}`. Every credential-shaped literal in the tree is one of six
-**shape-only** fixtures; no real TEST or LIVE key exists anywhere. Ledger re-confirmed from run
-`36944070061` (success), rows 64–68 = 048–052. Suite 1853 pass / 2 skip / 0 fail, backend tsc 0,
-typecheck 4/4, build 4/4. **No product defect found** — only the owner can unblock, by adding
-`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` under **Settings →
-Environment** (never a live key). No code change is expected to be needed once they exist.
+**Condensed current state.** Production migration 052 is APPLIED and its workflow is GREEN
+(run `36944070061`, success; ledger rows 1–68 = migrations 001–052). The V2 prepaid pricing
+domain reached production via §0 of migration 052. The real Stripe TEST E2E was re-attempted
+FOUR times (HEADs `eae65e3`, `0d09e50`, `3b728b3`, `45a17b0`) and is **still BLOCKED** — no
+TEST credential exists anywhere reachable (`freebuff-deploy env list` = `{"keys":[]}`; every
+credential-shaped literal in the tree is one of six shape-only fixtures). No product defect
+was found; only the owner can unblock it by adding `STRIPE_SECRET_KEY`,
+`STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` under **Settings → Environment** (never a
+live key). Audit: `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-02.md`.
 
-**The production finding, corrected.** `Migrate Neon Database` run `36902790862` (on `f0cc464`)
-printed `Already applied: 001_initial` — but that echo is **multi-line**: 001–051 are ALL applied
-and recorded, and the run's pending list held only `052_velrepeat_pricing_cycle_price.sql`. (An
-earlier note here read that line as a one-row ledger and wrongly called 048–051 unapplied; the full
-run log corrects it.) 052 failed on its first statement, `relation "velrepeat_pricing_snapshots"
-does not exist`: the V2 prepaid **domain** schema had no `db/migrations/*.sql` file at all.
+**Until a real Stripe TEST E2E runs, VelRepeat V2 is NOT production ready.** That blocker is
+UNCHANGED by Phase 5 and is restated in §63.
 
-**The fix (owner-authorised 2026-10-01).** §0 of `db/migrations/052_velrepeat_pricing_cycle_price.sql`
-now creates the prepaid pricing domain — `velrepeat_pricing_snapshots`,
-`velrepeat_pricing_snapshot_items`, `velrepeat_plans.commitment_cycles` + indexes — *before* the
-`cycle_price` ALTER, both table bodies copied verbatim from `db/schema.sql`. One file, because
-`migration-numbering.test.ts` forbids reusing the 052 prefix and `053_*` would sort after the ALTER;
-`orders.velrepeat_cycle_id` is excluded because `velrepeat-v2-pricing-total-prepaid.test.ts`
-forbids `ALTER TABLE orders` in 052. Verified on a DB rebuilt to production's exact starting state:
-applies clean, idempotent on re-run, and `pg_dump` matches a `db/run-sqleditor.sql` bootstrap
-except three **deliberate** divergences — `velrepeat_cycles` and `orders.velrepeat_cycle_id` (both
-Phase 5 substrate, zero non-test references) plus the column ordering an `ALTER` always causes.
-**The push triggered the canonical workflow: `Migrate Neon Database` run `36944070061` concluded
-SUCCESS** — green on `main` for the first time since `f0cc464` — and its own log ends
-`V0052: 0 snapshot(s) given a cycle_price` with ledger row 68
-`052_velrepeat_pricing_cycle_price`. **0 rows touched in production**: the strongest possible proof
-that no settled payment, order, balance or financial record was rewritten. `Tests` on the same
-commit: 1853/2/0, identical to local. The production DB was still unreachable from this
-environment (env lists empty, `gh secret list` / `workflow_dispatch` 403), so **no production
-contents beyond that log are claimed.**
+## 63. VelRepeat **V2 Phase 5 — cycle lifecycle & per-cycle order creation** (2026-10-02)
 
-**Verified locally against a real PostgreSQL** (14, bootstrapped from `db/run-sqleditor.sql`):
-048–052 each apply clean, and 052 is idempotent on re-run. 052's backfill was exercised on real
-pre-052 data with both safety branches: an UNSETTLED plan went `93.44 → cycle_price 93.44 /
-total_amount 280.33` (exact 93.4444×3, **not** 93.44×3=280.32), while a plan with a `paid` payment
-was left **completely untouched** and the `NOT NULL` constraint was **declined, not forced**. No
-settled payment, order, balance, Stripe record or transaction was modified; nothing deleted.
-`db/schema.sql` ≡ `db/run-sqleditor.sql`; `db/run-update.sql` still absent.
+**STATUS: PASS.** An `active` plan mints its cycle schedule at activation; each cycle creates its
+own Normal Order **only when due**, exactly once, under concurrent workers. Audit:
+`.ai/tasks/audits/velrepeat-v2-phase5-cycle-lifecycle-2026-10-02.md`. Suite **1882 / 2 / 0**
+(1884 tests, 61 files), backend tsc 0, typecheck 4/4, build 4/4, `git diff --check` clean,
+`db/schema.sql` ≡ `db/run-sqleditor.sql`.
 
-**Pricing:** contract re-proved from source + DB. 1/2/4/8 cycles → 90.00 / 180.00 / **360.00** /
-720.00; 30% cap accepted at exactly the boundary and **refused** (never clamped) above it; G1
-sequential (7% then 5% on 170.00 → 150.195, not a 12% sum); `commitment_cycles` validated before
-any rule; one final 2dp rounding (150.195×3 = **450.59**, not 450.60); bigint only, no float.
-NUMERIC(12,2) overflow is **refused, not clamped** — the engine emits the exact value and
-PostgreSQL rejects it with `22003 numeric field overflow`.
+**New:** `backend/lib/velrepeat-cycles.ts` (schedule + per-cycle order creation),
+`backend/jobs/velrepeat-v2-cycle-scheduler.ts` (due worker, started in `server.ts`),
+`db/migrations/053_velrepeat_v2_cycle_lifecycle.sql`, and a 28-test suite. **Modified:** the Phase 4
+settlement (activation now calls `createCycleSchedule` **inside its own transaction**), `server.ts`,
+both canonical schema files, and 4 Phase 3/4 test files (see below). All V1 and unrelated files
+verified unchanged.
 
-**Stripe: test mode is structurally enforced, but a real E2E was NOT run.** `stripeStatus()` is a
-single gate that refuses rather than degrades: `sk_live_…` → `STRIPE_LIVE_KEY_REFUSED`,
-unrecognized → `STRIPE_KEY_UNRECOGNIZED`, `STRIPE_MODE=live` → `STRIPE_MODE_MISMATCH`, test key
-without a webhook secret → `STRIPE_WEBHOOK_NOT_CONFIGURED`. Amount comes from the persisted
-snapshot's `total_amount` only; ownership is checked *before* the snapshot is read, so a pricing
-refusal cannot become an oracle.
-**No Stripe credential exists in any reachable environment** (env empty, no key literal outside
-test files, secret names 403), so the outbound charge-creation call and any real Stripe-side
-confirmation are **unverified**. Not simulated, not faked.
+**Migration 053 — the substrate gap, one phase after 052.** `velrepeat_cycles` and
+`orders.velrepeat_cycle_id` existed in both canonical schema files since Phase 1 (`ea79277`) and in
+**no** migration. That is the identical omission that killed V0052, and §0 of 052 names both as
+Phase 5 substrate. Additive + idempotent: nullable `ADD COLUMN`, the cycle table copied **verbatim**
+from `db/schema.sql`, FK `ON DELETE SET NULL`, plus **`idx_orders_velrepeat_cycle_seller_unique`** —
+`UNIQUE (velrepeat_cycle_id, shop_id)`. **053 MUST be applied to production; the cycle substrate has
+never existed in Neon.**
 
-**What the new matrix suite does prove** (41 tests, `backend/tests/velrepeat-v2-verification-
-matrix.test.ts`, full row-by-row detail in the audit §13): the whole server-side settlement
-contract through the **real webhook endpoint** with a **real HMAC-SHA256 signature** against a
-**real database**. Mismatch (90.00 attempted vs 360.00 expected): plan stays `draft`, payment row
-**retained as `paid`** (never hidden — Stripe took it), 1 `PLAN_AMOUNT_MISMATCH` incident, no fake
-success. Replay → exactly 1 `PLAN_ACTIVATED`, 0 cycles/orders/runs/inventory, `order_id` NULL.
-Activation re-anchors `started_at` to the settlement instant, `next_run_at` to +1 week. Payment
-success creates **no** order, cycle, run, stock decrement or fulfillment. Injected `seller_id`/
-`cycle_price`/`total_amount`/`discount`/`pricing_rule`/`amount`/`payment_status`/`plan_status`/
-`user_id`/`plan_id` change nothing. **No production runtime code changed** — only
-`db/migrations/052_velrepeat_pricing_cycle_price.sql` (§0) and a test.
+**Idempotency — two independent DB guarantees, never a flag.** (1) The row claim: `SELECT … FOR
+UPDATE OF c` + `UPDATE … WHERE status = 'scheduled'`, reusing `lib/order-lock.ts` — a second worker
+blocks, re-reads, returns `already_claimed` and writes nothing (tested with 4 simultaneous workers:
+1 `ordered`, 3 `already_claimed`, 1 order, 1 reservation). (2) The unique index, tested directly via
+a raw second `INSERT` → 23505. The key is **`(cycle, shop)`, not `(cycle)`** — Q17 says a cycle
+splits into one order per seller. `processCycle` owns its transaction, so each cycle is an
+independent unit of work.
 
-**Results:** 1853 pass / 2 skip / 0 fail (1855 tests, 60 files) = +41 over the 1812 baseline, 0
-regressions. backend tsc 0; `bun run typecheck` 4/4; `build:apps` 4/4; `git diff --check` clean;
-**no V1 protected file in the diff.** Nine first-run failures were all bugs in the new test (a
-`Date.toString()` millisecond blind spot, a stray SQL parameter, two bad destructures, two
-miscomputed totals, a comment-matched keyword); each was fixed by making the assertion stricter.
-**No assertion was weakened to get green.** Three pre-existing guards (migration numbering, the
-Phase 3 migration inventory, "052 changes no V1 table") shaped the migration's shape and were all
-left intact rather than edited.
+**Boundaries held.** No `sold_count` (Q2 open), no plan-level reservation (Decision A/Q1, Phase 6),
+no `commitOrderInventory` (settlement-only), **no payment row per cycle** (Q14 — a cycle order is
+`pending`, never `pending_payment`/`paid`), no `velrepeat_runs` write and **no retirement of its
+`UNIQUE (plan_id, scheduled_for)`** (Phase 7), no change to `paymentAllowsConfirmation` (Phase 8).
+Pricing is the **frozen snapshot** — no current product price is ever read. Scheduling **reuses**
+`calculateNextRunAt`; the module contains no date arithmetic of its own (structural test). `fulfilled`
+was **not** added to the cycle vocabulary. Activation writes cycles and **zero** orders.
 
-**Unblock, one owner action remains:** supply a **TEST** `STRIPE_SECRET_KEY` + **TEST**
-`STRIPE_WEBHOOK_SECRET` (+ `NEON_DATABASE_URL` to verify production state after the push). Until
-a real Stripe TEST E2E is run, **do not call VelRepeat V2 production ready.**
+**6 pre-Phase-5 test assertions superseded** (4 files) — they asserted `cycles = 0` after
+activation, which the owner's §10 (`create Cycle schedule` after `draft → active`) replaces. **Every
+fulfillment assertion was left intact** (`orders = 0`, `runs = 0`, `stock` unchanged) and the cycle
+assertions were **strengthened**: they now pin all four cycles as `status = 'scheduled'`, and pin
+that a duplicate/concurrent delivery still yields exactly the commitment's count.
 
-**Next safe phase:** 5 (V2 plan lifecycle routes for an *active* plan, which V1's routes can now
-reach) — and that migration must also carry `velrepeat_cycles` + `orders.velrepeat_cycle_id`,
-the two Phase 5 objects §0 of 052 deliberately leaves out. NOT inventory or fulfillment.
+**Two real bugs the tests caught in the first draft** (both fixed): an unsafe per-shop money sum that
+joined on `product_id` via `unnest`, and a `velrepeat_items` join with no plan scoping. A third was
+caught when the database **refused an invalid fixture** and exposed that `velrepeat_items` has two
+**partial unique indexes** — so a plan holds a given product at most once, `products.shop_id` is
+NOT NULL, and **a multi-seller plan spans shops via different products, never the same product
+twice**. The `unit_price` join condition I had added for that was itself a latent production bug:
+the snapshot holds the **discounted** price and `velrepeat_items` the **base**, so it would have
+refused deliverable cycles. Reverted, and both facts are now pinned by a structural test. Also found
+by reading: an order with `shop_id = NULL` would fall **outside** the unique index, so an
+unattributable line is now refused.
+
+**Remaining blockers.** (1) **Real Stripe TEST E2E still BLOCKED** — unchanged, re-attempted 4×;
+no TEST credential exists anywhere. **Until one runs, VelRepeat V2 is NOT production ready.**
+(2) **Apply 053 to production.** (3) Q2 recognition moment → Phase 6. (4) Decision A/Q1 → Phase 6.
+(5) Owner decision C (`skipped`/`cancelled` money) → Phase 9. (6) Owner decision F (what happens
+next to a refused cycle) → Phase 9. (7) Phase 7 retires `velrepeat_runs`; Phase 8 extends
+`paymentAllowsConfirmation` — **until then a cycle order is `pending` and cannot be confirmed by the
+canonical path.**
+
+**Pre-existing, NOT a Phase 5 regression:** replaying the whole chain `001 → 053` on a fresh DB fails
+on **008, 023, 047, 049, 051, 052** (`relation "payments"/"auth_identities" does not exist`) —
+production was bootstrapped from the canonical schema and only partially migrated. **053 itself
+applies clean** in that same run. Left alone per "do not refactor unrelated code"; flagged so it is
+not later mistaken for Phase 5 damage.

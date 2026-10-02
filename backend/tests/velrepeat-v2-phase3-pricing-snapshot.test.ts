@@ -869,11 +869,13 @@ describe("Phase 3 — V1 regression (structural)", () => {
   test("no V1 → V2 migration or rewrite was introduced", () => {
     const migrations = readdirSync(join(root, "db", "migrations"));
     // 024 is the legacy V1 buy-ahead migration; 034/035/044 are the V2 plan
-    // migrations. Phase 3 adds none of them. The two later additions are
-    // additive columns on tables Phase 3 itself introduced or already owns:
-    // V0051 adds a parent to `payments` (Phase 4, Q13=B) and V0052 adds the
-    // per-cycle `cycle_price` to the pricing snapshot (the total-prepaid
-    // correction). Neither rewrites a VelRepeat V1 table.
+    // migrations. Phase 3 adds none of them. The three later additions are
+    // additive and touch no VelRepeat V1 table: V0051 adds a parent to
+    // `payments` (Phase 4, Q13=B), V0052 adds the per-cycle `cycle_price` to
+    // the pricing snapshot (the total-prepaid correction), and V0053 creates
+    // the Phase 5 cycle entity and the cycle→order link, which existed in the
+    // canonical schema files but in no migration — the same omission that made
+    // V0052 die in production. None of them rewrites a V1 table.
     expect(migrations.filter((name) => /velrepeat/i.test(name)).sort()).toEqual([
       "024_velrepeat_packages_deliveries_customer_events.sql",
       "034_velrepeat_v2.sql",
@@ -881,6 +883,7 @@ describe("Phase 3 — V1 regression (structural)", () => {
       "044_velrepeat_plans_status_constraint.sql",
       "051_payments_velrepeat_v2_plan_parent.sql",
       "052_velrepeat_pricing_cycle_price.sql",
+      "053_velrepeat_v2_cycle_lifecycle.sql",
     ]);
   });
 });

@@ -1433,10 +1433,21 @@ await query(
     expect(payment.currency).toBe("THB");
     expect(payment.paid_at).not.toBeNull();
 
-    // ── Zero orders, cycles, reservations or fulfillment ──────────────────
+    // ── Zero orders, runs or fulfillment — and exactly the cycle SCHEDULE ──
+    // Phase 5 (owner §10) changed ONE line of this block: activation now mints
+    // the cycle SCHEDULE, so `commitment_cycles` cycles exist and all of them
+    // are `scheduled`. Before Phase 5 this asserted 0. Everything that would
+    // constitute premature fulfillment is still asserted at 0 below, and the
+    // cycle states are pinned so a schedule can never quietly become work.
     const effects = await sideEffectsFor(target);
     expect(effects.orders).toBe(0);
-    expect(effects.cycles).toBe(0);
+    expect(effects.cycles).toBe(Number(plan.commitment_cycles));
+    const cycleStates = await query(
+      `SELECT status, COUNT(*)::int AS n FROM velrepeat_cycles
+        WHERE plan_id = $1 GROUP BY status`,
+      [target],
+    );
+    expect(cycleStates.rows).toEqual([{ status: "scheduled", n: 4 }]);
     expect(effects.runs).toBe(0);
     expect(effects.activations).toBe(1);
     expect(effects.paidPayments).toBe(1);
@@ -1463,6 +1474,10 @@ await query(
     const after_ = await sideEffectsFor(target);
     expect(after_.activations).toBe(1);
     expect(after_.paidPayments).toBe(1);
+    // A duplicate delivery must not mint a SECOND schedule. `UNIQUE (plan_id,
+    // cycle_number)` makes this impossible to fake, so the count holding at
+    // the commitment is a real assertion about the replay.
+    expect(after_.cycles).toBe(Number(plan.commitment_cycles));
     const planAfter = await readPlan(target);
     expect(planAfter.status).toBe("active");
     // Timing is NOT re-stamped by a duplicate delivery.
@@ -1526,7 +1541,10 @@ await query(
     expect(settled.status).toBe("active");
     expect(settled.payment_method).toBe("PROMPTPAY");
     expect(effects.orders).toBe(0);
-    expect(effects.cycles).toBe(0);
+    // Five simultaneous deliveries produced ONE schedule, sized by the
+    // commitment — not five schedules and not none. See the Phase 5 note on
+    // the sibling assertion above.
+    expect(effects.cycles).toBe(Number(settled.commitment_cycles));
   });
 
   testFn("an active plan is refused a second payment", async () => {

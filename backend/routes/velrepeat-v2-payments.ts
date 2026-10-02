@@ -110,6 +110,7 @@ import {
   type LatePaymentReason,
 } from "../lib/payment-incidents.js";
 import { VELREPEAT_CURRENCY } from "../lib/velrepeat-pricing.js";
+import { createCycleSchedule } from "../lib/velrepeat-cycles.js";
 import {
   sessionConfirmsPayment,
   stripeServerClient,
@@ -1238,6 +1239,26 @@ export async function settlePlanCharge(charge: PlanChargeEvent): Promise<Settlem
       return { outcome: "already_active", paymentId: attempt.id, planId: charge.planId };
     }
 
+    // ── Phase 5: the cycle SCHEDULE, and nothing else ──────────────────────
+    // The plan is active, so its delivery commitment now has a schedule. This
+    // runs INSIDE the settlement transaction, so "the plan went active" and
+    // "its cycles exist" are one unit of work: a rollback of either loses both,
+    // and there is no state in which a customer has paid for four cycles and
+    // the plan has none.
+    //
+    // It creates CYCLE ROWS ONLY — no order, no inventory hold, no shipment and
+    // no `completed`. `next_run_at` is one full interval AFTER this instant, so
+    // cycle 1 is not due yet even for a plan bought at its first interval. The
+    // orders themselves appear only when each cycle's `scheduled_at` arrives
+    // and the due-cycle worker runs (Phase 5 §5, not here).
+    const schedule = await createCycleSchedule(client, charge.planId, {
+      pricingSnapshotId: snapshot.id,
+    });
+    console.log(
+      `[velrepeat-v2] plan ${charge.planId} activated with ` +
+        `${schedule.cycles.length} cycle(s) scheduled against snapshot ${schedule.pricingSnapshotId}`,
+    );
+
     await client.query(
       `INSERT INTO velrepeat_events (plan_id, event_type, metadata)
        VALUES ($1, 'PLAN_ACTIVATED', $2::jsonb)`,
@@ -1253,7 +1274,8 @@ export async function settlePlanCharge(charge: PlanChargeEvent): Promise<Settlem
           snapshot_id: snapshot.id,
           amount: attempt.amount,
           currency: attempt.currency,
-          commitment_cycles: null,
+          commitment_cycles: snapshot.commitmentCycles,
+          cycle_ids: schedule.cycles.map((cycle) => cycle.id),
           event_id: charge.eventId,
           started_at: startedAt.toISOString(),
           next_run_at: nextRunAt.toISOString(),
