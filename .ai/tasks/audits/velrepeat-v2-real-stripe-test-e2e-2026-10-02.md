@@ -9,7 +9,8 @@ verification that does **not** require one was completed and is recorded below. 
 simulated, faked, or reported as a PASS.
 
 - **START SHA:** `909b9c454bda847083cb389abb99ee62aa533af8`
-- **FINAL SHA:** *(this audit's commit — see §19)*
+- **FINAL SHA:** `ba1ea451b673f3f97a5af5d0063bc43e34a1f31a` — the commit that carries this audit.
+  (A later docs-only commit backfills this line; that commit changes no code, test or assertion.)
 
 ---
 
