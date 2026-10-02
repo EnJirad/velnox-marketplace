@@ -14,6 +14,37 @@ simulated, faked, or reported as a PASS.
 
 ---
 
+## 0. SECOND PASS — re-verified against a later HEAD, still BLOCKED
+
+A second, independent pass was run against `eae65e307c694eae3f6a894c94a52cc78cdddee5`, in case
+credentials had been added since. **They had not.** The stop condition is unchanged, and this pass
+adds one piece of evidence the first pass did not have: the **application's own gate**, queried
+directly, which reports presence without ever exposing a value.
+
+| Gate | Output |
+|---|---|
+| `stripeStatus()` | `{"usable":false,"mode":null,"publishableKey":null,"publishableKeyMatchesMode":false,"webhookConfigured":false,"reason":"STRIPE_NOT_CONFIGURED"}` |
+| `webhookSecretHealth()` | `{"present":false,"shapeUsable":false,"prefixOk":false,"lengthBucket":"absent","wrappedInQuotes":false,"interiorWhitespace":false,"surroundingWhitespaceOnly":false}` |
+| `stripeSecretKey() !== null` | `false` |
+| `freebuff-deploy env list` | `{"keys":[]}` |
+
+Git state at this pass: branch `main`, working tree **clean**,
+`git rev-list --left-right --count HEAD...origin/main` = `0  0`.
+
+Production re-confirmed: `Migrate Neon Database` is still `36944070061` (**success**, unchanged —
+no `db/migrations/` change since), ledger rows 62–68 = `047_payment_foundation`,
+`048_payment_reservation`, `049_payment_incidents`, `050_orders_status_check`,
+`051_payments_velrepeat_v2_plan_parent`, `052_velrepeat_pricing_cycle_price`.
+
+Re-run at this HEAD: **1853 pass / 2 skip / 0 fail** · backend `tsc` 0 · `bun run typecheck` 4/4 ·
+`bun run build:apps` 4/4 · `git diff --check` clean.
+
+**Two hard stops fire here, not one:** #2 *Stripe TEST credentials are missing* **and** #3 *webhook
+secret is missing*. Per §25 the run stops immediately. **No Stripe object was created, no Stripe
+webhook was received, and no simulated substitute was reported as an E2E pass.**
+
+---
+
 ## 1. Git state
 
 | Fact | Value |
