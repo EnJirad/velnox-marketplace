@@ -730,6 +730,15 @@ exists anywhere reachable. Production re-confirmed 001–052 all applied (ledger
 still 1853/2/0; no code, test or assertion changed. Audit:
 `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-02.md`.
 
+**Re-attempted a second, third and fourth time** at HEADs `eae65e3`, `0d09e50`, `3b728b3`: gate
+still `usable=false / mode=null / reason=STRIPE_NOT_CONFIGURED`, webhook secret absent,
+`freebuff-deploy env list` `{"keys":[]}`. Every credential-shaped literal in the tree is one of six
+**shape-only** fixtures; no real TEST or LIVE key exists anywhere. Ledger re-confirmed from run
+`36944070061` (success), rows 64–68 = 048–052. Suite 1853 pass / 2 skip / 0 fail, backend tsc 0,
+typecheck 4/4, build 4/4. **No product defect found** — only the owner can unblock, by adding
+`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` under **Settings →
+Environment** (never a live key). No code change is expected to be needed once they exist.
+
 **The production finding, corrected.** `Migrate Neon Database` run `36902790862` (on `f0cc464`)
 printed `Already applied: 001_initial` — but that echo is **multi-line**: 001–051 are ALL applied
 and recorded, and the run's pending list held only `052_velrepeat_pricing_cycle_price.sql`. (An

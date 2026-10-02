@@ -65,7 +65,55 @@ Database` `36944070061` **success**, ledger rows 64–68 = `048_payment_reservat
 `052_velrepeat_pricing_cycle_price`. Re-run at this HEAD: **1853 pass / 2 skip / 0 fail** · backend
 `tsc` 0 · typecheck 4/4 · build 4/4 · `git diff --check` clean · tree clean.
 
-**REAL STRIPE E2E: BLOCKED.** The blockers are unchanged across three passes; the only thing that
+### FOURTH PASS — re-checked at `3b728b344d2989442efe617ec697505a2c2768a1`
+
+Run a fourth time in case credentials had been added since the third pass. **Still blocked,
+identical result. No product defect was found.**
+
+| Gate | Output |
+|---|---|
+| `stripeStatus().usable` | `false` |
+| `stripeStatus().mode` | `null` |
+| `stripeStatus().publishableKeyMatchesMode` | `false` |
+| `stripeStatus().webhookConfigured` | `false` |
+| `stripeStatus().reason` | `STRIPE_NOT_CONFIGURED` |
+| `webhookSecretHealth()` | `{"present":false,"prefixOk":false,"lengthBucket":"absent"}` |
+| `stripeSecretKey() !== null` | `false` |
+| `stripeWebhookSecret() !== null` | `false` |
+| `classifyStripeSecretKey(secret)` | `null` |
+| `freebuff-deploy env list` | `{"keys":[]}` |
+
+**present / absent matrix (nothing was printed; only presence is reported):**
+
+| Required variable | State |
+|---|---|
+| `STRIPE_SECRET_KEY` (`sk_test_…`) | **absent** |
+| `STRIPE_PUBLISHABLE_KEY` (`pk_test_…`) | **absent** |
+| `STRIPE_WEBHOOK_SECRET` (TEST `whsec_…`) | **absent** |
+| `STRIPE_MODE` | **absent** (no key ⇒ no mode to classify) |
+
+A repo-wide scan was run again to rule out a credential committed anywhere. Every
+credential-shaped literal in the tree is one of exactly six **shape-only** placeholders used by
+test fixtures — `sk_test_000000000000000000000000`, `sk_live_000000000000000000000000`,
+`pk_test_000000000000000000000000`, `pk_live_000000000000000000000000`,
+`whsec_000000000000000000000000`, `whsec_ffffffffffffffffffffffffffffffff`. **No real TEST or LIVE
+credential exists anywhere.** Hard stops **#2 (TEST credentials missing)** and **#3 (webhook secret
+missing)** both fire; per §3 the run stops immediately.
+
+Git state: branch `main`, tree clean, `git rev-parse HEAD` ==
+`git rev-parse origin/main` == `3b728b34…`, `git rev-list --left-right --count HEAD...origin/main`
+= `0  0`. Production re-confirmed from run `36944070061` (**success**, unchanged): ledger rows
+64–68 = `048_payment_reservation`, `049_payment_incidents`, `050_orders_status_check`,
+`051_payments_velrepeat_v2_plan_parent`, `052_velrepeat_pricing_cycle_price` — 001→052 all applied.
+
+Re-run at this HEAD: **1853 pass / 2 skip / 0 fail** (1855 tests, 60 files) · backend `tsc` 0 ·
+`bun run typecheck` 4/4 · `bun run build:apps` 4/4 · `git diff --check` clean · tree clean.
+
+**REAL STRIPE E2E: BLOCKED.** Four passes, four identical results. The blocker is unchanged across
+all of them and is entirely an owner action; nothing in the repository needs to change. **No
+product defect was found.**
+
+**REAL STRIPE E2E: BLOCKED.** The blockers are unchanged across four passes; the only thing that
 clears them is the owner adding the TEST credentials. Nothing in the repository needs to change.
 
 ---
