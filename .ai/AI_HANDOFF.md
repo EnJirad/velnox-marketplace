@@ -725,6 +725,10 @@ only `001_initial`.
 **STATUS: the production migration is APPLIED and its workflow is GREEN; Stripe TEST E2E still NOT
 EXECUTED.** Everything verifiable without a Stripe credential passed.
 Audit: `.ai/tasks/audits/velrepeat-v2-production-migration-stripe-e2e-2026-10-01.md`.
+**Re-attempted 2026-10-02** for the real TEST payment itself: **hard stop #2**, no TEST credential
+exists anywhere reachable. Production re-confirmed 001–052 all applied (ledger rows 1–68); suite
+still 1853/2/0; no code, test or assertion changed. Audit:
+`.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-02.md`.
 
 **The production finding, corrected.** `Migrate Neon Database` run `36902790862` (on `f0cc464`)
 printed `Already applied: 001_initial` — but that echo is **multi-line**: 001–051 are ALL applied
