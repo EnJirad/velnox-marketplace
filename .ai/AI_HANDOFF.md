@@ -728,18 +728,11 @@ only `001_initial`.
      credential re-attempts and the 052 production-failure investigation are
      history and are NOT repeated here. -->
 
-**Condensed current state.** Production migration 052 is APPLIED and its workflow is GREEN
-(run `36944070061`, success; ledger rows 1–68 = migrations 001–052). The V2 prepaid pricing
-domain reached production via §0 of migration 052. The real Stripe TEST E2E was re-attempted
-FOUR times (HEADs `eae65e3`, `0d09e50`, `3b728b3`, `45a17b0`) and is **still BLOCKED** — no
-TEST credential exists anywhere reachable (`freebuff-deploy env list` = `{"keys":[]}`; every
-credential-shaped literal in the tree is one of six shape-only fixtures). No product defect
-was found; only the owner can unblock it by adding `STRIPE_SECRET_KEY`,
-`STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` under **Settings → Environment** (never a
-live key). Audit: `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-02.md`.
-
-**Until a real Stripe TEST E2E runs, VelRepeat V2 is NOT production ready.** That blocker is
-UNCHANGED by Phase 5 and is restated in §63.
+**Superseded.** Measured 052-in-production (run `36944070061`) and the still-blocked Stripe TEST E2E
+are both superseded by **§63 (Phase 5)** and **§64 (053 applied + production verified)**; the four
+Stripe credential re-attempts and the 052 investigation live in the archive above and in
+`.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-02.md`. Kept only as a pointer so the
+history stays out of this file.
 
 ## 63. VelRepeat **V2 Phase 5 — cycle lifecycle & per-cycle order creation** (2026-10-02)
 
@@ -810,3 +803,22 @@ on **008, 023, 047, 049, 051, 052** (`relation "payments"/"auth_identities" does
 production was bootstrapped from the canonical schema and only partially migrated. **053 itself
 applies clean** in that same run. Left alone per "do not refactor unrelated code"; flagged so it is
 not later mistaken for Phase 5 damage.
+
+## 64. VelRepeat **V2 Phase 5 — production migration 053 APPLIED + verified** (2026-10-03)
+
+**Migration 053 is IN PRODUCTION and verified** — applied by the Phase 5 push itself (`Migrate Neon Database`
+run `37026940189`, success), so §62's "the cycle tables were never created" is **superseded**. Ledger row
+`69 | 053_… | 2026-10-02 15:26:29+00`; 001–053 applied, none pending. Verified read-only in Neon (`Velnox Neon
+Schema Diagnostic` run `37082364439`): `velrepeat_cycles` + all 12 canonical columns + `UNIQUE (plan_id,
+cycle_number)` + both CHECKs + both cycle indexes; `orders.velrepeat_cycle_id uuid NULLABLE` + FK `ON DELETE SET
+NULL`; `idx_orders_velrepeat_cycle_seller_unique` = UNIQUE `(velrepeat_cycle_id, shop_id)` partial (the
+exactly-once `(cycle, shop)` key). `velrepeat_cycles` rowcount 0, orders 0/0 → additive, rewrote nothing.
+Suite **1882/2/0** (baseline, zero delta), tsc 0, typecheck 4/4, build 4/4, schema files identical.
+**No local Neon credential** — production is reachable only through those workflows, so 053 probes were added
+to `diag-neon-schema.yml` (SELECT-only). Full detail:
+`.ai/tasks/audits/velrepeat-v2-production-migration-053-2026-10-03.md`.
+
+**Real Stripe TEST E2E is STILL BLOCKED** (5th check: all three STRIPE keys unset, `freebuff-deploy env list` =
+`{"keys":[]}`). **VelRepeat V2 remains NOT production ready until one real Stripe TEST E2E passes.** Owner
+action unchanged: add the three TEST keys under **Settings → Environment** (never a live key), then ask for
+the E2E.
