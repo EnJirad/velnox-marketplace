@@ -17,6 +17,7 @@ architecture change. Every "NOT EXECUTED" below means exactly that.
 | Branch | `main` |
 | HEAD at start of this task | `a2b6ff92e94e3b8d9c09cb097d58caaeff093b19` |
 | HEAD subject | `docs(velrepeat): verify production migration 053` |
+| FINAL SHA (commit that carries this audit) | `c9352b636d537406955697b55c913f4afbef7e39` — docs-only; changes no code, test or assertion. A later docs-only commit backfills this line and likewise changes no code. |
 | `git ls-remote origin HEAD` | `a2b6ff92e94e3b8d9c09cb097d58caaeff093b19` |
 | In sync? | **YES** — local == remote, verified before anything was done |
 | Working tree at start | **clean** (`git status --porcelain` → empty) |
