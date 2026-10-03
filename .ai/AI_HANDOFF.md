@@ -107,33 +107,30 @@ still open is **§6 below**, which stayed inline, and the current work is **§43
 
 ### Open, actionable
 
-- **Stripe sandbox round trips have still never been driven by an agent** (§27, §18). The
-  owner **completed the configuration step** — verified read-only 2026-09-27: production reports
-  `{configured:true, mode:"test", webhookConfigured:true}` and `/api/payments/methods` offers
-  **CARD + PROMPTPAY** (COD disabled); the key is a `pk_test_…`. What is still unproven is the
-  round trip itself: no PaymentIntent, PromptPay QR, webhook delivery or refund has ever been
-  executed **from this workspace** (`freebuff-env list` → `{"files":{}}`), so those remain
-  **CODE VERIFIED, never PASS** — and driving them in production means taking money in the owner's
-  own account. `STRIPE_CONNECT_MISSING`: no Connect, no payout (checkout ≠ payout readiness).
-  Variables: `INSTALLATION.md` §4 + `docs/ENVIRONMENT.md`; `.env.example` is owner-edit only.
-- ~~**The DB-gated tests have never been executed in this workspace.**~~ **CLOSED** — they now
-  run against a disposable Postgres, including the two self-approval HTTP cases. **Production Neon is
-  verified read-only (§9):** the ledger matches `main` and the 041–046 repairs are applied. What
-  remains is a fresh catalog read of four low-severity details (§9.4); the SELECT-only
-  `diag-neon-schema.yml` still cannot be dispatched from a workspace (403).
+- **Stripe TEST round trips still unproven — the gate is the EXECUTION SURFACE, not configuration**
+  (§64, §18). Runtime config re-verified live on the traffic host 2026-10-03: `{configured:true,
+  mode:"test", webhookConfigured:true}`, CARD + PROMPTPAY (COD off), webhook refusing forgeries
+  (400). Unproven: the checkout round trip itself (no PaymentIntent, PromptPay QR, webhook delivery
+  or refund ever executed) — no `velnox_session` cookie can be minted from this workspace (no
+  browser, no test account) and Checkout is Stripe-hosted. **CODE VERIFIED, never PASS.**
+  `STRIPE_CONNECT_MISSING`: no Connect, no payout (checkout ≠ payout readiness). Variables:
+  `INSTALLATION.md` §4 + `docs/ENVIRONMENT.md`; `.env.example` is owner-edit only.
+- ~~**The DB-gated tests have never been executed in this workspace.**~~ **CLOSED** — they run
+  against a disposable Postgres, including the two self-approval HTTP cases. **Production Neon is
+  verified read-only (§9):** ledger matches `main`, 041–046 repairs applied. Remaining: a fresh
+  catalog read of four low-severity details (§9.4); `diag-neon-schema.yml` still cannot be
+  dispatched from a workspace (403).
 - **`backend/tsconfig.json` excludes `tests`**, so `tsc` never validates test files — a syntax
   error or bad import surfaces only when `bun test` parses it. After editing a test, run that file.
 
 - ~~**Closed gap records moved out of this file.**~~ **ARCHIVED 2026-09-29** →
   [`history/archive/AI_Handoff-closed-gaps-2026-09-29.md`](history/archive/AI_Handoff-closed-gaps-2026-09-29.md)
-  (verification self-action guard, unbounded admin product/seller lists,
-  unpaginated verification queue, DB constraint repairs, non-idempotent fixtures,
-  the corrupted revoke string). Closed items are neither current state nor a gap.
-- **`shops.seller_id` is not UNIQUE** (`idx_shops_seller` is a plain index), so a
-  seller with two shops would make the verification queue list one verification
-  twice — and `COUNT(*) OVER()` would count it twice, consistently. The app
-  upserts a single shop per seller, so this is latent, not observed. A `COUNT(DISTINCT
-  sv.id)` + de-duplicated listing is the fix if multi-shop sellers ever exist.
+  (self-action guard, unbounded admin lists, unpaginated verification queue, DB constraint
+  repairs, non-idempotent fixtures, corrupted revoke string). Closed items are not gaps.
+- **`shops.seller_id` is not UNIQUE** (`idx_shops_seller` is a plain index), so a two-shop
+  seller would make the verification queue list one verification twice (`COUNT(*) OVER()`
+  counts it twice too). The app upserts one shop per seller, so it is latent, not observed.
+  Fix if multi-shop sellers ever exist: `COUNT(DISTINCT sv.id)` + de-duplicated listing.
 - ~~**VelCenter's verification queue labels are hardcoded Thai**~~ **CLOSED (2026-09-26, §20)** —
   every string renders through the existing `review.*` namespace. `ProductModerationQueue.tsx`'s copy
   is still hardcoded Thai (pre-existing).
@@ -141,10 +138,10 @@ still open is **§6 below**, which stayed inline, and the current work is **§43
   one file per number, which is how the V0035 repair was skipped. New migrations must use an unused
   number; consider renumbering.
 - **Channels with no publisher.** `cart:updated`, `order:created` and
-  `inventory:updated` are in the subscribe allowlist but nothing broadcasts them.
-  **Confirmed by measurement (2026-09-26, §19):** 0 `CHANNELS.*` publisher sites
-  each (`order:updated` 14, `product:updated` 1, `seller:updated` 1). Harmless today
-  (no consumer subscribes), but they are dead entries.
+  `inventory:updated` are in the subscribe allowlist but nothing broadcasts them
+  (**measured 2026-09-26, §19:** 0 `CHANNELS.*` publisher sites each; `order:updated` 14,
+  `product:updated` 1, `seller:updated` 1). Harmless today (no consumer subscribes),
+  but they are dead entries.
 - **The `velnox.com` zone does not resolve** (Google DoH `Status: 2`, "Name servers
   refused query (lame delegation?)"; `center.velnx.com` is NXDOMAIN). Production is unaffected —
   every Vercel project sets `VITE_*` overrides and no deployed bundle references `*.velnox.com` —
@@ -190,8 +187,7 @@ still open is **§6 below**, which stayed inline, and the current work is **§43
   after `git diff` + the tests confirm the result.
 - **Very large docs are read-only in practice.**
   `.ai/history/archive/AI_Handoff-2026-09-14.md` (~335 KB) and
-  `…-2026-09-22-full.md` (~97 KB) are verbatim records — read them with windows,
-  never as a whole file.
+  `…-2026-09-22-full.md` (~97 KB) are verbatim records — read with windows, never whole-file.
 
 ## 7. Where to look next
 
@@ -565,45 +561,33 @@ quota; 048–050 unapplied; new objects absent in prod and unread by any code).
 
 ## 55. VelRepeat **V2 Owner Decision Closure + Architecture Consistency Gate** (2026-09-30)
 
-**Docs only — no code, no schema, no migration 051, no production behavior change.** New audit
-`.ai/tasks/audits/velrepeat-v2-owner-decision-closure-2026-09-30.md` (12 sections) records the owner's
-binding decisions: **Q13=B** (plan-level linkage inside the existing `payments` authority),
-**Q14** (one canonical Stripe prepaid charge per plan, not Subscriptions), **A/Q1=B** (reserve per
-cycle), **Q2** (`sold_count` on actual cycle settlement, canonical writer only), **B/C/D/E/F/G**
-(refund future unfulfilled only · skip future only · pause future only · price snapshot at purchase ·
-no oversell / no auto-substitute), **H/Q11** (platform-controlled, data-driven pricing; the
-1/2/4/8/16 → 0/3/7/10/15 % ladder is examples only), **Q15** (V1 coexists as legacy), **Q16**
-(scheduling = UTC, `timezone` is display-only), **Q17** (multi-seller plan, one payment, per-seller
-fulfillment), plus the cycle-identity direction (`velrepeat_cycles` = identity, `velrepeat_runs` =
-execution attempt). Contract Revision 2.3 pointer added.
+**Docs only.** Audit `.ai/tasks/audits/velrepeat-v2-owner-decision-closure-2026-09-30.md` records the owner's
+binding decisions: **Q13=B** (plan-level linkage inside `payments`), **Q14** (one canonical Stripe prepaid charge
+per plan, not Subscriptions), **A/Q1=B** (reserve per cycle), **Q2** (`sold_count` on actual cycle settlement),
+**B/C/D/E/F/G** (refund future unfulfilled only · skip future only · pause future only · price snapshot at
+purchase · no oversell / no auto-substitute), **H/Q11** (platform-controlled data-driven pricing; the
+1/2/4/8/16 → 0/3/7/10/15 % ladder is examples only), **Q15** (V1 legacy), **Q16** (scheduling = UTC,
+`timezone` display-only), **Q17** (multi-seller plan, one payment, per-seller fulfillment); cycle identity =
+`velrepeat_cycles` (identity) / `velrepeat_runs` (execution attempt). Contract Rev 2.3 pointer added.
 
-**Verdict: `PHASE 2 = BLOCKED`** on three customer-visible money / authority questions — pricing-rule
-resolution (stack vs one-wins), rounding & currency, package-authoring ownership.
+**Verdict `PHASE 2 = BLOCKED`** on pricing-rule resolution (stack vs one-wins), rounding & currency,
+package-authoring ownership. **Stop tokens:** `OWNER FORMULA REQUIRED` for **B** refund / **C** skip / **D** paused
+/ **F** out-of-stock monetary consequences → **Phase 9 STOPPED** (no per-cycle amount or discount allocation to
+refund from); `OWNER DECISION REQUIRED` for the **Q2 recognition moment**, multi-seller money attribution, seller
+eligibility, plan status `pending_payment`, cycle status `due`/`reserved`/`fulfilled`, 4A reservation window.
 
-**Stop tokens issued (nothing guessed):** `OWNER FORMULA REQUIRED` for the **B** refund formula, **C**
-skip monetary consequence, **D** paused-cycle monetary consequence, **F** out-of-stock monetary
-consequence → **Phase 9 STOPPED** (the repository has no per-cycle amount or discount allocation to
-refund from). `OWNER DECISION REQUIRED` for the **Q2 recognition moment**, multi-seller money
-attribution, seller eligibility, plan status `pending_payment`, cycle status `due`/`reserved`/
-`fulfilled`, and the 4A plan-level reservation-window mapping.
+**Findings:** (1) **Q2 conflicts with commerce semantics** — canonical `sold_count` commits at *payment
+settlement* (`inventory.ts:141` ← `stripe.ts:559`, gated by `orders.status → 'paid'`), which a prepaid cycle order
+never has → ambiguous, STOPPED not resolved. (2) The "settled payment outranks cancellation" guard is keyed to
+per-order payments (`inventory.ts:226-232`) and vanishes for cycle orders under Q14 → Phase 6 needs a cycle-state
+claim. (3) `paymentAllowsConfirmation` (`order-fulfillment.ts:218-235`) would refuse every cycle order → Phase 8
+must extend it, not bypass it. (4) Per-seller money attribution is **unrepresentable**: `commissions.order_id NOT
+NULL`, `settlements` has no plan/cycle reference, neither has a writer, no Connect/payout rail
+(`.ai/context/payment.md:239-250`). (5) `velrepeat_runs` and `velrepeat_cycles` are unrelated while `orders`
+references both → dual cycle-identity hazard.
 
-**New source-verified findings:** (1) **Q2 conflicts with existing commerce semantics** — canonical
-`sold_count` is committed at *payment settlement* (`inventory.ts:141` ← `stripe.ts:559`, gated by
-`orders.status → 'paid'`), and a prepaid cycle order never has one, so the recognition moment is
-ambiguous → reported and STOPPED, not resolved. (2) The release guard's "settled payment outranks
-cancellation" protection is keyed to per-order payments (`inventory.ts:226-232`) and disappears for
-cycle orders under Q14 → a cycle-state claim is required in Phase 6. (3) `paymentAllowsConfirmation`
-(`order-fulfillment.ts:218-235`) would refuse every cycle order, because it looks only at that order's
-payment history → Phase 8 must extend the gate, not bypass it. (4) Per-seller money attribution is
-**unrepresentable today**: `commissions.order_id NOT NULL`, `settlements` has no plan/cycle reference,
-neither table has any backend writer, and there is no Stripe Connect / payout rail
-(`.ai/context/payment.md:239-250`). (5) `velrepeat_runs` and `velrepeat_cycles` have **no relation** to
-each other and `orders` references both → the dual cycle-identity hazard.
-
-**Verification:** `bun run test` **968 pass / 196 skip / 0 fail** (1164 tests, 53 files) · backend tsc 0
-· typecheck 4/4 · build:apps 4/4 · `git diff --check` clean · `cmp` schema files identical ·
-`db/migrations/` still ends at `050`. Docs-only — DB-gated tests skip locally (no PostgreSQL); CI's
-`postgres:16` is the only real DB execution. **PRODUCTION = BLOCKED** (Neon quota; 048–050 unapplied).
+**Verification:** `bun run test` **968 pass / 196 skip / 0 fail** · backend tsc 0 · typecheck 4/4 · build:apps 4/4
+· diff clean · schema files identical · `db/migrations/` ended at `050`. **PRODUCTION = BLOCKED** (Neon quota).
 
 ---
 
@@ -720,19 +704,12 @@ measured state is in §62.** The production blocker it raised is CONFIRMED and W
 the V2 domain schema still has no `db/migrations/*.sql` file, and the production ledger holds
 only `001_initial`.
 
-## 62. VelRepeat **V2 — production migration + Stripe TEST E2E verification** (2026-10-01)
+## 62. VelRepeat **V2 — production migration + Stripe TEST E2E verification** (2026-10-01) — ARCHIVED
 
-<!-- ARCHIVED VERBATIM 2026-10-02 (Phase 5 pass, edit-headroom housekeeping).
-     Full original text: .ai/history/archive/AI_Handoff-2026-10-02-velrepeat-v2-production-migration.md
-     The superseding current state is §63 (Phase 5) below; the four Stripe TEST
-     credential re-attempts and the 052 production-failure investigation are
-     history and are NOT repeated here. -->
-
-**Superseded.** Measured 052-in-production (run `36944070061`) and the still-blocked Stripe TEST E2E
-are both superseded by **§63 (Phase 5)** and **§64 (053 applied + production verified)**; the four
-Stripe credential re-attempts and the 052 investigation live in the archive above and in
-`.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-02.md`. Kept only as a pointer so the
-history stays out of this file.
+**Superseded** by §63 (Phase 5) and §64 (053 applied + production verified). Original text, the four
+Stripe credential re-attempts, and the 052 production-failure investigation:
+`.ai/history/archive/AI_Handoff-2026-10-02-velrepeat-v2-production-migration.md` and
+`.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-02.md`. Pointer only.
 
 ## 63. VelRepeat **V2 Phase 5 — cycle lifecycle & per-cycle order creation** (2026-10-02)
 
@@ -754,8 +731,7 @@ verified unchanged.
 **no** migration. That is the identical omission that killed V0052, and §0 of 052 names both as
 Phase 5 substrate. Additive + idempotent: nullable `ADD COLUMN`, the cycle table copied **verbatim**
 from `db/schema.sql`, FK `ON DELETE SET NULL`, plus **`idx_orders_velrepeat_cycle_seller_unique`** —
-`UNIQUE (velrepeat_cycle_id, shop_id)`. **053 MUST be applied to production; the cycle substrate has
-never existed in Neon.**
+`UNIQUE (velrepeat_cycle_id, shop_id)`. **053 was applied to production and verified (§64).**
 
 **Idempotency — two independent DB guarantees, never a flag.** (1) The row claim: `SELECT … FOR
 UPDATE OF c` + `UPDATE … WHERE status = 'scheduled'`, reusing `lib/order-lock.ts` — a second worker
@@ -790,11 +766,11 @@ refused deliverable cycles. Reverted, and both facts are now pinned by a structu
 by reading: an order with `shop_id = NULL` would fall **outside** the unique index, so an
 unattributable line is now refused.
 
-**Remaining blockers.** (1) **Real Stripe TEST E2E still BLOCKED** — unchanged, re-attempted 4×;
-no TEST credential exists anywhere. **Until one runs, VelRepeat V2 is NOT production ready.**
-(2) **Apply 053 to production.** (3) Q2 recognition moment → Phase 6. (4) Decision A/Q1 → Phase 6.
-(5) Owner decision C (`skipped`/`cancelled` money) → Phase 9. (6) Owner decision F (what happens
-next to a refused cycle) → Phase 9. (7) Phase 7 retires `velrepeat_runs`; Phase 8 extends
+**Remaining blockers.** (1) **Real Stripe TEST E2E still BLOCKED** — config PASS, gate is the
+execution surface (§64). **Until one runs, VelRepeat V2 is NOT production ready.**
+(2) Q2 recognition moment → Phase 6. (3) Decision A/Q1 → Phase 6.
+(4) Owner decision C (`skipped`/`cancelled` money) → Phase 9. (5) Owner decision F (what happens
+next to a refused cycle) → Phase 9. (6) Phase 7 retires `velrepeat_runs`; Phase 8 extends
 `paymentAllowsConfirmation` — **until then a cycle order is `pending` and cannot be confirmed by the
 canonical path.**
 
@@ -806,31 +782,33 @@ not later mistaken for Phase 5 damage.
 
 ## 64. VelRepeat **V2 Phase 5 — production migration 053 APPLIED + verified** (2026-10-03)
 
-**Migration 053 is IN PRODUCTION and verified** — applied by the Phase 5 push itself (`Migrate Neon Database`
-run `37026940189`, success), so §62's "the cycle tables were never created" is **superseded**. Ledger row
-`69 | 053_… | 2026-10-02 15:26:29+00`; 001–053 applied, none pending. Verified read-only in Neon (`Velnox Neon
-Schema Diagnostic` run `37082364439`): `velrepeat_cycles` + all 12 canonical columns + `UNIQUE (plan_id,
-cycle_number)` + both CHECKs + both cycle indexes; `orders.velrepeat_cycle_id uuid NULLABLE` + FK `ON DELETE SET
-NULL`; `idx_orders_velrepeat_cycle_seller_unique` = UNIQUE `(velrepeat_cycle_id, shop_id)` partial (the
-exactly-once `(cycle, shop)` key). `velrepeat_cycles` rowcount 0, orders 0/0 → additive, rewrote nothing.
-Suite **1882/2/0** (baseline, zero delta), tsc 0, typecheck 4/4, build 4/4, schema files identical.
-**No local Neon credential** — production is reachable only through those workflows, so 053 probes were added
-to `diag-neon-schema.yml` (SELECT-only). Full detail:
+**Migration 053 is IN PRODUCTION and verified** — applied by the Phase 5 push (`Migrate Neon Database` run
+`37026940189`), so §62's "the cycle tables were never created" is **superseded**. Ledger row `69 | 053_… |
+2026-10-02 15:26:29+00`; 001–053 applied, none pending. Verified read-only (`Velnox Neon Schema Diagnostic` run
+`37082364439`): `velrepeat_cycles` + 12 columns + `UNIQUE (plan_id, cycle_number)` + both CHECKs + both indexes;
+`orders.velrepeat_cycle_id uuid NULLABLE` + FK `ON DELETE SET NULL`; `idx_orders_velrepeat_cycle_seller_unique` =
+UNIQUE `(velrepeat_cycle_id, shop_id)` partial (the exactly-once `(cycle, shop)` key). Rowcount 0 → additive.
+**No local Neon credential** — production is reachable only through those workflows. Full detail:
 `.ai/tasks/audits/velrepeat-v2-production-migration-053-2026-10-03.md`.
 
-**Real Stripe TEST E2E: the CONFIGURATION blocker is GONE — §64's earlier "credentials missing" was a
-measurement error.** The owner added the Stripe variables on **Render**; six prior checks had measured the
-**Freebuff sandbox** instead (`freebuff-env list` / `freebuff-deploy env list` describe Freebuff hosting,
-NOT Render). Probed on the real runtime, `GET https://velnox-api.onrender.com/api/stripe/configured` →
-**`configured: true, mode: "test", reason: null`**, `webhookSecretHealth.shapeUsable: true`; `?selfTest=1` →
-`attempted: true, verified: true` (which also proves `getStripe()` built a non-null **test** client in the
-Render process). `/api/payments/methods` → CARD + PROMPTPAY enabled, COD off. Webhook endpoint live and
-correctly refusing forged/missing signatures (400). `POST /api/velrepeat/v2/plans` and `…/payment` → 401
-(route live, deploy current). Frontends hold **no** Stripe secret, so Vercel was never involved. Env names
-matched the code exactly (`payment-config.ts:160-163`) — nothing renamed, nothing to fix.
-**RULE: verify runtime config against the host that serves traffic (`velnox-api.onrender.com`), never the
-build sandbox.** Docs-only fix: `INSTALLATION.md`'s Render env block had omitted all four Stripe vars.
-**Still NOT production ready** — the E2E itself was never run; it now needs an owner browser checkout with
-TEST card `4242…4242` plus disposable production fixtures. Suite unchanged at **1882/2/0**, tsc 0,
-typecheck 4/4, build 4/4, diff clean. Full detail:
-`.ai/tasks/audits/velrepeat-v2-stripe-test-runtime-verification-2026-10-03.md`.
+**Real Stripe TEST E2E: the CONFIGURATION blocker is GONE — the earlier "credentials missing" was a
+measurement error.** Six prior checks measured the **Freebuff sandbox** (`freebuff-env list` /
+`freebuff-deploy env list` describe Freebuff hosting, NOT Render). On the real runtime,
+`GET /api/stripe/configured` → **`configured: true, mode: "test", reason: null`**, `?selfTest=1` →
+`attempted: true, verified: true` (proving `getStripe()` built a non-null **test** client in the Render
+process). `/api/payments/methods` → CARD + PROMPTPAY enabled, COD off. Webhook live, refusing forgeries (400).
+Env names matched the code exactly (`payment-config.ts:160-163`). **RULE: verify runtime config against the host
+that serves traffic (`velnox-api.onrender.com`), never the build sandbox.** Docs-only fix: `INSTALLATION.md`'s
+Render env block had omitted all four Stripe vars.
+**Still NOT production ready — the blocker is now the EXECUTION SURFACE, not credentials** (E2E attempt
+2026-10-03T16:14–16:26Z at HEAD `8ef8c0b`, config re-confirmed live PASS). Both V2 money routes need the
+`velnox_session` cookie (`requireAuth` reads only that cookie — no header/internal/cron path); minting it needs a
+browser Google OAuth round trip, and this workspace has **no browser, no Playwright/Puppeteer, no provisioned test
+account**. Payment is a Stripe **hosted** Checkout Session (no `confirm`/`pm_card_*` path exists in the repo), so
+only a human in a browser can complete it — and only then can Stripe deliver the webhook. No staging backend
+(`velnox-api-staging`/`-test` → 404). `runDueCycleTick()` has no HTTP/operator trigger (in-process job,
+`server.ts:546`). **8 refusal paths WERE executed live** (forged/missing webhook signature → 400; V2
+plan/payment/package + forged cookie → 401; `_diag` → 401), all stopping before any DB write. Regression re-run:
+**1882/2/0** (`bun test` and `pnpm test`), tsc 0, backend typecheck 0, typecheck 4/4, build 4/4, schema identical,
+diff clean. (`pnpm exec tsc -b` / `pnpm build` are not this repo's commands — bun workspace, no root tsconfig.)
+Full detail: §18 of `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-03.md`.

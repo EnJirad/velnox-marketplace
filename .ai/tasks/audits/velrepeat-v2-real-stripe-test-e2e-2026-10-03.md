@@ -422,3 +422,142 @@ applied and verified in production.
 
 *The goal is proof that the real Stripe TEST path is safe — not a green report. That proof cannot be
 produced until a TEST credential exists, and it will not be manufactured.*
+
+---
+
+## 18. Later pass, same day — configuration CLEARED, the **execution surface** is the real gate
+
+> **STATUS OF THIS ROUND: `REAL STRIPE TEST E2E = BLOCKED` — and NOT on credentials.**
+> The Stripe TEST runtime on Render is proven configured and working (§18.1). The E2E still cannot be
+> executed, but the reason is now a **reachability / execution-surface** gate (§18.2), not a missing
+> credential. §2's "credentials missing" conclusion is superseded by
+> `.ai/tasks/audits/velrepeat-v2-stripe-test-runtime-verification-2026-10-03.md`; §2's
+> `NOT EXECUTED` findings still stand and are **not** retroactively relabelled.
+
+| Fact | Value |
+|---|---|
+| Test timestamp | **2026-10-03T16:14Z → 2026-10-03T16:26:29Z** (live probes) |
+| Environment | **Render Web Service `velnox-api`** — `https://velnox-api.onrender.com` (production host, Stripe **TEST** mode) |
+| HEAD at this pass | `8ef8c0b35544caa5d63bc70a85087f598789b333` — local == `git ls-remote origin refs/heads/main`; tree clean |
+| Runtime-verification commit | `407cdb1dc4920d7257b1b1431224b2c02e8c4890` (present in history, as cited in the brief) |
+| Production writes made | **none** |
+| Test data created | **none** — no fixture could be created without an authenticated session (§18.2) |
+| Mocks / simulated Stripe success | **none** |
+
+### 18.1 Stripe TEST runtime — **PASS** (live, measured this round)
+
+Prefixes only. No secret value is recorded anywhere in this document.
+
+| Probe | Result |
+|---|---|
+| `GET /api/stripe/configured` | **HTTP 200** — `configured: true`, `mode: "test"`, `reason: null`, `webhookConfigured: true`; `webhookSecretHealth` = `present: true`, `shapeUsable: true`, `prefixOk: true`, `lengthBucket: "expected"`, `wrappedInQuotes: false`, `interiorWhitespace: false`, `surroundingWhitespaceOnly: false` |
+| `GET /api/stripe/configured?selfTest=1` | **HTTP 200** — `webhookSignatureSelfTest: {attempted: true, verified: true, reason: null}`. `attempted: true` is direct proof `getStripe()` built a **non-null test client inside the Render process** (a live key would have been refused as `STRIPE_LIVE_KEY_REFUSED`) |
+| `GET /api/payments/methods` | **HTTP 200** — `CARD` + `PROMPTPAY` `enabled: true`, `COD` `enabled: false`, `currency: "THB"`, `stripe.mode: "test"` |
+| `GET /api/health` | **HTTP 200** — `{"status":"ok"}` |
+| `GET /auth/google` | **HTTP 302** → `accounts.google.com/o/oauth2/v2/auth` with a real `client_id` (the browser login path exists and is live) |
+
+Credential presence, as reported by the runtime itself (presence only):
+`STRIPE_SECRET_KEY` = **SET**, prefix `sk_test_***` · `STRIPE_PUBLISHABLE_KEY` = **SET**, prefix
+`pk_test_***` · `STRIPE_WEBHOOK_SECRET` = **SET**, prefix `whsec_***` · `STRIPE_MODE` = **test**.
+
+**`STRIPE_NOT_CONFIGURED` is resolved.** That earlier verdict was a measurement error: it was taken
+from the Freebuff workspace sandbox (`freebuff-env list` → `{"files":{}}`,
+`freebuff-deploy env list` → `{"keys":[]}`, both of which describe **Freebuff hosting, not Render**)
+rather than from the host that serves traffic. The owner's Render variables were always in effect.
+
+### 18.2 The real blocker — nothing in this workspace can drive an authenticated Checkout
+
+Five independent facts, each verified from source and/or a live probe:
+
+| # | Fact | Evidence |
+|---|---|---|
+| 1 | **Both V2 money endpoints require the `velnox_session` cookie.** | `requireAuth` reads **only** `req.cookies?.velnox_session` (`backend/middleware/auth.ts:73`); there is no `Authorization`, `x-api-key`, internal-token or cron auth path (greps over `backend/` return empty). Live: `POST /api/velrepeat/v2/plans` → **401**, `POST /api/velrepeat/v2/plans/:planId/payment` → **401**, `GET /api/velrepeat/v2/packages/:id` → **401** |
+| 2 | **Only a browser Google OAuth round trip can mint that cookie.** | `GET /auth/google` → 302 to Google; the only other login is `POST /api/auth/member-login`, which needs an existing user's email + password. This workspace has **no browser binary** (no chromium/chrome/firefox), **no Playwright/Puppeteer/Cypress** (installed or cached), and **no provisioned test account** (handoff §14: "No safe authorized production test account exists"; no account email is recorded anywhere in `.ai/` or `docs/`) |
+| 3 | **The payment is a Stripe *hosted* Checkout Session — it can only be completed by a human in a browser.** | `stripe.checkout.sessions.create({ mode: "payment", … })` (`backend/routes/velrepeat-v2-payments.ts:691`). A repo-wide grep for `.confirm(`, `confirm: true`, `paymentIntents.confirm` returns **empty** — the only session calls are `create` / `retrieve` / `expire`. There is no server-side `pm_card_*` completion path, so no script can finish a TEST payment |
+| 4 | **Stripe itself must deliver the webhook, and forging one is forbidden.** | Verification is `constructEventAsync(req.body, signature, webhookSecret)` (`backend/routes/stripe.ts:1539`) against the real `whsec_…`. The endpoint is live and correctly refuses forgeries — see §18.3 — but a *real* delivery requires a real payment (fact 3) |
+| 5 | **There is no non-production environment to run against.** | `velnox-api-staging.onrender.com`, `velnox-staging.onrender.com`, `velnox-api-test.onrender.com` all resolve but return **HTTP 404** — none serves this API. The only live backend is production, and this workspace holds **no Neon credential** (`freebuff-env list` → `{"files":{}}`), so the production database is reachable only through read-only GitHub Actions probes |
+
+A sixth, smaller consequence: `runDueCycleTick()` has **no HTTP or operator trigger** — it is an
+in-process job started by `startVelRepeatV2CycleScheduler()` (`backend/server.ts:546`, 60 s interval).
+Driving a due cycle in production would require either waiting on that tick after a real activation,
+or database access. Neither is available here.
+
+**Consequence for §7 (due cycle):** the canonical test path the brief allows — `runDueCycleTick()` — is
+only reachable from inside the deployed process. It was **not** called against production data, and no
+production code was edited to expose it.
+
+### 18.3 What *was* executed live this round (negative battery, subset)
+
+These ran against the real Render backend. All are refusal paths that stop **before** any database write.
+
+| # | Case | Live result |
+|---|---|---|
+| 1 | Webhook with **no** `stripe-signature` header | **400** `{"error":"Missing stripe-signature header"}` |
+| 2 | Webhook with a **forged** `stripe-signature` | **400** `{"error":"Invalid signature"}` |
+| 2b | Webhook with a **malformed** signature header | **400** `{"error":"Invalid signature"}` |
+| 3 | V2 plan creation with **no** session | **401** `UNAUTHORIZED` |
+| 4 | V2 plan payment with **no** session | **401** `UNAUTHORIZED` |
+| 5 | V2 package read with **no** session | **401** `UNAUTHORIZED` |
+| 6 | V2 plan creation with a **forged/unsigned** cookie | **401** `Invalid or expired token` |
+| 7 | `/api/auth/me` with a forged cookie | **401** `Invalid session` |
+| 8 | `/api/_diag/schema` unauthenticated | **401** `UNAUTHORIZED` (guarded by prefix, fails closed) |
+
+**No money, no order, no payment row, no inventory change, and no plan row resulted from any of the above.**
+The remaining negative cases (duplicate webhook, payment failure, cancelled payment, out-of-stock item,
+unavailable product/variant, duplicate cycle processing) all require a real payment or a real plan+cycle
+first, so they remain **suite-proven only** — see §12.
+
+### 18.4 Regression — re-run from scratch this round
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `TEST_DATABASE_URL=… bun test backend/tests` (repo-canonical, `.ai/AI_RULES.md`) | **1882 pass / 2 skip / 0 fail** — 1884 tests / 61 files, **EXIT=0** |
+| 1b | `TEST_DATABASE_URL=… pnpm test` (as literally requested) | **1882 pass / 2 skip / 0 fail**, **EXIT=0** (same suite; `pnpm` delegates to the same `bun test` script) |
+| 2 | `cd backend && bunx tsc --noEmit` | **0 errors, EXIT=0** |
+| 2b | `bun --filter @velnox/backend typecheck` (the CI variant) | **EXIT=0** |
+| 3 | `bun run typecheck` | **EXIT=0 — 4/4 apps "Exited with code 0"** |
+| 4 | `bun run build:apps` | **EXIT=0 — 4/4 apps "Exited with code 0"** |
+| 5 | `cmp db/schema.sql db/run-sqleditor.sql` | **identical** |
+| 6 | `git diff --check` | **clean** |
+| 7 | `git status --porcelain` | **clean** |
+
+**Two notes, stated plainly rather than hidden:**
+
+- `pnpm exec tsc -b` and `pnpm build` — the literal commands in the brief — **do not apply to this
+  repository**: there is no root `tsconfig.json` (`TS5083: Cannot read file …/tsconfig.json`) and no root
+  `build` script (`ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL: Command "build" not found`). This is a **bun**
+  workspace; the equivalents defined by the repo (and by `.ai/AI_RULES.md`) are rows 2–4 above. They were
+  run instead, and they pass.
+- The **first** `pnpm test` attempt reported `1601 pass / 173 fail`, all `ECONNREFUSED 127.0.0.1:5432`:
+  the **local disposable PostgreSQL had stopped** (`pg_isready` → "no response",
+  `service postgresql status` → `14/main (port 5432): down`). After `service postgresql start`, the same
+  command returned **1882 / 2 / 0, EXIT=0**. The 173 failures were a local test-dependency outage, **not**
+  a product defect, and they are not reported as a pass. The clean re-run is the recorded result.
+
+### 18.5 Verdict for this round
+
+| Area | Status |
+|---|---|
+| Stripe runtime configuration | **PASS** |
+| Stripe TEST payment | **BLOCKED** — no authenticated session; hosted Checkout needs a browser |
+| Webhook (real Stripe delivery) | **BLOCKED** — endpoint live and correctly refusing forgeries, but no real event can occur without a payment |
+| Plan activation / cycle schedule / cycle processing / order creation / inventory / idempotency / multi-seller | **BLOCKED** — all downstream of the payment |
+| Negative cases | **PARTIAL** — 8 refusal paths executed live (§18.3); the rest suite-proven only |
+| Regression | **PASS** (§18.4) |
+
+**`REAL STRIPE TEST E2E = BLOCKED`** — the blocker is the **execution surface**, not the credentials.
+**VelRepeat V2 production readiness = NOT READY.** No `PASS` is claimed for any step that was not
+actually executed against real Stripe.
+
+**To unblock (owner actions, no repository change required):**
+
+1. Run the §3 flow in a **browser** with an authorized account — sign in via Google on VelShop, create a
+   draft Repeat Plan from a real package, open the payment session, and complete TEST Checkout with card
+   `4242 4242 4242 4242`. Stripe will then deliver the webhook to the already-configured endpoint.
+2. **Or** provision a disposable staging backend (its own database + the same TEST keys) so an E2E can be
+   driven without touching production data.
+3. **Or** grant this workspace a way to authenticate (a dedicated test account) plus database read access,
+   so the post-payment assertions in §6–§11 can be verified.
+
+*No secret, token, or credential value appears in this document. The only credential-shaped strings
+anywhere in this file are the all-zero/`f` shape fixtures already catalogued in §2.3.*
