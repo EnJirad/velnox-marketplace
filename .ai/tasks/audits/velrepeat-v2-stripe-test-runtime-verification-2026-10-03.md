@@ -21,12 +21,15 @@ environment has never contained the Stripe variables — instead of the Render W
 |---|---|
 | Branch | `main` |
 | HEAD at start of this task | `c50a1a824113d8c5195e5afdb60fc6a2bd6e16a8` |
-| HEAD subject | `docs(velrepeat): backfill the e2e audit commit sha` |
-| `git ls-parse HEAD` vs `git ls-remote origin HEAD` | identical — **in sync** |
+| HEAD subject at start | `docs(velrepeat): backfill the e2e audit commit sha` |
+| `git rev-parse HEAD` vs `git ls-remote origin HEAD` at start | identical — **in sync** |
 | Working tree at start | clean |
+| **Commit that carries this audit** | **`407cdb1dc4920d7257b1b1431224b2c02e8c4890`** — `fix(velrepeat): verify stripe test runtime configuration`, pushed to `main` and confirmed on GitHub via `git ls-remote origin refs/heads/main` |
+| Files in that commit | `INSTALLATION.md`, `.ai/AI_HANDOFF.md`, `.ai/tasks/audits/velrepeat-v2-stripe-test-runtime-verification-2026-10-03.md`, `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-03.md` |
+| Application code / test / schema / migration in that commit | **NONE** — `git diff --name-only c50a1a8 407cdb1 -- backend db apps packages .github '*.ts' '*.tsx' '*.json'` returns empty, so the §10 regression result still applies to the shipped tree |
 
-The FINAL SHA that carries this audit is recorded by the follow-up docs commit and backfilled in the
-handoff; it changes no code, test or assertion.
+The regression in §10 ran against `c50a1a8`; every file changed afterwards is Markdown only, so no
+check had to be re-run.
 
 ---
 
