@@ -10,6 +10,24 @@ architecture change. Every "NOT EXECUTED" below means exactly that.
 
 ---
 
+> ### ⚠️ LATER FINDING — the "credentials missing" conclusion below was a measurement error
+>
+> **Later the same day**, this audit's configuration conclusion was found to be wrong, because it
+> measured the **Freebuff workspace sandbox** environment (`freebuff-env list`,
+> `freebuff-deploy env list`) instead of the **Render Web Service** that actually serves the API.
+> The owner had added the Stripe variables in Render, and the live backend already had them.
+>
+> Measured on the real runtime, `GET https://velnox-api.onrender.com/api/stripe/configured` returns
+> **`configured: true, mode: "test", reason: null`**, with `webhookSecretHealth.shapeUsable: true`
+> and `?selfTest=1` → `attempted: true, verified: true`.
+>
+> **This document is left unedited below on purpose.** Its `NOT EXECUTED` findings stand — the E2E
+> really was never run — but its "credentials are missing" reasoning is superseded. Nothing here is
+> retroactively re-labelled PASS. Full correction and root cause:
+> `.ai/tasks/audits/velrepeat-v2-stripe-test-runtime-verification-2026-10-03.md`.
+
+---
+
 ## 1. Commit SHA
 
 | Fact | Value |

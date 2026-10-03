@@ -818,15 +818,19 @@ Suite **1882/2/0** (baseline, zero delta), tsc 0, typecheck 4/4, build 4/4, sche
 to `diag-neon-schema.yml` (SELECT-only). Full detail:
 `.ai/tasks/audits/velrepeat-v2-production-migration-053-2026-10-03.md`.
 
-**Real Stripe TEST E2E is STILL BLOCKED** — **6th check, 2026-10-03, at `a2b6ff9`.** All three STRIPE keys
-unset; `freebuff-env list` = `{"files":{}}`; `freebuff-deploy env list` = `{"keys":[]}`; the app's own gate
-returns `usable=false / mode=null / reason=STRIPE_NOT_CONFIGURED`. Real failure point traced:
-`openPlanPaymentSession` (`velrepeat-v2-payments.ts:610-617`) → `stripeServerClient()` null → **503
-STRIPE_NOT_CONFIGURED**, failing closed *before* any Stripe call. Repo-wide scan: every credential-shaped
-literal is an all-zero shape-only fixture — no real TEST **or** LIVE key exists anywhere. Nothing was faked;
-no code, schema or test was changed. Re-run at that SHA: **1882 pass / 2 skip / 0 fail** (1884 tests, 61 files),
-tsc 0, typecheck 4/4, build 4/4, `git diff --check` clean, schema files identical.
-**VelRepeat V2 remains NOT production ready until one real Stripe TEST E2E passes.** Owner action unchanged:
-add the three TEST keys (`sk_test_…` / `pk_test_…` / `whsec_…`) under **Settings → Environment** (never a
-live key), plus a Stripe-reachable webhook endpoint, then ask for the E2E.
-Full detail: `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-03.md`.
+**Real Stripe TEST E2E: the CONFIGURATION blocker is GONE — §64's earlier "credentials missing" was a
+measurement error.** The owner added the Stripe variables on **Render**; six prior checks had measured the
+**Freebuff sandbox** instead (`freebuff-env list` / `freebuff-deploy env list` describe Freebuff hosting,
+NOT Render). Probed on the real runtime, `GET https://velnox-api.onrender.com/api/stripe/configured` →
+**`configured: true, mode: "test", reason: null`**, `webhookSecretHealth.shapeUsable: true`; `?selfTest=1` →
+`attempted: true, verified: true` (which also proves `getStripe()` built a non-null **test** client in the
+Render process). `/api/payments/methods` → CARD + PROMPTPAY enabled, COD off. Webhook endpoint live and
+correctly refusing forged/missing signatures (400). `POST /api/velrepeat/v2/plans` and `…/payment` → 401
+(route live, deploy current). Frontends hold **no** Stripe secret, so Vercel was never involved. Env names
+matched the code exactly (`payment-config.ts:160-163`) — nothing renamed, nothing to fix.
+**RULE: verify runtime config against the host that serves traffic (`velnox-api.onrender.com`), never the
+build sandbox.** Docs-only fix: `INSTALLATION.md`'s Render env block had omitted all four Stripe vars.
+**Still NOT production ready** — the E2E itself was never run; it now needs an owner browser checkout with
+TEST card `4242…4242` plus disposable production fixtures. Suite unchanged at **1882/2/0**, tsc 0,
+typecheck 4/4, build 4/4, diff clean. Full detail:
+`.ai/tasks/audits/velrepeat-v2-stripe-test-runtime-verification-2026-10-03.md`.

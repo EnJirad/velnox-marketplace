@@ -420,7 +420,19 @@ R2_BUCKET=
 R2_PUBLIC_DOMAIN=
 CORS_ORIGINS=https://shop.velnx.com,https://seller.velnx.com,https://center.velnx.com,https://velnx.com
 PORT=3001
+STRIPE_SECRET_KEY=
+STRIPE_PUBLISHABLE_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_MODE=test
 ```
+
+**Stripe — TEST MODE ONLY.** Card and PromptPay stay unavailable until all three Stripe
+variables are set here on the **backend** service (the four Vercel frontends must never
+hold a Stripe secret). A live key is refused by the backend, not used. `STRIPE_MODE` is
+optional; set it to `test` so a key/mode disagreement is refused instead of guessed.
+After changing any of these, Render must redeploy/restart the service before the running
+process sees them — verify with `GET /api/stripe/configured` →
+`configured: true, mode: "test"`. Full detail: `docs/ENVIRONMENT.md`.
 
 ### Database — Neon
 
