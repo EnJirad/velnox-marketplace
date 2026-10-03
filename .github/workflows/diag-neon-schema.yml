@@ -287,7 +287,8 @@ jobs:
 
           -- the cycle -> order link ------------------------------------------------
           SELECT 'orders.velrepeat_cycle_id' AS probe,
-                 COALESCE((SELECT data_type || CASE WHEN is_nullable THEN ' NULLABLE' ELSE ' NOT NULL' END
+                 COALESCE((SELECT data_type ||
+                                    CASE WHEN is_nullable = 'YES' THEN ' NULLABLE' ELSE ' NOT NULL' END
                              FROM information_schema.columns
                             WHERE table_name = 'orders' AND column_name = 'velrepeat_cycle_id'),
                           'MISSING (053 not applied)') AS state;
