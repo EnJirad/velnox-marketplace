@@ -818,7 +818,15 @@ Suite **1882/2/0** (baseline, zero delta), tsc 0, typecheck 4/4, build 4/4, sche
 to `diag-neon-schema.yml` (SELECT-only). Full detail:
 `.ai/tasks/audits/velrepeat-v2-production-migration-053-2026-10-03.md`.
 
-**Real Stripe TEST E2E is STILL BLOCKED** (5th check: all three STRIPE keys unset, `freebuff-deploy env list` =
-`{"keys":[]}`). **VelRepeat V2 remains NOT production ready until one real Stripe TEST E2E passes.** Owner
-action unchanged: add the three TEST keys under **Settings → Environment** (never a live key), then ask for
-the E2E.
+**Real Stripe TEST E2E is STILL BLOCKED** — **6th check, 2026-10-03, at `a2b6ff9`.** All three STRIPE keys
+unset; `freebuff-env list` = `{"files":{}}`; `freebuff-deploy env list` = `{"keys":[]}`; the app's own gate
+returns `usable=false / mode=null / reason=STRIPE_NOT_CONFIGURED`. Real failure point traced:
+`openPlanPaymentSession` (`velrepeat-v2-payments.ts:610-617`) → `stripeServerClient()` null → **503
+STRIPE_NOT_CONFIGURED**, failing closed *before* any Stripe call. Repo-wide scan: every credential-shaped
+literal is an all-zero shape-only fixture — no real TEST **or** LIVE key exists anywhere. Nothing was faked;
+no code, schema or test was changed. Re-run at that SHA: **1882 pass / 2 skip / 0 fail** (1884 tests, 61 files),
+tsc 0, typecheck 4/4, build 4/4, `git diff --check` clean, schema files identical.
+**VelRepeat V2 remains NOT production ready until one real Stripe TEST E2E passes.** Owner action unchanged:
+add the three TEST keys (`sk_test_…` / `pk_test_…` / `whsec_…`) under **Settings → Environment** (never a
+live key), plus a Stripe-reachable webhook endpoint, then ask for the E2E.
+Full detail: `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-03.md`.
