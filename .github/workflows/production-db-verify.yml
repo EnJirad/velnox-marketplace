@@ -55,6 +55,10 @@ on:
       - 'backend/routes/stripe.ts'
       - 'backend/routes/cart.ts'
       - 'backend/server.ts'
+      # The `repository` job runs tests from backend/tests/, so a change to
+      # those files is a change to what this workflow asserts. Excluding them
+      # would let the contract drift without re-running the gate.
+      - 'backend/tests/**'
       - '.github/workflows/**'
   schedule:
     # 03:17 UTC every Monday. Read-only against production.
