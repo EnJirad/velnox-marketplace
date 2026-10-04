@@ -281,6 +281,19 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.cancelVelRepeatPlan": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/cancel`, a),
   "api.commerce.runVelRepeatPlanNow": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/run-now`, a),
   "api.commerce.velRepeatPlanRuns": (a) => apiGet(`/api/velrepeat/plans/${a.planId}/runs`),
+  // VelRepeat V2 — PREPAID commitments. Three endpoints, and only three:
+  // browse what may be bought, create the draft, and open the payment. The
+  // plan status is a separate READ (below) because a returned-from-Stripe
+  // browser must never be treated as proof of payment — the UI polls the server.
+  "api.velrepeatV2.packages": () => apiGet("/api/velrepeat/v2/packages"),
+  "api.velrepeatV2.packageDetail": (a) => apiGet(`/api/velrepeat/v2/packages/${a.packageId}`),
+  // The request carries ONLY packageId / commitmentCycles / frequencyType /
+  // intervalValue. Price, seller, ownership and totals are server-derived: the
+  // backend refuses a body that tries to set them.
+  "api.velrepeatV2.createPlan": (a) => apiPost("/api/velrepeat/v2/plans", a),
+  "api.velrepeatV2.payment": (a) => apiPost(`/api/velrepeat/v2/plans/${a.planId}/payment`, a),
+  "api.velrepeatV2.plans": () => apiGet("/api/velrepeat/v2/plans"),
+  "api.velrepeatV2.planDetail": (a) => apiGet(`/api/velrepeat/v2/plans/${a.planId}`),
   "api.commerce.repeatOrderNow": (a) => apiPost("/api/velrepeat/repeat-now", a),
   "api.commerce.sellerVelRepeatOverview": () => apiGet("/api/seller/velrepeat/overview"),
   "api.centerAdmin.velRepeatOverview": () => apiGet("/api/admin/velrepeat/overview"),

@@ -156,6 +156,30 @@ export default function MyOrders() {
   const orders = data?.orders ?? [];
   const subscriptions = data?.subscriptions ?? [];
 
+  /**
+   * ONE purchase, N fulfillment orders.
+   *
+   * A checkout across several shops produces one canonical ORDER per shop —
+   * each with its own fulfilment, shipment and tracking — all sharing ONE
+   * `checkoutGroupId`. The history groups them so the customer still sees
+   * "this order I placed today", while each shop keeps a separate, separately
+   * trackable order underneath.
+   *
+   * An order with no group (a legacy row, or a VelRepeat cycle order, which is
+   * its own purchase) is its own group, so nothing is ever hidden or merged.
+   */
+  const purchases = useMemo(() => {
+    const byGroup = new Map<string, { key: string; groupId: string | null; orders: StoreOrder[]; createdAt: number }>();
+    for (const order of orders) {
+      const groupId = order.checkoutGroupId ?? null;
+      const key = groupId ?? `order:${order.id}`;
+      const existing = byGroup.get(key);
+      if (existing) existing.orders.push(order);
+      else byGroup.set(key, { key, groupId, orders: [order], createdAt: order.createdAt });
+    }
+    return [...byGroup.values()].sort((a, b) => b.createdAt - a.createdAt);
+  }, [orders]);
+
   /** Is any order still counting down? Only then does the clock need to tick. */
   const hasOpenReservation = useMemo(
     () =>
@@ -377,7 +401,19 @@ export default function MyOrders() {
             </div>
           ) : (
             <div className="mt-3 space-y-4">
-              {orders.map((order: StoreOrder) => {
+              {purchases.map((purchase) => (
+              <div key={purchase.key} className="space-y-3">
+              {purchase.orders.length > 1 && (
+                <div className="rounded-lg border border-[#10B981]/30 bg-[#ECFDF5]/60 px-3 py-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#047857]">
+                    {t("orders.purchaseGroup")}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-600">
+                    {t("orders.purchaseGroupMeta", { count: purchase.orders.length })}
+                  </p>
+                </div>
+              )}
+              {purchase.orders.map((order: StoreOrder) => {
                 // The badge TEXT must follow the shopper's language — the shared
                 // `meta.label` stays the Thai seller-side fallback.
                 const statusLabel = t(orderStatusI18nKey(order.status));
@@ -605,6 +641,8 @@ export default function MyOrders() {
                   </div>
                 );
               })}
+              </div>
+              ))}
             </div>
           )}
         </section>

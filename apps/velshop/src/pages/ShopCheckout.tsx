@@ -66,6 +66,15 @@ interface CheckoutItemSummary {
 interface CheckoutResult {
   parentOrderId: string;
   parentOrderNumber: string;
+  /**
+   * The purchase identity: ONE checkout that produced N per-shop fulfillment
+   * orders. The payment is taken against THIS, never against one shop's order —
+   * otherwise a three-shop cart would be charged for one shop and the other two
+   * would expire unpaid. `parentOrderId` stays for back-compat with the existing
+   * single-order resume flow.
+   */
+  checkoutGroupId?: string;
+  shopCount?: number;
   orders: Array<{ orderId: string; orderNumber: string; shopId: string; shopName: string; subtotal: number; shippingFee: number; total: number }>;
   total: number;
   itemCount: number;
@@ -300,12 +309,23 @@ export default function ShopCheckout() {
    * by design. Duplicate sessions are still impossible — the backend keeps at
    * most one active Stripe payment per order.
    */
-  const openStripeSession = async (orderId: string, method: string, requestKey: string): Promise<string> => {
+  const openStripeSession = async (
+    target: { checkoutGroupId?: string; orderId: string },
+    method: string,
+    requestKey: string,
+  ): Promise<string> => {
+    // ONE charge for the WHOLE purchase. `checkoutGroupId` is what makes a
+    // multi-shop cart a single Stripe session whose amount covers every shop's
+    // order; the backend re-derives that total server-side and settles the group
+    // from the verified webhook. The `orderId` form is kept for a single-shop
+    // purchase and for resuming one specific order.
     const res = (await createStripeCheckout({
-      orderId,
+      ...(target.checkoutGroupId
+        ? { checkoutGroupId: target.checkoutGroupId }
+        : { orderId: target.orderId }),
       method,
       requestKey,
-      returnPath: `/orders?order=${orderId}`,
+      returnPath: `/orders?order=${target.orderId}`,
     })) as unknown as { url?: string | null };
     const url = res?.url;
     if (typeof url !== "string" || url.trim() === "") {
@@ -363,7 +383,7 @@ export default function ShopCheckout() {
         // the payment page was even shown, and would make a second press
         // necessary to reach Stripe.
         redirectUrl = await openStripeSession(
-          order.parentOrderId,
+          { checkoutGroupId: order.checkoutGroupId, orderId: order.parentOrderId },
           chosenMethod,
           requestIdRef.current ?? crypto.randomUUID(),
         );
@@ -409,7 +429,11 @@ export default function ShopCheckout() {
     try {
       // Fresh key (see `openStripeSession`): the previous attempt's claim must
       // not block the retry, and the backend still allows one active session.
-      redirectUrl = await openStripeSession(pending.orderId, pending.method, crypto.randomUUID());
+      redirectUrl = await openStripeSession(
+        { orderId: pending.orderId },
+        pending.method,
+        crypto.randomUUID(),
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : t("checkout.payStartFailed");
       setPaymentStartError({ ...pending, message });

@@ -268,7 +268,16 @@ export interface StoreOrderItem {
 
 export interface StoreOrder {
   id: string;
+  /**
+   * The PUBLIC order number — a STRING, always. An 18-digit value exceeds
+   * `Number.MAX_SAFE_INTEGER`, so a `number` here would silently corrupt it.
+   */
   orderNumber: string;
+  /**
+   * The purchase this order belongs to: ONE checkout across N shops yields N
+   * per-shop orders sharing one group id. The customer history groups by it.
+   */
+  checkoutGroupId?: string | null;
   parentOrderId?: string;
   customerUserId: string;
   status: StoreOrderStatus;

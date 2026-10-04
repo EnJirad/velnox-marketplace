@@ -70,6 +70,7 @@ const MyOrders = lazy(() => import("@/pages/MyOrders"));
 const ShopOrderDetail = lazy(() => import("@/pages/ShopOrderDetail"));
 const ShopTracking = lazy(() => import("@/pages/ShopTracking"));
 const VelRepeatPage = lazy(() => import("@/pages/VelRepeatPage"));
+const VelRepeatV2Page = lazy(() => import("@/pages/VelRepeatV2Page"));
 const ShopWishlist = lazy(() => import("@/pages/ShopWishlist"));
 const ShopAddresses = lazy(() => import("@/pages/ShopAddresses"));
 const ShopProfile = lazy(() => import("@/pages/ShopProfile"));
@@ -138,6 +139,18 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireAuth>
                 <VelRepeatPage />
+              </RequireAuth>
+            }
+          />
+          {/* VelRepeat V2 — the prepaid commitment flow. Stripe returns here
+              with ?velrepeat_v2_payment=success|cancel&plan=<id>; the page then
+              reads the plan status from the SERVER and never assumes the
+              redirect means the payment landed. */}
+          <Route
+            path="/velrepeat/v2"
+            element={
+              <RequireAuth>
+                <VelRepeatV2Page />
               </RequireAuth>
             }
           />
