@@ -17,9 +17,12 @@
 # -----
 #   bash db/verify-reconciler.sh
 #
-# Needs psql and a PostgreSQL you may create databases on. Override the
-# connection with PGHOST/PGPORT/PGUSER/PGPASSWORD, or by exporting
-# VELNOX_VERIFY_ADMIN_DB (defaults to velnox_test).
+# Needs psql and a PostgreSQL you may create databases on. The connection is
+# derived from TEST_DATABASE_URL when that is set — so a CI job that provisions
+# its own disposable cluster verifies against the SAME cluster it tests against,
+# rather than against a hard-coded pair of credentials that happen to work on one
+# machine and fail on another. Explicit PGHOST/PGPORT/PGUSER/PGPASSWORD or
+# VELNOX_VERIFY_ADMIN_DB still win over both.
 #
 # EXIT STATUS
 # -----------
@@ -27,11 +30,46 @@
 # ============================================================================
 set -u
 
-ADMIN_DB="${VELNOX_VERIFY_ADMIN_DB:-velnox_test}"
-PGUSER="${PGUSER:-velnox_test}"
-export PGPASSWORD="${PGPASSWORD:-velnox_test}"
-PGHOST="${PGHOST:-127.0.0.1}"
-PGPORT="${PGPORT:-5432}"
+# Explicit settings, captured before the defaults are applied, so "the operator
+# asked for this" and "this is a fallback" stay distinguishable.
+_ADMIN_DB_SET="${VELNOX_VERIFY_ADMIN_DB:-}"
+_PGUSER_SET="${PGUSER:-}"
+_PGPASSWORD_SET="${PGPASSWORD:-}"
+_PGHOST_SET="${PGHOST:-}"
+_PGPORT_SET="${PGPORT:-}"
+
+ADMIN_DB="${_ADMIN_DB_SET:-velnox_test}"
+PGUSER="${_PGUSER_SET:-velnox_test}"
+export PGPASSWORD="${_PGPASSWORD_SET:-velnox_test}"
+PGHOST="${_PGHOST_SET:-127.0.0.1}"
+PGPORT="${_PGPORT_SET:-5432}"
+
+# Derive from TEST_DATABASE_URL only when nothing was set explicitly. The URL is
+# parsed into the individual PG* variables here and is never echoed, printed or
+# written anywhere: a connection string embeds the password.
+if [ -n "${TEST_DATABASE_URL:-}" ] \
+   && [ -z "$_ADMIN_DB_SET" ] && [ -z "$_PGUSER_SET" ] \
+   && [ -z "$_PGPASSWORD_SET" ] && [ -z "$_PGHOST_SET" ] && [ -z "$_PGPORT_SET" ]; then
+  _v_url="${TEST_DATABASE_URL%%\?*}"                 # drop ?sslmode=… and friends
+  _v_creds="${_v_url#*://}"
+  if [ "$_v_creds" != "$_v_url" ] && [ "${_v_creds#*@}" != "$_v_creds" ]; then
+    _v_userinfo="${_v_creds%@*}"                    # user:password
+    _v_hostpath="${_v_creds##*@}"                   # host[:port]/database
+    _v_hostport="${_v_hostpath%%/*}"
+    PGUSER="${_v_userinfo%%:*}"
+    export PGPASSWORD="${_v_userinfo#*:}"
+    PGHOST="${_v_hostport%%:*}"
+    if [ "${_v_hostport##*:}" != "$_v_hostport" ]; then
+      PGPORT="${_v_hostport##*:}"
+    fi
+    _v_db="${_v_hostpath#*/}"
+    if [ -n "$_v_db" ]; then
+      ADMIN_DB="${_v_db%%/*}"
+    fi
+  fi
+  unset _v_url _v_creds _v_userinfo _v_hostpath _v_hostport _v_db
+fi
+
 FILE="db/run-sqleditor.sql"
 
 FAILED=0

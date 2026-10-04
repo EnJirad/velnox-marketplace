@@ -772,11 +772,24 @@ Suite after this change: **1962 pass / 2 skip / 0 fail**, typecheck 4/4 + backen
 workflow by name), which is the guard that pins the runner's filename-keyed ledger. Caught by
 running the suite rather than by inspection; the reference now points at the renamed file.
 
-**A second defect only the real Actions run could find.** The new `repository` job runs the
-schema-contract tests with **no database**, and
-`backend/tests/checkout-group-sql-scope.test.ts` had one test inside a *static* `describe`
-that still executed its statement through `query()` — so it passed in `test.yml` (which always
-has a container) and failed in the new job. That assertion is now gated on `hasTestDatabase()`
-exactly like every other DB-backed one: 71 pass / 11 skip with no database, and it still runs
-and passes when one is present. Both failures were found by inspecting the GitHub run, not
-locally — which is the whole argument for Phase 15.
+**Two further defects only the real Actions run could find.**
+
+1. The new `repository` job runs the schema-contract tests with **no database**, and
+   `backend/tests/checkout-group-sql-scope.test.ts` had one test inside a *static* `describe`
+   that still executed its statement through `query()` — so it passed in `test.yml` (which
+   always has a container) and failed in the new job. That assertion is now gated on
+   `hasTestDatabase()` exactly like every other DB-backed one: 71 pass / 11 skip with no
+   database, and it still runs and passes when one is present.
+2. `db/verify-reconciler.sh` defaulted to hard-coded `velnox_test` / `velnox_test`
+   credentials and ignored `TEST_DATABASE_URL`, so in a CI job whose container uses
+   `postgres` / `postgres` every scenario failed on
+   `password authentication failed` — and, worse, it had been verifying against different
+   credentials than it tested against. It now derives `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`
+   and the admin database from `TEST_DATABASE_URL` (query string stripped, never echoed),
+   with explicit `PG*` / `VELNOX_VERIFY_ADMIN_DB` still winning. Verified against three
+   shapes: the CI credentials, the local credentials, and explicit overrides; plus a
+   credential-less URL, which must not corrupt the parse. `test.yml` never ran
+   `db:verify`, which is why this survived until now.
+
+Both were found by inspecting the GitHub run, not locally — which is the whole argument for
+verifying on Actions.
