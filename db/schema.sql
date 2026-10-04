@@ -379,15 +379,28 @@ CREATE TABLE IF NOT EXISTS orders (
   reservation_policy JSONB,
   velrepeat_run_id UUID,
   velrepeat_cycle_id UUID,
+  checkout_group_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_checkout_group_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_checkout_group_id_fkey FOREIGN KEY (checkout_group_id) REFERENCES checkout_groups(id) ON DELETE SET NULL; END IF; END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_number_unique ON orders (order_number) WHERE order_number IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_unreleased ON orders (id) WHERE inventory_released = FALSE;
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_shop ON orders (shop_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
 CREATE INDEX IF NOT EXISTS idx_orders_payment_expires_at ON orders (payment_expires_at) WHERE payment_expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_checkout_group ON orders (checkout_group_id) WHERE checkout_group_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS checkout_groups (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  item_count INTEGER NOT NULL DEFAULT 0 CHECK (item_count >= 0),
+  shop_count INTEGER NOT NULL DEFAULT 1 CHECK (shop_count >= 1),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_checkout_groups_user ON checkout_groups (user_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS checkout_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -441,6 +454,7 @@ CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID REFERENCES orders(id),
   plan_id UUID,
+  checkout_group_id UUID REFERENCES checkout_groups(id) ON DELETE SET NULL,
   amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'THB',
   method TEXT NOT NULL DEFAULT 'cod',
@@ -456,9 +470,11 @@ CREATE TABLE IF NOT EXISTS payments (
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT payments_exactly_one_parent_check CHECK (
-    (order_id IS NOT NULL AND plan_id IS NULL)
-    OR (order_id IS NULL AND plan_id IS NOT NULL)
+  CONSTRAINT payments_at_least_one_parent_check CHECK (
+    order_id IS NOT NULL OR plan_id IS NOT NULL OR checkout_group_id IS NOT NULL
+  ),
+  CONSTRAINT payments_single_domain_check CHECK (
+    NOT (plan_id IS NOT NULL AND (order_id IS NOT NULL OR checkout_group_id IS NOT NULL))
   )
 );
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
@@ -466,6 +482,8 @@ CREATE INDEX IF NOT EXISTS idx_payments_plan ON payments (plan_id) WHERE plan_id
 CREATE INDEX IF NOT EXISTS idx_payments_provider_session ON payments (provider_checkout_session_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_payment ON payments (provider_payment_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe ON payments (order_id) WHERE provider = 'stripe' AND status IN ('pending', 'requires_action');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe_group ON payments (checkout_group_id) WHERE provider = 'stripe' AND checkout_group_id IS NOT NULL AND status IN ('pending', 'requires_action');
+CREATE INDEX IF NOT EXISTS idx_payments_checkout_group ON payments (checkout_group_id) WHERE checkout_group_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe_plan ON payments (plan_id) WHERE provider = 'stripe' AND plan_id IS NOT NULL AND status IN ('pending', 'requires_action');
 CREATE TABLE IF NOT EXISTS payment_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

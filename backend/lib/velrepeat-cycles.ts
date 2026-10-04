@@ -121,6 +121,9 @@ import type { PoolClient } from "pg";
 import { query, withTransaction } from "../db/index.js";
 import { calculateNextRunAt, type FrequencyType } from "../jobs/velrepeat-scheduler.js";
 import { reserveInventoryStock } from "./inventory.js";
+// Every customer-visible order needs a public number — including one minted by
+// the cycle scheduler, which never went through the cart checkout path.
+import { generateOrderNumber, isOrderNumberCollision } from "./order-number.js";
 
 /** Refusal reasons this module can end a cycle with. */
 export type CycleOutcome =
@@ -527,23 +530,41 @@ export async function processCycleInTransaction(
         shopLines.map((line) => line.line_id),
       );
 
-      const orderRes = await client.query(
-        `INSERT INTO orders
-           (user_id, shop_id, status, subtotal, total_amount, currency,
-            shipping_address_id, shipping_address, notes, velrepeat_cycle_id)
-         VALUES ($1, $2, 'pending', $3, $3, $4, $5, $6, $7, $8)
-         RETURNING id`,
-        [
-          cycle.user_id,
-          shopId,
-          orderTotal,
-          cycle.currency ?? "THB",
-          cycle.shipping_address_id ?? null,
-          cycle.shipping_address ?? null,
-          `VelRepeat cycle ${cycle.cycle_number} of plan ${cycle.plan_id}`,
-          cycle.id,
-        ],
-      );
+      // The public order number. A cycle order is a real order the customer
+      // tracks, quotes to support and a seller fulfils, so it carries the same
+      // numeric-only number as a cart order — generated here, server-side, and
+      // retried on the ONE collision the unique index can raise. Retrying
+      // inside the SAVEPOINT above keeps a collision from discarding the cycle
+      // claim taken before it.
+      let orderRes;
+      for (let attempt = 1; ; attempt += 1) {
+        await client.query("SAVEPOINT cycle_order_number_attempt");
+        try {
+          orderRes = await client.query(
+            `INSERT INTO orders
+               (user_id, shop_id, order_number, status, subtotal, total_amount, currency,
+                shipping_address_id, shipping_address, notes, velrepeat_cycle_id)
+             VALUES ($1, $2, $3, 'pending', $4, $4, $5, $6, $7, $8, $9)
+             RETURNING id`,
+            [
+              cycle.user_id,
+              shopId,
+              generateOrderNumber(),
+              orderTotal,
+              cycle.currency ?? "THB",
+              cycle.shipping_address_id ?? null,
+              cycle.shipping_address ?? null,
+              `VelRepeat cycle ${cycle.cycle_number} of plan ${cycle.plan_id}`,
+              cycle.id,
+            ],
+          );
+          await client.query("RELEASE SAVEPOINT cycle_order_number_attempt");
+          break;
+        } catch (err) {
+          await client.query("ROLLBACK TO SAVEPOINT cycle_order_number_attempt");
+          if (attempt >= 5 || !isOrderNumberCollision(err)) throw err;
+        }
+      }
       const orderId = String(orderRes.rows[0].id);
       orderIds.push(orderId);
 

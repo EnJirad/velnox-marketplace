@@ -342,6 +342,7 @@ export function setupSellerOrderRoutes(app: Express): void {
         `SELECT DISTINCT o.id, o.user_id, o.order_number, o.status, o.subtotal,
                 o.shipping_fee, o.discount, o.total_amount, o.currency,
                 o.shipping_address, o.notes, o.created_at, o.updated_at,
+                o.checkout_group_id,
                 sh.name AS shop_name, sh.slug AS shop_slug,
                 COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
@@ -381,6 +382,11 @@ export function setupSellerOrderRoutes(app: Express): void {
         return {
           id: r.id,
           orderNumber: r.order_number || r.id,
+          // The purchase this order belongs to. It is an IDENTIFIER only: the
+          // seller list is already scoped to this seller's own shop_id, so a
+          // group id never exposes another seller's order — it only lets the
+          // seller UI say "part of the same purchase".
+          checkoutGroupId: r.checkout_group_id ?? null,
           parentOrderId: r.id,
           customerUserId: r.user_id,
           status: normalizeSellerOrderStatus(r.status),

@@ -374,8 +374,13 @@ export function setupCenterRoutes(app: Express): void {
 
       const orderRes = await query(
         `SELECT o.id, o.user_id, o.order_number, o.status, o.total_amount, o.created_at,
-                sh.name AS shop_name,
-                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status
+                o.checkout_group_id, sh.name AS shop_name, sh.slug AS shop_slug,
+                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                -- Tracking belongs to the ORDER, never to the purchase: a
+                -- multi-shop checkout has one shipment per shop.
+                (SELECT tracking_number FROM shipments sm
+                  WHERE sm.order_id = o.id AND sm.tracking_number IS NOT NULL
+                  ORDER BY sm.created_at DESC LIMIT 1) AS tracking_number
          FROM orders o
          LEFT JOIN shops sh ON o.shop_id = sh.id
          ORDER BY o.created_at DESC
@@ -424,6 +429,12 @@ export function setupCenterRoutes(app: Express): void {
           return {
             id: r.id,
             orderNumber: r.order_number || r.id,
+          // VelCenter is the only surface that may see the whole purchase tree:
+          // one checkout across N shops, each with its own order and tracking.
+          // It grants no seller access — seller ownership is unchanged.
+          checkoutGroupId: r.checkout_group_id ?? null,
+          shopSlug: r.shop_slug ?? null,
+          trackingNumber: r.tracking_number ?? null,
             status: r.status,
             createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
             total: parseFloat(r.total_amount) || 0,

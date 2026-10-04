@@ -71,23 +71,23 @@ const ORDER_NUMBER_ATTEMPTS = 5;
  * replaying an INSERT that fails for a different reason would hide a real bug.
  */
 async function insertOrderWithUniqueNumber(
-  client: { query: (sql: string, params?: unknown[]) => Promise<any> },
-  params: {
+  client: { query: (sql: string, params?: unknown[]) => Promise<any> },    params: {
     userId: string;
     shopId: string;
     totalAmount: number;
     shippingAddressId: string | null;
     addressSnapshot: string | null;
     notes: string | null;
+    checkoutGroupId: string | null;
   },
-): Promise<{ id: string; created_at: Date }> {
+): Promise<{ id: string; order_number: string; created_at: Date }> {
   for (let attempt = 1; ; attempt += 1) {
     await client.query("SAVEPOINT order_number_attempt");
     try {
       const orderResult = await client.query(
-        `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency, shipping_address_id, shipping_address, notes)
-         VALUES ($1, $2, $3, 'pending', $4, 'THB', $5, $6, $7)
-         RETURNING id, created_at`,
+        `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency, shipping_address_id, shipping_address, notes, checkout_group_id)
+         VALUES ($1, $2, $3, 'pending', $4, 'THB', $5, $6, $7, $8)
+         RETURNING id, order_number, created_at`,
         [
           params.userId,
           params.shopId,
@@ -96,6 +96,7 @@ async function insertOrderWithUniqueNumber(
           params.shippingAddressId,
           params.addressSnapshot,
           params.notes,
+          params.checkoutGroupId,
         ],
       );
       await client.query("RELEASE SAVEPOINT order_number_attempt");
@@ -865,6 +866,10 @@ export function setupCartRoutes(app: Express): void {
       // Create orders (one per shop)
       const createdOrders: any[] = [];
       let responseData: any = null;
+      /** The group row for this purchase — created with the first order. */
+      let checkoutGroupId: string | null = null;
+      /** The purchase total, accumulated once from the cart lines. */
+      let groupTotal = 0;
 
       /** Internal marker: this request key was already claimed — respond with the stored result. */
       class DuplicateCheckoutError extends Error {}
@@ -901,7 +906,34 @@ export function setupCartRoutes(app: Express): void {
             totalAmount += parseFloat(item.price) * item.quantity;
           }
 
-          // Create order (with a human-readable, collision-checked order number)
+          // ── The checkout group ──────────────────────────────────────────
+          // One customer purchase is ONE row here, however many shops it
+          // spans. It is what makes "the order you placed today" a real
+          // identity for the customer, the seller views and the center,
+          // instead of N unrelated orders that merely share a `created_at`.
+          // Created once, on the first shop's iteration, inside the same
+          // transaction as the orders themselves — a rollback therefore leaves
+          // no orphan group behind.
+          if (checkoutGroupId === null) {
+            const totalItemCount = items.reduce((s: number, i: any) => s + i.quantity, 0);
+            const groupRes = await client.query(
+              `INSERT INTO checkout_groups (user_id, total_amount, currency, item_count, shop_count)
+               VALUES ($1, 0, 'THB', $2, $3)
+               RETURNING id`,
+              [userId, totalItemCount, shopMap.size],
+            );
+            checkoutGroupId = String(groupRes.rows[0].id);
+            groupTotal = items.reduce(
+              (s: number, i: any) => s + parseFloat(i.price) * i.quantity,
+              0,
+            );
+            await client.query(
+              `UPDATE checkout_groups SET total_amount = $2 WHERE id = $1`,
+              [checkoutGroupId, groupTotal],
+            );
+          }
+
+          // Create order (with a numeric-only, collision-checked order number)
           const orderResult = await insertOrderWithUniqueNumber(client, {
             userId,
             shopId,
@@ -909,8 +941,10 @@ export function setupCartRoutes(app: Express): void {
             shippingAddressId: shippingAddressId || null,
             addressSnapshot: serverAddressSnapshot ? JSON.stringify(serverAddressSnapshot) : null,
             notes: notes || null,
+            checkoutGroupId,
           });
           const orderId = orderResult.id;
+          const orderNumber = orderResult.order_number;
 
           // Create order items + decrease stock
           for (const item of shopItems) {
@@ -973,7 +1007,7 @@ export function setupCartRoutes(app: Express): void {
             }
           }
 
-          createdOrders.push({ orderId, orderNumber: orderId, shopId, shopName: shopItems[0]?.shop_name ?? '', subtotal: totalAmount, shippingFee: 0, total: totalAmount });
+          createdOrders.push({ orderId, orderNumber, shopId, shopName: shopItems[0]?.shop_name ?? '', subtotal: totalAmount, shippingFee: 0, total: totalAmount });
 
           // COD orders get a real payments row (method 'cod', provider 'cod', status 'pending')
           // so order list/detail can report paymentStatus. This branch is only
@@ -1012,6 +1046,9 @@ export function setupCartRoutes(app: Express): void {
         await recalcCart(cartId);
 
         // Build the idempotent response once, inside the transaction.
+        // `parentOrderId` is retained as the FIRST order for backwards
+        // compatibility with the existing storefront links; `checkoutGroupId`
+        // is the real grouping key and is what new code should use.
         const parentOrderId = createdOrders[0]?.orderId ?? '';
         const parentOrderNumber = createdOrders[0]?.orderNumber ?? '';
         const totalAll = createdOrders.reduce((s, o) => s + o.total, 0);
@@ -1029,6 +1066,11 @@ export function setupCartRoutes(app: Express): void {
         responseData = {
           parentOrderId,
           parentOrderNumber,
+          // The purchase identity: ONE checkout that produced N per-shop
+          // fulfillment orders. The storefront groups its order history and
+          // the center shows the tree by this id.
+          checkoutGroupId,
+          shopCount: createdOrders.length,
           orders: createdOrders,
           total: totalAll,
           itemCount,
@@ -1107,7 +1149,15 @@ export function setupCartRoutes(app: Express): void {
         const items = itemsByOrder[r.id] ?? [];
         return {
           id: r.id,
+          // The PUBLIC order number (18 digits, digits only). It is a STRING in
+          // every type and every response: an 18-digit value does not survive a
+          // JavaScript `number`.
           orderNumber: r.order_number || r.id,
+          // The purchase this order belongs to. ONE checkout that spans N shops
+          // produces N per-shop orders under ONE `checkoutGroupId`; the customer
+          // history groups by it so the purchase stays one thing while each shop
+          // keeps its own fulfillment and tracking.
+          checkoutGroupId: r.checkout_group_id ?? null,
           customerUserId: r.user_id,
           status: r.status,
           paymentStatus: r.payment_status,

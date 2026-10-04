@@ -22,6 +22,7 @@ import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
 import { setupVelRepeatPackageRoutes } from "./routes/velrepeat-packages.js";
 import { setupVelRepeatV2PlanRoutes } from "./routes/velrepeat-v2-plans.js";
 import { setupVelRepeatV2PaymentRoutes } from "./routes/velrepeat-v2-payments.js";
+import { setupVelRepeatV2StatusRoutes } from "./routes/velrepeat-v2-status.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupCenterRoutes } from "./routes/center.js";
@@ -490,6 +491,12 @@ setupVelRepeatV2PlanRoutes(app);
 // (routes/stripe.ts), so there is still exactly one signature check, one event
 // claim and one redelivery policy for all Stripe events.
 setupVelRepeatV2PaymentRoutes(app);
+
+// ─── VelRepeat V2 (customer plan status: plan + pricing + cycles + orders) ───
+// The read side of the same flow, so the storefront can poll the SERVER's
+// verdict after Stripe returns the customer instead of assuming a redirect
+// means the payment succeeded.
+setupVelRepeatV2StatusRoutes(app);
 
 // ─── Chat, Messaging & Notifications ────────────────────
 setupChatRoutes(app);

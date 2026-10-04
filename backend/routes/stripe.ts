@@ -40,8 +40,16 @@ import { commitOrderInventory, releaseOrderInventory } from "../lib/inventory.js
 // The ONE order-row lock. Every transaction below that writes both `orders` and
 // `payments`/`refunds` takes it FIRST, so a customer cancellation and a webhook
 // take the same two rows in the same order and cannot deadlock (lib/order-lock.ts).
-import { lockOrderRow } from "../lib/order-lock.js";
+import { lockCheckoutGroupOrderRows, lockOrderRow } from "../lib/order-lock.js";
 import { recordLatePaymentIncident, type LatePaymentReason } from "../lib/payment-incidents.js";
+// One purchase, N per-shop orders: the group is the payment parent, and its
+// member orders settle through the same single-order path a one-shop order uses.
+import {
+  firstBlockingOrder,
+  readGroupOrders,
+  readOwnedCheckoutGroup,
+  sumGroupOrderTotal,
+} from "../lib/checkout-groups.js";
 // The ONE order-number generator; stripe.ts used to carry a second, unused copy.
 import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
@@ -246,6 +254,33 @@ async function orderIdForPaymentIntent(paymentIntent: Stripe.PaymentIntent): Pro
   return row.rows[0]?.order_id ?? null;
 }
 
+/**
+ * Which PARENT does this charge belong to — a checkout group, or one order?
+ *
+ * A multi-shop purchase is ONE Stripe charge whose `payments` row hangs off
+ * `checkout_group_id`, so `order_idForPaymentIntent` finds nothing for it. This
+ * is the read that routes the event to the right settlement shape, and it is
+ * deliberately made OUTSIDE every settlement transaction: it is a plain lookup
+ * that takes no lock, and putting it inside would place a statement between the
+ * order-row lock and the payment write (lib/order-lock.ts).
+ *
+ * A NULL identifier simply does not match (`= NULL` is NULL), so the other one
+ * still can — the same rule `resolvePaymentAttemptRow` follows.
+ */
+async function checkoutGroupIdForAttempt(attempt: PaymentAttemptRef): Promise<string | null> {
+  const sessionId = attempt.checkoutSessionId ?? null;
+  const intentId = attempt.providerPaymentId ?? null;
+  if (!sessionId && !intentId) return null;
+  const row = await query(
+    `SELECT checkout_group_id FROM payments
+      WHERE checkout_group_id IS NOT NULL
+        AND (provider_checkout_session_id = $1 OR provider_payment_id = $2)
+      LIMIT 1`,
+    [sessionId, intentId],
+  );
+  return (row.rows[0]?.checkout_group_id as string | undefined) ?? null;
+}
+
 // ─── Money reconciliation (pure — exported for tests) ──────────────────────
 
 /**
@@ -444,7 +479,250 @@ async function resolvePaymentAttemptRow(
   return (fallback.rows[0]?.id as string | undefined) ?? null;
 }
 
-/** Payment succeeded → Payment `paid`, Order `paid`, stock committed. */
+/**
+ * Open ONE Stripe Checkout Session that settles a whole checkout group.
+ *
+ * Mirrors the single-order path step for step — same method guard, same
+ * server-derived amount, same one-active-session rule, same response shape —
+ * with the group as the payment parent:
+ *
+ *   • ownership — the group is read through `readOwnedCheckoutGroup`, so a
+ *     group id belonging to another account is a plain 404;
+ *   • amount — re-derived from the member ORDER rows, never from the client and
+ *     never from the group's stored total;
+ *   • payability — EVERY order must still be `pending`/`pending_payment`,
+ *     unreleased and inside its reservation window. One shop having lapsed
+ *     closes the whole purchase, because the customer pays once;
+ *   • exactly one charge — `idx_payments_one_active_stripe_group` plus the
+ *     race handling below mean a retry returns the existing session instead of
+ *     opening a second one.
+ */
+async function openCheckoutGroupSession(args: {
+  res: Response;
+  userId: string;
+  groupId: string;
+  method: PaymentMethodId;
+  rememberResponse: (data: unknown) => Promise<void>;
+  stripe: Stripe;
+}): Promise<void> {
+  const { res, userId, groupId, method, rememberResponse, stripe } = args;
+
+  const group = await readOwnedCheckoutGroup(groupId, userId);
+  if (!group) {
+    fail(res, 404, "NOT_FOUND", "Checkout not found");
+    return;
+  }
+
+  const orders = await readGroupOrders({ query: (sql, params) => query(sql, params) }, groupId);
+  if (orders.length === 0) {
+    fail(res, 400, "INVALID_ORDER_GROUP", "This checkout has no orders to pay.");
+    return;
+  }
+  // The group's representative order — the earliest one — stands in wherever a
+  // single order id is structurally required (Stripe metadata, the countdown).
+  const representative = orders[0]!;
+
+  // One shop's lapsed reservation must not be paid around: the customer pays
+  // once for the purchase, so the purchase is only open while all of it is.
+  const blocking = firstBlockingOrder(orders);
+  if (blocking) {
+    fail(
+      res,
+      400,
+      "INVALID_STATUS",
+      `This checkout can no longer be paid (order ${blocking.order_number || blocking.id} is '${blocking.status}'). Please place a new order.`,
+    );
+    return;
+  }
+
+  const { total, currency } = await sumGroupOrderTotal(
+    { query: (sql, params) => query(sql, params) },
+    groupId,
+  );
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    fail(res, 400, "INVALID_CURRENCY", "The order currency is not usable for payment.");
+    return;
+  }
+  if (method === PAYMENT_METHOD.PROMPTPAY && currency !== "THB") {
+    fail(res, 400, "CURRENCY_UNSUPPORTED", "PromptPay is only available for THB orders.");
+    return;
+  }
+  const expectedMinor = toStripeMinor(total);
+  if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
+    fail(res, 400, "INVALID_AMOUNT", "The order total is not payable.");
+    return;
+  }
+
+  // Line items across EVERY order in the purchase, so the Stripe total and the
+  // charged total are the same figure derived from the same rows.
+  const itemsResult = await query(
+    `SELECT oi.order_id, oi.product_name_snapshot, oi.product_name,
+            oi.image_url_snapshot, oi.quantity, oi.price
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+      WHERE o.checkout_group_id = $1
+      ORDER BY oi.order_id ASC, oi.created_at ASC`,
+    [groupId],
+  );
+  const lineItems = buildCheckoutLineItems(
+    itemsResult.rows,
+    expectedMinor,
+    currency,
+    `Velnox order ${groupId.slice(0, 8)}`,
+  );
+
+  const frontendUrl = process.env.VITE_VELSHOP_URL || "https://velshop.vercel.app";
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  // ── Reuse the live session for this purchase, if any ──────────────────
+  const activePayment = await query(
+    `SELECT id, provider_checkout_session_id
+       FROM payments
+      WHERE checkout_group_id = $1 AND provider = 'stripe'
+        AND status IN ('pending', 'requires_action')
+      ORDER BY created_at DESC LIMIT 1`,
+    [groupId],
+  );
+  if (activePayment.rows.length > 0) {
+    const activeSessionId: string | null = activePayment.rows[0].provider_checkout_session_id ?? null;
+    if (activeSessionId) {
+      try {
+        const existing = await stripe.checkout.sessions.retrieve(activeSessionId);
+        // Only reuse a session opened for the SAME rail — otherwise the customer
+        // would be charged through a method they did not choose.
+        if (existing.status === "open" && existing.url && existing.metadata?.method === method) {
+          const data = {
+            checkoutGroupId: groupId,
+            orderIds: orders.map((o) => o.id),
+            orderNumbers: orders.map((o) => o.order_number).filter((n): n is string => Boolean(n)),
+            sessionId: existing.id,
+            url: existing.url,
+            method,
+            provider: "stripe",
+            stripeMode: "test",
+            amount: expectedMinor / 100,
+            currency,
+            expiresAt: existing.expires_at,
+            paymentExpiresAt: representative.payment_expires_at
+              ? new Date(representative.payment_expires_at).getTime()
+              : null,
+            reused: true,
+          };
+          await rememberResponse(data);
+          res.json({ success: true, data });
+          return;
+        }
+      } catch {
+        /* fall through to the conflict below */
+      }
+    }
+    fail(res, 409, "DUPLICATE_PAYMENT_IN_PROGRESS", "Your payment is being prepared. Please try again.");
+    return;
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    payment_method_types: [stripePaymentMethodType(method)!],
+    line_items: lineItems,
+    success_url: `${frontendUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}&group=${groupId}`,
+    cancel_url: `${frontendUrl}/checkout/cancel?group=${groupId}`,
+    metadata: {
+      // `checkoutGroupId` is what the webhook fans out on. `orderId` is the
+      // group's earliest order, kept only so an event that predates this
+      // contract (or an operator looking at Stripe metadata) still has a pointer.
+      checkoutGroupId: groupId,
+      orderId: representative.id,
+      userId,
+      method,
+      provider: "stripe",
+      mode: "test",
+    },
+    payment_intent_data: { metadata: { checkoutGroupId: groupId, userId, method } },
+    customer_creation: "always",
+    allow_promotion_codes: true,
+    ...(nowSeconds > 0 ? {} : {}),
+  });
+
+  const intentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : (session.payment_intent?.id ?? null);
+
+  let paymentId: string | null = null;
+  try {
+    const inserted = await query(
+      `INSERT INTO payments
+         (checkout_group_id, provider, method, status, amount, currency,
+          provider_checkout_session_id, provider_payment_id, metadata)
+       VALUES ($1, 'stripe', $2, $3, $4, $5, $6, $7, $8::jsonb)
+       RETURNING id`,
+      [
+        groupId,
+        method,
+        PAYMENT_STATUS.REQUIRES_ACTION,
+        expectedMinor / 100,
+        currency,
+        session.id,
+        intentId,
+        JSON.stringify({ stripeMode: "test", method, group: true }),
+      ],
+    );
+    paymentId = inserted.rows[0]?.id ?? null;
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    // A concurrent request won the active slot. Close OUR session (which the
+    // customer is never shown) and let the caller retry onto the winner.
+    await stripe.checkout.sessions.expire(session.id).catch(() => {});
+    fail(res, 409, "DUPLICATE_PAYMENT_IN_PROGRESS", "Your payment is being prepared. Please try again.");
+    return;
+  }
+
+  // Every order in the purchase moves to `pending_payment` together, so the
+  // storefront renders one consistent state for the whole checkout.
+  await query(
+    `UPDATE orders SET status = 'pending_payment', updated_at = NOW()
+      WHERE checkout_group_id = $1 AND status = 'pending'`,
+    [groupId],
+  );
+
+  const data = {
+    checkoutGroupId: groupId,
+    orderIds: orders.map((o) => o.id),
+    orderNumbers: orders.map((o) => o.order_number).filter((n): n is string => Boolean(n)),
+    sessionId: session.id,
+    url: session.url,
+    method,
+    provider: "stripe",
+    stripeMode: "test",
+    amount: expectedMinor / 100,
+    currency,
+    paymentId,
+    expiresAt: session.expires_at,
+    paymentExpiresAt: representative.payment_expires_at
+      ? new Date(representative.payment_expires_at).getTime()
+      : null,
+    reused: false,
+  };
+  await rememberResponse(data);
+
+  console.log(
+    `[stripe] checkout session ${session.id} opened for checkout group ${groupId} ` +
+      `(${orders.length} orders, ${method}, ${currency} ${expectedMinor / 100}, test mode)`,
+  );
+  res.json({ success: true, data });
+}
+
+/**
+ * Payment succeeded → Payment `paid`, Order `paid`, stock committed.
+ *
+ * The SINGLE-ORDER authority, deliberately left as one function with one
+ * transaction and one order-row lock. A checkout group does NOT come through
+ * here: `settleCheckoutGroup` is its own writer (one charge, N orders, N locks
+ * taken before any `payments` write), and the webhook picks between them from
+ * the payment's own `checkout_group_id`. Routing inside this transaction would
+ * have meant a group read sitting between the lock and the payment write — the
+ * exact ordering `lib/order-lock.ts` forbids.
+ */
 async function markPaymentSucceeded(
   orderId: string,
   attempt: PaymentAttemptRef,
@@ -592,6 +870,93 @@ async function markPaymentSucceeded(
     return { orderId, moved, inventoryReleased: false };
   });
 }
+
+/**
+ * Settle every order of a checkout group from ONE paid session.
+ *
+ * Each order is claimed with the same `status IN ('pending','pending_payment')
+ * AND inventory_released = FALSE` guard and the same row lock as a single-order
+ * payment, so:
+ *
+ *   • an order already paid or cancelled is skipped, never re-paid;
+ *   • a duplicate webhook delivery re-runs the guard, moves nothing, and is
+ *     reported as a duplicate rather than charged twice;
+ *   • stock is committed once per order, through the ONE settlement authority.
+ *
+ * Orders are locked together, in `id ASC`, by ONE statement
+ * (`lockCheckoutGroupOrderRows`) that is the transaction's first — so two
+ * concurrent deliveries take the same rows in the same sequence instead of
+ * deadlocking, and no partial lock is ever held across the payment write.
+ */
+async function settleCheckoutGroup(
+  groupId: string,
+  attempt: PaymentAttemptRef,
+): Promise<SyncResult> {
+  return withTransaction(async (client) => {
+    // ORDER ROWS FIRST — all N of them, in one statement, before anything is
+    // written through `payments`. Same rule, same reason as `lockOrderRow`: the
+    // order rows are the serialisation point for settlement, cancellation and
+    // expiry, so a concurrent cancellation of ANY shop's order queues behind
+    // this instead of forming an AB-BA cycle.
+    const locked = await lockCheckoutGroupOrderRows(client, groupId);
+    if (locked.length === 0) {
+      return { orderId: groupId, moved: false, inventoryReleased: false };
+    }
+
+    // The payment row IS the attempt here: a group payment is not scoped to one
+    // order, so it is marked by its own session/intent, not resolved per order.
+    const paymentWrite = await client.query(
+      `UPDATE payments
+        SET status = 'paid',
+            paid_at = COALESCE(paid_at, NOW()),
+            updated_at = NOW(),
+            failure_code = NULL,
+            failure_message = NULL,
+            provider_payment_id = COALESCE($2, provider_payment_id)
+      WHERE checkout_group_id = $1 AND status <> 'failed'
+        AND ($3::text IS NULL OR provider_checkout_session_id = $3)
+      RETURNING id`,
+      [groupId, attempt.providerPaymentId ?? null, attempt.checkoutSessionId ?? null],
+    );
+  if ((paymentWrite.rowCount ?? 0) === 0) {
+    const prior = await client.query(
+      `SELECT status FROM payments WHERE checkout_group_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [groupId],
+    );
+    if (prior.rows[0]?.status === "paid") {
+      // Duplicate delivery of an already-settled charge: nothing is wrong.
+      return { orderId: groupId, moved: false, inventoryReleased: false };
+    }
+  }
+
+  const settled: string[] = [];
+    for (const order of locked) {
+      const updated = await client.query(
+        `UPDATE orders SET status = 'paid', updated_at = NOW()
+          WHERE id = $1 AND status IN ('pending', 'pending_payment')
+            AND inventory_released = FALSE`,
+        [order.id],
+      );
+      if ((updated.rowCount ?? 0) === 0) continue;
+      await commitOrderInventory(client, order.id);
+      settled.push(order.id);
+    }
+
+    // One realtime message per order — the storefront subscribes per order, and
+    // a customer watching three shops must see all three settle.
+    for (const orderId of settled) {
+      broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
+    }
+
+    console.log(
+      `[stripe] checkout group ${groupId} settled from session ${attempt.checkoutSessionId ?? "?"}: ` +
+        `${settled.length}/${locked.length} orders paid`,
+    );
+
+    return { orderId: groupId, moved: settled.length > 0, inventoryReleased: false };
+  });
+}
+
 
 /** Payment failed → Payment `failed`, Order `payment_failed`, stock released. */
 async function markPaymentFailed(
@@ -861,14 +1226,20 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : (session.payment_intent?.id ?? null);
-      const result = await markPaymentSucceeded(
-        orderId,
-        {
-          providerPaymentId: intentId,
-          checkoutSessionId: session.id,
-        },
-        event.id,
-      );
+      const attempt: PaymentAttemptRef = {
+        providerPaymentId: intentId,
+        checkoutSessionId: session.id,
+      };
+      // ONE purchase is paid as ONE charge: if this session belongs to a
+      // checkout group, it settles every per-shop order in it. The branch is
+      // taken from the payment's own `checkout_group_id`, never from the
+      // representative `orderId` in metadata.
+      const groupId = await checkoutGroupIdForAttempt(attempt);
+      if (groupId) {
+        await settleCheckoutGroup(groupId, attempt);
+        return;
+      }
+      const result = await markPaymentSucceeded(orderId, attempt, event.id);
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
@@ -883,14 +1254,16 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : (session.payment_intent?.id ?? null);
-      const result = await markPaymentSucceeded(
-        orderId,
-        {
-          providerPaymentId: intentId,
-          checkoutSessionId: session.id,
-        },
-        event.id,
-      );
+      const attempt: PaymentAttemptRef = {
+        providerPaymentId: intentId,
+        checkoutSessionId: session.id,
+      };
+      const groupId = await checkoutGroupIdForAttempt(attempt);
+      if (groupId) {
+        await settleCheckoutGroup(groupId, attempt);
+        return;
+      }
+      const result = await markPaymentSucceeded(orderId, attempt, event.id);
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
@@ -935,16 +1308,21 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     // ── PaymentIntent ───────────────────────────────────────────────────────
     case "payment_intent.succeeded": {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      const attempt: PaymentAttemptRef = { providerPaymentId: paymentIntent.id };
+      // A group charge carries no `metadata.orderId`, so the group branch must
+      // be taken BEFORE the order lookup or the event would be dropped as
+      // unresolvable.
+      const groupId = await checkoutGroupIdForAttempt(attempt);
+      if (groupId) {
+        await settleCheckoutGroup(groupId, attempt);
+        return;
+      }
       const orderId = await orderIdForPaymentIntent(paymentIntent);
       if (!orderId) {
         console.warn(`[stripe webhook] ${event.id} payment_intent.succeeded has no resolvable order — ignored`);
         return;
       }
-      const result = await markPaymentSucceeded(
-        orderId,
-        { providerPaymentId: paymentIntent.id },
-        event.id,
-      );
+      const result = await markPaymentSucceeded(orderId, attempt, event.id);
       if (result.moved) {
         broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
       }
@@ -1082,8 +1460,10 @@ export function setupStripeRoutes(app: Express): void {
       const body = (req.body ?? {}) as Record<string, unknown>;
 
       const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
-      if (!orderId) {
-        fail(res, 400, "VALIDATION_ERROR", "orderId is required");
+      const checkoutGroupId =
+        typeof body.checkoutGroupId === "string" ? body.checkoutGroupId.trim() : "";
+      if (!orderId && !checkoutGroupId) {
+        fail(res, 400, "VALIDATION_ERROR", "orderId or checkoutGroupId is required");
         return;
       }
 
@@ -1114,6 +1494,44 @@ export function setupStripeRoutes(app: Express): void {
       if (!s) {
         const status = stripeStatus();
         fail(res, 503, status.reason ?? "STRIPE_NOT_CONFIGURED", "Card and PromptPay payments are not available right now.");
+        return;
+      }
+
+      // ── Idempotency layer 1: the request key ────────────────────────────
+      // One durable row per (user, scope, request key). A retry with the same
+      // key replays the stored response instead of opening a second session.
+      // Declared before the group dispatch because BOTH paths snapshot their
+      // response under the same key, which is what makes a double-click or a
+      // retry of a multi-shop purchase idempotent.
+      const rawKey = typeof body.requestKey === "string" ? body.requestKey.trim() : "";
+      const requestKey = rawKey ? rawKey.slice(0, 200) : null;
+
+      const rememberResponse = async (data: unknown) => {
+        if (!requestKey) return;        await query(
+          `UPDATE checkout_requests SET order_id = $1, response = $2::jsonb
+            WHERE user_id = $3 AND scope = 'payment' AND request_key = $4`,
+          [orderId, JSON.stringify({ ...(data as object), paymentRequest: true, method }), userId, requestKey],
+        ).catch(() => {
+          // The response snapshot is an optimisation; failing to store it must
+          // not fail a payment the customer can already complete.
+        });
+      };
+
+      // ── CHECKOUT GROUP: one charge for a multi-shop purchase ────────────
+      // A checkout spanning N shops is ONE customer purchase: ONE Stripe
+      // session, ONE charge covering the SUM of the N orders. Before this,
+      // payment was taken against a single order id, so a three-shop cart was
+      // charged for one shop only and the other orders expired unpaid.
+      //
+      // It is dispatched HERE, before the single-order lookup, because a group
+      // request carries no `orderId` at all and the lookup below parses one.
+      //
+      // Everything money-bearing stays server-side: the group is read through
+      // the OWNER scope, the amount is re-derived from the member order rows,
+      // and the session is settled only by the signature-verified webhook
+      // (`settleCheckoutGroup`). No client figure is trusted.
+      if (checkoutGroupId) {
+        await openCheckoutGroupSession({ res, userId, groupId: checkoutGroupId, method, rememberResponse, stripe: s });
         return;
       }
 
@@ -1190,23 +1608,6 @@ export function setupStripeRoutes(app: Express): void {
         order.order_number || orderId,
       );
 
-      // ── Idempotency layer 1: the request key ────────────────────────────
-      // One durable row per (user, scope, request key). A retry with the same
-      // key replays the stored response instead of opening a second session.
-      const rawKey = typeof body.requestKey === "string" ? body.requestKey.trim() : "";
-      const requestKey = rawKey ? rawKey.slice(0, 200) : null;
-
-      const rememberResponse = async (data: unknown) => {
-        if (!requestKey) return;
-        await query(
-          `UPDATE checkout_requests SET order_id = $1, response = $2::jsonb
-            WHERE user_id = $3 AND scope = 'payment' AND request_key = $4`,
-          [orderId, JSON.stringify({ ...(data as object), paymentRequest: true, method }), userId, requestKey],
-        ).catch(() => {
-          // The response snapshot is an optimisation; failing to store it must
-          // not fail a payment the customer can already complete.
-        });
-      };
 
       if (requestKey) {
         const claim = await query(

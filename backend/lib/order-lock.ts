@@ -80,6 +80,37 @@ export async function lockOrderRow(
  * Exported because both the cancellation route and its tests pin the same rule
  * (`routes/cart.ts` and `backend/tests/customer-order-cancel.test.ts`).
  */
+/**
+ * Take the SAME lock over EVERY order of a checkout group.
+ *
+ * One purchase can be N per-shop orders, so a single Stripe charge settles N
+ * rows. The rule this function exists for is unchanged: the order rows are the
+ * serialisation point and must be the FIRST statement of the transaction, so a
+ * concurrent cancellation of any member takes the same rows in the same order
+ * and there is no cycle.
+ *
+ * `ORDER BY id ASC` is not cosmetic. Locking the group in a stable, identical
+ * sequence is what stops two concurrent deliveries of the same event from
+ * deadlocking against each other (A→B on one side, B→A on the other); the
+ * caller then settles in exactly the order returned here.
+ *
+ * MUST be called INSIDE an existing `withTransaction` block, and BEFORE any
+ * write through `payments` — the same contract as `lockOrderRow`.
+ */
+export async function lockCheckoutGroupOrderRows(
+  client: pg.PoolClient,
+  checkoutGroupId: string,
+): Promise<LockedOrderRow[]> {
+  const res = await client.query(
+    `SELECT id, status, inventory_released FROM orders
+      WHERE checkout_group_id = $1
+      ORDER BY id ASC
+      FOR UPDATE`,
+    [checkoutGroupId],
+  );
+  return res.rows as LockedOrderRow[];
+}
+
 export const PAYMENT_SETTLED_STATUSES = ["paid", "processing"] as const;
 
 /** True when a payment state blocks a cancellation (see above). */

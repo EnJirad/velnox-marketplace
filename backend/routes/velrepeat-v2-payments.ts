@@ -698,8 +698,8 @@ async function openPlanPaymentSession(
         name: "VelRepeat prepaid plan",
       }),
     ],
-    success_url: `${frontendUrl}/velrepeat?velrepeat_v2_payment=success&plan=${planId}`,
-    cancel_url: `${frontendUrl}/velrepeat?velrepeat_v2_payment=cancel&plan=${planId}`,
+    success_url: `${frontendUrl}/velrepeat/v2?velrepeat_v2_payment=success&plan=${planId}`,
+    cancel_url: `${frontendUrl}/velrepeat/v2?velrepeat_v2_payment=cancel&plan=${planId}`,
     metadata: buildPlanStripeMetadata({ planId, userId, method }),
     // The PaymentIntent carries the same pointer, so `payment_intent.*` events
     // resolve to the plan without a session lookup.
