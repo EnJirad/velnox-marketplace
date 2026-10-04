@@ -99,20 +99,53 @@ pre-payment status AND `inventory_released = FALSE`, records the money on the pa
 | `GET /api/stripe/payment-status/:sessionId` | Ownership-checked |
 | `GET /api/orders/:orderId` | Order + payment + refunds (what the success page polls) |
 
-## Order numbers (`VNX-YYYYMMDD-XXXXXX`)
+## Order numbers — DIGITS ONLY (`^[0-9]{18}$`)
 
-One definition: **`backend/lib/order-number.ts` → `generateOrderNumber()`** (imported by `routes/cart.ts`
-and `routes/stripe.ts`; the two old private copies are gone).
+One definition: **`backend/lib/order-number.ts` → `generateOrderNumber()`** (imported by `routes/cart.ts`,
+`routes/stripe.ts` and `lib/velrepeat-cycles.ts`; no private copy survives anywhere).
 
-- The reference is 6 symbols from `crypto.randomInt` over `23456789ABCDEFGHJKMNPQRSTVWXYZ` — no `0/O`,
-  `1/I/L`, `U/V`, because the number gets dictated to support. **Never `Math.random()`** (predictable).
-- It is deliberately **not sequential** and never a UUID: `orders.id` is internal only. The date half
-  keeps it searchable; the random half keeps the daily order volume private.
+- The public number is **18 decimal digits and nothing else** — e.g. `586322973946053945`. No prefix,
+  no separator, no letters, because every surface (customer, seller, center, tracking, support forms)
+  treats it as a lookup key.
+- The first **14** digits are a millisecond timestamp (`padStart(14, "0")`); the last **4** are a
+  `crypto.randomInt()` disambiguator, so two orders created in the same millisecond do not collide.
+  **Never `Math.random()`** (predictable PRNG).
+- It is a **STRING everywhere**. 18 digits exceeds `Number.MAX_SAFE_INTEGER` (16 digits), so a
+  `number` in any JSON round trip would silently corrupt it. `orders.order_number` stays `TEXT` and
+  every API, type and UI surface types it as `string`.
 - Uniqueness is the DATABASE's job: `idx_orders_number_unique` (partial, `WHERE order_number IS NOT NULL`)
-  exists in **both** `db/schema.sql` and `db/run-sqleditor.sql`. Checkout therefore retries that ONE
-  collision — `insertOrderWithUniqueNumber()` in `routes/cart.ts`, under a SAVEPOINT so a failed INSERT
-  cannot poison the transaction — and `isOrderNumberCollision()` refuses any other unique violation
-  (order idempotency key, payment slot). `backend/tests/order-number.test.ts` pins all of it.
+  exists in **both** `db/schema.sql` and `db/run-sqleditor.sql`. Every creator retries that ONE
+  collision under a SAVEPOINT — `insertOrderWithUniqueNumber()` in `routes/cart.ts` and the inline
+  retry in `lib/velrepeat-cycles.ts` (`cycle_order_number_attempt`) — and `isOrderNumberCollision()`
+  refuses any other unique violation.
+- **Legacy numbers still resolve.** Orders created before this change keep their `VNX-YYYYMMDD-XXXXXX`
+  value verbatim; nothing is rewritten, the column is nullable and the unique index is partial.
+  `isLegacyOrderNumber()` recognises them for lookup paths.
+- `backend/tests/order-number.test.ts` pins the shape, the string type, legacy recognition, the crypto
+  source, the server-side-only generation and both SAVEPOINT retry loops.
+
+## One purchase, N fulfillment orders (`checkout_groups`)
+
+`POST /api/customer/checkout` groups cart lines by `shop_id` and creates **one canonical ORDER per shop**
+— never one per product. A three-shop cart is therefore three orders, each with its own fulfillment,
+shipment and tracking (a customer's cancellation and Stripe settlement cannot touch another shop's rows).
+
+- The purchase identity is **`checkout_groups`** (`user_id`, `total_amount`, `currency`, `item_count`,
+  `shop_count`); `orders.checkout_group_id` points at it (`ON DELETE SET NULL`).
+- **The group is the payment parent.** `POST /api/stripe/checkout` accepts `checkoutGroupId` OR
+  `orderId`. The group path re-derives the amount from the member ORDER rows
+  (`sumGroupOrderTotal`), reads the group through the OWNER scope (`readOwnedCheckoutGroup`), and
+  requires EVERY member order to be still payable — one shop lapsing closes the whole purchase,
+  because the customer pays once.
+- `payments.checkout_group_id` is the third payment parent, with `idx_payments_one_active_stripe_group`
+  enforcing at most one active session per purchase. `payments_at_least_one_parent_check` +
+  `payments_single_domain_check` replaced the old `payments_exactly_one_parent_check`, which would
+  have rejected a group payment outright.
+- Settlement: `settleCheckoutGroup()` takes the order locks FIRST (`lockCheckoutGroupOrderRows`, one
+  statement, `id ASC`), writes the group payment row, then claims each order with the same
+  `status IN ('pending','pending_payment') AND inventory_released = FALSE` guard and the same
+  `commitOrderInventory` a single-order payment uses. One Stripe charge, N orders, one transaction,
+  no duplicate charge. The webhook routes to it through `checkoutGroupIdForAttempt()`.
 
 ## Important Rules
 

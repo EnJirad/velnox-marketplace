@@ -591,89 +591,11 @@ references both → dual cycle-identity hazard.
 
 ---
 
-## 56. VelRepeat **V2 — Remaining Owner Decisions Sheet** (2026-09-30)
+## 56–58. VelRepeat V2 decision sheets + Phase 3 gate (2026-09-30/10-01) — ARCHIVED
 
-**Docs only — no code, no schema, no migration 051, no production behavior change.** New audit
-`.ai/tasks/audits/velrepeat-v2-owner-decisions-pending-2026-09-30.md` (20 sections, 17 decisions) is a
-**human-answerable sheet**: every question carries ID, source evidence, why it matters, the exact
-question, choices, the phase it blocks, and the source files affected after approval. §18 is the fill-in
-answer form (`G1: B`, `Q2: A`, …) so the owner need not read the codebase.
-
-**No answer was chosen for the owner.** Items: **G1** rule stacking/cap · **G2** rounding+currency
-(incl. the per-cycle formula, remainder side, discount allocation) · **G3** package authoring · **Q2**
-`sold_count` recognition moment · **B/C/D/F** refund · skip · pause · out-of-stock money · **MS**
-multi-seller attribution (payout flagged as a separate architecture decision, not designed) · **PS** package↔seller ·
-**LS/CS** plan + cycle status vocabularies · **RW** reservation window · **SE** seller eligibility ·
-**CI** cycle identity approval · **PX** snapshot confirmation · **V1V2** compatibility.
-
-**`PHASE 2 = BLOCKED`** on G1, G2, G3. Explicitly NOT defaulted: `total_amount / commitment_cycles`,
-the current retry-forever out-of-stock behaviour, and the current silent pause deferral
-(`velrepeat-plans.ts:520`). **One citation corrected:** `commissions.order_id` is at
-`db/run-sqleditor.sql:522` (not `:521`). Next action = obtain the owner answers; **do not start Phase 2**.
-
----
-
-## 57. VelRepeat **V2 — G1/G1.1/G2/G3 implemented** (2026-09-30)
-
-**Pricing engine + seller-owned packages. No Phase 3–9 behaviour.** New `backend/lib/money.ts` (exact
-`bigint` rational money, one half-up 2dp rounding at the final price, no float),
-`backend/lib/velrepeat-pricing.ts` (G1 **B** sequential/multiplicative rules ordered by persisted
-`priority` then `key`, G1.1 **30% effective-discount cap**, platform rule set from
-`platform_settings.velrepeat_pricing_rules`, decision-E snapshot writer over the existing Phase 1
-tables), `backend/routes/velrepeat-packages.ts` (G3 **B** seller-owned packages).
-
-**G3:** `velrepeat_packages.seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE` +
-`idx_velrepeat_packages_seller`, in both canonical files (byte-identical). Item ownership is derived
-`products → shops → sellers`; every line must resolve to the package owner or the whole
-transaction is rejected. Seller identity only ever from the session.
-
-**BLOCKED — the 30% cap has no resolution policy.** A breach **fails closed**
-(`PricingCapExceededError`): the engine does not trim the last rule, scale the rules, keep only the
-top priority, or clamp to the 70% floor, because each is an undecided business policy.
-`PRICING_CAP_POLICY` is the next owner decision.
-
-**Also still blocked:** absolute-amount discount rules, rule scoping, per-cycle price + remainder,
-refund/skip/pause/out-of-stock money, `sold_count` moment, reservation window, multi-seller
-attribution, plan/cycle vocabularies, cycle identity, payment linkage, Stripe prepaid charge.
-`insertPricingSnapshot()` is exported and tested but **not yet called** — Phase 4 wires it.
-
-**Verification:** `bun run test` **1445 pass / 207 skip / 0 fail** (1652 tests, 56 files) · backend tsc 0 ·
-typecheck 4/4 · build:apps 4/4 · `git diff --check` clean · schema files identical · no migration 051 ·
-`db/run-update.sql` still absent. Audit: `.ai/tasks/audits/velrepeat-v2-g1-g3-implementation-2026-09-30.md`.
-Docs + code only; **DB-gated tests SKIPPED locally (no PostgreSQL)** — CI postgres:16 is the only real
-DB execution. **Production untouched: V2 tables still do not exist there** (048–050 unapplied).
-
-## 58. VelRepeat **V2 Phase 3 — BLOCKED before implementation** (2026-09-30)
-
-**Package → Repeat Plan purchase-time pricing snapshot was not started.** The brief's §4 inspection
-found the phase hits its own §21 stop conditions; no code, schema, migration, or production behavior
-changed. Audit: `.ai/tasks/audits/velrepeat-v2-phase3-pricing-snapshot-2026-09-30.md`.
-
-**Blocker A — plan initial status [OWNER DECISION REQUIRED].** The owner's machine
-`draft → pending_payment → active → paused → completed/cancelled` (owner-decision-closure §5.1) needs
-`pending_payment`, absent from `velrepeat_plans.status` (`db/run-sqleditor.sql:827`); LS.1/LS.4
-unanswered; the binding gate table already marks **Phase 3 Repeat Plan [BLOCKED] (shape + eligibility)**
-(§10.2). Creating the plan `active` (DEFAULT; the only status any writer produces) hands it to the live
-V1 engine — `processDuePlans` sweeps `status='active' AND next_run_at <= NOW()`
-(`velrepeat-scheduler.ts:444-451`), then live re-price `:245`, orders `:270`, stock `:328`,
-`reserveInventoryStock` `:341`, `sold_count` `:344`, COD pseudo-payment `:351` — every one forbidden by
-Phase 3. `draft`/`pending_payment` are the unanswered shape, and adding either (or a `package_id`
-marker) to `velrepeat_plans` needs migration 051 on a production table (forbidden). The snapshot cannot
-decouple: `velrepeat_pricing_snapshots.plan_id NOT NULL REFERENCES velrepeat_plans(id)` (`:923`).
-
-**Blocker B — seller eligibility for repeat commerce [OWNER DECISION REQUIRED]** (which sellers may
-appear in a plan/package; G3=B made packages seller-scoped, removing the Phase-2 exemption — closure
-§12 item 4 / §11.2 item 6).
-
-**Also open (recorded, not the stopper):** the shared creation route is COD-only
-(`velrepeat-plans.ts:223`, `:836`) so `payment_method` needs the Phase-4 rail decision; plan creation
-has no canonical idempotency (`checkout_requests` is checkout/payment-scoped); `PRICING_CAP_POLICY`
-stays inherited-open from Phase 2.
-
-**Verified clean:** HEAD `356c640` == `origin/main`; tree clean before the docs record; no change to
-payment / inventory / fulfillment / `sold_count` / COD / V1 / schema; `db/migrations` still ends at
-`050`; `db/run-update.sql` still absent; V2 tables still absent in production (048–050 unapplied).
-**Next:** owner answers Q-A/Q-B (audit §5) before Phase 3 (or Phase 4) starts.
+Superseded by §59–§65 (Phase 3 shipped, Phase 4 shipped, Phase 5 shipped, the multi-shop /
+numeric-order-number / V2-UI work landed). Moved verbatim to
+[`.ai/history/archive/AI_Handoff-2026-10-01-decisions-and-phase3-gate.md`](./history/archive/AI_Handoff-2026-10-01-decisions-and-phase3-gate.md).
 
 ## 59. VelRepeat **V2 Phase 3 — package → draft plan → immutable snapshot** (2026-10-01) — ARCHIVED
 
@@ -812,3 +734,69 @@ plan/payment/package + forged cookie → 401; `_diag` → 401), all stopping bef
 **1882/2/0** (`bun test` and `pnpm test`), tsc 0, backend typecheck 0, typecheck 4/4, build 4/4, schema identical,
 diff clean. (`pnpm exec tsc -b` / `pnpm build` are not this repo's commands — bun workspace, no root tsconfig.)
 Full detail: §18 of `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-03.md`.
+
+---
+
+## §65. Multi-shop checkout, numeric order numbers, VelRepeat V2 customer UI (2026-10-04)
+
+Three headline goals delivered end to end.
+
+### 54.1 Public order numbers are DIGITS ONLY
+
+`generateOrderNumber()` (`backend/lib/order-number.ts`) now returns **18 decimal digits**
+(`^[0-9]{18}$`): 14-digit ms timestamp + 4 digits from `crypto.randomInt()`. No prefix, no letters,
+no separator. The value is a **string everywhere** (18 digits > `Number.MAX_SAFE_INTEGER`); the
+column stays `TEXT`. Legacy `VNX-YYYYMMDD-XXXXXX` rows keep their value — the column is nullable and
+`idx_orders_number_unique` is partial — and `isLegacyOrderNumber()` recognises them.
+VelRepeat cycle orders now carry a public number too (savepoint retry `cycle_order_number_attempt`).
+
+### 54.2 One purchase, N fulfillment orders
+
+- New `checkout_groups` table; `orders.checkout_group_id`; migration
+  `db/migrations/054_checkout_groups_numeric_order_number.sql` (additive, idempotent; **not yet
+  applied to production** — Neon quota blocker, same as 048/049/053).
+- `payments.checkout_group_id` is a third payment parent.
+  `payments_exactly_one_parent_check` → `payments_at_least_one_parent_check` +
+  `payments_single_domain_check`; `idx_payments_one_active_stripe_group` enforces one active
+  session per purchase. Both canonical SQL files updated identically.
+- **`POST /api/stripe/checkout` accepts `checkoutGroupId` OR `orderId`.** The group path reads the
+  group through the OWNER scope, re-derives the amount from the member ORDER rows, and requires every
+  member to still be payable. **The previous bug** — reconciling against ONE order's `total_amount`,
+  so a 3-shop cart charged only shop A — is fixed.
+- Settlement: `settleCheckoutGroup()` locks every member row FIRST
+  (`lockCheckoutGroupOrderRows`, one statement, `id ASC`), writes the group payment row, then claims
+  each order with the same guarded UPDATE + `commitOrderInventory` a single-order payment uses. One
+  charge, N orders, one transaction. The webhook routes via `checkoutGroupIdForAttempt()`, OUTSIDE
+  any transaction, so the lock-order invariant (`backend/tests/payment-cancellation-race.test.ts`)
+  still holds — `settleCheckoutGroup` is now a case in that suite.
+- `markPaymentSucceeded` was restored to its original single-order shape; the dispatcher is at the
+  webhook call sites. This is why `late-payment-incidents.test.ts` and
+  `payment-attempt-identity.test.ts` pass **unmodified**.
+
+### 54.3 VelRepeat V2 customer UI (`/velrepeat/v2`)
+
+New read endpoints (`backend/routes/velrepeat-v2-status.ts`): `GET /api/velrepeat/v2/packages`,
+`GET /api/velrepeat/v2/plans`, `GET /api/velrepeat/v2/plans/:planId` (owner-scoped; pricing from the
+FROZEN snapshot; cycles from `readPlanCycles`; per-cycle orders with shop, shipping status and
+tracking). Stripe success/cancel now return to `/velrepeat/v2?velrepeat_v2_payment=…&plan=<id>`.
+
+`apps/velshop/src/pages/VelRepeatV2Page.tsx`: package → commitment → frequency → review → draft plan →
+Stripe TEST Checkout → return → server-decided status → cycles → per-shop orders (each openable, each
+with its own tracking). It **never** computes an authoritative price (renders the server's frozen
+figures), **never** treats the Stripe redirect as proof of payment (polls the server while it says
+`draft`), and sends only `packageId` / `commitmentCycles` / `frequencyType` / `intervalValue`.
+Commitment options and frequencies mirror the backend's own vocabulary.
+
+### 54.4 Order history grouped by purchase
+
+`checkoutGroupId` is exposed on the customer, seller and center order lists. VelShop groups the
+history by it so one purchase reads as one thing with N per-shop orders underneath. VelCenter can see
+the whole purchase tree; seller ownership is unchanged (`WHERE sh.seller_id = $1` still scopes it).
+Tracking stays per ORDER / per SHIPMENT — never per group.
+
+### 54.5 Tests
+
+`backend/tests/multi-shop-checkout.test.ts` (17) covers split cases 1–4, group totals, ownership in
+both directions, cross-customer refusal, one-charge/no-duplicate settlement via the real signed
+webhook, stock committed once, group invisibility, and concurrent number generation.
+Suite: **1908 pass / 2 skip / 0 fail** (baseline 1882/2/0).

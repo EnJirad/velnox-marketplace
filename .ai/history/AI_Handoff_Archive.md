@@ -12,6 +12,7 @@ unchanged) in:
 |---|---|
 | [`archive/AI_Handoff-2026-09-22-full.md`](./archive/AI_Handoff-2026-09-22-full.md) | the complete handoff as it stood at 2026-09-22, before the split (1,594 lines) |
 | [`archive/AI_Handoff-2026-09-14.md`](./archive/AI_Handoff-2026-09-14.md) | the earlier snapshot it replaced |
+| [`archive/AI_Handoff-2026-10-01-decisions-and-phase3-gate.md`](./archive/AI_Handoff-2026-10-01-decisions-and-phase3-gate.md) | §56–§58 of the handoff: V2 decision sheets + the Phase 3 gate (moved 2026-10-04, superseded by §59–§65) |
 
 **Why the index exists:** this environment's file-edit tools stop matching past
 roughly 55 KB in a file, so the single ~109 KB handoff could no longer be edited.
