@@ -731,3 +731,39 @@ schema change.
 **The two canonical files are no longer byte-identical, on purpose.** The contract between
 them is declaration parity, asserted by `backend/tests/helpers/canonical-schema.ts`, and the
 11 tests that pinned byte-identity now pin that instead. `db/run-update.sql` remains absent.
+
+---
+
+## `42703 checkout_group_id` — the schema was never wrong (2026-10-04)
+
+Production evidence, in order: `checkout_groups WHERE id=$1 AND user_id=$2` worked,
+`orders WHERE checkout_group_id=$1` worked, then the ORDER ITEMS query raised
+`42703 column "checkout_group_id" does not exist` — with `orders.checkout_group_id`
+confirmed present.
+
+**A 42703 naming a bare column means no relation in that statement's FROM/JOIN scope owns
+it.** That is why the two queries above do not raise it: both have `orders` in scope. The
+failing statement therefore read `order_items` WITHOUT `orders` in scope.
+
+**No statement on `main` has that shape.** Every SQL string in `backend/` that mentions
+`checkout_group_id` was enumerated and its FROM/JOIN scope checked: 14 statements, all
+resolve. The item-by-group query is `stripe.ts:558`, and it does `JOIN orders o` with
+`WHERE o.checkout_group_id = $1`. `git log -S` shows it has been qualified since `d4ac063`,
+the same commit that introduced the group flow the log's first line comes from. So the
+running build is not `main` — that is the actionable conclusion, not a code change.
+
+`backend/tests/checkout-group-sql-scope.test.ts` pins this going forward: a static scope
+check over every backend SQL string, plus a live PostgreSQL fixture (checkout_groups →
+orders → order_items) that executes the statement **read out of `routes/stripe.ts`**, and a
+negative control that reproduces `42703` by dropping `orders` from scope and shows the
+qualified join succeeding on the same rows.
+
+**Logging, because this was undiagnosable.** A DB failure logged `statement: "SELECT"` and
+nothing else, so a 42703 could not be attributed to a file. `logDbFailure` now also logs the
+redacted statement and its relation scope. `sqlForLog()` strips `--` comments, replaces every
+single-quoted and dollar-quoted literal with `?`, collapses whitespace and truncates; params are
+never interpolated. `db-failure-log-redaction.test.ts` (12 tests) pins that no value can leak.
+
+**Separate finding, NOT the 42703.** `acquire ~1.2–1.6s` with `exec ~197–315ms` is pool and
+TLS cost to Neon, not a bad plan; `max: 20, min: 1, idleTimeoutMillis: 30000` in
+`backend/db/index.ts` explains `idle=6`. Untouched — no evidence yet justifies changing it.

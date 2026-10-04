@@ -92,14 +92,58 @@ pool.on("error", (err) => {
 });
 
 // ─── Safe database failure logging ─────────────────────────────────────────
-// Diagnosis aid only. Logs the operation, the statement's leading keyword, and
-// the PostgreSQL error code/severity/message — never the connection string,
-// credentials, cookies, or query parameters (which may carry PII).
+// Diagnosis aid only. Never the connection string, credentials, cookies, or
+// query parameters (which may carry PII).
+//
+// WHY THE STATEMENT TEXT IS NOW LOGGED
+// ------------------------------------
+// Logging only the leading keyword (`statement: "SELECT"`) is what made a real
+// production incident undiagnosable: a 42703 naming `checkout_group_id` cannot
+// be attributed to a file when every failing statement logs the same word.
+// `sqlForLog()` is the redaction that makes the text safe to print.
+//
+// It removes `--` comments, replaces every single-quoted literal with `?`, drops
+// dollar-quoted bodies, collapses whitespace and truncates. Parameters are NEVER
+// interpolated, so an email address, a token or a cookie in a bound value cannot
+// reach the log; only the SHAPE of the statement is printed.
+export function sqlForLog(sql: string | null): string | null {
+  if (!sql) return null;
+  return (
+    sql
+      // dollar-quoted function bodies: $$ … $$ / $tag$ … $tag$
+      .replace(/\$[A-Za-z_]*\$[\s\S]*?\$[A-Za-z_]*\$/g, " $$…$$ ")
+      // string literals — the only place a value could ever leak
+      .replace(/'(?:[^']|'')*'/g, "?")
+      // E'' escape strings, before anything else can split them
+      .replace(/E'(?:[^']|'')*'/g, "?")
+      .replace(/--[^\n]*/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 400) || null
+  );
+}
+
+/** The relations a statement names, so an unqualified column can be attributed. */
+export function sqlTablesForLog(sql: string | null): string[] {
+  if (!sql) return [];
+  return [
+    ...new Set(
+      [...sql.matchAll(/(?:FROM|JOIN|INTO|UPDATE)\s+([a-z_][a-z_0-9]*)/gi)].map((m) =>
+        m[1]!.toLowerCase(),
+      ),
+    ),
+  ];
+}
+
 function logDbFailure(operation: string, sql: string | null, err: unknown): void {
   const pgErr = err as { code?: string; severity?: string; message?: string } | null;
   console.error("[DB] operation failed:", {
     operation,
     statement: sql ? sql.trim().split(/\s+/)[0] : null,
+    // The redacted statement and its relation scope: this is what turns
+    // "42703 checkout_group_id" into "this file, this FROM list".
+    sql: sqlForLog(sql),
+    tables: sqlTablesForLog(sql),
     code: pgErr?.code ?? null,
     severity: pgErr?.severity ?? null,
     message: pgErr?.message ?? (err instanceof Error ? err.message : String(err)),
