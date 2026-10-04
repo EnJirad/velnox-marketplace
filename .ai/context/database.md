@@ -8,12 +8,30 @@ Neon PostgreSQL. Single `pg.Pool` in `backend/db/index.ts` (SSL `verify-full`). 
 
 | File | Purpose | Rule |
 |------|---------|------|
-| `db/schema.sql` | Complete current schema snapshot | Authoritative structure |
-| `db/run-sqleditor.sql` | Complete idempotent fresh-DB bootstrap | Run once on an **empty** DB to get the full current DB |
+| `db/schema.sql` | Complete current schema **snapshot** | Authoritative structure; bootstraps an empty DB in one pass |
+| `db/run-sqleditor.sql` | **Rerunnable additive reconciler** | Paste into Neon SQL Editor and Run as often as needed against a database that already has data |
 | `db/run-update.sql` | **Deprecated** — do not recreate, update, or depend on it | — |
 | `db/migrations/001_*.sql` … | Historical migrations (idempotent, `IF NOT EXISTS`) | History only; do not rewrite |
 
-`db/schema.sql` and `db/run-sqleditor.sql` must represent the **same final structure** and be updated together on every schema change. No SQL comments inside them (put notes in handoff/docs).
+The two canonical files describe the **same database** but are **not the same
+artifact**, and must not be compared byte-for-byte:
+
+- `db/schema.sql` is what the current schema *is*. One pass over an empty database.
+- `db/run-sqleditor.sql` is what has to happen to an **existing** database to bring it
+  to that schema without losing anything. It therefore carries extra passes the snapshot
+  has no use for — `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, a `DROP NOT NULL` relax pass,
+  and the index / foreign-key / constraint / trigger passes moved after the column pass so
+  an older database that is missing a column is not aborted by the index that needs it.
+
+The contract between them is **declaration parity**, asserted by
+`backend/tests/helpers/canonical-schema.ts`: every table, column, index, named constraint,
+function, trigger and extension `db/schema.sql` declares must still be declared by
+`db/run-sqleditor.sql` with the same name and definition. The extra passes may ADD; they may
+never drop or redefine.
+
+`db/run-sqleditor.sql` is generated from `db/schema.sql`, which is the only source of truth.
+Edit `db/schema.sql`, then regenerate the reconciler's additive passes — never hand-edit the
+generated statements in isolation.
 
 ## What Must Be in the Canonical Files
 
@@ -22,10 +40,38 @@ Tables, columns, types, defaults, PKs, FKs, unique/check constraints, indexes (i
 ## Fresh-DB Contract
 
 ```
-Empty Postgres  →  run db/run-sqleditor.sql once  →  complete current Velnox DB
+Empty Postgres  →  run db/run-sqleditor.sql  →  complete current Velnox DB
+                    (run it again → nothing changes)
 ```
 
-No prior migrations, no `ALTER TABLE` tail required. Historical `db/migrations/` are for upgrading existing DBs, not for fresh creation. Never run the bootstrap against production as a migration; never `DROP/TRUNCATE` prod to make it pass.
+No prior migrations required. Historical `db/migrations/` are for upgrading existing DBs, not for fresh creation. Never `DROP/TRUNCATE` prod to make it pass.
+
+## The Reconciler Is Additive — Never Destructive
+
+`db/run-sqleditor.sql` is pasted into production, so it is written to the strictest rule:
+
+| Situation | What it does |
+|---|---|
+| table missing | `CREATE TABLE IF NOT EXISTS` |
+| column missing | `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` |
+| column is `NOT NULL` in the old DB but nullable in the schema | `ALTER COLUMN ... DROP NOT NULL` (widens only) |
+| index missing | `CREATE [UNIQUE] INDEX IF NOT EXISTS`, emitted **after** the column pass |
+| constraint / FK missing | added once, guarded on `pg_constraint` |
+| check whose stored definition differs from the schema | re-applied only when it differs |
+| trigger missing | created once, guarded on `pg_trigger` |
+| function present | `CREATE OR REPLACE` with the canonical body |
+
+It must never contain `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`, must never
+rename an object in place, and must never hide a failure behind
+`EXCEPTION WHEN OTHERS THEN NULL` — a migration that cannot be completed safely has to
+stop and say so, not report a false success. The one `DROP CONSTRAINT` it carries retires
+`payments_exactly_one_parent_check`, which migration 054 superseded; the in-file comment
+explains why, and it removes a rule rather than data.
+
+**Order is part of the contract.** Nothing may be created before what it depends on:
+tables → columns → indexes → constraints → foreign keys → triggers. An index on a column an
+older database does not have yet must come after the column pass, or the whole run aborts
+on the first such index.
 
 ## Dependency Ordering
 
@@ -170,7 +216,12 @@ SELECT count(*) FILTER (WHERE payment_expires_at > NOW()) AS open_windows,
 ## Safety & Verification
 
 - Never `DROP DATABASE/SCHEMA/TABLE` or `TRUNCATE` without explicit owner auth.
-- Verify: `diff db/schema.sql db/run-sqleditor.sql` is clean (structure), `git diff --check`, dependency order, and that the fresh-DB question is YES: *"Can an empty Neon become the current DB by running `db/run-sqleditor.sql` once?"*
-- Also check `db/run-update.sql` was not resurrected.
+- Verify: declaration parity between `db/schema.sql` and `db/run-sqleditor.sql`
+  (`canonicalParity()` must be empty), `git diff --check`, dependency order, and both
+  questions: *"Can an empty Neon become the current DB by running
+  `db/run-sqleditor.sql` once?"* and *"If I run it a second and third time, does anything
+  change — and are no rows lost on an old database?"*
+- Also check `db/run-update.sql` was not resurrected, and that the reconciler contains no
+  `DROP TABLE` / `DROP COLUMN` / `TRUNCATE` / `DELETE FROM` and no `EXCEPTION` handler.
 
 Related: `.ai/AI_RULES.md` §6, `INSTALLATION.md` §5–6, `docs/DATABASE.md`.

@@ -127,16 +127,52 @@ describe("the canonical schema never alters a table it does not create", () => {
 
   function phantomReferences(sql: string): string[] {
     const code = statements(sql);
-    const created = new Set([...code.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)/g)].map((m) => m[1]));
+    const created = new Set(
+      [...code.matchAll(/CREATE (?:TEMP(?:ORARY)? )?TABLE (?:IF NOT EXISTS )?([a-z_]+)/g)].map(
+        (m) => m[1],
+      ),
+    );
     const missing = new Set<string>();
     for (const m of code.matchAll(/ALTER TABLE (?:IF EXISTS )?([a-z_]+)/g)) {
       if (!created.has(m[1])) missing.add(m[1]);
+    }
+    // The reconciler's PART 2c relaxes a NOT NULL with a dynamic ALTER:
+    //   EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I DROP NOT NULL', ...)
+    // so the table is a bind parameter, not a literal, and the regex above reads
+    // the literal `public` instead. Its target set is not hidden: it is the
+    // explicit (c.table_name, c.column_name) IN (...) list in the same block, so
+    // that list is checked against the tables this file creates instead.
+    const dynamic = code.match(/AND \(c\.table_name, c\.column_name\) IN \(([\s\S]*?)\n\s*\)/);
+    if (dynamic) {
+      for (const m of dynamic[1]!.matchAll(/\('([a-z_]+)','[a-z_]+'\)/g)) {
+        if (!created.has(m[1]!)) missing.add(m[1]!);
+      }
+      missing.delete("public");
     }
     return [...missing];
   }
 
   test("db/schema.sql", () => expect(phantomReferences(schemaSql)).toEqual([]));
   test("db/run-sqleditor.sql", () => expect(phantomReferences(sqlEditor)).toEqual([]));
+
+  test("the reconciler only relaxes NOT NULL on tables it creates", () => {
+    // PART 2c drives ALTER TABLE from a bind parameter, so it must be pinned
+    // explicitly: every table in its target list is one this file creates.
+    const created = new Set(
+      [
+        ...statements(sqlEditor).matchAll(
+          /CREATE (?:TEMP(?:ORARY)? )?TABLE (?:IF NOT EXISTS )?([a-z_]+)/g,
+        ),
+      ].map((m) => m[1]),
+    );
+    const block = statements(sqlEditor).match(
+      /AND \(c\.table_name, c\.column_name\) IN \(([\s\S]*?)\n\s*\)/,
+    );
+    expect(block, "the reconciler lost its PART 2c NOT NULL relax list").not.toBeNull();
+    const targets = [...block![1]!.matchAll(/\('([a-z_]+)','[a-z_]+'\)/g)].map((m) => m[1]!);
+    expect(targets.length).toBeGreaterThan(200);
+    expect(targets.filter((t) => !created.has(t))).toEqual([]);
+  });
 
   test("the velrepeat run constraint targets the table V0034 creates", () => {
     for (const sql of [schemaSql, sqlEditor, migration044]) {

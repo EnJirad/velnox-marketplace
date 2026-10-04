@@ -94,10 +94,11 @@ Do not create a second competing source of truth. Frontend is never the source o
 
 ## 6. Database Rules
 
-- **Canonical files:** `db/schema.sql` = complete current schema snapshot. `db/run-sqleditor.sql` = complete idempotent fresh-database bootstrap. They MUST stay byte-identical in structure.
+- **Canonical files:** `db/schema.sql` = complete current schema SNAPSHOT. `db/run-sqleditor.sql` = the rerunnable ADDITIVE RECONCILER (pasted into Neon SQL Editor and Run, repeatedly). They are no longer byte-identical: the reconciler additionally carries the column / NOT NULL / index / foreign-key / constraint / trigger passes an EXISTING database needs, which the snapshot has no use for. The contract between them is **declaration parity** — every table, column, index, constraint, function, trigger and extension the snapshot declares must still be declared by the reconciler, unchanged (asserted by `backend/tests/helpers/canonical-schema.ts`).
+- **Reconciler safety:** `db/run-sqleditor.sql` must never `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`, and must never swallow an error with `EXCEPTION WHEN OTHERS THEN NULL`. It creates what is missing and leaves every existing row alone. The single `DROP CONSTRAINT` it carries is the one migration 054 superseded and is commented in place.
 - **Deprecated:** `db/run-update.sql` is deprecated — never recreate, update, or depend on it.
-- **Whenever schema changes**, update **both** canonical files (tables, columns, types, constraints, indexes, functions, triggers, views). No SQL comments inside them.
-- **Fresh DB contract:** an empty Postgres must become the complete current Velnox DB by running `db/run-sqleditor.sql` once — no prior migrations required.
+- **Whenever schema changes**, update **both** canonical files (tables, columns, types, constraints, indexes, functions, triggers, views) and regenerate the reconciler's additive passes from `db/schema.sql`. No SQL comments inside them.
+- **Fresh DB contract:** an empty Postgres must become the complete current Velnox DB by running `db/run-sqleditor.sql` once — no prior migrations required — and running it a second and third time must change nothing (no duplicate table, column, constraint, index or trigger).
 - **Dependency order:** respect PG dependency order; use deferred `ALTER TABLE ADD CONSTRAINT` for circular FKs. Histor
   migrations in `db/migrations/` remain history — do not rewrite them to clean the bootstrap.
 
@@ -155,7 +156,7 @@ Verify the relevant tier (see `.ai/context/testing.md`):
 
 - Frontend: typecheck + build + affected page + responsive/i18n
 - Backend: typecheck + affected API + auth/authz + error handling
-- Database: SQL validity + fresh-bootstrap completeness (`db/schema.sql` ↔ `db/run-sqleditor.sql` sync) + dep order + app compatibility
+- Database: SQL validity + fresh-bootstrap completeness (`db/schema.sql` ↔ `db/run-sqleditor.sql` declaration parity) + dep order + additive-only reruns + app compatibility
 - Always: `git diff --check`, no new type errors, no secrets committed
 
 ## 14. Git / Version Control — Automatic Commit and Push

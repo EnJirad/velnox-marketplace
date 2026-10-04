@@ -19,6 +19,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
+import { createTableBlock } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 import {
   PackageAuthorizationError,
@@ -61,10 +62,14 @@ describe("G3 — package ownership is structural", () => {
     });
 
     test("the package table still owns no inventory authority", () => {
-      const start = sql.indexOf("CREATE TABLE IF NOT EXISTS velrepeat_packages (");
-      const end = sql.indexOf("CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_active");
-      expect(start).toBeGreaterThan(-1);
-      expect(sql.slice(start, end)).not.toContain("stock");
+      // Bound the slice by the table's OWN closing paren. db/run-sqleditor.sql is
+      // the rerunnable reconciler and carries its index pass in a later part, so
+      // anchoring the end on idx_velrepeat_packages_active would scan unrelated
+      // tables (velrepeat_cycles carries an 'out_of_stock' status) and fail on
+      // text that has nothing to do with this table.
+      const block = createTableBlock(sql, "velrepeat_packages");
+      expect(block).not.toBe("");
+      expect(block).not.toContain("stock");
     });
 
     test("a multi-seller package is impossible by construction — items carry no seller", () => {

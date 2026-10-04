@@ -52,6 +52,11 @@ import express from "express";
 import jwt from "jsonwebtoken";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
+import {
+  NO_CANONICAL_DRIFT,
+  canonicalParity,
+  runUpdateSqlResurrected,
+} from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
 import {
@@ -379,19 +384,17 @@ describe("MATRIX — §3/§5 migration 052 touches no financial history", () => 
     expect(code).toContain("skipped_settled");
   });
 
-  test("the canonical SQL files remain byte-identical", () => {
-    expect(read("db/schema.sql")).toBe(read("db/run-sqleditor.sql"));
+  test("the canonical snapshot and the reconciler declare the same schema", () => {
+    // db/run-sqleditor.sql is the rerunnable additive reconciler and is
+    // legitimately longer than db/schema.sql; the contract is that it declares
+    // everything the snapshot declares, unchanged.
+    expect(canonicalParity(read("db/schema.sql"), read("db/run-sqleditor.sql"))).toEqual(
+      NO_CANONICAL_DRIFT,
+    );
   });
 
   test("the deprecated db/run-update.sql was not resurrected", () => {
-    let resurrected = false;
-    try {
-      read("db/run-update.sql");
-      resurrected = true;
-    } catch {
-      // absent is the required state
-    }
-    expect(resurrected).toBe(false);
+    expect(runUpdateSqlResurrected()).toBe(false);
   });
 });
 

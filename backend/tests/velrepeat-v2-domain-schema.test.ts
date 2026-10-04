@@ -48,6 +48,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
+import { NO_CANONICAL_DRIFT, canonicalParity, createTableBlock } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 
 const root = join(import.meta.dir, "..", "..");
@@ -69,8 +70,12 @@ describe("velrepeat v2 phase-1 schema — canonical files", () => {
   const schema = read("db/schema.sql");
   const bootstrap = read("db/run-sqleditor.sql");
 
-  test("db/schema.sql and db/run-sqleditor.sql stay byte-identical", () => {
-    expect(schema).toBe(bootstrap);
+  test("the reconciler still declares everything db/schema.sql declares", () => {
+    // db/run-sqleditor.sql is the rerunnable additive reconciler, not a second
+    // copy of the snapshot, so the contract is declaration parity rather than
+    // byte-identity: it may carry the column/index/constraint passes an existing
+    // database needs, but it may not drop or redefine what the snapshot declares.
+    expect(canonicalParity(schema, bootstrap)).toEqual(NO_CANONICAL_DRIFT);
   });
 
   for (const table of V2_TABLES) {
@@ -99,11 +104,13 @@ describe("velrepeat v2 phase-1 schema — canonical files", () => {
 
   test("the package table owns no inventory authority (no stock column)", () => {
     for (const sql of [schema, bootstrap]) {
-      const start = sql.indexOf("CREATE TABLE IF NOT EXISTS velrepeat_packages (");
-      const end = sql.indexOf("CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_active");
-      expect(start).toBeGreaterThan(-1);
-      expect(end).toBeGreaterThan(start);
-      expect(sql.slice(start, end)).not.toContain("stock");
+      // Bounded by the table's OWN closing paren. In the reconciler the index pass
+      // is a later part, so anchoring the end on idx_velrepeat_packages_active
+      // would scan unrelated tables (velrepeat_cycles has an 'out_of_stock'
+      // status) and fail on text unrelated to this table.
+      const block = createTableBlock(sql, "velrepeat_packages");
+      expect(block).not.toBe("");
+      expect(block).not.toContain("stock");
     }
   });
 

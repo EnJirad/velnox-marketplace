@@ -26,7 +26,7 @@
  *   4. `payments.status = 'failed'` is never read as an `orders.status` — the
  *      two axes stay separate in SQL, in the shared types and in the UI meta;
  *   5. the MEDIUM #9 allowed set is UNCHANGED (still exactly 12 values, still
- *      declared identically in both canonical SQL files and in V0050, and
+ *      declared in both canonical SQL files and in V0050, and
  *      still WITHOUT `failed`) — the fix must not quietly widen the constraint;
  *   6. inventory release behavior is unchanged: each surviving status still
  *      releases, a non-releasable one still refuses, and a settled payment
@@ -47,6 +47,7 @@ import { RELEASABLE_STATUSES, releaseOrderInventory } from "../lib/inventory.js"
 import { PAYMENT_RESERVATION_EXPIRED_STATUS } from "../lib/payment-reservation.js";
 import { PAYMENT_SETTLED_STATUSES } from "../lib/order-lock.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
+import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 
 const root = join(import.meta.dir, "..", "..");
@@ -332,8 +333,11 @@ describe("LOW #12 — MEDIUM #9 (orders.status CHECK) is untouched", () => {
     expect(ALLOWED_ORDER_STATUSES).toHaveLength(12);
   });
 
-  test("both canonical SQL files still declare exactly that set, byte-identical", () => {
-    expect(read(SCHEMA)).toBe(read(BOOTSTRAP));
+  test("both canonical SQL files still declare exactly that set", () => {
+    // db/run-sqleditor.sql is a rerunnable additive reconciler, not a copy of
+    // db/schema.sql, so the two are compared on what they DECLARE rather than on
+    // their bytes; helpers/canonical-schema.ts carries that contract.
+    expect(canonicalParity(read(SCHEMA), read(BOOTSTRAP))).toEqual(NO_CANONICAL_DRIFT);
     expect(declaredValues(read(SCHEMA)).sort()).toEqual([...ALLOWED_ORDER_STATUSES].sort());
   });
 

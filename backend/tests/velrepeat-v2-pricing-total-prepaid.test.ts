@@ -33,6 +33,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
+import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 import { withTransaction } from "../db/index.js";
 import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
@@ -423,8 +424,10 @@ describe("TOTAL PREPAID — exact money, structurally", () => {
 describe("TOTAL PREPAID — schema", () => {
   const schema = read("db/schema.sql");
 
-  test("the canonical SQL files are byte-identical", () => {
-    expect(read("db/run-sqleditor.sql")).toBe(schema);
+  test("the reconciler still declares everything the snapshot declares", () => {
+    expect(canonicalParity(schema, read("db/run-sqleditor.sql"))).toEqual(
+      NO_CANONICAL_DRIFT,
+    );
   });
 
   test("cycle_price exists beside total_amount, and the total can never be less", () => {

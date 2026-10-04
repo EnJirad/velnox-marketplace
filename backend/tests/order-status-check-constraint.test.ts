@@ -20,7 +20,9 @@
  *   2. the payment-domain values are NOT dumped in wholesale — each payment
  *      value in the set must have a real `orders.status` writer, and the
  *      payments-only statuses must stay out;
- *   3. both canonical SQL files carry the constraint and remain byte-identical;
+ *   3. both canonical SQL files carry the constraint, and the reconciler still
+ *      declares everything db/schema.sql declares (they are a snapshot and a
+ *      rerunnable updater, not two copies of one file);
  *   4. the constraint is a plain CHECK — no trigger, no enum, no state table;
  *   5. against a REAL database: every allowed value inserts and updates, an
  *      invalid value is refused by PostgreSQL itself (23514 on
@@ -38,6 +40,7 @@ import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 
 import { FULFILLMENT_STATUSES } from "../lib/order-fulfillment.js";
+import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 import { PAYMENT_RESERVATION_EXPIRED_STATUS } from "../lib/payment-reservation.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
 import { purgeUsers } from "./helpers/purge.js";
@@ -174,8 +177,13 @@ describe("order status CHECK — declared in both canonical files and in its mig
     return [...match![1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
   }
 
-  test("db/schema.sql and db/run-sqleditor.sql stay byte-identical", () => {
-    expect(read(SCHEMA)).toBe(read(BOOTSTRAP));
+  test("the reconciler still declares everything db/schema.sql declares", () => {
+    // NOT byte-identity: db/run-sqleditor.sql is a rerunnable additive reconciler
+    // and carries the column / index / constraint passes an existing database
+    // needs, so it is legitimately longer. What must hold is that nothing the
+    // canonical snapshot declares is missing from it or defined differently —
+    // that is what keeps pasting the reconciler into Neon describing this schema.
+    expect(canonicalParity(read(SCHEMA), read(BOOTSTRAP))).toEqual(NO_CANONICAL_DRIFT);
   });
 
   test("the schema declares exactly the derived allowed set", () => {

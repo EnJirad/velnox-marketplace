@@ -20,6 +20,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { hashPassword, isPasswordHashFormat, verifyPassword } from "../lib/password.js";
+import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf-8");
@@ -80,8 +81,10 @@ describe("password hashing", () => {
 // ─── Schema availability (the repo's database rule) ────────────────────────
 
 describe("must_change_password column", () => {
-  test("db/schema.sql and db/run-sqleditor.sql stay identical", () => {
-    expect(schema).toBe(bootstrap);
+  test("the reconciler still declares everything db/schema.sql declares", () => {
+    // db/run-sqleditor.sql is the rerunnable additive reconciler and so is
+    // legitimately longer than the snapshot; the contract is declaration parity.
+    expect(canonicalParity(schema, bootstrap)).toEqual(NO_CANONICAL_DRIFT);
   });
 
   test("both bootstrap files declare the column on users", () => {

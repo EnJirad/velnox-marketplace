@@ -39,6 +39,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
+import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 import {
   createCycleSchedule,
@@ -109,12 +110,17 @@ describe("Phase 5 — structural boundaries", () => {
     expect(existsSync(join(root, "db/run-update.sql"))).toBe(false);
   });
 
-  test("both canonical schema files carry the constraint, and stay identical", () => {
+  test("both canonical schema files carry the constraint, and do not drift", () => {
     for (const file of ["db/schema.sql", "db/run-sqleditor.sql"]) {
       expect(read(file)).toMatch(/idx_orders_velrepeat_cycle_seller_unique/i);
       expect(read(file)).toMatch(/CREATE TABLE IF NOT EXISTS velrepeat_cycles/i);
     }
-    expect(read("db/schema.sql")).toBe(read("db/run-sqleditor.sql"));
+    // db/run-sqleditor.sql is the rerunnable additive reconciler and is
+    // legitimately longer than the snapshot; the contract is that it declares
+    // everything the snapshot declares.
+    expect(canonicalParity(read("db/schema.sql"), read("db/run-sqleditor.sql"))).toEqual(
+      NO_CANONICAL_DRIFT,
+    );
   });
 
   test("scheduling reuses the ONE existing authority instead of re-deriving it", () => {

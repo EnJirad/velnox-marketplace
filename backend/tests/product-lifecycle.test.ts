@@ -31,6 +31,7 @@ import {
 } from "../lib/product-lifecycle.js";
 import { query } from "../db/index.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
+import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 
 const root = join(import.meta.dir, "..", "..");
 const productsSrc = readFileSync(join(root, "backend/routes/products.ts"), "utf8");
@@ -398,8 +399,12 @@ describe("migration 040 + schema sync", () => {
     expect(migration040).toContain("verified_at TIMESTAMPTZ");
   });
 
-  test("all schema files agree (schema.sql = run-sqleditor.sql)", () => {
-    expect(schemaSql).toBe(sqlEditor);
+  test("all schema files agree on what they declare", () => {
+    // db/run-sqleditor.sql is the rerunnable additive reconciler, not a second
+    // copy of db/schema.sql: it carries the column / index / constraint passes an
+    // existing database needs. What must still hold is that it declares every
+    // table, column, index and constraint the snapshot declares.
+    expect(canonicalParity(schemaSql, sqlEditor)).toEqual(NO_CANONICAL_DRIFT);
     for (const sql of [schemaSql, sqlEditor]) {
       expect(sql).toContain("verification_status TEXT NOT NULL DEFAULT 'unverified'");
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS seller_verifications");

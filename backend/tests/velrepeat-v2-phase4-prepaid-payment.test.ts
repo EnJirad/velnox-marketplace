@@ -48,6 +48,7 @@ import jwt from "jsonwebtoken";
 import type Stripe from "stripe";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
+import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 import {
   makeRational,
   multiply,
@@ -631,8 +632,10 @@ describe("Phase 4 — the payments schema carries a plan parent", () => {
   const schema = read("db/schema.sql");
   const migration = stripSqlComments(read("db/migrations/051_payments_velrepeat_v2_plan_parent.sql"));
 
-  test("the two canonical SQL files are byte-identical", () => {
-    expect(read("db/run-sqleditor.sql")).toBe(schema);
+  test("the reconciler still declares everything the snapshot declares", () => {
+    expect(canonicalParity(schema, read("db/run-sqleditor.sql"))).toEqual(
+      NO_CANONICAL_DRIFT,
+    );
   });
 
   test("order_id is nullable, plan_id exists, and a parent is required", () => {

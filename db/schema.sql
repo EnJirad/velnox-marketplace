@@ -383,7 +383,6 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_checkout_group_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_checkout_group_id_fkey FOREIGN KEY (checkout_group_id) REFERENCES checkout_groups(id) ON DELETE SET NULL; END IF; END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_number_unique ON orders (order_number) WHERE order_number IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_unreleased ON orders (id) WHERE inventory_released = FALSE;
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id);
@@ -401,6 +400,10 @@ CREATE TABLE IF NOT EXISTS checkout_groups (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_checkout_groups_user ON checkout_groups (user_id, created_at DESC);
+-- Declared here, not next to orders: a foreign key needs its target to exist first,
+-- so putting it before CREATE TABLE checkout_groups made a fresh bootstrap abort
+-- with 42P01 "relation checkout_groups does not exist".
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_checkout_group_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_checkout_group_id_fkey FOREIGN KEY (checkout_group_id) REFERENCES checkout_groups(id) ON DELETE SET NULL; END IF; END $$;
 CREATE TABLE IF NOT EXISTS checkout_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -53,6 +53,7 @@ import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
 import { setupCenterRoutes } from "../routes/center.js";
 import { setupStripeRoutes } from "../routes/stripe.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
+import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 
 if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "test-secret-for-unit-tests-only-32chars!!";
@@ -190,8 +191,10 @@ describe("money that cannot settle becomes a durable operator incident", () => {
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS payment_incidents");
       expect(sql).toContain("payment_incidents_dedupe_key");
     }
-    // The two canonical files must not drift.
-    expect(schema).toBe(bootstrap);
+    // The two canonical files must not drift. db/run-sqleditor.sql is a rerunnable
+    // additive reconciler and so is legitimately longer than the snapshot; what
+    // must hold is that it declares everything db/schema.sql declares.
+    expect(canonicalParity(schema, bootstrap)).toEqual(NO_CANONICAL_DRIFT);
   });
 
   test("the incident carries no secret and no raw provider payload", () => {

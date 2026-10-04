@@ -646,3 +646,58 @@ settlement, stock committed once per order. The full local proof is
 probes show *which* database it ran against. `diag-neon-schema.yml` now answers that directly
 (`rowcount.shops`, `shops.ids (first 5)`, `current_database`); compare against the live host
 before concluding anything.
+
+---
+
+## `db/run-sqleditor.sql` is now a rerunnable additive reconciler (2026-10-04)
+
+The Neon SQL Editor file was a copy of `db/schema.sql`, so it could only ever describe an
+EMPTY database. Production already has tables and rows, so "run it again" was never safe and
+"run it once on production" could not bring production up to the current schema.
+
+It is now generated from `db/schema.sql` (the only source of truth) in seven ordered passes:
+
+| Pass | What it does |
+|---|---|
+| 1 | `CREATE TABLE IF NOT EXISTS` — the snapshot |
+| 2 | `ALTER TABLE … ADD COLUMN IF NOT EXISTS` for all 652 columns, then `SET NOT NULL` only where no row is NULL |
+| 2c | `DROP NOT NULL` where the schema no longer requires it (this is what makes `payments.order_id` work on an old database) |
+| 3 | indexes — **after** the column pass |
+| 4 | foreign keys, guarded on `pg_constraint` |
+| 5 / 5c | unique + check constraints; checks `schema.sql` deliberately re-declares, re-applied only when the stored definition differs |
+| 6 | the trigger, guarded on `pg_trigger` |
+| 7 | read-only verification `SELECT`s |
+
+Never `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`; never an `EXCEPTION` handler, so
+an unfixable problem stops the run instead of reporting a false success.
+
+**Three latent defects fixed on the way, all of which had bitten or would have bitten production:**
+
+1. `orders_checkout_group_id_fkey` was declared in `db/schema.sql` **before**
+   `CREATE TABLE checkout_groups`, so a fresh database aborted with `42P01`. `db/schema.sql`
+   itself now bootstraps cleanly — it previously did not.
+2. Indexes were created in the table section. On a database that has `orders` but not yet
+   `orders.checkout_group_id`, `CREATE INDEX … idx_orders_checkout_group` aborted the entire
+   run. Indexes now follow the column pass.
+3. Six CHECK constraints (`orders_status_check`, `sellers_status_check`, the two velrepeat
+   status checks, the two pricing-snapshot checks) were `DROP`+`ADD` re-declarations in
+   `schema.sql` because their definition changed over history. A name-only guard silently
+   keeps the OLD definition on an older database and rejects a value the canonical schema
+   allows. They are now compared against the canonical definition and re-applied only when
+   they differ.
+
+`payments_exactly_one_parent_check` is retired by the one `DROP CONSTRAINT` the file carries
+(migration 054 superseded it; left in place it rejects every multi-shop payment). It removes a
+rule, not data, and is commented in place.
+
+**Verified** (local PostgreSQL 14, three disposable databases): fresh DB ×3 runs, all exit 0
+with `tables|indexes|constraints|columns|triggers = 66|243|255|652|1` and the trigger present
+exactly once; a pre-054 database with seeded `users/shops/products/orders/payments` upgraded
+in place with every row byte-identical and `checkout_groups`, both `checkout_group_id`
+columns, four group indexes and two group FKs created; and a database built from
+`db/schema.sql` compared against one built from `db/run-sqleditor.sql` — **1267 objects,
+identical**. `pnpm test` 1909 pass / 2 skip / 0 fail; typecheck 4/4; `build:apps` 4/4.
+
+**The two canonical files are no longer byte-identical, on purpose.** The contract between
+them is declaration parity, asserted by `backend/tests/helpers/canonical-schema.ts`, and the
+11 tests that pinned byte-identity now pin that instead. `db/run-update.sql` remains absent.

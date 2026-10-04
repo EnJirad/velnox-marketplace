@@ -62,6 +62,7 @@ import {
   selectOrderPaymentRow,
 } from "../lib/payment-reservation.js";
 import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
+import { declaredColumns, declaredIndexNames } from "./helpers/canonical-schema.js";
 import { setupCartRoutes } from "../routes/cart.js";
 import { setupStripeRoutes } from "../routes/stripe.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
@@ -479,19 +480,22 @@ describe("payment reservation — the wiring contracts", () => {
   });
 
   test("both canonical schema files carry the same columns and index", () => {
-    const extract = (sql: string) =>
-      sql
-        .split("\n")
-        .filter((line) => /payment_expires_at|reservation_policy/.test(line))
-        .map((line) => line.trim())
-        .sort();
-    const schema = extract(read("db/schema.sql"));
-    const bootstrap = extract(read("db/run-sqleditor.sql"));
-    expect(schema.length).toBeGreaterThanOrEqual(3);
-    expect(bootstrap).toEqual(schema);
-    expect(schema.some((l) => l.includes("payment_expires_at TIMESTAMPTZ"))).toBe(true);
-    expect(schema.some((l) => l.includes("reservation_policy JSONB"))).toBe(true);
-    expect(schema.some((l) => l.includes("idx_orders_payment_expires_at"))).toBe(true);
+    const schema = read("db/schema.sql");
+    const bootstrap = read("db/run-sqleditor.sql");
+    // Compared on what the two files DECLARE, not on their bytes: db/run-sqleditor.sql
+    // is the rerunnable additive reconciler and also contains the column pass, so
+    // its raw text legitimately mentions these columns more times than the
+    // snapshot does.
+    const snapshotOrders = declaredColumns(schema, "orders");
+    expect(snapshotOrders.length).toBeGreaterThanOrEqual(20);
+    expect(declaredColumns(bootstrap, "orders")).toEqual(snapshotOrders);
+    expect(snapshotOrders).toContain("payment_expires_at");
+    expect(snapshotOrders).toContain("reservation_policy");
+    for (const sql of [schema, bootstrap]) {
+      expect(declaredIndexNames(sql)).toContain("idx_orders_payment_expires_at");
+      expect(sql).toContain("payment_expires_at TIMESTAMPTZ");
+      expect(sql).toContain("reservation_policy JSONB");
+    }
   });
 
   test("the migration is additive and idempotent, and the deprecated file is untouched", () => {
