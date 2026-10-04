@@ -221,7 +221,10 @@ describe("the file stays additive and honest", () => {
 
   test("it still carries its read-only verification queries", () => {
     expect(code).toContain("to_regclass('public.checkout_groups')");
-    expect(code).toContain("c.table_name='orders' AND c.column_name='checkout_group_id'");
+    // PART 7 reports BOTH group columns with their type, not one table's name.
+    expect(code).toContain("c.table_name IN ('orders','payments')");
+    expect(code).toContain("c.column_name='checkout_group_id'");
+    expect(code).toContain("c.udt_name AS data_type");
     expect(code).toContain("idx_payments_one_active_stripe_group");
   });
 
@@ -258,8 +261,9 @@ test("the run ASSERTS, it does not only report", () => {
     // Every object the checkout flow reads or writes must be one it checks.
     for (const object of [
       "to_regclass('public.checkout_groups')",
-      "table_name='orders' AND column_name='checkout_group_id'",
-      "table_name='payments' AND column_name='checkout_group_id'",
+      "table_name='orders'",
+      "table_name='payments'",
+      "column_name='checkout_group_id'",
       "indexname='idx_checkout_groups_user'",
       "indexname='idx_orders_checkout_group'",
       "indexname='idx_payments_checkout_group'",
@@ -269,6 +273,58 @@ test("the run ASSERTS, it does not only report", () => {
     ]) {
       expect(part8).toContain(object);
     }
+  });
+
+  test("the assertion checks TYPE and DEPENDENCY, not only names", () => {
+    // WHY. `ALTER TABLE ... ADD COLUMN IF NOT EXISTS <name> <type>` is a NO-OP
+    // when a column of that NAME already exists under a different type, and a
+    // foreign key is never dropped by a name check. Both pass a name-only
+    // verification and both then fail at runtime — the reported incident is
+    // exactly `42703 column "checkout_group_id" does not exist` in the payment
+    // path. So existence is the least this file may claim.
+    //
+    // BOTH group columns must be pinned to `uuid` — the code binds a UUID, and
+    // `orders` was reconciled first, so one without the other is a half-fix.
+    const typedColumns = [...part8.matchAll(/column_name='checkout_group_id'\s+AND udt_name='uuid'/g)];
+    expect(typedColumns.length, "both group columns must be asserted as uuid").toBe(2);
+
+    // The index assertion must require the column to be IN the index, so an
+    // index of the right name over the wrong column cannot pass. All three
+    // group indexes are keyed on `checkout_group_id` — note that
+    // `idx_payments_one_active_stripe_group` does not carry the name, so this
+    // is checked by name rather than by pattern.
+    for (const indexName of [
+      "idx_orders_checkout_group",
+      "idx_payments_checkout_group",
+      "idx_payments_one_active_stripe_group",
+    ]) {
+      expect(part8).toMatch(
+        new RegExp(`indexname='${indexName}'\\s*\\n?\\s*AND indexdef LIKE '%\\(checkout_group_id\\)%'`),
+      );
+    }
+
+    // The foreign keys must assert the PARENT and the delete rule.
+    // `confdeltype='n'` is SET NULL, the architecture's rule: deleting a
+    // checkout group must not take its payment rows with it.
+    const fkChecks = [...part8.matchAll(/conname='([a-z_]*checkout_group_id_fkey)'\s*\n?\s*AND rel\.relname='checkout_groups' AND con\.confdeltype='n'/g)];
+    expect(fkChecks.length, "both group foreign keys must assert parent and ON DELETE SET NULL").toBe(2);
+
+    // And PART 7 must REPORT the type, so an operator reading the run's output
+    // sees the table | column | type row rather than a bare column name.
+    // Anchored on a surviving statement, never on the `-- PART 7` header: `code`
+    // has comments stripped, so a header search yields -1 and the slice is empty.
+    const PART7_START = "SELECT 'checkout_groups' AS object, to_regclass('public.checkout_groups')";
+    const part7 = code.slice(code.indexOf(PART7_START), code.indexOf(PART7_END));
+    expect(part7.length, "the PART 7 slice was empty — the anchor moved").toBeGreaterThan(0);
+    expect(part7).toContain("udt_name AS data_type");
+    expect(part7).toContain("on_delete_action");
+  });
+
+  test("the assertion is not weakened to a name-only check by a later edit", () => {
+    // Regression guard on the exact strings above, so a future "simplification"
+    // back to existence-only fails here rather than in production.
+    expect(part8).not.toMatch(/column_name='checkout_group_id'\s*\)\s*THEN/);
+    expect(part8).toContain("missing or have the wrong shape");
   });
 
   test("the assertion cannot swallow its own failure", () => {

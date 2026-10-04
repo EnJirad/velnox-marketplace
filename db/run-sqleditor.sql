@@ -4194,17 +4194,30 @@ END $$;
 -- Safe to leave in the file: every statement below is a SELECT.
 
 SELECT 'checkout_groups' AS object, to_regclass('public.checkout_groups') IS NOT NULL AS ok;
-SELECT c.column_name
+-- The exact shape PART 8 asserts: table | column | type. Not the column NAME --
+-- a column that exists under the wrong type is what a stale database carries,
+-- and the name alone would report that as reconciled.
+SELECT c.table_name, c.column_name, c.udt_name AS data_type
 FROM information_schema.columns c
-WHERE c.table_schema='public' AND c.table_name='orders' AND c.column_name='checkout_group_id';
-SELECT indexname FROM pg_indexes
+WHERE c.table_schema='public'
+  AND c.column_name='checkout_group_id'
+  AND c.table_name IN ('orders','payments')
+ORDER BY c.table_name;
+SELECT indexname, indexdef FROM pg_indexes
 WHERE schemaname='public'
   AND indexname IN ('idx_checkout_groups_user','idx_orders_checkout_group','idx_payments_checkout_group',
                     'idx_payments_one_active_stripe_group')
 ORDER BY indexname;
-SELECT conname FROM pg_constraint
-WHERE conname IN ('orders_checkout_group_id_fkey','payments_checkout_group_id_fkey')
-ORDER BY conname;
+-- What each group foreign key actually points at, and what it does on delete.
+-- Name-only would accept a same-named constraint on the wrong parent.
+SELECT con.conname,
+       (SELECT rel.relname FROM pg_class rel WHERE rel.oid = con.confrelid) AS references_table,
+       con.confdeltype AS on_delete,
+       CASE con.confdeltype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE'
+            WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' END AS on_delete_action
+FROM pg_constraint con
+WHERE con.conname IN ('orders_checkout_group_id_fkey','payments_checkout_group_id_fkey')
+ORDER BY con.conname;
 SELECT 'tables' AS metric, count(*)::text AS value FROM information_schema.tables WHERE table_schema='public'
 UNION ALL SELECT 'columns', count(*)::text FROM information_schema.columns WHERE table_schema='public'
 UNION ALL SELECT 'constraints', count(*)::text FROM pg_constraint c
@@ -4215,8 +4228,18 @@ UNION ALL SELECT 'indexes', count(*)::text FROM pg_indexes WHERE schemaname='pub
 -- ============================================================================
 -- PART 7 only REPORTS. This one FAILS. A run that ends here without an error
 -- has verified, against the live catalog, that the objects the checkout flow
--- reads and writes all exist: the checkout_groups table, both group columns,
--- the four group indexes and the two group foreign keys.
+-- reads and writes all exist AND are the shape the code binds: the
+-- checkout_groups table, both group columns as `uuid`, the four group indexes
+-- covering those columns, and the two group foreign keys pointing at
+-- checkout_groups(id) ON DELETE SET NULL.
+--
+-- WHY TYPE AND TARGET ARE ASSERTED, NOT JUST THE NAME
+-- ---------------------------------------------------
+-- `ALTER TABLE ... ADD COLUMN IF NOT EXISTS <name> <type>` is a no-op when a
+-- column of that NAME already exists under a DIFFERENT type, and a foreign key
+-- is dropped by name-check alone never. Both pass a name-only verification and
+-- both then fail at runtime as `42703`/`42804` in the payment path. Existence is
+-- the minimum this file is allowed to claim.
 --
 -- It raises rather than returning a row, so it cannot be overlooked, and it
 -- has no EXCEPTION handler, so nothing here can swallow the failure.
@@ -4227,34 +4250,54 @@ BEGIN
   IF to_regclass('public.checkout_groups') IS NULL THEN
     missing := missing || ' public.checkout_groups';
   END IF;
+  -- Columns: present AND typed `uuid`. The code binds a UUID string, and the
+  -- reported production failure (42703 on this very column) is what a missing
+  -- column looks like, so a type-only mismatch has to fail here, loudly.
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_schema='public' AND table_name='orders' AND column_name='checkout_group_id') THEN
-    missing := missing || ' public.orders.checkout_group_id';
+                 WHERE table_schema='public' AND table_name='orders'
+                   AND column_name='checkout_group_id' AND udt_name='uuid') THEN
+    missing := missing || ' public.orders.checkout_group_id (uuid)';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_schema='public' AND table_name='payments' AND column_name='checkout_group_id') THEN
-    missing := missing || ' public.payments.checkout_group_id';
+                 WHERE table_schema='public' AND table_name='payments'
+                   AND column_name='checkout_group_id' AND udt_name='uuid') THEN
+    missing := missing || ' public.payments.checkout_group_id (uuid)';
   END IF;
+  -- Indexes: present AND built on the column they exist for. An index of the
+  -- right name over the wrong column passes a name check and serves nothing.
   IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_checkout_groups_user') THEN
     missing := missing || ' idx_checkout_groups_user';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_orders_checkout_group') THEN
-    missing := missing || ' idx_orders_checkout_group';
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_orders_checkout_group'
+                   AND indexdef LIKE '%(checkout_group_id)%') THEN
+    missing := missing || ' idx_orders_checkout_group (on checkout_group_id)';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_payments_checkout_group') THEN
-    missing := missing || ' idx_payments_checkout_group';
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_payments_checkout_group'
+                   AND indexdef LIKE '%(checkout_group_id)%') THEN
+    missing := missing || ' idx_payments_checkout_group (on checkout_group_id)';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_payments_one_active_stripe_group') THEN
-    missing := missing || ' idx_payments_one_active_stripe_group';
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_payments_one_active_stripe_group'
+                   AND indexdef LIKE '%(checkout_group_id)%') THEN
+    missing := missing || ' idx_payments_one_active_stripe_group (on checkout_group_id)';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='orders_checkout_group_id_fkey') THEN
-    missing := missing || ' orders_checkout_group_id_fkey';
+  -- Foreign keys: present AND pointing at checkout_groups(id) ON DELETE SET
+  -- NULL, which is the architecture's rule (a deleted group must not take a
+  -- payment row with it). `confrelid` is resolved through pg_class, so a
+  -- same-named key on another parent is reported, not accepted.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint con
+                 JOIN pg_class rel ON rel.oid = con.confrelid
+                 WHERE con.conname='orders_checkout_group_id_fkey'
+                   AND rel.relname='checkout_groups' AND con.confdeltype='n') THEN
+    missing := missing || ' orders_checkout_group_id_fkey (-> checkout_groups ON DELETE SET NULL)';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='payments_checkout_group_id_fkey') THEN
-    missing := missing || ' payments_checkout_group_id_fkey';
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint con
+                 JOIN pg_class rel ON rel.oid = con.confrelid
+                 WHERE con.conname='payments_checkout_group_id_fkey'
+                   AND rel.relname='checkout_groups' AND con.confdeltype='n') THEN
+    missing := missing || ' payments_checkout_group_id_fkey (-> checkout_groups ON DELETE SET NULL)';
   END IF;
   IF missing <> '' THEN
-    RAISE EXCEPTION 'velnox: run-sqleditor.sql finished but these objects are still missing:%', missing;
+    RAISE EXCEPTION 'velnox: run-sqleditor.sql finished but these objects are still missing or have the wrong shape:%', missing;
   END IF;
-  RAISE NOTICE 'velnox: reconciliation verified - checkout_groups, both group columns, 4 indexes and 2 foreign keys are all present';
+  RAISE NOTICE 'velnox: reconciliation verified - checkout_groups, both group columns as uuid, 4 indexes on checkout_group_id and 2 foreign keys ON DELETE SET NULL are all present';
 END $$;

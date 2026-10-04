@@ -58,6 +58,7 @@ No prior migrations required. Historical `db/migrations/` are for upgrading exis
 |---|---|
 | table missing | `CREATE TABLE IF NOT EXISTS` |
 | column missing | `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` |
+| column present under the **wrong type** | **not fixed** — `ADD COLUMN IF NOT EXISTS` is a no-op; PART 8 refuses to report success |
 | column is `NOT NULL` in the old DB but nullable in the schema | `ALTER COLUMN ... DROP NOT NULL` (widens only) |
 | index missing | `CREATE [UNIQUE] INDEX IF NOT EXISTS`, emitted **after** the column pass |
 | constraint / FK missing | added once, guarded on `pg_constraint` |
@@ -76,6 +77,35 @@ explains why, and it removes a rule rather than data.
 tables → columns → indexes → constraints → foreign keys → triggers. An index on a column an
 older database does not have yet must come after the column pass, or the whole run aborts
 on the first such index.
+
+**Verification must check the SHAPE, not only the name.** `ALTER TABLE … ADD COLUMN IF NOT
+EXISTS <name> <type>` is a **no-op when a column of that name already exists under a different
+type**, and a foreign key is never removed by a name check. A name-only verification therefore
+passes on a database whose payment path still fails at runtime (`42804` for the type, `42703`
+for the column). PART 8 consequently also requires both group columns to be `uuid`, each group
+index to actually contain `(checkout_group_id)`, and each group foreign key to resolve to
+`checkout_groups` with `ON DELETE SET NULL`. `db/verify-reconciler.sh` scenario I breaks each of
+those on purpose and proves the run fails and names the object.
+
+### ⚠️ `42703 column "x" does not exist` does NOT mean the query is unqualified (2026-10-04)
+
+Measured, not inferred. PostgreSQL emits the **same message** in two different situations:
+
+| case | situation | message |
+|---|---|---|
+| (a) | no relation in the statement's FROM/JOIN scope owns `x` | `column "x" does not exist` |
+| (b) | the relation **is** in scope, and **the table itself lacks `x`** | `column "x" does not exist` |
+
+The message never names the relation it failed against, so the error text **cannot** distinguish
+them. This caused a real misdiagnosis: a production `42703` on `payments.checkout_group_id`
+was attributed to a stale deploy and dismissed twice, when the actual cause was that
+**production had never received migration 054** — the query was correct and the database was
+behind (`.ai/AI_HANDOFF.md`, §66 and the correction that follows it).
+
+**So never diagnose a 42703 from its text.** Read the catalog
+(`information_schema.columns` / `pg_attribute` / `pg_constraint`), and confirm *which database*
+you are connected to — `describeDatabaseIdentity()` in `backend/db/index.ts` prints both at boot,
+and `.github/workflows/diag-neon-schema.yml` probes them on demand.
 
 **Schema qualification.** `db/schema.sql` — and therefore this file's table section — uses
 unqualified names, which is the repo-wide convention. The reconciler pins
@@ -99,6 +129,8 @@ covers the shape that actually broke production:
 | E | populated database | existing rows are byte-identical afterwards |
 | F | after B/C | one payment with `order_id IS NULL` is accepted, i.e. a group purchase works |
 | G | a decoy schema first in `search_path` | nothing is created or altered outside `public` |
+| H | **the reported incident** — real `payments` rows with Stripe provider ids, `payments.checkout_group_id` removed | the production statement from `routes/stripe.ts` raises 42703 **before** and resolves the group **after**; the payment row, its provider ids and its `paid` status are unchanged |
+| I | a reconciled database, then deliberately broken | PART 8 exits 0 when reconciled, and **fails and names the object** on a wrong-typed column and on a `CASCADE` foreign key |
 
 It exits non-zero unless every assertion it prints actually passed.
 

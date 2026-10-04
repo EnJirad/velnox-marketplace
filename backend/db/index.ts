@@ -192,6 +192,103 @@ export async function query(text: string, params?: unknown[]): Promise<pg.QueryR
 export const SLOW_QUERY_MS = 150;
 
 /**
+ * The objects whose ABSENCE takes the whole payment path down, read from the
+ * live catalog. Named here rather than in the webhook because it is the one
+ * question every past incident answered wrongly: "is this the database I think
+ * it is, and is it the schema I think it is?"
+ */
+export const PAYMENT_CRITICAL_SCHEMA_OBJECTS = [
+  "checkout_groups",
+  "orders.checkout_group_id",
+  "payments.checkout_group_id",
+  "payments_checkout_group_id_fkey",
+  "idx_payments_checkout_group",
+] as const;
+
+export interface DatabaseIdentity {
+  /** Non-secret identity only — never the host, user, password or query params. */
+  database: string;
+  serverVersion: string;
+  /** Object name -> present, with the column's `udt_name` where it is a column. */
+  paymentSchema: Record<string, string>;
+  /** Every name above that is absent, as one line an operator can act on. */
+  missing: string[];
+}
+
+/**
+ * Strip a connection string down to what is safe to print.
+ *
+ * A Neon URL is `postgres://user:password@host/db?sslmode=…`. Only the database
+ * NAME is identity — the host, the user and every query parameter are either a
+ * credential or a routing secret, so none of them reach a log. Pinned by
+ * `db-identity.test.ts`.
+ */
+export function safeDatabaseLabel(connectionString: string | undefined | null): string {
+  if (!connectionString) return "(unset)";
+  const withoutQuery = connectionString.split("?")[0] ?? "";
+  const lastSlash = withoutQuery.lastIndexOf("/");
+  if (lastSlash < 0) return "(unparseable)";
+  const name = withoutQuery.slice(lastSlash + 1);
+  return name.length > 0 ? name : "(no database name)";
+}
+
+/**
+ * Which database this process is talking to, and whether the payment path's
+ * schema is actually there. READ-ONLY by contract — it is a `SELECT`, never
+ * DDL, so it is safe to run at boot on production.
+ *
+ * WHY IT EXISTS. Four incidents in a row were diagnosed against the WRONG
+ * database or the wrong assumption: `checkout_groups` "missing" (42P01),
+ * `order_items.checkout_group_id` "missing" (42703), and now
+ * `payments.checkout_group_id` genuinely missing (42703). Each was answered by
+ * reasoning about the connection string instead of asking the server. This
+ * answers it in one line at boot, before any customer request.
+ */
+export async function describeDatabaseIdentity(): Promise<DatabaseIdentity> {
+  const identity = await query(
+    "SELECT current_database() AS database, current_setting('server_version') AS server_version",
+  );
+  const row = identity.rows[0];
+  const database = row?.database ?? "(unknown)";
+
+  // One round trip for all five objects. `pg_class` covers the table and the
+  // indexes, `pg_attribute` the columns (with their type), `pg_constraint` the
+  // foreign keys — the same three catalogs PART 8 of db/run-sqleditor.sql
+  // asserts against, so the two agree by construction.
+  const catalog = await query(
+    `SELECT 'checkout_groups' AS object,
+            CASE WHEN to_regclass('public.checkout_groups') IS NULL THEN 'MISSING' ELSE 'table' END AS detail
+     UNION ALL
+     SELECT 'orders.checkout_group_id',
+            coalesce((SELECT 'uuid' FROM pg_attribute a
+                       JOIN pg_class c ON c.oid = a.attrelid
+                      WHERE c.relname = 'orders' AND a.attname = 'checkout_group_id'
+                        AND a.attnum > 0 AND NOT a.attisdropped), 'MISSING')
+     UNION ALL
+     SELECT 'payments.checkout_group_id',
+            coalesce((SELECT 'uuid' FROM pg_attribute a
+                       JOIN pg_class c ON c.oid = a.attrelid
+                      WHERE c.relname = 'payments' AND a.attname = 'checkout_group_id'
+                        AND a.attnum > 0 AND NOT a.attisdropped), 'MISSING')
+     UNION ALL
+     SELECT 'payments_checkout_group_id_fkey',
+            coalesce((SELECT 'foreign key' FROM pg_constraint WHERE conname = 'payments_checkout_group_id_fkey'), 'MISSING')
+     UNION ALL
+     SELECT 'idx_payments_checkout_group',
+            coalesce((SELECT 'index' FROM pg_class WHERE relname = 'idx_payments_checkout_group'
+                        AND relkind = 'i'), 'MISSING')`,
+  );
+
+  const paymentSchema: Record<string, string> = {};
+  for (const r of catalog.rows) paymentSchema[r.object] = r.detail;
+  const missing = [...PAYMENT_CRITICAL_SCHEMA_OBJECTS].filter(
+    (name) => (paymentSchema[name] ?? "MISSING") === "MISSING",
+  );
+
+  return { database, serverVersion: row?.server_version ?? "(unknown)", paymentSchema, missing };
+}
+
+/**
  * Which layer a slow statement's time actually went to.
  *
  * On this deployment a WARM round trip is ~0.2s, so the absolute number alone

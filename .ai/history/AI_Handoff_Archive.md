@@ -242,3 +242,16 @@ Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. Whe
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-10-04-sections-52-63.md`](./archive/AI_Handoff-2026-10-04-sections-52-63.md) | handoff §52–§63 — the VelRepeat V2 design sheets and phases 1–5 | Moved **verbatim** on 2026-10-04 after §66 (production `checkout_groups` 42P01) pushed `.ai/AI_HANDOFF.md` to ~57.5 KB, past the ~55 KB point at which the file-edit tools stop matching and the handoff could no longer be updated at all. Every section is COMPLETE and closed; current state is **§64–§66**. The file carries a header warning that its "production applied + verified" claims (former §62 and §64) are **retracted** — they rested on the Actions ledger, which §66 proves describes a different database from the one Render serves. |
+
+### 2026-10-04 — the reconciler narrative moved out, and the `42703` verdict was CORRECTED
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-04-reconciler-and-42703-correction.md`](./archive/AI_Handoff-2026-10-04-reconciler-and-42703-correction.md) | handoff `## db/run-sqleditor.sql is now a rerunnable additive reconciler` | Moved **verbatim** on 2026-10-04 after the PART 7/8 shape assertions and the boot-time identity probe pushed `.ai/AI_HANDOFF.md` back toward the ~55 KB edit ceiling. The file is COMPLETE and its contract is maintained in `.ai/context/database.md`; only the *reasoning* (the three latent defects and why the column existed only inside `CREATE TABLE IF NOT EXISTS`) is unique to it |
+| — | handoff `## 42703 checkout_group_id — the schema was never wrong` | **RETRACTED, not archived.** Its conclusion ("the schema was fine, therefore Render is not serving `main`") was based on a false premise about PostgreSQL's 42703 and is disproven by measurement. The correction and the measured two-case table are in the current handoff; the original claim must not be reused. |
+
+**The rule this leaves behind, which supersedes the old §66 note:** *`ERROR: column "x" does not
+exist` is emitted both when no relation in scope owns `x` AND when the relation in scope simply
+does not have `x`. The message is byte-identical, so it can never be used to infer that a query
+is unqualified or that a build is stale. Ask the catalog (`information_schema` / `pg_attribute` /
+`pg_constraint`) or ask which database you are connected to — never the error text.*

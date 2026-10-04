@@ -11,14 +11,29 @@
  *   …then the query that reads ORDER ITEMS:
  *     ERROR 42703  column "checkout_group_id" does not exist
  *
- * With `public.orders.checkout_group_id` confirmed present in Neon, a
- * 42703 naming that column UNQUALIFIED can only mean one thing: the statement's
- * FROM/JOIN scope contained no relation that has it. PostgreSQL reports the bare
- * column name exactly when nothing in scope resolves it — which is the whole
- * reason the two successful queries above do not raise it.
+ * With `public.orders.checkout_group_id` confirmed present in Neon, the failure
+ * was read as proof that the running build was not `main` and that the schema
+ * was fine. THAT INFERENCE WAS WRONG, and this file now pins the correction.
  *
- * So the failure mode this guards is a statement that filters a group while
- * reading `order_items`, where `orders` is not in scope:
+ * `ERROR: column "checkout_group_id" does not exist` is emitted in BOTH of
+ * these cases, with a byte-identical message:
+ *
+ *   (a) the column exists, but NO relation in the statement's FROM/JOIN scope
+ *       owns it  →  the statement is unqualified / the join is missing, OR
+ *   (b) the relation IS in scope — `FROM payments` — and the TABLE ITSELF does
+ *       not have that column.
+ *
+ * The message names a bare column in both cases; PostgreSQL does not qualify it
+ * with the relation it failed against. So the error text alone CANNOT
+ * distinguish "wrong query" from "column genuinely absent", and every earlier
+ * conclusion of this incident rested on assuming it could. `step 4c` below
+ * reproduces case (b) live, which is the real production shape: production
+ * `payments` genuinely lacks `checkout_group_id`, and `checkoutGroupIdForAttempt`
+ * (`backend/routes/stripe.ts`) is main's own statement, correctly scoped.
+ *
+ * So the failure mode this guards is BOTH: a statement that filters a group
+ * while reading `order_items` where `orders` is not in scope (case a), AND a
+ * database whose `payments` table never received the column (case b).
  *
  *     FROM order_items oi LEFT JOIN products p … WHERE checkout_group_id = $1
  *
@@ -81,6 +96,13 @@ function sqlBlocks(): Array<{ file: string; line: number; sql: string }> {
       for (const m of src.matchAll(/`([^`]*)`/g)) {
         if (!/\b(SELECT|INSERT|UPDATE|DELETE)\b/i.test(m[1]!)) continue;
         if (!m[1]!.includes("checkout_group_id")) continue;
+        // A catalog PROBE names the column as a string LITERAL value
+        // (`a.attname = 'checkout_group_id'`), which is a lookup, not a
+        // reference — and a relation-scoped statement in any case. Only a
+        // statement that mentions the column OUTSIDE quotes can raise 42703,
+        // so only those are in scope for the assertions below.
+        const withoutLiterals = m[1]!.replace(/'(?:[^']|'')*'/g, "''");
+        if (!withoutLiterals.includes("checkout_group_id")) continue;
         out.push({
           file: full.replace(`${root}/`, ""),
           line: src.slice(0, m.index).split("\n").length,
@@ -101,6 +123,36 @@ describe("every checkout_group_id reference resolves inside its own SQL scope", 
     expect(blocks.length).toBeGreaterThan(10);
     expect(blocks.some((b) => b.file.includes("stripe.ts"))).toBe(true);
     expect(blocks.some((b) => b.file.includes("checkout-groups.ts"))).toBe(true);
+    // And it must not be over-broad: the catalog probe in db/index.ts looks the
+    // column up by NAME, and treating that as a reference would make this scan
+    // flag the very statement that exists to prove the column is there.
+    expect(blocks.some((b) => b.file.includes("db/index.ts"))).toBe(false);
+  });
+
+  test("the reported failing statement IS main's own, correctly scoped", async () => {
+    // The exact statement in the Render log, read out of routes/stripe.ts, has
+    // `payments` in its FROM list. So it cannot be case (a) — it is case (b),
+    // the column genuinely absent from production `payments`. Pinned so the
+    // question cannot be re-opened as "the deployed build is stale".
+    const sql =
+      read("backend/routes/stripe.ts")
+        .match(/`SELECT checkout_group_id FROM payments[\s\S]*?LIMIT 1`/)?.[0]
+        ?.replace(/^`|`$/g, "") ?? "";
+    expect(sql, "the failing statement was not found in backend/routes/stripe.ts").not.toBe("");
+    expect(sql).toContain("FROM payments");
+    expect(sql).toContain("provider_checkout_session_id = $1");
+    expect(sql).toContain("provider_payment_id = $2");
+    const inScope = new Set(
+      [...sql.matchAll(/(?:FROM|JOIN|INTO|UPDATE)\s+([a-z_][a-z_0-9]*)/gi)].map((m) =>
+        m[1]!.toLowerCase(),
+      ),
+    );
+    expect([...inScope]).toContain("payments");
+
+    // Against this (reconciled) test database the very same statement succeeds,
+    // which is the difference between a missing column and a correct query.
+    const res = await query(sql, [null, null]);
+    expect(res.rows.length).toBe(0);
   });
 
   test("no statement filters on a bare checkout_group_id outside orders/payments", () => {
@@ -248,14 +300,8 @@ describe.skipIf(!hasTestDatabase())("the checkout-group item read works on a rea
     expect(res.rows.map((r: any) => r.order_id).sort()).toEqual([ORDER_A, ORDER_B].sort());
   });
 
-  test("step 4b — a group filter with orders OUT of scope reproduces 42703", async () => {
-    // Negative control, and the shape production actually hit.
-    //
-    // Simply dropping the `o.` alias does NOT break: `orders` is joined in that
-    // statement, so a bare name still resolves to it. PostgreSQL only raises 42703
-    // for an unqualified column when NO relation in scope owns it — which means the
-    // failing statement read `order_items` WITHOUT `orders` in its FROM/JOIN list.
-    // That is what is reproduced here, against the same schema and the same rows.
+  test("step 4b — a group filter with orders OUT of scope reproduces 42703 (case a)", async () => {
+    // Negative control for case (a): NO relation in scope owns the column.
     //
     // Without this control, step 4 could pass merely because the fixture cannot
     // produce the error at all.
@@ -283,6 +329,71 @@ describe.skipIf(!hasTestDatabase())("the checkout-group item read works on a rea
        ORDER BY oi.created_at ASC`;
     const res = await query(fixed, [GROUP]);
     expect(res.rows.length).toBe(2);
+  });
+
+  test("step 4c — a column ABSENT from the IN-SCOPE table gives the SAME 42703 (case b)", async () => {
+    // THE CASE THAT WAS MISDIAGNOSED. This is production's real shape:
+    // `SELECT checkout_group_id FROM payments …` has `payments` in scope, and
+    // production's `payments` simply does not have the column.
+    //
+    // The error text is indistinguishable from case (a) — same code, same
+    // message, same bare column name. Proving that here is what stops the next
+    // agent from repeating "it cannot be that, therefore the build is stale".
+    //
+    // Built on a scratch table in the same database: no existing table is
+    // altered, and nothing is left behind.
+    const scratch = "velnox_42703_case_b_probe";
+    await query(`DROP TABLE IF EXISTS ${scratch}`);
+    await query(
+      `CREATE TABLE ${scratch} (id uuid, provider_checkout_session_id text, provider_payment_id text)`,
+    );
+    try {
+      // The production statement, with `payments` replaced by the probe. Fully
+      // scoped — the relation IS in the FROM list — and still 42703.
+      let code = "";
+      let message = "";
+      try {
+        await query(
+          `SELECT checkout_group_id FROM ${scratch}
+            WHERE checkout_group_id IS NOT NULL
+              AND (provider_checkout_session_id = $1 OR provider_payment_id = $2)
+            LIMIT 1`,
+          ["cs_1", "pi_1"],
+        );
+      } catch (err: any) {
+        code = String(err?.code ?? "");
+        message = String(err?.message ?? "");
+      }
+      expect(code).toBe("42703");
+      expect(message).toContain('column "checkout_group_id" does not exist');
+
+      // Case (a) for comparison, on the same probe: a column no relation owns.
+      let codeA = "";
+      try {
+        await query(`SELECT checkout_group_id FROM ${scratch} LIMIT 1`, ["x", "y"]);
+      } catch (err: any) {
+        codeA = String(err?.code ?? "");
+      }
+      expect(codeA).toBe("42703");
+
+      // Both cases are 42703 — so the code alone proves nothing. What
+      // separates them is the catalog, which is exactly what PART 8 of
+      // db/run-sqleditor.sql and describeDatabaseIdentity() read.
+      const cols = await query(
+        `SELECT count(*)::int AS n FROM information_schema.columns
+          WHERE table_schema='public' AND table_name=$1 AND column_name='checkout_group_id'`,
+        [scratch],
+      );
+      expect(cols.rows[0].n).toBe(0);
+      const real = await query(
+        `SELECT count(*)::int AS n FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='payments' AND column_name='checkout_group_id'
+            AND udt_name='uuid'`,
+      );
+      expect(real.rows[0].n, "this test database must carry the reconciled payments column").toBe(1);
+    } finally {
+      await query(`DROP TABLE IF EXISTS ${scratch}`);
+    }
   });
 
   test("step 5 — items are reached through order_id, never a group column", async () => {

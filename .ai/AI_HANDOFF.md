@@ -649,121 +649,90 @@ before concluding anything.
 
 ---
 
-## `db/run-sqleditor.sql` is now a rerunnable additive reconciler (2026-10-04)
+## `42703 checkout_group_id` — CORRECTION: the earlier verdict here was WRONG (2026-10-04)
 
-The Neon SQL Editor file was a copy of `db/schema.sql`, so it could only ever describe an
-EMPTY database. Production already has tables and rows, so "run it again" was never safe and
-"run it once on production" could not bring production up to the current schema.
+**The section this replaces concluded "the schema was never wrong, therefore the running build
+is not `main`". That inference is disproven. Production `payments` genuinely lacks
+`checkout_group_id`, and the failing statement is `main`'s own, correctly scoped.**
 
-It is now derived from `db/schema.sql` (the only source of truth) in seven ordered passes:
+**The error that was made.** It read: *"A 42703 naming a bare column means no relation in that
+statement's FROM/JOIN scope owns it."* Measured against PostgreSQL, that is false. The message
+is emitted in **two** indistinguishable cases:
 
-| Pass | What it does |
-|---|---|
-| 1 | `CREATE TABLE IF NOT EXISTS` — the snapshot |
-| 2 | `ALTER TABLE … ADD COLUMN IF NOT EXISTS` for all 652 columns, then `SET NOT NULL` only where no row is NULL |
-| 2c | `DROP NOT NULL` where the schema no longer requires it (this is what makes `payments.order_id` work on an old database) |
-| 3 | indexes — **after** the column pass |
-| 4 | foreign keys, guarded on `pg_constraint` |
-| 5 / 5c | unique + check constraints; checks `schema.sql` deliberately re-declares, re-applied only when the stored definition differs |
-| 6 | the trigger, guarded on `pg_trigger` |
-| 7 | read-only verification `SELECT`s |
+| case | statement | message |
+|---|---|---|
+| (a) | the column exists, but **no relation in scope** owns it | `column "checkout_group_id" does not exist` |
+| (b) | the relation **IS in scope** — `FROM payments` — and **the table itself lacks the column** | `column "checkout_group_id" does not exist` |
 
-Never `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`; never an `EXCEPTION` handler, so
-an unfixable problem stops the run instead of reporting a false success.
+Byte-identical. PostgreSQL does not qualify the column with the relation it failed against, so
+the error text alone **cannot** distinguish "wrong query" from "column absent". Every earlier
+conclusion rested on assuming it could. Reproduced live in
+`backend/tests/checkout-group-sql-scope.test.ts` steps 4b and 4c.
 
-**PART 8 asserts, it does not only report.** PART 7 prints the object state; PART 8 then
-raises if `checkout_groups`, either group column, a group index or a group foreign key is
-still absent when the run ends, naming every missing object. So a green run means the
-database really was reconciled, never that the script stayed quiet. Proven live: the block
-alone against an empty database exits 3 with all nine objects listed, and against a
-reconciled one emits a NOTICE and exits 0. The file also runs correctly as a SINGLE
-transaction (`psql -1`), which is how the Neon SQL Editor executes a pasted script.
+**So the reported failure is case (b).** `checkoutGroupIdForAttempt` (`backend/routes/stripe.ts`)
+has `payments` in its FROM list, its scope is correct, and it is `main`'s own statement since
+`d4ac063`. The build is current; the **database** is behind. Same root cause as §66: every
+migration and every reconciler run in this repo reached a **different Neon** than Render's
+`DATABASE_URL`. Production therefore never received migration 054, which is what adds
+`payments.checkout_group_id`.
 
-**Three latent defects fixed on the way, all of which had bitten or would have bitten production:**
+**What is still true from the retired section** (the SQL-scope work stands): every backend SQL
+string mentioning `checkout_group_id` resolves in its own scope — 14 statements, all valid — and
+`logDbFailure` now logs the redacted statement plus its relation scope. What is **retracted** is
+the claim that a 42703 therefore proves a stale build.
 
-1. `orders_checkout_group_id_fkey` was declared in `db/schema.sql` **before**
-   `CREATE TABLE checkout_groups`, so a fresh database aborted with `42P01`. `db/schema.sql`
-   itself now bootstraps cleanly — it previously did not.
-2. Indexes were created in the table section. On a database that has `orders` but not yet
-   `orders.checkout_group_id`, `CREATE INDEX … idx_orders_checkout_group` aborted the entire
-   run. Indexes now follow the column pass.
-3. Six CHECK constraints (`orders_status_check`, `sellers_status_check`, the two velrepeat
-   status checks, the two pricing-snapshot checks) were `DROP`+`ADD` re-declarations in
-   `schema.sql` because their definition changed over history. A name-only guard silently
-   keeps the OLD definition on an older database and rejects a value the canonical schema
-   allows. They are now compared against the canonical definition and re-applied only when
-   they differ.
+## Boot-time database identity — the four incidents' real lesson (2026-10-04)
 
-`payments_exactly_one_parent_check` is retired by the one `DROP CONSTRAINT` the file carries
-(migration 054 superseded it; left in place it rejects every multi-shop payment). It removes a
-rule, not data, and is commented in place.
+`42P01 checkout_groups` → `42703 order_items.checkout_group_id` → `42703 payments.checkout_group_id`.
+All three were diagnosed by **reasoning about the connection string** instead of asking the server
+which database was connected, and all three produced a wrong conclusion.
 
-**THE ACTUAL REPORTED FAILURE WAS DIFFERENT, and it is now the pinned scenario.** Production
-had `checkout_groups` **existing** while `orders.checkout_group_id` was **missing**, so the
-root cause was never "the table is absent". It was that `checkout_group_id` existed ONLY inside
-`CREATE TABLE IF NOT EXISTS orders (…)` — a no-op for a table that already exists — and the
-file contained exactly **one** `ADD COLUMN IF NOT EXISTS` in total, none of them for this
-column. `CREATE TABLE IF NOT EXISTS checkout_groups` then ran and succeeded, which is exactly
-why the table existed while the column did not. The first statement that *references* the
-column (`CREATE INDEX … idx_orders_checkout_group`) errors, so any reconciliation placed after
-it would be dead code. `db/verify-reconciler.sh` scenario B builds precisely that state.
+`describeDatabaseIdentity()` in `backend/db/index.ts`, called once from `server.ts` at boot, now
+answers it directly and read-only (a `SELECT`, never DDL — startup must not migrate):
 
-**Schema qualification.** The file now pins `SET search_path = public, pg_catalog;` on its first
-statement and qualifies every statement that mutates an existing table, so `orders` means
-`public.orders` deterministically rather than whatever the session had. Scenario G runs the
-whole file with a decoy schema first in `search_path` and asserts nothing is written there.
+```
+[db] ✅ payment schema complete (database=neondb server=16.2)
+[db] ❌ PAYMENT SCHEMA INCOMPLETE (database=neondb server=16.2) — missing: public.payments.checkout_group_id
+```
 
-**Verified** by `bash db/verify-reconciler.sh` (`bun run db:verify`) — 7 scenarios, all PASS,
-including the reported production shape, legacy, twice-more, data preservation, an accepted
-group payment, and the hostile-`search_path` case. `db/schema.sql` built and
-`db/run-sqleditor.sql` built produce an **identical** 1267-object catalog. `pnpm test`
-1926 pass / 2 skip / 0 fail; typecheck 4/4; `build:apps` 4/4.
+It reports `current_database()`, the server version, and the live state of
+`PAYMENT_CRITICAL_SCHEMA_OBJECTS` (`checkout_groups`, both group columns **with their type**,
+the payments FK, the payments index). `safeDatabaseLabel()` reduces a connection string to the
+database **name** only — never the host, user, password or `?sslmode=…`, because a Neon URL
+embeds a password. Pinned by `backend/tests/db-identity.test.ts` (7 tests, incl. redaction and a
+SELECT-only assertion on the probe body).
 
-**Declaration parity is not sufficient, and there is no in-repo generator.** Adding a column
-to `db/schema.sql` without a matching `ALTER TABLE … ADD COLUMN IF NOT EXISTS` leaves the
-parity check green while every older database silently never receives the column — the run
-exits 0 and checkout breaks later, in production. `backend/tests/db-run-sqleditor-reconciler.test.ts`
-closes that, plus index ordering, constraint guards and the additive-only guarantee (17 tests,
-verified non-vacuous by injecting a column with no column pass and watching it fail). The
-additive passes are maintained by hand alongside the snapshot; run that file after any
-schema change.
+## PART 8 asserts the SHAPE, not just the names (2026-10-04)
 
-**The two canonical files are no longer byte-identical, on purpose.** The contract between
-them is declaration parity, asserted by `backend/tests/helpers/canonical-schema.ts`, and the
-11 tests that pinned byte-identity now pin that instead. `db/run-update.sql` remains absent.
+`db/run-sqleditor.sql` PART 7/8 previously proved *existence*. Existence is the least a
+reconciler may claim: `ADD COLUMN IF NOT EXISTS <name> <type>` is a **no-op when a column of
+that name already exists under a different type**, so a wrong-typed column passes a name check
+and then fails at runtime as `42804`. A foreign key is likewise never dropped by a name check.
 
----
+PART 8 now also requires: both group columns `udt_name='uuid'`; each of the three group indexes
+to actually contain `(checkout_group_id)`; and both group foreign keys to resolve to
+`checkout_groups` with `confdeltype='n'` (**SET NULL** — the architecture's rule that a deleted
+group must not take its payment rows with it). PART 7 reports `table | column | data_type` and
+each FK's target and delete action. Verified non-vacuous by `db/verify-reconciler.sh` scenario I:
+a wrong-typed column and a `CASCADE` foreign key are each rejected and **named**, exit 3.
 
-## `42703 checkout_group_id` — the schema was never wrong (2026-10-04)
+## The reported incident, reproduced end to end (2026-10-04)
 
-Production evidence, in order: `checkout_groups WHERE id=$1 AND user_id=$2` worked,
-`orders WHERE checkout_group_id=$1` worked, then the ORDER ITEMS query raised
-`42703 column "checkout_group_id" does not exist` — with `orders.checkout_group_id`
-confirmed present.
+`db/verify-reconciler.sh` gained two scenarios (9 total, all PASS):
 
-**A 42703 naming a bare column means no relation in that statement's FROM/JOIN scope owns
-it.** That is why the two queries above do not raise it: both have `orders` in scope. The
-failing statement therefore read `order_items` WITHOUT `orders` in scope.
+* **H — the reported incident.** A reconciled database holding a real `payments` row with
+  Stripe provider ids, then `payments.checkout_group_id` removed. The production statement,
+  verbatim, raises **42703 before** and **resolves the group after**; the payment row, its
+  provider ids and its `paid` status are unchanged; a single-order payment is not re-pointed at
+  the group; and a group payment is then resolved correctly.
+* **I — the assertion is not vacuous** (above).
 
-**No statement on `main` has that shape.** Every SQL string in `backend/` that mentions
-`checkout_group_id` was enumerated and its FROM/JOIN scope checked: 14 statements, all
-resolve. The item-by-group query is `stripe.ts:558`, and it does `JOIN orders o` with
-`WHERE o.checkout_group_id = $1`. `git log -S` shows it has been qualified since `d4ac063`,
-the same commit that introduced the group flow the log's first line comes from. So the
-running build is not `main` — that is the actionable conclusion, not a code change.
+Suite: **1962 pass / 2 skip / 0 fail** (66 files). Typecheck 4/4, `build:apps` 4/4,
+`bun run db:verify` exit 0, `git diff --check` clean.
 
-`backend/tests/checkout-group-sql-scope.test.ts` pins this going forward: a static scope
-check over every backend SQL string, plus a live PostgreSQL fixture (checkout_groups →
-orders → order_items) that executes the statement **read out of `routes/stripe.ts`**, and a
-negative control that reproduces `42703` by dropping `orders` from scope and shows the
-qualified join succeeding on the same rows.
-
-**Logging, because this was undiagnosable.** A DB failure logged `statement: "SELECT"` and
-nothing else, so a 42703 could not be attributed to a file. `logDbFailure` now also logs the
-redacted statement and its relation scope. `sqlForLog()` strips `--` comments, replaces every
-single-quoted and dollar-quoted literal with `?`, collapses whitespace and truncates; params are
-never interpolated. `db-failure-log-redaction.test.ts` (12 tests) pins that no value can leak.
-
-**Separate finding, NOT the 42703.** `acquire ~1.2–1.6s` with `exec ~197–315ms` is pool and
-TLS cost to Neon, not a bad plan; `max: 20, min: 1, idleTimeoutMillis: 30000` in
-`backend/db/index.ts` explains `idle=6`. Untouched — no evidence yet justifies changing it.
+**BLOCKER, owner action.** Production `payments` still has no `checkout_group_id`. Run
+`db/run-sqleditor.sql` against the database Render's `DATABASE_URL` actually points at (Neon SQL
+Editor, correct project/branch). It is additive, rerunnable, and **now raises** if the column,
+its type, its index or its foreign key is still wrong when it finishes. Confirm first with
+`.github/workflows/diag-neon-schema.yml`, which already probes `payments.checkout_group_id` with
+its type and the FK definition — a `MISSING` there is the confirmation, from the right database.

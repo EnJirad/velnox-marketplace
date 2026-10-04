@@ -9,6 +9,7 @@ import { requireDiagAccess } from "./middleware/diag-guard.js";
 import { stripeWebhookRawBody } from "./middleware/stripe-raw-body.js";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
+import { describeDatabaseIdentity } from "./db/index.js";
 import { setupRoutes } from "./routes/index.js";
 import { setupAdminRoutes } from "./routes/admin.js";
 import { setupCartRoutes } from "./routes/cart.js";
@@ -538,6 +539,36 @@ server.listen(PORT, "0.0.0.0", () => {
   // BOOTSTRAP_OWNER_SECRET is optional but must be set for owner initialization.
   // Logged as boolean only — the actual value is never exposed.
   console.log(`[bootstrap] BOOTSTRAP_OWNER_SECRET configured: ${Boolean(process.env.BOOTSTRAP_OWNER_SECRET)}`);
+
+  // ─── Which database, and is the payment schema actually there? ──────────
+  // READ-ONLY (a `SELECT`, never DDL — startup must not migrate). This exists
+  // because the payment path failed three times against a database nobody could
+  // name: a `42P01` for checkout_groups and two `42703`s for checkout_group_id
+  // were each diagnosed by reasoning about the connection string instead of
+  // asking the server. One line at boot answers it before a customer ever pays.
+  // Only the database NAME is printed — never the host, user, password or the
+  // `?sslmode=…` parameters.
+  void describeDatabaseIdentity()
+    .then((identity) => {
+      const where = `database=${identity.database} server=${identity.serverVersion}`;
+      if (identity.missing.length === 0) {
+        console.log(`[db] ✅ payment schema complete (${where})`);
+      } else {
+        console.error(
+          `[db] ❌ PAYMENT SCHEMA INCOMPLETE (${where}) — missing: ${identity.missing.join(", ")}`,
+        );
+        console.error(
+          "   The checkout-group feature will fail at runtime until this is reconciled.",
+        );
+        console.error("   Run db/run-sqleditor.sql against THIS database in the Neon SQL Editor (it asserts when it finishes).");
+      }
+    })
+    .catch((err: unknown) => {
+      console.error("[db] identity check failed (non-fatal at boot):", {
+        code: (err as { code?: string })?.code ?? null,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    });
 
   // ─── VelRepeat V2 Scheduler (recurring commerce worker) ────────────
   // The V1 pay-per-run worker above. Untouched by Phase 5.
