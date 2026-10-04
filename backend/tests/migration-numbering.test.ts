@@ -30,7 +30,12 @@ import { join } from "path";
 
 const root = join(import.meta.dir, "..", "..");
 const migrationsDir = join(root, "db", "migrations");
-const workflow = readFileSync(join(root, ".github", "workflows", "migrate-neon.yml"), "utf8");
+// The production migration runner. It was `migrate-neon.yml` until it was
+// renamed to pair with `production-db-verify.yml`; it is the same engine. This
+// file is deliberately read from disk rather than imported, so a rename that
+// silently pointed this suite at a different runner would fail loudly here
+// instead of passing vacuously.
+const workflow = readFileSync(join(root, ".github", "workflows", "production-db-migrate.yml"), "utf8");
 
 /** The duplicates that already exist in applied history. Frozen on purpose. */
 const KNOWN_DUPLICATE_PREFIXES = ["029", "030", "034", "035"];

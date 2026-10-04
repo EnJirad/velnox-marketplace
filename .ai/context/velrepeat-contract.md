@@ -1894,7 +1894,8 @@ specification; none are satisfied in code**:
 `velrepeat_packages` / `velrepeat_package_items` · `velrepeat_plans.commitment_cycles` ·
 `velrepeat_pricing_snapshots` / `velrepeat_pricing_snapshot_items` · `velrepeat_cycles`
 (`UNIQUE (plan_id, cycle_number)`) · `orders.velrepeat_cycle_id` + FK. Tests:
-`backend/tests/velrepeat-v2-domain-schema.test.ts`. **No migration file** — `migrate-neon.yml`
+`backend/tests/velrepeat-v2-domain-schema.test.ts`. **No migration file** —
+`production-db-migrate.yml`
 auto-applies all pending migrations (048–050 owner-blocked); next number `051`.
 **Phases 2–10 NOT STARTED.**
 Gates: §60.1 approved (1A–7B) · §60.2 Decisions A–I **[OWNER DECISION] — answered 2026-09-30; B, C, D,

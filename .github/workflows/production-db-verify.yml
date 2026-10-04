@@ -1,0 +1,534 @@
+# Velnox PRODUCTION database verification — READ-ONLY
+#
+# This is the workflow that proves the architecture the owner asked for:
+#
+#     GitHub Actions ──NEON_PRODUCTION_DATABASE_URL──▶ Neon Production DB ◀──DATABASE_URL── Render
+#
+# It exists because a green migration run proved nothing about production: for
+# weeks every migration and every reconciler run in this repository reached a
+# DIFFERENT Neon than Render's `DATABASE_URL` uses (§66 / handoff). The
+# `schema_migrations` ledger said 054 was applied; production had never received
+# it, and the failure surfaced as a 42703 in a Stripe webhook. A ledger is not
+# identity. So this workflow asks the server which database it is connected to,
+# and checks the objects the current backend code actually depends on.
+#
+# HARD RULES enforced by this file:
+#   1. Every statement against the production database is a SELECT. There is no
+#      DDL, no DML, no TRUNCATE, no CREATE. A missing column makes this job
+#      FAIL; it is never repaired here. Migration and verification are strictly
+#      separated — `production-db-migrate.yml` migrates, this verifies.
+#   2. The connection string comes only from `NEON_PRODUCTION_DATABASE_URL`.
+#      There is NO fallback to DATABASE_URL, to the retired NEON_DATABASE_URL,
+#      or to any other variable. A missing secret is reported as
+#      `BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured.` and the job
+#      stops there rather than guessing a target.
+#   3. The secret is never echoed, never printed, never interpolated into an
+#      error message. Only `safeDatabaseLabel()`-equivalent output appears:
+#      the database NAME, the schema, the server version and object state.
+#      (A Neon URL embeds a password; the host, user, password and
+#      `?sslmode=…` are never rendered.)
+#   4. No connection string is hard-coded anywhere in this file.
+#
+# Triggers:
+#   - workflow_dispatch                      (ad-hoc, on demand)
+#   - push to main touching the schema, the migrations, the backend DB layer
+#     or any workflow file                   (a change that could alter what
+#                                             production is expected to look like)
+#   - weekly schedule                        (production drifts on its own —
+#                                             e.g. someone edits it in the Neon
+#                                             console. Read-only, so cheap.)
+#
+# The test/typecheck/build job in this file uses a THROWAWAY PostgreSQL service
+# container and references no secret at all. Production is never a test
+# database; that property is enforced by `backend/db/test-database.ts` and is
+# what let the suite be trusted in the first place.
+
+name: Production DB Verify
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'db/**'
+      - 'backend/db/**'
+      - 'backend/routes/stripe.ts'
+      - 'backend/routes/cart.ts'
+      - 'backend/server.ts'
+      - '.github/workflows/**'
+  schedule:
+    # 03:17 UTC every Monday. Read-only against production.
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 1 — validate the REPOSITORY, with no database at all.
+  # Confirms the schema contract on disk is coherent and that no workflow has
+  # reintroduced a credential, a hard-coded URL, or a silent fallback.
+  # ────────────────────────────────────────────────────────────────────────────
+  repository:
+    name: Validate schema and workflow contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      schema_valid: ${{ steps.schema.outputs.valid }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate the canonical schema files
+        id: schema
+        run: |
+          set -euo pipefail
+
+          # The contract from AI_RULES §6: db/schema.sql is the snapshot and
+          # db/run-sqleditor.sql is the rerunnable reconciler, and every object
+          # the snapshot declares must still be declared by the reconciler.
+          # backend/tests/helpers/canonical-schema.ts is that assertion; run it
+          # rather than re-implementing it in YAML.
+          echo "▶ schema.sql ↔ run-sqleditor.sql declaration parity"
+          bun test backend/tests/db-run-sqleditor-reconciler.test.ts \
+                   backend/tests/checkout-group-sql-scope.test.ts \
+                   backend/tests/db-identity.test.ts \
+                   backend/tests/test-database-isolation.test.ts
+
+          # db/run-update.sql is deprecated and must never come back.
+          if [ -f db/run-update.sql ]; then
+            echo "::error::db/run-update.sql exists — it is deprecated (AI_RULES §6) and must not be recreated."
+            echo "schema_valid=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "▶ db/run-update.sql is correctly absent"
+
+          # The reconciler must stay additive: it may create what is missing and
+          # never remove or rewrite what exists.
+          echo "▶ reconciler safety scan (no DROP TABLE/COLUMN, TRUNCATE or DELETE)"
+          if grep -nE '^[[:space:]]*(DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN|TRUNCATE|DELETE[[:space:]]+FROM)' db/run-sqleditor.sql; then
+            echo "::error::db/run-sqleditor.sql contains a destructive statement."
+            echo "schema_valid=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "✅ Repository schema contracts are valid."
+          echo "schema_valid=true" >> "$GITHUB_OUTPUT"
+
+      - name: Validate no workflow hard-codes or falls back to a database credential
+        run: |
+          set -euo pipefail
+          failed=0
+
+          # (a) No committed connection string pointing at a REMOTE host in any
+          #     workflow. Two things are legitimately allowed: the throwaway
+          #     `localhost` service container, and the `ep-ci-guard-check`
+          #     fixture whose only job is to prove the test guard refuses a
+          #     production-looking target (nothing is ever connected to it).
+          echo "▶ no remote connection string is committed in a workflow"
+          REMOTE_URLS=$(git grep -nE 'postgres(ql)?://[^"'"'"' ]*@[^/"'"'"' ]+' -- .github/workflows \
+                          | grep -vE '@(localhost|127\.0\.0\.1)[:/]' \
+                          | grep -v 'ep-ci-guard-check' || true)
+          if [ -n "$REMOTE_URLS" ]; then
+            echo "::error::a workflow contains a hard-coded remote connection string."
+            printf '%s\n' "$REMOTE_URLS"
+            failed=1
+          fi
+
+          # (b) No workflow may read the production secret through an
+          #     expression other than the canonical name. Matched against the
+          #     `secrets.` context specifically, so prose about the old name in a
+          #     comment is not mistaken for a live reference.
+          echo "▶ the production secret is consumed only as secrets.NEON_PRODUCTION_DATABASE_URL"
+          if grep -rn 'secrets\.NEON_DATABASE_URL' .github/workflows ; then
+            echo "::error::a workflow still reads the retired NEON_DATABASE_URL secret."
+            failed=1
+          fi
+
+          # The CI workflow must not be able to reach production at all. Matched
+          # on an env-key position, so the comment in test.yml that documents
+          # this rule does not trip the check that enforces it.
+          if grep -nE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*:.*NEON_PRODUCTION_DATABASE_URL' \
+               .github/workflows/test.yml ; then
+            echo "::error::test.yml references the production secret — CI must never use production."
+            failed=1
+          fi
+
+          # (c) No silent fallback: a production step must never substitute
+          #     another variable when the secret is missing. The `${` anchor
+          #     matches the shell parameter expansion that would do it and does
+          #     not match this file's own guard expression.
+          echo "▶ no silent fallback to DATABASE_URL"
+          if grep -rnE '\$\{NEON_PRODUCTION_DATABASE_URL:-' .github/workflows ; then
+            echo "::error::a production step falls back to another variable when the secret is missing."
+            failed=1
+          fi
+
+          [ "$failed" -eq 0 ] || exit 1
+          echo "✅ Workflow credential contracts are valid."
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 2 — verify the PRODUCTION database. Read-only.
+  # ────────────────────────────────────────────────────────────────────────────
+  production:
+    name: Verify production schema and identity
+    needs: repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Require the canonical production secret
+        env:
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
+        run: |
+          # Deliberately NO fallback. If this secret is absent the run is
+          # BLOCKED — it does not quietly borrow DATABASE_URL, because a
+          # workflow that reaches the wrong Neon on its own is the exact failure
+          # this repository is being realigned to eliminate.
+          if [ -z "$NEON_PRODUCTION_DATABASE_URL" ]; then
+            echo "::error::BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured."
+            echo "   Create it at: Settings → Secrets and variables → Actions → New repository secret"
+            echo "   Name:  NEON_PRODUCTION_DATABASE_URL"
+            echo "   Value: the Neon connection string for the SAME project and branch that"
+            echo "          Render's DATABASE_URL uses (the one serving real shops and orders)."
+            echo "   No fallback is attempted. Nothing was connected and nothing was changed."
+            exit 1
+          fi
+          echo "✅ NEON_PRODUCTION_DATABASE_URL is configured (value not printed)."
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Database identity — which database is this, and is it production?
+        env:
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
+        run: |
+          # `current_user` is a PostgreSQL ROLE name, not a credential; the
+          # host, password and connection string are never rendered.
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' -c "
+            SELECT 'DATABASE IDENTITY',
+                   'database: '   || current_database(),
+                   'schema: '     || current_schema(),
+                   'server: '     || current_setting('server_version'),
+                   'user: '       || current_user;
+          "
+          echo ""
+          echo "Compare this with the '[db]' line the live backend logs at boot:"
+          echo "  [db] ✅ payment schema complete (database=… server=…)"
+          echo "If the two database names disagree, this secret does not point at production."
+          echo ""
+
+      - name: Schema fingerprint — does this database hold the production rows?
+        env:
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
+        run: |
+          # Aggregates and non-secret identifiers only: counts, and the first
+          # five shop id/slug pairs. No customer data, no orders, no payments.
+          # This is what distinguishes production from an empty sibling Neon —
+          # the migration 054 mistake showed that schema alone cannot.
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          SELECT 'FINGERPRINT',
+                 'shops: '    || CASE WHEN to_regclass('public.shops')    IS NULL THEN 'MISSING' ELSE (SELECT count(*)::text FROM shops)    END,
+                 'users: '    || CASE WHEN to_regclass('public.users')    IS NULL THEN 'MISSING' ELSE (SELECT count(*)::text FROM users)    END,
+                 'products: ' || CASE WHEN to_regclass('public.products') IS NULL THEN 'MISSING' ELSE (SELECT count(*)::text FROM products) END,
+                 'sellers: '  || CASE WHEN to_regclass('public.sellers')  IS NULL THEN 'MISSING' ELSE (SELECT count(*)::text FROM sellers)  END,
+                 'orders: '   || CASE WHEN to_regclass('public.orders')   IS NULL THEN 'MISSING' ELSE (SELECT count(*)::text FROM orders)   END,
+                 'payments: ' || CASE WHEN to_regclass('public.payments') IS NULL THEN 'MISSING' ELSE (SELECT count(*)::text FROM payments) END;
+          SELECT 'FINGERPRINT',
+                 'shops: ' || COALESCE((SELECT string_agg(t.x, ', ' ORDER BY t.x)
+                                           FROM (SELECT id::text || '/' || COALESCE(slug, '-') AS x
+                                                   FROM shops ORDER BY id LIMIT 5) t), '(no rows)');
+          SQL
+
+      - name: Verify critical production schema objects (read-only)
+        env:
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
+        run: |
+          # Every row below is `status | probe | detail`. status is PASS or FAIL.
+          # Nothing here creates, alters or repairs anything: a missing object is
+          # reported and the job fails, and the fix is a migration (or one run of
+          # the reconciler) — never this workflow.
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL' > /tmp/prod-verify.txt
+
+          -- ── tables ──────────────────────────────────────────────────────────
+          SELECT CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'FAIL' ELSE 'PASS' END,
+                 'checkout_groups exists',
+                 COALESCE(to_regclass('public.checkout_groups')::text, 'relation not found');
+
+          -- ── the two group columns, WITH THEIR TYPE ──────────────────────────
+          -- `ADD COLUMN IF NOT EXISTS <name> <type>` is a no-op when a column of
+          -- that name already exists under a different type, so a name-only
+          -- check would pass on a column that fails at runtime as 42804.
+          -- Existence is the least a verifier may assert.
+          SELECT CASE WHEN (SELECT udt_name FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'orders'
+                               AND column_name = 'checkout_group_id') = 'uuid'
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'orders.checkout_group_id is uuid',
+                 COALESCE((SELECT udt_name FROM information_schema.columns
+                            WHERE table_schema = 'public' AND table_name = 'orders'
+                              AND column_name = 'checkout_group_id'),
+                          'column absent');
+
+          SELECT CASE WHEN (SELECT udt_name FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'payments'
+                               AND column_name = 'checkout_group_id') = 'uuid'
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'payments.checkout_group_id is uuid',
+                 COALESCE((SELECT udt_name FROM information_schema.columns
+                            WHERE table_schema = 'public' AND table_name = 'payments'
+                              AND column_name = 'checkout_group_id'),
+                          'column absent');
+
+          -- ── payment idempotency / webhook identity columns ───────────────────
+          SELECT CASE WHEN (SELECT count(*) FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'payments'
+                               AND column_name IN ('provider_checkout_session_id','provider_payment_id')) = 2
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'payments.provider_checkout_session_id + provider_payment_id exist',
+                 COALESCE((SELECT string_agg(column_name, ', ' ORDER BY column_name)
+                             FROM information_schema.columns
+                            WHERE table_schema = 'public' AND table_name = 'payments'
+                              AND column_name IN ('provider_checkout_session_id','provider_payment_id')),
+                          'both absent');
+
+          -- ── foreign keys: SET NULL, so deleting a group never deletes money ──
+          -- confdeltype 'a' = NO ACTION, 'r' = RESTRICT, 'c' = CASCADE,
+          -- 'n' = SET NULL, 'd' = SET DEFAULT. Only 'n' is correct here.
+          SELECT CASE WHEN (SELECT count(*) FROM pg_constraint
+                             WHERE contype = 'f'
+                               AND conrelid IN (to_regclass('public.orders'), to_regclass('public.payments'))
+                               AND conname IN ('orders_checkout_group_id_fkey','payments_checkout_group_id_fkey')
+                               AND confrelid = to_regclass('public.checkout_groups')
+                               AND confdeltype = 'n') = 2
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'group foreign keys target checkout_groups ON DELETE SET NULL',
+                 COALESCE((SELECT string_agg(con.conname || ' → ' || rel.relname || ' ' || con.confdeltype, ', ' ORDER BY con.conname)
+                             FROM pg_constraint con
+                             JOIN pg_class rel ON rel.oid = con.confrelid
+                            WHERE con.contype = 'f'
+                              AND con.conrelid IN (to_regclass('public.orders'), to_regclass('public.payments'))
+                              AND con.conname IN ('orders_checkout_group_id_fkey','payments_checkout_group_id_fkey')),
+                          'no group foreign keys found');
+
+          -- ── the group indexes must actually contain the column ──────────────
+          SELECT CASE WHEN (SELECT count(*) FROM pg_indexes
+                             WHERE schemaname = 'public'
+                               AND indexname IN ('idx_orders_checkout_group','idx_payments_checkout_group','idx_payments_one_active_stripe_group')
+                               AND indexdef LIKE '%(checkout_group_id)%') = 3
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'group indexes are built on (checkout_group_id)',
+                 COALESCE((SELECT string_agg(indexname, ', ' ORDER BY indexname)
+                             FROM pg_indexes
+                            WHERE schemaname = 'public'
+                              AND indexname IN ('idx_orders_checkout_group','idx_payments_checkout_group','idx_payments_one_active_stripe_group')
+                              AND indexdef LIKE '%(checkout_group_id)%'),
+                          'missing or not on checkout_group_id');
+
+          SELECT CASE WHEN count(*) = 1 THEN 'PASS' ELSE 'FAIL' END,
+                 'idx_checkout_groups_user exists on (user_id, created_at DESC)',
+                 COALESCE((SELECT indexdef FROM pg_indexes
+                             WHERE schemaname = 'public' AND indexname = 'idx_checkout_groups_user'),
+                          'missing');
+
+          -- ── the payment parent CHECKs from migration 054 ────────────────────
+          SELECT CASE WHEN (SELECT count(*) FROM pg_constraint
+                             WHERE conrelid = to_regclass('public.payments')
+                               AND contype = 'c'
+                               AND conname IN ('payments_at_least_one_parent_check','payments_single_domain_check')) = 2
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'payments parent CHECKs present',
+                 COALESCE((SELECT string_agg(conname, ', ' ORDER BY conname)
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('public.payments')
+                              AND contype = 'c'
+                              AND conname IN ('payments_at_least_one_parent_check','payments_single_domain_check')),
+                          'missing');
+
+          -- ── migration state ─────────────────────────────────────────────────
+          -- `schema_migrations` is created by the migration mechanism, not by
+          -- the reconciler, so it may legitimately be absent. Probe it through
+          -- the catalog so these queries cannot raise 42P01 and abort the batch
+          -- before the FAIL is counted. The 054 row itself is checked separately
+          -- below, once the ledger is known to be usable.
+          SELECT CASE WHEN to_regclass('public.schema_migrations') IS NULL THEN 'FAIL' ELSE 'PASS' END,
+                 'schema_migrations ledger exists',
+                 COALESCE(to_regclass('public.schema_migrations')::text, 'table not found — run production-db-migrate.yml first');
+
+          SELECT CASE WHEN (SELECT count(*) FROM pg_class WHERE oid = to_regclass('public.schema_migrations')) = 0
+                      THEN 'FAIL'
+                      WHEN (SELECT count(*) FROM pg_attribute
+                             WHERE attrelid = to_regclass('public.schema_migrations')
+                               AND attname = 'migration_name'
+                               AND NOT attisdropped) = 0
+                      THEN 'FAIL'
+                      WHEN (SELECT count(*) FROM pg_index i
+                             WHERE i.indrelid = to_regclass('public.schema_migrations')
+                               AND i.indisunique
+                               AND pg_get_indexdef(i.indexrelid) LIKE '%migration_name%') = 0
+                      THEN 'FAIL'
+                      ELSE 'PASS' END,
+                 'schema_migrations ledger is usable (table + migration_name + unique index)',
+                 CASE WHEN to_regclass('public.schema_migrations') IS NULL THEN 'table not found'
+                      ELSE 'ledger present' END;
+          SQL
+
+          # Read the ledger only when the probe above says it is usable, so a
+          # missing table is reported as a FAIL and never as a 42P01 that
+          # aborts the whole step before the rest of the checks are counted.
+          if [ "$(grep -c '^FAIL | schema_migrations ledger is usable' /tmp/prod-verify.txt || true)" -eq 0 ]; then
+            psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' -c "
+              SELECT CASE WHEN EXISTS (
+                              SELECT 1 FROM schema_migrations
+                               WHERE migration_name = '054_checkout_groups_numeric_order_number')
+                          THEN 'PASS' ELSE 'FAIL' END,
+                     'migration 054 recorded in the ledger',
+                     'ledger holds ' || (SELECT count(*) FROM schema_migrations)::text || ' migration(s); '
+                     || (SELECT COALESCE(max(migration_name), '(none)') FROM schema_migrations);
+            " >> /tmp/prod-verify.txt
+          else
+            echo "FAIL | migration 054 recorded in the ledger | not checked — no usable schema_migrations ledger" \
+              >> /tmp/prod-verify.txt
+          fi
+
+          echo ""
+          echo "── PRODUCTION SCHEMA ──"
+          cat /tmp/prod-verify.txt
+
+          FAILS=$(grep -c '^FAIL' /tmp/prod-verify.txt || true)
+          TOTAL=$(grep -c -E '^(PASS|FAIL)' /tmp/prod-verify.txt || true)
+
+          echo ""
+          if [ "$FAILS" -ne 0 ]; then
+            echo "::error::FAIL: ${FAILS} of ${TOTAL} production schema checks failed."
+            echo "Migration and verification are separate on purpose — this job does NOT create"
+            echo "the missing objects. Apply the fix with db/migrations/ or one run of"
+            echo "db/run-sqleditor.sql against this same database, then re-run this workflow."
+            exit 1
+          fi
+          echo "✅ Production schema: ${TOTAL}/${TOTAL} checks PASS."
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 3 — the real repository gates. Runs against a THROWAWAY PostgreSQL
+  # service container created empty and destroyed with the runner. This job
+  # references no secret: production is never used as a test database.
+  # ────────────────────────────────────────────────────────────────────────────
+  gates:
+    name: Typecheck, build and database tests (disposable PostgreSQL)
+    needs: repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: velnox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d velnox_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # Throwaway service container only. No secret is referenced by this job.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/velnox_test?sslmode=disable
+      JWT_SECRET: velnox-ci-only-jwt-secret-not-used-in-production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Bootstrap the disposable database
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          # The canonical fresh-DB bootstrap, run once against the empty
+          # container. Never run against production.
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/run-sqleditor.sql
+          echo "✅ Disposable test database bootstrapped."
+
+      - name: Reconciler behaviour (idempotency, cases A–I)
+        run: bun run db:verify
+
+      - name: Test suite
+        run: bun test backend/tests
+
+      - name: Typecheck
+        run: |
+          bun run typecheck
+          bun --filter @velnox/backend typecheck
+
+      - name: Build apps
+        run: bun run build:apps
+
+      - name: Whitespace hygiene
+        run: git diff --check
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 4 — one verdict. Cannot mask a failure: it needs both jobs, and it
+  # re-states the production verdict explicitly rather than inferring it.
+  # ────────────────────────────────────────────────────────────────────────────
+  verdict:
+    name: Production database verdict
+    needs: [repository, production, gates]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report
+        env:
+          REPO: ${{ needs.repository.result }}
+          PROD: ${{ needs.production.result }}
+          GATES: ${{ needs.gates.result }}
+        run: |
+          echo "VELNOX PRODUCTION DATABASE VERIFICATION"
+          echo ""
+          echo "repository validation : ${REPO}"
+          echo "production schema     : ${PROD}"
+          echo "typecheck/build/tests : ${GATES}"
+          echo ""
+
+          if [ "$REPO" = "failure" ] || [ "$GATES" = "failure" ] || [ "$PROD" = "failure" ]; then
+            echo "Overall: FAIL"
+            exit 1
+          fi
+          if [ "$REPO" = "skipped" ] || [ "$PROD" = "skipped" ] || [ "$GATES" = "skipped" ]; then
+            echo "Overall: BLOCKED — a required job did not run."
+            exit 1
+          fi
+          if [ "$PROD" = "success" ] && [ "$REPO" = "success" ] && [ "$GATES" = "success" ]; then
+            echo "Overall: PASS"
+            echo ""
+            echo "The production Neon database this workflow verified is the one named in the"
+            echo "'DATABASE IDENTITY' line above. Confirm it is the SAME database the live"
+            echo "backend reports in its '[db]' boot line before treating this as production."
+            exit 0
+          fi
+
+          echo "Overall: BLOCKED"
+          exit 1

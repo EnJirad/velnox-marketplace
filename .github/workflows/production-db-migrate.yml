@@ -1,13 +1,27 @@
-# Velnox Neon Database Migration
+# Velnox PRODUCTION database migration
 #
-# Applies incremental migrations from db/migrations/ to the Neon production database.
-# NEVER runs schema.sql or run-sqleditor.sql — only individual migration files.
+# THIS is the production migration workflow — the only workflow in this
+# repository permitted to write to the production Neon database. It was
+# previously `migrate-neon.yml`; it is the same engine, unchanged, renamed so
+# that it pairs with `production-db-verify.yml` and so that every workflow that
+# touches production is recognisable by name.
 #
-# Usage:
-#   - Automatic: runs on push to main when db/migrations/*.sql changes
-#   - Manual: workflow_dispatch with optional migration file selection
+# It applies incremental migrations from db/migrations/ only. It NEVER runs
+# schema.sql or run-sqleditor.sql.
+#
+# Canonical secret: NEON_PRODUCTION_DATABASE_URL — the SAME Neon project and
+# branch Render's `DATABASE_URL` points at. There is deliberately NO fallback to
+# any other variable: a silently-substituted connection string is what caused
+# migration 054 to reach a database production does not use (§66).
+#
+# Triggers are explicit, never "on every push":
+#   - workflow_dispatch, optionally with a single migration file; or
+#   - a push to main that changes db/migrations/*.sql only.
+#
+# Verification is SEPARATE: this workflow migrates, `production-db-verify.yml`
+# verifies. Verification never creates an object; migration never asserts.
 
-name: Migrate Neon Database
+name: Production DB Migrate
 
 on:
   push:
@@ -22,7 +36,7 @@ on:
         type: string
 
 env:
-  NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+  NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
 
 jobs:
   migrate:
@@ -34,16 +48,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate Neon URL secret
+      - name: Validate production database secret
         run: |
-          if [ -z "$NEON_DATABASE_URL" ]; then
-            echo "❌ NEON_DATABASE_URL secret is not set."
-            echo "   Go to Settings → Secrets and variables → Actions → New repository secret"
-            echo "   Name: NEON_DATABASE_URL"
-            echo "   Value: your neon postgres connection string"
+          # Hard stop when the canonical secret is absent. There is NO fallback
+          # to DATABASE_URL or to the retired NEON_DATABASE_URL: a run that
+          # silently reached a different Neon is precisely the incident this
+          # repository is being aligned to eliminate.
+          if [ -z "$NEON_PRODUCTION_DATABASE_URL" ]; then
+            echo "::error::BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured."
+            echo "   Settings → Secrets and variables → Actions → New repository secret"
+            echo "   Name: NEON_PRODUCTION_DATABASE_URL"
+            echo "   Value: the Neon connection string for the SAME project/branch that Render's DATABASE_URL uses."
             exit 1
           fi
-          echo "✅ NEON_DATABASE_URL is configured."
+          echo "✅ NEON_PRODUCTION_DATABASE_URL is configured (value not printed)."
+
+      - name: Confirm which database this is before writing to it
+        run: |
+          # Read the identity FIRST. Writing to the wrong database is not
+          # recoverable by re-running this workflow, so the target is proven
+          # before any migration file is applied.
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' -c "
+            SELECT 'DATABASE IDENTITY',
+                   'database=' || current_database(),
+                   'schema=' || current_schema(),
+                   'server=' || current_setting('server_version'),
+                   'user=' || current_user;
+          "
+          echo "Compare the line above with the [db] line the live backend logs at boot."
+          echo "If they differ, STOP — this secret does not point at production."
 
       - name: Install psql client
         run: |
@@ -52,7 +85,7 @@ jobs:
 
       - name: Ensure schema_migrations table exists
         run: |
-          psql "$NEON_DATABASE_URL" -c "
+          psql "$NEON_PRODUCTION_DATABASE_URL" -c "
             CREATE TABLE IF NOT EXISTS schema_migrations (
               id BIGSERIAL PRIMARY KEY,
               migration_name TEXT UNIQUE NOT NULL,
@@ -67,7 +100,7 @@ jobs:
           echo "🔍 Checking for pending migrations..."
 
           # Get list of already-applied migrations
-          APPLIED=$(psql "$NEON_DATABASE_URL" -t -A -c "SELECT migration_name FROM schema_migrations ORDER BY id;" 2>/dev/null || echo "")
+          APPLIED=$(psql "$NEON_PRODUCTION_DATABASE_URL" -t -A -c "SELECT migration_name FROM schema_migrations ORDER BY id;" 2>/dev/null || echo "")
           echo "Already applied: $APPLIED"
 
           PENDING=()
@@ -124,9 +157,9 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
             # Run the migration inside a transaction
-            if psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$filepath"; then
+            if psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$filepath"; then
               # Record successful migration
-              psql "$NEON_DATABASE_URL" -c "
+              psql "$NEON_PRODUCTION_DATABASE_URL" -c "
                 INSERT INTO schema_migrations (migration_name)
                 VALUES ('$migration_name')
                 ON CONFLICT (migration_name) DO NOTHING;
@@ -147,4 +180,4 @@ jobs:
         if: steps.detect.outputs.has_pending == 'true'
         run: |
           echo "📊 Current migration state:"
-          psql "$NEON_DATABASE_URL" -c "SELECT id, migration_name, applied_at FROM schema_migrations ORDER BY id;"
+          psql "$NEON_PRODUCTION_DATABASE_URL" -c "SELECT id, migration_name, applied_at FROM schema_migrations ORDER BY id;"

@@ -26,7 +26,8 @@ Only real project issues. Do not invent solutions.
 ## Neon / Database
 
 - **DB errors / idle:** Neon may sleep; wake it, verify `DATABASE_URL` and `sslmode=verify-full`; run `db/run-sqleditor.sql` for fresh DB.
-- **Migration not applied:** check `.github/workflows/migrate-neon.yml` and `NEON_DATABASE_URL` secret; `schema_migrations` tracks drift.
+- **Migration not applied:** run `.github/workflows/production-db-verify.yml` first — it prints which database it actually reached and names every missing object. Apply with `production-db-migrate.yml` (secret `NEON_PRODUCTION_DATABASE_URL`); `schema_migrations` tracks drift.
+- **Workflow says `BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured`:** the canonical production secret is missing. Create it at Settings → Secrets and variables → Actions with the Neon connection string for the same project/branch Render's `DATABASE_URL` uses. It deliberately does not fall back to anything else.
 
 ## Deploy
 

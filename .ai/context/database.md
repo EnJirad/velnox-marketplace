@@ -142,14 +142,47 @@ Respect PostgreSQL dependency order (extensions → types → tables → FKs →
 
 1. Add a new `db/migrations/NNN_*.sql` (idempotent, no `DROP TABLE`).
 2. Update **both** `db/schema.sql` and `db/run-sqleditor.sql`.
-3. Production receives migrations via `.github/workflows/migrate-neon.yml` (secret `NEON_DATABASE_URL`) or manual apply.
+3. Production receives migrations via `.github/workflows/production-db-migrate.yml` (secret
+   `NEON_PRODUCTION_DATABASE_URL`) or manual apply.
 4. Track via `schema_migrations` table.
 
-### ⚠️ The Actions `NEON_DATABASE_URL` is NOT the production database (proven 2026-10-04)
+## The canonical production secret: `NEON_PRODUCTION_DATABASE_URL` (2026-10-04)
+
+One name, one target, one job each:
+
+| Workflow | Role | Secret | Writes to production? |
+|---|---|---|---|
+| `production-db-verify.yml` | verify production schema/identity | `NEON_PRODUCTION_DATABASE_URL` | **never** — SELECT only |
+| `production-db-migrate.yml` | apply `db/migrations/*.sql` | `NEON_PRODUCTION_DATABASE_URL` | yes, on an explicit trigger |
+| `diag-neon-schema.yml` | read-only inventory | `NEON_PRODUCTION_DATABASE_URL` | never |
+| `diag-stripe-payment-trace.yml` | read-only payment trace | `NEON_PRODUCTION_DATABASE_URL` | never |
+| `test.yml` | CI typecheck + tests | **none** (throwaway postgres service) | never |
+
+Rules the workflows enforce on themselves (`production-db-verify.yml` → the `repository` job,
+proven non-vacuous in both directions):
+
+* **No silent fallback.** A production step never substitutes another variable when the
+  secret is absent. It stops with `BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured.`
+  A workflow that reaches the wrong Neon *on its own* is the incident this alignment exists
+  to prevent.
+* **No hard-coded credential.** No committed remote connection string in any workflow; the
+  only permitted URLs are the `localhost` service container and the `ep-ci-guard-check`
+  fixture, which nothing ever connects to.
+* **CI never touches production.** `test.yml` references no secret at all, and the guard
+  test proves the suite refuses a production-looking `DATABASE_URL`.
+* **Verification never repairs.** A missing column FAILs the job and names the fix
+  (a migration, or one run of `db/run-sqleditor.sql`). Migration and verification are
+  separate workflows on purpose.
+* **Identity is proven, not assumed.** Every production run prints
+  `current_database()`, `current_schema()`, `server_version`, `current_user` and a
+  row-count fingerprint, and never the host, password or connection string. Compare it with
+  the `[db]` line the live backend logs at boot.
+
+### ⚠️ The retired `NEON_DATABASE_URL` secret pointed at a DIFFERENT Neon (proven 2026-10-04)
 
 **A green migration run proves nothing about production until you have checked which
-database it ran against.** The GitHub Actions secret `NEON_DATABASE_URL` resolves to a
-*different* Neon database from the one Render's `DATABASE_URL` connects to. Measured on
+database it ran against.** The now-retired GitHub Actions secret `NEON_DATABASE_URL` resolved
+to a *different* Neon database from the one Render's `DATABASE_URL` connects to. Measured on
 2026-10-04:
 
 | | Actions `NEON_DATABASE_URL` (`current_database = neondb`) | Production, via `GET /api/shops` on `velnox-api.onrender.com` |
@@ -168,11 +201,12 @@ The two sets are disjoint. Consequences:
   Actions ledger is subject to this. The ledger describes the Actions database only.
 
 **Before trusting any ledger read, prove the identity first.** The read-only probes in
-`.github/workflows/diag-neon-schema.yml` now answer it directly — `rowcount.shops`,
-`shops.ids (first 5)` and `current_database`. Compare them against what the live host
-serves before drawing a conclusion. Re-pointing the secret at the Neon project Render
-owns is an owner action on GitHub Secrets (the repo's app token gets `403` on both
-`secrets` and `workflow_dispatch`).
+`.github/workflows/production-db-verify.yml` (and the wider inventory in
+`diag-neon-schema.yml`) answer it directly — `DATABASE IDENTITY`, the row-count fingerprint
+and `current_database`. Compare them against what the live host serves before drawing a
+conclusion. Creating the `NEON_PRODUCTION_DATABASE_URL` secret and pointing it at the Neon
+project Render owns is an owner action on GitHub Secrets (the repo's app token gets `403`
+on both `secrets` and `workflow_dispatch`).
 
 Startup must never run DDL (`ALTER TABLE`).
 
@@ -182,8 +216,10 @@ Measured from the tracked tree: **no real Neon endpoint, hostname or credential 
 anywhere.** Every `neon.tech` in a tracked file is a placeholder (`ep-xxx`), a CI guard fixture
 (`ep-ci-guard-check`, used only to prove the suite refuses a production-looking URL), or a doc
 example. Render's `DATABASE_URL` is **not defined in this repository at all** — it exists only in
-Render's dashboard. The Actions URL is only ever referenced as `${{ secrets.NEON_DATABASE_URL }}`
-in three workflows (`migrate-neon.yml`, `diag-neon-schema.yml`, `diag-stripe-payment-trace.yml`).
+Render's dashboard. The Actions URL is only ever referenced as
+`${{ secrets.NEON_PRODUCTION_DATABASE_URL }}` in the four production workflows
+(`production-db-verify.yml`, `production-db-migrate.yml`, `diag-neon-schema.yml`,
+`diag-stripe-payment-trace.yml`); `test.yml` references no secret at all.
 
 So the two databases **share no definition in the repo**, which means nothing in CI or in the
 codebase can ever assert they are the same endpoint — the divergence is structural, not a stale

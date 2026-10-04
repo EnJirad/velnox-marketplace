@@ -5,8 +5,10 @@
 # anything to the database:
 #
 #   * every statement is a SELECT — no DDL, no DML, no TRUNCATE;
-#   * the connection string comes from the NEON_DATABASE_URL secret, is
-#     referenced only as `psql "$NEON_DATABASE_URL"` and is never echoed;
+#   * the connection string comes from the NEON_PRODUCTION_DATABASE_URL secret
+#     — the canonical production database, the same Neon Render uses — is
+#     referenced only as `psql "$NEON_PRODUCTION_DATABASE_URL"` and is never
+#     echoed. It never falls back to DATABASE_URL or any other variable;
 #   * a missing table/column/index is reported as the literal text MISSING
 #     (via information_schema / to_regclass / pg_catalog), so probes cannot
 #     fail the job — they only change the reported state.
@@ -32,14 +34,14 @@ jobs:
     steps:
       - name: Validate Neon URL secret
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          if [ -z "$NEON_DATABASE_URL" ]; then
-            echo "❌ NEON_DATABASE_URL secret is not set."
-            echo "   Settings -> Secrets and variables -> Actions -> NEON_DATABASE_URL"
+          if [ -z "$NEON_PRODUCTION_DATABASE_URL" ]; then
+            echo "::error::BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured."
+            echo "   Settings -> Secrets and variables -> Actions -> NEON_PRODUCTION_DATABASE_URL"
             exit 1
           fi
-          echo "✅ NEON_DATABASE_URL is configured (value not printed)."
+          echo "✅ NEON_PRODUCTION_DATABASE_URL is configured (value not printed)."
 
       - name: Install psql client
         run: |
@@ -48,9 +50,9 @@ jobs:
 
       - name: Migration ledger
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           SELECT 'server' AS probe, version() AS state;
           SELECT 'schema_migrations.exists' AS probe,
                  (to_regclass('public.schema_migrations') IS NOT NULL)::text AS state;
@@ -66,9 +68,9 @@ jobs:
 
       - name: Schema probes (verification / moderation / audit / notifications / media)
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           -- seller verification -------------------------------------------------
           SELECT 'users.must_change_password' AS probe,
                  COALESCE((SELECT data_type FROM information_schema.columns
@@ -274,9 +276,9 @@ jobs:
 
       - name: Payment reservation probes (migration 048)
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           -- The storefront countdown reads orders.payment_expires_at, so whether
           -- migration 048 applied decides if a 30-minute countdown can exist at all.
           SELECT 'orders.payment_expires_at' AS probe,
@@ -313,9 +315,9 @@ jobs:
 
       - name: VelRepeat V2 Phase 5 probes (migration 053)
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           -- 053 is the delivery-cycle substrate Phase 5 writes to. Every probe
           -- below is a SELECT against pg_catalog / information_schema; nothing
           -- is written and no customer identifier is selected (counts only).

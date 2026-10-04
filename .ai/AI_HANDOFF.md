@@ -212,21 +212,20 @@ conventions are in `AGENTS.md` and `.ai/README.md`.
 
 ## 9. Production Neon — read-only verification (TASK 001, 2026-09-23)
 
-**READ-ONLY.** No source, schema, migration, workflow or data change; nothing
-was connected to from this workspace (no database credentials are readable here,
-by platform design). Every fact below is the **production database's own
-response**, captured from the production migration runner (`migrate-neon.yml`,
-secret `NEON_DATABASE_URL` — documented as the production DB in
-`context/database.md`) — not a filename check, not a local/test database.
-
-**Closed evidence (method, migration ledger, verified-object table) archived** →
+**READ-ONLY.** No source, schema, migration, workflow or data change; nothing was
+connected to from this workspace (no database credentials are readable here, by
+platform design). Method, migration ledger and verified-object table archived →
 [`history/archive/AI_Handoff-2026-09-23-neon-readonly-verification.md`](history/archive/AI_Handoff-2026-09-23-neon-readonly-verification.md).
-Moved 2026-09-25 to keep this file small. Headline result: the production
-`schema_migrations` ledger matched `db/migrations/*.sql` **exactly** (49 rows /
-49 files, none missing or orphaned), captured from `migrate-neon.yml` logs — no
-credential was ever read or printed, and nothing was written.
 
-### 9.4 Still NOT VERIFIED (needs a fresh catalog read)
+**⚠️ Its headline conclusion was wrong and is superseded by §66.** This pass reported the
+ledger matching `db/migrations/*.sql` **exactly** (49 rows / 49 files, none missing or
+orphaned) and was taken to be the production ledger. It was not: the secret it read
+(`NEON_DATABASE_URL`) pointed at a *different* Neon than Render uses. "49/49, nothing
+missing" was a true statement about the wrong database — which is exactly why the ledger
+is no longer treated as evidence about production. Never draw a production conclusion
+from a ledger read without proving the identity first.
+
+### 9.4 Still NOT VERIFIED (needs a fresh catalog read, now against the right database)
 
 1. `notifications.user_id` nullability — canonical is `NOT NULL`, no migration
    loosens it, and all four writers pass a recipient.
@@ -241,19 +240,19 @@ credential was ever read or printed, and nothing was written.
 
 ### 9.5 Next action
 
-Run `.github/workflows/diag-neon-schema.yml` from **Actions → Velnox Neon Schema
-Diagnostic → Run workflow**. It has **never** been dispatched
-(`gh run list --workflow=diag-neon-schema.yml` is empty) and cannot be dispatched
-from a workspace (`403 Resource not accessible by integration`); granting the
-GitHub App **Actions: read/write** would allow it. Extend the probe with the two
-notification index names if item 2 above is to be closed.
+Run `.github/workflows/production-db-verify.yml` from **Actions → Production DB Verify
+→ Run workflow**; it prints the database identity and a row-count fingerprint first,
+so a run against the wrong Neon is visible in the log rather than inferred later. Items
+1–4 above still need `diag-neon-schema.yml`, whose probes cover them. Neither workflow
+can be dispatched from a workspace (`403 Resource not accessible by integration`);
+granting the GitHub App **Actions: read/write** would allow it.
 
 ### 9.6 Safety notes from this pass
 
 Never run `bun test backend/tests` where `DATABASE_URL` could point at production:
 the DB-gated fixtures **delete** rows (`backend/tests/helpers/purge.ts`). No
-credential, URL, password, token or hash was printed — the workflow references the
-secret only as `psql "$NEON_DATABASE_URL"` and never echoes it.
+credential, URL, password, token or hash was printed — the workflows reference the
+secret only as `psql "$NEON_PRODUCTION_DATABASE_URL"` and never echo it.
 
 ---
 
@@ -625,13 +624,15 @@ and every prior conclusion drawn from the Actions ledger about "production schem
 This finally identifies the §22/§31 anomaly recorded in `payment.md`: it was never a quota
 error, it was the wrong target.
 
-**Fix — owner action, cannot be done from the agent workspace.** Re-point the Actions secret
-`NEON_DATABASE_URL` at the Neon project/branch Render's `DATABASE_URL` uses (Settings → Secrets
-and variables → Actions), then dispatch `migrate-neon.yml` once; its `schema_migrations` ledger is
-per-database, so it will apply the genuinely-pending migrations (054 and any earlier ones) to
-production. The repo token gets `403` on both `secrets` and `workflow_dispatch`, and the
-production URL exists only in Render. **Do not** hand-apply `054` through any other route, and do
-not delete `checkout_groups` usage to silence the error — the table is correct, its target is not.
+**Fix — owner action, cannot be done from the agent workspace.** Create the Actions secret
+`NEON_PRODUCTION_DATABASE_URL` holding the Neon connection string for the project/branch Render's
+`DATABASE_URL` uses (Settings → Secrets and variables → Actions), then dispatch
+`production-db-migrate.yml` once; its `schema_migrations` ledger is per-database, so it will
+apply the genuinely-pending migrations (054 and any earlier ones) to production. The repo token
+gets `403` on both `secrets` and `workflow_dispatch`, and the production URL exists only in
+Render. **Do not** hand-apply `054` through any other route, and do not delete `checkout_groups`
+usage to silence the error — the table is correct, its target is not. The in-repo half of this
+fix is done: see "Canonical production DB + GitHub Actions alignment" below.
 
 **Not verified: the live smoke test.** `POST /api/customer/checkout` returns `401` without a
 `velnox_session` cookie, and no authorized test account is available here, so checkout has NOT
@@ -641,11 +642,6 @@ real: no 42P01, one `checkout_groups` row, N orders by shop, one Stripe TEST pay
 settlement, stock committed once per order. The full local proof is
 `backend/tests/multi-shop-checkout.test.ts` (17) + `payment-cancellation-race.test.ts` +
 `payment-attempt-identity.test.ts` — 1908 pass / 2 skip / 0 fail.
-
-**Rule this leaves behind:** a green migration run is not evidence about production until the
-probes show *which* database it ran against. `diag-neon-schema.yml` now answers that directly
-(`rowcount.shops`, `shops.ids (first 5)`, `current_database`); compare against the live host
-before concluding anything.
 
 ---
 
@@ -734,5 +730,44 @@ Suite: **1962 pass / 2 skip / 0 fail** (66 files). Typecheck 4/4, `build:apps` 4
 `db/run-sqleditor.sql` against the database Render's `DATABASE_URL` actually points at (Neon SQL
 Editor, correct project/branch). It is additive, rerunnable, and **now raises** if the column,
 its type, its index or its foreign key is still wrong when it finishes. Confirm first with
-`.github/workflows/diag-neon-schema.yml`, which already probes `payments.checkout_group_id` with
-its type and the FK definition — a `MISSING` there is the confirmation, from the right database.
+`.github/workflows/production-db-verify.yml`, which prints the database identity, a row-count
+fingerprint, and every critical column/index/FK with its type — a `FAIL` there is the
+confirmation, from the right database.
+
+## Canonical production DB + GitHub Actions alignment (2026-10-04)
+
+The Actions↔Render split is closed **in the repository**; the secret itself is still an owner
+action. `NEON_PRODUCTION_DATABASE_URL` is now the one name GitHub Actions uses to reach the
+production Neon, and the two workflows that touch production are named for that role:
+
+* **`production-db-verify.yml`** (new) — read-only. `repository` job validates the schema
+  contract and proves no workflow carries a credential, a remote connection string or a silent
+  fallback; `production` job prints `current_database` / `current_schema` /
+  `server_version` / `current_user` plus a row-count fingerprint, then checks 11 objects —
+  both group columns **with their type**, both `ON DELETE SET NULL` group FKs, the group
+  indexes, the payment parent CHECKs and the migration ledger. `gates` job runs the real
+  commands against a throwaway postgres container. `verdict` prints one PASS/BLOCKED/FAIL.
+* **`production-db-migrate.yml`** (was `migrate-neon.yml`, same engine, renamed) — the only
+  workflow that writes to production. It now prints the database identity **before** applying
+  anything and tells the operator to stop if it is not production.
+* `diag-neon-schema.yml` and `diag-stripe-payment-trace.yml` follow the canonical secret.
+  `test.yml` is unchanged and still references **no** secret.
+
+**Verification never repairs.** A missing object FAILs the job and names the fix; the workflow
+never creates it. **A missing secret is BLOCKED, never substituted** —
+`BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured.`
+
+Both properties were proven, not asserted: the check SQL was executed against a real reconciled
+database (**11/11 PASS**) and against a database with `payments.checkout_group_id` dropped — the
+reported production condition — where it reported **5 FAIL** naming exactly what was missing and
+exited non-zero without writing. The workflow guards were run against the real tree (clean) and
+against a planted violation file (all three fire, exit 1). The `repository` guards were written
+after three of them false-positived on the current tree, which is the only reason the planted
+`ep-ci-guard-check` fixture and the `test.yml` comment are now explicitly excluded.
+
+Suite after this change: **1962 pass / 2 skip / 0 fail**, typecheck 4/4 + backend 0, build 4/4,
+`db:verify` 9/9 exit 0, `git diff --check` clean.
+
+**Renaming `migrate-neon.yml` broke `backend/tests/migration-numbering.test.ts`** (it reads that
+workflow by name), which is the guard that pins the runner's filename-keyed ledger. Caught by
+running the suite rather than by inspection; the reference now points at the renamed file.

@@ -5,8 +5,10 @@
 # anything:
 #
 #   * every statement is a SELECT — no DDL, no DML;
-#   * the connection string comes from the NEON_DATABASE_URL secret, is
-#     referenced only as `psql "$NEON_DATABASE_URL"` and is never echoed;
+#   * the connection string comes from the NEON_PRODUCTION_DATABASE_URL secret
+#     — the canonical production database, the same Neon Render uses — is
+#     referenced only as `psql "$NEON_PRODUCTION_DATABASE_URL"` and is never
+#     echoed. It never falls back to DATABASE_URL or any other variable;
 #   * THIS REPOSITORY IS PUBLIC: the output is AGGREGATES ONLY (counts by
 #     rail/status/event type, truncated handler error strings, timestamps).
 #     Never print an order id, payment id, session id, event id, email,
@@ -37,14 +39,14 @@ jobs:
     steps:
       - name: Validate Neon URL secret
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          if [ -z "$NEON_DATABASE_URL" ]; then
-            echo "❌ NEON_DATABASE_URL secret is not set."
-            echo "   Settings -> Secrets and variables -> Actions -> NEON_DATABASE_URL"
+          if [ -z "$NEON_PRODUCTION_DATABASE_URL" ]; then
+            echo "::error::BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured."
+            echo "   Settings -> Secrets and variables -> Actions -> NEON_PRODUCTION_DATABASE_URL"
             exit 1
           fi
-          echo "✅ NEON_DATABASE_URL is configured (value not printed)."
+          echo "✅ NEON_PRODUCTION_DATABASE_URL is configured (value not printed)."
 
       - name: Install psql client
         run: |
@@ -54,9 +56,9 @@ jobs:
       - name: Payment rail & status aggregates (all time + 30d)
         continue-on-error: true
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           SELECT 'payments ' || provider || '/' || COALESCE(method, '-') || ' ' || status || ' n=' || count(*)::text
             FROM payments GROUP BY provider, method, status ORDER BY 1;
           SELECT 'payments30d ' || provider || '/' || COALESCE(method, '-') || ' ' || status
@@ -68,9 +70,9 @@ jobs:
       - name: Webhook delivery record (payment_events aggregates)
         continue-on-error: true
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           SELECT 'events ' || event_type || ' ' || status || ' n=' || count(*)::text
             FROM payment_events GROUP BY event_type, status ORDER BY 1;
           SELECT 'events30d ' || event_type || ' ' || status
@@ -103,9 +105,9 @@ jobs:
       - name: Order settlement aggregates (no identifiers)
         continue-on-error: true
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
-          psql "$NEON_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
+          psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           SELECT 'orders90d ' || status || ' n=' || count(*)::text
             FROM orders WHERE created_at > NOW() - INTERVAL '90 days'
            GROUP BY status ORDER BY 1;

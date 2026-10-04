@@ -12,8 +12,10 @@
 #   * points the suite at it with TEST_DATABASE_URL — the only variable the
 #     DB-gated tests accept for a database they are allowed to write to;
 #   * references **no repository secret at all**. In particular
-#     `NEON_DATABASE_URL` is never used here: production must not be a test
-#     database under any circumstance.
+#     `NEON_PRODUCTION_DATABASE_URL` is never used here, and no production
+#     secret may be added to this file: production must not be a test database
+#     under any circumstance. The canonical production secret is consumed only
+#     by the `production-db-*.yml` pair, which is the point of the split.
 #
 # `backend/db/test-database.ts` is the guard that enforces this, and
 # `backend/tests/test-database-isolation.test.ts` proves it fails closed.

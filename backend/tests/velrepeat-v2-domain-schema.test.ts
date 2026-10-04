@@ -34,9 +34,9 @@
  *   • any pricing-rule/tier storage (Decision H / Q11 — Phase 2);
  *   • any plan prepaid status vocabulary or payment_method semantics
  *     (Q13/Q14 — Phase 4);
- *   • no migration file: `.github/workflows/migrate-neon.yml` auto-applies ALL
- *     pending migrations (048–050 are still unapplied — owner action, Neon
- *     quota) whenever `db/migrations/*.sql` changes on a push to main.
+ *   • no migration file: `.github/workflows/production-db-migrate.yml`
+ *     auto-applies ALL pending migrations (048–050 are still unapplied — owner
+ *     action) whenever `db/migrations/*.sql` changes on a push to main.
  *
  * The structural half runs everywhere (pure file reads). The integration half
  * needs a disposable database (`TEST_DATABASE_URL`, bootstrapped from

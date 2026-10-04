@@ -216,7 +216,8 @@ expected signature for payload"). Separate them in this order:
 **DB read verdict (2026-09-27).** `payment_events` is the delivery record — a row exists only
 *after* a delivery passed verification — so it is the one place that settles whether the
 signature boundary is the problem. It cannot be read from the sandbox or from CI: the only URL
-available there (`NEON_DATABASE_URL`) is refused with `ERROR: Your account or project has
+available there (then `NEON_DATABASE_URL`, now `NEON_PRODUCTION_DATABASE_URL`) is refused with
+`ERROR: Your account or project has
 exceeded the quota` on **3/3** psql steps (Actions run `36336902638`), **while production's own
 DB-backed read `GET /api/shops` answers 200 with rows at the same moment**.
 
