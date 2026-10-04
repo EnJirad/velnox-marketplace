@@ -176,6 +176,28 @@ owns is an owner action on GitHub Secrets (the repo's app token gets `403` on bo
 
 Startup must never run DDL (`ALTER TABLE`).
 
+### Why the two URLs were never checked against each other (2026-10-04)
+
+Measured from the tracked tree: **no real Neon endpoint, hostname or credential is committed
+anywhere.** Every `neon.tech` in a tracked file is a placeholder (`ep-xxx`), a CI guard fixture
+(`ep-ci-guard-check`, used only to prove the suite refuses a production-looking URL), or a doc
+example. Render's `DATABASE_URL` is **not defined in this repository at all** — it exists only in
+Render's dashboard. The Actions URL is only ever referenced as `${{ secrets.NEON_DATABASE_URL }}`
+in three workflows (`migrate-neon.yml`, `diag-neon-schema.yml`, `diag-stripe-payment-trace.yml`).
+
+So the two databases **share no definition in the repo**, which means nothing in CI or in the
+codebase can ever assert they are the same endpoint — the divergence is structural, not a stale
+value that a refresh would fix. The only places identity can be established are, in order:
+
+1. `describeDatabaseIdentity()` at API boot — prints `current_database()` and whether the payment
+   schema is present, from whichever database that process actually opened.
+2. `.github/workflows/diag-neon-schema.yml` — `current_database`, `rowcount.shops`,
+   `shops.ids (first 5)`, and the `payments.checkout_group_id` type/FK probes.
+
+Compare those against what the live host serves **before** trusting any ledger read. Never print
+either connection string: a Neon URL embeds its password, so only the database name is safe to
+report (`safeDatabaseLabel()` exists for exactly this).
+
 ## Test Database
 
 Tests never touch `DATABASE_URL` — that value is production. `TEST_DATABASE_URL`
