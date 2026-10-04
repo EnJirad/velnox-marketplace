@@ -108,6 +108,93 @@ jobs:
                             WHERE table_name = 'seller_review_history'),
                           'MISSING') AS state;
 
+          -- multi-shop checkout group (migration 054) -----------------------------
+          -- The payment parent for "one purchase, N per-shop fulfillment orders".
+          -- Every element the CURRENT backend code depends on is probed, so a
+          -- 42P01 at checkout can be attributed to a specific missing object
+          -- rather than guessed at.
+          SELECT 'checkout_groups' AS probe,
+                 CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE 'present' END AS state;
+          SELECT 'checkout_groups.columns' AS probe,
+                 CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE (SELECT string_agg(column_name || ':' || data_type || CASE WHEN is_nullable = 'NO' THEN '!' ELSE '' END, ', ' ORDER BY column_name)
+                             FROM information_schema.columns WHERE table_name = 'checkout_groups') END AS state;
+          SELECT 'checkout_groups.pk' AS probe,
+                 CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE COALESCE((SELECT string_agg(a.attname, ',')
+                                       FROM pg_index i
+                                       JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON TRUE
+                                       JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                                      WHERE i.indrelid = to_regclass('checkout_groups') AND i.indisprimary), 'MISSING') END AS state;
+          SELECT 'checkout_groups.fk_to_users' AS probe,
+                 CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE COALESCE((SELECT string_agg(pg_get_constraintdef(oid), '; ')
+                                       FROM pg_constraint
+                                      WHERE conrelid = to_regclass('checkout_groups') AND contype = 'f'), 'NO FK') END AS state;
+          SELECT 'checkout_groups.indexes' AS probe,
+                 CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE (SELECT COALESCE(string_agg(indexname, ', ' ORDER BY indexname), 'NONE')
+                              FROM pg_indexes WHERE tablename = 'checkout_groups') END AS state;
+          SELECT 'orders.checkout_group_id' AS probe,
+                 COALESCE((SELECT data_type FROM information_schema.columns
+                            WHERE table_name = 'orders' AND column_name = 'checkout_group_id'),
+                          'MISSING') AS state;
+          SELECT 'orders.checkout_group_fk' AS probe,
+                 COALESCE((SELECT pg_get_constraintdef(oid)
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('orders') AND contype = 'f'
+                              AND conname = 'orders_checkout_group_id_fkey'),
+                          'MISSING') AS state;
+          SELECT 'payments.checkout_group_id' AS probe,
+                 COALESCE((SELECT data_type FROM information_schema.columns
+                            WHERE table_name = 'payments' AND column_name = 'checkout_group_id'),
+                          'MISSING') AS state;
+          SELECT 'payments.checkout_group_fk' AS probe,
+                 COALESCE((SELECT pg_get_constraintdef(oid)
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('payments') AND contype = 'f'
+                              AND conname = 'payments_checkout_group_id_fkey'),
+                          'MISSING') AS state;
+          SELECT 'payments.order_id nullable' AS probe,
+                 COALESCE((SELECT is_nullable FROM information_schema.columns
+                            WHERE table_name = 'payments' AND column_name = 'order_id'),
+                          'MISSING') AS state;
+          SELECT 'payments.parent CHECKs' AS probe,
+                 COALESCE((SELECT string_agg(conname || ' = ' || pg_get_constraintdef(oid), '; ' ORDER BY conname)
+                             FROM pg_constraint
+                            WHERE conrelid = to_regclass('payments') AND contype = 'c'
+                              AND (conname = 'payments_at_least_one_parent_check'
+                                OR conname = 'payments_single_domain_check'
+                                OR conname = 'payments_exactly_one_parent_check')),
+                          'MISSING') AS state;
+          SELECT 'payments.one-active-session indexes' AS probe,
+                 COALESCE((SELECT string_agg(indexname, ', ' ORDER BY indexname)
+                             FROM pg_indexes
+                            WHERE tablename = 'payments'
+                              AND indexname IN ('idx_payments_one_active_stripe',
+                                                'idx_payments_one_active_stripe_group',
+                                                'idx_payments_one_active_stripe_plan')),
+                          'MISSING') AS state;
+          -- Data safety: 054 is additive and must never have rewritten history.
+          SELECT 'checkout_groups.rows' AS probe,
+                 CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE (SELECT count(*)::text FROM checkout_groups) END AS state;
+          SELECT 'orders.preserved(total)' AS probe,
+                 CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE (SELECT count(*)::text FROM orders) END AS state;
+          SELECT 'orders.legacy order_number intact' AS probe,
+                 CASE WHEN to_regclass('public.checkout_groups') IS NULL
+                      THEN 'TABLE MISSING'
+                      ELSE (SELECT count(*)::text FROM orders WHERE order_number LIKE 'VNX-%') END AS state;
+
           -- product lifecycle / moderation --------------------------------------
           SELECT 'products.status CHECK' AS probe,
                  COALESCE((SELECT string_agg(conname || ' = ' || pg_get_constraintdef(oid), '; ')
