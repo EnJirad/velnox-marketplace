@@ -33,11 +33,14 @@
 --   that the column pass sits AFTER the table section, so a database whose
 --   `orders` already exists but lacks `checkout_group_id` gets the column added;
 --   running only the statements you expect to matter reproduces exactly the bug
---   this file is built to fix. Part 7 reports the result of the run.
+--   this file is built to fix. Part 7 reports and Part 8 asserts the result.
 --
 -- VERIFICATION
---   Part 7 is read-only and prints the state of the objects this schema depends
---   on. It cannot change anything, and it is safe to leave in the file.
+--   Part 7 prints the state of the objects this schema depends on; it is
+--   read-only and cannot change anything. Part 8 then ASSERTS: if checkout_groups,
+--   either group column, a group index or a group foreign key is still absent
+--   when the run reaches the end, it raises and the run FAILS. A green run means
+--   the database really was reconciled, not that the script stayed quiet.
 --
 -- db/schema.sql stays the canonical schema SNAPSHOT. This file is the
 -- rerunnable reconciler and additionally carries the additive passes below.
@@ -4206,3 +4209,52 @@ SELECT 'tables' AS metric, count(*)::text AS value FROM information_schema.table
 UNION ALL SELECT 'columns', count(*)::text FROM information_schema.columns WHERE table_schema='public'
 UNION ALL SELECT 'constraints', count(*)::text FROM pg_constraint c
 UNION ALL SELECT 'indexes', count(*)::text FROM pg_indexes WHERE schemaname='public';
+
+-- ============================================================================
+-- PART 8 - assertion (fails the run if reconciliation did not finish)
+-- ============================================================================
+-- PART 7 only REPORTS. This one FAILS. A run that ends here without an error
+-- has verified, against the live catalog, that the objects the checkout flow
+-- reads and writes all exist: the checkout_groups table, both group columns,
+-- the four group indexes and the two group foreign keys.
+--
+-- It raises rather than returning a row, so it cannot be overlooked, and it
+-- has no EXCEPTION handler, so nothing here can swallow the failure.
+DO $$
+DECLARE
+  missing TEXT := '';
+BEGIN
+  IF to_regclass('public.checkout_groups') IS NULL THEN
+    missing := missing || ' public.checkout_groups';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='orders' AND column_name='checkout_group_id') THEN
+    missing := missing || ' public.orders.checkout_group_id';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='payments' AND column_name='checkout_group_id') THEN
+    missing := missing || ' public.payments.checkout_group_id';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_checkout_groups_user') THEN
+    missing := missing || ' idx_checkout_groups_user';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_orders_checkout_group') THEN
+    missing := missing || ' idx_orders_checkout_group';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_payments_checkout_group') THEN
+    missing := missing || ' idx_payments_checkout_group';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_payments_one_active_stripe_group') THEN
+    missing := missing || ' idx_payments_one_active_stripe_group';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='orders_checkout_group_id_fkey') THEN
+    missing := missing || ' orders_checkout_group_id_fkey';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='payments_checkout_group_id_fkey') THEN
+    missing := missing || ' payments_checkout_group_id_fkey';
+  END IF;
+  IF missing <> '' THEN
+    RAISE EXCEPTION 'velnox: run-sqleditor.sql finished but these objects are still missing:%', missing;
+  END IF;
+  RAISE NOTICE 'velnox: reconciliation verified - checkout_groups, both group columns, 4 indexes and 2 foreign keys are all present';
+END $$;

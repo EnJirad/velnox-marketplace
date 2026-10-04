@@ -671,6 +671,14 @@ It is now derived from `db/schema.sql` (the only source of truth) in seven order
 Never `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`; never an `EXCEPTION` handler, so
 an unfixable problem stops the run instead of reporting a false success.
 
+**PART 8 asserts, it does not only report.** PART 7 prints the object state; PART 8 then
+raises if `checkout_groups`, either group column, a group index or a group foreign key is
+still absent when the run ends, naming every missing object. So a green run means the
+database really was reconciled, never that the script stayed quiet. Proven live: the block
+alone against an empty database exits 3 with all nine objects listed, and against a
+reconciled one emits a NOTICE and exits 0. The file also runs correctly as a SINGLE
+transaction (`psql -1`), which is how the Neon SQL Editor executes a pasted script.
+
 **Three latent defects fixed on the way, all of which had bitten or would have bitten production:**
 
 1. `orders_checkout_group_id_fkey` was declared in `db/schema.sql` **before**

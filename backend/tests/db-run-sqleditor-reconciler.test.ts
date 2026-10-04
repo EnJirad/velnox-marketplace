@@ -28,7 +28,9 @@
  *      because a bare `ADD CONSTRAINT` / `CREATE TRIGGER` fails on the second run;
  *   4. the file stays additive: no DROP TABLE / DROP COLUMN / TRUNCATE / DELETE;
  *   5. no `EXCEPTION` handler anywhere, so a failure cannot masquerade as success;
- *   6. it still carries its read-only verification queries.
+ *   6. it still carries its read-only verification queries;
+ *   7. it ASSERTS rather than only reports, so a green run means the database
+ *      was reconciled instead of merely uneventful.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
@@ -235,5 +237,44 @@ describe("the file stays additive and honest", () => {
     ]) {
       expect(code).toContain(object);
     }
+  });
+
+  // The assertion block is located from the END of the read-only PART 7, not from
+// its own "-- PART 8" header: `code` has comments stripped, so a header-based
+// search silently yields -1 and every `slice(-1, …)` after it becomes a
+// one-character vacuous pass. Anchoring on the last PART 7 statement instead puts
+// the whole assertion block in the slice.
+const PART7_END = "UNION ALL SELECT 'indexes', count(*)::text FROM pg_indexes";
+const PART8_ANCHOR = "RAISE EXCEPTION 'velnox: run-sqleditor.sql finished";
+const part8 = code.slice(code.indexOf(PART7_END));
+
+test("the run ASSERTS, it does not only report", () => {
+    // A verification query that only prints can be ignored and still be a green
+    // run. PART 8 raises instead, so "PASS" cannot mean "the script stayed
+    // quiet". db/verify-reconciler.sh proves the behaviour against a real
+    // database; this pins that the assertion is still in the file.
+    expect(reconciler).toContain("PART 8 - assertion");
+    expect(part8).toContain(PART8_ANCHOR);
+    // Every object the checkout flow reads or writes must be one it checks.
+    for (const object of [
+      "to_regclass('public.checkout_groups')",
+      "table_name='orders' AND column_name='checkout_group_id'",
+      "table_name='payments' AND column_name='checkout_group_id'",
+      "indexname='idx_checkout_groups_user'",
+      "indexname='idx_orders_checkout_group'",
+      "indexname='idx_payments_checkout_group'",
+      "indexname='idx_payments_one_active_stripe_group'",
+      "conname='orders_checkout_group_id_fkey'",
+      "conname='payments_checkout_group_id_fkey'",
+    ]) {
+      expect(part8).toContain(object);
+    }
+  });
+
+  test("the assertion cannot swallow its own failure", () => {
+    // An EXCEPTION handler anywhere near it would turn the failure back into a
+    // silent pass, which is the exact outcome this file exists to prevent.
+    expect(part8.length).toBeGreaterThan(500);
+    expect(part8).not.toMatch(/EXCEPTION\s+WHEN/i);
   });
 });
