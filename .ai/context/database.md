@@ -29,9 +29,13 @@ function, trigger and extension `db/schema.sql` declares must still be declared 
 `db/run-sqleditor.sql` with the same name and definition. The extra passes may ADD; they may
 never drop or redefine.
 
-`db/run-sqleditor.sql` is generated from `db/schema.sql`, which is the only source of truth.
-Edit `db/schema.sql`, then regenerate the reconciler's additive passes — never hand-edit the
-generated statements in isolation.
+`db/run-sqleditor.sql` was derived from `db/schema.sql`, which stays the only source of truth.
+There is no in-repo generator: the additive passes are maintained by hand alongside the
+snapshot, and **declaration parity is not enough** — a column added to `db/schema.sql`
+without a matching `ALTER TABLE … ADD COLUMN IF NOT EXISTS` passes the parity check and
+still leaves every older database without the column, failing silently. That case, the
+index ordering, the constraint guards and the additive-only guarantee are pinned by
+`backend/tests/db-run-sqleditor-reconciler.test.ts`; run it after any schema change.
 
 ## What Must Be in the Canonical Files
 
@@ -217,8 +221,9 @@ SELECT count(*) FILTER (WHERE payment_expires_at > NOW()) AS open_windows,
 
 - Never `DROP DATABASE/SCHEMA/TABLE` or `TRUNCATE` without explicit owner auth.
 - Verify: declaration parity between `db/schema.sql` and `db/run-sqleditor.sql`
-  (`canonicalParity()` must be empty), `git diff --check`, dependency order, and both
-  questions: *"Can an empty Neon become the current DB by running
+  (`canonicalParity()` must be empty), `db-run-sqleditor-reconciler.test.ts` (every new
+  column has its `ADD COLUMN IF NOT EXISTS` pass), `git diff --check`, dependency order,
+  and both questions: *"Can an empty Neon become the current DB by running
   `db/run-sqleditor.sql` once?"* and *"If I run it a second and third time, does anything
   change — and are no rows lost on an old database?"*
 - Also check `db/run-update.sql` was not resurrected, and that the reconciler contains no

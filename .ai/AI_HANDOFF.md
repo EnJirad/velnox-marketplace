@@ -655,7 +655,7 @@ The Neon SQL Editor file was a copy of `db/schema.sql`, so it could only ever de
 EMPTY database. Production already has tables and rows, so "run it again" was never safe and
 "run it once on production" could not bring production up to the current schema.
 
-It is now generated from `db/schema.sql` (the only source of truth) in seven ordered passes:
+It is now derived from `db/schema.sql` (the only source of truth) in seven ordered passes:
 
 | Pass | What it does |
 |---|---|
@@ -697,6 +697,15 @@ in place with every row byte-identical and `checkout_groups`, both `checkout_gro
 columns, four group indexes and two group FKs created; and a database built from
 `db/schema.sql` compared against one built from `db/run-sqleditor.sql` — **1267 objects,
 identical**. `pnpm test` 1909 pass / 2 skip / 0 fail; typecheck 4/4; `build:apps` 4/4.
+
+**Declaration parity is not sufficient, and there is no in-repo generator.** Adding a column
+to `db/schema.sql` without a matching `ALTER TABLE … ADD COLUMN IF NOT EXISTS` leaves the
+parity check green while every older database silently never receives the column — the run
+exits 0 and checkout breaks later, in production. `backend/tests/db-run-sqleditor-reconciler.test.ts`
+closes that, plus index ordering, constraint guards and the additive-only guarantee (17 tests,
+verified non-vacuous by injecting a column with no column pass and watching it fail). The
+additive passes are maintained by hand alongside the snapshot; run that file after any
+schema change.
 
 **The two canonical files are no longer byte-identical, on purpose.** The contract between
 them is declaration parity, asserted by `backend/tests/helpers/canonical-schema.ts`, and the
