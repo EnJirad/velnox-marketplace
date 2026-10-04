@@ -771,3 +771,12 @@ Suite after this change: **1962 pass / 2 skip / 0 fail**, typecheck 4/4 + backen
 **Renaming `migrate-neon.yml` broke `backend/tests/migration-numbering.test.ts`** (it reads that
 workflow by name), which is the guard that pins the runner's filename-keyed ledger. Caught by
 running the suite rather than by inspection; the reference now points at the renamed file.
+
+**A second defect only the real Actions run could find.** The new `repository` job runs the
+schema-contract tests with **no database**, and
+`backend/tests/checkout-group-sql-scope.test.ts` had one test inside a *static* `describe`
+that still executed its statement through `query()` — so it passed in `test.yml` (which always
+has a container) and failed in the new job. That assertion is now gated on `hasTestDatabase()`
+exactly like every other DB-backed one: 71 pass / 11 skip with no database, and it still runs
+and passes when one is present. Both failures were found by inspecting the GitHub run, not
+locally — which is the whole argument for Phase 15.

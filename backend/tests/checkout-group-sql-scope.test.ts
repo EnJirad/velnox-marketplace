@@ -151,6 +151,11 @@ describe("every checkout_group_id reference resolves inside its own SQL scope", 
 
     // Against this (reconciled) test database the very same statement succeeds,
     // which is the difference between a missing column and a correct query.
+    // Executing it needs a database; the assertions above do not. Gated so that
+    // running a static subset of the suite (as CI's repository-validation job
+    // does, with no TEST_DATABASE_URL at all) cannot fail here on the absence
+    // of a database rather than on anything about the SQL.
+    if (!hasTestDatabase()) return;
     const res = await query(sql, [null, null]);
     expect(res.rows.length).toBe(0);
   });
