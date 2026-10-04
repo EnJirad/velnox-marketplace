@@ -624,8 +624,13 @@ async function openCheckoutGroupSession(args: {
     mode: "payment",
     payment_method_types: [stripePaymentMethodType(method)!],
     line_items: lineItems,
-    success_url: `${frontendUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}&group=${groupId}`,
-    cancel_url: `${frontendUrl}/checkout/cancel?group=${groupId}`,
+    // The return page reads `order=<id>`; it is given the group's representative
+    // order so a multi-shop purchase lands on a real, readable order instead of
+    // an empty page. `group` is kept alongside it so the storefront can say how
+    // many shops the purchase spans — and it is NEVER used to decide payment
+    // state, which the return page reads back from the server.
+    success_url: `${frontendUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}&group=${groupId}&order=${representative.id}`,
+    cancel_url: `${frontendUrl}/checkout/cancel?group=${groupId}&order=${representative.id}`,
     metadata: {
       // `checkoutGroupId` is what the webhook fans out on. `orderId` is the
       // group's earliest order, kept only so an event that predates this

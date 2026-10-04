@@ -123,6 +123,16 @@ describe("order-row concurrency — one lock, one order", () => {
     // The multi-shop twin: one purchase, N per-shop orders, so the same rule is
     // stated once more for the whole group — locks together, in a stable order.
     expect(lib).toContain("export async function lockCheckoutGroupOrderRows(");
+    // Both shapes really lock: `FOR UPDATE` is what makes the order row the
+    // serialisation point, so a plain SELECT would silently remove the
+    // guarantee for the whole module.
+    expect(lib).toContain("FOR UPDATE");
+    // The group lock takes EVERY member row, in a stable order — a stable order
+    // is what stops two concurrent deliveries of the same event deadlocking
+    // against each other (A->B here, B->A there).
+    expect(lib).toMatch(
+      /lockCheckoutGroupOrderRows[\s\S]{0,600}?WHERE checkout_group_id = \$1[\s\S]{0,200}?ORDER BY id ASC[\s\S]{0,200}?FOR UPDATE/,
+    );
     // The rule is a comment-as-contract: a future editor who reorders the two
     // statements must be told why it matters.
     expect(lib).toContain("deadlock");

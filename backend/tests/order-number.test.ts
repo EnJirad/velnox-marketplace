@@ -193,12 +193,21 @@ describe("order numbers — one generator, one cryptographic source", () => {
     // No frontend source may BUILD a number — only display one the backend
     // returned. The generator's crypto dependency lives in the backend, and no
     // app in the monorepo generates a number of its own.
-    for (const app of ["apps/velshop", "apps/velseller", "apps/velcenter"]) {
-      const sources = globSync(`${app}/src/**/*.{ts,tsx}`).map((f) => read(f));
-      for (const src of sources) {
-        expect(src).not.toMatch(/generateOrderNumber/);
-        expect(src).not.toMatch(/crypto\.randomInt/);
-      }
+    //
+    // The glob is anchored at the RESOLVED repository root, never at
+    // `process.cwd()`: the suite is run both from the repo root
+    // (`bun test backend/tests`) and from `backend/` (`bun test tests`), and a
+    // cwd-relative pattern would match nothing in the second case and make this
+    // assertion silently vacuous.
+    const frontendFiles = ["apps/velshop", "apps/velseller", "apps/velcenter"].flatMap((app) =>
+      globSync(join(root, app, "src/**/*.{ts,tsx}")).map((f) => f),
+    );
+    // A vacuous pass would be worse than a failure: prove the scan saw files.
+    expect(frontendFiles.length).toBeGreaterThan(20);
+    for (const file of frontendFiles) {
+      const src = readFileSync(file, "utf8");
+      expect(src, `${file} generates an order number on the client`).not.toMatch(/generateOrderNumber/);
+      expect(src, `${file} generates an order number on the client`).not.toMatch(/crypto\.randomInt/);
     }
     // The checkout request carries no client-authored number at all.
     const sharedApi = read("packages/shared/src/lib/api-routes.ts");
