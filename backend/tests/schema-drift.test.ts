@@ -21,6 +21,8 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 
+import { unqualified } from "./helpers/canonical-schema.js";
+
 const root = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
@@ -176,7 +178,7 @@ describe("the canonical schema never alters a table it does not create", () => {
 
   test("the velrepeat run constraint targets the table V0034 creates", () => {
     for (const sql of [schemaSql, sqlEditor, migration044]) {
-      expect(statements(sql)).toContain("ALTER TABLE velrepeat_runs");
+      expect(unqualified(statements(sql))).toContain("ALTER TABLE velrepeat_runs");
       expect(statements(sql)).not.toContain("velrepeat_plan_runs");
     }
   });

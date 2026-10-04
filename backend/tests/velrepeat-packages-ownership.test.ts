@@ -19,7 +19,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
-import { createTableBlock } from "./helpers/canonical-schema.js";
+import { createTableBlock, unqualified } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 import {
   PackageAuthorizationError,
@@ -56,7 +56,7 @@ describe("G3 — package ownership is structural", () => {
     });
 
     test("the seller access path is indexed", () => {
-      expect(sql).toContain(
+      expect(unqualified(sql)).toContain(
         "CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_seller ON velrepeat_packages (seller_id)",
       );
     });

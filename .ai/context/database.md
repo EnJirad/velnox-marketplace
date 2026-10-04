@@ -77,6 +77,31 @@ tables → columns → indexes → constraints → foreign keys → triggers. An
 older database does not have yet must come after the column pass, or the whole run aborts
 on the first such index.
 
+**Schema qualification.** `db/schema.sql` — and therefore this file's table section — uses
+unqualified names, which is the repo-wide convention. The reconciler pins
+`SET search_path = public, pg_catalog;` on its first statement and qualifies every statement
+that mutates an existing table, so `orders` means `public.orders` deterministically instead of
+whatever the session happened to have. `db/verify-reconciler.sh` scenario G runs the whole file
+with a decoy schema first in `search_path` and asserts nothing is written there.
+
+## How the reconciler is proved
+
+`bash db/verify-reconciler.sh` (or `bun run db:verify`) builds disposable databases and runs the
+real file against them. It is the only check that exercises behaviour rather than text, and it
+covers the shape that actually broke production:
+
+| Scenario | What it builds | What it proves |
+|---|---|---|
+| A | empty database, run ×3 | creates the full schema; runs 2 and 3 change nothing |
+| B | **the reported shape** — `checkout_groups` exists, `orders.checkout_group_id` and `payments.checkout_group_id` missing | the columns are added, with their indexes and foreign keys |
+| C | legacy — no `checkout_groups` at all | the table and both columns are created |
+| D | already-current database, run twice more | no duplicates, no errors |
+| E | populated database | existing rows are byte-identical afterwards |
+| F | after B/C | one payment with `order_id IS NULL` is accepted, i.e. a group purchase works |
+| G | a decoy schema first in `search_path` | nothing is created or altered outside `public` |
+
+It exits non-zero unless every assertion it prints actually passed.
+
 ## Dependency Ordering
 
 Respect PostgreSQL dependency order (extensions → types → tables → FKs → indexes → functions → triggers → views → seeds). For circular FKs, create tables without the FK then `ALTER TABLE ADD CONSTRAINT` after (deferred via `DO $$ IF NOT EXISTS (pg_constraint)`); do not weaken constraints.

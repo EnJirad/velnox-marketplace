@@ -690,13 +690,26 @@ an unfixable problem stops the run instead of reporting a false success.
 (migration 054 superseded it; left in place it rejects every multi-shop payment). It removes a
 rule, not data, and is commented in place.
 
-**Verified** (local PostgreSQL 14, three disposable databases): fresh DB ×3 runs, all exit 0
-with `tables|indexes|constraints|columns|triggers = 66|243|255|652|1` and the trigger present
-exactly once; a pre-054 database with seeded `users/shops/products/orders/payments` upgraded
-in place with every row byte-identical and `checkout_groups`, both `checkout_group_id`
-columns, four group indexes and two group FKs created; and a database built from
-`db/schema.sql` compared against one built from `db/run-sqleditor.sql` — **1267 objects,
-identical**. `pnpm test` 1909 pass / 2 skip / 0 fail; typecheck 4/4; `build:apps` 4/4.
+**THE ACTUAL REPORTED FAILURE WAS DIFFERENT, and it is now the pinned scenario.** Production
+had `checkout_groups` **existing** while `orders.checkout_group_id` was **missing**, so the
+root cause was never "the table is absent". It was that `checkout_group_id` existed ONLY inside
+`CREATE TABLE IF NOT EXISTS orders (…)` — a no-op for a table that already exists — and the
+file contained exactly **one** `ADD COLUMN IF NOT EXISTS` in total, none of them for this
+column. `CREATE TABLE IF NOT EXISTS checkout_groups` then ran and succeeded, which is exactly
+why the table existed while the column did not. The first statement that *references* the
+column (`CREATE INDEX … idx_orders_checkout_group`) errors, so any reconciliation placed after
+it would be dead code. `db/verify-reconciler.sh` scenario B builds precisely that state.
+
+**Schema qualification.** The file now pins `SET search_path = public, pg_catalog;` on its first
+statement and qualifies every statement that mutates an existing table, so `orders` means
+`public.orders` deterministically rather than whatever the session had. Scenario G runs the
+whole file with a decoy schema first in `search_path` and asserts nothing is written there.
+
+**Verified** by `bash db/verify-reconciler.sh` (`bun run db:verify`) — 7 scenarios, all PASS,
+including the reported production shape, legacy, twice-more, data preservation, an accepted
+group payment, and the hostile-`search_path` case. `db/schema.sql` built and
+`db/run-sqleditor.sql` built produce an **identical** 1267-object catalog. `pnpm test`
+1926 pass / 2 skip / 0 fail; typecheck 4/4; `build:apps` 4/4.
 
 **Declaration parity is not sufficient, and there is no in-repo generator.** Adding a column
 to `db/schema.sql` without a matching `ALTER TABLE … ADD COLUMN IF NOT EXISTS` leaves the

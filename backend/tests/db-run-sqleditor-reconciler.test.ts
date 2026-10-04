@@ -40,6 +40,7 @@ import {
   declaredIndexNames,
   declaredTables,
   stripSqlComments,
+  unqualified,
 } from "./helpers/canonical-schema.js";
 
 const root = join(import.meta.dir, "..", "..");
@@ -48,6 +49,10 @@ const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 const schema = read("db/schema.sql");
 const reconciler = read("db/run-sqleditor.sql");
 const code = stripSqlComments(reconciler);
+// The reconciler qualifies every statement that mutates an existing table and pins
+// search_path, so `public.orders` and `orders` are the same object here. Compare
+// unqualified so the assertions below are about WHAT exists, not its spelling.
+const flat = unqualified(code);
 
 const lineOf = (needle: string): number => {
   const at = code.indexOf(needle);
@@ -62,8 +67,8 @@ describe("the column pass reaches every column the schema declares", () => {
   for (const table of tables) {
     for (const column of declaredColumns(schema, table)) {
       if (
-        !code.includes(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} `) &&
-        !code.includes(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column}\n`)
+        !flat.includes(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} `) &&
+        !flat.includes(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column}\n`)
       ) {
         missing.push(`${table}.${column}`);
       }
@@ -123,7 +128,7 @@ describe("nothing is created before what it depends on", () => {
   test("every declared index name is present", () => {
     const declared = declaredIndexNames(schema);
     const missing = declared.filter(
-      (name) => !code.includes(`INDEX IF NOT EXISTS ${name} `) && !code.includes(`INDEX IF NOT EXISTS ${name}\n`),
+      (name) => !flat.includes(`INDEX IF NOT EXISTS ${name} `) && !flat.includes(`INDEX IF NOT EXISTS ${name}\n`),
     );
     expect(missing).toEqual([]);
     expect(declared.length).toBeGreaterThan(100);
@@ -209,7 +214,7 @@ describe("the file stays additive and honest", () => {
         "orders.orders_status_check",
       ]).toContain(name);
     }
-    expect(code).toContain("ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_exactly_one_parent_check");
+    expect(code).toContain("ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_exactly_one_parent_check");
   });
 
   test("it still carries its read-only verification queries", () => {

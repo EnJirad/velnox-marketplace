@@ -48,7 +48,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 import { hasTestDatabase } from "./helpers/test-db.js";
-import { NO_CANONICAL_DRIFT, canonicalParity, createTableBlock } from "./helpers/canonical-schema.js";
+import { NO_CANONICAL_DRIFT, canonicalParity, createTableBlock, unqualified } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
 
 const root = join(import.meta.dir, "..", "..");
@@ -117,7 +117,7 @@ describe("velrepeat v2 phase-1 schema — canonical files", () => {
   test("G3=B — a package has exactly one owning seller and cannot exist without one", () => {
     for (const sql of [schema, bootstrap]) {
       expect(sql).toContain("seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE");
-      expect(sql).toContain(
+      expect(unqualified(sql)).toContain(
         "CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_seller ON velrepeat_packages (seller_id)",
       );
     }

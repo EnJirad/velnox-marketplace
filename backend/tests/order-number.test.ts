@@ -41,6 +41,8 @@ import { globSync } from "fs";
 import { readFileSync } from "fs";
 import { join } from "path";
 
+import { unqualified } from "./helpers/canonical-schema.js";
+
 import {
   generateOrderNumber,
   isLegacyOrderNumber,
@@ -218,7 +220,7 @@ describe("order numbers — one generator, one cryptographic source", () => {
 describe("order numbers — collision handling", () => {
   test("the unique index exists in BOTH schema files (no migration is needed)", () => {
     for (const file of ["db/schema.sql", "db/run-sqleditor.sql"]) {
-      const sql = read(file);
+      const sql = unqualified(read(file));
       expect(sql).toContain(`CREATE UNIQUE INDEX IF NOT EXISTS ${ORDER_NUMBER_UNIQUE_INDEX}`);
       expect(sql).toContain("ON orders (order_number)");
     }

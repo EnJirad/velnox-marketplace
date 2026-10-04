@@ -179,6 +179,24 @@ export function declaredExtensions(sql: string): string[] {
 }
 
 /**
+ * Drop `public.` from table references.
+ *
+ * `db/schema.sql` uses unqualified names, which is the repo-wide convention in
+ * every migration and every backend query. `db/run-sqleditor.sql` qualifies the
+ * statements that MUTATE an existing table (`ALTER TABLE public.orders …`,
+ * `CREATE INDEX … ON public.orders …`) so a run cannot act on a same-named
+ * table in another schema, and pins `search_path` so the unqualified names in its
+ * table section resolve to `public` too. Both therefore name the same object.
+ *
+ * A test whose subject is "does this index / column / constraint exist", rather
+ * than "is it spelled exactly this way", compares through this so the two files
+ * can spell it differently without the test becoming vacuous.
+ */
+export function unqualified(sql: string): string {
+  return sql.replace(/\bpublic\./g, "");
+}
+
+/**
  * The one shape `canonicalParity()` may take when nothing has drifted.
  *
  * Assert against this rather than checking each key by hand, so a new kind of

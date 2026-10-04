@@ -21,6 +21,7 @@
     "api:dev": "bun --filter @velnox/backend dev",
     "api:start": "bun --filter @velnox/backend start",
     "db:migrate": "echo 'Run migrations via db/migrations/'",
+    "db:verify": "bash db/verify-reconciler.sh",
     "db:smoke": "echo 'DB smoke test placeholder'",
     "db:consistency": "echo 'DB consistency check placeholder'",
     "typecheck": "bun --filter '@velnox/velshop' typecheck && bun --filter '@velnox/velseller' typecheck && bun --filter '@velnox/velcenter' typecheck && bun --filter '@velnox/velnox' typecheck",
