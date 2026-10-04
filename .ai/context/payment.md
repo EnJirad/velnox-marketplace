@@ -218,9 +218,15 @@ expected signature for payload"). Separate them in this order:
 signature boundary is the problem. It cannot be read from the sandbox or from CI: the only URL
 available there (`NEON_DATABASE_URL`) is refused with `ERROR: Your account or project has
 exceeded the quota` on **3/3** psql steps (Actions run `36336902638`), **while production's own
-DB-backed read `GET /api/shops` answers 200 with rows at the same moment**. That secret therefore
-does not point at the database Render uses (§22/§31); re-pointing it at the project Render owns
-(and restoring its quota) is an owner action, and until then the DB half of any Stripe
+DB-backed read `GET /api/shops` answers 200 with rows at the same moment**.
+
+**Proven by data, 2026-10-04.** That secret is not merely refused — it points at a
+*different database*. The Actions database holds **1** shop (`5d56f6f8…/eloop`); the live host
+serves **2** (`26d65318…/home-tech`, `91f4b9bf…/velnox-support`). Disjoint sets, so the quota
+error was never the finding — it was a symptom of the wrong target. It is also why
+migration `054` could be "successfully applied" while production still raised `42P01` on
+`checkout_groups`. Full evidence and the fix are in `database.md` § Migration Workflow. Until
+the secret is re-pointed at the project Render owns, the DB half of any Stripe or schema
 investigation stays unverified.
 
 Checks that prove things about the **deployment**, in the order they become available:

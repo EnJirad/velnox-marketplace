@@ -236,3 +236,9 @@ Work after 2026-09-18 is recorded in `.ai/AI_HANDOFF.md` and in git history. Whe
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-09-30-low12-medium8.md`](./archive/AI_Handoff-2026-09-30-low12-medium8.md) | handoff §49–§50 — the dead `failed` order status removed, and the duplicated reservation-urgency contracts consolidated | Moved **verbatim** on 2026-09-30 after the G1/G2/G3 implementation pass pushed `.ai/AI_HANDOFF.md` to ~55 KB, the point at which the file-edit tools stop matching and the handoff could no longer be updated at all. Both passes are COMPLETE and their findings are closed; what remains true of them is restated in **§6 "Remaining gaps / open items"** |
+
+### 2026-10-04 — §52–§63 moved out (edit-headroom housekeeping)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-04-sections-52-63.md`](./archive/AI_Handoff-2026-10-04-sections-52-63.md) | handoff §52–§63 — the VelRepeat V2 design sheets and phases 1–5 | Moved **verbatim** on 2026-10-04 after §66 (production `checkout_groups` 42P01) pushed `.ai/AI_HANDOFF.md` to ~57.5 KB, past the ~55 KB point at which the file-edit tools stop matching and the handoff could no longer be updated at all. Every section is COMPLETE and closed; current state is **§64–§66**. The file carries a header warning that its "production applied + verified" claims (former §62 and §64) are **retracted** — they rested on the Actions ledger, which §66 proves describes a different database from the one Render serves. |

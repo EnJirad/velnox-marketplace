@@ -38,6 +38,35 @@ Respect PostgreSQL dependency order (extensions → types → tables → FKs →
 3. Production receives migrations via `.github/workflows/migrate-neon.yml` (secret `NEON_DATABASE_URL`) or manual apply.
 4. Track via `schema_migrations` table.
 
+### ⚠️ The Actions `NEON_DATABASE_URL` is NOT the production database (proven 2026-10-04)
+
+**A green migration run proves nothing about production until you have checked which
+database it ran against.** The GitHub Actions secret `NEON_DATABASE_URL` resolves to a
+*different* Neon database from the one Render's `DATABASE_URL` connects to. Measured on
+2026-10-04:
+
+| | Actions `NEON_DATABASE_URL` (`current_database = neondb`) | Production, via `GET /api/shops` on `velnox-api.onrender.com` |
+|---|---|---|
+| shops | **1** — `5d56f6f8…/eloop` | **2** — `26d65318…/home-tech`, `91f4b9bf…/velnox-support` |
+| users / products / sellers | 3 / 1 / 1 | not exposed publicly |
+| orders / payments | 0 / 0 | real purchases exist |
+
+The two sets are disjoint. Consequences:
+
+* Migration `054_checkout_groups_numeric_order_number` **is applied and present** on the
+  Actions database, and production still raised
+  `relation "checkout_groups" does not exist` / `42P01` on real checkout. The table was
+  never missing — it was missing *from the database checkout actually ran against*.
+* Every earlier "schema is fine, it must be something else" conclusion drawn from the
+  Actions ledger is subject to this. The ledger describes the Actions database only.
+
+**Before trusting any ledger read, prove the identity first.** The read-only probes in
+`.github/workflows/diag-neon-schema.yml` now answer it directly — `rowcount.shops`,
+`shops.ids (first 5)` and `current_database`. Compare them against what the live host
+serves before drawing a conclusion. Re-pointing the secret at the Neon project Render
+owns is an owner action on GitHub Secrets (the repo's app token gets `403` on both
+`secrets` and `workflow_dispatch`).
+
 Startup must never run DDL (`ALTER TABLE`).
 
 ## Test Database
