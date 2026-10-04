@@ -404,6 +404,35 @@ jobs:
                                        FROM (SELECT status, count(*) AS n FROM orders GROUP BY 1) s),
                                     '(no rows)')
                  END AS state;
+          -- Identity probes: if this database holds none of the rows the live
+          -- backend serves, then the migration ledger proved here belongs to a
+          -- DIFFERENT database than the one Render's checkout runs against.
+          SELECT 'rowcount.users' AS probe,
+                 CASE WHEN to_regclass('public.users') IS NULL THEN 'MISSING'
+                      ELSE (SELECT count(*)::text FROM users) END AS state;
+          SELECT 'rowcount.shops' AS probe,
+                 CASE WHEN to_regclass('public.shops') IS NULL THEN 'MISSING'
+                      ELSE (SELECT count(*)::text FROM shops) END AS state;
+          SELECT 'rowcount.products' AS probe,
+                 CASE WHEN to_regclass('public.products') IS NULL THEN 'MISSING'
+                      ELSE (SELECT count(*)::text FROM products) END AS state;
+          SELECT 'rowcount.sellers' AS probe,
+                 CASE WHEN to_regclass('public.sellers') IS NULL THEN 'MISSING'
+                      ELSE (SELECT count(*)::text FROM sellers) END AS state;
+          SELECT 'rowcount.orders' AS probe,
+                 CASE WHEN to_regclass('public.orders') IS NULL THEN 'MISSING'
+                      ELSE (SELECT count(*)::text FROM orders) END AS state;
+          SELECT 'rowcount.payments' AS probe,
+                 CASE WHEN to_regclass('public.payments') IS NULL THEN 'MISSING'
+                      ELSE (SELECT count(*)::text FROM payments) END AS state;
+          SELECT 'shops.ids (first 5)' AS probe,
+                 CASE WHEN to_regclass('public.shops') IS NULL THEN 'MISSING'
+                      ELSE COALESCE((SELECT string_agg(x.t, ', ' ORDER BY x.t)
+                                       FROM (SELECT id::text || '/' || COALESCE(slug,'-') AS t
+                                               FROM shops ORDER BY id LIMIT 5) x),
+                                    '(no rows)')
+                 END AS state;
+          SELECT 'current_database' AS probe, current_database() AS state;
           SELECT 'velrepeat_cycles status distribution' AS probe,
                  CASE WHEN to_regclass('public.velrepeat_cycles') IS NULL
                       THEN 'MISSING (053 not applied)'
