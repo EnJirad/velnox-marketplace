@@ -255,3 +255,10 @@ exist` is emitted both when no relation in scope owns `x` AND when the relation 
 does not have `x`. The message is byte-identical, so it can never be used to infer that a query
 is unqualified or that a build is stale. Ask the catalog (`information_schema` / `pg_attribute` /
 `pg_constraint`) or ask which database you are connected to — never the error text.*
+
+### 2026-10-04 — payment-integrity pass: §64 and the DB-shape sections moved out
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-04-section-64-velrepeat-053.md`](./archive/AI_Handoff-2026-10-04-section-64-velrepeat-053.md) | handoff §64 — VelRepeat V2 Phase 5 / migration 053 | Moved **verbatim** on 2026-10-04. Its "APPLIED + verified" claim is **RETRACTED** (it rested on the Actions ledger, which §66 proves describes a different database from Render's). Still worth reading for the two durable findings it records: verify runtime Stripe config against `velnox-api.onrender.com`, never against the build sandbox; and that a real Stripe TEST E2E is blocked on a **human completing a hosted Checkout Session in a browser**, not on credentials |
+| [`archive/AI_Handoff-2026-10-04-db-identity-and-part8.md`](./archive/AI_Handoff-2026-10-04-db-identity-and-part8.md) | handoff `## Boot-time database identity`, `## PART 8 asserts the SHAPE`, `## The reported incident, reproduced end to end` | Moved **verbatim** on 2026-10-04 while adding the payment-integrity section. All COMPLETE; the contracts are maintained in `.ai/context/database.md` (boot-time `describeDatabaseIdentity()` probe, PART 7/8 type/index/FK-shape assertions, `db/verify-reconciler.sh` scenarios H and I). Carries a closing update: scenario H is now also pinned by `backend/tests/payment-webhook-schema-lag.test.ts`, and the settlement path no longer raises 42703 on a database without `payments.checkout_group_id` |

@@ -475,48 +475,16 @@ All COMPLETE and closed. Moved verbatim to
 (2026-10-04, edit-headroom housekeeping). Current state: §64–§66.
 
 **Their "production applied + verified" claims are unproven** — §66 shows the Actions
-ledger describes a different database from the one Render serves.
+ledger describes a different database from the one Render serves.## 64. VelRepeat **V2 Phase 5 — migration 053 applied** (2026-10-03) — ⚠️ "verified" RETRACTED — **ARCHIVED**
 
-## 64. VelRepeat **V2 Phase 5 — migration 053 applied** (2026-10-03) — ⚠️ "verified" RETRACTED
-
-> **Retracted 2026-10-04 (§66).** This section originally read "APPLIED + verified". The
-> verification rested entirely on the Actions `schema_migrations` ledger, which §66 proves
-> describes **a different database from the one Render serves**. 053 was applied to that
-> other database. Nothing here was ever verified against production, and the same retraction
-> applies to the "production migration 053" record in §62 (now archived).
-
-**Migration 053 is IN PRODUCTION and verified** — applied by the Phase 5 push (`Migrate Neon Database` run
-`37026940189`), so §62's "the cycle tables were never created" is **superseded**. Ledger row `69 | 053_… |
-2026-10-02 15:26:29+00`; 001–053 applied, none pending. Verified read-only (`Velnox Neon Schema Diagnostic` run
-`37082364439`): `velrepeat_cycles` + 12 columns + `UNIQUE (plan_id, cycle_number)` + both CHECKs + both indexes;
-`orders.velrepeat_cycle_id uuid NULLABLE` + FK `ON DELETE SET NULL`; `idx_orders_velrepeat_cycle_seller_unique` =
-UNIQUE `(velrepeat_cycle_id, shop_id)` partial (the exactly-once `(cycle, shop)` key). Rowcount 0 → additive.
-**No local Neon credential** — production is reachable only through those workflows. Full detail:
-`.ai/tasks/audits/velrepeat-v2-production-migration-053-2026-10-03.md`.
-
-**Real Stripe TEST E2E: the CONFIGURATION blocker is GONE — the earlier "credentials missing" was a
-measurement error.** Six prior checks measured the **Freebuff sandbox** (`freebuff-env list` /
-`freebuff-deploy env list` describe Freebuff hosting, NOT Render). On the real runtime,
-`GET /api/stripe/configured` → **`configured: true, mode: "test", reason: null`**, `?selfTest=1` →
-`attempted: true, verified: true` (proving `getStripe()` built a non-null **test** client in the Render
-process). `/api/payments/methods` → CARD + PROMPTPAY enabled, COD off. Webhook live, refusing forgeries (400).
-Env names matched the code exactly (`payment-config.ts:160-163`). **RULE: verify runtime config against the host
-that serves traffic (`velnox-api.onrender.com`), never the build sandbox.** Docs-only fix: `INSTALLATION.md`'s
-Render env block had omitted all four Stripe vars.
-**Still NOT production ready — the blocker is now the EXECUTION SURFACE, not credentials** (E2E attempt
-2026-10-03T16:14–16:26Z at HEAD `8ef8c0b`, config re-confirmed live PASS). Both V2 money routes need the
-`velnox_session` cookie (`requireAuth` reads only that cookie — no header/internal/cron path); minting it needs a
-browser Google OAuth round trip, and this workspace has **no browser, no Playwright/Puppeteer, no provisioned test
-account**. Payment is a Stripe **hosted** Checkout Session (no `confirm`/`pm_card_*` path exists in the repo), so
-only a human in a browser can complete it — and only then can Stripe deliver the webhook. No staging backend
-(`velnox-api-staging`/`-test` → 404). `runDueCycleTick()` has no HTTP/operator trigger (in-process job,
-`server.ts:546`). **8 refusal paths WERE executed live** (forged/missing webhook signature → 400; V2
-plan/payment/package + forged cookie → 401; `_diag` → 401), all stopping before any DB write. Regression re-run:
-**1882/2/0** (`bun test` and `pnpm test`), tsc 0, backend typecheck 0, typecheck 4/4, build 4/4, schema identical,
-diff clean. (`pnpm exec tsc -b` / `pnpm build` are not this repo's commands — bun workspace, no root tsconfig.)
-Full detail: §18 of `.ai/tasks/audits/velrepeat-v2-real-stripe-test-e2e-2026-10-03.md`.
+**Archived** (closed record; the "APPLIED + verified" claim is RETRACTED — it rested on the
+Actions ledger, which §66 proves describes a different database from the one Render serves) →
+[`history/archive/AI_Handoff-2026-10-04-section-64-velrepeat-053.md`](history/archive/AI_Handoff-2026-10-04-section-64-velrepeat-053.md).
+Moved 2026-10-04 to make room for the payment-integrity section. What remains true of it is
+restated there and in the current-state payment section below.
 
 ---
+
 
 ## §65. Multi-shop checkout, numeric order numbers, VelRepeat V2 customer UI (2026-10-04)
 
@@ -677,62 +645,15 @@ string mentioning `checkout_group_id` resolves in its own scope — 14 statement
 `logDbFailure` now logs the redacted statement plus its relation scope. What is **retracted** is
 the claim that a 42703 therefore proves a stale build.
 
-## Boot-time database identity — the four incidents' real lesson (2026-10-04)
+## Boot-time database identity + PART 8 shape assertions + the reproduced incident (2026-10-04) — **ARCHIVED**
 
-`42P01 checkout_groups` → `42703 order_items.checkout_group_id` → `42703 payments.checkout_group_id`.
-All three were diagnosed by **reasoning about the connection string** instead of asking the server
-which database was connected, and all three produced a wrong conclusion.
-
-`describeDatabaseIdentity()` in `backend/db/index.ts`, called once from `server.ts` at boot, now
-answers it directly and read-only (a `SELECT`, never DDL — startup must not migrate):
-
-```
-[db] ✅ payment schema complete (database=neondb server=16.2)
-[db] ❌ PAYMENT SCHEMA INCOMPLETE (database=neondb server=16.2) — missing: public.payments.checkout_group_id
-```
-
-It reports `current_database()`, the server version, and the live state of
-`PAYMENT_CRITICAL_SCHEMA_OBJECTS` (`checkout_groups`, both group columns **with their type**,
-the payments FK, the payments index). `safeDatabaseLabel()` reduces a connection string to the
-database **name** only — never the host, user, password or `?sslmode=…`, because a Neon URL
-embeds a password. Pinned by `backend/tests/db-identity.test.ts` (7 tests, incl. redaction and a
-SELECT-only assertion on the probe body).
-
-## PART 8 asserts the SHAPE, not just the names (2026-10-04)
-
-`db/run-sqleditor.sql` PART 7/8 previously proved *existence*. Existence is the least a
-reconciler may claim: `ADD COLUMN IF NOT EXISTS <name> <type>` is a **no-op when a column of
-that name already exists under a different type**, so a wrong-typed column passes a name check
-and then fails at runtime as `42804`. A foreign key is likewise never dropped by a name check.
-
-PART 8 now also requires: both group columns `udt_name='uuid'`; each of the three group indexes
-to actually contain `(checkout_group_id)`; and both group foreign keys to resolve to
-`checkout_groups` with `confdeltype='n'` (**SET NULL** — the architecture's rule that a deleted
-group must not take its payment rows with it). PART 7 reports `table | column | data_type` and
-each FK's target and delete action. Verified non-vacuous by `db/verify-reconciler.sh` scenario I:
-a wrong-typed column and a `CASCADE` foreign key are each rejected and **named**, exit 3.
-
-## The reported incident, reproduced end to end (2026-10-04)
-
-`db/verify-reconciler.sh` gained two scenarios (9 total, all PASS):
-
-* **H — the reported incident.** A reconciled database holding a real `payments` row with
-  Stripe provider ids, then `payments.checkout_group_id` removed. The production statement,
-  verbatim, raises **42703 before** and **resolves the group after**; the payment row, its
-  provider ids and its `paid` status are unchanged; a single-order payment is not re-pointed at
-  the group; and a group payment is then resolved correctly.
-* **I — the assertion is not vacuous** (above).
-
-Suite: **1962 pass / 2 skip / 0 fail** (66 files). Typecheck 4/4, `build:apps` 4/4,
-`bun run db:verify` exit 0, `git diff --check` clean.
-
-**BLOCKER, owner action.** Production `payments` still has no `checkout_group_id`. Run
-`db/run-sqleditor.sql` against the database Render's `DATABASE_URL` actually points at (Neon SQL
-Editor, correct project/branch). It is additive, rerunnable, and **now raises** if the column,
-its type, its index or its foreign key is still wrong when it finishes. Confirm first with
-`.github/workflows/production-db-verify.yml`, which prints the database identity, a row-count
-fingerprint, and every critical column/index/FK with its type — a `FAIL` there is the
-confirmation, from the right database.
+**Archived** (all COMPLETE; the contracts live in [`.ai/context/database.md`](context/database.md)
+— the boot-time `describeDatabaseIdentity()` probe, PART 7/8's type/index/FK-shape assertions,
+and `db/verify-reconciler.sh` scenarios H and I) →
+[`history/archive/AI_Handoff-2026-10-04-db-identity-and-part8.md`](history/archive/AI_Handoff-2026-10-04-db-identity-and-part8.md).
+Moved 2026-10-04 to keep the current-state file small while adding the payment-integrity
+section. The owner action it recorded (run `db/run-sqleditor.sql` against Render's actual
+database) is restated there and in §6.
 
 ## Canonical production DB + GitHub Actions alignment (2026-10-04)
 
@@ -793,3 +714,67 @@ running the suite rather than by inspection; the reference now points at the ren
 
 Both were found by inspecting the GitHub run, not locally — which is the whole argument for
 verifying on Actions.
+
+---
+
+## Payment integrity — a captured Stripe charge could never settle in production (2026-10-04)
+
+**Reported symptom.** Checkout → first attempt seen as failed → customer retried → the NEW Stripe
+attempt was genuinely charged → Velnox still showed "รอดำเนินการชำระ" and offered payment again.
+Retrying made it worse: every retry captured another real charge that also could not settle.
+
+**Root cause: failure class H (production schema ≠ backend code), surfacing as class D
+(`handleStripeEvent()` throws).** `checkoutGroupIdForAttempt()` (`backend/routes/stripe.ts`) decided
+which parent a charge belongs to by reading `payments.checkout_group_id` — added by migration
+**054**, which production never received. Naming an absent column raises `undefined_column` (42703),
+which is a THROWN ERROR, and it was thrown on the one query **every** order's settlement runs,
+before the order or payment row is touched:
+
+```
+payment_intent.succeeded → checkoutGroupIdForAttempt() throws 42703 → handleStripeEvent() throws
+  → payment_events.status = 'failed' → HTTP 500 → Stripe redelivers → the identical error
+  → payments.status and orders.status NEVER move → the storefront keeps offering payment
+```
+
+**Why partial application, not total absence.** `POST /api/customer/checkout` writes
+`checkout_groups` + `orders.checkout_group_id` unconditionally, so checkout demonstrably worked in
+production ⇒ 054's sections 1–2 landed ⇒ only section 3 (`payments.checkout_group_id`) did not.
+That is exactly the state `db/verify-reconciler.sh` scenario H reproduces, and it is the
+direct consequence of §66 (migrations reaching a different Neon than Render's `DATABASE_URL`).
+
+**Ruled out with live evidence, not reasoning.** `GET /api/stripe/configured?selfTest=1` on
+`velnox-api.onrender.com` → `configured: true, mode: "test", webhookConfigured: true`,
+`webhookSecretHealth.shapeUsable: true`, `webhookSignatureSelfTest.verified: true` ⇒ **A** (not
+sent) and **B** (signature) are out; an unsigned `POST /api/payments/stripe/webhook` → 400 ⇒ the
+endpoint is live and refusing. **G** is out too: `ShopCheckoutSuccess.tsx` polls
+`GET /api/orders/:orderId` until the payment settles, so the UI reported the truth.
+
+**The fix (code).** The column is read as a JSON KEY — `to_jsonb(p) ->> 'checkout_group_id'` —
+so ONE statement is correct against both schemas and cannot raise 42703; the companion `?`
+operator distinguishes "no group" from "no column" so the process can say so ONCE, naming
+`db/run-sqleditor.sql`. This is the same pattern `selectOrderPaymentRow()` already uses for
+`orders.payment_expires_at` in `lib/payment-reservation.ts`. It is **not** a bypass: the
+signature check, the `payment_events` claim, the 500-on-failure redelivery policy and the
+`status IN ('pending','pending_payment')` settlement guards are unchanged, and NULL is the safe
+answer — the column is what links a payment to a purchase, so on a database without it there is
+no group payment to route.
+
+**Tests.** `backend/tests/payment-webhook-schema-lag.test.ts` (new, 12 cases): the production
+routing SQL executed against a `payments`-shaped table **without** the column returns NULL and
+detects the absence where the pre-fix statement raises 42703 (the regression, demonstrated); a real
+group payment is still routed; attempt A failed then attempt B succeeds settles B and the order;
+a duplicate delivery settles nothing twice; an UNPAID `checkout.session.completed` never marks paid;
+an event identifying no attempt writes nothing; a processing failure answers **500** and records the
+event `failed`; and Stripe's retry of that same event id re-processes it. Suite: **1974 pass /
+2 skip / 0 fail** (67 files). `checkout-group-sql-scope.test.ts` was updated to pin the new
+statement (in scope for `payments`, no bare column reference left).
+
+**STILL BLOCKED — owner action, unchanged.** Production `payments` has no `checkout_group_id`, so a
+MULTI-SHOP checkout still cannot be paid for until `db/run-sqleditor.sql` is run against the
+database Render's `DATABASE_URL` actually points at. Confirm with `Production DB Verify`
+(`backend/routes/stripe.ts` is in its trigger paths), which needs the
+`NEON_PRODUCTION_DATABASE_URL` secret. Live `payment_events` / `payments` / `orders` reads are
+likewise BLOCKED in this workspace (no production DB access). **Real Stripe TEST E2E is BLOCKED,
+not PASS**: Stripe TEST mode is configured and verifiable in production, but payment is a Stripe
+**hosted** Checkout Session, so only a human in a browser can complete it and only then can Stripe
+deliver the webhook; this workspace has no browser and no test account.

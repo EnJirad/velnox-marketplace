@@ -266,19 +266,69 @@ async function orderIdForPaymentIntent(paymentIntent: Stripe.PaymentIntent): Pro
  *
  * A NULL identifier simply does not match (`= NULL` is NULL), so the other one
  * still can — the same rule `resolvePaymentAttemptRow` follows.
+ *
+ * WHY THE COLUMN IS READ OUT OF `to_jsonb` — DEPLOY ORDER IS NOT GUARANTEED
+ * ------------------------------------------------------------------------
+ * `payments.checkout_group_id` is migration 054. A backend that NAMES it can
+ * reach production before 054 has been applied there, and a statement naming a
+ * missing column fails with `undefined_column` (42703). That is not a degraded
+ * read — it is a THROWN ERROR, and it is thrown on the ONE query every single
+ * order's settlement runs, before the order or payment row is touched. So on
+ * such a database no Stripe event can settle anything, ever: the charge lands,
+ * the webhook is claimed, `handleStripeEvent()` throws here, `payment_events`
+ * records `failed`, the endpoint answers 500, Stripe redelivers and hits the
+ * identical error — while `payments.status` and `orders.status` never move and
+ * the storefront keeps offering payment for a purchase that was paid for. That
+ * is exactly the production incident this shape produced.
+ *
+ * `to_jsonb(p) ->> 'checkout_group_id'` is a KEY LOOKUP, so ONE statement reads
+ * correctly against both schemas and cannot raise 42703 at all: it yields NULL
+ * when the column is absent, exactly as it does when the column exists and is
+ * NULL. Same reasoning, same SQL, same module family as `selectOrderPaymentRow`
+ * (`lib/payment-reservation.ts`) — a payment read must never be able to stop
+ * trading.
+ *
+ * And NULL is the SAFE answer here, not a silent loss of a feature: the column
+ * is what links a payment to a purchase, so on a database without it there are
+ * no group payments to route — every charge is a single-order charge, which is
+ * precisely the branch that follows. The missing column still needs the
+ * reconciler (it is what group checkout writes), so this path says so ONCE per
+ * process; nothing is cached, so recovery needs no restart.
  */
 async function checkoutGroupIdForAttempt(attempt: PaymentAttemptRef): Promise<string | null> {
   const sessionId = attempt.checkoutSessionId ?? null;
   const intentId = attempt.providerPaymentId ?? null;
   if (!sessionId && !intentId) return null;
   const row = await query(
-    `SELECT checkout_group_id FROM payments
-      WHERE checkout_group_id IS NOT NULL
-        AND (provider_checkout_session_id = $1 OR provider_payment_id = $2)
+    `SELECT to_jsonb(p) ->> 'checkout_group_id' AS checkout_group_id,
+            to_jsonb(p) ? 'checkout_group_id'  AS has_checkout_group_column
+       FROM payments p
+      WHERE p.provider_checkout_session_id = $1 OR p.provider_payment_id = $2
       LIMIT 1`,
     [sessionId, intentId],
   );
+  // `?` asks whether the KEY exists, whatever its value — so `false` means the
+  // COLUMN itself is absent (migration 054 unapplied here), which is a
+  // deploy-order condition worth naming once. `true` with a NULL value is the
+  // ordinary single-order payment and says nothing.
+  if (row.rows[0]?.has_checkout_group_column === false) warnCheckoutGroupColumnMissing();
   return (row.rows[0]?.checkout_group_id as string | undefined) ?? null;
+}
+
+/**
+ * Say it once per process, name the reconciler, never repeat: a backend ahead of
+ * its database is a deploy condition, not a per-delivery fault.
+ */
+let checkoutGroupColumnWarned = false;
+
+function warnCheckoutGroupColumnMissing(): void {
+  if (checkoutGroupColumnWarned) return;
+  checkoutGroupColumnWarned = true;
+  console.error(
+    "[checkout-group] payments.checkout_group_id is missing — apply db/run-sqleditor.sql " +
+      "(migration 054). Single-order payments settle normally meanwhile; a MULTI-SHOP " +
+      "checkout cannot be paid for until the column exists.",
+  );
 }
 
 // ─── Money reconciliation (pure — exported for tests) ──────────────────────

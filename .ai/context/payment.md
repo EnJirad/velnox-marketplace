@@ -243,6 +243,54 @@ Checks that prove things about the **deployment**, in the order they become avai
   → `processed`, each with elapsed ms, so Render's log names the last stage that
   completed. No secret, signature, payload, token or cookie is ever logged.
 
+## A database older than the backend must never stop a settlement (2026-10-04)
+
+**The incident this rule comes from.** Production checkout worked (so `checkout_groups` and
+`orders.checkout_group_id` existed) but `payments.checkout_group_id` — migration **054** — never
+landed, because migrations had been reaching a *different* Neon than Render's `DATABASE_URL`.
+`checkoutGroupIdForAttempt()` read that column by name on the one query EVERY order's settlement
+runs, so a captured charge died like this:
+
+```
+payment_intent.succeeded → 42703 column "checkout_group_id" does not exist
+  → handleStripeEvent() throws → payment_events.status='failed' → HTTP 500
+  → Stripe redelivers → the identical error, forever
+  → payments.status and orders.status never move
+```
+
+The customer saw "รอดำเนินการชำระ" on a purchase that had been paid for, and was offered payment
+again — and paying again captured a SECOND real charge that also could not settle.
+
+**The rule.** A read on the payment path takes a column as a **JSON key**, not as a column:
+
+```sql
+to_jsonb(o) ->> 'payment_expires_at'   -- lib/payment-reservation.ts
+to_jsonb(p) ->> 'checkout_group_id'    -- routes/stripe.ts
+```
+
+A key lookup yields NULL when the column is absent, exactly as it does when the column exists and
+is NULL, so ONE statement is correct against both schemas and **cannot raise `undefined_column`**.
+The companion `to_jsonb(p) ? 'checkout_group_id'` tells the two apart, so a missing column is
+named ONCE per process instead of failing on every delivery.
+
+**Why not "catch 42703 and retry without the column"** — unchanged reasoning from
+`selectOrderPaymentRow()`: a caller may already be inside `withTransaction`, and PostgreSQL aborts
+the whole transaction on the first failed statement, so the retry would fail `25P02` and take the
+settlement down with it. A read that never fails needs no recovery.
+
+**What this is NOT.** Not a bypass: the signature check, the `payment_events` claim, the
+500-on-failure redelivery policy and the `status IN ('pending','pending_payment')` settlement
+guards are all untouched. And NULL is the *safe* answer — the column is what links a payment to a
+purchase, so on a database without it there is no group payment to route and every charge is a
+single-order charge, which is the branch that follows.
+
+**It does not remove the owner action.** A multi-shop checkout still cannot be paid for until
+`db/run-sqleditor.sql` has been applied to the database Render actually uses. Confirm with
+`Production DB Verify` (read-only; `backend/routes/stripe.ts` is in its trigger paths).
+Pinned by `backend/tests/payment-webhook-schema-lag.test.ts` (the pre-fix and post-fix statements
+are both executed against a probe table, so the difference is demonstrated, not asserted) and by
+`db/verify-reconciler.sh` scenario H.
+
 ## Stripe Connect / marketplace payout — **MISSING**
 
 This repository has **no Stripe Connect implementation**: no connected account, no

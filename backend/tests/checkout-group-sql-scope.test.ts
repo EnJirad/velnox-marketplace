@@ -130,15 +130,25 @@ describe("every checkout_group_id reference resolves inside its own SQL scope", 
   });
 
   test("the reported failing statement IS main's own, correctly scoped", async () => {
-    // The exact statement in the Render log, read out of routes/stripe.ts, has
+    // The exact statement the Render log named, read out of routes/stripe.ts, has
     // `payments` in its FROM list. So it cannot be case (a) — it is case (b),
     // the column genuinely absent from production `payments`. Pinned so the
     // question cannot be re-opened as "the deployed build is stale".
+    //
+    // It has since been rewritten to read the column as a JSON KEY, so the case
+    // (b) verdict stands — production's `payments` still lacks the column — while
+    // the statement no longer RAISES on such a database, which is what stopped
+    // every Stripe settlement in production. Both halves are asserted: the
+    // relation is still in scope, and no bare column reference is left that
+    // could raise 42703 there. `payment-webhook-schema-lag.test.ts` executes the
+    // pre-fix and post-fix forms against a probe table to prove the difference.
+    const source = read("backend/routes/stripe.ts");
     const sql =
-      read("backend/routes/stripe.ts")
-        .match(/`SELECT checkout_group_id FROM payments[\s\S]*?LIMIT 1`/)?.[0]
+      source
+        .slice(source.indexOf("async function checkoutGroupIdForAttempt("))
+        .match(/`SELECT[\s\S]*?LIMIT 1`/)?.[0]
         ?.replace(/^`|`$/g, "") ?? "";
-    expect(sql, "the failing statement was not found in backend/routes/stripe.ts").not.toBe("");
+    expect(sql, "the routing statement was not found in backend/routes/stripe.ts").not.toBe("");
     expect(sql).toContain("FROM payments");
     expect(sql).toContain("provider_checkout_session_id = $1");
     expect(sql).toContain("provider_payment_id = $2");
@@ -148,6 +158,15 @@ describe("every checkout_group_id reference resolves inside its own SQL scope", 
       ),
     );
     expect([...inScope]).toContain("payments");
+
+    // The column must appear only as a quoted KEY and as an output ALIAS — never
+    // as a column reference, which is the only thing that can raise 42703.
+    const referenced = sql
+      .replace(/'(?:[^']|'')*'/g, "''")
+      .replace(/\bAS\s+[A-Za-z_][A-Za-z0-9_]*/g, "AS");
+    expect(referenced, "the routing read still references checkout_group_id as a COLUMN").not.toContain(
+      "checkout_group_id",
+    );
 
     // Against this (reconciled) test database the very same statement succeeds,
     // which is the difference between a missing column and a correct query.
