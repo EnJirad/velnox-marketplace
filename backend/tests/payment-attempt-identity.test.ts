@@ -145,12 +145,20 @@ describe("a payment row is chosen by the ATTEMPT the event names", () => {
     // hand over `session.id` (and the intent when the session carries one).
     // Whitespace-tolerant on purpose: pinning the exact line break would make
     // this test fail on a harmless reformat instead of on a lost identity.
+    //
+    // The attempt may be written inline or bound to a local first — the
+    // multi-shop settlement branch needs the same identifiers to resolve the
+    // checkout group, so it binds them once and passes the binding down. Either
+    // way the ASSERTION is the same: no writer is ever reached with a bare
+    // orderId, because that loses the attempt.
     for (const writer of ["markPaymentSucceeded", "markPaymentFailed", "markPaymentCanceled"]) {
       expect(
         stripe,
         `${writer} is never called with a bare orderId — the attempt would be lost`,
       ).toMatch(
-        new RegExp(`${writer}\\(\\s*orderId,\\s*\\{[^}]*providerPaymentId:\\s*paymentIntent\\.id`),
+        new RegExp(
+          `${writer}\\(\\s*orderId,\\s*(?:\\{[^}]*providerPaymentId:\\s*paymentIntent\\.id|attempt)`,
+        ),
       );
     }
     expect(stripe).toContain("checkoutSessionId: session.id");

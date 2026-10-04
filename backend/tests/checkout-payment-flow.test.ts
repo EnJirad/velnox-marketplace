@@ -304,15 +304,27 @@ describe("ShopCheckout — one press goes order → Stripe → redirect", () => 
   });
 
   test("the retry reuses the order and the method, and uses a fresh idempotency key", () => {
-    expect(src).toContain("await openStripeSession(pending.orderId, pending.method, crypto.randomUUID());");
+    // The target is an OBJECT now: a multi-shop purchase is charged through its
+    // `checkoutGroupId`, a single order through its `orderId`. A retry of one
+    // specific order still names that order and creates no second one.
+    expect(src).toContain("{ orderId: pending.orderId },");
+    expect(src).toContain("pending.method");
+    expect(src).toContain("crypto.randomUUID()");
     // A retry must never create a second order.
     const retryBody = src.slice(src.indexOf("const handleRetryPayment"));
     expect(retryBody).not.toContain("checkoutAction(");
   });
 
   test("the session request carries the order, the method, the key and the return path", () => {
-    expect(sessionBody).toContain("orderId,\n      method,\n      requestKey,");
-    expect(sessionBody).toContain("returnPath: `/orders?order=${orderId}`,");
+    // EXACTLY ONE of the two parents is sent: the group when the checkout
+    // produced a purchase group, the order otherwise. Sending both would make
+    // the backend's own routing ambiguous, and the amount would come from the
+    // wrong parent.
+    expect(sessionBody).toContain("checkoutGroupId: target.checkoutGroupId");
+    expect(sessionBody).toContain("orderId: target.orderId");
+    expect(sessionBody).toContain("method,");
+    expect(sessionBody).toContain("requestKey,");
+    expect(sessionBody).toContain("returnPath: `/orders?order=${target.orderId}`,");
   });
 });
 

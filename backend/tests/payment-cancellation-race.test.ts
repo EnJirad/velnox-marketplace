@@ -120,7 +120,9 @@ describe("order-row concurrency — one lock, one order", () => {
   test("the lock is defined once, and its module states the rule", () => {
     const lib = read(ORDER_LOCK_LIB);
     expect(lib).toContain("export async function lockOrderRow(");
-    expect(lib).toContain("FOR UPDATE");
+    // The multi-shop twin: one purchase, N per-shop orders, so the same rule is
+    // stated once more for the whole group — locks together, in a stable order.
+    expect(lib).toContain("export async function lockCheckoutGroupOrderRows(");
     // The rule is a comment-as-contract: a future editor who reorders the two
     // statements must be told why it matters.
     expect(lib).toContain("deadlock");
@@ -133,6 +135,7 @@ describe("order-row concurrency — one lock, one order", () => {
     expect((cart.match(/FOR UPDATE/g) ?? []).length).toBe(0);
     expect(cart).toContain("lockOrderRow(client, orderId)");
     expect(stripe).toContain("lockOrderRow(client, orderId)");
+    expect(stripe).toContain("lockCheckoutGroupOrderRows(client, groupId)");
     expect(sweep).toContain("lockOrderRow(client, orderId)");
   });
 
@@ -140,6 +143,11 @@ describe("order-row concurrency — one lock, one order", () => {
     const stripe = read(STRIPE_ROUTE);
     const cases: Array<[string, string, string]> = [
       [STRIPE_ROUTE, stripe, "async function markPaymentSucceeded("],
+      // The multi-shop settlement writer is the SAME invariant over N rows: it
+      // locks every order of the purchase (one statement, stable order) before
+      // it touches `payments`. Added with the group path, not in place of the
+      // single-order one.
+      [STRIPE_ROUTE, stripe, "async function settleCheckoutGroup("],
       [STRIPE_ROUTE, stripe, "async function markPaymentFailed("],
       [STRIPE_ROUTE, stripe, "async function markPaymentCanceled("],
       [STRIPE_ROUTE, stripe, "async function syncRefundFromStripe("],
@@ -157,8 +165,14 @@ describe("order-row concurrency — one lock, one order", () => {
 
     for (const [file, source, marker] of cases) {
       const tx = transactionOf(bodyOf(source, marker), `${file} — ${marker}`);
-      const lockAt = tx.indexOf("lockOrderRow(");
-      expect(lockAt, `${file} — ${marker} never takes the order lock`).toBeGreaterThanOrEqual(0);
+      // The ONE lock has two shapes: a single order row, and every order row of
+      // a checkout group. Both are "the order lock", and both must come first.
+      const lockAt = Math.min(
+        ...["lockOrderRow(", "lockCheckoutGroupOrderRows("]
+          .map((n) => tx.indexOf(n))
+          .filter((i) => i >= 0),
+      );
+      expect(lockAt, `${file} — ${marker} never takes the order lock`).toBeLessThan(Number.POSITIVE_INFINITY);
       // The lock is the transaction's FIRST statement: nothing may be read or
       // written through a pool client before it.
       const firstStatementAt = tx.indexOf("client.query(");

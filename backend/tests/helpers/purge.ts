@@ -54,6 +54,16 @@ export async function purgeUsers(userIds: Array<string | null | undefined>): Pro
       [ids],
     );
   }
+  // A CHECKOUT GROUP payment carries no `order_id` (it parents the whole
+  // purchase), so the order_id-scoped DELETE above cannot see it — and it is a
+  // NO ACTION child of `checkout_groups`, which would then block the user's
+  // deletion with 23503.
+  await query(
+    `DELETE FROM payments
+      WHERE checkout_group_id IN (SELECT id FROM checkout_groups WHERE user_id = ANY($1::uuid[]))`,
+    [ids],
+  );
+  await query(`DELETE FROM checkout_groups WHERE user_id = ANY($1::uuid[])`, [ids]);
   await query(`DELETE FROM orders WHERE user_id = ANY($1::uuid[])`, [ids]);
   await query(`UPDATE seller_verifications SET reviewed_by = NULL WHERE reviewed_by = ANY($1::uuid[])`, [ids]);
   await query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [ids]);

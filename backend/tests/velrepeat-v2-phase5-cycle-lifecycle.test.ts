@@ -172,8 +172,10 @@ describe("Phase 5 — structural boundaries", () => {
     // duplicate-state-machine hazard. It must never appear as a written state.
     expect(lib).not.toMatch(/'fulfilled'|"fulfilled"/);
     // The canonical ORDER vocabulary is untouched: this module writes exactly
-    // one order status, and it is the canonical entry state.
-    expect(lib).toMatch(/VALUES \(\$1, \$2, 'pending'/);
+    // one order status, and it is the canonical entry state. `$3` is the
+    // server-generated public order number (`order_number`), which sits between
+    // the shop and the status — the STATE is still the only written value.
+    expect(lib).toMatch(/VALUES \(\$1, \$2, \$3, 'pending'/);
   });
 
   test("activation is wired into the Phase 4 settlement, inside its transaction", () => {

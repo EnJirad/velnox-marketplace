@@ -635,13 +635,40 @@ describe("Phase 4 — the payments schema carries a plan parent", () => {
     expect(read("db/run-sqleditor.sql")).toBe(schema);
   });
 
-  test("order_id is nullable, plan_id exists, and exactly one parent is required", () => {
+  test("order_id is nullable, plan_id exists, and a parent is required", () => {
     expect(schema).toMatch(/order_id UUID REFERENCES orders\(id\),\n {2}plan_id UUID,/);
-    expect(schema).toContain("CONSTRAINT payments_exactly_one_parent_check CHECK (");
+    // A payment belongs to EXACTLY ONE parent, and there are now THREE kinds:
+    // an order, a VelRepeat V2 plan, or a multi-shop checkout group. The rule is
+    // therefore stated as two constraints rather than the old single XOR:
+    //
+    //   payments_at_least_one_parent_check — no orphan payment row at all;
+    //   payments_single_domain_check       — a PLAN never shares a payment with
+    //                                         an order or a group, because plan
+    //                                         activation settles through a
+    //                                         different authority.
+    //
+    // The old `payments_exactly_one_parent_check` is GONE: it would reject a
+    // group payment outright, which is how one Stripe charge pays N per-shop
+    // orders (one charge, N fulfilment orders, no duplicate charge).
+    expect(schema).not.toContain("payments_exactly_one_parent_check");
+    expect(schema).toContain("CONSTRAINT payments_at_least_one_parent_check CHECK (");
     expect(schema).toMatch(
-      /\(order_id IS NOT NULL AND plan_id IS NULL\)\s*\n\s*OR \(order_id IS NULL AND plan_id IS NOT NULL\)/,
+      /order_id IS NOT NULL OR plan_id IS NOT NULL OR checkout_group_id IS NOT NULL/,
+    );
+    expect(schema).toContain("CONSTRAINT payments_single_domain_check CHECK (");
+    expect(schema).toMatch(
+      /NOT \(plan_id IS NOT NULL AND \(order_id IS NOT NULL OR checkout_group_id IS NOT NULL\)\)/,
     );
     expect(schema).toContain("payments_plan_id_fkey");
+  });
+
+  test("a checkout group is the third payment parent, and it is exactly one", () => {
+    expect(schema).toMatch(/checkout_group_id UUID REFERENCES checkout_groups\(id\)/);
+    // One active Stripe session per purchase — the same one-active-attempt rule
+    // the order-scoped index already enforces, applied to the group.
+    expect(schema).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe_group[\s\S]*?provider = 'stripe'[\s\S]*?checkout_group_id IS NOT NULL[\s\S]*?status IN \('pending', 'requires_action'\)/,
+    );
   });
 
   test("a plan-scoped twin of the single-active-attempt index exists", () => {
