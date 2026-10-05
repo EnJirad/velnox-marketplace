@@ -797,3 +797,17 @@ pointing at the SAME Neon project/branch Render's `DATABASE_URL` uses, confirm t
 backend's boot `[db]` line, then run `db/run-sqleditor.sql` (or `db/migrations/054_*.sql`) via
 `production-db-migrate.yml`; `Production DB Verify` must then go BLOCKED → PASS on all 11 objects. Only then can a
 real PromptPay TEST round trip be attempted. **STATUS: BLOCKED — never PASS.**
+
+**Verified on a real database reconciled by `db/run-sqleditor.sql`** (disposable, dropped after): the incident's exact
+statement — `SELECT id FROM payments WHERE checkout_group_id = $1 AND provider = $2 ORDER BY created_at DESC LIMIT 1`
+(verbatim `backend/routes/stripe.ts:844-851`) — answers `ERROR: column "checkout_group_id" does not exist` when the
+column is absent and returns the attempt id when it is present, so it is a real detector, not a tautology. All of
+054 §3 lands: column `uuid`/nullable, both `ON DELETE SET NULL` FKs, the group indexes, both payment CHECKs,
+`payments.order_id` nullable.
+
+**One hazard found while proving it (NOT a production blocker).** `db/run-sqleditor.sql:4038` adds
+`payments_at_least_one_parent_check` under `ON_ERROR_STOP`, guarded only by a name check: if any `payments` row has
+`order_id`, `plan_id` and `checkout_group_id` **all** NULL the reconciler aborts mid-file and the rest — including the
+PART 8 self-assertion — never runs. Production cannot reach that state (`payments_exactly_one_parent_check`, migration
+051, has always required exactly one of `order_id`/`plan_id`, and a parentless INSERT is rejected on a reconciled
+database). Only a database that stored a group payment and then lost the column can hit it.
