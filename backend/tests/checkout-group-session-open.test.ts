@@ -77,11 +77,12 @@
  * trip — NOT a substitute for the real Stripe TEST E2E, which stays BLOCKED
  * without test credentials and a browser.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createHmac } from "crypto";
 import express from "express";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
+import Stripe from "stripe";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -261,85 +262,85 @@ function stripeError(overrides: Record<string, unknown>): Error {
   });
 }
 
-/** The REAL SDK constructor, captured before the module is replaced. */
-let RealStripe: (new (key: string, options?: unknown) => unknown) | null = null;
-
 /**
- * The Stripe client, replaced in-process. Every call the OPEN path makes is one
- * of `checkout.sessions.create / retrieve / expire`, so this is the whole
- * surface: nothing reaches the network and nothing is invented at the route
- * boundary.
+ * Stub the three Checkout-Session calls the OPEN path makes, by spying on the
+ * SHARED resource prototype the real SDK already uses. Nothing else is
+ * touched: `webhooks.constructEventAsync` keeps verifying signatures for real,
+ * and the other payment suites keep the real client.
  *
- * Anything ELSE — `webhooks.constructEventAsync` above all — falls through to
- * the REAL SDK client. A module mock in `bun test` lasts for the whole process,
- * so a stub that swallowed the webhook verifier would silently break the
- * sibling suites that verify signatures for real.
+ * `mock.module("stripe", …)` was the obvious alternative and is a trap here. A
+ * module mock in `bun test` lives for the whole PROCESS and its effect depends
+ * on which file loaded the module first, so whether a suite gets the stub or
+ * the live SDK is decided by directory-walk order. In CI the VelRepeat Phase 4
+ * suite got the stub, `sessions.create` "succeeded" for a test that must never
+ * reach a provider, and its leftover payment row broke four more tests in the
+ * same block with `idx_payments_one_active_stripe_plan`. A `spyOn` on the
+ * prototype has an explicit lifetime: `mockRestore()` in `afterAll` puts the
+ * real method back before the next file starts.
  */
-class FakeStripe {
-  checkout = {
-    sessions: {
-      create: async (params: Record<string, unknown>): Promise<FakeSession> => {
-        fake.created.push(params);
-        if (fake.failNextCreate) {
-          const err = fake.failNextCreate;
-          fake.failNextCreate = null;
-          throw err;
-        }
-        const id = `cs_test_${crypto.randomUUID().replace(/-/g, "")}`;
-        const session: FakeSession = {
-          id,
-          url: `https://checkout.stripe.com/c/pay/${id}#fidk2Xx`,
-          status: "open",
-          payment_intent: `pi_test_${crypto.randomUUID().replace(/-/g, "")}`,
-          expires_at: Math.floor(Date.now() / 1000) + 24 * 3600,
-          metadata: (params.metadata ?? {}) as Record<string, string>,
-        };
-        fake.sessions.set(id, session);
-        return session;
-      },
-      retrieve: async (id: string): Promise<FakeSession> => {
-        const session = fake.sessions.get(id);
-        if (!session) throw stripeError({ type: "StripeInvalidRequestError", code: "resource_missing", message: `No such checkout.session: ${id}` });
-        return session;
-      },
-      expire: async (id: string): Promise<FakeSession> => {
-        const session = fake.sessions.get(id);
-        if (!session) throw stripeError({ type: "StripeInvalidRequestError", code: "resource_missing", message: `No such checkout.session: ${id}` });
-        session.status = "expired";
-        fake.expired.push(id);
-        return session;
-      },
-    },
-  };
+const sessionSpies: Array<{ mockRestore: () => void }> = [];
 
-  key: string;
-  options: unknown;
-  private real: any;
+function installFakeSessions(): void {
+  const prototype = Object.getPrototypeOf(new Stripe("sk_test_probe_0000000000").checkout.sessions);
 
-  constructor(key: string, options: unknown) {
-    this.key = key;
-    this.options = options;
-    this.real = RealStripe ? new RealStripe(key, options) : null;
-    return new Proxy(this, {
-      get: (target, prop) => {
-        if (prop in target) return Reflect.get(target, prop);
-        const value = target.real?.[prop];
-        return typeof value === "function" ? value.bind(target.real) : value;
-      },
-    }) as FakeStripe;
-  }
+  sessionSpies.push(
+    spyOn(prototype, "create").mockImplementation(async (params: Record<string, unknown>) => {
+      fake.created.push(params);
+      if (fake.failNextCreate) {
+        const err = fake.failNextCreate;
+        fake.failNextCreate = null;
+        throw err;
+      }
+      const id = `cs_test_${crypto.randomUUID().replace(/-/g, "")}`;
+      const session: FakeSession = {
+        id,
+        url: `https://checkout.stripe.com/c/pay/${id}#fidk2Xx`,
+        status: "open",
+        payment_intent: `pi_test_${crypto.randomUUID().replace(/-/g, "")}`,
+        expires_at: Math.floor(Date.now() / 1000) + 24 * 3600,
+        metadata: (params.metadata ?? {}) as Record<string, string>,
+      };
+      fake.sessions.set(id, session);
+      return session;
+    }),
+  );
+
+  sessionSpies.push(
+    spyOn(prototype, "retrieve").mockImplementation(async (id: string) => {
+      const session = fake.sessions.get(id);
+      if (!session) {
+        throw stripeError({
+          type: "StripeInvalidRequestError",
+          code: "resource_missing",
+          statusCode: 404,
+          message: `No such checkout.session: ${id}`,
+        });
+      }
+      return session;
+    }),
+  );
+
+  sessionSpies.push(
+    spyOn(prototype, "expire").mockImplementation(async (id: string) => {
+      const session = fake.sessions.get(id);
+      if (!session) {
+        throw stripeError({
+          type: "StripeInvalidRequestError",
+          code: "resource_missing",
+          statusCode: 404,
+          message: `No such checkout.session: ${id}`,
+        });
+      }
+      session.status = "expired";
+      fake.expired.push(id);
+      return session;
+    }),
+  );
 }
 
-// Installed from `beforeAll`, not at module scope: `bun test` loads every file
-// before it runs any test, so a top-level patch here races the other suites'
-// imports of the same SDK. The route constructs its client lazily per request,
-// so patching before the first request is what matters — and the real
-// constructor is captured first so everything this stub does not cover (the
-// webhook signature verifier) keeps working for the other suites.
-const installFakeStripe = async () => {
-  if (!RealStripe) RealStripe = (await import("stripe")).default as never;
-  mock.module("stripe", () => ({ default: FakeStripe }));
-};
+function restoreFakeSessions(): void {
+  while (sessionSpies.length > 0) sessionSpies.pop()!.mockRestore();
+}
 
 const describeDb = hasTestDatabase() ? describe : describe.skip;
 const testFn = hasTestDatabase() ? test : test.skip;
@@ -358,7 +359,7 @@ describeDb("opening a checkout session (requires TEST_DATABASE_URL)", () => {
   const fixtureUsers: Array<string | null> = [];
 
   beforeAll(async () => {
-    await installFakeStripe();
+    installFakeSessions();
     for (const key of ENV_KEYS) saved[key] = process.env[key];
     process.env.STRIPE_SECRET_KEY = TEST_SECRET_KEY;
     process.env.STRIPE_PUBLISHABLE_KEY = TEST_PUBLISHABLE_KEY;
@@ -367,6 +368,8 @@ describeDb("opening a checkout session (requires TEST_DATABASE_URL)", () => {
   });
 
   afterAll(async () => {
+    // Before anything else: the next file must get the REAL SDK back.
+    restoreFakeSessions();
     for (const key of ENV_KEYS) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
