@@ -400,7 +400,7 @@ export function __resetPaymentsGroupColumnCache(): void {
  *     never echoed wholesale.
  * The client still receives only the generic message — `fail()` is unchanged.
  */
-function logCheckoutSessionFailure(args: {
+async function logCheckoutSessionFailure(args: {
   stage: string;
   orderId: string | null;
   checkoutGroupId: string | null;
@@ -408,8 +408,9 @@ function logCheckoutSessionFailure(args: {
   currency: string | null;
   amountMinor: number | null;
   sessionId: string | null;
+  paymentAttemptId?: string | null;
   err: unknown;
-}): void {
+}): Promise<void> {
   const { stage, orderId, checkoutGroupId, method, currency, amountMinor, sessionId, err } = args;
   const e = (err ?? {}) as {
     type?: unknown;
@@ -430,12 +431,35 @@ function logCheckoutSessionFailure(args: {
     return str(v);
   };
 
+  // The attempt id is what ties a log line to the row an operator must look
+  // at, and the caller usually cannot know it — the failure is frequently the
+  // INSERT that would have created it. Resolved here, BEST EFFORT: on the
+  // failure path a dead pool must not cost us the diagnostic line, so a lookup
+  // that fails leaves the field null rather than throwing.
+  let paymentAttemptId: string | null = args.paymentAttemptId ?? null;
+  if (!paymentAttemptId && (orderId || checkoutGroupId)) {
+    try {
+      const row = await query(
+        checkoutGroupId
+          ? `SELECT id FROM payments WHERE checkout_group_id = $1 AND provider = 'stripe'
+              ORDER BY created_at DESC LIMIT 1`
+          : `SELECT id FROM payments WHERE order_id = $1 AND provider = 'stripe'
+              ORDER BY created_at DESC LIMIT 1`,
+        [checkoutGroupId ?? orderId],
+      );
+      paymentAttemptId = (row.rows[0]?.id as string | undefined) ?? null;
+    } catch {
+      paymentAttemptId = null;
+    }
+  }
+
   const detail: Record<string, unknown> = {
     failure_stage: stage,
     provider: "stripe",
     occurred_at: new Date().toISOString(),
     order_id: orderId,
     checkout_group_id: checkoutGroupId,
+    payment_attempt_id: paymentAttemptId,
     method,
     currency,
     amount_minor: Number.isFinite(amountMinor as number) ? amountMinor : null,
@@ -734,7 +758,7 @@ async function openCheckoutGroupSession(args: {
   // This is a deploy-order condition, not a customer error, so the status is 503
   // (retryable by definition) and the log names the reconciler.
   if (!(await paymentsCheckoutGroupColumnExists())) {
-    logCheckoutSessionFailure({
+    await logCheckoutSessionFailure({
       stage: "group_column_missing",
       orderId: null,
       checkoutGroupId: groupId,
@@ -899,7 +923,7 @@ async function openCheckoutGroupSession(args: {
     // Stripe refused to open the session — nothing exists at Stripe, so there is
     // no orphan to clean up. Recorded with the request_id that identifies this
     // exact call in Stripe's own logs.
-    logCheckoutSessionFailure({
+    await logCheckoutSessionFailure({
       stage: "group_session_create",
       orderId: representative.id,
       checkoutGroupId: groupId,
@@ -944,7 +968,7 @@ async function openCheckoutGroupSession(args: {
       // explicitly — an operator must be able to expire it from the Stripe
       // dashboard by id. The error's own code/param say whether this was the
       // schema (42703) or something else.
-      logCheckoutSessionFailure({
+      await logCheckoutSessionFailure({
         stage: "group_payment_insert",
         orderId: representative.id,
         checkoutGroupId: groupId,
@@ -2196,7 +2220,7 @@ export function setupStripeRoutes(app: Express): void {
       // code, HTTP status, `param`, `request_id`). Without `request_id` a
       // production 500 here is unactionable: Stripe support cannot find the call
       // and neither can we. Never the secret key, card data or the payload.
-      logCheckoutSessionFailure({
+      await logCheckoutSessionFailure({
         stage: "checkout_session_open",
         orderId: failureOrderId,
         checkoutGroupId: failureGroupId,

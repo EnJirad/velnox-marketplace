@@ -175,6 +175,7 @@ describe("the group session is never opened before the database can record it", 
       "occurred_at",
       "order_id",
       "checkout_group_id",
+      "payment_attempt_id",
       "method",
       "currency",
       "amount_minor",
@@ -726,6 +727,10 @@ describeDb("opening a checkout session (requires TEST_DATABASE_URL)", () => {
     expect(failure!.checkout_group_id).toBe(groupId);
     expect(failure!.amount_minor).toBe(36000);
     expect(failure!.provider).toBe("stripe");
+    // Nothing was written, so there is no attempt to point at — but the field
+    // must be present and explicitly null, never absent.
+    expect(failure).toHaveProperty("payment_attempt_id");
+    expect(failure!.payment_attempt_id).toBeNull();
     expect(typeof failure!.occurred_at).toBe("string");
 
     // Retry — what "ลองชำระเงินอีกครั้ง" does — succeeds, with no leftover state.
@@ -736,6 +741,45 @@ describeDb("opening a checkout session (requires TEST_DATABASE_URL)", () => {
     });
     expect(retried.status).toBe(200);
     expect(await activeCount("checkout_group_id", groupId)).toBe(1);
+  });
+
+  testFn("the failure record names the attempt an operator has to open", async () => {
+    const { query } = await import("../db/index.js");
+    const { ownerId, orderId } = await seedSingleOrder();
+
+    // Attempt A exists and is on file.
+    const a = await openSession(ownerId, { orderId, method: "PROMPTPAY", requestKey: crypto.randomUUID() });
+    expect(a.status).toBe(200);
+    const attemptA = (
+      await query(`SELECT id, provider_checkout_session_id FROM payments WHERE order_id = $1`, [orderId])
+    ).rows[0];
+
+    // A's session goes stale, so the retry retires A and opens B — and B's
+    // create is refused. The log line must still correlate to A, because that
+    // is the row an operator has to look at.
+    fake.sessions.get(attemptA.provider_checkout_session_id)!.status = "expired";
+    fake.failNextCreate = stripeError({
+      type: "StripeCardError",
+      code: "card_declined",
+      statusCode: 402,
+      requestId: "req_declined_probe",
+      message: "Your card was declined.",
+    });
+
+    const failed = await openSession(ownerId, { orderId, method: "PROMPTPAY", requestKey: crypto.randomUUID() });
+    expect(failed.status).toBe(500);
+    expect(failed.body.error.code).toBe("STRIPE_ERROR");
+
+    const last = failureLines().at(-1)!;
+    expect(last.failure_stage).toBe("checkout_session_open");
+    expect(last.order_id).toBe(orderId);
+    expect(last.payment_attempt_id).toBe(attemptA.id);
+    expect(last.provider_error_code).toBe("card_declined");
+    expect(last.provider_http_status).toBe("402");
+    expect(last.provider_request_id).toBe("req_declined_probe");
+    // Opening a session is never paying, whatever the failure.
+    const stillOpen = await query(`SELECT status, paid_at FROM payments WHERE id = $1`, [attemptA.id]);
+    expect(stillOpen.rows[0].paid_at).toBeNull();
   });
 
   // ── Test 3 ─────────────────────────────────────────────────────────────
@@ -775,14 +819,15 @@ describeDb("opening a checkout session (requires TEST_DATABASE_URL)", () => {
       expect(orphan!.status).toBe("expired");
 
       // …and it is NAMED, so an operator can find it in the Stripe dashboard.
-      const [failure] = failureLines();
-      expect(failure!.failure_stage).toBe("group_payment_insert");
-      expect(failure!.stripe_session_id).toBe(orphan!.id);
-      // 42703 is the production error code, recorded verbatim.
-      expect(failure!.provider_error_code).toBe("42703");
-      expect(failure!.provider_error_message).toContain("checkout_group_id");
-      expect(failure!.checkout_group_id).toBe(groupId);
-      expect(failure!.amount_minor).toBe(36000);
+    const [failure] = failureLines();
+    expect(failure!.failure_stage).toBe("group_payment_insert");
+    expect(failure!.stripe_session_id).toBe(orphan!.id);
+    // 42703 is the production error code, recorded verbatim.
+    expect(failure!.provider_error_code).toBe("42703");
+    expect(failure!.provider_error_message).toContain("checkout_group_id");
+    expect(failure!.checkout_group_id).toBe(groupId);
+    expect(failure!.amount_minor).toBe(36000);
+    expect(failure!.payment_attempt_id, "no attempt exists — the INSERT that would have made it is what failed").toBeNull();
 
       // Nothing was recorded, so the retry is not a duplicate of anything.
       expect(await groupPayments(groupId)).toHaveLength(0);

@@ -793,8 +793,10 @@ it asks Stripe for money.
    `CHECKOUT_GROUP_UNAVAILABLE`** instead of an orphan session. No Stripe call is made.
 2. `logCheckoutSessionFailure()` — one `console.error` JSON line per failure carrying
    `failure_stage`, `provider`, `occurred_at`, `order_id`, `checkout_group_id`, `method`,
-   `currency`, `amount_minor`, `stripe_session_id`, `provider_error_type`, `provider_error_code`,
-   `provider_http_status`, `provider_request_id`, `provider_error_param`, `provider_error_message`.
+   `currency`, `amount_minor`, `stripe_session_id`, `payment_attempt_id`, `provider_error_type`,
+   `provider_error_code`, `provider_http_status`, `provider_request_id`, `provider_error_param`,
+   `provider_error_message`. The attempt id is resolved best-effort (the failure is often the very
+   INSERT that would have created it, so the field is explicitly `null` rather than absent).
    No secret key, no `whsec_`/`sk_`/`pk_`, no card data, no customer email/phone, `metadata` never
    echoed wholesale. The **client response is unchanged** — `fail()` still returns only the generic
    message. Numeric `statusCode`/`pg` codes are coerced, so the HTTP status is not silently dropped.
@@ -812,7 +814,9 @@ it asks Stripe for money.
 (the probe precedes `sessions.create`; the probe reads the catalogue; a write failure is logged
 WITH the session id and the session is expired; the log carries the diagnostic fields; the client
 still sees only the generic text; no transaction is held across the Stripe call) and the six
-required regressions driven against the REAL route with an in-process Stripe stub: 1/6 first
+required regressions driven against the REAL route with an in-process Stripe stub (prototype
+spies restored in `afterAll` — a `mock.module` on the SDK leaked into the VelRepeat Phase 4 suite
+in CI and had to be replaced): 1/6 first
 PromptPay multi-shop session succeeds and the request Stripe received is `mode:"payment"`,
 `payment_method_types:["promptpay"]`, `thb`, summing to the **database** total (a hostile client
 `amount` cannot move it); 2 Stripe refuses → order stays payable, no attempt, the failure is logged
@@ -824,7 +828,7 @@ and a LATE failure for A cannot un-pay the order; plus the pre-054 refusal, whic
 zero times. Two of these were checked by disabling the fix and confirming the test fails.
 The suite also caught a real defect in the fix itself: numeric `statusCode` was being dropped.
 
-**Suite after this change: 1987 pass / 2 skip / 0 fail (68 files)**, typecheck 4/4 + backend 0,
+**Suite after this change: 1988 pass / 2 skip / 0 fail (68 files)**, typecheck 4/4 + backend 0,
 build 4/4, `db:verify` ALL SCENARIOS PASSED, `git diff --check` clean.
 
 **STILL BLOCKED — unchanged owner action.** Production `payments` still has no `checkout_group_id`,
