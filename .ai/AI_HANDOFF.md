@@ -438,53 +438,24 @@ superseded risk-based reservation v1. Each is recorded in full in `history/archi
 
 ---
 
-## 37–48. Archived (moved 2026-09-30, edit-headroom housekeeping)
+## 37–48 + 51–64. Archived (verbatim)
 
-§37–§48 (migration 048 read path, the Stripe TEST-mode E2E attempts and their BLOCKED verdicts,
-the CI guard fix, the §42 full-system audit, §43 inventory CRITICAL #1/#2, §44 the paid-order
-cancellation guard, §46 HIGH #4 payment attempt identity, §47 HIGH #5 late-payment operator
-flow, §48 MEDIUM #9 `orders.status` CHECK) moved **verbatim** to
-[`history/archive/AI_Handoff-2026-09-30-payments-and-audit-record.md`](history/archive/AI_Handoff-2026-09-30-payments-and-audit-record.md)
-(index row: [`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)).
+§37–§48 → [`history/archive/AI_Handoff-2026-09-30-payments-and-audit-record.md`](history/archive/AI_Handoff-2026-09-30-payments-and-audit-record.md)
+· §51 → `.ai/history/archive/AI_Handoff-2026-09-30-velrepeat-prepaid-contract-stopped.md` · §52–§63 →
+[`history/archive/AI_Handoff-2026-10-04-sections-52-63.md`](history/archive/AI_Handoff-2026-10-04-sections-52-63.md) · §64 →
+[`history/archive/AI_Handoff-2026-10-04-section-64-velrepeat-053.md`](history/archive/AI_Handoff-2026-10-04-section-64-velrepeat-053.md)
+(index: [`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)).
 
-**Still live from them:** the reservation is a **CONSTANT 30 minutes** · **migrations 048, 049 and
-050 are still NOT applied in production** (Neon quota, §14/§16/§21–22) · real Stripe TEST E2E and
-browser E2E have **never** run · the current status of every audit finding is the compact index in
-**§51**, with MEDIUM #10 / #11, LOW #13/#14 and HIGH #4/#5 still **open**.
+**Still live from them:** the reservation is a **CONSTANT 30 minutes** · **migrations 048/049/050 were never applied in
+production** (Neon quota, §14/§16/§21–22) · real Stripe TEST E2E and browser E2E have **never** run · MEDIUM #10/#11,
+LOW #13/#14 and HIGH #4/#5 audit findings remain open.
 
----
-
-## 51. VelRepeat — Prepaid Repeat Commerce (2026-09-30) — CONTRACT COMPLETE, IMPLEMENTATION STOPPED — **ARCHIVED**
-
-The audit-finding index and the three structural facts that stopped the prepaid implementation at
-this point are archived verbatim in
-`.ai/history/archive/AI_Handoff-2026-09-30-velrepeat-prepaid-contract-stopped.md`.
-
-**Superseded, do not read as current:** all three blockers listed there were closed by §52–§58
-(contract), Phase 3 (plan creation + pricing snapshot), Phase 4 (prepaid Stripe settlement) and
-§62 (production migration). Its "migrations 048/049/050 still unapplied" line is **stale** —
-production is at 051 (§62). Its MEDIUM #10 lifecycle blocker is now Phase 5, which is the next
-safe phase.
+**Superseded, do not read as current:** §51's three blockers were closed by §52–§58, Phase 3, Phase 4 and §62, and its
+"048/049/050 still unapplied" line is **stale**. §52–§64's "production applied + verified" claims are **RETRACTED** —
+they rested on the Actions ledger, and §66 proves that ledger describes a different database from the one Render serves.
+Current state: §65–§69.
 
 ---
-
-## 52–63. VelRepeat V2 design sheets + phases 1–5 (2026-09-30/10-02) — ARCHIVED
-
-All COMPLETE and closed. Moved verbatim to
-[`history/archive/AI_Handoff-2026-10-04-sections-52-63.md`](history/archive/AI_Handoff-2026-10-04-sections-52-63.md)
-(2026-10-04, edit-headroom housekeeping). Current state: §64–§66.
-
-**Their "production applied + verified" claims are unproven** — §66 shows the Actions
-ledger describes a different database from the one Render serves.## 64. VelRepeat **V2 Phase 5 — migration 053 applied** (2026-10-03) — ⚠️ "verified" RETRACTED — **ARCHIVED**
-
-**Archived** (closed record; the "APPLIED + verified" claim is RETRACTED — it rested on the
-Actions ledger, which §66 proves describes a different database from the one Render serves) →
-[`history/archive/AI_Handoff-2026-10-04-section-64-velrepeat-053.md`](history/archive/AI_Handoff-2026-10-04-section-64-velrepeat-053.md).
-Moved 2026-10-04 to make room for the payment-integrity section. What remains true of it is
-restated there and in the current-state payment section below.
-
----
-
 
 ## §65. Multi-shop checkout, numeric order numbers, VelRepeat V2 customer UI (2026-10-04)
 
@@ -757,85 +728,72 @@ deliver the webhook; this workspace has no browser and no test account.
 
 ---
 
-## §68. "Failed to create checkout session" on a multi-shop PromptPay order (2026-10-05)
+## §68. Multi-shop PromptPay — "Failed to create checkout session" (2026-10-05) — **ARCHIVED**
 
-**Symptom.** Order `46d6e39b-e6f0-457b-86eb-58a09ae296b1` / `017911592602649656` (PromptPay) was
-created, then the storefront showed `สร้างคำสั่งซื้อแล้ว แต่ยังไม่ได้เริ่มการชำระเงิน` +
-`Failed to create checkout session`, and offered `ลองชำระเงินอีกครั้ง`.
+**The fix is SHIPPED and LIVE; the record moved verbatim** →
+[`history/archive/AI_Handoff-2026-10-05-section-68-checkout-group-session-open.md`](history/archive/AI_Handoff-2026-10-05-section-68-checkout-group-session-open.md)
+(2026-10-05, edit-headroom housekeeping; index row in [`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)).
 
-**Root cause — Case C, not Case A.** The cart spans shops, so the storefront always sends
-`checkoutGroupId` and the request dispatches to `openCheckoutGroupSession()`. That handler names
-`payments.checkout_group_id` (migration **054 §3**) as a bare column in two statements. On the
-production database — which never received 054 §3, the same defect §66/§67 recorded for the
-SETTLEMENT read — both raise **42703**. The order and `checkout_groups` row are written earlier by
-`POST /api/customer/checkout`, which does NOT need the column, which is exactly why "order created"
-and "payment cannot start" coexist. Order of events:
+**Still live from it:** order `46d6e39b-…` / `017911592602649656` could not start a payment because `openCheckoutGroupSession()` names
+`payments.checkout_group_id` as a bare column, which 42703s **after** Stripe already created the session — the shipped
+guard `paymentsCheckoutGroupColumnExists()` (a `pg_attribute` probe, cached, `__resetPaymentsGroupColumnCache()` seam) now
+answers **503 `CHECKOUT_GROUP_UNAVAILABLE` BEFORE `sessions.create`**, so no orphan payable URL is ever opened;
+`logCheckoutSessionFailure()` (async) emits one JSON line with `failure_stage`/`order_id`/`checkout_group_id`/
+`payment_attempt_id`/`stripe_session_id`/`provider_request_id`/… while the CLIENT still sees only the generic text; a failed
+group INSERT logs the session id and **expires** it; and the **request key is now claimed on the group path** too, after
+ownership is verified. Suite then: 1988 pass / 2 skip / 0 fail. Its "STILL BLOCKED" owner action is restated by **§69**
+with a second incident on the same column and the CI run proving the production secret is still absent.
 
-```
-POST /api/customer/checkout  → order + checkout_groups      (needs no 054 §3)
-stripe.checkout.sessions.create(...)  → session EXISTS      ← Stripe DID create it
-INSERT INTO payments (checkout_group_id, …) → 42703         ← the write that cannot happen
-outer catch → 500 "Failed to create checkout session"        ← the reported text
-```
+---
 
-So the reported message was never "Stripe refused": **Stripe created an OPEN session that no
-payment row pointed at**, and every retry spent another one.
+## §69. Production `payments.checkout_group_id` — the gap is real, applying it is **BLOCKED** (2026-10-05)
 
-**Why §67's fix did not cover it.** `to_jsonb(p) ->> 'checkout_group_id'` makes a READ
-schema-tolerant. A WRITE cannot be phrased that way: `INSERT INTO t (c, …)` NAMES the column, so
-its absence is an error regardless. The group OPEN path must know whether the column exists BEFORE
-it asks Stripe for money.
+**Second, independent incident on the same missing column.** Order
+`2aa736e9-0010-43c2-8f0e-19142b25189b` / `017911658804352200`, PromptPay, group
+`c86fb8fe-758d-4907-aedf-3e8f6bde8de2`. Production logged `[checkout-group] payments.checkout_group_id is
+missing — apply db/run-sqleditor.sql (migration 054).` with `code: 42703`, `failure_stage:
+group_column_missing`, `stripe_session_id: null`. **That log line is the §68 guard working** — production ran the
+fixed build, the probe saw the column absent, and it refused with 503 *before* Stripe. The build is current; the
+**database** is not.
 
-**Fix (code, `backend/routes/stripe.ts`).**
-1. `paymentsCheckoutGroupColumnExists()` — a `pg_attribute` catalogue probe (true on an EMPTY
-   `payments`, which is the production shape), cached per process, warned once naming the
-   reconciler. Consulted **before** `sessions.create`; the customer gets **503
-   `CHECKOUT_GROUP_UNAVAILABLE`** instead of an orphan session. No Stripe call is made.
-2. `logCheckoutSessionFailure()` — one `console.error` JSON line per failure carrying
-   `failure_stage`, `provider`, `occurred_at`, `order_id`, `checkout_group_id`, `method`,
-   `currency`, `amount_minor`, `stripe_session_id`, `payment_attempt_id`, `provider_error_type`,
-   `provider_error_code`, `provider_http_status`, `provider_request_id`, `provider_error_param`,
-   `provider_error_message`. The attempt id is resolved best-effort (the failure is often the very
-   INSERT that would have created it, so the field is explicitly `null` rather than absent).
-   No secret key, no `whsec_`/`sk_`/`pk_`, no card data, no customer email/phone, `metadata` never
-   echoed wholesale. The **client response is unchanged** — `fail()` still returns only the generic
-   message. Numeric `statusCode`/`pg` codes are coerced, so the HTTP status is not silently dropped.
-3. The group `sessions.create` and the group `INSERT` are stage-instrumented
-   (`group_session_create`, `group_payment_insert`). A failed INSERT that is not a unique violation
-   now logs the **session id** and **expires the session** instead of abandoning a payable URL.
-4. The **request key is now claimed on the group path too**. It was only claimed on the single-order
-   path, *below* the group dispatch — so the multi-shop flow had no durable request-key idempotency.
-   Claimed after the group is verified as owned (a bogus id cannot burn a key) and before any Stripe
-   call. `rememberResponse` now attributes a group snapshot to the group's representative order; it
-   previously passed the empty `orderId`, so the UPDATE threw and the snapshot was dropped, leaving
-   the key permanently "claimed but unfinished".
+**Root cause confirmed: production Neon never received migration 054 §3.**
 
-**Tests (new, `backend/tests/checkout-group-session-open.test.ts`, 13 cases).** Six structural
-(the probe precedes `sessions.create`; the probe reads the catalogue; a write failure is logged
-WITH the session id and the session is expired; the log carries the diagnostic fields; the client
-still sees only the generic text; no transaction is held across the Stripe call) and the six
-required regressions driven against the REAL route with an in-process Stripe stub (prototype
-spies restored in `afterAll` — a `mock.module` on the SDK leaked into the VelRepeat Phase 4 suite
-in CI and had to be replaced): 1/6 first
-PromptPay multi-shop session succeeds and the request Stripe received is `mode:"payment"`,
-`payment_method_types:["promptpay"]`, `thb`, summing to the **database** total (a hostile client
-`amount` cannot move it); 2 Stripe refuses → order stays payable, no attempt, the failure is logged
-with `provider_request_id`, and a retry succeeds; 3 the session is created and the INSERT raises the
-**real 42703** → the session is expired, named in the log, and the retry leaves exactly one live
-session; 4 double-click → one `sessions.create`, one payment row, the request key claimed and the
-response replayable; 5 attempt A retired (`SESSION_NOT_REUSABLE`) then B succeeds → B authoritative
-and a LATE failure for A cannot un-pay the order; plus the pre-054 refusal, which reaches Stripe
-zero times. Two of these were checked by disabling the fix and confirming the test fails.
-The suite also caught a real defect in the fix itself: numeric `statusCode` was being dropped.
+**Source of truth for `payments.checkout_group_id`** — from `db/migrations/054_…sql` §3, `db/schema.sql:460` and
+`db/run-sqleditor.sql:461,1378,3416-3421,4035-4036`: `UUID`, **nullable** (no `NOT NULL`), FK
+`payments_checkout_group_id_fkey` → `checkout_groups(id) ON DELETE SET NULL`; indexes `idx_payments_checkout_group`
+(partial) and the unique partial `idx_payments_one_active_stripe_group`; it participates in
+`payments_at_least_one_parent_check` + `payments_single_domain_check`; and `payments.order_id` becomes NULLABLE.
+§3 also drops `payments_exactly_one_parent_check`. **Nothing was changed** — the repository was already consistent,
+and no datatype, constraint or index was invented.
 
-**Suite after this change: 1988 pass / 2 skip / 0 fail (68 files)**, typecheck 4/4 + backend 0,
-build 4/4, `db:verify` ALL SCENARIOS PASSED, `git diff --check` clean.
+**Repository side: COMPLETE.** `db/schema.sql` ↔ `db/run-sqleditor.sql` declaration parity passes
+(`backend/tests/helpers/canonical-schema.ts`), `db/run-update.sql` does not exist, and `db/verify-reconciler.sh`
+**scenario H reproduces this exact production shape** — a populated `payments` with real Stripe rows and the column
+dropped — then proves the statement 42703s before, runs clean after, leaves the payment row, its provider ids and its
+`paid` settlement state untouched, never re-points it at the group, and is idempotent on a second run. `bun run
+db:verify` → `RECONCILER PROOF: ALL SCENARIOS PASSED` (52 PASS / 0 FAIL).
 
-**STILL BLOCKED — unchanged owner action.** Production `payments` still has no `checkout_group_id`,
-so a MULTI-SHOP checkout answers 503 with a log line naming the fix instead of failing at Stripe
-after the session is opened. Run `db/run-sqleditor.sql` against the database Render's
-`DATABASE_URL` points at (secret `NEON_PRODUCTION_DATABASE_URL`; `Production DB Verify` reads it).
-**Real Stripe TEST E2E remains BLOCKED, never PASS** — payment is a Stripe **hosted** Checkout
-Session; this workspace has no browser, no test account and no Stripe credentials. Live reads of the
-reported order are equally unavailable, so its state above is derived from code plus the reproduced
-42703, not asserted as observed.
+**New regressions (4, `backend/tests/checkout-group-session-open.test.ts`, 14 → 18).** The single-shop rail was
+**uncovered**, which is the risk 054 §3 itself creates — it makes `order_id` nullable and swaps the parent CHECK:
+**(1)** one order still opens a session and records `order_id` with `checkout_group_id IS NULL`, the session id, and a
+row satisfying `payments_at_least_one_parent_check` (old constraint gone); **(2)** a retry with a FRESH idempotency key
+reuses that session — one `sessions.create`, one active attempt; **(3)** the reported order's exact state (group +
+orders, **no** payment row) reads **not paid** on `GET /api/orders/:orderId`; its retry opens exactly one attempt with
+the session recorded and `paid_at` null, a second retry reuses it, and no order is ever `paid`; **(4)** static — the
+open path between the two `app.post` registrations contains **no** `paid` write at all, so a missing column can never be
+"fixed" by paying an order Stripe never charged. Suite: **1992 pass / 2 skip / 0 fail**, typecheck 4/4 + backend 0,
+build 4/4, `db:verify` 52/0, `git diff --check` clean.
+
+**PRODUCTION: NOT APPLIED — BLOCKED, and it must be reported as such.** `NEON_PRODUCTION_DATABASE_URL` is absent:
+`freebuff-env list` returns no keys, the GitHub App token gets **403** on both `secrets` and `workflow_dispatch`, and
+CI run **37249675032** of `Production DB Verify` fails with `##[error]BLOCKED: NEON_PRODUCTION_DATABASE_URL is not
+configured.` — the identical pre-change baseline. The repository therefore **cannot prove** the migration reaches the
+same Neon Render serves, and no Stripe TEST E2E was executed. **The payment architecture was not changed**: no
+multi-shop removal, no single-shop fallback, no bypassed column, no session-before-payment-row, no disabled schema
+validation, no 42703 catch-and-pass, no frontend "paid", no blind retry, no sleep, no disabled idempotency.
+
+**Owner action — unchanged, and still the whole remaining gap.** Create the `NEON_PRODUCTION_DATABASE_URL` secret
+pointing at the SAME Neon project/branch Render's `DATABASE_URL` uses, confirm the printed identity against the
+backend's boot `[db]` line, then run `db/run-sqleditor.sql` (or `db/migrations/054_*.sql`) via
+`production-db-migrate.yml`; `Production DB Verify` must then go BLOCKED → PASS on all 11 objects. Only then can a
+real PromptPay TEST round trip be attempted. **STATUS: BLOCKED — never PASS.**

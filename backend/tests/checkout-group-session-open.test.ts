@@ -221,6 +221,26 @@ describe("the group session is never opened before the database can record it", 
       ).toBe(false);
     }
   });
+
+  // ── the incident cannot be closed by declaring the order paid ───────────
+
+  test("opening a session can never mark an order paid", () => {
+    // The reported order carries `stripe_session_id = null`, so there is no
+    // evidence any money moved and it must stay UNPAID. The only writer of
+    // `paid` is the settlement reached from the signature-verified webhook, so
+    // the OPEN path — the whole span between the two `app.post` registrations —
+    // must contain no paid write at all. This is what keeps a missing column
+    // from being "resolved" by paying an order Stripe never charged.
+    const source = read(STRIPE_ROUTE);
+    const open = source.indexOf('app.post("/api/stripe/checkout"');
+    const webhook = source.indexOf('app.post("/api/payments/stripe/webhook"');
+    expect(open, "the checkout route must exist").toBeGreaterThan(0);
+    expect(webhook, "the webhook route must exist").toBeGreaterThan(open);
+    const openPath = source.slice(open, webhook);
+    expect(openPath, "the open path must not write paid").not.toMatch(/SET\s+status\s*=\s*'paid'/);
+    expect(openPath, "the open path must not stamp paid_at").not.toMatch(/paid_at\s*=\s*NOW\(\)/);
+    expect(openPath, "the open path must not coalesce a paid_at").not.toMatch(/paid_at\s*=\s*COALESCE/);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -999,5 +1019,145 @@ describeDb("opening a checkout session (requires TEST_DATABASE_URL)", () => {
       await query(`ALTER TABLE payments RENAME COLUMN checkout_group_id_hidden TO checkout_group_id`);
       __resetPaymentsGroupColumnCache();
     }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 3. THE SINGLE-SHOP RAIL, and THE REPORTED ORDER, once 054 §3 is in place
+  //
+  // Migration 054 §3 does two things that touch the single-order rail: it makes
+  // `payments.order_id` NULLABLE and replaces `payments_exactly_one_parent_check`
+  // with `payments_at_least_one_parent_check`. A single-order payment satisfies
+  // the new rule through `order_id` alone, but nothing had proved it against a
+  // real database — so "apply 054 §3" could have quietly broken single-shop
+  // checkout. These are the regressions that would catch it.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** GET /api/orders/:orderId — what the storefront polls to decide "paid". */
+  async function readOrder(userId: string, orderId: string) {
+    return withServer(async (base) => {
+      const token = jwt.sign({ userId, email: `${userId}@test.local` }, process.env.JWT_SECRET!, { expiresIn: "1h" });
+      const res = await fetch(`${base}/api/orders/${orderId}`, { headers: { Cookie: `velnox_session=${token}` } });
+      return { status: res.status, body: (await res.json()) as Record<string, any> };
+    });
+  }
+
+  testFn("§9 single-shop — one order still opens a session and records its attempt", async () => {
+    const { query } = await import("../db/index.js");
+    const { ownerId, orderId, total } = await seedSingleOrder();
+
+    const res = await openSession(ownerId, { orderId, method: "PROMPTPAY", requestKey: crypto.randomUUID() });
+
+    expect(res.status).toBe(200);
+    const data = res.body.data;
+    expect(data.url, "the storefront needs a URL to redirect to").toBeTruthy();
+    expect(String(data.sessionId)).toMatch(/^cs_test_/);
+    expect(data.reused).toBe(false);
+    expect(Number(data.amount)).toBe(total);
+    expect(data.currency).toBe("THB");
+
+    // The attempt is recorded against the ORDER, and 054 §3's nullable
+    // `checkout_group_id` does not become a second, empty parent.
+    const rows = (
+      await query(
+        `SELECT order_id, checkout_group_id, status, method, amount,
+                provider_checkout_session_id, provider_payment_id, paid_at
+           FROM payments WHERE order_id = $1`,
+        [orderId],
+      )
+    ).rows;
+    expect(rows, "the payment attempt must exist").toHaveLength(1);
+    expect(rows[0]!.order_id).toBe(orderId);
+    expect(rows[0]!.checkout_group_id, "a single-shop purchase has no group").toBeNull();
+    expect(rows[0]!.provider_checkout_session_id).toBe(data.sessionId);
+    expect(rows[0]!.status).toBe("requires_action");
+    expect(rows[0]!.method).toBe("PROMPTPAY");
+    expect(Number(rows[0]!.amount)).toBe(total);
+    expect(rows[0]!.paid_at, "opening a session is not paying").toBeNull();
+
+    expect((await stateOf([orderId]))[orderId]).toBe("pending_payment");
+
+    // And the constraint 054 §3 put in force is the one the row satisfies.
+    const checks = (
+      await query(`SELECT conname FROM pg_constraint WHERE conrelid = 'payments'::regclass AND contype = 'c'`)
+    ).rows.map((r) => r.conname as string);
+    expect(checks, "054 §3 relaxed the parent rule").toContain("payments_at_least_one_parent_check");
+    expect(checks, "the pre-054 rule must be gone").not.toContain("payments_exactly_one_parent_check");
+
+    expect(fake.created).toHaveLength(1);
+    expect(fake.created[0]!.payment_method_types).toEqual(["promptpay"]);
+    expect(fake.created[0]!.payment_intent_data).toMatchObject({ metadata: { orderId } });
+  });
+
+  testFn("§9 single-shop — a retry reuses the open session instead of opening a second", async () => {
+    const { ownerId, orderId } = await seedSingleOrder();
+
+    const first = await openSession(ownerId, { orderId, method: "PROMPTPAY", requestKey: crypto.randomUUID() });
+    expect(first.status).toBe(200);
+    const sessionId = first.body.data.sessionId;
+
+    // A fresh idempotency key — the storefront retries with a NEW key every
+    // time ("ลองชำระเงินอีกครั้ง"), so the durable key cannot be what stops the
+    // second session. The active-slot lookup is.
+    const retry = await openSession(ownerId, { orderId, method: "PROMPTPAY", requestKey: crypto.randomUUID() });
+    expect(retry.status).toBe(200);
+    expect(retry.body.data.sessionId).toBe(sessionId);
+    expect(retry.body.data.reused).toBe(true);
+    expect(fake.created, "no uncontrolled second Stripe session").toHaveLength(1);
+    expect(fake.expired, "nothing needed closing").toHaveLength(0);
+    expect(await activeCount("order_id", orderId, "order_id"), "exactly one active attempt").toBe(1);
+  });
+
+  testFn("§9 + §11 the reported order — created, never paid, and its retry opens exactly one attempt", async () => {
+    const { ownerId, groupId, orderIds } = await seedGroupCheckout();
+
+    // The production state, reproduced exactly: `POST /api/customer/checkout`
+    // committed the orders and the `checkout_groups` row; the payment INSERT
+    // then raised 42703 because `payments.checkout_group_id` did not exist. So
+    // there is NO attempt and NO session id — the customer was never charged.
+    expect(await groupPayments(groupId), "no attempt was ever recorded").toHaveLength(0);
+    expect(await stateOf(orderIds)).toEqual(Object.fromEntries(orderIds.map((id) => [id, "pending"])));
+
+    const before = await readOrder(ownerId, orderIds[0]!);
+    expect(before.status).toBe(200);
+    expect(before.body.data.status, "a session-less order is not paid").not.toBe("paid");
+    expect(before.body.data.payment, "there is nothing to show as a payment").toBeNull();
+
+    // The customer's retry, now that the schema carries the column.
+    const retry = await openSession(ownerId, {
+      checkoutGroupId: groupId,
+      method: "PROMPTPAY",
+      requestKey: crypto.randomUUID(),
+    });
+    expect(retry.status).toBe(200);
+    const sessionId = retry.body.data.sessionId;
+    expect(String(sessionId)).toMatch(/^cs_test_/);
+    expect(fake.created).toHaveLength(1);
+
+    const payments = await groupPayments(groupId);
+    expect(payments, "the retry creates the attempt the incident could not").toHaveLength(1);
+    expect(payments[0]!.provider_checkout_session_id, "the session id is recorded").toBe(sessionId);
+    expect(payments[0]!.status).toBe("requires_action");
+    expect(payments[0]!.paid_at, "still not paid — no money has moved").toBeNull();
+    expect(await activeCount("checkout_group_id", groupId)).toBe(1);
+    expect(await stateOf(orderIds)).toEqual(Object.fromEntries(orderIds.map((id) => [id, "pending_payment"])));
+
+    // Retrying AGAIN is served the same session: no duplicate, no second charge.
+    const again = await openSession(ownerId, {
+      checkoutGroupId: groupId,
+      method: "PROMPTPAY",
+      requestKey: crypto.randomUUID(),
+    });
+    expect(again.status).toBe(200);
+    expect(again.body.data.sessionId).toBe(sessionId);
+    expect(fake.created, "no duplicate uncontrolled Stripe session").toHaveLength(1);
+    expect(await groupPayments(groupId)).toHaveLength(1);
+
+    // The whole purchase still reads as unpaid from the authoritative endpoint.
+    for (const orderId of orderIds) {
+      const after = await readOrder(ownerId, orderId);
+      expect(after.body.data.status).toBe("pending_payment");
+      expect(after.body.data.status, "an open session is not a payment").not.toBe("paid");
+    }
+    expect((await groupPayments(groupId))[0]!.paid_at).toBeNull();
   });
 });
