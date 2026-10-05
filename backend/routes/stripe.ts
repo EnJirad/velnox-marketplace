@@ -331,6 +331,128 @@ function warnCheckoutGroupColumnMissing(): void {
   );
 }
 
+/**
+ * Can this database STORE a group payment at all?
+ *
+ * `checkoutGroupIdForAttempt` answers "does this existing payment belong to a
+ * group", which a key lookup can answer on either schema. A WRITE cannot be
+ * phrased that way: `INSERT INTO payments (checkout_group_id, …)` NAMES the
+ * column, and naming an absent column raises `undefined_column` (42703) — it is
+ * not a NULL, it is a thrown error. So the group OPEN path needs to know whether
+ * the column exists BEFORE it asks Stripe for money.
+ *
+ * This is the same deploy-order hazard as the settlement read, one step earlier
+ * in the request. Left unhandled it produces exactly the production symptom a
+ * customer reports: the order and the `checkout_groups` row are created (both by
+ * `POST /api/customer/checkout`, which does NOT need this column), the session
+ * is opened at Stripe, and then the INSERT raises 42703 — so the customer is
+ * shown "Failed to create checkout session" for an order that exists, with an
+ * open Stripe session nobody holds. Retrying opens another one.
+ *
+ * `pg_attribute` is the catalogue, not the table, so this statement is TRUE even
+ * on an empty `payments` — unlike probing a row, which would answer "no" simply
+ * because no group payment had been written yet. Result is cached for the
+ * process: the column is added by a migration, never by traffic, and
+ * `checkoutGroupIdForAttempt` re-detects per call so recovery needs no restart.
+ */
+let paymentsGroupColumnAvailable: boolean | null = null;
+
+async function paymentsCheckoutGroupColumnExists(): Promise<boolean> {
+  if (paymentsGroupColumnAvailable !== null) return paymentsGroupColumnAvailable;
+  const row = await query(
+    `SELECT EXISTS (
+        SELECT 1 FROM pg_attribute
+         WHERE attrelid = 'payments'::regclass
+           AND attname = 'checkout_group_id'
+           AND NOT attisdropped
+           AND attnum > 0
+     ) AS present`,
+  );
+  paymentsGroupColumnAvailable = row.rows[0]?.present === true;
+  if (!paymentsGroupColumnAvailable) warnCheckoutGroupColumnMissing();
+  return paymentsGroupColumnAvailable;
+}
+
+/**
+ * Reset the cached capability probe. Test-only seam — production has no reason
+ * to re-read the catalogue, and caching is what keeps this off the hot path.
+ */
+export function __resetPaymentsGroupColumnCache(): void {
+  paymentsGroupColumnAvailable = null;
+  checkoutGroupColumnWarned = false;
+}
+
+/**
+ * WHY A CHECKOUT SESSION FAILED — one structured line per failure.
+ *
+ * `catch { fail(res, 500, "STRIPE_ERROR", "Failed to create checkout session") }`
+ * throws away every field needed to diagnose it: the Stripe error TYPE, its
+ * CODE, the HTTP status, the `request_id` (the only handle Stripe support can
+ * use), and the `param` naming the rejected field. Every failure therefore looks
+ * identical from the outside, which is how a 42703 from THIS repository and a
+ * misconfigured PromptPay rail in the Stripe dashboard became indistinguishable.
+ *
+ * What is logged is deliberately bounded to correlation identifiers and Stripe's
+ * own error envelope:
+ *   • never the secret key, the signing secret or any `sk_`/`whsec_`/`pk_` value;
+ *   • never card data, a client secret, a customer email/phone or an address;
+ *   • `metadata` is reduced to the ids we ourselves put there (order/group/user),
+ *     never echoed wholesale.
+ * The client still receives only the generic message — `fail()` is unchanged.
+ */
+function logCheckoutSessionFailure(args: {
+  stage: string;
+  orderId: string | null;
+  checkoutGroupId: string | null;
+  method: string;
+  currency: string | null;
+  amountMinor: number | null;
+  sessionId: string | null;
+  err: unknown;
+}): void {
+  const { stage, orderId, checkoutGroupId, method, currency, amountMinor, sessionId, err } = args;
+  const e = (err ?? {}) as {
+    type?: unknown;
+    code?: unknown;
+    statusCode?: unknown;
+    status?: unknown;
+    requestId?: unknown;
+    param?: unknown;
+    message?: unknown;
+  };
+  const str = (v: unknown): string | null =>
+    typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+  // Stripe's `statusCode` is a NUMBER and `pg`'s `code` is a string, so a
+  // string-only coercion silently dropped the HTTP status from every Stripe
+  // failure — precisely the field requirement 3 asks for.
+  const scalar = (v: unknown): string | null => {
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    return str(v);
+  };
+
+  const detail: Record<string, unknown> = {
+    failure_stage: stage,
+    provider: "stripe",
+    occurred_at: new Date().toISOString(),
+    order_id: orderId,
+    checkout_group_id: checkoutGroupId,
+    method,
+    currency,
+    amount_minor: Number.isFinite(amountMinor as number) ? amountMinor : null,
+    stripe_session_id: sessionId,
+    provider_error_type: str(e.type),
+    provider_error_code: scalar(e.code),
+    provider_http_status: scalar(e.statusCode) ?? scalar(e.status),
+    provider_request_id: str(e.requestId),
+    provider_error_param: str(e.param),
+    provider_error_message: str(e.message),
+  };
+
+  // One line, JSON, so a log search can filter on provider_request_id and get
+  // exactly the Stripe-side log for that one call.
+  console.error(`[stripe] checkout_session_failed ${JSON.stringify(detail)}`);
+}
+
 // ─── Money reconciliation (pure — exported for tests) ──────────────────────
 
 /**
@@ -552,14 +674,84 @@ async function openCheckoutGroupSession(args: {
   userId: string;
   groupId: string;
   method: PaymentMethodId;
-  rememberResponse: (data: unknown) => Promise<void>;
+  requestKey: string | null;
+  rememberResponse: (data: unknown, orderId?: string | null) => Promise<void>;
   stripe: Stripe;
 }): Promise<void> {
-  const { res, userId, groupId, method, rememberResponse, stripe } = args;
+  const { res, userId, groupId, method, requestKey, rememberResponse, stripe } = args;
 
   const group = await readOwnedCheckoutGroup(groupId, userId);
   if (!group) {
     fail(res, 404, "NOT_FOUND", "Checkout not found");
+    return;
+  }
+
+  // ── Idempotency layer 1: the request key, claimed HERE ────────────────
+  // This used to live only on the single-order path, below the group dispatch
+  // in the route — so a multi-shop purchase, the exact flow that failed in
+  // production, had NO request-key idempotency at all. Two clicks of "pay" each
+  // opened their own Stripe session; the partial unique index let one INSERT
+  // win and expired the loser's session after the fact. Recoverable, but it
+  // spends a real provider call per double-click and shows the customer a
+  // "try again" for a payment that was in fact already being prepared.
+  //
+  // Claimed AFTER the group is verified as existing and owned, so a bogus group
+  // id cannot burn a key, and BEFORE any Stripe call, so the loser of a
+  // double-click never reaches the provider.
+  if (requestKey) {
+    const claim = await query(
+      `INSERT INTO checkout_requests (user_id, scope, request_key) VALUES ($1, 'payment', $2)
+       ON CONFLICT (user_id, scope, request_key) DO NOTHING
+       RETURNING id`,
+      [userId, requestKey],
+    );
+    if (claim.rows.length === 0) {
+      const previous = await query(
+        `SELECT response FROM checkout_requests
+          WHERE user_id = $1 AND scope = 'payment' AND request_key = $2`,
+        [userId, requestKey],
+      );
+      const stored = previous.rows[0]?.response;
+      if (stored && typeof stored === "object") {
+        res.json({ success: true, data: stored });
+        return;
+      }
+      // Claimed but unfinished — never open a competing session.
+      fail(res, 409, "DUPLICATE_PAYMENT_IN_PROGRESS", "Your payment is being prepared. Please wait a moment.");
+      return;
+    }
+  }
+
+  // ── Can this database record a group payment? ─────────────────────────
+  // A group charge is written as `INSERT INTO payments (checkout_group_id, …)`,
+  // which NAMES the column (migration 054 §3). On a database where 054 has not
+  // been applied that INSERT raises 42703. Asking Stripe first would leave an
+  // OPEN session at Stripe that this backend cannot attach to any payment row —
+  // a live checkout URL for a purchase nothing can ever settle, which is the
+  // worst outcome available here. So the capability is checked FIRST and the
+  // customer is refused before any money-moving call is made.
+  //
+  // This is a deploy-order condition, not a customer error, so the status is 503
+  // (retryable by definition) and the log names the reconciler.
+  if (!(await paymentsCheckoutGroupColumnExists())) {
+    logCheckoutSessionFailure({
+      stage: "group_column_missing",
+      orderId: null,
+      checkoutGroupId: groupId,
+      method,
+      currency: null,
+      amountMinor: null,
+      sessionId: null,
+      err: new Error(
+        "payments.checkout_group_id is absent — the group payment row cannot be written",
+      ),
+    });
+    fail(
+      res,
+      503,
+      "CHECKOUT_GROUP_UNAVAILABLE",
+      "Payment for this multi-shop checkout is temporarily unavailable. Please try again shortly.",
+    );
     return;
   }
 
@@ -658,7 +850,7 @@ async function openCheckoutGroupSession(args: {
               : null,
             reused: true,
           };
-          await rememberResponse(data);
+          await rememberResponse(data, representative.id);
           res.json({ success: true, data });
           return;
         }
@@ -670,33 +862,55 @@ async function openCheckoutGroupSession(args: {
     return;
   }
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    payment_method_types: [stripePaymentMethodType(method)!],
-    line_items: lineItems,
-    // The return page reads `order=<id>`; it is given the group's representative
-    // order so a multi-shop purchase lands on a real, readable order instead of
-    // an empty page. `group` is kept alongside it so the storefront can say how
-    // many shops the purchase spans — and it is NEVER used to decide payment
-    // state, which the return page reads back from the server.
-    success_url: `${frontendUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}&group=${groupId}&order=${representative.id}`,
-    cancel_url: `${frontendUrl}/checkout/cancel?group=${groupId}&order=${representative.id}`,
-    metadata: {
-      // `checkoutGroupId` is what the webhook fans out on. `orderId` is the
-      // group's earliest order, kept only so an event that predates this
-      // contract (or an operator looking at Stripe metadata) still has a pointer.
-      checkoutGroupId: groupId,
+  // Stage-instrumented: a failure between here and the INSERT below is the one
+  // case that leaves an OPEN Stripe session with no payment row pointing at it.
+  // The group id, method, amount and Stripe's request_id make that recoverable
+  // from logs alone; without them it is an orphan nobody can find.
+  let session;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: [stripePaymentMethodType(method)!],
+      line_items: lineItems,
+      // The return page reads `order=<id>`; it is given the group's representative
+      // order so a multi-shop purchase lands on a real, readable order instead of
+      // an empty page. `group` is kept alongside it so the storefront can say how
+      // many shops the purchase spans — and it is NEVER used to decide payment
+      // state, which the return page reads back from the server.
+      success_url: `${frontendUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}&group=${groupId}&order=${representative.id}`,
+      cancel_url: `${frontendUrl}/checkout/cancel?group=${groupId}&order=${representative.id}`,
+      metadata: {
+        // `checkoutGroupId` is what the webhook fans out on. `orderId` is the
+        // group's earliest order, kept only so an event that predates this
+        // contract (or an operator looking at Stripe metadata) still has a pointer.
+        checkoutGroupId: groupId,
+        orderId: representative.id,
+        userId,
+        method,
+        provider: "stripe",
+        mode: "test",
+      },
+      payment_intent_data: { metadata: { checkoutGroupId: groupId, userId, method } },
+      customer_creation: "always",
+      allow_promotion_codes: true,
+      ...(nowSeconds > 0 ? {} : {}),
+    });
+  } catch (err) {
+    // Stripe refused to open the session — nothing exists at Stripe, so there is
+    // no orphan to clean up. Recorded with the request_id that identifies this
+    // exact call in Stripe's own logs.
+    logCheckoutSessionFailure({
+      stage: "group_session_create",
       orderId: representative.id,
-      userId,
+      checkoutGroupId: groupId,
       method,
-      provider: "stripe",
-      mode: "test",
-    },
-    payment_intent_data: { metadata: { checkoutGroupId: groupId, userId, method } },
-    customer_creation: "always",
-    allow_promotion_codes: true,
-    ...(nowSeconds > 0 ? {} : {}),
-  });
+      currency,
+      amountMinor: expectedMinor,
+      sessionId: null,
+      err,
+    });
+    throw err;
+  }
 
   const intentId =
     typeof session.payment_intent === "string"
@@ -724,7 +938,30 @@ async function openCheckoutGroupSession(args: {
     );
     paymentId = inserted.rows[0]?.id ?? null;
   } catch (err) {
-    if (!isUniqueViolation(err)) throw err;
+    if (!isUniqueViolation(err)) {
+      // A session EXISTS at Stripe right now and nothing points at it. That is
+      // the one unrecoverable shape in this handler, so the session id is logged
+      // explicitly — an operator must be able to expire it from the Stripe
+      // dashboard by id. The error's own code/param say whether this was the
+      // schema (42703) or something else.
+      logCheckoutSessionFailure({
+        stage: "group_payment_insert",
+        orderId: representative.id,
+        checkoutGroupId: groupId,
+        method,
+        currency,
+        amountMinor: expectedMinor,
+        sessionId: session.id,
+        err,
+      });
+      // Close the session we are about to abandon: an open session nobody holds
+      // is a payable URL for a charge this backend cannot settle. Expiring it is
+      // best-effort and never masks the original error.
+      await stripe.checkout.sessions.expire(session.id).catch(() => {
+        /* best-effort: the failure above is what must be reported */
+      });
+      throw err;
+    }
     // A concurrent request won the active slot. Close OUR session (which the
     // customer is never shown) and let the caller retry onto the winner.
     await stripe.checkout.sessions.expire(session.id).catch(() => {});
@@ -758,7 +995,7 @@ async function openCheckoutGroupSession(args: {
       : null,
     reused: false,
   };
-  await rememberResponse(data);
+  await rememberResponse(data, representative.id);
 
   console.log(
     `[stripe] checkout session ${session.id} opened for checkout group ${groupId} ` +
@@ -1510,6 +1747,15 @@ export function setupStripeRoutes(app: Express): void {
   // this endpoint sends to Stripe is derived from the database, never from the
   // request body.
   app.post("/api/stripe/checkout", requireAuth, async (req: Request, res: Response) => {
+    // Declared OUTSIDE the try so the catch below can always correlate a failure
+    // with the customer-visible identifiers, whatever stage threw. They are
+    // assigned from the same request fields the handler uses, so they can never
+    // disagree with the values the rest of the route acted on.
+    let failureOrderId: string | null = null;
+    let failureGroupId: string | null = null;
+    let failureMethod: string | null = null;
+    let failureCurrency: string | null = null;
+    let failureAmountMinor: number | null = null;
     try {
       const userId = req.user!.userId;
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -1533,6 +1779,9 @@ export function setupStripeRoutes(app: Express): void {
         fail(res, 400, "INVALID_PAYMENT_METHOD", "Unsupported payment method.");
         return;
       }
+      failureMethod = method;
+      failureOrderId = orderId || null;
+      failureGroupId = checkoutGroupId || null;
 
       // The method guard runs BEFORE anything provider-related, so a disabled
       // method is refused with its own code no matter what state Stripe is in.
@@ -1555,17 +1804,29 @@ export function setupStripeRoutes(app: Express): void {
       // ── Idempotency layer 1: the request key ────────────────────────────
       // One durable row per (user, scope, request key). A retry with the same
       // key replays the stored response instead of opening a second session.
-      // Declared before the group dispatch because BOTH paths snapshot their
-      // response under the same key, which is what makes a double-click or a
-      // retry of a multi-shop purchase idempotent.
+      //
+      // The group path CLAIMS the key inside `openCheckoutGroupSession`, not
+      // here: the key must not be claimed before the group is known to exist
+      // and be owned by this user, or a bogus group id would burn the key. The
+      // single-order path keeps its claim below, after the order is validated
+      // for the same reason. Both paths share `rememberResponse`, so a replayed
+      // response is served from either one.
       const rawKey = typeof body.requestKey === "string" ? body.requestKey.trim() : "";
       const requestKey = rawKey ? rawKey.slice(0, 200) : null;
 
-      const rememberResponse = async (data: unknown) => {
-        if (!requestKey) return;        await query(
+      const rememberResponse = async (data: unknown, responseOrderId?: string | null) => {
+        if (!requestKey) return;
+        // A group request carries NO `orderId` (the group IS the subject), so
+        // attributing the snapshot to the empty string threw a uuid parse error
+        // and the whole snapshot was silently dropped — leaving the claimed key
+        // permanently 'claimed but unfinished', i.e. a replay could never be
+        // served. The group path passes its representative order instead.
+        const orderRef = responseOrderId ?? orderId;
+        if (!orderRef) return;
+        await query(
           `UPDATE checkout_requests SET order_id = $1, response = $2::jsonb
             WHERE user_id = $3 AND scope = 'payment' AND request_key = $4`,
-          [orderId, JSON.stringify({ ...(data as object), paymentRequest: true, method }), userId, requestKey],
+          [orderRef, JSON.stringify({ ...(data as object), paymentRequest: true, method }), userId, requestKey],
         ).catch(() => {
           // The response snapshot is an optimisation; failing to store it must
           // not fail a payment the customer can already complete.
@@ -1586,7 +1847,15 @@ export function setupStripeRoutes(app: Express): void {
       // and the session is settled only by the signature-verified webhook
       // (`settleCheckoutGroup`). No client figure is trusted.
       if (checkoutGroupId) {
-        await openCheckoutGroupSession({ res, userId, groupId: checkoutGroupId, method, rememberResponse, stripe: s });
+        await openCheckoutGroupSession({
+          res,
+          userId,
+          groupId: checkoutGroupId,
+          method,
+          requestKey,
+          rememberResponse,
+          stripe: s,
+        });
         return;
       }
 
@@ -1649,6 +1918,8 @@ export function setupStripeRoutes(app: Express): void {
         fail(res, 400, "INVALID_AMOUNT", "The order total is not payable.");
         return;
       }
+      failureCurrency = currency;
+      failureAmountMinor = expectedMinor;
 
       const itemsResult = await query(
         `SELECT product_name_snapshot, product_name, image_url_snapshot, quantity, price
@@ -1918,7 +2189,23 @@ export function setupStripeRoutes(app: Express): void {
       );
       res.json({ success: true, data });
     } catch (err) {
-      console.error("[stripe] checkout error:", err instanceof Error ? err.message : "unknown error");
+      // The outer catch covers everything from the order read to the session
+      // write, so it cannot know which step failed on its own. What it always
+      // knows is the identifiers the customer and the order share, so the
+      // failure is recorded with them plus Stripe's own error envelope (type,
+      // code, HTTP status, `param`, `request_id`). Without `request_id` a
+      // production 500 here is unactionable: Stripe support cannot find the call
+      // and neither can we. Never the secret key, card data or the payload.
+      logCheckoutSessionFailure({
+        stage: "checkout_session_open",
+        orderId: failureOrderId,
+        checkoutGroupId: failureGroupId,
+        method: failureMethod ?? "unknown",
+        currency: failureCurrency,
+        amountMinor: failureAmountMinor,
+        sessionId: null,
+        err,
+      });
       fail(res, 500, "STRIPE_ERROR", "Failed to create checkout session");
     }
   });
