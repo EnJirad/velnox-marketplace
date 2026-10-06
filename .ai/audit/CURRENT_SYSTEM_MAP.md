@@ -125,6 +125,50 @@ unreachable at runtime; no retry budget; no reconciliation against Stripe.
 
 ---
 
+## 4A. CART
+
+| | |
+|---|---|
+| **Actual files** | `backend/routes/cart.ts` — add/update at `:308`, `:395-417`, remove at `:448`/`:536`; checkout from `:684` |
+| **Actual API** | cart CRUD + `POST /api/customer/checkout` |
+| **Actual DB tables** | `carts`, `cart_items` (carries an add-to-cart `price` snapshot), `products`, `product_variants`, `inventory` |
+| **Actual state** | one cart per user; items snapshot a price at add time |
+| **Actual owner** | the customer |
+| **Actual source of truth** | **the server** — `products.price` / `product_variants.price` are the real prices; `cart_items.price` is only a snapshot that checkout revalidates |
+| **Actual transaction boundary** | add/update are single statements; checkout is one transaction |
+| **Actual tests** | cart suites + `multi-shop-checkout.test.ts` |
+
+### The §8 checklist, verified item by item
+
+| Check | Result | Evidence |
+|---|---|---|
+| Cart ownership | ✅ | every item mutation scopes by subquery: `DELETE FROM cart_items WHERE id = $1 AND cart_id = (SELECT id FROM carts WHERE user_id = $2)` (`:448`, `:536`) |
+| Cart persistence | ✅ | `carts` / `cart_items` in Postgres; totals recalculated from `cart_items` (`:172-178`) |
+| Product validation | ✅ | checkout rejects `product_status !== 'published'` → `PRODUCT_UNAVAILABLE` (`:799`) |
+| Variant validation | ✅ | re-reads `product_variants`; rejects `status !== 'active'` or insufficient stock → `INSUFFICIENT_STOCK` / `VARIANT_NOT_FOUND` (`:805-841`) |
+| Quantity validation | ✅ | `validateCheckoutQuantity()` server-side, `MAX_ORDER_QUANTITY = 999` (`lib/inventory.ts:11`) → `VALIDATION_ERROR` (`:789`) |
+| **Price refresh** | ✅✅ | checkout re-reads the price per item and **reassigns it**: `item.price = productPrice` (`:861-865`) and `item.price = variantPrice` (`:843-847`), with a 0.005 tolerance, setting `priceChanged` so the client is told. The code comment claiming this is accurate — this is stronger than the common "trust the cart snapshot" implementation |
+| Unavailable product | ✅ | `PRODUCT_UNAVAILABLE` |
+| Seller ownership | ✅ | the shop comes from `p.shop_id` in the join, never from the request |
+| Stock changes | ✅ | availability is re-read at checkout (`stock_qty - reserved`, or variant `stock`) |
+| Duplicate items | ✅ | upsert per (cart, product, variant): `SELECT … FROM cart_items WHERE cart_id = $1 AND product_id = $2${variantClause}` then UPDATE, else INSERT (`:395-417`) |
+| Concurrent modification | ⚠️ | no row lock or version on `cart_items`; a concurrent add and a concurrent checkout can interleave. Harmless for money — checkout revalidates stock and price inside its own transaction — but cart contents are last-write-wins |
+| Cart expiration | ❌ absent | verified: no `expires_at` column, no sweep job. Low impact precisely *because* checkout revalidates price and stock; the cost is stale rows and a stale-looking total in the UI |
+
+### Can the frontend tamper with the money? — **No, verified**
+
+`POST /api/customer/checkout` reads exactly five body fields (`cart.ts:690-700`):
+`shippingAddressId`/`addressId`, `notes`, `cartItemIds`, `requestId`, `paymentMethod`.
+A search for `body.price`, `body.total`, `body.amount`, `body.seller`, `body.discount`,
+`body.subtotal` and `body.shop` returns **zero matches** in `routes/cart.ts`.
+
+So **price, quantity, seller, product, variant and discount cannot be supplied by the
+client.** All are resolved from the database. `paymentMethod` is documented in the code
+itself as *"a routing hint; it never affects price"* and is validated against server-side
+payment configuration, so a disabled method cannot be ordered by hiding or showing UI.
+
+---
+
 ## 5. CHECKOUT
 
 | | |
@@ -141,6 +185,22 @@ unreachable at runtime; no retry budget; no reconciliation against Stripe.
 **Verified:** the cart split is real; `checkout_requests UNIQUE (user_id, scope,
 request_key)` stores the response and replays it, so a duplicate checkout cannot
 create a second purchase; stock reservation is a guarded atomic UPDATE.
+
+### The §9 checklist, verified item by item
+
+| Check | Result | Evidence |
+|---|---|---|
+| Server-side price | ✅ | see §4A — the price is re-read and reassigned per item inside checkout |
+| Total calculation | ✅ | the order's lines are written from the **reassigned** `item.price` (`:963` `parseFloat(item.price) * item.quantity`) |
+| Multi-seller | ✅ | items are grouped by `shop_id` in-memory and one order per shop is created (`:875+`) |
+| Atomicity | ✅ | order, order items and stock reservation are written in **one** `withTransaction()`; a failure rolls the whole purchase back |
+| Idempotency | ✅ | `checkout_requests UNIQUE (user_id, scope, request_key)` with the **response stored** and replayed |
+| Retry | ✅ | a retry with the same `requestId` returns the original purchase rather than creating a second |
+| Inventory reservation | ✅ | guarded atomic UPDATE; validation and mutation are the same statement |
+| Expiration | ⚠️ | the *payment reservation* expires (`payment-reservation-expiry.test.ts`) and releases stock; the **cart** does not expire (§4A) |
+| Concurrent checkout | ✅ | two concurrent requests for one purchase: the lock order + guarded stock predicate serialise them; tested with two real connections |
+| Duplicate checkout | ✅ | blocked by the idempotency key above |
+| Partial failure | ✅ | one transaction: a stock failure on the second shop rolls back the first shop's order too — no half-purchase. Verified by the `INSUFFICIENT_STOCK` / `EMPTY_CART` / `PRODUCT_UNAVAILABLE` early returns happening **before** any write, and the stock guards happening **inside** the transaction |
 
 ---
 

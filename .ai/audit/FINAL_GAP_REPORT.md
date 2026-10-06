@@ -68,6 +68,7 @@ cannot yet account for it.
 
 - **Domain:** Order
 - **Type:** REAL DEFECT
+- **Severity:** P0
 - **Velnox evidence:**
   - DB constraint (`db/schema.sql`, `orders_status_check`): `CHECK (status IN ('pending','confirmed','packing','shipped','delivered','completed','cancelled','pending_payment','paid','payment_failed','refunded','expired'))`
   - 12 writer sites: `cart.ts:1501`, `center.ts:532`, `seller-orders.ts:627`, `stripe.ts:1011/1067/1266/1442/1489/1637/1643/2449`, `checkout-group-lifecycle.ts:168`
@@ -83,6 +84,7 @@ cannot yet account for it.
 
 - **Domain:** Settlement / Marketplace
 - **Type:** MISSING CAPABILITY
+- **Severity:** P0
 - **Velnox evidence:** `commissions` and `settlements` exist with **zero writers** (verified by search); `ledger_entries` (056) has the account vocabulary `platform_cash | platform_revenue | seller_payable | refund_clearing` and an append-only trigger (`trg_prevent_ledger_mutation`) and **zero writers**; three contradictory rates — `SELLER_COMMISSION_RATE = 0.03` (`lib/seller-stats.ts:7`, used at `routes/admin.ts:190`), `commissionRate: 0.03` (`routes/products.ts:2608`), `commissionRate: 0` (`routes/seller-orders.ts:249`), column default `0.05`
 - **Benchmark evidence:** Lazada publishes payout/statement APIs (`/finance/payout/status/get`); Amazon SP-API exposes financial events and settlement periods (`developer-docs.amazon.com/sp-api/reference/listsummary`: *"the financial summary for the specified time period or settlement period"*); Shopify has payouts.
 - **Difference:** the provider tells Velnox what the **customer** paid. Nothing records what the platform **owes the seller**.
@@ -95,6 +97,7 @@ cannot yet account for it.
 
 - **Domain:** Reconciliation
 - **Type:** MISSING CAPABILITY
+- **Severity:** P0
 - **Velnox evidence:** `reconciliation_runs` and `reconciliation_findings` (056) have `kind`, `severity`, a unique `fingerprint` per kind and `expected`/`observed` JSONB — **no runner, no reader, zero references** (verified by search). Every `reconcil` match in the codebase is an amount-reconciliation *comment*; `db/verify-reconciler.sh` is a **schema-shape** verifier and does not compare business data.
 - **Benchmark evidence:** Amazon's settlement/report model is explicitly reconciliation-shaped; Shopify and Lazada both publish payout/statement surfaces whose purpose is to be compared against the platform's own record.
 - **Difference:** Velnox has no way to ask "does my database agree with Stripe / with itself?"
@@ -110,6 +113,7 @@ cannot yet account for it.
 
 - **Domain:** Inventory
 - **Type:** REAL DEFECT — **introduced by migration 056**, and found by auditing this audit's own prior work
+- **Severity:** P1
 - **Velnox evidence:** `routes/products.ts:1487` — `INSERT INTO inventory (product_id, quantity, …) … ON CONFLICT (product_id) DO UPDATE SET quantity = $2` with `qty = Math.max(0, Number(quantity) || 0)` clamped **only at 0**. The new constraint `inventory_availability_check` is `CHECK (reserved + committed <= quantity)`. The route's `catch` (`:1498-1501`) returns `500 { code: "STOCK_FAILED" }`.
 - **Why it is new:** before 056 the same update silently succeeded. It could set `quantity` to 0 while 3 units were **reserved by an in-flight checkout**, i.e. the shelf was oversold. The constraint now refuses — correctly — but nothing handles the refusal.
 - **Risk:** a seller restocking or correcting stock during an active checkout gets an opaque 500. There is no message, no partial success, and no way to discover that the cause is an outstanding reservation. The seller concludes the product page is broken.
@@ -120,6 +124,7 @@ cannot yet account for it.
 
 - **Domain:** Shipment
 - **Type:** REAL DEFECT
+- **Severity:** P1
 - **Velnox evidence:** `backend/lib/order-fulfillment.ts:396` `ensureShipmentForShipping` — `SELECT … LIMIT 1` then `INSERT INTO shipments (order_id, carrier, tracking_number, status) VALUES ($1,$2,$3,'created')`. There is **no unique constraint on `shipments.order_id`** and no idempotency key. `shipment_items_shipment_item_unique` (056) constrains the items table, not the shipment.
 - **Benchmark evidence:** Shopify's `Fulfillment` is a first-class object created deliberately; Amazon's Fulfillment Outbound submissions carry idempotency semantics; all three treat a shipment as a distinct, once-created artefact.
 - **Difference:** every other money/stock/order write in Velnox is DB-keyed; this one is not.
@@ -131,6 +136,7 @@ cannot yet account for it.
 
 - **Domain:** Shipping
 - **Type:** MISSING CAPABILITY
+- **Severity:** P1
 - **Velnox evidence:** `shipments.status` now has the 056 vocabulary `pending, created, picked_up, in_transit, out_for_delivery, delivered, returned, lost, cancelled` — but the **only** values ever written are `created` (`order-fulfillment.ts:438`) and a one-way `pending → created` migration (`:418`). `shipments.shipped_at` and `shipments.delivered_at` (056) have **no writer**.
 - **Benchmark evidence:** all three benchmarks attach tracking and transit events to the shipment; Lazada's seller workflow exposes shipped/delivered as shipment facts.
 - **Difference:** the vocabulary is a promise the code does not keep.
@@ -142,6 +148,7 @@ cannot yet account for it.
 
 - **Domain:** Returns
 - **Type:** MISSING CAPABILITY
+- **Severity:** P1
 - **Velnox evidence:** no route, no service. `order_returns` (056) declares `requested, approved, rejected, in_transit, received, restocked, completed, cancelled` with `requested_by`, `decided_by`, `received_at`, `restocked_quantity` — **zero references** (verified by search). Tests prove only that the TABLE refuses bad rows.
 - **Benchmark evidence:** Lazada publishes reverse-order APIs; Shopify has a Returns API; Amazon exposes returns in SP-API.
 - **Difference:** `cancel` and `refund` exist and are not returns.
@@ -153,6 +160,7 @@ cannot yet account for it.
 
 - **Domain:** Fulfillment
 - **Type:** MISSING CAPABILITY
+- **Severity:** P1
 - **Velnox evidence:** `lib/order-fulfillment.ts` has a real 7-state machine (`pending, confirmed, packing, shipped, delivered, completed, cancelled`) with `FULFILLMENT_TRANSITIONS`, `paymentAllowsConfirmation` and `assertNoSettledPaymentForCancellation`. It is enforced **in code only** — no DB constraint — and its result is stored in the shared `orders.status`. `fulfillment_orders` (056) and `order_items.fulfilled_quantity` (056) have **zero references**.
 - **Benchmark evidence:** Shopify's `FulfillmentOrder` is *"either an item or a group of items in an order that are to be fulfilled from the same location"* and `Fulfillment` *"tracks which LineItem objects ship, their quantities"*. Amazon splits Order / OrderItem / Fulfillment similarly.
 - **Difference:** Velnox's machine models *an order* moving through stages; the benchmark models *work* that can be split, partially completed and repeated.
@@ -427,8 +435,15 @@ Ranked by how much would be lost by "simplifying" it.
 14. **2,035 passing tests** including a multi-shop purchase test suite that asserts against
     **the production query constants themselves**, so a drift between test and production
     is impossible.
+15. **Checkout revalidates the price per item and reassigns it in place.**
+    `cart.ts:843-847` and `:861-865` re-read `product_variants.price` /
+    `products.price`, compare against the cart snapshot with a 0.005 tolerance, and
+    overwrite `item.price` before the order lines are written — so the charged amount is
+    always the current server price, and `priceChanged` is surfaced so neither side is
+    silently surprised. The add-to-cart price is a display snapshot, never the price
+    charged. Most implementations trust the cart row here.
 
-**Recommendation for all fourteen: leave them alone.** Keeping them is what makes the
+**Recommendation for all fifteen: leave them alone.** Keeping them is what makes the
 incremental path in "Recommended Fix Order" safe. Replacing any of them would be a
 regression, not a modernization.
 

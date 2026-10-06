@@ -240,7 +240,8 @@ should be dismantled by a fix for anything below.
 | Checkout idempotency with the **stored response** replayed | `checkout_requests UNIQUE (user_id, scope, request_key)` |
 | Exactly-once stock release with a DB claim | `orders.inventory_released` + `lib/inventory.ts` |
 | Absolute-value recompute instead of increment for refund totals | `routes/stripe.ts` — `SUM(refunds.amount)` per sync, so a replayed webhook cannot double-count |
-| Server-resolved checkout (client cannot set price/seller/total) | `routes/cart.ts` resolves from the DB inside the transaction |
+| Server-resolved checkout (client cannot set price/seller/total) | `routes/cart.ts` reads exactly five body fields (`:690-700`) and resolves everything else from the DB inside the transaction |
+| **Per-item price revalidation at checkout** — the add-to-cart price is a display snapshot, never the price charged | `cart.ts:843-847` (variant) and `:861-865` (product) re-read the current price, compare with a 0.005 tolerance and **overwrite** `item.price`; `priceChanged` is surfaced so neither side is silently surprised |
 | Guarded atomic stock reservation (`WHERE stock >= $1`) | `routes/cart.ts:1003`, `lib/inventory.ts:61`, `lib/velrepeat-cycles.ts:602` |
 | Exact decimal money | `NUMERIC(12,2)`; `lib/money.ts` documents string handling |
 | Purchase-level parent for a multi-shop charge | `checkout_groups` + the covering-set resolver `lib/payment-attempt.ts` |
