@@ -43,6 +43,12 @@ import { releaseOrderInventory } from "../lib/inventory.js";
 // cancel and with the Stripe webhook, so it enters the same lock order as they
 // do (order row first) and none of the three can deadlock (lib/order-lock.ts).
 import { lockOrderRow } from "../lib/order-lock.js";
+// The covering-set predicate and the group-unit termination. A multi-shop
+// purchase's charge is ONE row on the checkout GROUP with `order_id IS NULL`, so
+// a read or a write that names only `payments.order_id` is blind to it — and on
+// this path that blindness took money with no order (see `expireCheckoutGroupReservation`).
+import { coveringPaymentsPredicate, logPaymentEvent } from "../lib/payment-attempt.js";
+import { terminateCheckoutGroup } from "../lib/checkout-group-lifecycle.js";
 import {
   isUndefinedColumnError,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
@@ -98,14 +104,26 @@ export async function findDuePaymentReservations(limit = 25): Promise<string[]> 
  * customer's own cancel: the guarded claim decides, and the loser is a no-op.
  */
 export async function expirePaymentReservation(orderId: string): Promise<ReservationExpiryResult> {
+  // Both payment reads go through the COVERING SET (lib/payment-attempt.ts).
+  // `WHERE p.order_id = o.id` matched nothing for a multi-shop purchase, so:
+  //   • `blocking_payment_status` was NULL, i.e. a LIVE or CAPTURED group charge
+  //     did not block the expiry — the sweep could expire a purchase the customer
+  //     was still inside the payment window for;
+  //   • `open_session_id` was NULL, so the sweep never closed the Stripe session
+  //     it was abandoning. The customer could still pay it, and the settlement then
+  //     moved no order (they were `expired`), leaving captured money on
+  //     `payments.status = 'paid'` with zero orders sold.
   const state = await query(
     `SELECT o.id, o.status, o.inventory_released, o.payment_expires_at,
+            o.checkout_group_id,
             (SELECT p.provider_checkout_session_id FROM payments p
-              WHERE p.order_id = o.id AND p.provider = 'stripe'
+              WHERE p.provider = 'stripe'
                 AND p.status IN ('pending', 'requires_action')
+                AND ${coveringPaymentsPredicate("p", "o")}
               ORDER BY p.created_at DESC LIMIT 1) AS open_session_id,
             (SELECT p.status FROM payments p
-              WHERE p.order_id = o.id AND p.status = ANY($2::text[])
+              WHERE p.status = ANY($2::text[])
+                AND ${coveringPaymentsPredicate("p", "o")}
               ORDER BY p.created_at DESC LIMIT 1) AS blocking_payment_status
        FROM orders o WHERE o.id = $1`,
     [orderId, [...EXPIRY_BLOCKING_PAYMENT_STATUSES]],
@@ -139,6 +157,22 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
     };
   }
 
+  // ── A purchase expires as ONE unit ──────────────────────────────────────
+  // Expiring a single member of a multi-shop purchase would release that shop's
+  // stock while leaving the charge live and payable for a purchase whose amount no
+  // longer matches the goods. The whole purchase ends here, through the same
+  // `terminateCheckoutGroup()` the customer's own cancel route uses, so there is
+  // ONE definition of "this purchase is over". The other member orders then read as
+  // a benign "already decided" skip on their own due rows — idempotent by design.
+  if (order.checkout_group_id) {
+    return expireCheckoutGroupReservation(
+      orderId,
+      order.checkout_group_id as string,
+      (order.open_session_id as string | null) ?? null,
+      new Date(order.payment_expires_at).toISOString(),
+    );
+  }
+
   const claimed = await withTransaction(async (client) => {
     // ORDER ROW FIRST (lib/order-lock.ts). A concurrent cancel does the same,
     // so the two serialise on one row in one order and the guarded claim below
@@ -155,8 +189,8 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
           AND payment_expires_at <= NOW()
           AND NOT EXISTS (
             SELECT 1 FROM payments p
-             WHERE p.order_id = orders.id
-               AND p.status = ANY($4::text[])
+             WHERE p.status = ANY($4::text[])
+               AND ${coveringPaymentsPredicate("p", "orders")}
           )
         RETURNING id`,
       [
@@ -175,7 +209,12 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
       `UPDATE payments
           SET status = 'cancelled', failure_code = 'PAYMENT_RESERVATION_EXPIRED',
               failure_message = 'The payment reservation window expired.', updated_at = NOW()
-        WHERE order_id = $1 AND provider = 'stripe' AND status <> 'paid'`,
+        WHERE provider = 'stripe' AND status <> 'paid'
+          AND (order_id = $1
+               OR (checkout_group_id IS NOT NULL
+                   AND checkout_group_id = (SELECT o.checkout_group_id
+                                              FROM orders o
+                                             WHERE o.id = $1)))`,
       [orderId],
     );
 
@@ -207,6 +246,12 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
     to: PAYMENT_RESERVATION_EXPIRED_STATUS,
   });
 
+  logPaymentEvent("inventory.released", {
+    order_id: orderId,
+    status: PAYMENT_RESERVATION_EXPIRED_STATUS,
+    reason: "payment reservation window expired",
+  });
+
   console.log(
     `[reservation] order ${orderId} expired — payment reservation lapsed at ${new Date(order.payment_expires_at).toISOString()}, stock released`,
   );
@@ -216,6 +261,98 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
     released: true,
     sessionExpired,
     reason: "payment reservation window expired",
+  };
+}
+
+/**
+ * Expire an ENTIRE multi-shop purchase, because one of its orders' reservation
+ * windows has passed.
+ *
+ * Every member order was written by ONE `POST /api/customer/checkout` transaction
+ * and they share the deadline it stamped, so "one member is due" means the
+ * purchase is due. It is ended as a unit through `terminateCheckoutGroup()`, the
+ * same function the customer's cancel route uses:
+ *
+ *   • all member order rows are locked together, `id ASC` (lib/order-lock.ts);
+ *   • a `paid`/`processing` charge refuses the whole thing — money outranks the
+ *     sweep, and the order is reported as skipped so an operator can see why;
+ *   • each order is claimed and its stock released through the ONE release path;
+ *   • the charge is voided LAST, so a late webhook finds nothing left to settle.
+ *
+ * The Stripe session read BEFORE the void is closed after the commit. It is
+ * deliberately attempted even though the order state is already terminal: leaving
+ * a payable page open is what let a customer pay for a purchase whose orders had
+ * expired — the exact defect this function exists to remove.
+ */
+async function expireCheckoutGroupReservation(
+  orderId: string,
+  checkoutGroupId: string,
+  preReadSessionId: string | null,
+  expiresAt: string,
+): Promise<ReservationExpiryResult> {
+  const outcome = await withTransaction((client) =>
+    terminateCheckoutGroup(client, checkoutGroupId, {
+      toStatus: PAYMENT_RESERVATION_EXPIRED_STATUS,
+      failureCode: "PAYMENT_RESERVATION_EXPIRED",
+      failureMessage: "The payment reservation window expired.",
+      allowedFrom: [...PAYMENT_RESERVATION_EXPIRABLE_STATUSES],
+    }),
+  );
+
+  if (outcome.blockedBy) {
+    // A charge is live or captured: the webhook owns this purchase.
+    return {
+      orderId,
+      outcome: "skipped",
+      released: false,
+      sessionExpired: false,
+      reason: `payment is '${outcome.blockedBy}'`,
+    };
+  }
+
+  if (!outcome.moved) {
+    return {
+      orderId,
+      outcome: "skipped",
+      released: false,
+      sessionExpired: false,
+      reason: "another writer decided this purchase first (paid, cancelled or already expired)",
+    };
+  }
+
+  // The provider side is closed AFTER the fact — the same ordering the
+  // single-order path uses, and for the same reason: the order is terminal
+  // whether or not Stripe accepts the expiry.
+  const sessionId = outcome.openSessionId ?? preReadSessionId;
+  const sessionExpired = sessionId ? await expireStripeCheckoutSession(sessionId) : false;
+
+  for (const movedOrderId of outcome.claimed) {
+    broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
+      orderId: movedOrderId,
+      to: PAYMENT_RESERVATION_EXPIRED_STATUS,
+    });
+  }
+
+  logPaymentEvent("inventory.released", {
+    order_ids: outcome.claimed,
+    checkout_group_id: checkoutGroupId,
+    checkout_session_id: sessionId,
+    status: PAYMENT_RESERVATION_EXPIRED_STATUS,
+    reason: "payment reservation window expired",
+    count: outcome.claimed.length,
+  });
+
+  console.log(
+    `[reservation] purchase ${checkoutGroupId} expired — reservation lapsed at ${expiresAt}; ` +
+      `${outcome.claimed.length}/${outcome.orders.length} orders expired, ` +
+      `${outcome.released.length} stock release(s), ${outcome.voidedRows} charge row(s) voided`,
+  );
+  return {
+    orderId,
+    outcome: "expired",
+    released: outcome.released.length > 0,
+    sessionExpired,
+    reason: `payment reservation window expired for the whole purchase (${outcome.claimed.length} orders)`,
   };
 }
 

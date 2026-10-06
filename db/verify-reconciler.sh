@@ -91,7 +91,12 @@ command -v psql >/dev/null || { echo "psql is required"; exit 2; }
 echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$ADMIN_DB" -tAc 'select version()' 2>/dev/null | cut -c1-40)"
 
 # The canonical object counts a fresh, fully reconciled database must have.
-CANON="66|243|255|652"
+# tables|indexes|constraints|columns. Migration 055 (a grouped purchase's refund
+# has a parent) grew the canonical schema by exactly: 1 column
+# (`refunds.checkout_group_id`), 1 index (`idx_refunds_checkout_group`), and 3
+# constraints (`refunds_checkout_group_id_fkey`, `refunds_parent_check`,
+# `payments_status_check`). Re-measured on a fresh run of db/run-sqleditor.sql.
+CANON="66|244|258|653"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────

@@ -469,10 +469,18 @@ describe("backend contract — the session endpoint and the webhook", () => {
 
   test("the storefront can read the order's rail from the list endpoint", () => {
     const cartSrc = read(CART_ROUTE);
-    expect(cartSrc).toContain(
-      "(SELECT method FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS payment_method",
-    );
+    // The rail is read through the ONE covering-set resolver. The literal this test
+    // used to pin — `WHERE order_id = o.id` — answered NULL for a multi-shop
+    // purchase, whose only payment row carries `order_id IS NULL`, so the storefront
+    // rendered a paid order with no rail (and no payment status) at all.
+    expect(cartSrc).toContain("${ORDER_PAYMENT_METHOD_SQL} AS payment_method,");
     expect(cartSrc).toContain("paymentMethod: r.payment_method ?? null,");
+    // …and the constant resolves the purchase's whole covering set, so a grouped
+    // charge is reachable from EVERY member order.
+    const resolver = read("backend/lib/payment-attempt.ts");
+    expect(resolver).toContain("export const ORDER_PAYMENT_METHOD_SQL");
+    expect(resolver).toContain("FROM (${ORDER_COVERING_PAYMENTS_SQL}) cp");
+    expect(resolver).toContain("export const ORDER_COVERING_PAYMENTS_SQL");
   });
 
   test("the checkout request key stays scoped separately from the payment key", () => {

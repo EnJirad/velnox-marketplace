@@ -187,8 +187,12 @@ describe("every checkout_group_id reference resolves inside its own SQL scope", 
           (m) => m[1]!.toLowerCase(),
         ),
       );
-      // A relation that legitimately owns the column.
-      const owner = ["orders", "payments"].some((t) => inScope.has(t));
+      // A relation that legitimately owns the column. `refunds` gained its own
+      // `checkout_group_id` in migration 055: a multi-shop purchase's charge is ONE
+      // row on the group, so its refund has no `order_id` to hang on and must name
+      // the group instead. That is a second OWNER of the same edge, not a second
+      // source of truth — the value is always copied from `orders.checkout_group_id`.
+      const owner = ["orders", "payments", "refunds"].some((t) => inScope.has(t));
       if (owner) continue;
       offenders.push(`${file}:${line}  scope=[${[...inScope].join(", ")}]`);
     }

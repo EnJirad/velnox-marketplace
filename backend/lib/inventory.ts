@@ -1,6 +1,7 @@
 import type pg from "pg";
 
 import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js";
+import { coveringPaymentsPredicate } from "./payment-attempt.js";
 
 /**
  * Sanity cap for a single order line. Checkout / VelRepeat orders are not
@@ -225,9 +226,17 @@ export async function releaseOrderInventory(
         AND inventory_released = FALSE
         AND status = ANY($2::text[])
         AND NOT EXISTS (
+          -- THE COVERING SET (lib/payment-attempt.ts): a multi-shop purchase's
+          -- charge is ONE row on the checkout GROUP with order_id IS NULL, so
+          -- "WHERE p.order_id = orders.id" matched nothing and this guard reported
+          -- "no settled payment" for a PAID purchase — i.e. it would hand the stock
+          -- of a sold order back to the shelf. The parameter array is deliberately
+          -- unchanged (paid, processing): this gate asks "would releasing this
+          -- stock be a SECOND terminal transition after a COMMIT", which is a
+          -- different question from what the customer should see.
           SELECT 1 FROM payments p
-           WHERE p.order_id = orders.id
-             AND p.status = ANY($3::text[])
+           WHERE p.status = ANY($3::text[])
+             AND ${coveringPaymentsPredicate("p", "orders")}
         )
       RETURNING id`,
     [orderId, RELEASABLE_STATUSES, [...PAYMENT_SETTLED_STATUSES]],
@@ -239,7 +248,8 @@ export async function releaseOrderInventory(
     const orderRes = await client.query(
       `SELECT o.status, o.inventory_released,
               EXISTS (SELECT 1 FROM payments p
-                       WHERE p.order_id = o.id AND p.status = ANY($2::text[])) AS settled
+                       WHERE p.status = ANY($2::text[])
+                         AND ${coveringPaymentsPredicate("p", "o")}) AS settled
          FROM orders o
         WHERE o.id = $1`,
       [orderId, [...PAYMENT_SETTLED_STATUSES]],

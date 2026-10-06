@@ -43,6 +43,10 @@ import {
 } from "../lib/order-fulfillment.js";
 import { hashPassword, isPasswordHashFormat } from "../lib/password.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+// The ONE covering-set payment resolver (see lib/payment-attempt.ts): a multi-shop
+// purchase's charge hangs off the checkout GROUP, so a per-order read that names
+// `payments.order_id` alone reports 'unpaid' for a paid purchase.
+import { ORDER_PAYMENT_STATUS_SQL } from "../lib/payment-attempt.js";
 import { PERMISSION_CATALOG, isCenterMember, userHasPermission } from "../lib/permissions.js";
 import { invalidateCachedProfile } from "./auth.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
@@ -375,7 +379,7 @@ export function setupCenterRoutes(app: Express): void {
       const orderRes = await query(
         `SELECT o.id, o.user_id, o.order_number, o.status, o.total_amount, o.created_at,
                 o.checkout_group_id, sh.name AS shop_name, sh.slug AS shop_slug,
-                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                ${ORDER_PAYMENT_STATUS_SQL} AS payment_status,
                 -- Tracking belongs to the ORDER, never to the purchase: a
                 -- multi-shop checkout has one shipment per shop.
                 (SELECT tracking_number FROM shipments sm

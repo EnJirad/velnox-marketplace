@@ -478,6 +478,11 @@ CREATE TABLE IF NOT EXISTS payments (
   ),
   CONSTRAINT payments_single_domain_check CHECK (
     NOT (plan_id IS NOT NULL AND (order_id IS NOT NULL OR checkout_group_id IS NOT NULL))
+  ),
+  -- The payment vocabulary, previously only in backend/lib/payment-config.ts
+  -- (`PAYMENT_STATUS`). Migration 055; see it for the writer behind each value.
+  CONSTRAINT payments_status_check CHECK (
+    status IN ('pending', 'requires_action', 'processing', 'paid', 'failed', 'cancelled')
   )
 );
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
@@ -535,7 +540,12 @@ CREATE INDEX IF NOT EXISTS payment_incidents_dedupe_key ON payment_incidents (de
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_intent ON payment_incidents (provider_payment_intent_id);
 CREATE TABLE IF NOT EXISTS refunds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id UUID NOT NULL REFERENCES orders(id),
+  -- OPTIONAL since migration 055: a refund of a MULTI-SHOP purchase names the
+  -- purchase, not one of its orders (the charge is ONE `payments` row on the
+  -- checkout group). It was NOT NULL, so every grouped refund raised 23502, the
+  -- webhook answered 500 and Stripe redelivered it forever.
+  order_id UUID REFERENCES orders(id),
+  checkout_group_id UUID REFERENCES checkout_groups(id) ON DELETE SET NULL,
   payment_id UUID REFERENCES payments(id),
   provider TEXT NOT NULL DEFAULT 'stripe',
   provider_refund_id TEXT,
@@ -546,11 +556,15 @@ CREATE TABLE IF NOT EXISTS refunds (
   refunded_at TIMESTAMPTZ,
   failure_reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- The same rule 054 gave `payments`: a refund must name SOMETHING. Migrations
+  -- 055.
+  CONSTRAINT refunds_parent_check CHECK (order_id IS NOT NULL OR checkout_group_id IS NOT NULL)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_refunds_provider_refund ON refunds (provider_refund_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds (order_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_payment ON refunds (payment_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_checkout_group ON refunds (checkout_group_id) WHERE checkout_group_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS commissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id),

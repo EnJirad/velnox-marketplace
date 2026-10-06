@@ -62,6 +62,7 @@
  */
 import type pg from "pg";
 import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js";
+import { coveringPaymentsPredicate, coveringPaymentsPredicateForOrderId } from "./payment-attempt.js";
 import { isCodEnabled } from "./payment-config.js";
 
 // ─── The state machine ───────────────────────────────────────────────────────
@@ -248,8 +249,21 @@ export async function assertPaymentConfirmedForConfirmation(
 ): Promise<{ method: string | null }> {
   let rows: PaymentRowForFulfillment[] = [];
   try {
+    // THE COVERING SET (lib/payment-attempt.ts) — a multi-shop purchase's charge is
+    // ONE row on the checkout GROUP with `order_id IS NULL`, so `WHERE order_id = $1`
+    // returned ZERO rows, `paymentAllowsConfirmation([])` answered false, and a
+    // seller could NEVER confirm an order the customer had already paid for: a
+    // permanent 409 PAYMENT_NOT_CONFIRMED on a settled purchase, with the stock
+    // committed and no way to ship it.
+    //
+    // `paymentAllowsConfirmation` already scans the rows for ANY `paid` one, so
+    // handing it the covering set is the whole fix — including the case where a
+    // later abandoned retry is newer than the captured row.
     const res = await client.query(
-      `SELECT method, status FROM payments WHERE order_id = $1 ORDER BY created_at DESC`,
+      `SELECT p.method, p.status
+         FROM payments p
+        WHERE ${coveringPaymentsPredicateForOrderId("p", "$1")}
+        ORDER BY p.created_at DESC, p.id DESC`,
       [orderId],
     );
     rows = res.rows as PaymentRowForFulfillment[];
@@ -313,8 +327,8 @@ export async function assertNoSettledPaymentForCancellation(
             COALESCE(
               (SELECT array_agg(p.status)
                  FROM payments p
-                WHERE p.order_id = o.id
-                  AND p.status = ANY($2::text[])),
+                WHERE p.status = ANY($2::text[])
+                  AND ${coveringPaymentsPredicate("p", "o")}),
               '{}'::text[]
             ) AS settled_statuses
        FROM orders o

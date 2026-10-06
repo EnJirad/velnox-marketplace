@@ -50,6 +50,18 @@ import {
   readOwnedCheckoutGroup,
   sumGroupOrderTotal,
 } from "../lib/checkout-groups.js";
+// The ONE covering-set payment resolver. A multi-shop purchase stores ONE payment
+// row on the checkout GROUP (`order_id IS NULL`), so every per-order read here
+// must resolve the covering set instead of naming `payments.order_id` alone.
+import {
+  coveringPaymentsForOrder,
+  coveringPaymentsPredicateForOrderId,
+  foldPaymentRow,
+  logPaymentEvent,
+  readOrderPurchaseScope,
+} from "../lib/payment-attempt.js";
+// Terminating a purchase is a GROUP operation: N orders, one charge, one unit.
+import { terminateCheckoutGroup } from "../lib/checkout-group-lifecycle.js";
 // The ONE order-number generator; stripe.ts used to carry a second, unused copy.
 import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
@@ -1231,9 +1243,12 @@ async function settleCheckoutGroup(
             provider_payment_id = COALESCE($2, provider_payment_id)
       WHERE checkout_group_id = $1 AND status <> 'failed'
         AND ($3::text IS NULL OR provider_checkout_session_id = $3)
-      RETURNING id`,
+      RETURNING id, amount`,
       [groupId, attempt.providerPaymentId ?? null, attempt.checkoutSessionId ?? null],
     );
+    const paymentRowId: string | null = paymentWrite.rows[0]?.id ?? null;
+    const groupAmount: string | null =
+      paymentWrite.rows[0]?.amount != null ? String(paymentWrite.rows[0].amount) : null;
   if ((paymentWrite.rowCount ?? 0) === 0) {
     const prior = await client.query(
       `SELECT status FROM payments WHERE checkout_group_id = $1 ORDER BY created_at DESC LIMIT 1`,
@@ -1258,10 +1273,68 @@ async function settleCheckoutGroup(
       settled.push(order.id);
     }
 
+    // ── Money received that could not be settled ────────────────────────────
+    // The charge row is now `paid`, but NO member order could be moved: the
+    // purchase was terminal when the money arrived (cancelled / expired / its store
+    // released). This is the worst outcome the system can produce — money taken,
+    // nothing sold — and the SINGLE-ORDER path has always recorded a durable
+    // operator incident for it (`recordLatePaymentIncident`). The group path did
+    // not, so the sharpest case in the whole architecture was also the quietest:
+    // the customer was charged and nobody was told.
+    //
+    // Recorded against the group's FIRST member order because `payment_incidents`
+    // keys on a real order id; the incident's `paymentId` names the group charge,
+    // so the operator reaches the purchase from either side. Deduplicated by the
+    // table's own `dedupe_key`, so any number of redeliveries leaves one row.
+    if (settled.length === 0 && locked.length > 0) {
+      // `paymentWrite.rowCount > 0` means THIS delivery is the one that recorded
+      // the money. Zero rows means the row was already settled and the early
+      // return above already handled it as a benign duplicate — so an incident is
+      // raised for the captured-now case only, exactly as the single-order path
+      // does.
+      const justCaptured = (paymentWrite.rowCount ?? 0) > 0;
+      if (justCaptured) {
+        const firstOrder = locked[0]!;
+        await recordLatePaymentIncident(client, {
+          orderId: firstOrder.id,
+          paymentId: paymentRowId,
+          providerPaymentIntentId: attempt.providerPaymentId ?? null,
+          checkoutSessionId: attempt.checkoutSessionId ?? null,
+          eventId: null,
+          reason: "ORDER_NOT_SETTLEABLE",
+          orderStatus: firstOrder.status,
+          amount: groupAmount,
+          currency: null,
+        });
+      }
+      console.warn(
+        `[stripe] checkout group ${groupId} charge captured but 0/${locked.length} orders could settle — ` +
+          `money recorded, nothing sold${justCaptured ? " (LATE PAYMENT — incident recorded)" : ""}`,
+      );
+    }
+
     // One realtime message per order — the storefront subscribes per order, and
     // a customer watching three shops must see all three settle.
     for (const orderId of settled) {
       broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
+    }
+
+    if (settled.length > 0) {
+      logPaymentEvent("order.paid", {
+        order_ids: settled,
+        checkout_group_id: groupId,
+        payment_id: paymentRowId,
+        checkout_session_id: attempt.checkoutSessionId ?? null,
+        provider_payment_id: attempt.providerPaymentId ?? null,
+        status: "paid",
+        count: settled.length,
+      });
+      logPaymentEvent("inventory.committed", {
+        order_ids: settled,
+        checkout_group_id: groupId,
+        payment_id: paymentRowId,
+        count: settled.length,
+      });
     }
 
     console.log(
@@ -1273,6 +1346,54 @@ async function settleCheckoutGroup(
   });
 }
 
+
+/**
+ * Terminate a PURCHASE because its charge failed, expired or was canceled.
+ *
+ * WHY THIS EXISTS — the failure/abandonment half of the group contract
+ * ---------------------------------------------------------------------
+ * The SUCCESS path was made group-aware (`checkoutGroupIdForAttempt` →
+ * `settleCheckoutGroup`) but the FAILURE paths were not, and a group session
+ * carries `metadata.orderId = <representative order>` (kept so an operator
+ * looking at Stripe sees a pointer). So every failure event resolved to the
+ * representative order and took a single-order handler, where
+ * `resolvePaymentAttemptRow()` looks for `payments WHERE order_id = <order>` —
+ * which a group purchase never has. Result: `attemptRowId` was NULL, the handler
+ * returned `moved: false`, and NOTHING HAPPENED AT ALL.
+ *
+ * Concretely, on a failed or abandoned multi-shop purchase:
+ *   • the payment row stayed `requires_action` forever;
+ *   • every member order stayed `pending_payment` with its stock reserved;
+ *   • the Stripe session was never closed by us;
+ *   • the sweep then expired ONE order (its own read was equally blind), leaving
+ *     the session payable — so the customer could still pay a purchase whose
+ *     orders were already terminal. `settleCheckoutGroup()` then moved NO order
+ *     (they were `expired`), and the money landed on `payments.status = 'paid'`
+ *     with zero orders sold and no incident: money taken, nothing shipped.
+ *
+ * The whole purchase therefore moves HERE, through the ONE
+ * `terminateCheckoutGroup()` — the same function the customer's cancel route
+ * uses, so there is a single definition of "this purchase is over".
+ *
+ * The returned `openSessionId` must be expired at Stripe by the CALLER, after
+ * this transaction commits: the order state is terminal either way, so a session
+ * that cannot be closed is a non-event — but it must be attempted.
+ */
+async function failCheckoutGroup(
+  groupId: string,
+  failureCode: string,
+  failureMessage: string,
+  toStatus: "payment_failed" | "cancelled",
+): Promise<Awaited<ReturnType<typeof terminateCheckoutGroup>>> {
+  return withTransaction((client) =>
+    terminateCheckoutGroup(client, groupId, {
+      toStatus,
+      failureCode,
+      failureMessage,
+      allowedFrom: ["pending", "pending_payment"],
+    }),
+  );
+}
 
 /** Payment failed → Payment `failed`, Order `payment_failed`, stock released. */
 async function markPaymentFailed(
@@ -1386,16 +1507,26 @@ async function markPaymentCanceled(
 async function syncRefundFromStripe(
   stripeRefund: Stripe.Refund,
   orderIdHint: string | null,
-): Promise<{ orderId: string; refundedAmount: number; refundStatus: string | null } | null> {
+): Promise<{ orderId: string | null; refundedAmount: number; refundStatus: string | null } | null> {
   const intentId =
     typeof stripeRefund.payment_intent === "string"
       ? stripeRefund.payment_intent
       : (stripeRefund.payment_intent?.id ?? null);
 
-  let payment: { id: string; order_id: string; amount: string } | null = null;
+  let payment: {
+    id: string;
+    order_id: string | null;
+    checkout_group_id: string | null;
+    amount: string;
+  } | null = null;
   if (intentId) {
+    // `checkout_group_id` is SELECTED because a multi-shop purchase's charge hangs
+    // off the checkout GROUP and has `order_id IS NULL`. Without it the refund was
+    // attributed to a non-existent order (NOT NULL violation, 23502) and — because
+    // that aborted the transaction — the webhook answered 500 and Stripe
+    // redelivered the same event forever.
     const byIntent = await query(
-      `SELECT id, order_id, amount FROM payments
+      `SELECT id, order_id, checkout_group_id, amount FROM payments
         WHERE provider = 'stripe' AND provider_payment_id = $1
         ORDER BY created_at DESC LIMIT 1`,
       [intentId],
@@ -1403,13 +1534,21 @@ async function syncRefundFromStripe(
     payment = byIntent.rows[0] ?? null;
   }
   if (!payment && orderIdHint) {
-    const byOrder = await query(
-      `SELECT id, order_id, amount FROM payments
-        WHERE provider = 'stripe' AND order_id = $1
-        ORDER BY created_at DESC LIMIT 1`,
-      [orderIdHint],
-    );
-    payment = byOrder.rows[0] ?? null;
+    // The COVERING SET, not `WHERE order_id = $1`: a refund for a grouped purchase
+    // names one of its member orders, and the charge is recorded on the group. The
+    // old predicate matched nothing, so `syncRefundFromStripe` returned early and a
+    // real refund was silently dropped — captured money, no refund row, and the
+    // operator told the refund did not match a payment.
+    const covering = await coveringPaymentsForOrder({ query }, orderIdHint);
+    const resolved = foldPaymentRow(covering);
+    if (resolved) {
+      payment = {
+        id: resolved.id,
+        order_id: resolved.order_id,
+        checkout_group_id: resolved.checkout_group_id,
+        amount: String(resolved.amount ?? "0"),
+      };
+    }
   }
   if (!payment) {
     console.warn(`[stripe webhook] refund ${stripeRefund.id} does not match a recorded payment — ignored`);
@@ -1437,18 +1576,37 @@ async function syncRefundFromStripe(
     // paths: this transaction writes `refunds`, `payments` and (on a full refund)
     // the order itself, so it must enter the same lock order as every other
     // order writer (lib/order-lock.ts).
-    await lockOrderRow(client, payment!.order_id);
+    if (payment!.checkout_group_id) {
+      // One purchase = N per-shop orders, so the refund moves ALL of them and their
+      // rows are locked TOGETHER, in `id ASC`, in one statement (lib/order-lock.ts).
+      // `lockOrderRow(client, null)` used to be what ran here, which locks nothing.
+      await lockCheckoutGroupOrderRows(client, payment!.checkout_group_id);
+    } else if (payment!.order_id) {
+      await lockOrderRow(client, payment!.order_id);
+    }
 
+    // `refunds.order_id` is written from the payment's OWN parent, so a grouped
+    // charge records `order_id IS NULL, checkout_group_id = <group>`. That is what
+    // migration 055's `refunds_parent_check` allows and what
+    // `idx_refunds_checkout_group` indexes; the operator route (which knows which
+    // order was asked about) additionally names that order.
     await client.query(
       `INSERT INTO refunds
-         (order_id, payment_id, provider, provider_refund_id, amount, reason, status, refunded_at)
-       VALUES ($1, $2, 'stripe', $3, $4, $5, 'succeeded', NOW())
+         (order_id, checkout_group_id, payment_id, provider, provider_refund_id, amount, reason, status, refunded_at)
+       VALUES ($1, $2, $3, 'stripe', $4, $5, $6, 'succeeded', NOW())
        ON CONFLICT (provider_refund_id) DO UPDATE
          SET status = 'succeeded',
              refunded_at = COALESCE(refunds.refunded_at, NOW()),
              failure_reason = NULL,
              updated_at = NOW()`,
-      [payment!.order_id, payment!.id, stripeRefund.id, amount, stripeRefund.reason ?? null],
+      [
+        payment!.order_id,
+        payment!.checkout_group_id,
+        payment!.id,
+        stripeRefund.id,
+        amount,
+        stripeRefund.reason ?? null,
+      ],
     );
 
     // Recompute, never increment — a replayed event must not double-count.
@@ -1471,15 +1629,34 @@ async function syncRefundFromStripe(
     // A full refund is terminal for the order; a partial refund leaves the order
     // in its fulfilment state and is represented on the payment row.
     if (refundStatus === "refunded") {
-      await client.query(
-        `UPDATE orders SET status = 'refunded', updated_at = NOW() WHERE id = $1 AND status <> 'refunded'`,
-        [payment!.order_id],
-      );
+      if (payment!.checkout_group_id) {
+        // A purchase is refunded as ONE thing: every per-shop order becomes
+        // `refunded`, because the customer was charged once for all of them and no
+        // single shop's order can be "still paid".
+        await client.query(
+          `UPDATE orders SET status = 'refunded', updated_at = NOW()
+            WHERE checkout_group_id = $1 AND status <> 'refunded'`,
+          [payment!.checkout_group_id],
+        );
+      } else {
+        await client.query(
+          `UPDATE orders SET status = 'refunded', updated_at = NOW() WHERE id = $1 AND status <> 'refunded'`,
+          [payment!.order_id],
+        );
+      }
     }
   });
 
+  logPaymentEvent("refund.succeeded", {
+    order_id: payment.order_id,
+    checkout_group_id: payment.checkout_group_id,
+    payment_id: payment.id,
+    provider_payment_id: typeof stripeRefund.payment_intent === "string" ? stripeRefund.payment_intent : null,
+    status,
+    amount: String(amount),
+  });
   console.log(
-    `[stripe webhook] refund ${stripeRefund.id} synced — order ${payment.order_id} payment ${payment.id} ${status}`,
+    `[stripe webhook] refund ${stripeRefund.id} synced — order ${payment.order_id ?? "(purchase)"} payment ${payment.id} ${status}`,
   );
   return { orderId: payment.order_id, refundedAmount: amount, refundStatus: resolvedStatus };
 }
@@ -1594,6 +1771,26 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : (session.payment_intent?.id ?? null);
+      // The purchase branch, taken BEFORE the single-order handler: a group
+      // session's `metadata.orderId` is only a representative pointer, so the
+      // single-order path would find no payment row and silently do nothing (see
+      // `failCheckoutGroup`).
+      const failedGroupId = await checkoutGroupIdForAttempt({
+        providerPaymentId: asyncIntentId,
+        checkoutSessionId: session.id,
+      });
+      if (failedGroupId) {
+        const outcome = await failCheckoutGroup(
+          failedGroupId,
+          "ASYNC_PAYMENT_FAILED",
+          "The delayed payment did not complete.",
+          "payment_failed",
+        );
+        for (const movedId of outcome.claimed) {
+          broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId: movedId, to: "payment_failed" });
+        }
+        return;
+      }
       const result = await markPaymentFailed(
         orderId,
         { providerPaymentId: asyncIntentId, checkoutSessionId: session.id },
@@ -1610,6 +1807,23 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const session = event.data.object as Stripe.Checkout.Session;
       const orderId = session.metadata?.orderId;
       if (!orderId) return;
+      // Purchase branch first — see `failCheckoutGroup`. This is the event that
+      // fires 30 minutes after an abandoned attempt, i.e. the one that MUST end a
+      // multi-shop purchase cleanly, because it is the only writer that closes the
+      // window in which the customer can still pay an abandoned session.
+      const expiredGroupId = await checkoutGroupIdForAttempt({ checkoutSessionId: session.id });
+      if (expiredGroupId) {
+        const outcome = await failCheckoutGroup(
+          expiredGroupId,
+          "PAYMENT_CANCELED",
+          `Checkout session ${session.id} expired.`,
+          "cancelled",
+        );
+        for (const movedId of outcome.claimed) {
+          broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId: movedId, to: "cancelled" });
+        }
+        return;
+      }
       const result = await markPaymentCanceled(
         orderId,
         { checkoutSessionId: session.id },
@@ -1647,6 +1861,17 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
 
     case "payment_intent.payment_failed": {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      // Purchase branch first — see `failCheckoutGroup`.
+      const failedGroupId = await checkoutGroupIdForAttempt({ providerPaymentId: paymentIntent.id });
+      if (failedGroupId) {
+        const code = paymentIntent.last_payment_error?.code ?? "PAYMENT_FAILED";
+        const message = paymentIntent.last_payment_error?.message ?? "The payment was declined.";
+        const outcome = await failCheckoutGroup(failedGroupId, code, message, "payment_failed");
+        for (const movedId of outcome.claimed) {
+          broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId: movedId, to: "payment_failed" });
+        }
+        return;
+      }
       const orderId = await orderIdForPaymentIntent(paymentIntent);
       if (!orderId) return;
       const code = paymentIntent.last_payment_error?.code ?? "PAYMENT_FAILED";
@@ -1665,6 +1890,20 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
 
     case "payment_intent.canceled": {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      // Purchase branch first — see `failCheckoutGroup`.
+      const canceledGroupId = await checkoutGroupIdForAttempt({ providerPaymentId: paymentIntent.id });
+      if (canceledGroupId) {
+        const outcome = await failCheckoutGroup(
+          canceledGroupId,
+          "PAYMENT_CANCELED",
+          "The payment was canceled.",
+          "cancelled",
+        );
+        for (const movedId of outcome.claimed) {
+          broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId: movedId, to: "cancelled" });
+        }
+        return;
+      }
       const orderId = await orderIdForPaymentIntent(paymentIntent);
       if (!orderId) return;
       const result = await markPaymentCanceled(
@@ -1870,11 +2109,35 @@ export function setupStripeRoutes(app: Express): void {
       // the OWNER scope, the amount is re-derived from the member order rows,
       // and the session is settled only by the signature-verified webhook
       // (`settleCheckoutGroup`). No client figure is trusted.
-      if (checkoutGroupId) {
+      // ── Server-derived purchase scope ──────────────────────────────────
+      // A retry that names only `orderId` must STILL be routed to the purchase it
+      // belongs to. `ResumePaymentButton` sends `orderId` alone (the order page,
+      // the order list and the success page all have one), so a multi-shop
+      // purchase was dispatched to the SINGLE-ORDER branch above — which charged
+      // ONE shop's `total_amount` (`toStripeMinor(order.total_amount)`) and wrote a
+      // second live attempt beside the group's. Reproduced on a real database: a
+      // `700.00` attempt appeared next to the live `1500.00` group charge. The
+      // branch is therefore taken from the ORDER's own `checkout_group_id` — our
+      // row, never the client's claim — so a caller cannot opt out of the group by
+      // omitting the id, and the storefront needs no change.
+      //
+      // `readOrderPurchaseScope` reads the link out of `to_jsonb(o)` so a database
+      // whose `orders` table predates migration 054 answers "no group" (the
+      // single-order branch) instead of raising `undefined_column`. Ownership is
+      // NOT decided here: `openCheckoutGroupSession` re-reads the group through
+      // `readOwnedCheckoutGroup`, so a group belonging to another account is a 404.
+      let purchaseGroupId: string | null = checkoutGroupId || null;
+      if (!purchaseGroupId && orderId) {
+        const scope = await readOrderPurchaseScope({ query }, orderId);
+        purchaseGroupId = scope.checkoutGroupId;
+        if (purchaseGroupId) failureGroupId = purchaseGroupId;
+      }
+
+      if (purchaseGroupId) {
         await openCheckoutGroupSession({
           res,
           userId,
-          groupId: checkoutGroupId,
+          groupId: purchaseGroupId,
           method,
           requestKey,
           rememberResponse,
@@ -2422,19 +2685,18 @@ export function setupStripeRoutes(app: Express): void {
       const orderId = param(req, "orderId");
       const body = (req.body ?? {}) as Record<string, unknown>;
 
-      const paymentResult = await query(
-        `SELECT id, order_id, status, amount, currency, refunded_amount, refund_status, provider_payment_id
-           FROM payments
-          WHERE order_id = $1 AND provider = 'stripe'
-          ORDER BY created_at DESC LIMIT 1`,
-        [orderId],
-      );
-      if (paymentResult.rows.length === 0) {
+      // The COVERING SET, and a settled row wins. `WHERE order_id = $1` returned
+      // nothing for a multi-shop purchase (its charge hangs off the checkout GROUP
+      // with `order_id IS NULL`), so an operator refund of a grouped charge answered
+      // 404 and the only route to giving the customer their money back was closed.
+      // Taking the newest row instead would be worse: a later abandoned retry would
+      // outrank the captured charge it was never charged against.
+      const covering = await coveringPaymentsForOrder({ query }, orderId);
+      const payment = foldPaymentRow(covering);
+      if (!payment) {
         fail(res, 404, "NOT_FOUND", "No Stripe payment exists for this order.");
         return;
       }
-
-      const payment = paymentResult.rows[0];
       if (payment.status !== "paid") {
         // A refund is only possible against captured money.
         fail(res, 409, "PAYMENT_NOT_REFUNDABLE", `A payment with status '${payment.status}' cannot be refunded.`);
@@ -2528,12 +2790,15 @@ export function setupStripeRoutes(app: Express): void {
       // same idempotent sync the webhook runs, using the PROVIDER's answer (not
       // the caller's) to advance the state.
       const inserted = await query(
+        // BOTH parents are recorded: the order the operator asked about (which the
+        // refund page resolves by) AND the purchase the charge belongs to, so a
+        // grouped refund is reachable from every member order's detail page.
         `INSERT INTO refunds
-           (order_id, payment_id, provider, provider_refund_id, amount, reason, status, requested_by)
-         VALUES ($1, $2, 'stripe', $3, $4, $5, 'pending', $6)
+           (order_id, checkout_group_id, payment_id, provider, provider_refund_id, amount, reason, status, requested_by)
+         VALUES ($1, $2, $3, 'stripe', $4, $5, $6, 'pending', $7)
          ON CONFLICT (provider_refund_id) DO UPDATE SET updated_at = NOW()
          RETURNING id`,
-        [orderId, payment.id, stripeRefund.id, requestedMinor / 100, reason, actorId],
+        [orderId, payment.checkout_group_id, payment.id, stripeRefund.id, requestedMinor / 100, reason, actorId],
       );
 
       if (stripeRefund.status === "succeeded" || stripeRefund.status === "pending") {
@@ -2675,10 +2940,31 @@ export function setupStripeRoutes(app: Express): void {
             ORDER BY oi.created_at ASC`,
           [orderId],
         ),
-        query(`SELECT * FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`, [orderId]),
+        // The covering set, settled row first — a grouped charge has
+        // `order_id IS NULL`, so the old predicate returned no row at all and this
+        // endpoint reported `payment: null` for a purchase that had been paid.
         query(
-          `SELECT id, amount, status, reason, created_at, refunded_at
-             FROM refunds WHERE order_id = $1 ORDER BY created_at ASC`,
+          `SELECT p.* FROM payments p
+            WHERE ${coveringPaymentsPredicateForOrderId("p", "$1")}
+            ORDER BY (p.status = 'paid') DESC, p.created_at DESC, p.id DESC
+            LIMIT 1`,
+          [orderId],
+        ),
+        // A refund made against a purchase is recorded on the GROUP, so it is read
+        // through the covering set too — otherwise the order page showed no refund
+        // for money that had already been returned. `refunds.checkout_group_id` is
+        // migration 055, read out of `to_jsonb` so a database that has not applied
+        // it yet answers "no group refund" instead of raising `undefined_column`
+        // (42703) and taking the whole order page down with it.
+        query(
+          `SELECT r.id, r.amount, r.status, r.reason, r.created_at, r.refunded_at
+             FROM refunds r
+            WHERE r.order_id = $1
+               OR (r.order_id IS NULL
+                   AND to_jsonb(r) ->> 'checkout_group_id' IS NOT NULL
+                   AND to_jsonb(r) ->> 'checkout_group_id' = (
+                     SELECT o.checkout_group_id::text FROM orders o WHERE o.id = $1))
+            ORDER BY r.created_at ASC`,
           [orderId],
         ),
       ]);

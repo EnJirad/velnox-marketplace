@@ -30,6 +30,18 @@ import {
   paymentBlocksCancellation,
 } from "../lib/order-lock.js";
 import { applyPaymentReservationPolicy } from "../lib/payment-reservation.js";
+// The ONE covering-set payment resolver (see the module header). Every
+// per-order payment READ goes through it, because a multi-shop purchase stores
+// ONE payment row with `order_id IS NULL, checkout_group_id = <group>` and a
+// read that names only `payments.order_id` answers 'unpaid' for a paid purchase.
+import {
+  ORDER_OPEN_SESSION_SQL,
+  ORDER_PAYMENT_METHOD_SQL,
+  ORDER_PAYMENT_STATUS_SQL,
+  coveringPaymentsForOrder,
+} from "../lib/payment-attempt.js";
+// Terminating a purchase is a GROUP operation: N orders, one charge, one unit.
+import { terminateCheckoutGroup } from "../lib/checkout-group-lifecycle.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { normalizePaymentMethod, assertPaymentMethodUsable, PAYMENT_METHOD, type PaymentMethodId } from "../lib/payment-config.js";
 // The Stripe client lives in stripe.ts (one lazy, test-mode-only client). The
@@ -1131,8 +1143,8 @@ export function setupCartRoutes(app: Express): void {
 
       const result = await query(
         `SELECT o.*, sh.name AS shop_name, sh.slug AS shop_slug,
-                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
-                (SELECT method FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS payment_method,
+                ${ORDER_PAYMENT_STATUS_SQL} AS payment_status,
+                ${ORDER_PAYMENT_METHOD_SQL} AS payment_method,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          LEFT JOIN shops sh ON o.shop_id = sh.id
@@ -1210,7 +1222,7 @@ export function setupCartRoutes(app: Express): void {
 
       const orderResult = await query(
         `SELECT o.*, sh.name AS shop_name, sh.slug AS shop_slug,
-                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                ${ORDER_PAYMENT_STATUS_SQL} AS payment_status,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          LEFT JOIN shops sh ON o.shop_id = sh.id
@@ -1225,16 +1237,13 @@ export function setupCartRoutes(app: Express): void {
 
       const order = orderResult.rows[0];
 
-      const [itemsByOrder, shipments, paymentsRes] = await Promise.all([
+      const [itemsByOrder, shipments, coveringPayments] = await Promise.all([
         fetchOrderItemsForOrders([orderId]),
         fetchShipmentsForOrder(orderId),
-        query(
-          `SELECT id, method, status, amount, provider
-           FROM payments
-           WHERE order_id = $1
-           ORDER BY created_at DESC`,
-          [orderId],
-        ),
+        // The covering set, not `WHERE order_id = $1`: a multi-shop purchase's
+        // charge is recorded on the checkout GROUP, so the old predicate returned
+        // no rows at all and the order page showed no payment for a paid order.
+        coveringPaymentsForOrder({ query }, orderId),
       ]);
       const items = itemsByOrder[orderId] ?? [];
 
@@ -1247,7 +1256,7 @@ export function setupCartRoutes(app: Express): void {
           customerUserId: order.user_id,
           status: order.status,
           paymentStatus: order.payment_status,
-          paymentMethod: paymentsRes.rows[0]?.method ?? null,
+          paymentMethod: coveringPayments[0]?.method ?? null,
           // See the list route: the reservation deadline in ms, null when the
           // order holds no window. The order page counts down from THIS value.
           paymentExpiresAt: order.payment_expires_at ? new Date(order.payment_expires_at).getTime() : null,
@@ -1271,11 +1280,11 @@ export function setupCartRoutes(app: Express): void {
           items,
           itemCount: items.reduce((s: number, i: any) => s + i.quantity, 0),
           shipments,
-          payments: paymentsRes.rows.map((p: any) => ({
+          payments: coveringPayments.map((p) => ({
             id: p.id,
             method: p.method,
             status: p.status,
-            amount: parseFloat(p.amount) || 0,
+            amount: parseFloat(String(p.amount ?? 0)) || 0,
           })),
         },
       });
@@ -1312,13 +1321,9 @@ export function setupCartRoutes(app: Express): void {
       // so another customer's order is a 404 — never a 403 that would confirm the
       // order exists to someone who does not own it.
       const orderRes = await query(
-        `SELECT o.id, o.status,
-                (SELECT status FROM payments
-                  WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS latest_payment_status,
-                (SELECT provider_checkout_session_id FROM payments
-                  WHERE order_id = o.id AND provider = 'stripe'
-                    AND status IN ('pending', 'requires_action')
-                  ORDER BY created_at DESC LIMIT 1) AS open_session_id
+        `SELECT o.id, o.status, o.checkout_group_id,
+                ${ORDER_PAYMENT_STATUS_SQL} AS latest_payment_status,
+                ${ORDER_OPEN_SESSION_SQL} AS open_session_id
            FROM orders o
           WHERE o.id = $1 AND o.user_id = $2`,
         [orderId, userId],
@@ -1349,6 +1354,79 @@ export function setupCartRoutes(app: Express): void {
         res.status(400).json({
           success: false,
           error: { code: "INVALID_STATUS", message: "Order can only be cancelled before it ships" },
+        });
+        return;
+      }
+
+      // ── A multi-shop purchase is cancelled as ONE unit ────────────────────
+      // One checkout = ONE charge = N per-shop orders, so cancelling a single
+      // member would leave the charge live and payable for a purchase whose amount
+      // no longer matches the goods. `terminateCheckoutGroup` locks every member
+      // order, claims each one, releases each one's stock through the ONE release
+      // path, and voids the charge — and it refuses outright when the money
+      // already moved, so the codes below stay exactly what a single order
+      // answers with.
+      if (order.checkout_group_id) {
+        const groupOutcome = await withTransaction((client) =>
+          terminateCheckoutGroup(client, order.checkout_group_id as string, {
+            toStatus: "cancelled",
+            failureCode: "ORDER_CANCELLED",
+            failureMessage: "The customer cancelled this purchase before payment.",
+            allowedFrom: CANCELABLE_STATUSES,
+          }),
+        );
+
+        if (groupOutcome.blockedBy === "paid" || groupOutcome.blockedBy === "processing") {
+          // Same two refusals, same codes, same statuses as the single-order path:
+          // captured money and a charge in flight both outrank a cancellation.
+          const paid = groupOutcome.blockedBy === "paid";
+          res.status(409).json({
+            success: false,
+            error: paid
+              ? {
+                  code: "ORDER_ALREADY_PAID",
+                  message: "This order has already been paid. Please request a refund instead of cancelling.",
+                }
+              : {
+                  code: "PAYMENT_IN_PROGRESS",
+                  message: "A payment for this order is being processed. Please try again in a moment.",
+                },
+          });
+          return;
+        }
+
+        // The provider side is closed AFTER the commit: every member order is
+        // terminal and the charge is already voided in our own ledger, so a session
+        // that cannot be closed is a non-event — whereas expiring it first would
+        // leave a window in which a second caller sees an open session on an order
+        // this one is about to cancel.
+        if (groupOutcome.openSessionId) {
+          await expireStripeCheckoutSession(groupOutcome.openSessionId);
+        }
+
+        for (const movedOrderId of groupOutcome.claimed) {
+          try {
+            broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
+              orderId: movedOrderId,
+              from: order.status,
+              to: "cancelled",
+            });
+          } catch { /* best-effort — a committed cancel never fails on a socket error */ }
+        }
+
+        res.json({
+          success: true,
+          data: {
+            id: orderId,
+            status: "cancelled",
+            cancelled: true,
+            alreadyFinal: !groupOutcome.moved,
+            stockReleased: groupOutcome.released.length > 0,
+            // The whole purchase moved, so the storefront can refresh every shop's
+            // row instead of leaving two of three showing "awaiting payment".
+            checkoutGroupId: order.checkout_group_id,
+            orderIds: groupOutcome.orders,
+          },
         });
         return;
       }
@@ -1404,6 +1482,10 @@ export function setupCartRoutes(app: Express): void {
         // 404/409 without taking a lock); a payment that settled, or went into
         // flight, while this request waited for the row is only visible here.
         if (locked) {
+          // Group-aware: the covering set, so a purchase charged through a checkout
+          // group is visible here too. A read that named only `payments.order_id`
+          // answered NULL for a multi-shop purchase, and NULL is not a settled
+          // status — so a PAID purchase could be cancelled under this lock.
           const paymentStatus = await latestPaymentStatusForOrder(client, orderId);
           if (paymentBlocksCancellation(paymentStatus)) {
             return { moved: false, released: false, blockedBy: paymentStatus };
@@ -1432,8 +1514,13 @@ export function setupCartRoutes(app: Express): void {
                 SET status = 'cancelled', failure_code = 'ORDER_CANCELLED',
                     failure_message = 'The customer cancelled this order before payment.',
                     updated_at = NOW()
-              WHERE order_id = $1 AND provider = 'stripe'
-                AND status IN ('pending', 'requires_action')`,
+              WHERE provider = 'stripe'
+                AND status IN ('pending', 'requires_action')
+                AND (order_id = $1
+                     OR (checkout_group_id IS NOT NULL
+                         AND checkout_group_id = (SELECT o.checkout_group_id
+                                                    FROM orders o
+                                                   WHERE o.id = $1)))`,
             [orderId],
           );
         }

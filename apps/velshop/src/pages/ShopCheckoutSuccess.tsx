@@ -58,6 +58,15 @@ const STATUS_META: Record<string, { icon: typeof CheckCircle2; color: string; bg
   expired: { icon: XCircle, color: "text-slate-500", bg: "bg-slate-100", labelKey: "orderReservation.expiredTitle" },
 };
 
+/**
+ * Order statuses that are still waiting on the provider's confirmation. Used ONLY
+ * to decide whether the payment line is worth rendering when the backend sent no
+ * payment row at all — never to decide what the payment state IS. A settled order
+ * with no payment row is a backend incident, not something this page may paper over
+ * with a status it guessed.
+ */
+const AWAITING_PAYMENT_STATUSES = new Set(["pending", "pending_payment"]);
+
 export default function ShopCheckoutSuccess() {
   const { t } = useLanguage();
   const { isAuthenticated } = useAuth();
@@ -212,12 +221,25 @@ export default function ShopCheckoutSuccess() {
                 <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(order.total)}</p>
               </div>
 
-              {order.payment && (
+              {/*
+                The payment line is never hidden when the customer is waiting on
+                money: it used to disappear entirely whenever the endpoint answered
+                `payment: null`, which is how a paid multi-shop purchase rendered as
+                an order with no payment line at all. The endpoint now resolves the
+                whole covering set (a grouped charge carries `order_id IS NULL`), so
+                a null row means the backend genuinely has no payment record yet —
+                and then the honest thing to show is "still verifying", not a
+                status this page invented. `paymentLabels.*` still comes from the
+                backend's own `status`.
+              */}
+              {(order.payment || AWAITING_PAYMENT_STATUSES.has(order.status)) && (
                 <div className="mt-3 flex items-center justify-between">
                   <p className="text-sm text-slate-500">{t("checkoutSuccess.paymentStatus")}</p>
                   <span className="flex items-center gap-1.5 text-sm font-medium">
                     <CreditCard className="size-3.5 text-[#10B981]" />
-                    {paymentStatusLabel(order.payment.status)}
+                    {order.payment
+                      ? paymentStatusLabel(order.payment.status)
+                      : t("checkoutSuccess.verifyingPayment")}
                   </span>
                 </div>
               )}

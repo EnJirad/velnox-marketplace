@@ -162,10 +162,32 @@ describe("backend contract — the cancel endpoint", () => {
     expect(cancelBody).toContain('code: "INVALID_STATUS"');
     expect(cancelBody).toContain('code: "ORDER_ALREADY_PAID"');
     expect(cancelBody).toContain('code: "PAYMENT_IN_PROGRESS"');
-    // The refusals all `return` before the transaction.
-    const guard = cancelBody.indexOf('code: "ORDER_ALREADY_PAID"');
+    // The CHEAP refusals — the order's own status, and the payment state read
+    // before the lock — all `return` before any transaction is opened.
+    const invalidStatus = cancelBody.indexOf('code: "INVALID_STATUS"');
+    const groupBranch = cancelBody.indexOf("if (order.checkout_group_id) {");
+    expect(invalidStatus).toBeGreaterThan(-1);
+    expect(groupBranch).toBeGreaterThan(-1);
+    expect(invalidStatus).toBeLessThan(groupBranch);
+
+    // A GROUPED purchase's refusal is deliberately decided INSIDE the transaction
+    // that locks its member orders: a read taken outside those locks is only a fast
+    // path, so `terminateCheckoutGroup` is the authority — and it refuses without
+    // writing anything, which is what makes the in-transaction decision safe. The
+    // refusal is answered before the provider session is closed and before a single
+    // socket event is published.
+    const refusal = cancelBody.indexOf(
+      'if (groupOutcome.blockedBy === "paid" || groupOutcome.blockedBy === "processing")',
+    );
+    expect(refusal).toBeGreaterThan(-1);
+    expect(refusal).toBeLessThan(cancelBody.indexOf("await expireStripeCheckoutSession(groupOutcome.openSessionId)"));
+    expect(refusal).toBeLessThan(cancelBody.indexOf("broadcast(CHANNELS.ORDER_UPDATED"));
+    expect(read("backend/lib/checkout-group-lifecycle.ts")).toContain("blockedBy");
+
+    // The SINGLE-ORDER refusals still precede their transaction.
+    const guard = cancelBody.indexOf('if (order.latest_payment_status === "paid")');
     expect(guard).toBeGreaterThan(-1);
-    expect(cancelBody.indexOf("await withTransaction(")).toBeGreaterThan(guard);
+    expect(cancelBody.indexOf("await withTransaction(", guard)).toBeGreaterThan(guard);
   });
 
   test("the transition, the payment invalidation and the stock release share one transaction", () => {

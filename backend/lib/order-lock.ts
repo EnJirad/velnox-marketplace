@@ -43,6 +43,8 @@
  */
 import type pg from "pg";
 
+import { coveringPaymentsPredicateForOrderId } from "./payment-attempt.js";
+
 /** The order fields every decision in these transactions needs under the lock. */
 export interface LockedOrderRow {
   id: string;
@@ -133,10 +135,33 @@ export async function latestPaymentStatusForOrder(
   client: pg.PoolClient,
   orderId: string,
 ): Promise<string | null> {
+  // THE COVERING SET, folded by precedence (lib/payment-attempt.ts) — not the
+  // newest row, and not `WHERE order_id = $1`.
+  //
+  // Both parts matter, and both were wrong here:
+  //   • A multi-shop purchase's charge is ONE row with `order_id IS NULL`,
+  //     `checkout_group_id = <group>`. `WHERE order_id = $1` matched NOTHING and
+  //     answered NULL — and NULL is not a settled status, so
+  //     `paymentBlocksCancellation()` returned FALSE for a PAID purchase. A
+  //     customer could cancel, and the stock release would refuse (its own guard
+  //     is separate) — money kept, order cancelled, stock never returned.
+  //   • A retry that opened after the charge settled is NEWER, so
+  //     `ORDER BY created_at DESC LIMIT 1` answered `requires_action` for a
+  //     settled purchase. The fold answers `paid`, which is what the webhook
+  //     already wrote to `orders.status`.
+  //
+  // The fold also surfaces `refunded` / `partially_refunded`, so a refunded
+  // payment can never read as merely `pending`.
   const res = await client.query(
-    `SELECT status FROM payments
-      WHERE order_id = $1
-      ORDER BY created_at DESC LIMIT 1`,
+    `SELECT CASE
+              WHEN bool_or(p.refund_status = 'refunded') THEN 'refunded'
+              WHEN bool_or(p.refund_status = 'partially_refunded') THEN 'partially_refunded'
+              WHEN bool_or(p.status = 'paid') THEN 'paid'
+              WHEN bool_or(p.status = 'processing') THEN 'processing'
+              ELSE (array_agg(p.status ORDER BY p.created_at DESC, p.id DESC))[1]
+            END AS status
+       FROM payments p
+      WHERE ${coveringPaymentsPredicateForOrderId("p", "$1")}`,
     [orderId],
   );
   return (res.rows[0]?.status as string | undefined) ?? null;

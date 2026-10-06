@@ -479,6 +479,9 @@ CREATE TABLE IF NOT EXISTS payments (
   ),
   CONSTRAINT payments_single_domain_check CHECK (
     NOT (plan_id IS NOT NULL AND (order_id IS NOT NULL OR checkout_group_id IS NOT NULL))
+  ),
+  CONSTRAINT payments_status_check CHECK (
+    status IN ('pending', 'requires_action', 'processing', 'paid', 'failed', 'cancelled')
   )
 );
 CREATE TABLE IF NOT EXISTS payment_events (
@@ -520,7 +523,10 @@ CREATE TABLE IF NOT EXISTS payment_incidents (
 );
 CREATE TABLE IF NOT EXISTS refunds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id UUID NOT NULL REFERENCES orders(id),
+  -- OPTIONAL since migration 055: a refund of a MULTI-SHOP purchase names the
+  -- purchase, not one of its orders. Kept in step with db/schema.sql.
+  order_id UUID REFERENCES orders(id),
+  checkout_group_id UUID REFERENCES checkout_groups(id) ON DELETE SET NULL,
   payment_id UUID REFERENCES payments(id),
   provider TEXT NOT NULL DEFAULT 'stripe',
   provider_refund_id TEXT,
@@ -531,7 +537,8 @@ CREATE TABLE IF NOT EXISTS refunds (
   refunded_at TIMESTAMPTZ,
   failure_reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT refunds_parent_check CHECK (order_id IS NOT NULL OR checkout_group_id IS NOT NULL)
 );
 CREATE TABLE IF NOT EXISTS commissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -1425,6 +1432,7 @@ ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS updated_at TIMESTA
 
 ALTER TABLE public.refunds ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.refunds ADD COLUMN IF NOT EXISTS order_id UUID;
+ALTER TABLE public.refunds ADD COLUMN IF NOT EXISTS checkout_group_id UUID;
 ALTER TABLE public.refunds ADD COLUMN IF NOT EXISTS payment_id UUID;
 ALTER TABLE public.refunds ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'stripe' NOT NULL;
 ALTER TABLE public.refunds ADD COLUMN IF NOT EXISTS provider_refund_id TEXT;
@@ -2928,7 +2936,7 @@ BEGIN
              ('payment_incidents','order_id'), ('payment_incidents','plan_id'), ('payment_incidents','payment_id'), ('payment_incidents','provider_payment_intent_id'),
              ('payment_incidents','provider_checkout_session_id'), ('payment_incidents','event_id'), ('payment_incidents','order_status'), ('payment_incidents','amount'),
              ('payment_incidents','currency'), ('payment_incidents','resolution_note'), ('payment_incidents','resolved_by'), ('payment_incidents','resolved_at'),
-             ('refunds','id'), ('refunds','payment_id'), ('refunds','provider_refund_id'), ('refunds','reason'),
+             ('refunds','id'), ('refunds','order_id'), ('refunds','payment_id'), ('refunds','provider_refund_id'), ('refunds','reason'),
              ('refunds','requested_by'), ('refunds','refunded_at'), ('refunds','failure_reason'), ('commissions','id'),
              ('settlements','id'), ('subscriptions','id'), ('subscriptions','product_id'), ('subscriptions','seller_id'),
              ('subscriptions','shop_id'), ('subscriptions','next_due_date'), ('subscriptions','metadata'), ('departments','id'),
@@ -3046,6 +3054,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_incidents_intent ON public.payment_incide
 CREATE UNIQUE INDEX IF NOT EXISTS idx_refunds_provider_refund ON public.refunds (provider_refund_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_order ON public.refunds (order_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_payment ON public.refunds (payment_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_checkout_group ON public.refunds (checkout_group_id) WHERE checkout_group_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON public.subscriptions (user_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_next_due ON public.subscriptions (next_due_date) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON public.audit_logs (user_id);
@@ -3454,6 +3463,13 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'refunds_
   AND to_regclass('public.payments') IS NOT NULL THEN
   ALTER TABLE public.refunds ADD CONSTRAINT refunds_payment_id_fkey
     FOREIGN KEY (payment_id) REFERENCES public.payments(id);
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'refunds_checkout_group_id_fkey')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='refunds' AND column_name='checkout_group_id')
+  AND to_regclass('public.checkout_groups') IS NOT NULL THEN
+  ALTER TABLE public.refunds ADD CONSTRAINT refunds_checkout_group_id_fkey
+    FOREIGN KEY (checkout_group_id) REFERENCES public.checkout_groups(id) ON DELETE SET NULL;
 END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'refunds_requested_by_fkey')
   AND EXISTS (SELECT 1 FROM information_schema.columns
@@ -4039,6 +4055,40 @@ END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_single_domain_check') THEN
   ALTER TABLE public.payments ADD CONSTRAINT payments_single_domain_check CHECK (NOT (plan_id IS NOT NULL AND (order_id IS NOT NULL OR checkout_group_id IS NOT NULL)));
 END IF; END $$;
+
+-- A refund must name SOMETHING. Cannot fail on an existing database: every row
+-- written before migration 055 carries an `order_id` (it was NOT NULL), and PART
+-- 2c has just relaxed that column so a purchase refund can name the group instead.
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'refunds_parent_check') THEN
+  ALTER TABLE public.refunds ADD CONSTRAINT refunds_parent_check CHECK (order_id IS NOT NULL OR checkout_group_id IS NOT NULL);
+END IF; END $$;
+
+-- The `payments.status` vocabulary, previously enforced only in
+-- backend/lib/payment-config.ts. DATA-GUARDED, unlike every other CHECK in this
+-- section, and deliberately so: `ADD CONSTRAINT` on a database holding an
+-- out-of-vocabulary row would abort the WHOLE file under ON_ERROR_STOP —
+-- including the reconciliation assertion in PART 8 — i.e. the repair script for a
+-- legacy database would be the thing that fails on it. A database that cannot
+-- take the constraint is TOLD so, and keeps working; inspect it with
+--   SELECT status, count(*) FROM payments
+--    WHERE status NOT IN ('pending','requires_action','processing','paid','failed','cancelled')
+--    GROUP BY status;
+-- and decide, as a business question, what those rows are. Never coerce them.
+DO $$
+DECLARE offenders BIGINT;
+BEGIN
+  SELECT count(*) INTO offenders
+    FROM public.payments
+   WHERE status NOT IN ('pending', 'requires_action', 'processing', 'paid', 'failed', 'cancelled');
+
+  IF offenders > 0 THEN
+    RAISE NOTICE 'velnox: payments_status_check NOT added - % row(s) hold a status outside the vocabulary (see the comment above)', offenders;
+  ELSIF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_status_check') THEN
+    ALTER TABLE public.payments ADD CONSTRAINT payments_status_check
+      CHECK (status IN ('pending', 'requires_action', 'processing', 'paid', 'failed', 'cancelled'));
+    RAISE NOTICE 'velnox: payments_status_check added';
+  END IF;
+END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payment_incidents_exactly_one_parent_check') THEN
   ALTER TABLE public.payment_incidents ADD CONSTRAINT payment_incidents_exactly_one_parent_check CHECK ((order_id IS NOT NULL AND plan_id IS NULL) OR (order_id IS NULL AND plan_id IS NOT NULL));
 END IF; END $$;

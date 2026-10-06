@@ -41,11 +41,15 @@ export async function purgeUsers(userIds: Array<string | null | undefined>): Pro
   if (ids.length === 0) return;
   const { query } = await import("../../db/index.js");
 
+  // `refunds` comes BEFORE `payments`, and the order is load-bearing:
+  // `refunds.payment_id` is a NO ACTION child of `payments`, so deleting a payment
+  // row while a refund still names it throws 23503 — which surfaced as a *failing
+  // test whose assertions had all passed*, thrown from this file's own cleanup.
   for (const table of [
     "payment_incidents",
     "product_reviews",
-    "payments",
     "refunds",
+    "payments",
     "commissions",
     "vrepeat_deliveries",
   ]) {
@@ -54,6 +58,21 @@ export async function purgeUsers(userIds: Array<string | null | undefined>): Pro
       [ids],
     );
   }
+
+  // A refund of a MULTI-SHOP purchase names the purchase, not an order: since
+  // migration 055 it is stored as `order_id IS NULL, checkout_group_id = <group>`,
+  // so the order_id-scoped DELETE above cannot see it, and the payments delete
+  // below would then fail on `refunds_payment_id_fkey`. Scoping by `payment_id`
+  // covers every group refund without depending on `refunds.checkout_group_id`
+  // existing in the database under test.
+  await query(
+    `DELETE FROM refunds
+      WHERE payment_id IN (SELECT id FROM payments
+                            WHERE checkout_group_id IN (
+                                    SELECT id FROM checkout_groups WHERE user_id = ANY($1::uuid[])))`,
+    [ids],
+  );
+
   // A CHECKOUT GROUP payment carries no `order_id` (it parents the whole
   // purchase), so the order_id-scoped DELETE above cannot see it — and it is a
   // NO ACTION child of `checkout_groups`, which would then block the user's

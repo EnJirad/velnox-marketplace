@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-09-30 · **Branch:** `main` · **Latest pass:** VelRepeat **V2 Phase 1 — domain + schema implemented** (**§53**) — additive only; payment linkage (Q13) + decisions **A–I** still BLOCKED; no migration file (auto-apply hazard)
+**Last updated:** 2026-10-06 · **Branch:** `main` · **Latest pass:** Payment + Checkout + Order + Inventory + Webhook **rebuilt as ONE system** (**§70**) — the grouping blind spot is fixed, verified **2011 pass / 2 skip / 0 fail**; **real Stripe TEST E2E and production migration 055 remain BLOCKED** (owner action)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -331,78 +331,23 @@ dedicated customer, no real orders/payments) plus a live browser.
 
 ---
 
-## 15. Payment foundation — Stripe test mode, Card + PromptPay, COD OFF (TASK 005, 2026-09-25)
+## 15–20. Payment foundation, Stripe E2E records, CI guard, readiness audit, moderation queue — ARCHIVED
 
-**Archived** (full text) → [`history/archive/AI_Handoff-2026-09-25-payment-foundation.md`](history/archive/AI_Handoff-2026-09-25-payment-foundation.md).
-Live reference: [`.ai/context/payment.md`](context/payment.md) — read that, not this line.
+**Moved verbatim on 2026-10-06** to
+[`history/archive/AI_Handoff-2026-09-25-to-2026-09-26-payment-and-e2e-records.md`](history/archive/AI_Handoff-2026-09-25-to-2026-09-26-payment-and-e2e-records.md)
+(handoff edit-ceiling housekeeping; made room for §70). **Still-live claims, unchanged:**
 
-Built ON the existing Stripe code (V0023) — no second payment system, no duplicate table.
-**Stripe: TEST MODE ONLY; COD stays disabled.** The audit found the pre-existing code unsafe
-(no PromptPay, no idempotency, sync `constructEvent`, any key accepted, `payment_events` marked
-seen before processing, COD as the checkout DEFAULT, `refunds` a table with no code) and
-`backend/lib/payment-config.ts` became the ONE decision point: test-mode-only key classification,
-fail-closed COD flags, Card + PromptPay checkout, `constructEventAsync`, DATABASE-BACKED
-idempotency (`checkout_requests` + `idx_payments_one_active_stripe` + atomic `payment_events`
-claim/re-arm), separate order↔payment lifecycles, and refunds capped at the paid amount
-(`orders.manage`). Schema: migration 047 + both canonical files; `run-update.sql` **not** created.
-
----
-
-## 16. Stripe TEST-mode E2E verification (TASK 006, 2026-09-25) — **BLOCKED**
-
-**Status: BLOCKED — Stripe TEST credentials unavailable** (unchanged). `freebuff-env
-list` → `{"files":{}}`; no Stripe API call, PaymentIntent, PromptPay QR, webhook
-delivery or refund has ever been executed. Pre-move evidence (probe table, tier
-table, secret audit, unblock steps) is archived:
-[`history/archive/AI_Handoff-2026-09-25-payment-foundation.md`](history/archive/AI_Handoff-2026-09-25-payment-foundation.md).
-**Correction:** its claim that this sandbox has no `postgres`/`psql` binary was
-wrong — PostgreSQL 14 IS installed there, and §18 records the DB-gated payment
-tests executing (**560 pass / 2 skip / 0 fail**). Only the credential half stands.
+- **Stripe TEST E2E stays BLOCKED** — no `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`
+  (`freebuff-env list` → `{"files":{}}`); no PaymentIntent, PromptPay QR, webhook delivery or
+  refund has ever been executed. Production payment readiness **NOT claimed**.
+- **PRODUCTION: NOT READY**; §19's per-gate evidence is in
+  [`.ai/tasks/completed/production-readiness-audit-2026-09-26.md`](tasks/completed/production-readiness-audit-2026-09-26.md).
+- The moderation queue is bounded/paginated and `SellerVerificationQueue.tsx` renders through
+  `review.*` (th/en/my). Live rules: [`.ai/context/payment.md`](context/payment.md),
+  [`.ai/context/testing.md`](context/testing.md), and the code.
 
 ---
 
-## 17. CI guard fix — "Verify the guard refuses production" (2026-09-25)
-
-**Archived** (closed record, pushed at the time) →
-[`history/archive/AI_Handoff-2026-09-25-ci-guard-fix.md`](history/archive/AI_Handoff-2026-09-25-ci-guard-fix.md).
-Moved 2026-09-27 to make room for §22. The fix is live in
-`.github/workflows/test.yml` (`env -u TEST_DATABASE_URL` plus the
-accepted-target assertion) and CI has been green on every push since, including
-`c2d3639` (run 36283775266). Live rules: [`.ai/context/testing.md`](context/testing.md).
-
-## 18. Stripe TEST-mode E2E — independent re-verification (TASK 007, 2026-09-26)
-
-**Archived** (BLOCKED record; its statements are mirrored into
-[`.ai/context/payment.md`](context/payment.md)) →
-[`history/archive/AI_Handoff-2026-09-26-stripe-e2e-tasks.md`](history/archive/AI_Handoff-2026-09-26-stripe-e2e-tasks.md).
-Moved 2026-09-27 to make room for §23. **Stripe TEST E2E stays BLOCKED** (§6, §22):
-credential gate unchanged, no PaymentIntent / PromptPay QR / webhook delivery / refund
-ever executed, production payment readiness **NOT claimed**.
-
-## 19. Production-readiness audit — risk-ordered (TASK 009, 2026-09-26)
-
-**Archived** (closed record) →
-[`history/archive/AI_Handoff-2026-09-26-production-readiness-audit.md`](history/archive/AI_Handoff-2026-09-26-production-readiness-audit.md).
-Moved 2026-09-27 to make room for §22. **PRODUCTION: NOT READY** and **PRODUCTION
-PAYMENT READINESS: NOT CLAIMED** still stand; per-gate evidence is in
-[`.ai/tasks/completed/production-readiness-audit-2026-09-26.md`](tasks/completed/production-readiness-audit-2026-09-26.md);
-Stripe TEST E2E and production Browser / Google-OAuth / R2-authenticated E2E stay
-**BLOCKED** (§6, §18).
-
-## 20. Moderation-queue pagination + verification-queue i18n (2026-09-26) — archived
-
-Full narrative: [`history/archive/AI_Handoff-2026-09-26-moderation-pagination-i18n.md`](history/archive/AI_Handoff-2026-09-26-moderation-pagination-i18n.md)
-(this was the documented NEXT SPLIT; moved out on 2026-09-27). What stays live:
-
-- `GET /api/admin/products/moderation` is bounded and returns `{products, pagination}`;
-  `ProductModerationQueue.tsx` pages it (25) and its badge reads `pagination.total`.
-- `SellerVerificationQueue.tsx` renders through the `review.*` namespace (24 keys added in
-  th/en/my); the corrupted `ระงับและลบrêtailer แล้ว` string is fixed.
-- Tooling note: both edits sat past the ~55 KB match window and were applied with a single-use
-  `bun` anchor-asserting script.
-- Still open / unchanged: §19's release blockers (Stripe TEST E2E, browser/OAuth/R2 E2E,
-  `velnox.com` NS delegation, §9.4 catalog reads, dead realtime channels);
-  `ProductModerationQueue.tsx`'s other copy is still hardcoded Thai (pre-existing).
 
 ## 21–22. PostgreSQL 53000 — first pass + provider-quota classification (2026-09-27) — archived
 
@@ -602,65 +547,18 @@ Moved 2026-10-04 to keep the current-state file small while adding the payment-i
 section. The owner action it recorded (run `db/run-sqleditor.sql` against Render's actual
 database) is restated there and in §6.
 
-## Canonical production DB + GitHub Actions alignment (2026-10-04)
+## Canonical production DB + GitHub Actions alignment (2026-10-04) — ARCHIVED
 
-The Actions↔Render split is closed **in the repository**; the secret itself is still an owner
-action. `NEON_PRODUCTION_DATABASE_URL` is now the one name GitHub Actions uses to reach the
-production Neon, and the two workflows that touch production are named for that role:
-
-* **`production-db-verify.yml`** (new) — read-only. `repository` job validates the schema
-  contract and proves no workflow carries a credential, a remote connection string or a silent
-  fallback; `production` job prints `current_database` / `current_schema` /
-  `server_version` / `current_user` plus a row-count fingerprint, then checks 11 objects —
-  both group columns **with their type**, both `ON DELETE SET NULL` group FKs, the group
-  indexes, the payment parent CHECKs and the migration ledger. `gates` job runs the real
-  commands against a throwaway postgres container. `verdict` prints one PASS/BLOCKED/FAIL.
-* **`production-db-migrate.yml`** (was `migrate-neon.yml`, same engine, renamed) — the only
-  workflow that writes to production. It now prints the database identity **before** applying
-  anything and tells the operator to stop if it is not production.
-* `diag-neon-schema.yml` and `diag-stripe-payment-trace.yml` follow the canonical secret.
-  `test.yml` is unchanged and still references **no** secret.
-
-**Verification never repairs.** A missing object FAILs the job and names the fix; the workflow
-never creates it. **A missing secret is BLOCKED, never substituted** —
-`BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured.`
-
-Both properties were proven, not asserted: the check SQL was executed against a real reconciled
-database (**11/11 PASS**) and against a database with `payments.checkout_group_id` dropped — the
-reported production condition — where it reported **5 FAIL** naming exactly what was missing and
-exited non-zero without writing. The workflow guards were run against the real tree (clean) and
-against a planted violation file (all three fire, exit 1). The `repository` guards were written
-after three of them false-positived on the current tree, which is the only reason the planted
-`ep-ci-guard-check` fixture and the `test.yml` comment are now explicitly excluded.
-
-Suite after this change: **1962 pass / 2 skip / 0 fail**, typecheck 4/4 + backend 0, build 4/4,
-`db:verify` 9/9 exit 0, `git diff --check` clean.
-
-**Renaming `migrate-neon.yml` broke `backend/tests/migration-numbering.test.ts`** (it reads that
-workflow by name), which is the guard that pins the runner's filename-keyed ledger. Caught by
-running the suite rather than by inspection; the reference now points at the renamed file.
-
-**Two further defects only the real Actions run could find.**
-
-1. The new `repository` job runs the schema-contract tests with **no database**, and
-   `backend/tests/checkout-group-sql-scope.test.ts` had one test inside a *static* `describe`
-   that still executed its statement through `query()` — so it passed in `test.yml` (which
-   always has a container) and failed in the new job. That assertion is now gated on
-   `hasTestDatabase()` exactly like every other DB-backed one: 71 pass / 11 skip with no
-   database, and it still runs and passes when one is present.
-2. `db/verify-reconciler.sh` defaulted to hard-coded `velnox_test` / `velnox_test`
-   credentials and ignored `TEST_DATABASE_URL`, so in a CI job whose container uses
-   `postgres` / `postgres` every scenario failed on
-   `password authentication failed` — and, worse, it had been verifying against different
-   credentials than it tested against. It now derives `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`
-   and the admin database from `TEST_DATABASE_URL` (query string stripped, never echoed),
-   with explicit `PG*` / `VELNOX_VERIFY_ADMIN_DB` still winning. Verified against three
-   shapes: the CI credentials, the local credentials, and explicit overrides; plus a
-   credential-less URL, which must not corrupt the parse. `test.yml` never ran
-   `db:verify`, which is why this survived until now.
-
-Both were found by inspecting the GitHub run, not locally — which is the whole argument for
-verifying on Actions.
+**Moved verbatim on 2026-10-06** (edit-ceiling housekeeping; made room for §70) →
+[`history/archive/AI_Handoff-2026-10-04-canonical-production-db-and-actions.md`](history/archive/AI_Handoff-2026-10-04-canonical-production-db-and-actions.md).
+**Still live from it:** `NEON_PRODUCTION_DATABASE_URL` is the ONE secret name GitHub Actions uses
+to reach production; `production-db-verify.yml` is read-only and checks 11 objects (both group
+columns **with their type**, both `ON DELETE SET NULL` group FKs, the group indexes, the payment
+parent CHECKs, the ledger), `production-db-migrate.yml` is the only writer and prints the database
+identity **before** applying; `test.yml` references no secret. **Verification never repairs, and a
+missing secret is BLOCKED, never substituted.** Two durable CI lessons are in the archive: a
+DB-backed assertion inside a *static* `describe` must be gated on `hasTestDatabase()`, and
+`db/verify-reconciler.sh` must derive its connection from `TEST_DATABASE_URL`.
 
 ---
 
@@ -730,19 +628,14 @@ deliver the webhook; this workspace has no browser and no test account.
 
 ## §68. Multi-shop PromptPay — "Failed to create checkout session" (2026-10-05) — **ARCHIVED**
 
-**The fix is SHIPPED and LIVE; the record moved verbatim** →
-[`history/archive/AI_Handoff-2026-10-05-section-68-checkout-group-session-open.md`](history/archive/AI_Handoff-2026-10-05-section-68-checkout-group-session-open.md)
-(2026-10-05, edit-headroom housekeeping; index row in [`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)).
-
-**Still live from it:** order `46d6e39b-…` / `017911592602649656` could not start a payment because `openCheckoutGroupSession()` names
-`payments.checkout_group_id` as a bare column, which 42703s **after** Stripe already created the session — the shipped
-guard `paymentsCheckoutGroupColumnExists()` (a `pg_attribute` probe, cached, `__resetPaymentsGroupColumnCache()` seam) now
-answers **503 `CHECKOUT_GROUP_UNAVAILABLE` BEFORE `sessions.create`**, so no orphan payable URL is ever opened;
-`logCheckoutSessionFailure()` (async) emits one JSON line with `failure_stage`/`order_id`/`checkout_group_id`/
-`payment_attempt_id`/`stripe_session_id`/`provider_request_id`/… while the CLIENT still sees only the generic text; a failed
-group INSERT logs the session id and **expires** it; and the **request key is now claimed on the group path** too, after
-ownership is verified. Suite then: 1988 pass / 2 skip / 0 fail. Its "STILL BLOCKED" owner action is restated by **§69**
-with a second incident on the same column and the CI run proving the production secret is still absent.
+**Record moved verbatim** → [`history/archive/AI_Handoff-2026-10-05-section-68-checkout-group-session-open.md`](history/archive/AI_Handoff-2026-10-05-section-68-checkout-group-session-open.md).
+**Still live from it (the fix is SHIPPED):** `paymentsCheckoutGroupColumnExists()` — a cached `pg_attribute`
+probe with a `__resetPaymentsGroupColumnCache()` seam — answers **503 `CHECKOUT_GROUP_UNAVAILABLE` BEFORE
+`sessions.create`**, so no orphan payable URL is ever opened when the column is missing; the async
+`logCheckoutSessionFailure()` emits one JSON line (`failure_stage`/`order_id`/`checkout_group_id`/
+`payment_attempt_id`/`stripe_session_id`/…) while the client sees only generic text; a failed group INSERT
+**expires** the session it just created; and the request key is claimed on the group path too, after ownership
+is verified. Owner action restated by **§69**.
 
 ---
 
@@ -811,3 +704,81 @@ column is absent and returns the attempt id when it is present, so it is a real 
 PART 8 self-assertion — never runs. Production cannot reach that state (`payments_exactly_one_parent_check`, migration
 051, has always required exactly one of `order_id`/`plan_id`, and a parentless INSERT is rejected on a reconciled
 database). Only a database that stored a group payment and then lost the column can hit it.
+
+---
+
+## §70. Payment + Checkout + Order + Inventory + Webhook — rebuilt as ONE system (2026-10-06)
+
+**Full record:** [`docs/PAYMENT_CURRENT_STATE.md`](../docs/PAYMENT_CURRENT_STATE.md) (25-question audit) ·
+[`docs/PAYMENT_TARGET_ARCHITECTURE.md`](../docs/PAYMENT_TARGET_ARCHITECTURE.md) ·
+[`docs/PAYMENT_IMPLEMENTATION.md`](../docs/PAYMENT_IMPLEMENTATION.md) (19 sections) ·
+[`docs/PAYMENT_E2E_CHECKLIST.md`](../docs/PAYMENT_E2E_CHECKLIST.md) (47 PASS / 5 BLOCKED / 0 FAIL).
+
+### Root cause
+
+Every per-order payment **read and decision** resolved the ledger by `payments.order_id` alone, while a
+multi-shop purchase stores **ONE** payment row with `order_id IS NULL, checkout_group_id = <group>` → NULL →
+`COALESCE(…, 'unpaid')` → the UI showed `orders.status='paid'` beside "ยังไม่ชำระ". The same blindness broke the
+**decisions**: confirm gate (409 forever on a paid order), release guard (would return **sold** stock),
+cancellation gate (a paid purchase could be cancelled), expiry sweep (could expire a purchase mid-payment).
+**A seventh, more severe defect was found this pass** (`docs/PAYMENT_CURRENT_STATE.md`, defect 7): a group session's
+`metadata.orderId` is the REPRESENTATIVE order, so the four failure/expiry paths resolved to it, searched
+`payments WHERE order_id = <order>` → NULL → `moved: false` → **nothing happened at all** (payment stuck
+`requires_action`, orders stuck `pending_payment` holding stock, session never closed); the sweep then expired
+**one** order, leaving the session payable, and the late charge settled against `expired` orders — money taken,
+nothing sold, **no incident** — silently.
+
+### What was built
+
+1. **`backend/lib/payment-attempt.ts`** (new, 490 lines) — the ONE covering-set resolver: predicates, the SQL
+   fragments, the **precedence fold** (`refunded > partially_refunded > paid > processing > NEWEST`), row
+   accessors and purchase-scope readers. **24 blind subqueries across 8 files now use it**
+   (`routes/{cart,stripe,seller-orders,center}.ts`, `lib/{order-lock,order-fulfillment,inventory}.ts`,
+   `jobs/payment-reservation-scheduler.ts`).
+2. **`backend/lib/checkout-group-lifecycle.ts`** (new, 200 lines) — `terminateCheckoutGroup()`: locks every
+   member order (id ASC), refuses when any covering payment is settled or in flight (`blockedBy`), claims each
+   order, releases stock through the ONE release path, and voids the charge **last**. Used by the cancel route,
+   the expiry sweep and all four failure/expiry webhook cases.
+3. **`routes/stripe.ts`** — failure/expiry paths group-aware; purchase scope derived **server-side from the order
+   row** (closes the retry hole where an `orderId`-only request charged ONE shop's total beside a live group
+   charge); settlement records a durable late-payment incident when captured money has no payable order; refunds
+   are group-aware. **Migration 055** (mirrored in both canonical SQL files): nullable `refunds.order_id`,
+   `refunds.checkout_group_id` + index, `refunds_parent_check`, `payments_status_check` (added **conditionally**
+   — production is unreadable from a workspace). `db/verify-reconciler.sh` counts `66|243|255|652` →
+   `66|244|258|653`.
+4. **One frontend file**, `apps/velshop/src/pages/ShopCheckoutSuccess.tsx`: the payment line is no longer hidden
+   when the backend sends `payment: null`. No new i18n keys.
+
+### Verified (all observed, none assumed)
+
+| Check | Result |
+|---|---|
+| `bun test backend/tests` on a freshly reconciled disposable DB | **2011 pass / 2 skip / 0 fail**, 2013 tests, 69 files |
+| `backend/tests/checkout-group-payment-visibility.test.ts` (new, 539 lines) | **18/18** |
+| `bun run db:verify` | exit 0 — **52 PASS**, ALL SCENARIOS PASSED |
+| `bun run typecheck` (4 frontends) + `@velnox/backend` | exit 0 |
+| `bun run build:apps` | exit 0 (4/4) |
+| `bun run i18n:check` · `git diff --check` | exit 0 · clean |
+
+Five pre-existing source-shape tests failed because they pinned the OLD blind SQL verbatim; each was updated to
+pin the new architecture, and the cancel contract gained a **stronger** assertion (a grouped refusal is decided
+under the member-order locks and returns before the provider session is closed or any socket event published).
+No assertion was weakened, skipped or deleted. `bun run lint` is **not configured** in this repo.
+
+### Still BLOCKED (unchanged, do not read as PASS)
+
+1. **Real Stripe TEST-mode E2E** — no `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` /
+   `STRIPE_WEBHOOK_SECRET` (`freebuff-env list` → `{"files":{}}`), no browser, no test account. Phase 19 is
+   verified at **DB level with prototype-spied Stripe sessions** and labelled as a simulation. Requires: set the
+   three Stripe keys in the backend env and register the webhook for `POST /api/payments/stripe/webhook`.
+2. **Production Neon unreachable** — migration 055 could not be read against or applied to production (no
+   `NEON_PRODUCTION_DATABASE_URL`; GitHub App token 403 on secrets and workflow dispatch). Apply 055, confirm the
+   two new constraints, re-run the count assertion.
+3. **Owner follow-ups from this pass:** reconcile historical rows where a charge landed on `expired` orders
+   (start from `payment_incidents`); decide/implement seller payout (Stripe Connect or an internal ledger) and
+   persist commission per order — neither exists today (`docs/PAYMENT_IMPLEMENTATION.md` §19).
+
+### Conflict flagged in the task brief
+
+The brief lists `db/run-update.sql` as a schema sync target. `AGENTS.md` rule 4 forbids recreating that file, so
+only `db/schema.sql`, `db/run-sqleditor.sql` and the migration were written. `db/run-update.sql` remains absent.

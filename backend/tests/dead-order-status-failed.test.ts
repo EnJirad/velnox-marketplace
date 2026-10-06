@@ -366,7 +366,11 @@ describe("LOW #12 — the release claim's shape is unchanged", () => {
     // payment, and it RETURNS the row so only the winner mutates stock.
     expect(lib).toMatch(/AND inventory_released = FALSE/);
     expect(lib).toMatch(/AND status = ANY\(\$2::text\[\]\)/);
-    expect(lib).toMatch(/AND NOT EXISTS \(\s*SELECT 1 FROM payments p/);
+    // The `NOT EXISTS` now opens with a comment that documents WHY the predicate is
+    // the covering set (a grouped purchase's charge has `order_id IS NULL`), so the
+    // shape is asserted as: the guard exists, it reads `payments`, and it is bound
+    // to $3 — the comment must not be allowed to hide a missing clause.
+    expect(lib).toMatch(/AND NOT EXISTS \(\s*(?:\s*--[^\n]*\n)*\s*SELECT 1 FROM payments p/);
     expect(lib).toMatch(/RETURNING id/);
     // The guard is still bound to the claim, as $2.
     expect(lib).toContain("[orderId, RELEASABLE_STATUSES, [...PAYMENT_SETTLED_STATUSES]]");

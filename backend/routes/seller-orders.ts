@@ -41,6 +41,11 @@ import {
   type FulfillmentStatus,
 } from "../lib/order-fulfillment.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+// The ONE covering-set payment resolver. A multi-shop purchase stores ONE payment
+// row on the checkout GROUP (`order_id IS NULL`), so a per-order read that names
+// `payments.order_id` alone reports 'unpaid' for a paid purchase — and the seller
+// then cannot tell a paid order from an abandoned one.
+import { ORDER_PAYMENT_STATUS_SQL, coveringPaymentsForOrder } from "../lib/payment-attempt.js";
 
 function param(req: Request, key: string): string {
   return (req.params as Record<string, string>)[key] ?? "";
@@ -344,7 +349,7 @@ export function setupSellerOrderRoutes(app: Express): void {
                 o.shipping_address, o.notes, o.created_at, o.updated_at,
                 o.checkout_group_id,
                 sh.name AS shop_name, sh.slug AS shop_slug,
-                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                ${ORDER_PAYMENT_STATUS_SQL} AS payment_status,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          JOIN order_items oi ON oi.order_id = o.id
@@ -434,7 +439,7 @@ export function setupSellerOrderRoutes(app: Express): void {
 
       const orderRes = await query(
         `SELECT DISTINCT o.*, sh.name AS shop_name, sh.slug AS shop_slug,
-                COALESCE((SELECT status FROM payments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'unpaid') AS payment_status,
+                ${ORDER_PAYMENT_STATUS_SQL} AS payment_status,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
          FROM orders o
          JOIN order_items oi ON oi.order_id = o.id
@@ -449,14 +454,13 @@ export function setupSellerOrderRoutes(app: Express): void {
       }
       const order = orderRes.rows[0];
 
-      const [itemsByOrder, shipments, paymentsRes, customerRes] = await Promise.all([
+      const [itemsByOrder, shipments, coveringPayments, customerRes] = await Promise.all([
         fetchSellerItemsForOrders([orderId], sellerId),
         fetchShipmentsForOrder(orderId),
-        query(
-          `SELECT id, method, status, amount, provider FROM payments
-           WHERE order_id = $1 ORDER BY created_at DESC`,
-          [orderId],
-        ),
+        // The covering set — a multi-shop purchase's charge is recorded on the
+        // checkout GROUP, so `WHERE order_id = $1` returned nothing and the seller
+        // saw no payment at all on an order the customer had paid for.
+        coveringPaymentsForOrder({ query }, orderId),
         query(`SELECT name, phone FROM users WHERE id = $1`, [order.user_id]),
       ]);
       const items = itemsByOrder[orderId] ?? [];
@@ -495,11 +499,11 @@ export function setupSellerOrderRoutes(app: Express): void {
           items,
           itemCount: items.reduce((s: number, i: any) => s + i.quantity, 0),
           shipments,
-          payments: paymentsRes.rows.map((p: any) => ({
+          payments: coveringPayments.map((p) => ({
             id: p.id,
             method: p.method,
             status: p.status,
-            amount: parseFloat(p.amount) || 0,
+            amount: parseFloat(String(p.amount ?? 0)) || 0,
           })),
         },
       });
