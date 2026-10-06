@@ -512,19 +512,48 @@ describe("a multi-shop purchase through the covering-set resolver", () => {
   });
 
   testFn("CASE 12 — the stored payment vocabulary is the one the schema allows", async () => {
-    // `payments_status_check` (migration 055) exists on a freshly reconciled
-    // database because no row can violate it.
+    // `payments_status_check` exists on a freshly reconciled database because no
+    // row can violate it.
+    //
+    // Migration 056 WIDENED the stored vocabulary, and that is the contract here:
+    // a payment the provider has authorized or expired, and the two partial-refund
+    // states, are real states the payment path has to be able to record. Before
+    // 056 the column could not hold `authorized` at all, so an authorization had
+    // nowhere to live and the attempt layer had to be inferred from timestamps.
     const constraint = await q(
       `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'payments_status_check'`,
     );
     expect(constraint.rows.length).toBe(1);
-    for (const value of ["pending", "requires_action", "processing", "paid", "failed", "cancelled"]) {
+    for (const value of [
+      "pending",
+      "requires_action",
+      "processing",
+      "authorized",
+      "paid",
+      "failed",
+      "cancelled",
+      "expired",
+      "partially_refunded",
+      "refunded",
+    ]) {
       expect(constraint.rows[0].def).toContain(value);
     }
 
+    // The widened vocabulary is STORED, not merely tolerated in the definition:
+    // the state the refund path moves a payment into has to be accepted, or the
+    // refund path raises 23514 on a partial refund.
+    await q(`UPDATE payments SET status = 'partially_refunded' WHERE id = $1`, [groupPayment]);
+    const stored = await q(`SELECT status FROM payments WHERE id = $1`, [groupPayment]);
+    expect(stored.rows[0].status).toBe("partially_refunded");
+    // Put the fixture back the way the earlier cases left it, so adding a CASE 13
+    // below this one cannot inherit a half-refunded payment by accident.
+    await q(`UPDATE payments SET status = 'paid' WHERE id = $1`, [groupPayment]);
+
+    // Widening a CHECK must not turn it into a no-op. A value no lifecycle can
+    // produce is still refused BY THE DATABASE, not only by application code.
     let rejected = false;
     try {
-      await q(`UPDATE payments SET status = 'partially_refunded' WHERE id = $1`, [groupPayment]);
+      await q(`UPDATE payments SET status = 'not_a_payment_state' WHERE id = $1`, [groupPayment]);
     } catch (err) {
       rejected = (err as { code?: string }).code === "23514";
     }

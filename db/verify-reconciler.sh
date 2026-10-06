@@ -91,12 +91,32 @@ command -v psql >/dev/null || { echo "psql is required"; exit 2; }
 echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$ADMIN_DB" -tAc 'select version()' 2>/dev/null | cut -c1-40)"
 
 # The canonical object counts a fresh, fully reconciled database must have.
-# tables|indexes|constraints|columns. Migration 055 (a grouped purchase's refund
-# has a parent) grew the canonical schema by exactly: 1 column
-# (`refunds.checkout_group_id`), 1 index (`idx_refunds_checkout_group`), and 3
-# constraints (`refunds_checkout_group_id_fkey`, `refunds_parent_check`,
-# `payments_status_check`). Re-measured on a fresh run of db/run-sqleditor.sql.
-CANON="66|244|258|653"
+# tables|indexes|constraints|columns.
+#
+# Migration 055 (a grouped purchase's refund has a parent) grew the canonical
+# schema by exactly: 1 column (`refunds.checkout_group_id`), 1 index
+# (`idx_refunds_checkout_group`), and 3 constraints
+# (`refunds_checkout_group_id_fkey`, `refunds_parent_check`,
+# `payments_status_check`). That measurement was 66|244|258|653.
+#
+# Migration 056 (commerce core invariants) grew it by: 9 tables
+# (payment_attempts, fulfillment_orders, shipment_items, inventory_movements,
+# ledger_entries, order_returns, outbox_events, reconciliation_runs,
+# reconciliation_findings), 52 indexes, 81 constraints (per-table CHECKs, the two
+# order-axis vocabularies, the two inventory counter/availability rules on
+# product AND variant, the attempt/settlement/refund/outbox/reconciliation
+# uniques and the ledger append-only trigger's function) and 154 columns.
+# Re-measured on a fresh, twice-rerun db/run-sqleditor.sql.
+#
+# Note on the constraint count: an `orders_total_matches_parts_check` was written
+# during 056 and deliberately reverted before it ever shipped. A production-shaped
+# order can legitimately hold a total with no line breakdown, so the CHECK would
+# have refused rows the application itself produces — the "a constraint would
+# reject valid data" stop condition. The relationship is reported by the purchase
+# and payment reconcilers instead. That revert is why the count is 81 and not 82;
+# the total = subtotal + shipping - discount relationship is intentionally NOT a
+# database constraint anywhere in this schema.
+CANON="75|296|339|807"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────
@@ -199,7 +219,12 @@ DB=velnox_verify_path
 fresh_db "$DB"
 q "$DB" -q >/dev/null 2>&1 -c "CREATE SCHEMA decoy; CREATE TABLE decoy.orders (id int, note text); INSERT INTO decoy.orders VALUES (1,'must not be touched');"
 q "$DB" -q -c "SET search_path = decoy, public;" -f "$FILE" >/tmp/velnox_verify_path.log 2>&1 && pass "file executed with search_path=decoy,public, exit=0" || { fail "exit=$?"; grep -n ERROR /tmp/velnox_verify_path.log | head -3; }
-eq "tables landed in public" "$(t "$DB" "select count(*) from information_schema.tables where table_schema='public'")" "66"
+# The expectation is the canonical TABLE count, taken from CANON rather than
+# written as a literal. This assertion is "the file wrote everything into
+# public, not into the decoy", so it has to track the canonical schema by
+# itself — a hardcoded literal goes stale on every migration that adds a table,
+# and a stale literal here reads as a search_path bug that does not exist.
+eq "tables landed in public" "$(t "$DB" "select count(*) from information_schema.tables where table_schema='public'")" "${CANON%%|*}"
 eq "the decoy orders table was not altered" "$(t "$DB" "select count(*) from information_schema.columns where table_schema='decoy' and table_name='orders' and column_name='checkout_group_id'")" "0"
 eq "the decoy row is intact" "$(t "$DB" "select note from decoy.orders")" "must not be touched"
 

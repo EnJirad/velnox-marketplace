@@ -203,11 +203,19 @@ describe("the file stays additive and honest", () => {
       .map((m) => `${m[1]}.${m[2]}`)
       .filter((name) => !name.startsWith("velnox_defn_probe"));
     // payments_exactly_one_parent_check is retired on purpose (migration 054);
-    // the five status/pricing checks are only dropped when the stored definition
-    // differs from db/schema.sql.
+    // every other entry is a check the snapshot re-declares, and each one is
+    // dropped only when the STORED definition differs from db/schema.sql —
+    // PostgreSQL cannot ALTER a CHECK, so dropping and re-adding is the only way
+    // to change one, and the definition guard is what stops that from happening
+    // on every run. payments_status_check joined the set in migration 056, which
+    // adds `authorized`, `expired`, `partially_refunded` and `refunded` to the
+    // stored vocabulary. Adding a value cannot invalidate an existing row, which
+    // is why the guard there also refuses to re-declare while a row still carries
+    // a status outside the widened vocabulary.
     for (const name of drops) {
       expect([
         "payments.payments_exactly_one_parent_check",
+        "payments.payments_status_check",
         "velrepeat_pricing_snapshots.velrepeat_pricing_snapshots_cycle_price_not_null",
         "velrepeat_pricing_snapshots.velrepeat_pricing_snapshots_total_not_below_cycle",
         "velrepeat_plans.velrepeat_plans_status_check",

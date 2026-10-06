@@ -1,9 +1,13 @@
 # FINAL_VERIFICATION.md — the verification ledger (§45/§46)
 
-> **Status at the time this file was created:** Phase 0-3 (audit, research,
-> design) complete; **no implementation phase has started**, so every
-> implementation row below is `PENDING`, not `PASS`. This file is updated at the
-> end of every phase and re-read at the end of the work.
+> **Status:** Phase 0-3 (audit, research, design) complete, and **Phase 4 (DB
+> invariants) is implemented and verified** — see §3.1 for the measured evidence.
+> Phases 5-17 have not started, so their rows below are `PENDING`, not `PASS`.
+> This file is updated at the end of every phase and re-read at the end of the work.
+>
+> **§2 is the floor measured BEFORE any change and is never overwritten.** Current
+> measurements live in the phase sections, so a regression is visible as a
+> difference between the two rather than hidden by an edit.
 >
 > **Status vocabulary — used strictly.**
 > `PASS` = the command was run in this workspace and succeeded ·
@@ -48,9 +52,13 @@
 
 | # | Phase | Check | Status |
 |---|---|---|---|
-| 4 | DB invariants | fresh bootstrap + 3× rerun no-op | PENDING |
-| 4 | DB invariants | legacy-shaped seed preserved, backfill correct | PENDING |
-| 4 | DB invariants | `db/verify-reconciler.sh` updated counts | PENDING |
+| 4 | DB invariants | fresh bootstrap + 3× rerun no-op | **PASS** — §3.1 A |
+| 4 | DB invariants | legacy-shaped seed preserved, backfill correct | **PASS** — §3.1 B |
+| 4 | DB invariants | `db/verify-reconciler.sh` updated counts | **PASS** — §3.1 C |
+| 4 | DB invariants | migration 056 applies to a PRE-056 database and converges on the canonical schema | **PASS** — §3.1 D |
+| 4 | DB invariants | the commerce-core invariants are enforced BY THE DATABASE (23 cases) | **PASS** — §3.1 E |
+| 4 | DB invariants | the two canonical files stay in contract with each other | **PASS** — §3.1 F |
+| 4 | DB invariants | migration 056 applied to the canonical PRODUCTION database | **BLOCKED** — §6 (2) |
 | 5 | Checkout | no client amount/seller/price accepted | PENDING |
 | 6 | Order | projection totality + transition legality | PENDING |
 | 7 | Payment | attempt lifecycle + settlement writes ledger/outbox | PENDING |
@@ -67,9 +75,48 @@
 
 ---
 
-## 4. The §35 payment test matrix (20 cases) — expected outcome per environment
+## 3.1 Phase 4 evidence (DB invariants)
 
-| # | Case | This workspace |
+Every row below was executed in this workspace; the command and its observed
+output are quoted. Nothing here is a projection.
+
+| # | Check | Command | Observed |
+|---|---|---|---|
+| A | fresh bootstrap, three runs, no drift | `psql -v ON_ERROR_STOP=1 -f db/run-sqleditor.sql` ×3 | exit 0 each time; object counts `75\|296\|339\|807` identical after every run; final NOTICE names the nine tables, both order axes, both inventory axes, the fulfilled-quantity axis, the ledger trigger and the retry metadata |
+| A2 | the reconciler proof | `bun run db:verify` | exit 0, **51 PASS / 0 FAIL**, `RECONCILER PROOF: ALL SCENARIOS PASSED` |
+| B | a pre-existing row is never rewritten | `db:verify` scenario E | order rows byte-identical (`md5` unchanged), historic order number preserved verbatim, order count unchanged |
+| C | the canonical counts are the ones recorded | `db:verify` scenarios A/C/D/G | expectations are enforced against `CANON="75\|296\|339\|807"`; scenario G derives its table count from `CANON` instead of a literal, so it cannot go stale on the next migration |
+| D | the migration path and the bootstrap path agree | pre-056 tree (`git show HEAD:db/run-sqleditor.sql`) → `db/migrations/056_…sql` → `db/run-sqleditor.sql` | `66\|244\|258\|653` → migration exit 0 → `75\|296\|339\|807` → rerun exit 0 → unchanged → reconciler over it exit 0 → unchanged. **The two paths converge on the same schema.** |
+| E | the invariants are enforced by the database | `bun test backend/tests/commerce-core-invariants.test.ts` | 23 pass / 0 fail / 47 expect calls. Each case executes the refused statement and asserts its SQLSTATE: `23514` CHECK, `23505` unique, `P0001` ledger trigger |
+| F | the canonical files stay in contract | `bun test backend/tests/db-run-sqleditor-reconciler.test.ts` + the parity helper | 21 pass / 0 fail: every declared column has its `ADD COLUMN IF NOT EXISTS` pass, every index is created after the last column, no index sits in the table section, every `ADD CONSTRAINT` is guarded, the file stays additive, and PART 7b/PART 8 still assert rather than report |
+| G | no regression in the existing suite | `bun test backend/tests` | **2035 pass / 2 skip / 0 fail**, 70 files, exit 0 (floor was 2011/2/0, 69 files) |
+| H | typecheck, build, i18n, whitespace | `bun run typecheck`; `bun --filter @velnox/backend typecheck`; `bun run build:apps`; `bun run i18n:check`; `git diff --check` | all exit 0; build 4/4 `✓ built`; i18n `th=1496 en=1496 my=1496` |
+| I | lint | `bun run lint` | **SKIPPED — lint is not configured in this repository** (`echo 'Lint not yet configured'`). Not a passing check |
+
+Two defects were found by these checks and FIXED rather than accommodated:
+
+1. the migration-056 structure had been appended to `db/run-sqleditor.sql` as a
+   late `PART 9`, which put `ADD COLUMN` statements after the index pass and left
+   the nine new tables with no column pass at all. It is now distributed into the
+   passes the file is organised around (PART 1 tables, PART 2 columns, PART 3
+   indexes, PART 5 constraints, PART 6 triggers), and the column pass for the nine
+   new tables is generated from the snapshot.**No contract test was weakened.**
+2. `orders_total_matches_parts_check` was written and then deliberately reverted:
+   a production-shaped order can hold a total with no line breakdown, so the CHECK
+   would have refused a row the application itself can produce — §43's "a
+   constraint would reject valid data" condition. The relationship is reported by
+   the reconcilers instead. It is absent from the migration and from both canonical
+   files; `CANON` reflects the revert.
+
+---
+
+## 4. The §35 payment test matrix (20 cases)
+
+**Every cell below is an EXPECTED outcome, not an observed one.** Phases 5-13
+implement what these cases exercise; until then no cell in this table has been
+run, and none of them may be quoted as a result.
+
+| # | Case | Expected in this workspace |
 |---|---|---|
 | 1 successful card | DB/contract simulation **PASS**; real Stripe **BLOCKED — no keys** |
 | 2 failed card | DB/contract **PASS** |
@@ -131,7 +178,9 @@
 
 ## 7. Production readiness verdict
 
-**NOT READY** until all of the following hold, and the verdict is one word only:
+**NOT READY** — the verdict is one word only, and it is unchanged by Phase 4.
+Phase 4 makes the SCHEMA ready; it does not make the SYSTEM ready. It holds until
+all of the following are true:
 
 1. migration 056 applied to the canonical production database and the reconciler
    counts asserted there (currently **BLOCKED**);
