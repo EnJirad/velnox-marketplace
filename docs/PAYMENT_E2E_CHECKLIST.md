@@ -157,11 +157,14 @@ the deployed services cannot be reached. Reporting them as PASS would be exactly
 
 ## Tally
 
-| Label | Count |
-|---|---|
-| **PASS** | 47 |
-| **BLOCKED** | 5 (D10, I4, Phase-19 steps 1 / 6 / 7 / 8 / PromptPay — grouped above as the credential-gated set) |
-| **FAIL** | **0** |
+| Label | Count | Rows |
+|---|---|---|
+| **PASS** | **58** | A1–A8, B1–B6, C1–C8, D1–D9, E1–E7, F1–F6, G1–G5, H1–H5, I1–I3, Phase-19 steps 2–5 and 9–16 |
+| **BLOCKED** | **8** | A9 (no lint script), D10 (no Stripe credentials), I4 (no production DB), Phase-19 steps 1 / 6 / 7 / 8, PromptPay TEST |
+| **FAIL** | **0** | — |
 
-**No row is FAIL.** Every check that could be executed passed; every check that could not
-is BLOCKED with its reason named, never softened into a pass.
+Counted by row, not estimated: 58 rows labelled PASS, 8 labelled BLOCKED, **0 labelled FAIL**.
+Every check that could be executed passed; every check that could not is BLOCKED with its reason
+named, never softened into a pass. The single largest evidence block is the full backend suite —
+**2011 pass / 2 skip / 0 fail** — re-run on the frozen tree and independently re-run by CI
+(`Tests` → the typecheck/build/DB-tests job passed on commit `c50e5f5`).

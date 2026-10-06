@@ -712,7 +712,7 @@ database). Only a database that stored a group payment and then lost the column 
 **Full record:** [`docs/PAYMENT_CURRENT_STATE.md`](../docs/PAYMENT_CURRENT_STATE.md) (25-question audit) ·
 [`docs/PAYMENT_TARGET_ARCHITECTURE.md`](../docs/PAYMENT_TARGET_ARCHITECTURE.md) ·
 [`docs/PAYMENT_IMPLEMENTATION.md`](../docs/PAYMENT_IMPLEMENTATION.md) (19 sections) ·
-[`docs/PAYMENT_E2E_CHECKLIST.md`](../docs/PAYMENT_E2E_CHECKLIST.md) (47 PASS / 5 BLOCKED / 0 FAIL).
+[`docs/PAYMENT_E2E_CHECKLIST.md`](../docs/PAYMENT_E2E_CHECKLIST.md) (58 PASS / 8 BLOCKED / **0 FAIL**).
 
 ### Root cause
 
