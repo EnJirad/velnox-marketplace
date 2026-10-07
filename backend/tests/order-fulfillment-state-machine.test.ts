@@ -230,7 +230,10 @@ describe("payment gate — confirming requires settled money", () => {
     const route = seller.slice(seller.indexOf('app.patch("/api/seller/orders/:id/status"'));
     const lock = route.indexOf("FOR UPDATE");
     const gate = route.indexOf("await assertPaymentConfirmedForConfirmation(client, orderId)");
-    const update = route.indexOf("UPDATE orders SET status = $1, updated_at = NOW()");
+    // The order write now records the axes AND the projected legacy value in one
+    // statement (P0-1), so the anchor is that statement — the ORDERING the test
+    // is about (lock → gate → write) is unchanged.
+    const update = route.indexOf("SET status = $1, order_state = $3, fulfillment_status = $4");
     expect(lock).toBeGreaterThan(-1);
     expect(gate).toBeGreaterThan(lock);
     expect(update).toBeGreaterThan(gate);
@@ -270,7 +273,7 @@ describe("shipment gate — `shipped` needs a carrier and a tracking number", ()
     const route = seller.slice(seller.indexOf('app.patch("/api/seller/orders/:id/status"'));
     expect(route).toContain("await ensureShipmentForShipping(client, orderId, { carrier, trackingNumber });");
     expect(route.indexOf("ensureShipmentForShipping")).toBeLessThan(
-      route.indexOf("UPDATE orders SET status = $1, updated_at = NOW()"),
+      route.indexOf("SET status = $1, order_state = $3, fulfillment_status = $4"),
     );
     expect(read(CENTER_ROUTE)).toContain("await ensureShipmentForShipping(client, orderId, { carrier, trackingNumber });");
     // The shipment is written to the EXISTING table — no second shipment system.
@@ -827,7 +830,7 @@ describe("cancellation gate — money outranks a staff cancellation", () => {
     const route = seller.slice(seller.indexOf('app.patch("/api/seller/orders/:id/status"'));
     const lock = route.indexOf("FOR UPDATE");
     const gate = route.indexOf("await assertNoSettledPaymentForCancellation(client, orderId)");
-    const update = route.indexOf("UPDATE orders SET status = $1, updated_at = NOW()");
+    const update = route.indexOf("SET status = $1, order_state = $3, fulfillment_status = $4");
     expect(lock).toBeGreaterThan(-1);
     expect(gate).toBeGreaterThan(lock);
     expect(update).toBeGreaterThan(gate);
@@ -837,7 +840,7 @@ describe("cancellation gate — money outranks a staff cancellation", () => {
     const admin = center.slice(center.indexOf('app.patch("/api/admin/orders/:orderId/status"'));
     const adminLock = admin.indexOf("FOR UPDATE");
     const adminGate = admin.indexOf("await assertNoSettledPaymentForCancellation(client, orderId)");
-    const adminUpdate = admin.indexOf("UPDATE orders SET status = $1, updated_at = NOW()");
+    const adminUpdate = admin.indexOf("SET status = $3, order_state = $4, fulfillment_status = $5");
     expect(adminLock).toBeGreaterThan(-1);
     expect(adminGate).toBeGreaterThan(adminLock);
     expect(adminUpdate).toBeGreaterThan(adminGate);

@@ -280,3 +280,11 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 **Also on 2026-10-06:** the handoff's `## §68` stub was **compressed in place** (its verbatim record already lives in the row above); nothing was discarded.
 
 **Current-state pointer:** the payment/checkout/order/inventory/webhook rebuild is recorded in the handoff at `## §70` with the four long-form documents under `docs/PAYMENT_*.md`.
+
+### 2026-10-07 — §72 (order state authority) added; §65–§66 archived
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md`](./archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md) | handoff §65–§66 — multi-shop checkout / numeric order numbers / VelRepeat V2 customer UI, and the `checkout_groups` 42P01 root cause | Moved **verbatim** on 2026-10-07 while adding §72 (edit-headroom housekeeping; the current-state file was at 55.0 KB against the ~55 KB edit-tool limit). Kept because §66 is the record of the durable finding that **migrations were applied to the database named by the Actions secret `NEON_DATABASE_URL`, not the one Render's `DATABASE_URL` points at** — so every "production schema verified" claim resting on that ledger is suspect — and of the resulting owner action (`NEON_PRODUCTION_DATABASE_URL` + `production-db-migrate.yml`), still **BLOCKED**. §65 records the live shapes it shipped: 18-digit digits-only order numbers as strings, one purchase = one `checkout_groups` row + N per-shop orders. Every still-live claim is restated in the handoff's §65/§66 pointers |
+
+**Also on 2026-10-07:** the handoff's §65/§66 headers were replaced by those pointers (nothing else was compressed), and §72 records the P0-1 closure — `orders.status` is a derived projection of `order_state` + `fulfillment_status` + the payment axis through `backend/lib/order-state.ts`, with every writer migrated and `backend/tests/order-state-projection.test.ts` as the proof.

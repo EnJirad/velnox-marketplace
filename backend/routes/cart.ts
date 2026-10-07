@@ -40,6 +40,10 @@ import {
   ORDER_PAYMENT_STATUS_SQL,
   coveringPaymentsForOrder,
 } from "../lib/payment-attempt.js";
+// The ONE order-state authority: the three lifecycle axes and the legacy
+// `orders.status` projection of them (see the module header). Every writer of
+// `orders.status` in this file goes through it.
+import { NEW_ORDER_AXES, projectOrderStatus, axesForFulfillmentStatus } from "../lib/order-state.js";
 // Terminating a purchase is a GROUP operation: N orders, one charge, one unit.
 import { terminateCheckoutGroup } from "../lib/checkout-group-lifecycle.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
@@ -96,9 +100,14 @@ async function insertOrderWithUniqueNumber(
   for (let attempt = 1; ; attempt += 1) {
     await client.query("SAVEPOINT order_number_attempt");
     try {
+      // GROUP A of the order-state migration (P0-1): a new order records ALL
+      // THREE axes at creation, and the legacy `status` is the projection of
+      // them — never a fourth opinion. The projection of "nothing has happened
+      // yet" is `pending`, which is the value this statement hard-coded before
+      // the axes existed, so every existing reader sees the same column value.
       const orderResult = await client.query(
-        `INSERT INTO orders (user_id, shop_id, order_number, status, total_amount, currency, shipping_address_id, shipping_address, notes, checkout_group_id)
-         VALUES ($1, $2, $3, 'pending', $4, 'THB', $5, $6, $7, $8)
+        `INSERT INTO orders (user_id, shop_id, order_number, status, order_state, fulfillment_status, total_amount, currency, shipping_address_id, shipping_address, notes, checkout_group_id)
+         VALUES ($1, $2, $3, $9, $10, $11, $4, 'THB', $5, $6, $7, $8)
          RETURNING id, order_number, created_at`,
         [
           params.userId,
@@ -109,6 +118,9 @@ async function insertOrderWithUniqueNumber(
           params.addressSnapshot,
           params.notes,
           params.checkoutGroupId,
+          projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES }),
+          NEW_ORDER_AXES.orderState,
+          NEW_ORDER_AXES.fulfillmentStatus,
         ],
       );
       await client.query("RELEASE SAVEPOINT order_number_attempt");
@@ -1477,6 +1489,11 @@ export function setupCartRoutes(app: Express): void {
         // order removes the cycle entirely.
         const locked = await lockOrderRow(client, orderId);
 
+        // The payment axis as it stands under the lock, passed to the projection
+        // below. Read from the covering set (lib/payment-attempt.ts), so a
+        // multi-shop purchase's group charge is visible from every member order.
+        let cancellationPaymentState: string | null = null;
+
         // Money outranks a cancellation, and this re-check runs UNDER the lock.
         // The read before this transaction is only a fast path (it also answers
         // 404/409 without taking a lock); a payment that settled, or went into
@@ -1490,6 +1507,7 @@ export function setupCartRoutes(app: Express): void {
           if (paymentBlocksCancellation(paymentStatus)) {
             return { moved: false, released: false, blockedBy: paymentStatus };
           }
+          cancellationPaymentState = paymentStatus;
         }
 
         // One guarded UPDATE is the race gate. Under READ COMMITTED a concurrent
@@ -1497,11 +1515,26 @@ export function setupCartRoutes(app: Express): void {
         // against the committed row, where the status is no longer cancelable —
         // so of two simultaneous requests exactly one actually moves the order,
         // and the loser cannot release stock a second time.
+        //
+        // GROUP C of the order-state migration (P0-1): the cancellation is an
+        // ORDER + FULFILMENT fact, so it is recorded on those two axes and the
+        // legacy `status` is the projection of them. Nothing here names the
+        // legacy column as a source — the guard still reads it only because the
+        // projection is deterministic, so `status` and the axes can never
+        // disagree about whether the order is still cancelable.
+        const cancelAxes = axesForFulfillmentStatus("cancelled");
         const claim = await client.query(
-          `UPDATE orders SET status = 'cancelled', updated_at = NOW()
+          `UPDATE orders
+              SET status = $3, order_state = $4, fulfillment_status = $5, updated_at = NOW()
             WHERE id = $1 AND status = ANY($2::text[])
             RETURNING id`,
-          [orderId, CANCELABLE_STATUSES],
+          [
+            orderId,
+            CANCELABLE_STATUSES,
+            projectOrderStatus({ paymentState: cancellationPaymentState, ...cancelAxes }),
+            cancelAxes.orderState,
+            cancelAxes.fulfillmentStatus,
+          ],
         );
         const moved = claim.rows.length > 0;
 

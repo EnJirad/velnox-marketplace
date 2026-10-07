@@ -62,6 +62,11 @@ import {
 } from "../lib/payment-attempt.js";
 // Terminating a purchase is a GROUP operation: N orders, one charge, one unit.
 import { terminateCheckoutGroup } from "../lib/checkout-group-lifecycle.js";
+// The ONE order-state authority: every `orders.status` write in this file goes
+// through the projection (see the module header). A payment event moves the
+// PAYMENT axis; it never writes the order or fulfilment axis, which is what
+// stops a refund from erasing the record that a parcel shipped (P0-1).
+import { axesForFulfillmentStatus, projectOrderStatus, projectOrderStatusSql } from "../lib/order-state.js";
 // The ONE order-number generator; stripe.ts used to carry a second, unused copy.
 import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
@@ -1007,8 +1012,11 @@ async function openCheckoutGroupSession(args: {
 
   // Every order in the purchase moves to `pending_payment` together, so the
   // storefront renders one consistent state for the whole checkout.
+  // GROUP B: a payment event moves the PAYMENT axis only. The order and
+  // fulfilment axes are left exactly as they are — the projection reads them and
+  // returns `pending_payment` for an order nothing has happened to yet.
   await query(
-    `UPDATE orders SET status = 'pending_payment', updated_at = NOW()
+    `UPDATE orders SET status = ${projectOrderStatusSql("'pending'")}, updated_at = NOW()
       WHERE checkout_group_id = $1 AND status = 'pending'`,
     [groupId],
   );
@@ -1063,8 +1071,12 @@ async function markPaymentSucceeded(
     // one lock in one order instead of forming an AB-BA deadlock.
     await lockOrderRow(client, orderId);
 
+    // GROUP B: the money moved — the PAYMENT axis. The ORDER and FULFILMENT
+    // axes are deliberately NOT written: this statement cannot know whether the
+    // shop accepted the order, and a settlement that arrived after the parcel
+    // shipped must project back to `shipped`, not overwrite it with `paid`.
     const updated = await client.query(
-      `UPDATE orders SET status = 'paid', updated_at = NOW()
+      `UPDATE orders SET status = ${projectOrderStatusSql("'paid'")}, updated_at = NOW()
        WHERE id = $1 AND status IN ('pending', 'pending_payment')
          AND inventory_released = FALSE`,
       [orderId],
@@ -1262,8 +1274,11 @@ async function settleCheckoutGroup(
 
   const settled: string[] = [];
     for (const order of locked) {
+      // GROUP B, the checkout-group twin of `markPaymentSucceeded`: one charge,
+      // one payment axis, N member orders — none of whose ORDER or FULFILMENT
+      // axes this statement may touch.
       const updated = await client.query(
-        `UPDATE orders SET status = 'paid', updated_at = NOW()
+        `UPDATE orders SET status = ${projectOrderStatusSql("'paid'")}, updated_at = NOW()
           WHERE id = $1 AND status IN ('pending', 'pending_payment')
             AND inventory_released = FALSE`,
         [order.id],
@@ -1438,8 +1453,11 @@ async function markPaymentFailed(
       return { orderId, moved: false, inventoryReleased: false };
     }
 
+    // GROUP B: a failure is a PAYMENT fact. The ORDER axis stays where it is —
+    // "unpaid, retryable" is not a cancellation of the order, and the projection
+    // renders `payment_failed` from the payment axis alone.
     const updated = await client.query(
-      `UPDATE orders SET status = 'payment_failed', updated_at = NOW()
+      `UPDATE orders SET status = ${projectOrderStatusSql("'failed'")}, updated_at = NOW()
        WHERE id = $1 AND status IN ('pending', 'pending_payment')`,
       [orderId],
     );
@@ -1485,10 +1503,21 @@ async function markPaymentCanceled(
       return { orderId, moved: false, inventoryReleased: false };
     }
 
+    // GROUP C: the abandoned session ENDS the order (it always did — this is the
+    // `checkout.session.expired` handler), so this is the one payment path that
+    // legitimately moves the ORDER + FULFILMENT axes: the order is cancelled and
+    // nothing will ever be fulfilled from it.
+    const canceledAxes = axesForFulfillmentStatus("cancelled");
     const updated = await client.query(
-      `UPDATE orders SET status = 'cancelled', updated_at = NOW()
-       WHERE id = $1 AND status IN ('pending_payment', 'pending')`,
-      [orderId],
+      `UPDATE orders
+          SET status = $2, order_state = $3, fulfillment_status = $4, updated_at = NOW()
+        WHERE id = $1 AND status IN ('pending_payment', 'pending')`,
+      [
+        orderId,
+        projectOrderStatus({ paymentState: "cancelled", ...canceledAxes }),
+        canceledAxes.orderState,
+        canceledAxes.fulfillmentStatus,
+      ],
     );
     const released = await releaseOrderInventory(client, orderId);
     return { orderId, moved: (updated.rowCount ?? 0) > 0, inventoryReleased: released };
@@ -1628,19 +1657,37 @@ async function syncRefundFromStripe(
 
     // A full refund is terminal for the order; a partial refund leaves the order
     // in its fulfilment state and is represented on the payment row.
+    // GROUP E — THE REGRESSION THIS MIGRATION EXISTS FOR (P0-1).
+    //
+    // This used to be `UPDATE orders SET status = 'refunded'`, which OVERWROTE a
+    // `shipped` or `delivered` value: the record that the parcel left the
+    // warehouse was destroyed by a money event, and no reader could tell a
+    // refunded-but-shipped order from one that never went out. That column is
+    // now a PROJECTION of the three axes, so the refund moves nothing on the
+    // ORDER and FULFILMENT axes at all — a shipped order still reads `shipped`, a
+    // delivered one still reads `delivered`/`completed`, and the refund itself is
+    // carried by the PAYMENT axis, which is what `paymentStatus` renders (the
+    // fold in lib/payment-attempt.ts has surfaced `refunded` / `partially_refunded`
+    // from the payment rows all along).
+    //
+    // A refund on an order that had NOT shipped still projects to `refunded`, so
+    // the legacy column keeps its old value exactly where the old code was right.
     if (refundStatus === "refunded") {
       if (payment!.checkout_group_id) {
-        // A purchase is refunded as ONE thing: every per-shop order becomes
-        // `refunded`, because the customer was charged once for all of them and no
-        // single shop's order can be "still paid".
+        // A purchase is refunded as ONE thing: every per-shop order is told the
+        // money came back, because the customer was charged once for all of them
+        // and no single shop's order can be "still paid".
         await client.query(
-          `UPDATE orders SET status = 'refunded', updated_at = NOW()
+          `UPDATE orders
+              SET status = ${projectOrderStatusSql("'refunded'")}, updated_at = NOW()
             WHERE checkout_group_id = $1 AND status <> 'refunded'`,
           [payment!.checkout_group_id],
         );
       } else {
         await client.query(
-          `UPDATE orders SET status = 'refunded', updated_at = NOW() WHERE id = $1 AND status <> 'refunded'`,
+          `UPDATE orders
+              SET status = ${projectOrderStatusSql("'refunded'")}, updated_at = NOW()
+            WHERE id = $1 AND status <> 'refunded'`,
           [payment!.order_id],
         );
       }
@@ -2445,8 +2492,10 @@ export function setupStripeRoutes(app: Express): void {
         return;
       }
 
+      // GROUP B: a payment event moves the PAYMENT axis only — see the checkout
+      // group twin above for why the other two axes are not written here.
       await query(
-        `UPDATE orders SET status = 'pending_payment', updated_at = NOW()
+        `UPDATE orders SET status = ${projectOrderStatusSql("'pending'")}, updated_at = NOW()
           WHERE id = $1 AND status IN ('pending', 'pending_payment')`,
         [orderId],
       );

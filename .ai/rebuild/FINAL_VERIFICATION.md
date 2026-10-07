@@ -1,8 +1,10 @@
 # FINAL_VERIFICATION.md — the verification ledger (§45/§46)
 
-> **Status:** Phase 0-3 (audit, research, design) complete, and **Phase 4 (DB
-> invariants) is implemented and verified** — see §3.1 for the measured evidence.
-> Phases 5-17 have not started, so their rows below are `PENDING`, not `PASS`.
+> **Status:** Phase 0-3 (audit, research, design) complete, **Phase 4 (DB
+> invariants)** and **Phase 6 (Purchase / Order — the `order_state` + projection half,
+> which also closes audit finding P0-1)** are implemented and verified — see §3.1 and
+> §3.2 for the measured evidence. Phases 5 and 7-17 have not started, so their rows
+> below are `PENDING`, not `PASS`.
 > This file is updated at the end of every phase and re-read at the end of the work.
 >
 > **§2 is the floor measured BEFORE any change and is never overwritten.** Current
@@ -60,7 +62,7 @@
 | 4 | DB invariants | the two canonical files stay in contract with each other | **PASS** — §3.1 F |
 | 4 | DB invariants | migration 056 applied to the canonical PRODUCTION database | **BLOCKED** — §6 (2) |
 | 5 | Checkout | no client amount/seller/price accepted | PENDING |
-| 6 | Order | projection totality + transition legality | PENDING |
+| 6 | Order | projection totality + transition legality | **PASS** — §3.2 A (totality over all 495 axis combinations, SQL mirror ≡ TypeScript on a real database); transition legality is Phase 6's pre-existing half (`order-fulfillment-state-machine.test.ts`: every forward transition allowed, every skipping transition refused, terminal states terminal) and the axes are now recorded FROM that machine's own target status |
 | 7 | Payment | attempt lifecycle + settlement writes ledger/outbox | PENDING |
 | 8 | Inventory | last-unit concurrency; movement replay | PENDING |
 | 9 | Seller orders | cross-shop leak test | PENDING |
@@ -94,7 +96,36 @@ output are quoted. Nothing here is a projection.
 | H | typecheck, build, i18n, whitespace | `bun run typecheck`; `bun --filter @velnox/backend typecheck`; `bun run build:apps`; `bun run i18n:check`; `git diff --check` | all exit 0; build 4/4 `✓ built`; i18n `th=1496 en=1496 my=1496` |
 | I | lint | `bun run lint` | **SKIPPED — lint is not configured in this repository** (`echo 'Lint not yet configured'`). Not a passing check |
 
-Two defects were found by these checks and FIXED rather than accommodated:
+## 3.2 Phase 6 evidence (Purchase / Order — `orders.status` becomes a projection)
+
+Phase 6's gate is *"transition tests; projection totality test"*. The transition half already
+existed in `order-fulfillment-state-machine.test.ts` and is unchanged in meaning; the projection
+half is new. Audit finding **P0-1** (`orders.status` carried three lifecycles in one column, so a
+refund overwrote a `shipped`/`delivered` value) is closed by this phase.
+
+| # | Check | Command | Observed |
+|---|---|---|---|
+| A | the projection is TOTAL and the two encodings cannot drift | `bun test backend/tests/order-state-projection.test.ts` | **20 pass / 0 fail**, 2105 expect calls. All **11 payment × 5 order × 9 fulfilment = 495** combinations project into the twelve `orders_status_check` values; the SQL mirror (`projectOrderStatusSql()`) and `projectOrderStatus()` agree on **all 495, executed against a real database** (one derived table per payment state, the fragment in its real shape); every distinct projected value is written to a real row and accepted by the CHECK; the two axis vocabularies are asserted equal to the CHECK lists parsed out of `db/schema.sql` |
+| B | the five required executions, against real rows | same file | **Test 1** `paid` + shipped stays `shipped` — guarded statement matches 0 rows, and even the WIDENED statement (guard removed) leaves `status = 'shipped'` with both axes intact · **Test 2** refund after `shipped` keeps `shipped` while the payment axis reads `refunded` (and a replay is idempotent) · **Test 3** refund after `delivered`/`completed` keeps the delivery/completion fact · **Test 4** a `failed` payment never rolls `packing`/`shipped`/`delivered` back, yet still publishes `payment_failed` on an unshipped order · **Test 5** concurrent payment + fulfilment writes, in BOTH orders of arrival, over two real connections, leave a row equal to the projection of its own axes. Regression guard: an UNSHIPPED refund still publishes `refunded` exactly where the old code was right, and a paid unshipped order still publishes `paid` |
+| C | the writers really go through the authority | same file (source assertions) | no `UPDATE orders … SET status = '…'` literal survives in `stripe.ts` (comments blanked before scanning, so the header's quotation of the OLD statement is not mistaken for a writer); every payment statement built from `projectOrderStatusSql()` names neither `order_state` nor `fulfillment_status`; the lapsed-session writer is the ONE payment path that ends the order and uses `axesForFulfillmentStatus("cancelled")`; both staff routes and all three creation sites carry the authority |
+| D | no regression in the existing suite | `bun test backend/tests` (local PostgreSQL 14, `velnox_test`) | **2059 pass / 2 skip / 0 fail**, 71 files, exit 0. Floor from §3.1 G was 2035/2/0, 70 files (the new file plus the rewritten source-order contract tests) |
+| E | typecheck, whitespace | `bun --filter @velnox/backend typecheck`; `bun run typecheck`; `git diff --check` | all exit 0 (backend, velshop, velseller, velcenter, velnox); `git diff --check` clean |
+| F | lint | `bun run lint` | **SKIPPED — lint is not configured in this repository** (unchanged from §3.1 I) |
+
+**Scope discipline.** No CHECK was changed, no column removed, no frontend touched: `orders.status`
+stays one of its existing twelve values, so every deployed reader keeps working. The payment axis is
+derived from `payments` (the covering set), NOT stored as a fourth column — a second home for money
+state would recreate the very disagreement this phase removes. Creation writes `NEW_ORDER_AXES`, so a
+row made by the new code is indistinguishable on the legacy column from one made by the old code.
+
+**Not claimed:** transition legality was not re-proved by this phase (it is the pre-existing machine's
+contract, and this phase did not change `FULFILLMENT_TRANSITIONS`); phases 5, 7-17 remain PENDING; the
+two BLOCKED items in §6 are unchanged by this phase, so §7's verdict stays **NOT READY**.
+
+## 3.3 Defects found by the PHASE 4 checks and FIXED rather than accommodated
+
+(Recorded after §3.2 because this ledger is appended to, not reordered; both findings belong to
+Phase 4 and are unchanged by Phase 6.)
 
 1. the migration-056 structure had been appended to `db/run-sqleditor.sql` as a
    late `PART 9`, which put `ADD COLUMN` statements after the index pass and left

@@ -202,8 +202,10 @@ describe("backend contract — the cancel endpoint", () => {
     expect(cancelBody).toContain("return { moved, released, blockedBy: null as string | null };");
     expect(cancelBody).toContain("if (outcome.blockedBy === \"paid\") {");
     // The order must be `cancelled` BEFORE the release, because
-    // releaseOrderInventory only releases for a releasable status.
-    expect(cancelBody.indexOf("SET status = 'cancelled'")).toBeLessThan(
+    // releaseOrderInventory only releases for a releasable status. The order
+    // write now sets the axes AND the projected legacy value in one statement
+    // (P0-1), so the anchor is that statement.
+    expect(cancelBody.indexOf("SET status = $3, order_state = $4, fulfillment_status = $5")).toBeLessThan(
       cancelBody.indexOf("releaseOrderInventory(client, orderId)"),
     );
   });
@@ -219,8 +221,13 @@ describe("backend contract — the cancel endpoint", () => {
   test("the abandoned Stripe attempt is invalidated, and never a paid one", () => {
     expect(cancelBody).toContain("AND status IN ('pending', 'requires_action')");
     // The payment UPDATE is inside the transaction, after the order moved.
+    // `orders` and `payments` each set their own `status`; the ORDER write is
+    // the one that also carries the axes (P0-1), which is what makes the two
+    // anchors unambiguous.
     const paymentsUpdate = cancelBody.indexOf("SET status = 'cancelled', failure_code = 'ORDER_CANCELLED'");
-    expect(paymentsUpdate).toBeGreaterThan(cancelBody.indexOf("SET status = 'cancelled'"));
+    expect(paymentsUpdate).toBeGreaterThan(
+      cancelBody.indexOf("SET status = $3, order_state = $4, fulfillment_status = $5"),
+    );
     expect(paymentsUpdate).toBeLessThan(cancelBody.indexOf("releaseOrderInventory(client, orderId)"));
   });
 
@@ -243,10 +250,26 @@ describe("backend contract — the cancel endpoint", () => {
 describe("webhook behaviour after a cancellation", () => {
   const stripeSrc = read(STRIPE_ROUTE);
 
+  /**
+   * The SQL text of the statement starting at `marker` — from there to the
+   * closing backtick of the template literal it lives in.
+   *
+   * The payment writers project the legacy status through the order-state
+   * authority (P0-1) instead of naming a literal, so a guard assertion needs the
+   * STATEMENT rather than a fixed substring: this helper keeps the assertions on
+   * the WHERE clause — which is what the scenario is about — independently of
+   * how the SET value is computed.
+   */
+  const statementAfter = (marker: string): string => {
+    const at = stripeSrc.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const end = stripeSrc.indexOf("`", at);
+    return stripeSrc.slice(at, end === -1 ? stripeSrc.length : end);
+  };
+
   test("only a pre-payment status can become paid", () => {
-    const guard = stripeSrc.match(
-      /UPDATE orders SET status = 'paid', updated_at = NOW\(\)\s*WHERE id = \$1 AND status IN \(([^)]+)\)/,
-    );
+    const paid = statementAfter(`projectOrderStatusSql("'paid'")`);
+    const guard = paid.match(/status IN \(([^)]+)\)/);
     expect(guard).not.toBeNull();
     const accepted = [...guard![1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
     // `cancelled` is deliberately absent: a cancelled order stays cancelled.
@@ -255,9 +278,12 @@ describe("webhook behaviour after a cancellation", () => {
   });
 
   test("the same two statuses are the only ones a failure or expiry may move", () => {
-    expect(stripeSrc).toContain("UPDATE orders SET status = 'payment_failed'");
-    expect(stripeSrc).toMatch(/SET status = 'payment_failed'[\s\S]{0,200}status IN \('pending', 'pending_payment'\)/);
-    expect(stripeSrc).toMatch(/SET status = 'cancelled'[\s\S]{0,200}status IN \('pending_payment', 'pending'\)/);
+    const failed = statementAfter(`projectOrderStatusSql("'failed'")`);
+    expect(failed).toContain("status IN ('pending', 'pending_payment')");
+    // The lapsed-session writer moves the axes too (the order really is over),
+    // so its guard is pinned on the statement that carries both.
+    const canceled = statementAfter("SET status = $2, order_state = $3");
+    expect(canceled).toContain("status IN ('pending_payment', 'pending')");
   });
 
   test("funds arriving for a non-payable order are logged for an operator, never ignored", () => {

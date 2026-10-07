@@ -447,13 +447,25 @@ describe("backend contract — the session endpoint and the webhook", () => {
   });
 
   test("only the Stripe path writes `paid` to an order (scenario 11)", () => {
+    // The money fact now reaches the order through the order-state projection
+    // (P0-1): the scan follows the projection call instead of the literal it
+    // replaced, so the scenario's claim is unchanged — nothing outside the
+    // Stripe route can assert that an order was paid. A literal is additionally
+    // asserted ABSENT, so the old shape cannot quietly return beside it.
     const writers: string[] = [];
+    const scanned: string[] = [];
     for (const dir of ["backend/routes", "backend/lib", "backend/realtime"]) {
       for (const file of new Bun.Glob(`${dir}/**/*.ts`).scanSync({ cwd: root })) {
-        if (/UPDATE orders SET status = 'paid'/.test(read(file))) writers.push(file);
+        const src = read(file);
+        scanned.push(file);
+        if (/projectOrderStatusSql\("'paid'"\)/.test(src)) writers.push(file);
       }
     }
+    expect(scanned.length).toBeGreaterThan(20);
     expect(writers).toEqual([STRIPE_ROUTE]);
+    for (const file of scanned) {
+      expect(read(file)).not.toMatch(/UPDATE orders SET status = 'paid'/);
+    }
   });
 
   test("the resume request keeps the existing idempotency design (scenario 12)", () => {

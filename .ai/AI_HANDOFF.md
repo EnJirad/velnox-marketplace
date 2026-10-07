@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-06 · **Branch:** `main` · **Latest pass:** Payment + Checkout + Order + Inventory + Webhook **rebuilt as ONE system** (**§70**) — the grouping blind spot is fixed, verified **2011 pass / 2 skip / 0 fail**; **real Stripe TEST E2E and production migration 055 remain BLOCKED** (owner action)
+**Last updated:** 2026-10-07 · **Branch:** `main` · **Latest pass:** **`orders.status` is now a DERIVED projection of three axes — P0-1 closed** (**§72**) — every writer records the axis it moves, verified **2059 pass / 2 skip / 0 fail**; **real Stripe TEST E2E and the production migration remain BLOCKED** (owner action)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -402,130 +402,27 @@ Current state: §65–§69.
 
 ---
 
-## §65. Multi-shop checkout, numeric order numbers, VelRepeat V2 customer UI (2026-10-04)
+## §65. Multi-shop checkout, numeric order numbers, VelRepeat V2 customer UI (2026-10-04) — **ARCHIVED**
 
-Three headline goals delivered end to end.
+**Moved verbatim on 2026-10-07** (edit-headroom housekeeping; made room for §72) →
+[`history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md`](history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md).
+**Still live from it:** public order numbers are 18 digits, digits only, and a string everywhere
+(`generateOrderNumber()`) · one purchase = one `checkout_groups` row + N per-shop orders
+(`orders.checkout_group_id`), one charge settled as ONE transaction with every member row locked
+first · VelShop groups order history by the purchase, and the seller scope is unchanged.
 
-### 54.1 Public order numbers are DIGITS ONLY
+## §66. Production `checkout_groups` 42P01 — ROOT CAUSE: migrations reach the WRONG database (2026-10-04) — **ARCHIVED**
 
-`generateOrderNumber()` (`backend/lib/order-number.ts`) now returns **18 decimal digits**
-(`^[0-9]{18}$`): 14-digit ms timestamp + 4 digits from `crypto.randomInt()`. No prefix, no letters,
-no separator. The value is a **string everywhere** (18 digits > `Number.MAX_SAFE_INTEGER`); the
-column stays `TEXT`. Legacy `VNX-YYYYMMDD-XXXXXX` rows keep their value — the column is nullable and
-`idx_orders_number_unique` is partial — and `isLegacyOrderNumber()` recognises them.
-VelRepeat cycle orders now carry a public number too (savepoint retry `cycle_order_number_attempt`).
-
-### 54.2 One purchase, N fulfillment orders
-
-- New `checkout_groups` table; `orders.checkout_group_id`; migration
-  `db/migrations/054_checkout_groups_numeric_order_number.sql` (additive, idempotent).
-  **Corrected 2026-10-04 (§66): the earlier "not yet applied — Neon quota blocker" note here was
-  wrong.** 054 *was* applied (Actions run `37170858966`, 2026-10-04T02:22:59Z) and the table is
-  fully present — on the **wrong database**. See §66.
-- `payments.checkout_group_id` is a third payment parent.
-  `payments_exactly_one_parent_check` → `payments_at_least_one_parent_check` +
-  `payments_single_domain_check`; `idx_payments_one_active_stripe_group` enforces one active
-  session per purchase. Both canonical SQL files updated identically.
-- **`POST /api/stripe/checkout` accepts `checkoutGroupId` OR `orderId`.** The group path reads the
-  group through the OWNER scope, re-derives the amount from the member ORDER rows, and requires every
-  member to still be payable. **The previous bug** — reconciling against ONE order's `total_amount`,
-  so a 3-shop cart charged only shop A — is fixed.
-- Settlement: `settleCheckoutGroup()` locks every member row FIRST
-  (`lockCheckoutGroupOrderRows`, one statement, `id ASC`), writes the group payment row, then claims
-  each order with the same guarded UPDATE + `commitOrderInventory` a single-order payment uses. One
-  charge, N orders, one transaction. The webhook routes via `checkoutGroupIdForAttempt()`, OUTSIDE
-  any transaction, so the lock-order invariant (`backend/tests/payment-cancellation-race.test.ts`)
-  still holds — `settleCheckoutGroup` is now a case in that suite.
-- `markPaymentSucceeded` was restored to its original single-order shape; the dispatcher is at the
-  webhook call sites. This is why `late-payment-incidents.test.ts` and
-  `payment-attempt-identity.test.ts` pass **unmodified**.
-
-### 54.3 VelRepeat V2 customer UI (`/velrepeat/v2`)
-
-New read endpoints (`backend/routes/velrepeat-v2-status.ts`): `GET /api/velrepeat/v2/packages`,
-`GET /api/velrepeat/v2/plans`, `GET /api/velrepeat/v2/plans/:planId` (owner-scoped; pricing from the
-FROZEN snapshot; cycles from `readPlanCycles`; per-cycle orders with shop, shipping status and
-tracking). Stripe success/cancel now return to `/velrepeat/v2?velrepeat_v2_payment=…&plan=<id>`.
-
-`apps/velshop/src/pages/VelRepeatV2Page.tsx`: package → commitment → frequency → review → draft plan →
-Stripe TEST Checkout → return → server-decided status → cycles → per-shop orders (each openable, each
-with its own tracking). It **never** computes an authoritative price (renders the server's frozen
-figures), **never** treats the Stripe redirect as proof of payment (polls the server while it says
-`draft`), and sends only `packageId` / `commitmentCycles` / `frequencyType` / `intervalValue`.
-Commitment options and frequencies mirror the backend's own vocabulary.
-
-### 54.4 Order history grouped by purchase
-
-`checkoutGroupId` is exposed on the customer, seller and center order lists. VelShop groups the
-history by it so one purchase reads as one thing with N per-shop orders underneath. VelCenter can see
-the whole purchase tree; seller ownership is unchanged (`WHERE sh.seller_id = $1` still scopes it).
-Tracking stays per ORDER / per SHIPMENT — never per group.
-
-### 54.5 Tests
-
-`backend/tests/multi-shop-checkout.test.ts` (17) covers split cases 1–4, group totals, ownership in
-both directions, cross-customer refusal, one-charge/no-duplicate settlement via the real signed
-webhook, stock committed once, group invisibility, and concurrent number generation.
-Suite: **1908 pass / 2 skip / 0 fail** (baseline 1882/2/0).
-
-## §66. Production `checkout_groups` 42P01 — ROOT CAUSE: migrations reach the WRONG database (2026-10-04)
-
-**Symptom.** Real production checkout fails:
-`[checkout] error: relation "checkout_groups" does not exist` / `PostgreSQL code: 42P01` /
-`backend/routes/cart.ts:919`. (The route is `POST /api/customer/checkout`; the log names the
-failing statement, not the path.) Line 919 of `cart.ts` at HEAD is exactly the
-`INSERT INTO checkout_groups` — so Render **is** running current code.
-
-**The migration was never missing.** Read-only probes against the Actions `NEON_DATABASE_URL`
-(run `37173839460`) prove the whole 054 substrate is present there:
-
-```
-checkout_groups            | present
-checkout_groups.columns    | created_at:…! currency:text! id:uuid! item_count:integer!
-                            shop_count:integer! total_amount:numeric! user_id:uuid!
-checkout_groups.pk         | id
-checkout_groups.fk_to_users| FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-checkout_groups.indexes    | checkout_groups_pkey, idx_checkout_groups_user
-orders.checkout_group_fk   | FOREIGN KEY (checkout_group_id) REFERENCES checkout_groups(id) ON DELETE SET NULL
-payments.checkout_group_fk | FOREIGN KEY (checkout_group_id) REFERENCES checkout_groups(id) ON DELETE SET NULL
-payments.order_id nullable | YES
-payments.parent CHECKs     | payments_at_least_one_parent_check, payments_single_domain_check
-schema_migrations.count    | 57   (ends … > 053 > 054_checkout_groups_numeric_order_number)
-```
-
-**Root cause — proven by data, not inferred.** That database is **not** the one Render connects
-to. Identity probes (run `37174025731`) vs. the live host:
-
-| | Actions `NEON_DATABASE_URL` | production `velnox-api.onrender.com` |
-|---|---|---|
-| `current_database` | `neondb` | not exposed |
-| shops | **1** — `5d56f6f8…/eloop` | **2** — `26d65318…/home-tech`, `91f4b9bf…/velnox-support` |
-| users/products/sellers | 3 / 1 / 1 | — |
-| orders/payments | 0 / 0 | real purchases |
-
-Disjoint sets. So **`054` was applied successfully to a database that checkout never touches**,
-and every prior conclusion drawn from the Actions ledger about "production schema" is suspect.
-This finally identifies the §22/§31 anomaly recorded in `payment.md`: it was never a quota
-error, it was the wrong target.
-
-**Fix — owner action, cannot be done from the agent workspace.** Create the Actions secret
-`NEON_PRODUCTION_DATABASE_URL` holding the Neon connection string for the project/branch Render's
-`DATABASE_URL` uses (Settings → Secrets and variables → Actions), then dispatch
-`production-db-migrate.yml` once; its `schema_migrations` ledger is per-database, so it will
-apply the genuinely-pending migrations (054 and any earlier ones) to production. The repo token
-gets `403` on both `secrets` and `workflow_dispatch`, and the production URL exists only in
-Render. **Do not** hand-apply `054` through any other route, and do not delete `checkout_groups`
-usage to silence the error — the table is correct, its target is not. The in-repo half of this
-fix is done: see "Canonical production DB + GitHub Actions alignment" below.
-
-**Not verified: the live smoke test.** `POST /api/customer/checkout` returns `401` without a
-`velnox_session` cookie, and no authorized test account is available here, so checkout has NOT
-been observed progressing past the `checkout_groups` query in production. Verdict for this item is
-**BLOCKED**, not PASS. After re-pointing the secret, verify by logging in and checking out for
-real: no 42P01, one `checkout_groups` row, N orders by shop, one Stripe TEST payment, one
-settlement, stock committed once per order. The full local proof is
-`backend/tests/multi-shop-checkout.test.ts` (17) + `payment-cancellation-race.test.ts` +
-`payment-attempt-identity.test.ts` — 1908 pass / 2 skip / 0 fail.
+**Moved verbatim on 2026-10-07** (same housekeeping) →
+[`history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md`](history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md).
+**Still live from it — the durable finding:** migrations were applied to the database named
+by the Actions secret `NEON_DATABASE_URL`, which is **NOT** the database Render's `DATABASE_URL`
+points at (disjoint shops/users/products), so every "production schema verified" claim resting on
+that ledger is suspect. The owner action is to set `NEON_PRODUCTION_DATABASE_URL` and dispatch
+`production-db-migrate.yml`; **do not** hand-apply 054 elsewhere and do not remove
+`checkout_groups` usage. Verdict stays **BLOCKED**, never PASS, until a real logged-in checkout is
+observed there. The general rule this produced is in [`context/database.md`](context/database.md):
+the `42703` error text can never prove which database, or which build, you are on.
 
 ---
 
@@ -813,3 +710,52 @@ absent; only `db/schema.sql`, `db/run-sqleditor.sql` and `db/migrations/056_*.sq
 
 Next: **Phase 5 (Checkout)**, then 6-17 per `MIGRATION_PLAN.md` §3. Re-read §2 and §3.1 of
 `FINAL_VERIFICATION.md` first: a regression is a difference from §2, never from the last edit.
+
+---
+
+## §72. P0-1 CLOSED — `orders.status` is a DERIVED projection of three axes (2026-10-07)
+
+**The defect.** `orders.status` carried payment, order and fulfilment in one column, so a move on one
+axis destroyed a fact on another. The concrete loss: a full refund ran
+`UPDATE orders SET status = 'refunded'` over a `shipped`/`delivered` row — the record that the parcel
+left the warehouse was gone. Migration 056 added `orders.order_state` / `orders.fulfillment_status`
+and no writer (a verified zero-reference).
+
+**What shipped — the missing half.**
+
+| Piece | Where | What it does |
+|---|---|---|
+| `lib/order-state.ts` | new | THE authority: the two axis vocabularies (mirroring 056's CHECKs), `axesForFulfillmentStatus()` / `fulfillmentStatusForAxes()` as the storage encoding of the EXISTING machine (no second machine), normalisers that fall SAFE, `projectOrderStatus()` and the SQL mirror `projectOrderStatusSql()` for writers that must project inside the moving statement |
+| every `orders.status` writer | `stripe.ts` (7 sites), `cart.ts`, `seller-orders.ts`, `center.ts`, `checkout-group-lifecycle.ts`, `payment-reservation-scheduler.ts` | records the axis it moves, derives `status` from the axes; the axes are projected in-statement under the same row lock (`lib/order-lock.ts`) |
+| the three creation sites | `cart.ts` (checkout), `lib/velrepeat-cycles.ts`, `jobs/velrepeat-scheduler.ts` | `NEW_ORDER_AXES` — an order created by new code is indistinguishable on the legacy column from one the old code made |
+
+**Precedence (the whole point):** shipped → delivered/completed → packing → terminal → `expired` →
+cancelled → completed → refunded/confirmed/paid/payment_failed → pending(_payment). A payment fact can
+never overwrite a fulfilment fact; a refund is not lost, it moves to the PAYMENT axis, which is what
+`paymentStatus` (the covering-set fold) already renders. **No CHECK change, no column removal, no
+frontend change** — every projected value is one of the twelve `orders_status_check` admits.
+
+**Evidence — `backend/tests/order-state-projection.test.ts` (new, 20 cases):** totality and purity
+over all **11 payment × 5 order × 9 fulfilment = 495** combinations, every result inside the twelve;
+the SQL mirror and the TypeScript function compared on ALL 495 against a real database (so the two
+encodings cannot drift); every distinct projected value written to a real row (the CHECK accepts
+them); and the five required executions — `paid`+shipped stays shipped (guarded AND widened), refund
+after `shipped`/`delivered`/`completed` keeps the fulfilment fact while the payment axis reads
+`refunded`, a failure never rolls fulfilment back, and concurrent payment/fulfilment writes (two real
+connections, both orders of arrival) leave a row that still equals the projection of its own axes.
+Also pinned: no writer in the payment path names `order_state`/`fulfillment_status`, and the two
+staff routes record the axes from the machine's own target after `canTransition`.
+
+**Measured:** `bun test backend/tests` → **2059 pass / 2 skip / 0 fail**, 71 files, exit 0 (floor
+2035/2/0, 70 files) · backend + all four frontend typechecks exit 0 · `git diff --check` clean.
+`FINAL_VERIFICATION.md` §3.2 carries the Phase 6 rows. **Lint: SKIPPED — not configured.**
+
+**Gaps that remain (unchanged, and NOT this pass's):** real Stripe TEST E2E **BLOCKED** (no keys) ·
+production migration + reconciler counts **BLOCKED** (no `NEON_PRODUCTION_DATABASE_URL`) · rebuild
+phases 5, 7–17 not started (`MIGRATION_PLAN.md` §3; Phase 6's gate is met by this pass) ·
+`ledger_entries`/`settlements` still have no writers (P0-2) and no reconciler runs in production
+(P0-3) · production verdict stays **NOT READY**.
+
+**Housekeeping:** §65–§66 moved verbatim to
+[`history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md`](history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md)
+(index row added); nothing discarded.

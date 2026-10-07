@@ -399,8 +399,21 @@ describe("payment reservation — the wiring contracts", () => {
   });
 
   test("the `expired` status is written in exactly ONE module, and never in a route", () => {
+    // Comments are stripped before the scan, because the assertion is about
+    // WRITERS: the order-state authority (lib/order-state.ts) NAMES the constant
+    // in prose — it documents that the reservation lapse is what separates
+    // `expired` from `cancelled` on the payment axis — and it writes no order
+    // status of its own. Without this the scan would measure documentation.
+    const codeOnly = (src: string) =>
+      src
+        .split("\n")
+        .filter((line) => {
+          const t = line.trim();
+          return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
+        })
+        .join("\n");
     const writers = backendFiles.filter((f) =>
-      /PAYMENT_RESERVATION_EXPIRED_STATUS|SET status = 'expired'/.test(read(f)),
+      /PAYMENT_RESERVATION_EXPIRED_STATUS|SET status = 'expired'/.test(codeOnly(read(f))),
     );
     expect(writers.sort()).toEqual([SWEEP_JOB, POLICY_LIB].sort());
     expect(writers.some((f) => f.startsWith("backend/routes/"))).toBe(false);
@@ -436,10 +449,12 @@ describe("payment reservation — the wiring contracts", () => {
 
   test("a payment can never mark an order paid once its stock was released", () => {
     const stripe = read(STRIPE_ROUTE);
-    const guard = stripe.slice(
-      stripe.indexOf("SET status = 'paid', updated_at = NOW()"),
-      stripe.indexOf("SET status = 'paid', updated_at = NOW()") + 300,
-    );
+    // The paid writer projects the legacy status through the order-state
+    // authority (P0-1); its guards — which are what this test is about — are
+    // pinned from that statement.
+    const paidAt = stripe.indexOf(`projectOrderStatusSql("'paid'")`);
+    expect(paidAt).toBeGreaterThan(-1);
+    const guard = stripe.slice(paidAt, paidAt + 300);
     expect(guard).toContain("status IN ('pending', 'pending_payment')");
     expect(guard).toContain("inventory_released = FALSE");
     // …and the refusal is logged with the reservation reason, never silently.

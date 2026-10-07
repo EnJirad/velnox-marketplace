@@ -38,6 +38,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { NEW_ORDER_AXES, projectOrderStatus } from "../lib/order-state.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
 import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 import { purgeUsers } from "./helpers/purge.js";
@@ -177,11 +178,14 @@ describe("Phase 5 — structural boundaries", () => {
     // `fulfilled` would be a second word for `completed` — the
     // duplicate-state-machine hazard. It must never appear as a written state.
     expect(lib).not.toMatch(/'fulfilled'|"fulfilled"/);
-    // The canonical ORDER vocabulary is untouched: this module writes exactly
-    // one order status, and it is the canonical entry state. `$3` is the
-    // server-generated public order number (`order_number`), which sits between
-    // the shop and the status — the STATE is still the only written value.
-    expect(lib).toMatch(/VALUES \(\$1, \$2, \$3, 'pending'/);
+    // The canonical ORDER vocabulary is untouched: this module still creates
+    // orders in exactly ONE state, and it is the canonical entry state. Since
+    // P0-1 it records the three lifecycle axes and DERIVES the legacy value from
+    // them through the ONE order-state authority, so the assertion follows the
+    // authority rather than a literal — and adds the behavioural half: the axes
+    // this module writes must project to `pending`.
+    expect(lib).toMatch(/INSERT INTO orders[\s\S]{0,900}?NEW_ORDER_AXES/);
+    expect(projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES })).toBe("pending");
   });
 
   test("activation is wired into the Phase 4 settlement, inside its transaction", () => {

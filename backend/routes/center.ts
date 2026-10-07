@@ -43,6 +43,13 @@ import {
 } from "../lib/order-fulfillment.js";
 import { hashPassword, isPasswordHashFormat } from "../lib/password.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+// The covering-set payment fold, read under the row lock the route already
+// takes — the same helper the seller route uses, so the projection below sees
+// the money as it is at commit time (lib/order-lock.ts).
+import { latestPaymentStatusForOrder } from "../lib/order-lock.js";
+// The ONE order-state authority: the axes an operator move records and the
+// legacy `orders.status` projection of them (see the module header).
+import { axesForFulfillmentStatus, projectOrderStatus } from "../lib/order-state.js";
 // The ONE covering-set payment resolver (see lib/payment-attempt.ts): a multi-shop
 // purchase's charge hangs off the checkout GROUP, so a per-order read that names
 // `payments.order_id` alone reports 'unpaid' for a paid purchase.
@@ -529,7 +536,28 @@ export function setupCenterRoutes(app: Express): void {
             await assertNoSettledPaymentForCancellation(client, orderId);
           }
 
-          await client.query("UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2", [to, orderId]);
+          // GROUP D of the order-state migration (P0-1): an operator move is an
+          // ORDER + FULFILMENT fact, so it is recorded on those two axes and the
+          // legacy `status` is the PROJECTION of them — from the same authority
+          // the seller route uses, so the two surfaces can never disagree.
+          //
+          // The payment axis is read from the covering set (lib/order-lock.ts)
+          // under the row lock taken above, so a charge that settled while this
+          // request waited is visible here.
+          const targetAxes = axesForFulfillmentStatus(to);
+          const paymentState = await latestPaymentStatusForOrder(client, orderId);
+          await client.query(
+            `UPDATE orders
+                SET status = $3, order_state = $4, fulfillment_status = $5, updated_at = NOW()
+              WHERE id = $1`,
+            [
+              orderId,
+              to,
+              projectOrderStatus({ paymentState, ...targetAxes }),
+              targetAxes.orderState,
+              targetAxes.fulfillmentStatus,
+            ],
+          );
 
           // A cancellation ends the reservation too, and it must go through the
           // ONE release authority (lib/inventory.ts) exactly as the seller's and

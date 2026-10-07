@@ -40,6 +40,12 @@ import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 
 import { FULFILLMENT_STATUSES } from "../lib/order-fulfillment.js";
+import {
+  NEW_ORDER_AXES,
+  PAYMENT_STATES,
+  axesForFulfillmentStatus,
+  projectOrderStatus,
+} from "../lib/order-state.js";
 import { NO_CANONICAL_DRIFT, canonicalParity } from "./helpers/canonical-schema.js";
 import { PAYMENT_RESERVATION_EXPIRED_STATUS } from "../lib/payment-reservation.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
@@ -96,27 +102,63 @@ describe("order status CHECK — the allowed set comes from the writers, not fro
 
   test("every status stripe.ts writes as a SQL literal is in the set", () => {
     const src = read("backend/routes/stripe.ts");
-    const written = [...src.matchAll(/UPDATE orders SET status = '([a-z_]+)'/g)].map((m) => m[1]);
+    // The order-state migration (P0-1) replaced the literal writes with the
+    // projection authority, so the scrape reads the PAYMENT-axis state the file
+    // passes and derives the legacy status from it — over the axes each writer
+    // actually runs on. The set equality is the same assertion as before: the
+    // five legacy statuses the payment engine publishes.
+    const viaSql = [...src.matchAll(/projectOrderStatusSql\("'([a-z_]+)'"\)/g)].map((m) => m[1]);
+    const viaTs = [...src.matchAll(/projectOrderStatus\(\{\s*paymentState:\s*"([a-z_]+)"/g)].map(
+      (m) => m[1],
+    );
     // Guard the scrape: a refactor of the SQL shape must fail loudly.
-    expect(written.length).toBeGreaterThanOrEqual(4);
-    for (const status of new Set(written)) {
+    expect(viaSql.length).toBeGreaterThanOrEqual(4);
+    expect(viaTs.length).toBeGreaterThanOrEqual(1);
+    for (const state of [...viaSql, ...viaTs]) {
+      // Every value must be a real PAYMENT-axis state — never an orders value
+      // smuggled back in.
+      expect(PAYMENT_STATES).toContain(state as (typeof PAYMENT_STATES)[number]);
+    }
+
+    const written = new Set<string>();
+    for (const paymentState of viaSql) {
+      written.add(
+        projectOrderStatus({ paymentState, orderState: "pending", fulfillmentStatus: "unfulfilled" }),
+      );
+    }
+    for (const paymentState of viaTs) {
+      written.add(projectOrderStatus({ paymentState, ...axesForFulfillmentStatus("cancelled") }));
+    }
+    for (const status of written) {
       expect(ALLOWED_ORDER_STATUSES).toContain(status);
     }
     // The four payment-lifecycle transitions plus the abandoned-session cancel.
-    expect(new Set(written)).toEqual(
+    expect(written).toEqual(
       new Set(["pending_payment", "paid", "payment_failed", "refunded", "cancelled"]),
     );
   });
 
   test("the two order-creating INSERTs write statuses the set allows", () => {
+    // Every creation site now records the three axes and derives the legacy
+    // value from them (P0-1). The assertion is therefore made on the PROJECTION
+    // OF THE AXES THE SITE WRITES — a stronger claim than matching a literal,
+    // because it also pins the axes a brand-new order may carry.
     for (const file of ["backend/routes/cart.ts", "backend/jobs/velrepeat-scheduler.ts"]) {
       const src = read(file);
-      const inserted = [...src.matchAll(/INSERT INTO orders[\s\S]{0,400}?VALUES\s*\([^)]{0,400}?'([a-z_]+)'/g)];
-      expect(inserted.length).toBeGreaterThan(0);
-      for (const match of inserted) {
-        expect(ALLOWED_ORDER_STATUSES).toContain(match[1]);
-      }
+      expect(src).toMatch(/INSERT INTO orders\s*\([^)]*order_state[^)]*\)/);
+      expect(src).toMatch(/INSERT INTO orders[\s\S]{0,900}?NEW_ORDER_AXES/);
     }
+    const created = projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES });
+    expect(ALLOWED_ORDER_STATUSES).toContain(created);
+    expect(created).toBe("pending");
+    // The axes themselves are members of the vocabularies the CHECK constraints
+    // declare — so a creation INSERT can never raise 23514 on either column.
+    expect(["pending", "confirmed", "processing", "completed", "cancelled"]).toContain(
+      NEW_ORDER_AXES.orderState,
+    );
+    expect(["unfulfilled", "ready", "packing", "shipped", "delivered", "cancelled"]).toContain(
+      NEW_ORDER_AXES.fulfillmentStatus,
+    );
   });
 
   test("the expiry sweep's target status is a real orders.status value", () => {
@@ -129,13 +171,37 @@ describe("order status CHECK — the allowed set comes from the writers, not fro
   });
 
   test("every payment-domain status in the set has a real writer in the code", () => {
+    // The PAYMENT-axis state each legacy payment status is published from, once
+    // the projection owns the write (P0-1). `pending_payment` is "a session is
+    // open, awaiting payment" and `payment_failed` is "the charge failed"; the
+    // other two are named after their own axis value.
+    const PAYMENT_AXIS_STATE: Record<string, string> = {
+      pending_payment: "pending",
+      payment_failed: "failed",
+    };
     for (const [status, file] of Object.entries(PAYMENT_ORDER_STATUSES)) {
       expect(ALLOWED_ORDER_STATUSES).toContain(status);
-      // The claimed writer must actually mention the literal it claims to write.
+      // The claimed writer must actually move the axis it claims to move — and
+      // that axis state must still PROJECT to the legacy status in this set.
       if (file.endsWith("stripe.ts")) {
-        expect(read(file)).toContain(`status = '${status}'`);
+        const axisState = PAYMENT_AXIS_STATE[status] ?? status;
+        expect(read(file)).toContain(`projectOrderStatusSql("'${axisState}'")`);
+        expect(
+          projectOrderStatus({
+            paymentState: axisState,
+            orderState: "pending",
+            fulfillmentStatus: "unfulfilled",
+          }),
+        ).toBe(status);
       } else {
         expect(read(file)).toContain("PAYMENT_RESERVATION_EXPIRED_STATUS");
+        expect(
+          projectOrderStatus({
+            paymentState: "expired",
+            orderState: "pending",
+            fulfillmentStatus: "unfulfilled",
+          }),
+        ).toBe(status);
       }
     }
   });
@@ -289,10 +355,14 @@ describe("order status CHECK — declared in both canonical files and in its mig
     expect(fulfillment).toContain("ensureShipmentForShipping");
     // The row lock every writer takes is not weakened.
     expect(read("backend/lib/order-lock.ts")).toContain("lockOrderRow");
-    // And no writer gained a status write it did not have.
-    expect(read("backend/routes/stripe.ts")).toContain(
-      "UPDATE orders SET status = 'payment_failed'",
-    );
+    // And no writer gained a status write it did not have: stripe.ts still
+    // publishes `payment_failed` on the failed-charge path — now through the
+    // projection authority rather than a literal (P0-1).
+    const stripe = read("backend/routes/stripe.ts");
+    expect(stripe).toContain(`projectOrderStatusSql("'failed'")`);
+    expect(
+      projectOrderStatus({ paymentState: "failed", orderState: "pending", fulfillmentStatus: "unfulfilled" }),
+    ).toBe("payment_failed");
   });
 });
 

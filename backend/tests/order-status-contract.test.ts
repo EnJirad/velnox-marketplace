@@ -45,6 +45,14 @@ import {
   type StoreOrderStatus,
 } from "../../packages/shared/src/lib/commerce.ts";
 import { normalizeSellerOrderStatus } from "../routes/seller-orders.js";
+import {
+  FULFILLMENT_AXIS_STATUSES,
+  LEGACY_ORDER_STATUSES,
+  ORDER_STATES,
+  PAYMENT_STATES,
+  axesForFulfillmentStatus,
+  projectOrderStatus,
+} from "../lib/order-state.js";
 
 const root = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
@@ -67,11 +75,75 @@ const BACKEND_ORDER_STATUSES: StoreOrderStatus[] = [
   "cancelled", // cart.ts customer cancel, stripe.ts expiry, seller/center
 ];
 
-/** The statuses stripe.ts writes as SQL literals: `UPDATE orders SET status = 'x'`. */
-function stripeOrderStatusWrites(): string[] {
+/**
+ * The PAYMENT-axis states stripe.ts projects, scraped from the projection
+ * authority the file now calls instead of writing a literal itself:
+ * `projectOrderStatusSql("'x'")`.
+ *
+ * Before the order-state migration this scraped `UPDATE orders SET status = 'x'`
+ * — the file no longer contains that shape at all, which `no bare status write`
+ * below asserts, so the scrape had to move to the new authority rather than be
+ * widened into something that matches anything.
+ */
+/**
+ * The four GUARDED payment writers (checkout session opened, settled, failed) and
+ * the refund: they project inside the statement, so the scrape is their
+ * payment-state argument.
+ */
+function stripeAxisStatesViaSql(): string[] {
   const src = read("backend/routes/stripe.ts");
-  const matches = src.matchAll(/UPDATE orders SET status = '([a-z_]+)'/g);
-  return [...matches].map((m) => m[1] as string);
+  return [...src.matchAll(/projectOrderStatusSql\("'([a-z_]+)'"\)/g)].map((m) => m[1] as string);
+}
+
+/**
+ * The HAND-OFF writer (a lapsed Checkout Session): it passes the payment state
+ * through the TypeScript function because it moves the order and fulfilment axes
+ * in the same statement — the order really is over.
+ */
+function stripeAxisStatesViaTs(): string[] {
+  const src = read("backend/routes/stripe.ts");
+  return [...src.matchAll(/projectOrderStatus\(\{\s*paymentState:\s*"([a-z_]+)"/g)].map(
+    (m) => m[1] as string,
+  );
+}
+
+function stripePaymentAxisStates(): string[] {
+  return [...stripeAxisStatesViaSql(), ...stripeAxisStatesViaTs()];
+}
+
+/**
+ * The legacy statuses those payment-axis states produce on the axes a PAYMENT
+ * writer can actually be looking at — the two pre-fulfilment pairs.
+ *
+ * The restriction is the point, not a convenience: every payment statement is
+ * guarded to the unfulfilled/ready rows, and if one were ever widened onto a
+ * shipped order the projection keeps `shipped` (asserted separately below), so
+ * the two pre-fulfilment pairs are exactly the reachable set. Sweeping all axes
+ * here would assert that the projection returns a payment status for an order
+ * that already shipped, which is the defect this migration removed.
+ */
+/**
+ * The axes every GUARDED payment writer can see: `status IN ('pending',
+ * 'pending_payment')` is the WHERE clause they all carry, so nothing past the
+ * start of the order is reachable from them.
+ */
+const PAYMENT_WRITER_AXES = { orderState: "pending", fulfillmentStatus: "unfulfilled" };
+
+/**
+ * Every legacy status stripe.ts can publish, derived from the file rather than
+ * hardcoded: the guarded writers project on the start-of-order axes, the
+ * hand-off writer lands on the cancelled pair (`order_state` AND
+ * `fulfillment_status` both `cancelled`) in the same statement.
+ */
+function stripeProjectedOrderStatuses(): Set<string> {
+  const produced = new Set<string>();
+  for (const paymentState of stripeAxisStatesViaSql()) {
+    produced.add(projectOrderStatus({ paymentState, ...PAYMENT_WRITER_AXES }));
+  }
+  for (const paymentState of stripeAxisStatesViaTs()) {
+    produced.add(projectOrderStatus({ paymentState, ...axesForFulfillmentStatus("cancelled") }));
+  }
+  return produced;
 }
 
 // ─── 1. every backend status is displayable ──────────────────────────────────
@@ -108,23 +180,78 @@ describe("order status contract — backend statuses are all displayable", () =>
 // ─── 2. backend ↔ shared contract cross-check ────────────────────────────────
 
 describe("order status contract — the backend cannot write a status we cannot render", () => {
-  test("stripe.ts writes only statuses the shared contract knows", () => {
-    const written = stripeOrderStatusWrites();
+  test("stripe.ts no longer writes a bare orders.status literal", () => {
+    // The order-state migration (P0-1) moved every writer onto the projection
+    // authority. A literal coming back would silently reintroduce the fourth
+    // opinion the axes exist to remove — so the absence is asserted, not assumed.
+    //
+    // Full-line comments are stripped first: this file's own migration comment
+    // QUOTES the statement it replaced, and a scan that cannot tell the quote
+    // from the code would either fail on the documentation or have to be
+    // widened until it matched nothing.
+    const src = read("backend/routes/stripe.ts")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+    // Scoped to `orders`: the file legitimately writes literal statuses to
+    // `payments` and `payment_events`, which are the OTHER two axes' own tables.
+    expect(src).not.toMatch(/UPDATE orders[\s\S]{0,80}?SET status = '/);
+  });
+
+  test("stripe.ts projects payment states the shared contract can render", () => {
+    const written = stripePaymentAxisStates();
     // Guard the scrape itself: a refactor of the SQL shape must fail loudly
     // rather than silently matching nothing.
     expect(written.length).toBeGreaterThanOrEqual(4);
-
-    for (const status of written) {
-      expect(getOrderStatusMeta(status)).not.toBe(UNKNOWN_ORDER_STATUS_META);
+    for (const state of written) {
+      expect(PAYMENT_STATES).toContain(state as (typeof PAYMENT_STATES)[number]);
     }
-    // The four lifecycle transitions the payment engine performs.
+    // The payments the payment engine moves, expressed on its OWN axis.
     expect(new Set(written)).toEqual(
-      new Set(["pending_payment", "paid", "payment_failed", "cancelled", "refunded"]),
+      new Set(["pending", "paid", "failed", "cancelled", "refunded"]),
     );
   });
 
-  test("the pinned backend status list matches the source literals", () => {
-    for (const status of stripeOrderStatusWrites()) {
+  test("every status stripe.ts can project is one the UI renders", () => {
+    // The FULL sweep: for each payment state stripe.ts passes, over EVERY order /
+    // fulfilment pair the schema allows, the projected value must be a real
+    // legacy status with complete display metadata. A payment statement can be
+    // widened onto a shipped row tomorrow; this is what keeps that safe.
+    for (const paymentState of stripePaymentAxisStates()) {
+      for (const orderState of ORDER_STATES) {
+        for (const fulfillmentStatus of FULFILLMENT_AXIS_STATUSES) {
+          const status = projectOrderStatus({ paymentState, orderState, fulfillmentStatus });
+          expect(LEGACY_ORDER_STATUSES).toContain(status as (typeof LEGACY_ORDER_STATUSES)[number]);
+          expect(getOrderStatusMeta(status)).not.toBe(UNKNOWN_ORDER_STATUS_META);
+        }
+      }
+    }
+  });
+
+  test("stripe.ts reproduces exactly the legacy statuses it wrote before the migration", () => {
+    // Nothing a frontend could see has disappeared: the payment engine still
+    // produces the same five statuses on the orders it can actually reach.
+    expect(stripeProjectedOrderStatuses()).toEqual(
+      new Set(["pending_payment", "paid", "payment_failed", "cancelled", "refunded"]),
+    );
+    // The refund writer's guard is wider than the other four (it excludes only
+    // the already-refunded rows), so it can also reach an ACCEPTED order — which
+    // must still read `refunded`, because nothing has shipped yet.
+    expect(
+      projectOrderStatus({ paymentState: "refunded", orderState: "confirmed", fulfillmentStatus: "ready" }),
+    ).toBe("refunded");
+  });
+
+  test("a shipped order is never projected away by a payment state", () => {
+    // The regression this migration exists for: the refund used to overwrite a
+    // `shipped`/`delivered` order with `refunded`.
+    expect(projectOrderStatus({ paymentState: "refunded", orderState: "processing", fulfillmentStatus: "shipped" })).toBe("shipped");
+    expect(projectOrderStatus({ paymentState: "refunded", orderState: "processing", fulfillmentStatus: "delivered" })).toBe("delivered");
+    expect(projectOrderStatus({ paymentState: "refunded", orderState: "completed", fulfillmentStatus: "delivered" })).toBe("completed");
+  });
+
+  test("the pinned backend status list still matches what stripe.ts produces", () => {
+    for (const status of stripeProjectedOrderStatuses()) {
       expect(BACKEND_ORDER_STATUSES).toContain(status as StoreOrderStatus);
     }
   });

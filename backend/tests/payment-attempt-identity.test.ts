@@ -212,7 +212,11 @@ describe("a payment row is chosen by the ATTEMPT the event names", () => {
       expect(body).toMatch(new RegExp(`rowCount \\?\\? 0\\) > 0`));
       // …and the order claim must come AFTER it, guarded by an early return.
       const guardAt = body.indexOf(`if (!${earlyReturn})`);
-      const claimAt = body.indexOf("UPDATE orders SET status =");
+      // The order claim now sets the axes alongside the projected legacy value
+      // (P0-1), so the anchor is the SET clause both handlers share. The
+      // handler's own payments UPDATE is quoted (`SET status = 'failed'` /
+      // `'cancelled'`), which is what keeps the two apart.
+      const claimAt = body.indexOf("SET status = $");
       expect(guardAt, `${marker} has no early return for an unattributable failure`).toBeGreaterThan(0);
       expect(claimAt).toBeGreaterThan(guardAt);
     }

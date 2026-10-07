@@ -41,6 +41,12 @@ import {
   type FulfillmentStatus,
 } from "../lib/order-fulfillment.js";
 import { releaseOrderInventory } from "../lib/inventory.js";
+// The ONE order-row lock and the covering-set payment fold, read under it so the
+// projection below sees the money as it is at commit time (lib/order-lock.ts).
+import { latestPaymentStatusForOrder } from "../lib/order-lock.js";
+// The ONE order-state authority: the axes this route records and the legacy
+// `orders.status` projection of them (see the module header).
+import { axesForFulfillmentStatus, projectOrderStatus } from "../lib/order-state.js";
 // The ONE covering-set payment resolver. A multi-shop purchase stores ONE payment
 // row on the checkout GROUP (`order_id IS NULL`), so a per-order read that names
 // `payments.order_id` alone reports 'unpaid' for a paid purchase — and the seller
@@ -623,9 +629,28 @@ export function setupSellerOrderRoutes(app: Express): void {
             await assertNoSettledPaymentForCancellation(client, orderId);
           }
 
+          // GROUP D of the order-state migration (P0-1): a seller move is an
+          // ORDER + FULFILMENT fact, so it is recorded on those two axes and the
+          // legacy `status` is the PROJECTION of them — computed from the axes
+          // this statement is writing, never written as a fourth opinion.
+          //
+          // The payment axis is read from the covering set UNDER THE LOCK
+          // (`latestPaymentStatusForOrder`, the same fold the two gates above
+          // use) so the projection sees the money as it is at commit time: a
+          // payment that settled while this request waited cannot produce a
+          // legacy value that contradicts the axes.
+          const targetAxes = axesForFulfillmentStatus(status);
+          const paymentState = await latestPaymentStatusForOrder(client, orderId);
           await client.query(
-            `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2`,
-            [status, orderId],
+            `UPDATE orders
+                SET status = $1, order_state = $3, fulfillment_status = $4, updated_at = NOW()
+              WHERE id = $2`,
+            [
+              projectOrderStatus({ paymentState, ...targetAxes }),
+              orderId,
+              targetAxes.orderState,
+              targetAxes.fulfillmentStatus,
+            ],
           );
 
           // Cancellation restores the seller's stock — through the ONE release

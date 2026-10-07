@@ -48,6 +48,10 @@ import type pg from "pg";
 
 import { lockCheckoutGroupOrderRows } from "./order-lock.js";
 import { releaseOrderInventory } from "./inventory.js";
+// The ONE order-state authority: the terminal move below records the ORDER and
+// FULFILMENT axes and derives the legacy `status` from them (see the module
+// header) instead of naming a literal the axes cannot describe.
+import { axesForFulfillmentStatus, projectOrderStatus, type PaymentState } from "./order-state.js";
 
 /**
  * The terminal NON-PAID states a purchase can be moved to. Every one is a
@@ -160,15 +164,41 @@ export async function terminateCheckoutGroup(
   // still be in an abandonable state and its stock must not already have been
   // released. `releaseOrderInventory()` re-checks the settled guard itself, so
   // the two guards can never disagree.
+  // GROUP C of the order-state migration (P0-1): which axes a terminal move
+  // records depends on WHY the purchase ended.
+  //
+  //   • `cancelled` / `expired` END the order — nobody will fulfil it, so both
+  //     axes go to `cancelled`. Only the PAYMENT axis separates them: `expired`
+  //     is the reservation window lapsing (the sweep's own outcome), `cancelled`
+  //     is a decision. The projection reads the payment axis to tell them apart,
+  //     which is the one thing this column pair cannot express on its own.
+  //   • `payment_failed` does NOT end the order — it ends the CHARGE, exactly
+  //     like the single-order `markPaymentFailed`, which also leaves the order
+  //     axis where it was. Marking a failed charge as a cancelled order would
+  //     claim an outcome nobody chose.
+  const isPaymentFailure = options.toStatus === "payment_failed";
+  const terminalAxes = isPaymentFailure
+    ? axesForFulfillmentStatus("pending")
+    : axesForFulfillmentStatus("cancelled");
+  const terminalPaymentState: PaymentState =
+    options.toStatus === "payment_failed" ? "failed" : options.toStatus === "expired" ? "expired" : "cancelled";
+
   const claimed: string[] = [];
   const released: string[] = [];
   for (const order of locked) {
     if (!allowedFrom.includes(order.status)) continue;
     const claim = await client.query(
-      `UPDATE orders SET status = $2, updated_at = NOW()
+      `UPDATE orders
+          SET status = $2, order_state = $4, fulfillment_status = $5, updated_at = NOW()
         WHERE id = $1 AND status = ANY($3::text[]) AND inventory_released = FALSE
         RETURNING id`,
-      [order.id, options.toStatus, [...allowedFrom]],
+      [
+        order.id,
+        projectOrderStatus({ paymentState: terminalPaymentState, ...terminalAxes }),
+        [...allowedFrom],
+        terminalAxes.orderState,
+        terminalAxes.fulfillmentStatus,
+      ],
     );
     if (claim.rows.length === 0) continue;
     claimed.push(order.id);

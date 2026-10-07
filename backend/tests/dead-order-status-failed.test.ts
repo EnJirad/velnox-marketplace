@@ -43,6 +43,7 @@ import { readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 
 import { FULFILLMENT_STATUSES } from "../lib/order-fulfillment.js";
+import { NEW_ORDER_AXES, projectOrderStatus } from "../lib/order-state.js";
 import { RELEASABLE_STATUSES, releaseOrderInventory } from "../lib/inventory.js";
 import { PAYMENT_RESERVATION_EXPIRED_STATUS } from "../lib/payment-reservation.js";
 import { PAYMENT_SETTLED_STATUSES } from "../lib/order-lock.js";
@@ -91,12 +92,25 @@ function statementTable(content: string, index: number): string | null {
   return last ? (last[1] as string).toLowerCase() : null;
 }
 
+/**
+ * A write of the value `'failed'` to the BARE `status` column (optionally
+ * qualified, e.g. `o.status`).
+ *
+ * `(?<![_a-z])` is load-bearing, not cosmetic: the axis columns introduced by
+ * the order-state migration are named `fulfillment_status` / `payment_status`,
+ * and a bare `status\s*=` scan would read `fulfillment_status = 'failed'` (the
+ * ORDER-STATE projection's own vocabulary test, in lib/order-state.ts) as a
+ * write to `orders.status`. The lookbehind keeps the scan aimed at the column
+ * this test is about — and would still catch `orders.status = 'failed'`.
+ */
+const FAILED_STATUS_WRITE = /(?<![_a-z])\.?status\s*=\s*'failed'/gi;
+
 /** Every SQL `status = 'failed'` write in the backend, with its target table. */
 function failedStatusWrites(): Array<{ file: string; table: string | null }> {
   const found: Array<{ file: string; table: string | null }> = [];
   for (const file of BACKEND_SOURCE) {
     const content = read(file);
-    for (const m of content.matchAll(/status\s*=\s*'failed'/gi)) {
+    for (const m of content.matchAll(FAILED_STATUS_WRITE)) {
       found.push({ file, table: statementTable(content, m.index ?? 0) });
     }
   }
@@ -167,17 +181,56 @@ describe("LOW #12 — every remaining guard entry has a real orders.status write
     }
   });
 
-  test("checkout and VelRepeat INSERT orders as `pending`", () => {
-    const cart = read("backend/routes/cart.ts");
-    const velrepeat = read("backend/jobs/velrepeat-scheduler.ts");
-    expect(cart).toMatch(/INSERT INTO orders \([^)]*status[^)]*\)[\s\S]{0,80}?'pending'/);
-    expect(velrepeat).toMatch(/INSERT INTO orders \([^)]*status[^)]*\)[\s\S]{0,80}?'pending'/);
+  test("checkout and VelRepeat create orders with the pending axes", () => {
+    // Every order-creation site records all three lifecycle axes (P0-1) instead
+    // of naming a legacy literal, so the assertion moved to the new shape AND
+    // gained the behavioural half: the axes those sites write must project to
+    // the `pending` value the guard and every reader already expect.
+    for (const file of [
+      "backend/routes/cart.ts",
+      "backend/jobs/velrepeat-scheduler.ts",
+      "backend/lib/velrepeat-cycles.ts",
+    ]) {
+      const src = read(file);
+      expect(src).toMatch(/INSERT INTO orders\s*\([^)]*order_state[^)]*\)/);
+      expect(src).toMatch(/INSERT INTO orders[\s\S]{0,900}?NEW_ORDER_AXES/);
+    }
+    expect(NEW_ORDER_AXES.orderState).toBe("pending");
+    expect(NEW_ORDER_AXES.fulfillmentStatus).toBe("unfulfilled");
+    const created = projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES });
+    expect(created).toBe("pending");
+    expect(ALLOWED_ORDER_STATUSES).toContain(created);
+    expect(RELEASABLE_STATUSES).toContain(created);
   });
 
-  test("the payment-lifecycle entries are written by routes/stripe.ts", () => {
-    const stripe = read("backend/routes/stripe.ts");
-    for (const status of ["pending_payment", "paid", "payment_failed", "refunded", "cancelled"]) {
-      expect(stripe).toContain(`UPDATE orders SET status = '${status}'`);
+  test("the payment-lifecycle entries are projected by routes/stripe.ts", () => {
+    // Full-line comments are stripped before the scan: this file's own migration
+    // comment QUOTES the statement it replaced, and a scan that cannot tell the
+    // quote from the code would fail on the documentation.
+    const stripe = read("backend/routes/stripe.ts")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+    // The bare literal writes are GONE from the payment engine — asserted, so a
+    // regression cannot quietly reintroduce the fourth opinion the axes replace.
+    expect(stripe).not.toMatch(/UPDATE orders SET status = '/);
+    // The four GUARDED writers project inside the statement…
+    for (const paymentState of ["pending", "paid", "failed", "refunded"]) {
+      expect(stripe).toContain(`projectOrderStatusSql("'${paymentState}'")`);
+    }
+    // …and the hand-off writer (a lapsed session) moves the axes AND projects,
+    // so it passes the payment state through the TypeScript function instead.
+    expect(stripe).toContain('projectOrderStatus({ paymentState: "cancelled"');
+    // …and those payment states still publish the legacy statuses the payment
+    // domain always did, for the pre-fulfilment axes they run on.
+    const projected = new Set(
+      ["pending", "paid", "failed", "cancelled", "refunded"].map((paymentState) =>
+        projectOrderStatus({ paymentState, orderState: "pending", fulfillmentStatus: "unfulfilled" }),
+      ),
+    );
+    expect(projected).toEqual(new Set(["pending_payment", "paid", "payment_failed", "refunded"]));
+    for (const status of projected) {
+      expect(ALLOWED_ORDER_STATUSES).toContain(status);
     }
   });
 
@@ -199,7 +252,11 @@ describe("LOW #12 — every remaining guard entry has a real orders.status write
 
     const center = read("backend/routes/center.ts");
     expect(center).toContain("if (!isFulfillmentStatus(to))");
-    expect(center).toContain("UPDATE orders SET status = $1");
+    // Both parameterized writers now set the axes AND the projected legacy value
+    // in ONE statement, so the parameter they cannot escape the allowed set with
+    // is `to` — and it is still gated by the machine's own validator above.
+    expect(center).toContain("SET status = $3, order_state = $4, fulfillment_status = $5");
+    expect(center).toContain("axesForFulfillmentStatus(to)");
   });
 
   test("no source file anywhere writes `orders.status = 'failed'`", () => {
@@ -224,7 +281,13 @@ describe("LOW #12 — payment_failed survives as a real order status", () => {
 
   test("it is written on `payment_intent.payment_failed` and normalizes to cancelled", () => {
     const stripe = read("backend/routes/stripe.ts");
-    expect(stripe).toContain("UPDATE orders SET status = 'payment_failed'");
+    // A failed charge is a PAYMENT-axis move (P0-1): stripe.ts projects it
+    // instead of writing the legacy literal, and the projection must still
+    // publish exactly the value this guard entry names.
+    expect(stripe).toContain(`projectOrderStatusSql("'failed'")`);
+    expect(
+      projectOrderStatus({ paymentState: "failed", orderState: "pending", fulfillmentStatus: "unfulfilled" }),
+    ).toBe("payment_failed");
     // A failed charge means nothing left to fulfil — the state machine still
     // treats it as terminal, and that mapping must not change.
     expect(FULFILLMENT_STATUSES).toContain("cancelled");

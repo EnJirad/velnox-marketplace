@@ -205,7 +205,9 @@ describe("order-row concurrency — one lock, one order", () => {
     const body = bodyOf(cart, 'app.patch("/api/customer/orders/:orderId/cancel"');
     const lockAt = body.indexOf("lockOrderRow(");
     const authoritativeReadAt = body.indexOf("latestPaymentStatusForOrder(");
-    const claimAt = body.indexOf("UPDATE orders SET status = 'cancelled'");
+    // The claim now moves the axes and the projected legacy value together
+    // (P0-1); the ORDERING this test is about is unchanged.
+    const claimAt = body.indexOf("SET status = $3, order_state = $4, fulfillment_status = $5");
     // The pre-transaction read is only a fast path: it answers 404/409 without a
     // lock. The gate that decides must sit between the lock and the claim, so a
     // payment that settled while this request waited for the row is still seen.

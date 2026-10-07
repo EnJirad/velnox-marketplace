@@ -21,6 +21,9 @@
  */
 import { query, withTransaction } from "../db/index.js";
 import { reserveInventoryStock } from "../lib/inventory.js";
+// The ONE order-state authority: an auto-created order writes the three
+// lifecycle axes and derives the legacy `orders.status` from them (P0-1).
+import { NEW_ORDER_AXES, projectOrderStatus } from "../lib/order-state.js";
 import type pg from "pg";
 
 export type FrequencyType = "days" | "weeks" | "months";
@@ -267,9 +270,13 @@ export async function processPlan(planId: string): Promise<string | null> {
       totalAmount += orderTotal;
 
       const orderRes = await client.query(
-        `INSERT INTO orders (user_id, shop_id, status, total_amount, currency,
+        // GROUP A of the order-state migration (P0-1): an auto-created order
+        // records ALL THREE axes, and the legacy `status` is the PROJECTION of
+        // them — the same authority the customer checkout uses, so an order
+        // VelRepeat creates is indistinguishable from one the customer placed.
+        `INSERT INTO orders (user_id, shop_id, status, order_state, fulfillment_status, total_amount, currency,
                              shipping_address_id, shipping_address, notes, velrepeat_run_id)
-         VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8)
+         VALUES ($1, $2, $9, $10, $11, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
           plan.user_id,
@@ -280,6 +287,9 @@ export async function processPlan(planId: string): Promise<string | null> {
           shippingAddress,
           plan.notes || `VelRepeat auto-order (plan ${plan.id})`,
           runId,
+          projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES }),
+          NEW_ORDER_AXES.orderState,
+          NEW_ORDER_AXES.fulfillmentStatus,
         ],
       );
       const orderId = orderRes.rows[0].id as string;

@@ -124,6 +124,9 @@ import { reserveInventoryStock } from "./inventory.js";
 // Every customer-visible order needs a public number — including one minted by
 // the cycle scheduler, which never went through the cart checkout path.
 import { generateOrderNumber, isOrderNumberCollision } from "./order-number.js";
+// The ONE order-state authority: a cycle order writes the three lifecycle axes
+// and derives the legacy `orders.status` from them (see the module header).
+import { NEW_ORDER_AXES, projectOrderStatus } from "./order-state.js";
 
 /** Refusal reasons this module can end a cycle with. */
 export type CycleOutcome =
@@ -541,10 +544,13 @@ export async function processCycleInTransaction(
         await client.query("SAVEPOINT cycle_order_number_attempt");
         try {
           orderRes = await client.query(
+            // GROUP A of the order-state migration (P0-1): a cycle order records
+            // ALL THREE axes and derives the legacy `status` from them, through
+            // the ONE order-state authority — never as a fourth opinion.
             `INSERT INTO orders
-               (user_id, shop_id, order_number, status, subtotal, total_amount, currency,
+               (user_id, shop_id, order_number, status, order_state, fulfillment_status, subtotal, total_amount, currency,
                 shipping_address_id, shipping_address, notes, velrepeat_cycle_id)
-             VALUES ($1, $2, $3, 'pending', $4, $4, $5, $6, $7, $8, $9)
+             VALUES ($1, $2, $3, $10, $11, $12, $4, $4, $5, $6, $7, $8, $9)
              RETURNING id`,
             [
               cycle.user_id,
@@ -556,6 +562,9 @@ export async function processCycleInTransaction(
               cycle.shipping_address ?? null,
               `VelRepeat cycle ${cycle.cycle_number} of plan ${cycle.plan_id}`,
               cycle.id,
+              projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES }),
+              NEW_ORDER_AXES.orderState,
+              NEW_ORDER_AXES.fulfillmentStatus,
             ],
           );
           await client.query("RELEASE SAVEPOINT cycle_order_number_attempt");

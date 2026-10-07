@@ -49,6 +49,11 @@ import { lockOrderRow } from "../lib/order-lock.js";
 // this path that blindness took money with no order (see `expireCheckoutGroupReservation`).
 import { coveringPaymentsPredicate, logPaymentEvent } from "../lib/payment-attempt.js";
 import { terminateCheckoutGroup } from "../lib/checkout-group-lifecycle.js";
+// The ONE order-state authority: this sweep is the 13th writer of `orders.status`
+// (the audit found twelve) and it goes through the same projection as the rest —
+// it records the ORDER and FULFILMENT axes and derives the legacy value. The
+// payment axis is what makes its outcome `expired` instead of `cancelled`.
+import { axesForFulfillmentStatus, projectOrderStatus } from "../lib/order-state.js";
 import {
   isUndefinedColumnError,
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
@@ -179,9 +184,15 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
     // is evaluated against a row nobody else can be moving.
     await lockOrderRow(client, orderId);
 
+    // GROUP C of the order-state migration (P0-1): the sweep ENDS the order, so
+    // it records both axes and derives the legacy value from them. The PAYMENT
+    // axis is what makes the outcome `expired` rather than `cancelled` — the two
+    // axes alone read `cancelled` for both, and only the window lapse
+    // distinguishes "the reservation ran out" from "somebody cancelled".
+    const expiredAxes = axesForFulfillmentStatus("cancelled");
     const claim = await client.query(
       `UPDATE orders
-          SET status = $2, updated_at = NOW()
+          SET status = $2, order_state = $5, fulfillment_status = $6, updated_at = NOW()
         WHERE id = $1
           AND status = ANY($3::text[])
           AND inventory_released = FALSE
@@ -195,9 +206,11 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
         RETURNING id`,
       [
         orderId,
-        PAYMENT_RESERVATION_EXPIRED_STATUS,
+        projectOrderStatus({ paymentState: "expired", ...expiredAxes }),
         [...PAYMENT_RESERVATION_EXPIRABLE_STATUSES],
         [...EXPIRY_BLOCKING_PAYMENT_STATUSES],
+        expiredAxes.orderState,
+        expiredAxes.fulfillmentStatus,
       ],
     );
     if (claim.rows.length === 0) return false;
