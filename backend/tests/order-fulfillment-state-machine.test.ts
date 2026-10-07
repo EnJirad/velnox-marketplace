@@ -816,7 +816,11 @@ describe("cancellation gate — money outranks a staff cancellation", () => {
     // The same settled-payment definition the release authority uses, so the
     // gate and `releaseOrderInventory` can never disagree about "the money
     // moved" — and it is read under the caller's lock, never from a fast path.
-    expect(lib).toContain('import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js"');
+    // …and the module it is imported FROM is the assertion: `PAYMENT_SETTLED_STATUSES`
+    // must come from lib/order-lock.ts, never be re-declared here. The import now
+    // also brings in `lockOrderRow` (the shipment gate takes the same lock), so
+    // the pin names the symbol and its module rather than one exact import line.
+    expect(lib).toContain('PAYMENT_SETTLED_STATUSES } from "./order-lock.js"');
     expect(lib).toContain("[...PAYMENT_SETTLED_STATUSES]");
     expect(lib).toContain("FROM orders o");
     // The customer route keeps its own copy of these two codes — one meaning,
@@ -840,7 +844,7 @@ describe("cancellation gate — money outranks a staff cancellation", () => {
     const admin = center.slice(center.indexOf('app.patch("/api/admin/orders/:orderId/status"'));
     const adminLock = admin.indexOf("FOR UPDATE");
     const adminGate = admin.indexOf("await assertNoSettledPaymentForCancellation(client, orderId)");
-    const adminUpdate = admin.indexOf("SET status = $3, order_state = $4, fulfillment_status = $5");
+    const adminUpdate = admin.indexOf("SET status = $2, order_state = $3, fulfillment_status = $4");
     expect(adminLock).toBeGreaterThan(-1);
     expect(adminGate).toBeGreaterThan(adminLock);
     expect(adminUpdate).toBeGreaterThan(adminGate);

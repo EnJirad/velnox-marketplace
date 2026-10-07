@@ -546,13 +546,22 @@ export function setupCenterRoutes(app: Express): void {
           // request waited is visible here.
           const targetAxes = axesForFulfillmentStatus(to);
           const paymentState = await latestPaymentStatusForOrder(client, orderId);
+          // PARAMETERS ARE CONTIGUOUS, AND THAT IS NOT COSMETIC. This statement
+          // used the positional `$3/$4/$5` of an older shape and bound `$2` to the
+          // raw `to`, which the statement never referenced. PostgreSQL cannot infer
+          // a type for a parameter the statement does not mention, so the query
+          // failed with `could not determine data type of parameter $2` on EVERY
+          // operator move: the whole VelCenter order-status surface was dead, and
+          // the transaction rolled the shipment back with it. The raw client value
+          // is deliberately NOT bound any more — the column gets the PROJECTION of
+          // the axes, which is what Phase 1 requires, and `to` is still validated
+          // above by `isFulfillmentStatus` and by the machine.
           await client.query(
             `UPDATE orders
-                SET status = $3, order_state = $4, fulfillment_status = $5, updated_at = NOW()
+                SET status = $2, order_state = $3, fulfillment_status = $4, updated_at = NOW()
               WHERE id = $1`,
             [
               orderId,
-              to,
               projectOrderStatus({ paymentState, ...targetAxes }),
               targetAxes.orderState,
               targetAxes.fulfillmentStatus,

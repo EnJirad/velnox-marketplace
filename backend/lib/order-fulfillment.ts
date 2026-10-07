@@ -61,7 +61,7 @@
  * turns the rail on, exactly like `assertPaymentMethodUsable()`.
  */
 import type pg from "pg";
-import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js";
+import { lockOrderRow, PAYMENT_SETTLED_STATUSES } from "./order-lock.js";
 import { coveringPaymentsPredicate, coveringPaymentsPredicateForOrderId } from "./payment-attempt.js";
 import { isCodEnabled } from "./payment-config.js";
 
@@ -379,6 +379,29 @@ function clean(value: unknown): string | null {
 }
 
 /**
+ * Is migration 057's canonical unique index installed on THIS database?
+ *
+ * `INSERT … ON CONFLICT (order_id)` is a hard error (`42P10`) when no unique
+ * index covers the conflict target, so the writer has to know WHICH database it
+ * is talking to before it picks its statement. The index is added by a
+ * migration and never by traffic, but it is probed on every call rather than
+ * cached: a deployment whose build lands before its migration (or a database
+ * whose history still holds duplicate `order_id` values, where the migration
+ * deliberately refuses to build it) recovers without a restart, and the probe
+ * costs one catalogue read on a path an operator drives by hand.
+ */
+async function shipmentsHaveCanonicalUniqueIndex(client: pg.PoolClient): Promise<boolean> {
+  const res = await client.query(
+    `SELECT EXISTS (
+        SELECT 1 FROM pg_index i
+          JOIN pg_class c ON c.oid = i.indexrelid
+         WHERE c.relname = 'shipments_order_id_unique' AND i.indisunique
+     ) AS present`,
+  );
+  return res.rows[0]?.present === true;
+}
+
+/**
  * Make sure a real shipment exists before an order is marked `shipped`.
  *
  * `shipped` must never be a placeholder: it is the state that tells the
@@ -390,6 +413,35 @@ function clean(value: unknown): string | null {
  * does not, an existing valid shipment on the order is accepted unchanged, and
  * anything else is refused with `SHIPMENT_REQUIRED`.
  *
+ * IDEMPOTENT AND CONCURRENCY-SAFE (audit P1-2)
+ * --------------------------------------------
+ * The OLD shape was a bare `SELECT … LIMIT 1` then `INSERT`, so the row existed
+ * only because nobody had raced: two concurrent "mark shipped" requests could
+ * each find nothing and each insert, and with no key on `shipments.order_id`
+ * the database accepted both. An operator reading the shipping queue could then
+ * book two parcels, and the tracking number shown depended on which row a query
+ * happened to pick.
+ *
+ * Three things now hold, in order of authority:
+ *
+ *   1. **The database arbitrates.** `shipments_order_id_unique` (migration 057)
+ *      is what makes "one canonical shipment per order" a fact rather than a
+ *      hope, and the insert below is then ONE keyed statement — the loser of a
+ *      race blocks on the index and FILLS ONLY what the winner left empty. It
+ *      never overwrites the winner's carrier, tracking number or status, and it
+ *      never moves `updated_at` unless it really filled something, so a second
+ *      caller cannot rewrite the first caller's shipment.
+ *   2. **The order row serialises the callers.** The lock is taken HERE, through
+ *      the ONE order-lock authority, so the function is safe for any caller —
+ *      including one that has not taken the lock itself — and it is a re-entrant
+ *      no-op for the two route callers, which already hold it. It also keeps a
+ *      database WITHOUT the index correct, which is the state a build that
+ *      reaches production before its migration runs against.
+ *   3. **A repeat is a no-op, not an edit.** A second request for an order that
+ *      already has a valid shipment returns that same row and leaves it alone,
+ *      timestamps included; only a real change (a filled field, or the legacy
+ *      `pending → created` promotion) moves `updated_at`.
+ *
  * Runs inside the caller's transaction, so a refused transition never leaves a
  * half-created shipment behind.
  */
@@ -400,6 +452,11 @@ export async function ensureShipmentForShipping(
 ): Promise<ShipmentRecord> {
   const carrier = clean(input.carrier);
   const trackingNumber = clean(input.trackingNumber);
+
+  // The order row is the serialisation point for the whole order (lib/order-lock.ts),
+  // and taking it FIRST is what makes this function self-contained: two creators
+  // for the same order cannot interleave between the read and the write below.
+  await lockOrderRow(client, orderId);
 
   const existingRes = await client.query(
     `SELECT id, carrier, tracking_number FROM shipments
@@ -415,10 +472,18 @@ export async function ensureShipmentForShipping(
     const nextTracking = trackingNumber ?? clean(existing.tracking_number);
     if (nextCarrier && nextTracking) {
       const updated = await client.query(
+        // `updated_at` moves only when the row really changes. A retry of the
+        // same ship request — the idempotent case — must leave the row exactly
+        // as it was, timestamps included, or a replay would look like an edit.
+        // `pending → created` IS a change, so it still bumps the value.
         `UPDATE shipments
             SET carrier = $1, tracking_number = $2,
                 status = CASE WHEN status = 'pending' THEN 'created' ELSE status END,
-                updated_at = NOW()
+                updated_at = CASE
+                  WHEN carrier IS NOT DISTINCT FROM $1::text
+                   AND tracking_number IS NOT DISTINCT FROM $2::text
+                   AND status <> 'pending'
+                  THEN updated_at ELSE NOW() END
           WHERE id = $3
           RETURNING id, carrier, tracking_number`,
         [nextCarrier, nextTracking, existing.id],
@@ -434,6 +499,33 @@ export async function ensureShipmentForShipping(
   }
 
   if (carrier && trackingNumber) {
+    // WHICH statement is used is decided by the database, not by a guess: the
+    // keyed one is only legal where the unique index exists.
+    if (await shipmentsHaveCanonicalUniqueIndex(client)) {
+      const inserted = await client.query(
+        `INSERT INTO shipments (order_id, carrier, tracking_number, status)
+         VALUES ($1, $2, $3, 'created')
+         ON CONFLICT (order_id) DO UPDATE
+            SET carrier = COALESCE(NULLIF(shipments.carrier, ''), EXCLUDED.carrier),
+                tracking_number = COALESCE(shipments.tracking_number, EXCLUDED.tracking_number),
+                status = CASE WHEN shipments.status = 'pending' THEN 'created' ELSE shipments.status END,
+                updated_at = CASE
+                  WHEN (NULLIF(shipments.carrier, '') IS NULL AND EXCLUDED.carrier IS NOT NULL)
+                    OR (shipments.tracking_number IS NULL AND EXCLUDED.tracking_number IS NOT NULL)
+                    OR shipments.status = 'pending'
+                  THEN NOW() ELSE shipments.updated_at END
+         RETURNING id, carrier, tracking_number`,
+        [orderId, carrier, trackingNumber],
+      );
+      const row = inserted.rows[0];
+      return { id: row.id, carrier: row.carrier, trackingNumber: row.tracking_number };
+    }
+
+    // No index on this database yet — a build ahead of migration 057, or a
+    // history the migration refused to constrain because it already holds two
+    // shipments for one order. The order row lock taken above is what serialises
+    // the creators here; the statement is deliberately the ORIGINAL one, so a
+    // pre-migration database behaves exactly as it did before this change.
     const inserted = await client.query(
       `INSERT INTO shipments (order_id, carrier, tracking_number, status)
        VALUES ($1, $2, $3, 'created')

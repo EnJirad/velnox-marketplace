@@ -3522,7 +3522,43 @@ CREATE INDEX IF NOT EXISTS idx_checkout_requests_order ON public.checkout_reques
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_user ON public.checkout_requests (user_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON public.order_items (order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_shop ON public.order_items (shop_id);
-CREATE INDEX IF NOT EXISTS idx_shipments_order ON public.shipments (order_id);
+-- P1-2: ONE CANONICAL SHIPMENT PER ORDER (audit finding P1-2).
+--
+-- WHY THE INDEX IS GUARDED RATHER THAN BARE
+-- ----------------------------------------
+-- `CREATE UNIQUE INDEX` on a table whose history already holds two shipments for
+-- one order FAILS (23505), which would abort the whole reconciliation on a
+-- database the operator still has to be able to migrate. Resolving duplicates is
+-- a BUSINESS decision — which parcel is the real one? — so this pass never
+-- deletes, never picks a winner, and never guesses: it reports the count, leaves
+-- the data untouched, and the runtime keeps working through the orders row lock.
+--
+-- WHY THE SUPERSEDED INDEX IS DROPPED ONLY INSIDE THE SAME GUARD
+-- -------------------------------------------------------------
+-- `shipments_order_id_unique` covers the same column and the same lookups as
+-- `idx_shipments_order`, so keeping both would be a duplicate index on one
+-- column. The drop therefore happens ONLY once the unique index really exists:
+-- on the duplicate-holding database the create above is skipped, and the old
+-- index must stay or the lookup would lose its index entirely.
+DO $$
+DECLARE dup_orders INTEGER;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'shipments_order_id_unique') THEN
+    SELECT COUNT(*) INTO dup_orders FROM (
+      SELECT order_id FROM public.shipments GROUP BY order_id HAVING COUNT(*) > 1
+    ) AS duplicated;
+    IF dup_orders > 0 THEN
+      RAISE NOTICE 'velnox: shipments_order_id_unique NOT created - % order(s) already carry more than one shipment row. Shipment creation stays serialised by the orders row lock; resolve which row is the real parcel (a business decision, never an automated delete) and rerun.', dup_orders;
+    ELSE
+      CREATE UNIQUE INDEX IF NOT EXISTS shipments_order_id_unique ON public.shipments (order_id);
+      RAISE NOTICE 'velnox: shipments_order_id_unique present - one canonical shipment per order is now enforced by the database';
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'shipments_order_id_unique')
+     AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_shipments_order') THEN
+    DROP INDEX public.idx_shipments_order;
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_tracking_events_shipment ON public.tracking_events (shipment_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_payments_order ON public.payments (order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_plan ON public.payments (plan_id) WHERE plan_id IS NOT NULL;

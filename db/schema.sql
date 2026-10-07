@@ -443,7 +443,22 @@ CREATE TABLE IF NOT EXISTS shipments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments (order_id);
+-- P1-2: ONE CANONICAL SHIPMENT PER ORDER, enforced by the database.
+--
+-- `shipments.order_id` was the only write in the system with no key behind it, so
+-- two concurrent "mark shipped" requests could each fail to see the other and
+-- each insert — two parcels, two tracking numbers, no way to tell which is real.
+-- This index is the arbitration point `ensureShipmentForShipping()`'s
+-- `INSERT … ON CONFLICT (order_id)` infers, and it SUPERSEDES the plain
+-- `idx_shipments_order` it replaces (same column, same lookups: a unique btree
+-- serves `WHERE order_id = $1` exactly as the non-unique one did).
+--
+-- One per order is the implemented model — no shipment carries a discriminator,
+-- nothing writes a second shipment, and migration 056's own backfill assumes
+-- `COUNT(*) = 1`. When split fulfilment arrives (rebuild Phase 10, shipments per
+-- `fulfillment_orders` work unit), this becomes a partial index on the work unit:
+-- a change of declaration, never of data.
+CREATE UNIQUE INDEX IF NOT EXISTS shipments_order_id_unique ON shipments (order_id);
 CREATE TABLE IF NOT EXISTS tracking_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   shipment_id UUID NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,

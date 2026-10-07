@@ -252,10 +252,13 @@ describe("LOW #12 — every remaining guard entry has a real orders.status write
 
     const center = read("backend/routes/center.ts");
     expect(center).toContain("if (!isFulfillmentStatus(to))");
-    // Both parameterized writers now set the axes AND the projected legacy value
-    // in ONE statement, so the parameter they cannot escape the allowed set with
-    // is `to` — and it is still gated by the machine's own validator above.
-    expect(center).toContain("SET status = $3, order_state = $4, fulfillment_status = $5");
+    // Both parameterized writers set the axes AND the projected legacy value in
+    // ONE statement. The raw client value is not bound at all: `to` is validated
+    // by the machine's own validator above, and the column receives the
+    // PROJECTION — which is also what keeps the parameter list contiguous
+    // (a statement that binds a parameter it never references cannot be typed by
+    // PostgreSQL: `could not determine data type of parameter $2`).
+    expect(center).toContain("SET status = $2, order_state = $3, fulfillment_status = $4");
     expect(center).toContain("axesForFulfillmentStatus(to)");
   });
 
