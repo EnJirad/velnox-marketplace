@@ -7,6 +7,7 @@
  *   GET  /api/admin/market-overview     — marketplace KPIs (real Neon data)
  *   GET  /api/admin/orders              — all orders (center view)
  *   PATCH /api/admin/orders/:orderId/status — transition an order
+ *   PATCH /api/admin/orders/:orderId/shipment — transition the SHIPMENT lifecycle
  *   GET  /api/admin/audit-logs          — append-only audit trail
  *   GET  /api/admin/payment-incidents  — money received that could not settle
  *   PATCH /api/admin/payment-incidents/:incidentId — acknowledge/resolve it
@@ -56,6 +57,11 @@ import { axesForFulfillmentStatus, projectOrderStatus } from "../lib/order-state
 import { ORDER_PAYMENT_STATUS_SQL } from "../lib/payment-attempt.js";
 import { PERMISSION_CATALOG, isCenterMember, userHasPermission } from "../lib/permissions.js";
 import { invalidateCachedProfile } from "./auth.js";
+// The ONE shipment lifecycle: its vocabulary (`order-shipment-states.ts`) and its
+// single transition helper (`order-shipment.ts`), shared verbatim with the seller
+// route so the two surfaces cannot disagree about a parcel move.
+import { isShipmentStatus } from "../lib/order-shipment-states.js";
+import { transitionShipment, type ShipmentTransitionResult } from "../lib/order-shipment.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 
 function param(req: Request, key: string): string {
@@ -601,6 +607,94 @@ export function setupCenterRoutes(app: Express): void {
     } catch (err) {
       console.error("[center] order status error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update order status" } });
+    }
+  });
+
+  // ── PATCH /api/admin/orders/:orderId/shipment ────────────────────────────
+  // Drive the PARCEL: pending → created → picked_up → in_transit →
+  // out_for_delivery → delivered (plus the terminal cancelled/lost).
+  //
+  // This is a SHIPMENT concern, deliberately separate from the order-status
+  // endpoint above: that one moves the ORDER and creates the parcel as a side
+  // effect, this one moves the parcel the order is already shipping. Both end up
+  // in the same place when they overlap, because when a move IS a fulfilment fact
+  // (handoff → the order's `shipped`, arrival → the order's `delivered`) the
+  // helper asks the ORDER's own machine first and refuses the parcel move if that
+  // machine has no edge (409 ORDER_NOT_READY). The two lifecycles therefore can
+  // never be advanced past one another by this endpoint.
+  //
+  // Authorization — the same two gates the order-status route applies, from the
+  // same module: center membership (owner/admin/staff) plus the explicit
+  // `orders.manage` grant. When either one is missing not a single row is read.
+  // No shipment id comes from the client: the helper resolves the order's
+  // canonical shipment itself, so there is no identifier to manipulate.
+  app.patch("/api/admin/orders/:orderId/shipment", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await isCenterMember(req.user!.userId))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+        return;
+      }
+      if (!(await userHasPermission(req.user!.userId, "orders.manage"))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "orders.manage permission required" } });
+        return;
+      }
+      const orderId = param(req, "orderId");
+      const to = typeof req.body?.status === "string" ? req.body.status : "";
+      if (!isShipmentStatus(to)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid shipment status" } });
+        return;
+      }
+      const carrier = req.body?.carrier;
+      const trackingNumber = req.body?.trackingNumber;
+
+      let outcome: ShipmentTransitionResult;
+      try {
+        outcome = await withTransaction((client) =>
+          transitionShipment(client, orderId, to, { carrier, trackingNumber }),
+        );
+      } catch (err) {
+        if (err instanceof FulfillmentError) {
+          res.status(err.status).json({ success: false, error: { code: err.code, message: err.message } });
+          return;
+        }
+        throw err;
+      }
+
+      // An operator move is audited, exactly like the order-status move above.
+      await writeAuditLog(
+        req.user!.userId,
+        "SHIPMENT_STATUS_UPDATE",
+        "order",
+        orderId,
+        { shipmentId: outcome.shipment.id, from: outcome.from, to: outcome.to, moved: outcome.moved },
+        auditClientIp(req),
+      );
+      // Publish on the ONE shipment channel so every open session follows the
+      // parcel, not only the session that acted (a committed move never fails on
+      // a socket error).
+      try {
+        broadcast(CHANNELS.SHIPMENT_UPDATED, "shipment:updated", {
+          orderId,
+          shipmentId: outcome.shipment.id,
+          from: outcome.from,
+          to: outcome.to,
+          moved: outcome.moved,
+        });
+      } catch { /* best-effort */ }
+      res.json({
+        success: true,
+        data: {
+          id: orderId,
+          shipmentId: outcome.shipment.id,
+          status: outcome.to,
+          from: outcome.from,
+          moved: outcome.moved,
+          orderAdvanced: outcome.orderAdvanced,
+        },
+      });
+    } catch (err) {
+      console.error("[center] shipment update error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update shipment" } });
     }
   });
 

@@ -59,7 +59,18 @@
  * combination the schema's vocabularies allow, so the legacy column can never
  * hold a value outside `orders_status_check`'s twelve.
  */
-import { FULFILLMENT_STATUSES, type FulfillmentStatus } from "./order-fulfillment.js";
+import type pg from "pg";
+import {
+  FULFILLMENT_STATUSES,
+  FulfillmentError,
+  canTransitionFulfillment,
+  normalizeOrderStatusToFulfillment,
+  type FulfillmentStatus,
+} from "./order-fulfillment.js";
+// The order-row lock authority and the covering-set payment fold — the same two
+// helpers every other order writer reads the money through, so a projection
+// written from here cannot disagree with the ones the routes write.
+import { latestPaymentStatusForOrder } from "./order-lock.js";
 
 // ─── Axis vocabularies (mirrors the CHECK constraints from migration 056) ────
 
@@ -327,3 +338,106 @@ export function projectOrderStatusSql(paymentStateExpr: string): string {
 
 /** Is `value` one of the seven fulfilment machine statuses? (re-exported for callers) */
 export const ORDER_FULFILLMENT_STATUSES = FULFILLMENT_STATUSES;
+
+// ─── The axis WRITER (for lifecycles outside the order-status routes) ─────────
+
+/**
+ * The fulfilment chain in ORDER, exactly as `FULFILLMENT_TRANSITIONS` walks it.
+ *
+ * Used only to answer "is the order already AT or PAST this status?", which is
+ * how an idempotent repeat is told apart from a move that still needs judging.
+ * `cancelled` is deliberately absent: it is not a position on the chain, so an
+ * order that was cancelled has no successor and is handled separately below.
+ */
+const FULFILLMENT_CHAIN: readonly FulfillmentStatus[] = [
+  "pending",
+  "confirmed",
+  "packing",
+  "shipped",
+  "delivered",
+  "completed",
+];
+
+/**
+ * Advance the ORDER's fulfilment axis to `target` on behalf of a lifecycle that
+ * is not one of the order-status routes (today: the shipment lifecycle, see
+ * `lib/order-shipment.ts`).
+ *
+ * It is NOT a second state machine: it decides with the ONE authority's own
+ * predicate (`canTransitionFulfillment`, from `order-fulfillment.ts`) and records
+ * the result with this module's own projection (`axesForFulfillmentStatus` +
+ * `projectOrderStatus`), so a parcel can never move an order anywhere the seller
+ * or VelCenter routes would refuse. It also writes no new column: the legacy
+ * `orders.status` stays the derived projection described in the module header.
+ *
+ * THE CALLER MUST ALREADY HOLD THE ORDER ROW LOCK (`lib/order-lock.ts`) inside
+ * its transaction. The read below is only authoritative because the row is
+ * locked, and the payment axis is read from the covering set under that same
+ * lock so the projection is derived from the money as it is at commit time.
+ *
+ * Returning `moved: false` is the idempotent repeat — the order was already at
+ * (or past) `target` — and it is a SUCCESS, not a no-op error.
+ *
+ * Refusals use the state machine's own error type, so every surface already
+ * knows how to answer them:
+ *   • 404 `NOT_FOUND`       — no such order (nothing to advance).
+ *   • 409 `ORDER_NOT_READY` — the order is behind `target` and the canonical
+ *     machine has NO edge there (it is still `pending`/`confirmed`, or it was
+ *     `cancelled`). The outside event contradicts the order, so the caller must
+ *     refuse rather than let the two lifecycles disagree.
+ */
+export async function advanceOrderFulfillmentAxis(
+  client: pg.PoolClient,
+  orderId: string,
+  target: FulfillmentStatus,
+): Promise<{ moved: boolean; from: FulfillmentStatus }> {
+  const res = await client.query(`SELECT status FROM orders WHERE id = $1`, [orderId]);
+  const rawFrom = res.rows[0]?.status as string | undefined;
+  if (rawFrom === undefined) {
+    throw new FulfillmentError(404, "NOT_FOUND", "Order not found");
+  }
+
+  const from = normalizeOrderStatusToFulfillment(rawFrom);
+
+  // Already there, or past it: nothing to write and nothing to complain about.
+  // This is the branch a replayed delivery/ship event lands in.
+  const fromAt = FULFILLMENT_CHAIN.indexOf(from);
+  const targetAt = FULFILLMENT_CHAIN.indexOf(target);
+  if (fromAt !== -1 && targetAt !== -1 && fromAt >= targetAt) {
+    return { moved: false, from };
+  }
+
+  if (!canTransitionFulfillment(from, target)) {
+    throw new FulfillmentError(
+      409,
+      "ORDER_NOT_READY",
+      `This order is '${from}' and cannot be moved to '${target}' yet; finish the current fulfilment step first.`,
+    );
+  }
+
+  const targetAxes = axesForFulfillmentStatus(target);
+  const paymentState = await latestPaymentStatusForOrder(client, orderId);
+  // Conditioned on the status it read, so the write is a CLAIM and not a blind
+  // overwrite: a writer that somehow holds no lock cannot clobber this one.
+  const updated = await client.query(
+    `UPDATE orders
+        SET status = $3, order_state = $4, fulfillment_status = $5, updated_at = NOW()
+      WHERE id = $1 AND status = $2`,
+    [
+      orderId,
+      rawFrom,
+      projectOrderStatus({ paymentState, ...targetAxes }),
+      targetAxes.orderState,
+      targetAxes.fulfillmentStatus,
+    ],
+  );
+  if (updated.rowCount === 0) {
+    throw new FulfillmentError(
+      409,
+      "ORDER_CONCURRENT_MODIFICATION",
+      "The order was modified concurrently. Please reload and try again.",
+    );
+  }
+
+  return { moved: true, from };
+}

@@ -12,6 +12,7 @@
  *   GET   /api/seller/orders              — seller's orders (paginated)
  *   GET   /api/seller/orders/:id          — seller's order detail (IDOR-safe)
  *   PATCH /api/seller/orders/:id/status   — transition order status (state machine)
+ *   PATCH /api/seller/orders/:id/shipment — transition the SHIPMENT lifecycle
  *   GET   /api/seller/subscriptions       — recurring VelRepeat plans for the seller
  *   POST  /api/subscriptions/process-due  — manually run the due-plan worker
  *
@@ -43,7 +44,7 @@ import {
 import { releaseOrderInventory } from "../lib/inventory.js";
 // The ONE order-row lock and the covering-set payment fold, read under it so the
 // projection below sees the money as it is at commit time (lib/order-lock.ts).
-import { latestPaymentStatusForOrder } from "../lib/order-lock.js";
+import { latestPaymentStatusForOrder, lockOrderRow } from "../lib/order-lock.js";
 // The ONE order-state authority: the axes this route records and the legacy
 // `orders.status` projection of them (see the module header).
 import { axesForFulfillmentStatus, projectOrderStatus } from "../lib/order-state.js";
@@ -52,6 +53,11 @@ import { axesForFulfillmentStatus, projectOrderStatus } from "../lib/order-state
 // `payments.order_id` alone reports 'unpaid' for a paid purchase — and the seller
 // then cannot tell a paid order from an abandoned one.
 import { ORDER_PAYMENT_STATUS_SQL, coveringPaymentsForOrder } from "../lib/payment-attempt.js";
+// The ONE shipment lifecycle: its vocabulary (`order-shipment-states.ts`) and its
+// single transition helper (`order-shipment.ts`), shared verbatim with the
+// VelCenter route so the two surfaces cannot disagree about a parcel move.
+import { isShipmentStatus } from "../lib/order-shipment-states.js";
+import { transitionShipment, type ShipmentTransitionResult } from "../lib/order-shipment.js";
 
 function param(req: Request, key: string): string {
   return (req.params as Record<string, string>)[key] ?? "";
@@ -694,6 +700,96 @@ export function setupSellerOrderRoutes(app: Express): void {
     } catch (err) {
       console.error("[seller-orders] status update error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update order status" } });
+    }
+  });
+
+  // ── PATCH /api/seller/orders/:id/shipment ────────────────────────────────
+  // Drive the PARCEL: pending → created → picked_up → in_transit →
+  // out_for_delivery → delivered (plus the terminal cancelled/lost).
+  //
+  // This is a SHIPMENT concern, deliberately separate from the ORDER status
+  // endpoint above: that one moves the ORDER and creates the parcel as a side
+  // effect, this one moves the parcel the order is already shipping. Both end up
+  // in the same place when they overlap, because when a move IS a fulfilment fact
+  // (handoff → the order's `shipped`, arrival → the order's `delivered`) the
+  // helper asks the ORDER's own machine first and refuses the parcel move if that
+  // machine has no edge (409 ORDER_NOT_READY). The two lifecycles therefore can
+  // never be advanced past one another by this endpoint.
+  //
+  // Authorization, in the same shape as the order-status route above:
+  //   • the caller must be an APPROVED seller (otherwise 403, before any read);
+  //   • the seller must own at least one item of the order — the same predicate,
+  //     taken UNDER the order row lock so ownership cannot be read stale;
+  //   • no shipment id is accepted from the client: the helper resolves the
+  //     order's canonical shipment itself, so there is no ID to manipulate.
+  app.patch("/api/seller/orders/:id/shipment", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const sellerId = await resolveApprovedSellerId(req.user!.userId);
+      if (!sellerId) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Seller access required" } });
+        return;
+      }
+      const orderId = param(req, "id");
+      const to = typeof req.body?.status === "string" ? req.body.status : "";
+      if (!isShipmentStatus(to)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_STATUS", message: "Invalid shipment status" } });
+        return;
+      }
+      const carrier = req.body?.carrier;
+      const trackingNumber = req.body?.trackingNumber;
+
+      let outcome: ShipmentTransitionResult;
+      try {
+        outcome = await withTransaction(async (client) => {
+          // Lock first (lib/order-lock.ts), then re-check ownership on the row
+          // nobody else can be moving — the order-status route's own ordering.
+          await lockOrderRow(client, orderId);
+          const ownRes = await client.query(
+            `SELECT oi.id FROM order_items oi
+             JOIN shops sh ON oi.shop_id = sh.id
+             WHERE oi.order_id = $1 AND sh.seller_id = $2
+             LIMIT 1`,
+            [orderId, sellerId],
+          );
+          if (ownRes.rows.length === 0) {
+            throw new HttpError(404, "NOT_FOUND", "Order not found");
+          }
+          return await transitionShipment(client, orderId, to, { carrier, trackingNumber });
+        });
+      } catch (err) {
+        if (err instanceof HttpError || err instanceof FulfillmentError) {
+          res.status(err.status).json({ success: false, error: { code: err.code, message: err.message } });
+          return;
+        }
+        throw err;
+      }
+
+      // Publish on the ONE shipment channel so every other open session follows
+      // the parcel (a committed move never fails on a socket error).
+      try {
+        broadcast(CHANNELS.SHIPMENT_UPDATED, "shipment:updated", {
+          orderId,
+          shipmentId: outcome.shipment.id,
+          from: outcome.from,
+          to: outcome.to,
+          moved: outcome.moved,
+        });
+      } catch { /* best-effort */ }
+
+      res.json({
+        success: true,
+        data: {
+          id: orderId,
+          shipmentId: outcome.shipment.id,
+          status: outcome.to,
+          from: outcome.from,
+          moved: outcome.moved,
+          orderAdvanced: outcome.orderAdvanced,
+        },
+      });
+    } catch (err) {
+      console.error("[seller-orders] shipment update error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update shipment" } });
     }
   });
 

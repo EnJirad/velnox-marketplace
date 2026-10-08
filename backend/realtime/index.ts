@@ -237,4 +237,11 @@ export const CHANNELS = {
    * `scope` ("categories" | "settings") and never any setting value.
    */
   CONFIG_UPDATED: "config:updated",
+  /**
+   * A canonical shipment on an order changed status. Published by the shipment
+   * lifecycle routes (seller + center) so every open session — VelCenter's
+   * shipping view and the seller's order page — follows the parcel, and so the
+   * frontends' shipping-status badges can react without polling.
+   */
+  SHIPMENT_UPDATED: "shipment:updated",
 } as const;
