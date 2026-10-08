@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-07 · **Branch:** `main` · **Latest pass:** **`orders.status` is now a DERIVED projection of three axes — P0-1 closed** (**§72**) — every writer records the axis it moves, verified **2059 pass / 2 skip / 0 fail**; **real Stripe TEST E2E and the production migration remain BLOCKED** (owner action)
+**Last updated:** 2026-10-08 · **Branch:** `main` · **Latest pass:** **Phase 3 — shipment lifecycle (`P1-3`) is DONE** (**§74**) — one transition helper over the DATABASE's own nine-status vocabulary, writing its two timestamps, with real-PostgreSQL concurrency proof; full suite **2103 pass / 2 skip / 0 fail**; **production DB verification and real Stripe TEST E2E remain BLOCKED** (owner action)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -795,3 +795,56 @@ reduced the same INTERNALLY CONTRADICTORY requirement to the same conclusion: `M
 ⟺ Order.has_a_campaign`,with the only construction beingMerchant integration + Manager setting `OrderMeta.has_a_campaign = true`.
 **Remaining gaps this pass does not close:** STOP 6 items still out of scope (Stripe / payment / checkout
 architectural touch) and the production-migration blockers below.
+
+---
+
+## §74. Phase 3 — shipment lifecycle (`P1-3`) (2026-10-08) — **DONE**
+
+Full record: [`.ai/audit/PHASE_3_SHIPMENT_LIFECYCLE.md`](audit/PHASE_3_SHIPMENT_LIFECYCLE.md).
+**Starting HEAD `6e24bd546e37e4db65a578cf90bdc9f407c0cd24`** (= `origin/main`, Phase 2).
+**Final HEAD (implementation commit):** `b9824fec170926af6cbc7e03890b61d361a58adc`
+— `feat(shipping): implement shipment lifecycle transitions`. The `docs(ai)` commit
+that carries this section is the tip after it (`git log -1 --format=%H` on `main`);
+both are pushed in the same pass and `origin/main` was re-read to confirm.
+
+`shipments.status` had a nine-value CHECK constraint and exactly ONE writer that
+ever wrote it (`created`). Phase 3 adds the missing transition: the canonical
+vocabulary is read off the database (`pending, created, picked_up, in_transit,
+ out_for_delivery, delivered, returned, lost, cancelled` — an invented
+`packed/ready_to_ship/shipped` draft was withdrawn because those values would be
+refused by `23514`), the machine is forward-only and terminal-protected, repeats
+are write-free idempotent successes, and the two timestamps the schema already
+had (`shipped_at` on handoff, `delivered_at` on arrival) are stamped once.
+
+- **Atomicity:** the order row lock FIRST (`lib/order-lock.ts`), then a
+  CONDITIONAL `UPDATE … WHERE id = $n AND status = $current` — proven with 8 real
+  concurrent transactions on a local PostgreSQL 14: exactly one move, one
+  timestamp, one order-axis advance.
+- **No duplicate machine:** the order's own fulfilment axis is advanced only
+  through `canTransitionFulfillment` + `projectOrderStatus`
+  (`advanceOrderFulfillmentAxis` in `lib/order-state.ts`), so a parcel move the
+  order's machine has no edge for is refused `409 ORDER_NOT_READY` instead of
+  letting the two lifecycles diverge; `orders.status` stays a projection.
+- **Surfaces:** `PATCH /api/seller/orders/:id/shipment` (approved seller +
+  ownership under the lock) and `PATCH /api/admin/orders/:orderId/shipment`
+  (center member + `orders.manage`, audited). `CHANNELS.SHIPMENT_UPDATED`.
+- **Schema:** NO migration needed — every column, the CHECK and the Phase-2
+  unique index already existed in 056/057, `db/schema.sql` and
+  `db/run-sqleditor.sql`; nothing additive was outstanding.
+- **Tests:** `backend/tests/shipment-lifecycle.test.ts` (27 cases; 13 run without
+  a database, 14 are DB-gated) plus the whole existing suite green.
+- **Verified this pass:** backend typecheck 0 · all four frontend typechecks 0 ·
+  targeted suite 27 pass / 0 fail · full suite **2103 pass / 2 skip / 0 fail** ·
+  `bash db/verify-reconciler.sh` ALL SCENARIOS PASSED · `git diff --check` clean.
+- **Protected (unchanged):** payment, checkout, inventory, the Phase-1 order-state
+  authority and the Phase-2 `UNIQUE(order_id)` invariant.
+- **BLOCKED (unchanged, owner action):** production database verification and
+  real Stripe TEST E2E; and the endpoints have no frontend consumer yet
+  (deliberately backend-scoped).
+- **Not started (out of scope):** P1-4 returns/RMA, P1-5 `fulfillment_orders`
+  (Phase 4), settlement, commission, ledger, reconciliation.
+
+**Note on this file's size:** it is ~56 KB against the ~55 KB edit-tool ceiling.
+The next pass should move an old section out to `history/archive/` before growing
+it further (`## 9.4–9.6` is the oldest still-live block; §8/§10/§11 are already
+pointers).
