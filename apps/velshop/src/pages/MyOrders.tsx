@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@velnox/shared/components/ui/select";
 import { api } from "@velnox/shared/lib/api-routes";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   formatBaht,
@@ -624,19 +625,24 @@ export default function MyOrders() {
                           returnPath={`/orders/${order.id}`}
                         />
                       )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5 border-[#10B981]/30 bg-[#F0FDF9] text-[#10B981] hover:bg-[#D1FAE5]"
-                        onClick={() => {
-                          setRepeatUnit("days");
-                          setRepeatValue(30);
-                          setRepeatOrder(order);
-                        }}
-                      >
-                        <RefreshCw className="size-3.5" />
-                        {t("velrepeatPlan.repeatOrder")}
-                      </Button>
+                      {/* PARKED (2026-10-14): "repeat this order" created a VelRepeat
+                          plan, so the action is hidden with the module. The handler,
+                          the dialog below and every string stay in source. */}
+                      {VELREPEAT_ENABLED && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 border-[#10B981]/30 bg-[#F0FDF9] text-[#10B981] hover:bg-[#D1FAE5]"
+                          onClick={() => {
+                            setRepeatUnit("days");
+                            setRepeatValue(30);
+                            setRepeatOrder(order);
+                          }}
+                        >
+                          <RefreshCw className="size-3.5" />
+                          {t("velrepeatPlan.repeatOrder")}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
@@ -648,8 +654,8 @@ export default function MyOrders() {
         </section>
       </main>
 
-      {/* VelRepeat repeat-now dialog */}
-      <Dialog open={repeatOrder !== null} onOpenChange={(open) => { if (!open) setRepeatOrder(null); }}>
+      {/* VelRepeat repeat-now dialog (PARKED 2026-10-14 — returns with the module) */}
+      <Dialog open={VELREPEAT_ENABLED && repeatOrder !== null} onOpenChange={(open) => { if (!open) setRepeatOrder(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

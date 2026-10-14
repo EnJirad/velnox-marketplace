@@ -1,48 +1,73 @@
 import { SITE_URLS } from "@velnox/shared/lib/sites";
 import { ArrowRight, ArrowUpRight, Check, ShoppingBag, Store } from "lucide-react";
 
+/**
+ * Velnox Group corporate landing page.
+ *
+ * POSITIONING (2026-10-14): the site sells what the platform actually does
+ * today — buy and sell, retail and wholesale. Two buyer tracks on one
+ * marketplace:
+ *
+ *   1. ordinary retail customers, who browse, add to cart and pay;
+ *   2. community / village shops, which restock by line item and can buy by the
+ *      piece or by the pack at a lower unit price.
+ *
+ * The "Customer Memory / จำแทนคุณ" promise (and VelRepeat) is PARKED — see
+ * `packages/shared/src/lib/features.ts`. It is deliberately absent from this
+ * page rather than described as a live capability; the marketing illustration
+ * is labelled as an example so nothing here reads as a live storefront.
+ */
 const STEPS = [
-  { n: "01", label: "Remember", desc: "ทุกการซื้อคือข้อมูล" },
-  { n: "02", label: "Learn", desc: "เข้าใจพฤติกรรมจริง" },
-  { n: "03", label: "Understand", desc: "รู้ว่าอะไรสำคัญกับคุณ" },
-  { n: "04", label: "Predict", desc: "คาดการณ์รอบถัดไป" },
-  { n: "05", label: "Help", desc: "ช่วยเหลือก่อนคุณถาม" },
+  { n: "01", label: "เลือกสินค้า", desc: "เรียกดูสินค้าจากร้านค้าจริง เลือกได้ทีละรายการ" },
+  { n: "02", label: "เลือกจำนวน", desc: "ซื้อปลีกเป็นชิ้น หรือยกแพ็ค/ยกกล่อง" },
+  { n: "03", label: "ราคาส่ง", desc: "ซื้อเป็นแพ็ค ราคาต่อหน่วยถูกลง" },
+  { n: "04", label: "ชำระเงิน", desc: "ชำระผ่านระบบ ตรวจสอบยอดได้" },
+  { n: "05", label: "ส่งถึงร้าน", desc: "ของถึงร้าน ติดตามสถานะได้ตลอด" },
 ] as const;
 
-function MemoryCard() {
+function WholesaleCard() {
   return (
     <div className="relative mx-auto w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-          VelRepeat · จำแทนคุณ
+          ร้านค้าชุมชน · เติมสต็อก
         </p>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-          ใช้งานอยู่
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+          ตัวอย่าง
         </span>
       </div>
-      <div className="mt-5 flex items-center gap-4">
-        <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-xl">
-          ☕
+      <div className="mt-5 space-y-3">
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">น้ำมะพร้าว 1 ลิตร</p>
+            <p className="mt-0.5 text-xs text-slate-500">ปลีก ฿ 55/ขวด · ยกแพ็ค 12 ขวด ฿ 540</p>
+          </div>
+          <span className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">
+            1 แพ็ค
+          </span>
         </div>
-        <div>
-          <p className="font-semibold text-slate-900">กาแฟบด 1 กก. (เมล็ดอาราบิก้า)</p>
-          <p className="mt-0.5 text-sm text-slate-500">ร้านบ้านสวนคาเฟ่ · ฿ 380</p>
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">ขนมขบเคี้ยวรวม</p>
+            <p className="mt-0.5 text-xs text-slate-500">ปลีก ฿ 12/ซอง · ยกแพ็ค 20 ซอง ฿ 200</p>
+          </div>
+          <span className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">
+            2 แพ็ค
+          </span>
         </div>
       </div>
-      <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+      <div className="mt-5 rounded-2xl bg-slate-900 p-4 text-white">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-500">รอบการซื้อที่เรียนรู้ได้</span>
-          <span className="font-semibold text-slate-900">ทุก 28 วัน</span>
+          <span className="text-slate-300">เฉพาะของที่หมด</span>
+          <span className="font-semibold">2 รายการ</span>
         </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
-          <div className="h-full w-4/5 rounded-full bg-emerald-500" />
-        </div>
-        <p className="mt-2 text-xs text-slate-400">คำสั่งซื้อถัดไป: 22 ส.ค. 2026 — ระบบจะเตือนคุณก่อน</p>
+        <p className="mt-2 text-xs leading-5 text-slate-400">
+          ของในร้านที่ยังเหลือไม่ต้องสั่งซ้ำ — เลือกเติมเฉพาะรายการที่หมดได้เลย
+        </p>
       </div>
       <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-700">
         <Check className="size-4" />
-        ระบบจำได้แล้ว — คุณไม่ต้องคิด
+        สั่งปลีกหรือยกแพ็ค ในบัญชีเดียวกัน
       </div>
     </div>
   );
@@ -57,16 +82,16 @@ export function CorporateHome() {
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-600">
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              Velnox Group · แพลตฟอร์มคอมเมิร์ซ
+              Velnox Group · แพลตฟอร์มซื้อขายออนไลน์
             </p>
             <h1 className="mt-6 text-4xl font-extrabold leading-[1.1] tracking-tight text-slate-900 sm:text-6xl">
-              Commerce that{" "}
-              <span className="text-emerald-600">remembers</span> you.
+              ซื้อขายจริง ทั้ง{" "}
+              <span className="text-emerald-600">ปลีกและส่ง</span>
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">
-              Velnox — <span className="font-semibold text-slate-900">จำแทนคุณ</span>.
-              ทุกสิ่งที่คุณซื้อ ระบบจำ เข้าใจ และช่วยให้ครั้งหน้าดียิ่งขึ้น
-              — ตั้งแต่การสั่งซื้อครั้งเดียว ไปจนถึงการสั่งซื้อซ้ำแบบอัตโนมัติ
+              Velnox คือตลาดออนไลน์ที่เชื่อมคนซื้อทั่วไปเข้ากับร้านค้าจริงทั่วประเทศ
+              และเปิดทางให้ร้านค้าชุมชนสั่งของเข้าสต็อกได้แบบยกแพ็คในราคาส่ง
+              — ไม่ต้องมีสาขาเป็นร้อย ก็เข้าถึงสินค้าได้ทั้งประเทศ
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
@@ -88,18 +113,18 @@ export function CorporateHome() {
               ไม่ต้องสมัครก็ดูสินค้าได้ · สมัครใช้รหัส OTP ทางอีเมล ไม่ต้องจำรหัสผ่าน
             </p>
           </div>
-          <MemoryCard />
+          <WholesaleCard />
         </div>
       </section>
 
-      {/* Value chain */}
+      {/* How a restock order works */}
       <section className="bg-slate-900 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-400">
-            Customer Memory
+            การสั่งซื้อแบบร้านค้า
           </p>
           <h2 className="mt-3 max-w-2xl text-2xl font-bold tracking-tight text-white sm:text-4xl">
-            ทุกการโต้ตอบคือความรู้ — และความรู้ทุกชิ้นช่วยคนคนเดิม
+            เติมสต็อกเข้าร้านได้ใน 5 ขั้นตอน
           </h2>
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {STEPS.map((step) => (
@@ -123,10 +148,11 @@ export function CorporateHome() {
             สองโหมดการซื้อ
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-            ซื้อครั้งเดียวก็ได้ สั่งซ้ำอัตโนมัติก็ดี
+            ซื้อปลีกก็ได้ ซื้อส่งก็ดี
           </h2>
           <p className="mt-4 text-base leading-7 text-slate-600">
-            เราไม่เคยบังคับให้ใครใช้ VelRepeat — แต่เมื่อคุณพร้อม ระบบจะจำแทนคุณ
+            บัญชีเดียวใช้ได้ทั้งสองแบบ — ลูกค้าทั่วไปซื้อปลีกได้ตามปกติ
+            และร้านค้าสามารถเลือกซื้อเป็นแพ็คเพื่อเติมสต็อกได้ในราคาต่อหน่วยที่ถูกลง
           </p>
         </div>
         <div className="mt-10 grid gap-5 md:grid-cols-2">
@@ -134,23 +160,26 @@ export function CorporateHome() {
             <div className="inline-flex size-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
               <ShoppingBag className="size-5" />
             </div>
-            <h3 className="mt-4 text-lg font-bold text-slate-900">Buy Once — ซื้อครั้งเดียว</h3>
+            <h3 className="mt-4 text-lg font-bold text-slate-900">ซื้อปลีก — สำหรับลูกค้าทั่วไป</h3>
             <p className="mt-2 text-sm leading-7 text-slate-600">
               ประสบการณ์มาร์เก็ตเพลสครบรูปแบบ: ค้นหา → ดูสินค้า → ตะกร้า → ชำระเงิน
-              → รับออเดอร์ รวดเร็วและสมบูรณ์แบบในตัวมันเอง
+              → รับออเดอร์ ครบถ้วนและรวดเร็วในตัวมันเอง
             </p>
           </div>
           <div className="relative rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-7 shadow-sm">
             <span className="absolute right-5 top-5 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">
-              เป้าหมายหลัก
+              จุดต่างของ Velnox
             </span>
             <div className="inline-flex size-10 items-center justify-center rounded-xl bg-emerald-600 text-white">
               <Check className="size-5" />
             </div>
-            <h3 className="mt-4 text-lg font-bold text-slate-900">VelRepeat — สั่งซื้อซ้ำอัตโนมัติ</h3>
+            <h3 className="mt-4 text-lg font-bold text-slate-900">
+              ซื้อส่ง — สำหรับร้านค้าชุมชน
+            </h3>
             <p className="mt-2 text-sm leading-7 text-slate-600">
-              สินค้าที่ซื้อเป็นประจำจะถูกจำไว้ ระบบเรียนรู้รอบการซื้อของคุณ และช่วยสั่งซื้อซ้ำ
-              ตามรอบที่กำหนด — เปิดหรือปิดได้ทุกเมื่อ
+              เลือกซื้อเป็นรายการ ซื้อเป็นชิ้นหรือยกแพ็ค ราคาต่อหน่วยถูกลงเมื่อยกแพ็ค
+              และสั่งเติมเฉพาะรายการที่หมดได้ — เหมาะกับร้านค้าในหมู่บ้านและร้านค้าขนาดเล็ก
+              ที่ต้องดูแลสต็อกของตัวเองทุกสัปดาห์
             </p>
           </div>
         </div>
@@ -183,7 +212,7 @@ export function CorporateHome() {
               {[
                 {
                   title: "VelShop",
-                  desc: "หน้าร้านค้าสำหรับลูกค้า — ค้นหา สั่งซื้อ และสั่งซ้ำอัตโนมัติ",
+                  desc: "หน้าร้านค้าสำหรับลูกค้า — ค้นหา เลือกซื้อ และชำระเงิน",
                   href: SITE_URLS.velshop,
                 },
                 {
@@ -225,10 +254,11 @@ export function CorporateHome() {
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
         <div className="rounded-3xl bg-slate-900 px-6 py-14 text-center sm:px-12">
           <h2 className="mx-auto max-w-2xl text-2xl font-bold tracking-tight text-white sm:text-4xl">
-            พร้อมให้ Velnox จำแทนคุณหรือยัง?
+            พร้อมเริ่มซื้อขายกับ Velnox หรือยัง?
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-slate-400">
-            เริ่มต้นจากการช้อปปิ้งครั้งแรกของคุณ — ระบบจะค่อย ๆ เรียนรู้และช่วยเหลือคุณมากขึ้นทุกครั้ง
+            ลูกค้าทั่วไปเริ่มจากการช้อปปิ้งครั้งแรก ส่วนร้านค้าเริ่มจากการสมัครเปิดร้าน
+            แล้วเลือกซื้อแบบยกแพ็คเพื่อเติมสต็อกได้ทันที
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <a

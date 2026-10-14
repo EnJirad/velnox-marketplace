@@ -43,6 +43,7 @@ import {
 } from "@velnox/shared/components/ui/table";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { api } from "@velnox/shared/lib/api-routes";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES } from "@velnox/shared/lib/i18n/config";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 // Id type replaced with string
@@ -1146,7 +1147,11 @@ export default function Center() {
               </CardContent>
             </Card>
 
-            {/* VelRepeat V2 — recurring commerce monitoring */}
+            {/* PARKED (2026-10-14): VelRepeat (recurring commerce) is off for the
+                MVP, so its monitoring card is not rendered and its overview API is
+                not mounted (the route is inside the backend flag). The card, the
+                state and the loader all stay in source behind the shared flag. */}
+            {VELREPEAT_ENABLED && (
             <Card className="mt-6 border-slate-200 shadow-none">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -1184,6 +1189,7 @@ export default function Center() {
                 )}
               </CardContent>
             </Card>
+            )}
           </TabsContent>
 
           {/* ============ Orders ============ */}
@@ -2194,7 +2200,7 @@ export default function Center() {
                               id="settings-tagline"
                               value={form.tagline}
                               onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))}
-                              placeholder="Commerce that remembers you · จำแทนคุณ"
+                              placeholder="ซื้อขายของจริง · ปลีกและส่ง ในที่เดียว"
                             />
                           </div>
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

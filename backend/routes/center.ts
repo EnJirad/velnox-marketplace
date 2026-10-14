@@ -63,6 +63,7 @@ import { invalidateCachedProfile } from "./auth.js";
 import { isShipmentStatus } from "../lib/order-shipment-states.js";
 import { transitionShipment, type ShipmentTransitionResult } from "../lib/order-shipment.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
+import { CUSTOMER_MEMORY_ENABLED } from "../lib/features.js";
 
 function param(req: Request, key: string): string {
   const v = req.params[key];
@@ -128,11 +129,30 @@ export function auditLogsListSql(whereSql: string, limitParam: string, offsetPar
          LIMIT ${limitParam} OFFSET ${offsetParam}`;
 }
 
+/**
+ * Answer 404 for an endpoint that belongs to a PARKED module (lib/features.ts).
+ * Identical to what a route that was never mounted would answer, so a client
+ * cannot tell a parked feature from one that does not exist — and no partial
+ * write happens on the way to the refusal.
+ */
+function parkedModule(res: Response): void {
+  res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Not found" } });
+}
+
 export function setupCenterRoutes(app: Express): void {
   // ── POST /api/events/track ──────────────────────────────────────────────
   // Fire-and-forget behavioral tracking from the frontends. Anonymous users
   // are attributed via anonymousId; signed-in users via session cookie.
+  //
+  // PARKED (2026-10-14): Customer Memory is off, so the platform accepts no new
+  // behavioural data. The handler answers 404 — exactly what an unmounted route
+  // would answer — instead of silently writing rows nobody reads. The insert,
+  // the table and this handler all stay in the repository.
   app.post("/api/events/track", optionalAuth, async (req: Request, res: Response) => {
+    if (!CUSTOMER_MEMORY_ENABLED) {
+      parkedModule(res);
+      return;
+    }
     try {
       const type = typeof req.body?.type === "string" ? req.body.type.slice(0, 50) : "";
       if (!type) {
@@ -172,7 +192,12 @@ export function setupCenterRoutes(app: Express): void {
 
   // ── POST /api/events/merge ──────────────────────────────────────────────
   // Claim anonymous history for a newly signed-in user.
+  // PARKED (2026-10-14) — see /api/events/track above.
   app.post("/api/events/merge", requireAuth, async (req: Request, res: Response) => {
+    if (!CUSTOMER_MEMORY_ENABLED) {
+      parkedModule(res);
+      return;
+    }
     try {
       const anonymousId =
         typeof req.body?.anonymousId === "string" && req.body.anonymousId
@@ -195,7 +220,15 @@ export function setupCenterRoutes(app: Express): void {
 
   // ── GET /api/memory/insights ────────────────────────────────────────────
   // Privacy-safe aggregate market interest (last 30 days, no personal data).
+  //
+  // PARKED (2026-10-14) with the rest of Customer Memory: with tracking off the
+  // aggregates would only describe data collected before the park, so the read
+  // is refused rather than presenting a stale picture as current.
   app.get("/api/memory/insights", requireAuth, async (req: Request, res: Response) => {
+    if (!CUSTOMER_MEMORY_ENABLED) {
+      parkedModule(res);
+      return;
+    }
     try {
       if (!(await canReadCenter(req.user!.userId))) {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });

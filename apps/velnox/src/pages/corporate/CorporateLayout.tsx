@@ -19,7 +19,7 @@ const NAV: NavItem[] = [
 ];
 
 const TITLES: Record<string, string> = {
-  "/": "Velnox Group — Commerce that remembers you",
+  "/": "Velnox Group — ซื้อขายจริง ทั้งปลีกและส่ง",
   "/about": "เกี่ยวกับ Velnox — Velnox Group",
   "/vision": "วิสัยทัศน์และพันธกิจ — Velnox Group",
   "/business": "ธุรกิจของเรา — Velnox Group",
@@ -146,7 +146,7 @@ export function CorporateLayout() {
             <div className="lg:col-span-1">
               <Logo />
               <p className="mt-4 max-w-xs text-sm leading-6 text-slate-500">
-                Commerce that remembers you — ระบบนิเวศคอมเมิร์ซที่จำแทนคุณ ตั้งแต่หน้าร้านจนถึงศูนย์กลางธุรกิจ
+                ซื้อขายของจริง ทั้งปลีกและส่ง — ระบบนิเวศคอมเมิร์ซที่เชื่อมลูกค้า ร้านค้าชุมชน และผู้ขายไว้ในที่เดียว
               </p>
             </div>
             <div>
@@ -178,7 +178,7 @@ export function CorporateLayout() {
           </div>
           <div className="mt-12 flex flex-col gap-2 border-t border-border/70 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-slate-400">© 2026 Velnox Group. สงวนลิขสิทธิ์</p>
-            <p className="text-xs text-slate-400">Commerce that remembers you · Velnox จำแทนคุณ</p>
+            <p className="text-xs text-slate-400">ซื้อขายจริง ปลีกและส่ง · Velnox</p>
           </div>
         </div>
       </footer>

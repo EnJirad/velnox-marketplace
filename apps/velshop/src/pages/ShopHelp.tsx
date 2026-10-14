@@ -8,6 +8,7 @@ import {
   AccordionTrigger,
 } from "@velnox/shared/components/ui/accordion";
 import { Button } from "@velnox/shared/components/ui/button";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { Input } from "@velnox/shared/components/ui/input";
 import {
   BadgePercent,
@@ -87,17 +88,24 @@ const CATEGORIES: HelpCategory[] = [
       { id: "acct-security", titleKey: "help.acctSecurity", descKey: "help.acctSecurityA" },
     ],
   },
-  {
-    id: "velrepeat",
-    icon: RefreshCw,
-    titleKey: "help.catVelRepeat",
-    descKey: "help.catVelRepeatDesc",
-    articles: [
-      { id: "vr-how", titleKey: "help.vrHow", descKey: "help.vrHowA" },
-      { id: "vr-manage", titleKey: "help.vrManage", descKey: "help.vrManageA" },
-      { id: "vr-pause", titleKey: "help.vrPause", descKey: "help.vrPauseA" },
-    ],
-  },
+  // PARKED (2026-10-14): the VelRepeat help category returns with the module.
+  // Help articles must never describe a flow the storefront no longer offers,
+  // so the category (and its three articles) is dropped while the flag is off.
+  ...(VELREPEAT_ENABLED
+    ? [
+        {
+          id: "velrepeat",
+          icon: RefreshCw,
+          titleKey: "help.catVelRepeat",
+          descKey: "help.catVelRepeatDesc",
+          articles: [
+            { id: "vr-how", titleKey: "help.vrHow", descKey: "help.vrHowA" },
+            { id: "vr-manage", titleKey: "help.vrManage", descKey: "help.vrManageA" },
+            { id: "vr-pause", titleKey: "help.vrPause", descKey: "help.vrPauseA" },
+          ],
+        },
+      ]
+    : []),
   {
     id: "shopping",
     icon: ShoppingBag,

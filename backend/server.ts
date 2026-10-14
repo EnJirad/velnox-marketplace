@@ -31,6 +31,7 @@ import { registerVerificationRoutes } from "./routes/verification.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
 import { startVelRepeatV2CycleScheduler } from "./jobs/velrepeat-v2-cycle-scheduler.js";
 import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
+import { VELREPEAT_ENABLED } from "./lib/features.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupChatRoutes } from "./routes/chat.js";
 import { broadcast, CHANNELS, setupWebSocket } from "./realtime/index.js";
@@ -228,7 +229,10 @@ async function ensureVelRepeatV2Tables(): Promise<void> {
     console.error("[startup] ensureVelRepeatV2Tables failed:", err?.message ?? err);
   }
 }
-ensureVelRepeatV2Tables();
+// PARKED (2026-10-14): VelRepeat is off, so its tables are NOT created at boot.
+// The tables, migrations and the code above stay in the repository — setting
+// VELREPEAT_ENABLED=true restores this call unchanged.
+if (VELREPEAT_ENABLED) ensureVelRepeatV2Tables();
 
 // ─── Auto-create checkout idempotency table if missing (V0035) ──────────
 async function ensureCheckoutIdempotencyTable(): Promise<void> {
@@ -474,30 +478,46 @@ setupStripeRoutes(app);
 // ─── Product Options & Attributes ──────────────────────────────
 setupProductOptionRoutes(app);
 
-// ─── VelRepeat Packages (V1 — buy-ahead) ────────────────────────
-setupVelRepeatRoutes(app);
+// ─── VelRepeat (PARKED 2026-10-14) ──────────────────────────────
+// The owner re-scoped the MVP to buy-and-sell (retail + wholesale by the pack)
+// and parked recurring / prepaid repeat commerce. The six route modules are NOT
+// mounted while the flag is off, so every /api/velrepeat*, /api/subscriptions and
+// /api/velrepeat-packages endpoint answers 404 instead of being reachable by a
+// crafted request. Nothing was deleted — all six setup functions, their handlers,
+// their tables and their tests are still in the repository, and setting
+// VELREPEAT_ENABLED=true restores the exact block below.
+//
+// The payment half of the V2 flow is deliberately included in the parked set:
+// an unmounted payment-initiation route cannot open a Stripe Session for a
+// feature the storefront no longer offers. The Stripe settlement webhook itself
+// is NOT touched — it stays mounted in routes/stripe.ts because it also settles
+// ordinary orders.
+if (VELREPEAT_ENABLED) {
+  // ─── VelRepeat Packages (V1 — buy-ahead) ──────────────────────
+  setupVelRepeatRoutes(app);
 
-// ─── VelRepeat Plans (V2 — recurring commerce engine) ────────────
-setupVelRepeatPlanRoutes(app);
+  // ─── VelRepeat Plans (V2 — recurring commerce engine) ─────────
+  setupVelRepeatPlanRoutes(app);
 
-// ─── VelRepeat Packages (V2 — seller package authoring, G3=B) ───
-setupVelRepeatPackageRoutes(app);
+  // ─── VelRepeat Packages (V2 — seller package authoring, G3=B) ─
+  setupVelRepeatPackageRoutes(app);
 
-// ─── VelRepeat V2 (package → draft plan → pricing snapshot, Phase 3) ───
-setupVelRepeatV2PlanRoutes(app);
+  // ─── VelRepeat V2 (package → draft plan → pricing snapshot, Phase 3) ───
+  setupVelRepeatV2PlanRoutes(app);
 
-// ─── VelRepeat V2 (prepaid plan-level Stripe payment, Phase 4) ───
-// Only the payment-initiation endpoint is mounted here. The settlement half of
-// this phase runs inside the EXISTING /api/payments/stripe/webhook handler
-// (routes/stripe.ts), so there is still exactly one signature check, one event
-// claim and one redelivery policy for all Stripe events.
-setupVelRepeatV2PaymentRoutes(app);
+  // ─── VelRepeat V2 (prepaid plan-level Stripe payment, Phase 4) ───
+  // Only the payment-initiation endpoint is mounted here. The settlement half of
+  // this phase runs inside the EXISTING /api/payments/stripe/webhook handler
+  // (routes/stripe.ts), so there is still exactly one signature check, one event
+  // claim and one redelivery policy for all Stripe events.
+  setupVelRepeatV2PaymentRoutes(app);
 
-// ─── VelRepeat V2 (customer plan status: plan + pricing + cycles + orders) ───
-// The read side of the same flow, so the storefront can poll the SERVER's
-// verdict after Stripe returns the customer instead of assuming a redirect
-// means the payment succeeded.
-setupVelRepeatV2StatusRoutes(app);
+  // ─── VelRepeat V2 (customer plan status: plan + pricing + cycles + orders) ───
+  // The read side of the same flow, so the storefront can poll the SERVER's
+  // verdict after Stripe returns the customer instead of assuming a redirect
+  // means the payment succeeded.
+  setupVelRepeatV2StatusRoutes(app);
+}
 
 // ─── Chat, Messaging & Notifications ────────────────────
 setupChatRoutes(app);
@@ -570,18 +590,23 @@ server.listen(PORT, "0.0.0.0", () => {
       });
     });
 
-  // ─── VelRepeat V2 Scheduler (recurring commerce worker) ────────────
-  // The V1 pay-per-run worker above. Untouched by Phase 5.
-  startVelRepeatScheduler();
+  if (VELREPEAT_ENABLED) {
+    // ─── VelRepeat V2 Scheduler (recurring commerce worker) ──────────
+    // The V1 pay-per-run worker above. Untouched by Phase 5.
+    startVelRepeatScheduler();
 
-  // ─── VelRepeat V2 due-cycle worker (Phase 5) ───────────────────────
-  // Generates a cycle's order when the cycle reaches its `scheduled_at`. A
-  // separate worker from the V1 one on purpose: V1 claims PLAN rows by
-  // `next_run_at` and writes `velrepeat_runs`; this one claims CYCLE rows by
-  // `scheduled_at` and writes no run row. They never contend for the same row,
-  // and the exactly-once guarantee for a cycle is the database's, not this
-  // process's — so running two instances of either is safe.
-  startVelRepeatV2CycleScheduler();
+    // ─── VelRepeat V2 due-cycle worker (Phase 5) ─────────────────────
+    // Generates a cycle's order when the cycle reaches its `scheduled_at`. A
+    // separate worker from the V1 one on purpose: V1 claims PLAN rows by
+    // `next_run_at` and writes `velrepeat_runs`; this one claims CYCLE rows by
+    // `scheduled_at` and writes no run row. They never contend for the same row,
+    // and the exactly-once guarantee for a cycle is the database's, not this
+    // process's — so running two instances of either is safe.
+    //
+    // PARKED (2026-10-14): a parked feature must not write orders, payments or
+    // inventory in the background. Both workers are off with the flag.
+    startVelRepeatV2CycleScheduler();
+  }
 
   // ─── Payment reservation sweep (FIXED 30-minute window) ──────────────
   // Ends unpaid orders whose reservation window has lapsed and returns their

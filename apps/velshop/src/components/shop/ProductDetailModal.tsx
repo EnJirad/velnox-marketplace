@@ -15,6 +15,7 @@ import {
   type StoreProduct,
 } from "@velnox/shared/lib/commerce";
 import { useTracking } from "@velnox/shared/lib/track";
+import { CUSTOMER_MEMORY_ENABLED, VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import {
   CalendarClock,
   Heart,
@@ -218,7 +219,8 @@ export function ProductDetailModal({ product, open, onOpenChange, onSubscribe }:
                 </div>
               )}
 
-              {!outOfStock && (
+              {/* PARKED (2026-10-14): the recurring-purchase action returns with VelRepeat. */}
+              {VELREPEAT_ENABLED && !outOfStock && (
                 <Button
                   variant="ghost"
                   className="mt-2 h-10 w-full gap-1.5 text-xs text-slate-500 hover:bg-[#ECFDF5] hover:text-emerald-700"
@@ -229,10 +231,15 @@ export function ProductDetailModal({ product, open, onOpenChange, onSubscribe }:
                 </Button>
               )}
 
-              <p className="mt-3 flex w-full items-center justify-center gap-1.5 text-xs text-slate-400">
-                <Heart className="size-3.5" />
-                {t("productDetail.interestNote")}
-              </p>
+              {/* PARKED (2026-10-14): "we remember your interests" is a Customer
+                  Memory promise. While the module is off the page makes no such
+                  claim — the note, its key and this markup all stay in source. */}
+              {CUSTOMER_MEMORY_ENABLED && (
+                <p className="mt-3 flex w-full items-center justify-center gap-1.5 text-xs text-slate-400">
+                  <Heart className="size-3.5" />
+                  {t("productDetail.interestNote")}
+                </p>
+              )}
             </div>
           </div>
         </div>

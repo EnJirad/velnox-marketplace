@@ -8,6 +8,7 @@ import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { useCart } from "@/lib/cart";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
 import { useTracking } from "@velnox/shared/lib/track";
@@ -366,13 +367,17 @@ export default function ShopDetail() {
         open={selectedProduct !== null}
         onOpenChange={(open) => { if (!open) setSelectedProduct(null); }}
         entryMode="options"
-        onVelRepeat={(p) => setSubProduct(p)}
+        /* PARKED (2026-10-14): passing no handler is what hides the sheet's
+           VelRepeat action, so the prop is spread only while the module is on. */
+        {...(VELREPEAT_ENABLED ? { onVelRepeat: (p: StoreProduct) => setSubProduct(p) } : {})}
       />
-      <SubscriptionDialog
-        product={subProduct}
-        open={subProduct !== null}
-        onOpenChange={(open) => { if (!open) setSubProduct(null); }}
-      />
+      {VELREPEAT_ENABLED && (
+        <SubscriptionDialog
+          product={subProduct}
+          open={subProduct !== null}
+          onOpenChange={(open) => { if (!open) setSubProduct(null); }}
+        />
+      )}
       <ShopFooter />
     </div>
   );

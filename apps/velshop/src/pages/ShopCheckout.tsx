@@ -3,6 +3,7 @@ import { ShopHeader } from "@/components/shop/ShopHeader";
 import { VelRepeatPlanDialog } from "@/components/shop/VelRepeatPlanDialog";
 import { useLanguage } from "@/lib/i18n";
 import { Badge } from "@velnox/shared/components/ui/badge";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@velnox/shared/components/ui/sheet";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
@@ -497,7 +498,10 @@ export default function ShopCheckout() {
               ))}
             </div>
           </div>
-          {eligibleItem && offerProduct && (
+          {/* PARKED (2026-10-14): the "set up a repeat plan" offer at checkout
+              returns with VelRepeat. The panel, the dialog and the eligibility
+              computation all stay in source. */}
+          {VELREPEAT_ENABLED && eligibleItem && offerProduct && (
             <div className="mt-6 rounded-2xl border border-[#10B981]/25 bg-[#F0FDF9] p-5">
               <div className="flex items-start gap-3">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#10B981] ring-1 ring-[#10B981]/15"><RefreshCw className="size-5" /></span>
@@ -511,8 +515,10 @@ export default function ShopCheckout() {
               </div>
             </div>
           )}
-          <VelRepeatPlanDialog product={offerProduct} open={vrOpen} onOpenChange={setVrOpen}
-            selectedVariant={eligibleItem?.variantId ? { id: eligibleItem.variantId, name: "", price: eligibleItem.price } : null} />
+          {VELREPEAT_ENABLED && (
+            <VelRepeatPlanDialog product={offerProduct} open={vrOpen} onOpenChange={setVrOpen}
+              selectedVariant={eligibleItem?.variantId ? { id: eligibleItem.variantId, name: "", price: eligibleItem.price } : null} />
+          )}
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {/*
               This screen is only reached by a rail that does not continue into

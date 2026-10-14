@@ -125,8 +125,8 @@ export const th = {
   },
 
   footer: {
-    tagline: "Commerce that remembers you · จำแทนคุณ",
-    shopDesc: "หน้าร้านค้าออนไลน์ Velnox — ซื้อของจริง สั่งซ้ำได้อัตโนมัติ",
+    tagline: "ซื้อขายของจริง · ปลีกและส่ง ในที่เดียว",
+    shopDesc: "หน้าร้านค้าออนไลน์ Velnox — ซื้อของจริง ราคาชัดเจน ส่งถึงมือ",
     sellerTitle: "ร่วมเป็นส่วนหนึ่งกับ Velnox",
     sellerDesc: "อยากขายสินค้ากับเรา?",
     sellerCta: "สมัครเป็น Seller",
@@ -311,7 +311,7 @@ export const th = {
     trustSupportTitle: "ช่วยเหลือลูกค้า",
     trustSupportDesc: "ติดต่อทีมงานได้จากทุกหน้า",
     seoTitle: "{shop} — VelShop · ตลาดออนไลน์ Velnox",
-    seoDesc: "{tagline} ค้นหาและสั่งซื้อสินค้าได้จริง พร้อมสั่งรายเดือนอัตโนมัติ (VelRepeat)",
+    seoDesc: "{tagline} ค้นหาและสั่งซื้อสินค้าจากร้านค้าจริงทั่วประเทศ",
   },
 
   products: {
@@ -379,7 +379,7 @@ export const th = {
     ariaRemove: "ลบ {name}",
     summary: "สินค้าในตะกร้าของคุณ",
     quantity: "จำนวน",
-    tagline: "Commerce that remembers you · จำแทนคุณ",
+    tagline: "ซื้อปลีกหรือสั่งส่ง — เลือกจำนวนได้ตามต้องการ",
     authRequired: "กรุณาสมัครสมาชิกหรือเข้าสู่ระบบก่อนใช้งานตะกร้า",
     authDesc: "เข้าสู่ระบบเพื่อบันทึกสินค้าในตะกร้าและดำเนินการชำระเงิน",
     loginCta: "เข้าสู่ระบบ",

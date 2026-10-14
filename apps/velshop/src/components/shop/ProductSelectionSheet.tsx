@@ -15,6 +15,7 @@ import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
 import { ACTION_BUTTON_CLASSES, type SelectionEntryMode } from "@/lib/productActions";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useTracking } from "@velnox/shared/lib/track";
 import { useIsMobile } from "@velnox/shared/hooks/use-mobile";
@@ -153,7 +154,9 @@ export function ProductSelectionSheet({
   }, [resolvedStock, qty]);
   const outOfStock = resolvedStock <= 0;
   const needsVariant = hasOptionGroups && !allRequiredSelected;
-  const velrepeatAvailable = !!(
+  // PARKED (2026-10-14): VelRepeat is off, so the sheet never offers the
+  // recurring-purchase action. Flip the shared flag to restore it.
+  const velrepeatAvailable = VELREPEAT_ENABLED && !!(
     product?.vrepeatEnabled ||
     product?.vrepeatWeeklyEnabled ||
     product?.vrepeatMonthlyEnabled

@@ -17,6 +17,7 @@ import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useAction } from "@velnox/shared/lib/api-routes";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { AvatarImage } from "@velnox/shared/components/ui/avatar-image";
 import {
   Bell,
@@ -71,7 +72,11 @@ interface ProfileRow {
 const SHOPPING: ProfileRow[] = [
   { to: "/orders", labelKey: "profile.orders", descKey: "profile.ordersDesc", icon: Package },
   { to: "/wishlist", labelKey: "profile.wishlist", descKey: "profile.wishlistDesc", icon: Heart },
-  { to: "/velrepeat", labelKey: "profile.velrepeat", descKey: "profile.velrepeatDesc", icon: RefreshCw },
+  // PARKED (2026-10-14): the VelRepeat hub entry returns when the module does.
+  // The row (and every other VelRepeat surface) is kept in source, not deleted.
+  ...(VELREPEAT_ENABLED
+    ? [{ to: "/velrepeat", labelKey: "profile.velrepeat", descKey: "profile.velrepeatDesc", icon: RefreshCw }]
+    : []),
   { to: "/addresses", labelKey: "profile.addresses", descKey: "profile.addressesDesc", icon: MapPin },
 ];
 

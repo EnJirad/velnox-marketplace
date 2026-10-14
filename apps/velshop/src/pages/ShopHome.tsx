@@ -14,6 +14,7 @@ import {
 } from "@velnox/shared/lib/commerce";
 import { setSeo } from "@/lib/seo";
 import { useTracking } from "@velnox/shared/lib/track";
+import { CUSTOMER_MEMORY_ENABLED, VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import {
   Armchair,
   ArrowRight,
@@ -144,20 +145,27 @@ export default function ShopHome() {
   const productsData = useCommerceData(
     useCallback(() => apiGet<any[]>("/api/products/catalog?status=published&limit=100"), []),
   );
+  // PARKED (2026-10-14): the three personalised rails below are Customer Memory
+  // features, so while the module is off their requests are not issued at all —
+  // the empty result is exactly what these rails already render when a call
+  // fails. Disabling the flag restores the original fetches unchanged.
   const recommendData = useCommerceData(
     useCallback(async () => {
+      if (!CUSTOMER_MEMORY_ENABLED) return { items: [], source: "popular" };
       try { return await apiGet<any>("/api/memory/recommendations?limit=8"); }
       catch { return { items: [], source: "popular" }; }
     }, []),
   );
   const regularsData = useCommerceData(
     useCallback(async () => {
+      if (!CUSTOMER_MEMORY_ENABLED) return [];
       try { return await apiGet<any[]>("/api/commerce/regulars"); }
       catch { return []; }
     }, []),
   );
   const remindersData = useCommerceData(
     useCallback(async () => {
+      if (!CUSTOMER_MEMORY_ENABLED) return [];
       try { return await apiGet<any[]>("/api/memory/reminders"); }
       catch { return []; }
     }, []),
@@ -260,7 +268,7 @@ export default function ShopHome() {
     }
   };
 
-  useEffect(() => { setSeo({ title: t("home.seoTitle", { shop: "VelShop" }), description: t("home.seoDesc", { tagline: "Commerce that remembers you · จำแทนคุณ" }) }); }, [t]);
+  useEffect(() => { setSeo({ title: t("home.seoTitle", { shop: "VelShop" }), description: t("home.seoDesc", { tagline: "ซื้อขายของจริง ปลีกและส่ง ในที่เดียว" }) }); }, [t]);
 
   const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "";
   const showReorder = reminders.length > 0;
@@ -301,7 +309,7 @@ export default function ShopHome() {
         </section>
       )}
 
-      {!authLoading && isAuthenticated && !remindersData.loading && showReorder && (
+      {CUSTOMER_MEMORY_ENABLED && !authLoading && isAuthenticated && !remindersData.loading && showReorder && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
             <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><BellRing className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.reorderDueTitle")}</h2><p className="text-xs text-slate-400">{t("home.reorderDueDesc")}</p></div></div>
@@ -318,7 +326,7 @@ export default function ShopHome() {
         </section>
       )}
 
-      {!authLoading && isAuthenticated && !regularsData.loading && showRegulars && (
+      {CUSTOMER_MEMORY_ENABLED && !authLoading && isAuthenticated && !regularsData.loading && showRegulars && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
             <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><History className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.continueShoppingTitle")}</h2><p className="text-xs text-slate-400">{t("home.continueShoppingDesc")}</p></div></div>
@@ -327,7 +335,7 @@ export default function ShopHome() {
         </section>
       )}
 
-      {!authLoading && recommendations.length > 0 && (
+      {CUSTOMER_MEMORY_ENABLED && !authLoading && recommendations.length > 0 && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
             <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><Sparkles className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{recommendData.data?.source === "personal" ? t("home.recsPersonal") : t("home.recsPopular")}</h2><p className="text-xs text-slate-400">{recommendData.data?.source === "personal" ? t("home.recsPersonalDesc") : t("home.recsPopularDesc")}</p></div></div>
@@ -348,18 +356,23 @@ export default function ShopHome() {
         </section>
       )}
 
-      <section className="border-b border-slate-100 bg-white">
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-4 px-4 py-6 sm:flex-row sm:items-center sm:px-6">
-          <div className="flex items-start gap-3 sm:items-center"><span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#10B981]"><RefreshCw className="size-5" /></span><div><p className="text-sm font-bold text-slate-900">{t("home.velrepeatTitle")}</p><p className="mt-0.5 max-w-xl text-xs leading-5 text-slate-500">{t("home.velrepeatDesc")}</p></div></div>
-          <Button className="h-10 shrink-0 gap-1.5 rounded-full bg-[#10B981] px-5 text-white hover:bg-emerald-700" asChild><Link to={isAuthenticated ? "/velrepeat" : "/auth?returnTo=/velrepeat"}>{t("home.velrepeatCta")}</Link></Button>
-        </div>
-      </section>
+      {/* PARKED (2026-10-14): the VelRepeat promo returns with the module. */}
+      {VELREPEAT_ENABLED && (
+        <section className="border-b border-slate-100 bg-white">
+          <div className="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-4 px-4 py-6 sm:flex-row sm:items-center sm:px-6">
+            <div className="flex items-start gap-3 sm:items-center"><span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#10B981]"><RefreshCw className="size-5" /></span><div><p className="text-sm font-bold text-slate-900">{t("home.velrepeatTitle")}</p><p className="mt-0.5 max-w-xl text-xs leading-5 text-slate-500">{t("home.velrepeatDesc")}</p></div></div>
+            <Button className="h-10 shrink-0 gap-1.5 rounded-full bg-[#10B981] px-5 text-white hover:bg-emerald-700" asChild><Link to={isAuthenticated ? "/velrepeat" : "/auth?returnTo=/velrepeat"}>{t("home.velrepeatCta")}</Link></Button>
+          </div>
+        </section>
+      )}
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
         {productsData.loading ? (<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => (<div key={i} className="h-64 animate-pulse rounded-xl border border-slate-200 bg-white" />))}</div>) : products.length === 0 ? (<div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]"><ShoppingBag className="size-7 text-[#10B981]" /></span><h2 className="mt-5 text-lg font-semibold text-slate-900">{t("home.emptyTitle")}</h2><p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("home.emptyDesc")}</p></div>) : null}
       </main>
       <ShopFooter />
-      <SubscriptionDialog product={subProduct} open={subProduct !== null} onOpenChange={(open) => { if (!open) setSubProduct(null); }} />
+      {VELREPEAT_ENABLED && (
+        <SubscriptionDialog product={subProduct} open={subProduct !== null} onOpenChange={(open) => { if (!open) setSubProduct(null); }} />
+      )}
 
     </div>
   );

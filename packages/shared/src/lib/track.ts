@@ -1,12 +1,19 @@
 /**
- * Velnox — client-side Customer Memory tracking 
+ * Velnox — client-side Customer Memory tracking
  *
  * Fire-and-forget wrapper around the API /events/track endpoint.
  * Signed-in users are attributed via session cookie.
  * Signed-out visitors get a random anonymousId in localStorage.
+ *
+ * PARKED (2026-10-14): while `CUSTOMER_MEMORY_ENABLED` is false this module
+ * sends nothing at all — `useTracking()` returns a no-op `track` and no
+ * anonymous id is generated or stored, so the storefront collects no
+ * behavioural data until the module is switched back on. The code below is
+ * deliberately kept intact so re-enabling is a one-line flag change.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { CUSTOMER_MEMORY_ENABLED } from "./features";
 import { apiBaseUrl as API_BASE } from "./sites";
 
 /** Keep in sync with backend event types. */
@@ -62,6 +69,7 @@ export function useTracking(): Tracking {
 
   const track = useCallback(
     (type: CustomerEventType, options?: TrackOptions) => {
+      if (!CUSTOMER_MEMORY_ENABLED) return; // parked — nothing leaves the browser
       fetch(`${API_BASE}/events/track`, {
         method: "POST",
         credentials: "include",

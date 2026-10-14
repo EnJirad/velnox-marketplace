@@ -1,4 +1,5 @@
 import { api } from "@velnox/shared/lib/api-routes";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import {
   type StoreProduct,
   type StoreShop,
@@ -1233,6 +1234,10 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         </div>
 
         {/* ═══ Section 8: VelRepeat ══════════════════════════════════ */}
+        {/* PARKED (2026-10-14): the VelRepeat authoring section returns with the
+            module. A seller can no longer configure a feature the storefront no
+            longer offers; the form state and the payload keys stay in source. */}
+        {VELREPEAT_ENABLED && (
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <button type="button" onClick={() => setVelRepeatExpanded((v) => !v)} className="flex w-full items-center gap-2">
             <CalendarClock className="size-4 text-[#10B981]" />
@@ -1281,6 +1286,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             </div>
           )}
         </div>
+        )}
 
         {/* ═══ Section 9: Edit Mode — Variant Manager (existing products) ═══ */}
         {isEdit && current && (

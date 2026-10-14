@@ -101,8 +101,8 @@ export const en: Dict = {
   },
 
   footer: {
-    tagline: "Commerce that remembers you",
-    shopDesc: "Velnox's online store — real products, auto reorder",
+    tagline: "Real buying and selling · retail and wholesale in one place",
+    shopDesc: "Velnox online marketplace — real products, clear prices, delivered",
     sellerTitle: "Join Velnox",
     sellerDesc: "Want to sell your products with us?",
     sellerCta: "Become a Seller",
@@ -287,7 +287,7 @@ export const en: Dict = {
     trustSupportTitle: "Customer support",
     trustSupportDesc: "Reach our team from any page",
     seoTitle: "{shop} — VelShop · Velnox marketplace",
-    seoDesc: "{tagline} Browse and order real products, with automatic reorder (VelRepeat)",
+    seoDesc: "{tagline} Browse and order real products from real sellers",
   },
 
   products: {
@@ -355,7 +355,7 @@ export const en: Dict = {
     ariaRemove: "Remove {name}",
     summary: "Items in your cart",
     quantity: "Qty",
-    tagline: "Commerce that remembers you",
+    tagline: "Buy retail or order wholesale — choose the quantity you need",
     authRequired: "Please sign in or create an account to use your cart",
     authDesc: "Sign in to keep items in your cart and continue to checkout",
     loginCta: "Sign in",

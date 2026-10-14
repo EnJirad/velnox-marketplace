@@ -85,7 +85,7 @@ export default function SellerGoals() {
               สวัสดี, {firstName} 👋
             </h1>
             <p className="mt-1.5 text-sm text-slate-500">
-              นี่คือภาพรวมเป้าหมายธุรกิจของคุณวันนี้ — Velnox จำแทนคุณ
+              นี่คือภาพรวมเป้าหมายธุรกิจของคุณวันนี้ — จากข้อมูลการขายจริงของร้านคุณ
             </p>
           </div>
           <Button

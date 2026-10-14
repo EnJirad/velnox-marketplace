@@ -2,6 +2,7 @@ import { useCookieConsent } from "@/lib/cookie-consent";
 import { useLanguage } from "@/lib/i18n";
 import { Logo } from "@velnox/shared/components/Logo";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { SITE_URLS } from "@velnox/shared/lib/sites";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
@@ -44,7 +45,10 @@ export function ShopFooter() {
                   <FooterLink to="/profile">{t("footer.myAccount")}</FooterLink>
                   <FooterLink to="/orders">{t("footer.accountOrders")}</FooterLink>
                   <FooterLink to="/wishlist">{t("footer.wishlist")}</FooterLink>
-                  <FooterLink to="/velrepeat">{t("footer.velrepeat")}</FooterLink>
+                  {/* PARKED (2026-10-14): the VelRepeat link returns with the module. */}
+                  {VELREPEAT_ENABLED && (
+                    <FooterLink to="/velrepeat">{t("footer.velrepeat")}</FooterLink>
+                  )}
                   <FooterLink to="/addresses">{t("footer.addresses")}</FooterLink>
                   <FooterLink to="/chat">{t("footer.messages")}</FooterLink>
                 </>

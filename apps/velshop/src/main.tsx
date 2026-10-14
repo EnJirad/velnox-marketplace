@@ -13,6 +13,7 @@ import { initMonitoring } from "@velnox/shared/lib/monitoring";
 
 initMonitoring();
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+import { CUSTOMER_MEMORY_ENABLED, VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { IdentityMerge } from "@velnox/shared/lib/track";
 import { useCart } from "@/lib/cart";
 import { Home, Package, ReceiptText, ShoppingCart, User } from "lucide-react";
@@ -85,7 +86,10 @@ const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
 createRoot(document.getElementById("root")!).render(
   <RootErrorBoundary>
     <LanguageProvider>
-      <IdentityMerge />
+      {/* PARKED (2026-10-14): Customer Memory is off, so the guest → account
+          identity merge is not mounted. The component stays in the bundle-ready
+          source and the flag restores it. */}
+      {CUSTOMER_MEMORY_ENABLED && <IdentityMerge />}
       <BrowserRouter basename={siteBasename("velshop")}>
       <ScrollToTop />
       <RouteSyncer />
@@ -134,26 +138,36 @@ createRoot(document.getElementById("root")!).render(
               </RequireAuth>
             }
           />
-          <Route
-            path="/velrepeat"
-            element={
-              <RequireAuth>
-                <VelRepeatPage />
-              </RequireAuth>
-            }
-          />
-          {/* VelRepeat V2 — the prepaid commitment flow. Stripe returns here
+          {/* PARKED (2026-10-14): VelRepeat (recurring / prepaid repeat commerce)
+              is off for the MVP. The routes are not registered, so /velrepeat and
+              /velrepeat/v2 fall through to NotFound — no page, and no API call to
+              a route the backend no longer mounts. The pages, the dialogs and the
+              backend modules are all still in the repository behind the flag.
+
+              VelRepeat V2 — the prepaid commitment flow. Stripe returns here
               with ?velrepeat_v2_payment=success|cancel&plan=<id>; the page then
               reads the plan status from the SERVER and never assumes the
               redirect means the payment landed. */}
-          <Route
-            path="/velrepeat/v2"
-            element={
-              <RequireAuth>
-                <VelRepeatV2Page />
-              </RequireAuth>
-            }
-          />
+          {VELREPEAT_ENABLED && (
+            <>
+              <Route
+                path="/velrepeat"
+                element={
+                  <RequireAuth>
+                    <VelRepeatPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/velrepeat/v2"
+                element={
+                  <RequireAuth>
+                    <VelRepeatV2Page />
+                  </RequireAuth>
+                }
+              />
+            </>
+          )}
           <Route
             path="/wishlist"
             element={

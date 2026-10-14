@@ -4,6 +4,7 @@ import { VelRepeatPlanDialog } from "@/components/shop/VelRepeatPlanDialog";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { VBadge } from "@velnox/shared/components/VBadge";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@velnox/shared/components/ui/sheet";
@@ -825,11 +826,17 @@ export default function ShopProductDetail() {
     return optionGroups.every((g: any) => !g.required || selectedOptions[g.id]);
   }, [hasOptionGroups, optionGroups, selectedOptions]);
   const needsVariant = hasOptionGroups && !allRequiredSelected;
-  const velrepeatAvailable = !!(
-    product?.vrepeatEnabled ||
-    product?.vrepeatWeeklyEnabled ||
-    product?.vrepeatMonthlyEnabled
-  );
+  // PARKED (2026-10-14): VelRepeat is off, so the product's recurring-purchase
+  // availability is false no matter what the seller had configured. Every
+  // VelRepeat button and sheet entry on this page reads this one value, so the
+  // module disappears from the page without deleting any of its markup.
+  const velrepeatAvailable =
+    VELREPEAT_ENABLED &&
+    !!(
+      product?.vrepeatEnabled ||
+      product?.vrepeatWeeklyEnabled ||
+      product?.vrepeatMonthlyEnabled
+    );
 
   /* ── SEO ────────────────────────────────────────────────────────── */
 
@@ -1868,7 +1875,10 @@ export default function ShopProductDetail() {
       </Sheet>
 
       <ShopFooter />
-      <VelRepeatPlanDialog product={product} open={planOpen} onOpenChange={setPlanOpen} selectedVariant={selectedVariant ? { id: selectedVariant.id, name: selectedVariant.name, price: selectedVariant.price, sku: selectedVariant.sku } : null} />
+      {/* PARKED (2026-10-14): the VelRepeat plan dialog returns with the module. */}
+      {VELREPEAT_ENABLED && (
+        <VelRepeatPlanDialog product={product} open={planOpen} onOpenChange={setPlanOpen} selectedVariant={selectedVariant ? { id: selectedVariant.id, name: selectedVariant.name, price: selectedVariant.price, sku: selectedVariant.sku } : null} />
+      )}
     </div>
   );
 }
