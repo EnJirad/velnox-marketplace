@@ -1,3 +1,15 @@
+> ## ⛔ PARKED (2026-10-14) — read this before changing anything here
+>
+> The owner re-scoped the product to **buy & sell: retail + community-shop wholesale** and parked
+> VelRepeat. With `VELREPEAT_ENABLED = false` (`packages/shared/src/lib/features.ts`,
+> `backend/lib/features.ts`) the **6 VelRepeat route modules are not mounted**, **both schedulers do
+> not start**, its boot-time table creation does not run, and its storefront surfaces are hidden.
+> **Nothing was deleted**: every table, migration, route, job, page, component, test and i18n key is
+> still here, so this contract stays accurate for the module it describes. A red test, an unmounted
+> route or an unused key is therefore **expected while parked** — do not "fix" it by deleting code,
+> and do not re-mount a route outside the flag. Plan and re-enable criteria:
+> [`.ai/tasks/active/mvp-marketplace-restructure-2026-10-14.md`](../tasks/active/mvp-marketplace-restructure-2026-10-14.md).
+
 # VelRepeat V2 — Prepaid Repeat Commerce Contract
 
 **Status:** AUTHORITATIVE CONTRACT — **V2** (**Phase 1 implemented**: additive domain + schema; Phases 2–10 **NOT STARTED**)
