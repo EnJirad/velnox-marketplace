@@ -6,6 +6,7 @@ import {
   RouteSyncer,
   SiteSuspense,
 } from "@velnox/shared/lib/app-shell";
+import { CUSTOMER_MEMORY_ENABLED } from "@velnox/shared/lib/features";
 import { siteBasename } from "@velnox/shared/lib/sites";
 import { IdentityMerge } from "@velnox/shared/lib/track";
 import { lazy } from "react";
@@ -22,7 +23,10 @@ const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
 
 createRoot(document.getElementById("root")!).render(
   <RootErrorBoundary>
-    <IdentityMerge />
+    {/* PARKED (2026-10-14): Customer Memory is off, so the guest → account
+        identity merge is not mounted. velShop guards the same mount; the
+        component stays in source and the flag restores it. */}
+    {CUSTOMER_MEMORY_ENABLED && <IdentityMerge />}
     <BrowserRouter basename={siteBasename("velcenter")}>
       <RouteSyncer />
       <div className="site-app">

@@ -37,6 +37,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
+import { loadSellingUnits } from "../lib/selling-units.js";
 import {
   buildOptionValueIndex,
   normalizeVariantOptions,
@@ -2227,10 +2228,16 @@ export function setupProductRoutes(app: Express): void {
       const productIds = result.rows.map((r: any) => r.id);
       const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
 
+      // Selling units (sets / packs) for this page, in ONE query. A product with
+      // none is served as a plain single-unit line, which is what every product
+      // was before selling units existed.
+      const sellingUnitsByProduct = await loadSellingUnits(query, productIds);
+
       const products = result.rows.map((row: any) => {
         const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
         const productVariants = variantsByProduct.get(row.id) ?? [];
         formatted.variants = productVariants;
+        formatted.sellingUnits = sellingUnitsByProduct.get(row.id) ?? [];
         applyVariantStock(formatted, productVariants);
         // Attach featured variant for product card pricing + image
         if (row.featured_variant_id && productVariants.length > 0) {
@@ -2342,6 +2349,9 @@ export function setupProductRoutes(app: Express): void {
         inventoryByProduct.get(productId) ?? null
       );
       formatted.variants = variantsByProduct.get(productId) ?? [];
+      // Selling units (sets / packs): the "by the piece or by the pack" choice the
+      // product page renders. Only ACTIVE definitions are exposed.
+      formatted.sellingUnits = (await loadSellingUnits(query, [productId])).get(productId) ?? [];
       applyVariantStock(formatted, formatted.variants);
 
       // Detail images for the product detail page

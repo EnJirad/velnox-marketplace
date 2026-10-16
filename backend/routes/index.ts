@@ -258,7 +258,6 @@ export function setupRoutes(app: Express): void {
       const out: Record<string, number | null> = {
         orders: null,
         wishlist: null,
-        velrepeat: null,
         addresses: null,
         notificationsUnread: null,
         chatUnread: null,
@@ -280,14 +279,8 @@ export function setupRoutes(app: Express): void {
         out.wishlist = r.rows[0]?.c ?? 0;
       } catch { /* table may not exist */ }
 
-      // VelRepeat — active recurring plans
-      try {
-        const r = await query(
-          "SELECT COUNT(*)::int AS c FROM velrepeat_plans WHERE user_id = $1 AND status = 'active'",
-          [userId],
-        );
-        out.velrepeat = r.rows[0]?.c ?? 0;
-      } catch { /* table may not exist */ }
+      // VelRepeat — PARKED (2026-10-14). The recurring-plans count is not part
+      // of the buy-and-sell MVP, so the stat is no longer queried or returned.
 
       try {
         const r = await query("SELECT COUNT(*)::int AS c FROM addresses WHERE user_id = $1", [userId]);

@@ -38,6 +38,11 @@ export type CustomerEventType =
 const ANON_KEY = "velnox_anon_id";
 
 export function getAnonymousId(): string {
+  // PARKED (2026-10-14): while Customer Memory is off, no visitor identifier is
+  // minted and nothing is written to storage. The guard lives here, at the
+  // source, so every caller — `useTracking()` and `IdentityMerge` — inherits it
+  // and no path can start collecting behaviour again by accident.
+  if (!CUSTOMER_MEMORY_ENABLED) return "";
   try {
     let id = window.localStorage.getItem(ANON_KEY);
     if (!id) {
@@ -102,6 +107,9 @@ export function IdentityMerge() {
   const attempts = useRef(0);
 
   useEffect(() => {
+    // PARKED (2026-10-14): nothing to merge while Customer Memory is off, so the
+    // component does not even ask whether the visitor is signed in.
+    if (!CUSTOMER_MEMORY_ENABLED) return;
     // Check if user is authenticated via session cookie
     fetch(`${API_BASE}/auth/me`, { credentials: "include" })
       .then((res) => {
@@ -111,6 +119,7 @@ export function IdentityMerge() {
   }, []);
 
   useEffect(() => {
+    if (!CUSTOMER_MEMORY_ENABLED) return; // parked — never issues the merge
     if (!isAuthenticated || attempts.current >= 3) return;
     const anonId = getAnonymousId();
     if (!anonId) {

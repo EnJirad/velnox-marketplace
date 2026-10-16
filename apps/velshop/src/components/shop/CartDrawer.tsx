@@ -126,6 +126,11 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                     {line.variantOptionLabels && (
                       <p className="mt-0.5 text-xs text-[#10B981] font-medium">{line.variantOptionLabels}</p>
                     )}
+                    {/* The SET / PACK this line is, so "2" can never be read as
+                        2 pieces when it is really 2 sets of 12. */}
+                    {line.sellingUnitName && (
+                      <p className="mt-0.5 text-xs font-medium text-[#10B981]">{line.sellingUnitName}</p>
+                    )}
                     <p className="mt-0.5 text-xs text-slate-400">
                       {formatBaht(line.price)} {t("cart.perUnit", { unit: line.unit })}
                     </p>
@@ -134,7 +139,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                         variant="outline"
                         size="icon"
                         className="size-8 border-slate-200 text-slate-600"
-                        onClick={() => setQty(line.productId, line.qty - 1, line.variantId)}
+                        onClick={() => setQty(line.productId, line.qty - 1, line.variantId, line.sellingUnitId)}
                         aria-label={t("cartDrawer.ariaDecrease")}
                       >
                         <Minus className="size-3" />
@@ -146,7 +151,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                         variant="outline"
                         size="icon"
                         className="size-8 border-slate-200 text-slate-600"
-                        onClick={() => setQty(line.productId, line.qty + 1, line.variantId)}
+                        onClick={() => setQty(line.productId, line.qty + 1, line.variantId, line.sellingUnitId)}
                         disabled={line.qty >= line.stock}
                         aria-label={t("cartDrawer.ariaIncrease")}
                       >
@@ -162,7 +167,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                       variant="ghost"
                       size="icon"
                       className="size-8 text-slate-400 hover:text-red-600"
-                      onClick={() => remove(line.productId, line.variantId)}
+                      onClick={() => remove(line.productId, line.variantId, line.sellingUnitId)}
                       aria-label={t("cartDrawer.ariaRemove", { name: line.name })}
                     >
                       <Trash2 className="size-3.5" />

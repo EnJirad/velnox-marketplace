@@ -33,6 +33,7 @@ import { startVelRepeatV2CycleScheduler } from "./jobs/velrepeat-v2-cycle-schedu
 import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
 import { VELREPEAT_ENABLED } from "./lib/features.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
+import { setupProductSellingUnitRoutes } from "./routes/product-selling-units.js";
 import { setupChatRoutes } from "./routes/chat.js";
 import { broadcast, CHANNELS, setupWebSocket } from "./realtime/index.js";
 
@@ -477,6 +478,11 @@ setupStripeRoutes(app);
 
 // ─── Product Options & Attributes ──────────────────────────────
 setupProductOptionRoutes(app);
+
+// ─── Selling units (sets / packs a seller authors) ──────────────────────
+// The authoring surface for "sell it by the piece or by the pack". Inventory is
+// untouched by it: a set only states its own name, pieces and price.
+setupProductSellingUnitRoutes(app);
 
 // ─── VelRepeat (PARKED 2026-10-14) ──────────────────────────────
 // The owner re-scoped the MVP to buy-and-sell (retail + wholesale by the pack)

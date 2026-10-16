@@ -262,6 +262,8 @@ export default function ShopProductDetail() {
   /* ── Variant sheet state ────────────────────────────────────────── */
   const [variantSheetOpen, setVariantSheetOpen] = useState(false);
   const [sheetQty, setSheetQty] = useState(1);
+  /** The chosen SET/PACK, or null for "by the piece". */
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [compactSheet, setCompactSheet] = useState(false);
   const addBtnRef = useRef<HTMLButtonElement>(null);
@@ -813,10 +815,31 @@ export default function ShopProductDetail() {
   }, [optionGroups, selectedOptions, optionValueImageMap, product]);
 
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
-  const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
+  // ── Selling units (sets / packs) ────────────────────────────────────────
+  // A set/pack belongs to ONE variant (or, for a product without variants, to
+  // the product itself), so only the definitions that match the CURRENTLY
+  // selected variant are offered — the server refuses a mismatched one.
+  const sellingUnits = useMemo(
+    () => (product?.sellingUnits ?? []).filter((u: any) => (u.variantId ?? null) === (selectedVariant?.id ?? null)),
+    [product?.sellingUnits, selectedVariant?.id],
+  );
+  const selectedUnit = useMemo(
+    () => sellingUnits.find((u: any) => u.id === selectedUnitId) ?? null,
+    [sellingUnits, selectedUnitId],
+  );
+  // Changing the variant invalidates the pack that was chosen for the old one.
+  useEffect(() => {
+    setSelectedUnitId(null);
+  }, [selectedVariant?.id]);
+
+  const unitBasePrice = selectedVariant?.price ?? product?.price ?? 0;
+  const unitBaseStock = selectedVariant?.stock ?? baseAvailable;
+  const displayPrice = selectedUnit ? selectedUnit.price : unitBasePrice;
   const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
   const displayDiscountPct = selectedVariant?.discountPercent ?? null;
-  const displayStock = selectedVariant?.stock ?? baseAvailable;
+  const displayStock = selectedUnit
+    ? Math.floor(unitBaseStock / Math.max(1, selectedUnit.pieces))
+    : unitBaseStock;
   const outOfStock = displayStock <= 0;
   const lowStock = !outOfStock && displayStock <= 5;
   const avgRating = reviewSummary.total > 0 ? reviewSummary.avgRating : null;
@@ -957,6 +980,9 @@ export default function ShopProductDetail() {
         id: product.id, name: product.name, unit: product.unit,
         price: displayPrice, stock: displayStock,
         variantId: selectedVariant?.id ?? null,
+        sellingUnitId: selectedUnit?.id ?? null,
+        sellingUnitName: selectedUnit?.name ?? null,
+        sellingUnitPieces: selectedUnit?.pieces ?? 1,
         imageUrl: cartImageUrl,
       }, sheetQty);
       fly(addBtnRef.current);
@@ -968,6 +994,9 @@ export default function ShopProductDetail() {
         id: product.id, name: product.name, unit: product.unit,
         price: displayPrice, stock: displayStock,
         variantId: selectedVariant?.id ?? null,
+        sellingUnitId: selectedUnit?.id ?? null,
+        sellingUnitName: selectedUnit?.name ?? null,
+        sellingUnitPieces: selectedUnit?.pieces ?? 1,
         imageUrl: cartImageUrl,
       }, sheetQty);
       setTimeout(() => {
@@ -1004,6 +1033,9 @@ export default function ShopProductDetail() {
         id: product.id, name: product.name, unit: product.unit,
         price: displayPrice, stock: displayStock,
         variantId: selectedVariant?.id ?? null,
+        sellingUnitId: selectedUnit?.id ?? null,
+        sellingUnitName: selectedUnit?.name ?? null,
+        sellingUnitPieces: selectedUnit?.pieces ?? 1,
         imageUrl: cartImageUrl,
       }, sheetQty);
       fly(addBtnRef.current);
@@ -1013,6 +1045,9 @@ export default function ShopProductDetail() {
         id: product.id, name: product.name, unit: product.unit,
         price: displayPrice, stock: displayStock,
         variantId: selectedVariant?.id ?? null,
+        sellingUnitId: selectedUnit?.id ?? null,
+        sellingUnitName: selectedUnit?.name ?? null,
+        sellingUnitPieces: selectedUnit?.pieces ?? 1,
         imageUrl: cartImageUrl,
       }, sheetQty);
       setTimeout(() => {
@@ -1781,6 +1816,51 @@ export default function ShopProductDetail() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Selling unit — buy it by the piece, or as a set / pack */}
+            {!outOfStock && sellingUnits.length > 0 && (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <p className="mb-2 text-xs font-semibold text-slate-700">
+                  {t("productDetail.sellingUnitLabel")}
+                </p>
+                <div className="space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUnitId(null)}
+                    aria-pressed={selectedUnit === null}
+                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                      selectedUnit === null
+                        ? "border-[#10B981] bg-[#ECFDF5] text-slate-900"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                    }`}
+                  >
+                    <span className="font-medium">{t("productDetail.sellingUnitSingle")}</span>
+                    <span className="tabular-nums font-semibold">{formatBaht(unitBasePrice)}</span>
+                  </button>
+                  {sellingUnits.map((u: any) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => setSelectedUnitId(u.id)}
+                      aria-pressed={selectedUnit?.id === u.id}
+                      className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                        selectedUnit?.id === u.id
+                          ? "border-[#10B981] bg-[#ECFDF5] text-slate-900"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{u.name}</span>
+                        <span className="block text-[11px] text-slate-400">
+                          {t("productDetail.sellingUnitPerPiece", { price: formatBaht(u.pricePerPiece) })}
+                        </span>
+                      </span>
+                      <span className="shrink-0 tabular-nums font-semibold">{formatBaht(u.price)}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

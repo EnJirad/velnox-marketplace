@@ -264,18 +264,49 @@ CREATE TABLE IF NOT EXISTS product_variants (
 CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_variants_status ON product_variants (product_id, status);
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'products_featured_variant_id_fkey') THEN ALTER TABLE products ADD CONSTRAINT products_featured_variant_id_fkey FOREIGN KEY (featured_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL; END IF; END $$;
+-- ─── Selling units (how a product is SOLD) ─────────────────────────────────
+-- One piece at the product's own price, or a named SET/PACK (Set 6, ลัง 12) at
+-- its own price. `pieces` is the number of BASE units one selling unit equals.
+--
+-- Inventory is never counted in packs. There is exactly ONE stock authority in
+-- this schema, and every pack line is converted to base pieces before it reaches
+-- it: base_units = quantity * pieces (see backend/lib/inventory.ts).
+--
+-- One LIVE definition per (product, variant, pieces) — the partial unique index
+-- below. Retired rows stay as status = 'inactive' so retiring "Set 6" and later
+-- publishing a differently priced "Set 6" never rewrites what history refers to.
+CREATE TABLE IF NOT EXISTS product_selling_units (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  pieces INTEGER NOT NULL CHECK (pieces > 0),
+  price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_product_selling_units_product ON product_selling_units (product_id);
+CREATE INDEX IF NOT EXISTS idx_product_selling_units_live ON product_selling_units (product_id, status) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_product_selling_units_variant ON product_selling_units (variant_id) WHERE variant_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_selling_units_unique ON product_selling_units (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), pieces) WHERE status = 'active';
 CREATE TABLE IF NOT EXISTS cart_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  selling_unit_id UUID REFERENCES product_selling_units(id) ON DELETE SET NULL,
+  selling_unit_pieces INTEGER NOT NULL DEFAULT 1,
+  selling_unit_name TEXT,
   quantity INTEGER NOT NULL DEFAULT 1,
   price NUMERIC(12, 2) NOT NULL,
   added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items (cart_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_variant ON cart_items (variant_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_items_unique ON cart_items (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE INDEX IF NOT EXISTS idx_cart_items_selling_unit ON cart_items (selling_unit_id) WHERE selling_unit_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_items_unique ON cart_items (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(selling_unit_id, '00000000-0000-0000-0000-000000000000'::uuid));
 CREATE TABLE IF NOT EXISTS product_images (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -416,12 +447,28 @@ CREATE TABLE IF NOT EXISTS checkout_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_order ON checkout_requests (order_id);
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_user ON checkout_requests (user_id);
+-- An order line is the IMMUTABLE record of what was sold.
+--
+--   quantity              — number of SELLING UNITS (pieces, or sets/packs)
+--   price / subtotal      — per SELLING UNIT; `subtotal = quantity * price`
+--   selling_unit_pieces   — BASE pieces per selling unit: 1 for a plain line
+--   selling_unit_name     — the set/pack name as sold (invoice snapshot)
+--
+-- base units = quantity * selling_unit_pieces — the only quantity inventory and
+-- products.sold_count ever see. Every existing row keeps `1`, so legacy lines
+-- are unchanged: 3 pieces still means 3 base units.
+--
+-- selling_unit_id is a convenience reference, never the authority: the snapshot
+-- columns above survive the selling unit being retired or deleted.
 CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id UUID NOT NULL REFERENCES products(id),
   shop_id UUID REFERENCES shops(id),
   variant_id UUID REFERENCES product_variants(id),
+  selling_unit_id UUID REFERENCES product_selling_units(id) ON DELETE SET NULL,
+  selling_unit_pieces INTEGER NOT NULL DEFAULT 1,
+  selling_unit_name TEXT,
   product_name_snapshot TEXT NOT NULL DEFAULT '',
   variant_name_snapshot TEXT,
   image_url_snapshot TEXT,

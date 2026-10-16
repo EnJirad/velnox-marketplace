@@ -304,7 +304,10 @@ describe("seller-triggered due-plan processing over HTTP (integration)", () => {
     const app = express();
     app.use(cookieParser());
     app.use(express.json({ limit: "1mb" }));
-    setupSellerOrderRoutes(app);
+    // VelRepeat is PARKED, so the server does not mount these two endpoints.
+    // The test mounts them explicitly to keep verifying the ownership contract
+    // the parked code must still satisfy when it is switched back on.
+    setupSellerOrderRoutes(app, { velrepeat: true });
     server = app.listen(0);
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

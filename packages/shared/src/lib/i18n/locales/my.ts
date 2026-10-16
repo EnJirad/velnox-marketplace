@@ -327,6 +327,10 @@ export const my = {
     variantUnavailable: "ဤရွေးချယ်မှု မရှိပါ",
     stockLeft: "လက်ကျန် {count}",
     stockPieces: "{count} ခု",
+    // ── Selling units (sets / packs) ──
+    sellingUnitLabel: "ရောင်းချယူနစ်",
+    sellingUnitSingle: "တစ်ခုချင်း ဝယ်ပါ",
+    sellingUnitPerPiece: "တစ်ခုလျှင် {price}",
     stockOut: "ကုန်သွားပါပြီ",
     prevImage: "ယခင်ပုံ",
     nextImage: "နောက်ပုံ",

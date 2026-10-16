@@ -431,6 +431,10 @@ export const en: Dict = {
     variantUnavailable: "This option is not available",
     stockLeft: "{count} left",
     stockPieces: "{count} pcs",
+    // ── Selling units (sets / packs) ──
+    sellingUnitLabel: "Selling unit",
+    sellingUnitSingle: "Buy by the piece",
+    sellingUnitPerPiece: "{price} per piece",
     stockOut: "Sold out",
     // ── Reviews ──
     yourReview: "Your review",

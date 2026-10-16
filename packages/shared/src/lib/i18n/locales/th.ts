@@ -455,6 +455,10 @@ export const th = {
     variantUnavailable: "ตัวเลือกนี้ไม่มีสินค้า",
     stockLeft: "เหลือ {count}",
     stockPieces: "{count} ชิ้น",
+    // ── Selling units (sets / packs) ──
+    sellingUnitLabel: "หน่วยที่ขาย",
+    sellingUnitSingle: "ซื้อทีละชิ้น",
+    sellingUnitPerPiece: "ชิ้นละ {price}",
     stockOut: "หมด",
     // ── Reviews ──
     yourReview: "รีวิวของคุณ",

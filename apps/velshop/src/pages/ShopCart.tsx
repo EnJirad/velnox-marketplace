@@ -131,7 +131,7 @@ export default function ShopCart() {
 
   const handleSetQty = async (line: CartLine, qty: number) => {
     setBusyId(lineKey(line));
-    setQty(line.productId, qty, line.variantId);
+    setQty(line.productId, qty, line.variantId, line.sellingUnitId);
     setBusyId(null);
   };
 
@@ -326,7 +326,7 @@ export default function ShopCart() {
                               variant="ghost"
                               size="icon"
                               className="size-8 text-slate-400 hover:text-red-600"
-                              onClick={() => remove(line.productId, line.variantId)}
+                              onClick={() => remove(line.productId, line.variantId, line.sellingUnitId)}
                               aria-label={t("cartDrawer.ariaRemove", { name: line.name })}
                             >
                               <Trash2 className="size-3.5" />

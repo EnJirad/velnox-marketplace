@@ -292,11 +292,33 @@ CREATE TABLE IF NOT EXISTS product_variants (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'products_featured_variant_id_fkey') THEN ALTER TABLE products ADD CONSTRAINT products_featured_variant_id_fkey FOREIGN KEY (featured_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL; END IF; END $$;
+-- Selling units (how a product is SOLD): one piece at the product's own price,
+-- or a named SET/PACK at its own price. `pieces` is how many BASE units one
+-- selling unit equals, so inventory stays a single authority counted in pieces:
+-- base_units = quantity * pieces (see backend/lib/inventory.ts).
+--
+-- One LIVE definition per (product, variant, pieces) - the partial unique index
+-- declared in PART 3. Retired rows stay as status = 'inactive'.
+CREATE TABLE IF NOT EXISTS product_selling_units (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  pieces INTEGER NOT NULL CHECK (pieces > 0),
+  price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS cart_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  selling_unit_id UUID REFERENCES product_selling_units(id) ON DELETE SET NULL,
+  selling_unit_pieces INTEGER NOT NULL DEFAULT 1,
+  selling_unit_name TEXT,
   quantity INTEGER NOT NULL DEFAULT 1,
   price NUMERIC(12, 2) NOT NULL,
   added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -427,6 +449,9 @@ CREATE TABLE IF NOT EXISTS order_items (
   product_id UUID NOT NULL REFERENCES products(id),
   shop_id UUID REFERENCES shops(id),
   variant_id UUID REFERENCES product_variants(id),
+  selling_unit_id UUID REFERENCES product_selling_units(id) ON DELETE SET NULL,
+  selling_unit_pieces INTEGER NOT NULL DEFAULT 1,
+  selling_unit_name TEXT,
   product_name_snapshot TEXT NOT NULL DEFAULT '',
   variant_name_snapshot TEXT,
   image_url_snapshot TEXT,
@@ -1475,10 +1500,24 @@ ALTER TABLE public.product_variants ADD COLUMN IF NOT EXISTS sort_order INTEGER 
 ALTER TABLE public.product_variants ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.product_variants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS product_id UUID;
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS variant_id UUID;
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS pieces INTEGER;
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS price NUMERIC(12, 2);
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' NOT NULL;
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0 NOT NULL;
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+
 ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS cart_id UUID;
 ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS product_id UUID;
 ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS variant_id UUID;
+ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS selling_unit_id UUID;
+ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS selling_unit_pieces INTEGER DEFAULT 1 NOT NULL;
+ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS selling_unit_name TEXT;
 ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1 NOT NULL;
 ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS price NUMERIC(12, 2);
 ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS added_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
@@ -1593,6 +1632,9 @@ ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS order_id UUID;
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS product_id UUID;
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS shop_id UUID;
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS variant_id UUID;
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS selling_unit_id UUID;
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS selling_unit_pieces INTEGER DEFAULT 1 NOT NULL;
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS selling_unit_name TEXT;
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS product_name_snapshot TEXT DEFAULT '' NOT NULL;
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS variant_name_snapshot TEXT;
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS image_url_snapshot TEXT;
@@ -3500,7 +3542,33 @@ CREATE INDEX IF NOT EXISTS idx_product_variants_product ON public.product_varian
 CREATE INDEX IF NOT EXISTS idx_product_variants_status ON public.product_variants (product_id, status);
 CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON public.cart_items (cart_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_variant ON public.cart_items (variant_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_items_unique ON public.cart_items (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE INDEX IF NOT EXISTS idx_product_selling_units_product ON public.product_selling_units (product_id);
+CREATE INDEX IF NOT EXISTS idx_product_selling_units_live ON public.product_selling_units (product_id, status) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_product_selling_units_variant ON public.product_selling_units (variant_id) WHERE variant_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_selling_units_unique ON public.product_selling_units (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), pieces) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_cart_items_selling_unit ON public.cart_items (selling_unit_id) WHERE selling_unit_id IS NOT NULL;
+-- A CART LINE IS (product, variant, SELLING UNIT). The 3-column version of this
+-- index predates selling units, and on such a database "1 pack" and "1 piece" of
+-- one product would collide, so adding a pack to a cart holding the plain line
+-- would SILENTLY MERGE the two lines.
+--
+-- The index is therefore REPLACED, not merely created: the guard drops the old
+-- definition only when the live one is not already correct, and re-creates it
+-- under the SAME name, so object counts are unchanged and a fresh database (which
+-- gets the widened key from the block above) never drops anything. The change is
+-- a widening of the key, never a relaxation: rows that were distinct stay
+-- distinct, and rows still collide only when they really are the same line.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'public' AND indexname = 'idx_cart_items_unique'
+       AND indexdef LIKE '%selling_unit_id%'
+  ) THEN
+    DROP INDEX IF EXISTS public.idx_cart_items_unique;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_items_unique ON public.cart_items (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(selling_unit_id, '00000000-0000-0000-0000-000000000000'::uuid));
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_product_images_product ON public.product_images (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_images_type ON public.product_images (product_id, image_type);
 CREATE INDEX IF NOT EXISTS idx_product_images_variant ON public.product_images (variant_id) WHERE variant_id IS NOT NULL;
@@ -3873,6 +3941,20 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'product_
   AND to_regclass('public.products') IS NOT NULL THEN
   ALTER TABLE public.product_variants ADD CONSTRAINT product_variants_product_id_fkey
     FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cart_items_selling_unit_id_fkey')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='cart_items' AND column_name='selling_unit_id')
+  AND to_regclass('public.product_selling_units') IS NOT NULL THEN
+  ALTER TABLE public.cart_items ADD CONSTRAINT cart_items_selling_unit_id_fkey
+    FOREIGN KEY (selling_unit_id) REFERENCES public.product_selling_units(id) ON DELETE SET NULL;
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'order_items_selling_unit_id_fkey')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='order_items' AND column_name='selling_unit_id')
+  AND to_regclass('public.product_selling_units') IS NOT NULL THEN
+  ALTER TABLE public.order_items ADD CONSTRAINT order_items_selling_unit_id_fkey
+    FOREIGN KEY (selling_unit_id) REFERENCES public.product_selling_units(id) ON DELETE SET NULL;
 END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cart_items_cart_id_fkey')
   AND EXISTS (SELECT 1 FROM information_schema.columns

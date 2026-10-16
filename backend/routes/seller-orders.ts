@@ -13,8 +13,12 @@
  *   GET   /api/seller/orders/:id          — seller's order detail (IDOR-safe)
  *   PATCH /api/seller/orders/:id/status   — transition order status (state machine)
  *   PATCH /api/seller/orders/:id/shipment — transition the SHIPMENT lifecycle
- *   GET   /api/seller/subscriptions       — recurring VelRepeat plans for the seller
- *   POST  /api/subscriptions/process-due  — manually run the due-plan worker
+ *   GET   /api/seller/subscriptions       — recurring VelRepeat plans (PARKED)
+ *   POST  /api/subscriptions/process-due  — run the due-plan worker (PARKED)
+ *
+ * The two VelRepeat endpoints are registered only while the module is on
+ * (see the `velrepeat` option below). With the flag off they are not mounted,
+ * so both paths answer 404 and no seller request can mint a recurring order.
  *
  * Authorization:
  *   - All endpoints require authentication (requireAuth).
@@ -27,6 +31,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
+import { VELREPEAT_ENABLED } from "../lib/features.js";
 import { processPlan } from "../jobs/velrepeat-scheduler.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import {
@@ -315,7 +320,18 @@ async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-export function setupSellerOrderRoutes(app: Express): void {
+export function setupSellerOrderRoutes(
+  app: Express,
+  // VelRepeat is PARKED (2026-10-14). The two recurring-plan endpoints at the
+  // bottom of this function are part of the parked module, so they are mounted
+  // only when the flag is on. The parameter exists so a VelRepeat test can
+  // mount them directly — the same way the parked route modules are mounted by
+  // their own tests — while the running server keeps both paths at 404.
+  // Fail closed: the default is the backend flag, which is false unless
+  // VELREPEAT_ENABLED is exactly "true".
+  options: { velrepeat?: boolean } = {},
+): void {
+  const velrepeat = options.velrepeat ?? VELREPEAT_ENABLED;
   // ── GET /api/seller/orders ───────────────────────────────────────────────
   // Seller's orders (paginated, stable ordering, seller-scoped).
   // Only orders containing products from the authenticated seller's shops
@@ -792,6 +808,13 @@ export function setupSellerOrderRoutes(app: Express): void {
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update shipment" } });
     }
   });
+
+  // ── VelRepeat (PARKED 2026-10-14) ────────────────────────────────────────
+  // Everything above is the buy-and-sell surface and stays mounted. The two
+  // endpoints below belong to the parked recurring-commerce module: an
+  // unmounted route cannot list a recurring plan or force one to run, which is
+  // what keeps "VelRepeat = OFF" true even for a crafted request.
+  if (!velrepeat) return;
 
   // ── GET /api/seller/subscriptions ────────────────────────────────────────
   // Recurring VelRepeat plans that include this seller's products. Reuses the

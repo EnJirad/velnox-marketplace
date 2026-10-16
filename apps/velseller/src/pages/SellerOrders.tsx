@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@velnox/shared/components/ui/table";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
+import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import {
   formatBaht,
   formatIsoDate,
@@ -93,7 +94,12 @@ export default function SellerOrders() {
     requestFilter.current = filter;
     const [o, s] = await Promise.all([
       sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter }),
-      sellerSubscriptionsAction(),
+      // VelRepeat is PARKED (2026-10-14): while the module is off its endpoints
+      // are not mounted, so the subscriptions call is skipped rather than
+      // issued. A 404 would reject this Promise.all and take the seller's ORDER
+      // list down with it — the order list is the MVP surface, the recurring
+      // panel is not.
+      VELREPEAT_ENABLED ? sellerSubscriptionsAction() : Promise.resolve([] as StoreSubscription[]),
     ]);
     if (requestFilter.current !== filter) return;
     setOrders(o);
@@ -106,7 +112,7 @@ export default function SellerOrders() {
     requestFilter.current = filter;
     Promise.all([
       sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter }),
-      sellerSubscriptionsAction(),
+      VELREPEAT_ENABLED ? sellerSubscriptionsAction() : Promise.resolve([] as StoreSubscription[]),
     ])
       .then(([o, s]) => {
         if (!alive || requestFilter.current !== filter) return;
@@ -179,7 +185,10 @@ export default function SellerOrders() {
           <p className="mt-1.5 text-sm text-slate-500">{t("sellerOrders.desc")}</p>
         </div>
 
-        {/* Monthly subscriptions (velshop สั่งรายเดือน) */}
+        {/* VelRepeat — PARKED (2026-10-14). The recurring-plan panel and its
+            "create the due-cycle orders" button are not part of the buy-and-sell
+            MVP, so they render only while the module is switched on. */}
+        {VELREPEAT_ENABLED && (
         <section className="mt-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2.5">
@@ -307,6 +316,7 @@ export default function SellerOrders() {
             </>
           )}
         </section>
+        )}
 
         {/* ── Customer orders ──────────────────────────────────────────────── */}
         <section className="mt-8">

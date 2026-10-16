@@ -20,7 +20,9 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
-import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
+import { VELREPEAT_ENABLED } from "../lib/features.js";
+import { MAX_ORDER_QUANTITY, releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
+import { baseUnits, resolveSellingUnit } from "../lib/selling-units.js";
 // The ONE order-row lock and the money-outranks-cancel rule (see the module
 // header: every transaction writing orders + payments takes the order lock
 // first, so cancellation and the Stripe webhook can never deadlock).
@@ -276,6 +278,13 @@ function formatCartRow(r: any) {
     unit: r.unit,
     quantity: r.quantity,
     priceSnapshot: parseFloat(r.price),
+    // Selling unit: which set/pack this line is, and how many BASE pieces one of
+    // it is worth. `baseQuantity` is the line converted to the only unit stock is
+    // counted in, so the UI can show "2 เซ็ต 12 = 24 ชิ้น" without its own arithmetic.
+    sellingUnitId: r.selling_unit_id ?? null,
+    sellingUnitName: r.selling_unit_name ?? null,
+    sellingUnitPieces: Math.max(1, Math.floor(Number(r.selling_unit_pieces) || 1)),
+    baseQuantity: baseUnits(r.quantity, r.selling_unit_pieces),
     availableStock: r.available_stock ?? 0,
     shopId: r.shop_id ?? null,
     shopName: r.shop_name,
@@ -397,34 +406,84 @@ export function setupCartRoutes(app: Express): void {
         }
       }
 
+      // ── Selling unit (set / pack) ────────────────────────────────────────
+      // The line's PRICE and PIECES come from the definition row, never from the
+      // request body, and the definition must belong to this exact product and
+      // variant — a crafted body cannot attach another product's pack price.
+      const resolvedUnit = await resolveSellingUnit(
+        query,
+        req.body?.sellingUnitId ?? null,
+        productId,
+        validatedVariantId,
+      );
+      if (!resolvedUnit.ok) {
+        res.status(resolvedUnit.code === "SELLING_UNIT_NOT_FOUND" ? 404 : 400).json({
+          success: false,
+          error: { code: resolvedUnit.code, message: resolvedUnit.message },
+        });
+        return;
+      }
+      const sellingUnit = resolvedUnit.unit;
+      const pieces = sellingUnit ? sellingUnit.pieces : 1;
+      if (sellingUnit) cartPrice = sellingUnit.price;
+
+      // Stock is counted in BASE units while the shopper adds SELLING units, so
+      // what fits is the whole units the stock can cover. Showing "0" here (not
+      // a partial pack) is what stops a set from being sold short.
+      const availableSellingUnits = Math.floor(availableStock / pieces);
+      if (availableSellingUnits <= 0) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: "OUT_OF_STOCK",
+            message: sellingUnit
+              ? `Not enough stock for one full "${sellingUnit.name}".`
+              : "This product is out of stock.",
+          },
+        });
+        return;
+      }
+
       const cartId = await ensureCart(userId);
 
-      // Check if item already in cart — match by productId + variantId
-      const variantClause = validatedVariantId ? " AND variant_id = $3" : " AND variant_id IS NULL";
-      const existingParams: any[] = [cartId, productId];
-      if (validatedVariantId) existingParams.push(validatedVariantId);
+      // Check if item already in cart — one line per (product, variant, SELLING
+      // UNIT). A set and a single piece of the same product are TWO lines, so
+      // adding a pack can never merge into (and silently re-price) the plain line.
+      const existingParams: any[] = [cartId, productId, validatedVariantId, sellingUnit ? sellingUnit.id : null];
       const existing = await query(
-        `SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND product_id = $2${variantClause}`,
+        `SELECT id, quantity FROM cart_items
+          WHERE cart_id = $1 AND product_id = $2
+            AND COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid) = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+            AND COALESCE(selling_unit_id, '00000000-0000-0000-0000-000000000000'::uuid) = COALESCE($4::uuid, '00000000-0000-0000-0000-000000000000'::uuid)`,
         existingParams,
       );
 
       if (existing.rows.length > 0) {
-        const newQty = Math.min(availableStock, existing.rows[0].quantity + qty);
+        const newQty = Math.min(availableSellingUnits, existing.rows[0].quantity + qty);
         await query(
-          "UPDATE cart_items SET quantity = $1, price = $2 WHERE id = $3",
-          [newQty, cartPrice, existing.rows[0].id],
+          `UPDATE cart_items
+              SET quantity = $1, price = $2, selling_unit_pieces = $3, selling_unit_name = $4
+            WHERE id = $5`,
+          [newQty, cartPrice, pieces, sellingUnit ? sellingUnit.name : null, existing.rows[0].id],
         );
       } else {
-        const addQty = Math.min(availableStock, qty);
+        const addQty = Math.min(availableSellingUnits, qty);
         try {
           await query(
-            "INSERT INTO cart_items (cart_id, product_id, quantity, price, variant_id) VALUES ($1, $2, $3, $4, $5)",
-            [cartId, productId, addQty, cartPrice, validatedVariantId],
+            `INSERT INTO cart_items (cart_id, product_id, quantity, price, variant_id, selling_unit_id, selling_unit_pieces, selling_unit_name)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [cartId, productId, addQty, cartPrice, validatedVariantId, sellingUnit ? sellingUnit.id : null, pieces, sellingUnit ? sellingUnit.name : null],
           );
         } catch (insertErr: any) {
-          // 42703 = column does not exist — cart_items.variant_id not yet added by V0028
+          // 42703 = column does not exist — an older database has not added
+          // sales-unit columns yet. The plain line is still sellable without
+          // them; a selling-unit request is REFUSED rather than written unsized.
           if (insertErr?.code === "42703") {
-            console.warn("[cart] variant_id column missing, inserting without it (run V0028 migration)");
+            if (sellingUnit) {
+              res.status(503).json({ success: false, error: { code: "SELLING_UNIT_UNAVAILABLE", message: "Selling units are unavailable on this server. Please try again later." } });
+              return;
+            }
+            console.warn("[cart] cart_items columns missing, inserting the plain line only");
             await query(
               "INSERT INTO cart_items (cart_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)",
               [cartId, productId, addQty, cartPrice],
@@ -522,7 +581,11 @@ export function setupCartRoutes(app: Express): void {
         }
         availableStock = quantity - reserved;
       }
-      const finalQty = Math.min(qty, availableStock);
+      // Stock is in BASE units, this line is in SELLING units: only whole units
+      // the stock can cover are allowed. A plain line has pieces = 1, so its
+      // behaviour is bit-identical to before.
+      const linePieces = Math.max(1, Math.floor(Number(item.selling_unit_pieces) || 1));
+      const finalQty = Math.min(qty, Math.floor(availableStock / linePieces));
 
       await query("UPDATE cart_items SET quantity = $1 WHERE id = $2", [finalQty, cartItemId]);
 
@@ -816,6 +879,42 @@ export function setupCartRoutes(app: Express): void {
           });
           return;
         }
+        // ── Selling unit (set / pack) ─────────────────────────────────────
+        // Re-resolved from the definition on EVERY checkout: the cart snapshot is
+        // never the authority for the price, the pieces or the availability. A
+        // retired set is refused; a re-priced one is charged at its CURRENT price
+        // and flagged, exactly like a changed product price.
+        const resolvedUnit = await resolveSellingUnit(
+          query,
+          item.selling_unit_id ?? null,
+          item.product_id,
+          item.variant_id ?? null,
+        );
+        if (!resolvedUnit.ok) {
+          res.status(resolvedUnit.code === "SELLING_UNIT_NOT_FOUND" ? 404 : 400).json({
+            success: false,
+            error: { code: resolvedUnit.code, message: `${resolvedUnit.message} ("${item.product_name}")` },
+          });
+          return;
+        }
+        // The line's own snapshot, refreshed from the live definition.
+        item.selling_unit_pieces = resolvedUnit.unit ? resolvedUnit.unit.pieces : 1;
+        item.selling_unit_name = resolvedUnit.unit ? resolvedUnit.unit.name : null;
+        // The number stock is measured in.
+        const baseQty = baseUnits(item.quantity, item.selling_unit_pieces);
+        // The per-line cap applied to BASE units, so a set/pack line cannot
+        // smuggle a multiple of the cap past the server-side backstop.
+        if (baseQty > MAX_ORDER_QUANTITY) {
+          res.status(400).json({
+            success: false,
+            error: {
+              code: "VALIDATION_ERROR",
+              message: `Quantity for "${item.product_name}" exceeds the maximum of ${MAX_ORDER_QUANTITY} units`,
+            },
+          });
+          return;
+        }
+
         if (item.variant_id) {
           // Variant stock is source of truth — must succeed or stop checkout
           let varStock;
@@ -847,32 +946,35 @@ export function setupCartRoutes(app: Express): void {
             });
             return;
           }
-          if (v.status !== "active" || item.quantity > variantStock) {
+          // Stock is compared in BASE units: a set of 12 needs 12 available.
+          if (v.status !== "active" || baseQty > variantStock) {
             res.status(400).json({
               success: false,
               error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}" (variant: ${variantStock} available)` },
             });
             return;
           }
-          // Price revalidation — charge the CURRENT variant price, never a stale snapshot.
-          const variantPrice = Number(v.price);
-          if (Number.isFinite(variantPrice) && variantPrice >= 0 && Math.abs(variantPrice - parseFloat(item.price)) > 0.005) {
-            item.price = variantPrice;
+          // Price revalidation — the SELLING UNIT's price is authoritative for a
+          // set/pack line; otherwise the CURRENT variant price, never a stale
+          // snapshot.
+          const authoritativePrice = resolvedUnit.unit ? resolvedUnit.unit.price : Number(v.price);
+          if (Number.isFinite(authoritativePrice) && authoritativePrice >= 0 && Math.abs(authoritativePrice - parseFloat(item.price)) > 0.005) {
+            item.price = authoritativePrice;
             priceChanged = true;
           }
         } else {
           const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
-          if (item.quantity > available) {
+          if (baseQty > available) {
             res.status(400).json({
               success: false,
               error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}"` },
             });
             return;
           }
-          // Price revalidation for non-variant products.
-          const productPrice = Number(item.product_price);
-          if (Number.isFinite(productPrice) && productPrice >= 0 && Math.abs(productPrice - parseFloat(item.price)) > 0.005) {
-            item.price = productPrice;
+          // Price revalidation for non-variant products (selling unit first).
+          const authoritativePrice = resolvedUnit.unit ? resolvedUnit.unit.price : Number(item.product_price);
+          if (Number.isFinite(authoritativePrice) && authoritativePrice >= 0 && Math.abs(authoritativePrice - parseFloat(item.price)) > 0.005) {
+            item.price = authoritativePrice;
             priceChanged = true;
           }
         }
@@ -1001,11 +1103,18 @@ export function setupCartRoutes(app: Express): void {
               } catch { /* variant table may not exist */ }
             }
 
+            // `quantity` is SELLING units; `selling_unit_pieces` is the base
+            // pieces each one is worth. The snapshot keeps the invoice honest even
+            // if the seller later re-prices or retires the definition.
+            const linePieces = baseUnits(1, item.selling_unit_pieces);
             await client.query(
-              `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, image_url_snapshot, variant_id, variant_name_snapshot, quantity, price, subtotal)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-              [orderId, item.product_id, item.shop_id || null, item.product_name, item.product_name, item.product_image_url || null, item.variant_id || null, variantNameSnapshot, item.quantity, item.price, subtotal],
+              `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, image_url_snapshot, variant_id, variant_name_snapshot, selling_unit_id, selling_unit_pieces, selling_unit_name, quantity, price, subtotal)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+              [orderId, item.product_id, item.shop_id || null, item.product_name, item.product_name, item.product_image_url || null, item.variant_id || null, variantNameSnapshot, item.selling_unit_id || null, linePieces, item.selling_unit_name || null, item.quantity, item.price, subtotal],
             );
+
+            // BASE units — the only quantity the stock authorities ever see.
+            const baseQty = baseUnits(item.quantity, item.selling_unit_pieces);
 
             // Decrease stock: if variant, use atomic variant stock decrement; otherwise use inventory
             if (item.variant_id) {
@@ -1015,7 +1124,7 @@ export function setupCartRoutes(app: Express): void {
                   `UPDATE product_variants SET stock = stock - $1, updated_at = NOW()
                    WHERE id = $2 AND stock >= $1
                    RETURNING id`,
-                  [item.quantity, item.variant_id],
+                  [baseQty, item.variant_id],
                 );
               } catch (varErr: any) {
                 // Variant table query failed — do NOT fallback to inventory
@@ -1026,8 +1135,9 @@ export function setupCartRoutes(app: Express): void {
               }
             } else {
               // Atomic guarded reservation — validation and mutation in one
-              // statement so concurrent checkouts can never oversell.
-              await reserveInventoryStock(client, item.product_id, item.quantity);
+              // statement so concurrent checkouts can never oversell. A set of 12
+              // reserves 12, through the SAME single release/commit path.
+              await reserveInventoryStock(client, item.product_id, baseQty);
             }
           }
 
@@ -1664,7 +1774,9 @@ export function setupCartRoutes(app: Express): void {
       }
 
       const itemsRes = await query(
-        `SELECT product_id, variant_id, quantity, product_name FROM order_items WHERE order_id = $1`,
+        `SELECT product_id, variant_id, quantity, product_name,
+                selling_unit_id, selling_unit_pieces, selling_unit_name
+           FROM order_items WHERE order_id = $1`,
         [orderId],
       );
       if (itemsRes.rows.length === 0) {
@@ -1720,28 +1832,75 @@ export function setupCartRoutes(app: Express): void {
           available = qtyNum - resNum;
         }
 
-        // Merge with an existing cart line for the same product + variant
+        // ── Selling unit (set / pack) ───────────────────────────────────────
+        // A re-order must re-add the SET the customer bought, not that many
+        // pieces: 2 sets of 12 are 24 pieces, and dropping the reference would
+        // both under-order and re-price the line. If the definition has since
+        // been retired, the line is SKIPPED — never silently downgraded to a
+        // single piece, which would deliver less than the customer asked for.
+        const resolvedUnit = await resolveSellingUnit(
+          query,
+          item.selling_unit_id ?? null,
+          item.product_id,
+          item.variant_id ?? null,
+        );
+        if (!resolvedUnit.ok) {
+          skipped.push({ productName: item.product_name || "สินค้า", reason: "selling_unit_unavailable" });
+          continue;
+        }
+        const unit = resolvedUnit.unit;
+        const linePieces = unit ? unit.pieces : 1;
+
+        // Price must be written with the line (cart_items.price is NOT NULL) and
+        // comes from the same authority checkout uses: the selling unit when the
+        // line is a set/pack, otherwise the current product/variant price.
+        let linePrice: number | null = unit ? unit.price : null;
+        if (linePrice === null) {
+          const priceRes = item.variant_id
+            ? await query(`SELECT price FROM product_variants WHERE id = $1`, [item.variant_id])
+            : await query(`SELECT price FROM products WHERE id = $1`, [item.product_id]);
+          const current = Number(priceRes.rows[0]?.price);
+          if (!Number.isFinite(current) || current < 0) {
+            skipped.push({ productName: item.product_name || "สินค้า", reason: "unavailable" });
+            continue;
+          }
+          linePrice = current;
+        }
+
+        // The stock this line can take, measured in SELLING units.
+        const availableUnits = Math.floor(available / linePieces);
+        if (availableUnits <= 0) {
+          skipped.push({ productName: item.product_name || "สินค้า", reason: "out_of_stock" });
+          continue;
+        }
+
+        // Merge with an existing cart line for the same product + variant + SET
         const existing = await query(
-          `SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND product_id = $2 AND (variant_id IS NOT DISTINCT FROM $3)`,
-          [cartId, item.product_id, item.variant_id],
+          `SELECT id, quantity FROM cart_items
+            WHERE cart_id = $1 AND product_id = $2
+              AND (variant_id IS NOT DISTINCT FROM $3)
+              AND (selling_unit_id IS NOT DISTINCT FROM $4)`,
+          [cartId, item.product_id, item.variant_id, unit ? unit.id : null],
         );
         if (existing.rows.length > 0) {
           const curQty = Number(existing.rows[0].quantity) || 0;
-          if (curQty >= available) {
+          if (curQty >= availableUnits) {
             skipped.push({ productName: item.product_name || "สินค้า", reason: "at_stock_limit" });
             continue;
           }
-          const finalQty = Math.min(curQty + item.quantity, available);
+          const finalQty = Math.min(curQty + item.quantity, availableUnits);
           await query(
-            `UPDATE cart_items SET quantity = $1, updated_at = NOW() WHERE id = $2`,
-            [finalQty, existing.rows[0].id],
+            `UPDATE cart_items
+                SET quantity = $1, price = $2, selling_unit_pieces = $3, selling_unit_name = $4, updated_at = NOW()
+              WHERE id = $5`,
+            [finalQty, linePrice, linePieces, unit ? unit.name : null, existing.rows[0].id],
           );
         } else {
-          const finalQty = Math.min(item.quantity, available);
+          const finalQty = Math.min(item.quantity, availableUnits);
           const insRes = await query(
-            `INSERT INTO cart_items (cart_id, product_id, variant_id, quantity)
-             VALUES ($1, $2, $3, $4) RETURNING id`,
-            [cartId, item.product_id, item.variant_id, finalQty],
+            `INSERT INTO cart_items (cart_id, product_id, variant_id, selling_unit_id, selling_unit_pieces, selling_unit_name, quantity, price)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+            [cartId, item.product_id, item.variant_id, unit ? unit.id : null, linePieces, unit ? unit.name : null, finalQty, linePrice],
           );
           added.push({ id: insRes.rows[0].id, productId: item.product_id });
         }
@@ -1755,7 +1914,13 @@ export function setupCartRoutes(app: Express): void {
     }
   });
 
-  // ─── SUBSCRIPTIONS (VelRepeat stubs) ──────────────────────────────────────
+  // ─── SUBSCRIPTIONS (VelRepeat — PARKED 2026-10-14) ───────────────────────
+  // The four endpoints below are the legacy VelRepeat subscription surface
+  // (`/api/customer/subscriptions`, `/api/subscriptions/create`, …). Recurring
+  // commerce is parked, so they are NOT mounted: leaving them reachable would
+  // keep a recurring-order entry point in the customer API. Nothing is deleted —
+  // with the flag on this block mounts exactly as it did before.
+  if (!VELREPEAT_ENABLED) return;
 
   // ── GET /api/customer/subscriptions ────────────────────────────────────
   app.get("/api/customer/subscriptions", requireAuth, async (req: Request, res: Response) => {
@@ -1859,6 +2024,7 @@ export function setupCartRoutes(app: Express): void {
   });
 
   // ── PATCH /api/subscriptions/:subscriptionId ──────────────────────────────
+  // (last registration of this parked block)
   app.patch("/api/subscriptions/:subscriptionId", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;

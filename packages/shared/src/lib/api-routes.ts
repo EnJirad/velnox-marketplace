@@ -299,6 +299,13 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.centerAdmin.velRepeatOverview": () => apiGet("/api/admin/velrepeat/overview"),
   // Legacy subscriptions (kept for backward compat)
   "api.commerce.mySubscriptions": () => apiGet("/api/customer/subscriptions"),
+  // ─── Selling units (sets / packs) ──────────────────────────────────────
+  // One product can be sold by the piece or by the set/pack; the buyer chooses
+  // on the product page, the seller authors the definitions here.
+  "api.commerce.sellerSellingUnits": (a) => apiGet(`/api/seller/products/${a.productId}/selling-units`),
+  "api.commerce.createSellingUnit": (a) => apiPost(`/api/seller/products/${a.productId}/selling-units`, a),
+  "api.commerce.updateSellingUnit": (a) => apiPatch(`/api/seller/products/${a.productId}/selling-units/${a.unitId}`, a),
+  "api.commerce.retireSellingUnit": (a) => apiDelete(`/api/seller/products/${a.productId}/selling-units/${a.unitId}`),
   "api.commerce.sellerSubscriptions": () => apiGet("/api/seller/subscriptions"),
   "api.commerce.pauseSubscription": (a) => apiPatch(`/api/subscriptions/${a.subscriptionId}/pause`, a),
   "api.commerce.updateSubscriptionAction": (a) => apiPatch(`/api/subscriptions/${a.subscriptionId}`, a),

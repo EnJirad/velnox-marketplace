@@ -80,7 +80,14 @@ describe("inventory authorities — structural contract", () => {
     expect(lib).toContain("reserved = GREATEST(0, reserved - $1)");
     expect(lib).toContain("sold_count = sold_count + $1");
     // …reads the lines variant-aware (the old stripe.ts read was product-only)…
-    expect(lib).toContain("SELECT product_id, variant_id, quantity FROM order_items");
+    expect(lib).toContain("SELECT product_id, variant_id,");
+    expect(lib).toContain("FROM order_items WHERE order_id = $1");
+    // …and converts every line to BASE units before it touches stock: a line's
+    // `quantity` counts SELLING units (pieces, or sets/packs), so `quantity`
+    // alone must never be handed to inventory. Both readers (commit and release)
+    // go through the ONE shared expression, in the same module.
+    expect(lib).toContain("orderItemBaseQuantitySql()");
+    expect(lib).toContain("baseUnits(item.base_quantity, 1)");
     // …and never falls back to the parent inventory row for a variant line.
     expect(lib).toContain("Variant: `product_variants.stock` was decremented at reserve time");
 

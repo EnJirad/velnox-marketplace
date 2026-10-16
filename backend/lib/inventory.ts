@@ -2,11 +2,15 @@ import type pg from "pg";
 
 import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js";
 import { coveringPaymentsPredicate } from "./payment-attempt.js";
+import { baseUnits, orderItemBaseQuantitySql } from "./selling-units.js";
 
 /**
- * Sanity cap for a single order line. Checkout / VelRepeat orders are not
- * allowed to reserve more than this many units of one product per line.
- * The frontend clamps to available stock, this is a server-side backstop.
+ * Sanity cap for a single order line, counted in BASE UNITS. Checkout / VelRepeat
+ * orders are not allowed to reserve more than this many units of one product per
+ * line. The frontend clamps to available stock, this is a server-side backstop.
+ *
+ * It is applied to `quantity * selling_unit_pieces`, not to the selling-unit
+ * count, so a set/pack line cannot smuggle 999 packs of 24 past the clamp.
  */
 export const MAX_ORDER_QUANTITY = 999;
 
@@ -117,12 +121,18 @@ export async function commitOrderInventory(
   client: pg.PoolClient,
   orderId: string,
 ): Promise<number> {
+  // BASE UNITS, always: `quantity` counts selling units (pieces, or sets/packs)
+  // and `selling_unit_pieces` converts it. One shared expression, so settlement,
+  // release and reporting can never disagree about how many pieces a line is.
   const items = await client.query(
-    `SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1`,
+    `SELECT product_id, variant_id,
+            ${orderItemBaseQuantitySql()} AS base_quantity
+       FROM order_items WHERE order_id = $1`,
     [orderId],
   );
 
   for (const item of items.rows) {
+    const baseQty = baseUnits(item.base_quantity, 1);
     if (!item.variant_id) {
       // Non-variant: convert this order's hold into a completed sale.
       await client.query(
@@ -131,7 +141,7 @@ export async function commitOrderInventory(
                 reserved = GREATEST(0, reserved - $1),
                 updated_at = NOW()
           WHERE product_id = $2`,
-        [item.quantity, item.product_id],
+        [baseQty, item.product_id],
       );
     }
     // Variant: `product_variants.stock` was decremented at reserve time and
@@ -140,7 +150,7 @@ export async function commitOrderInventory(
 
     await client.query(
       `UPDATE products SET sold_count = sold_count + $1 WHERE id = $2`,
-      [item.quantity, item.product_id],
+      [baseQty, item.product_id],
     );
   }
 
@@ -276,22 +286,27 @@ export async function releaseOrderInventory(
   // 2. Release stock for every item in the order — only the claim winner
   //    reaches this point.
   const items = await client.query(
-    `SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1`,
+    `SELECT product_id, variant_id,
+            ${orderItemBaseQuantitySql()} AS base_quantity
+       FROM order_items WHERE order_id = $1`,
     [orderId],
   );
   for (const item of items.rows) {
+    // BASE UNITS — the same conversion the commit path uses, so a pack line
+    // returns exactly the pieces it took.
+    const baseQty = baseUnits(item.base_quantity, 1);
     if (item.variant_id) {
       // Variant products: restore variant stock directly.
       await client.query(
         `UPDATE product_variants SET stock = stock + $1, updated_at = NOW() WHERE id = $2`,
-        [item.quantity, item.variant_id],
+        [baseQty, item.variant_id],
       );
     } else {
       // Non-variant products: release the reservation (never go below 0).
       await client.query(
         `UPDATE inventory SET reserved = GREATEST(0, reserved - $1), updated_at = NOW()
          WHERE product_id = $2`,
-        [item.quantity, item.product_id],
+        [baseQty, item.product_id],
       );
     }
   }

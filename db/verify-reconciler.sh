@@ -116,7 +116,17 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # and payment reconcilers instead. That revert is why the count is 81 and not 82;
 # the total = subtotal + shipping - discount relationship is intentionally NOT a
 # database constraint anywhere in this schema.
-CANON="75|296|339|807"
+# Migration 058 (selling units) grew it by: 1 table (`product_selling_units`),
+# 6 indexes (the selling-unit table's primary key, `idx_product_selling_units_`
+# `product` / `_live` / `_variant` / `_unique`, and `idx_cart_items_selling_unit`),
+# 8 constraints (the new table's primary key, its two foreign keys and its three
+# CHECKs — pieces > 0, price >= 0, status vocabulary — plus
+# `cart_items_selling_unit_id_fkey` and `order_items_selling_unit_id_fkey`) and
+# 16 columns (10 on the new table, 3 each on `cart_items` and `order_items`).
+# `idx_cart_items_unique` was REPLACED under the same name (its key gained
+# `selling_unit_id`), so it contributes no net index.
+# Measured on a fresh database built from db/run-sqleditor.sql.
+CANON="76|302|347|823"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────

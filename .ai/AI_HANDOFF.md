@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-08 · **Branch:** `main` · **Latest pass:** **Phase 3 — shipment lifecycle (`P1-3`) is DONE** (**§74**) — one transition helper over the DATABASE's own nine-status vocabulary, writing its two timestamps, with real-PostgreSQL concurrency proof; full suite **2103 pass / 2 skip / 0 fail**; **production DB verification and real Stripe TEST E2E remain BLOCKED** (owner action)
+**Last updated:** 2026-10-16 · **Branch:** `freebuff/d4296b7210b943b805a8cf6d` (from `main`) · **Latest pass:** **selling units (sets / packs) BUILT + the VelRepeat/Memory parking holes CLOSED** (**§76**) — inventory still a single authority in BASE units; full suite **2123 pass / 2 skip / 0 fail** against a real PostgreSQL 16, `db:verify` all scenarios passed; **seller authoring UI still to build**; production DB + real Stripe TEST E2E remain BLOCKED (owner action)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -713,88 +713,11 @@ Next: **Phase 5 (Checkout)**, then 6-17 per `MIGRATION_PLAN.md` §3. Re-read §2
 
 ---
 
-## §72. P0-1 CLOSED — `orders.status` is a DERIVED projection of three axes (2026-10-07)
+## §72. P0-1 CLOSED — `orders.status` is a DERIVED projection of three axes (2026-10-07) — **ARCHIVED**
 
-**The defect.** `orders.status` carried payment, order and fulfilment in one column, so a move on one
-axis destroyed a fact on another. The concrete loss: a full refund ran
-`UPDATE orders SET status = 'refunded'` over a `shipped`/`delivered` row — the record that the parcel
-left the warehouse was gone. Migration 056 added `orders.order_state` / `orders.fulfillment_status`
-and no writer (a verified zero-reference).
-
-**What shipped — the missing half.**
-
-| Piece | Where | What it does |
-|---|---|---|
-| `lib/order-state.ts` | new | THE authority: the two axis vocabularies (mirroring 056's CHECKs), `axesForFulfillmentStatus()` / `fulfillmentStatusForAxes()` as the storage encoding of the EXISTING machine (no second machine), normalisers that fall SAFE, `projectOrderStatus()` and the SQL mirror `projectOrderStatusSql()` for writers that must project inside the moving statement |
-| every `orders.status` writer | `stripe.ts` (7 sites), `cart.ts`, `seller-orders.ts`, `center.ts`, `checkout-group-lifecycle.ts`, `payment-reservation-scheduler.ts` | records the axis it moves, derives `status` from the axes; the axes are projected in-statement under the same row lock (`lib/order-lock.ts`) |
-| the three creation sites | `cart.ts` (checkout), `lib/velrepeat-cycles.ts`, `jobs/velrepeat-scheduler.ts` | `NEW_ORDER_AXES` — an order created by new code is indistinguishable on the legacy column from one the old code made |
-
-**Precedence (the whole point):** shipped → delivered/completed → packing → terminal → `expired` →
-cancelled → completed → refunded/confirmed/paid/payment_failed → pending(_payment). A payment fact can
-never overwrite a fulfilment fact; a refund is not lost, it moves to the PAYMENT axis, which is what
-`paymentStatus` (the covering-set fold) already renders. **No CHECK change, no column removal, no
-frontend change** — every projected value is one of the twelve `orders_status_check` admits.
-
-**Evidence — `backend/tests/order-state-projection.test.ts` (new, 20 cases):** totality and purity
-over all **11 payment × 5 order × 9 fulfilment = 495** combinations, every result inside the twelve;
-the SQL mirror and the TypeScript function compared on ALL 495 against a real database (so the two
-encodings cannot drift); every distinct projected value written to a real row (the CHECK accepts
-them); and the five required executions — `paid`+shipped stays shipped (guarded AND widened), refund
-after `shipped`/`delivered`/`completed` keeps the fulfilment fact while the payment axis reads
-`refunded`, a failure never rolls fulfilment back, and concurrent payment/fulfilment writes (two real
-connections, both orders of arrival) leave a row that still equals the projection of its own axes.
-Also pinned: no writer in the payment path names `order_state`/`fulfillment_status`, and the two
-staff routes record the axes from the machine's own target after `canTransition`.
-
-**Measured:** `bun test backend/tests` → **2075 pass / 2 skip / 0 fail**, 73 files, exit 0 (floor
-2035/2/0, 70 files) · backend + all four frontend typechecks exit 0 · `git diff --check` clean.
-`FINAL_VERIFICATION.md` §3.2 carries the Phase 6 rows. **Lint: SKIPPED — not configured.**
-
-**This pass (§73):** `fix(fulfillment): backstop BP1-2, remove dead-engineered shipped-release
-boolean, and coverage-test the state machine`. Phase 6 won on §72 — BP1-2 (concurrent
-duplicate shipment) was already closed by additive tables + a free-text status + the satisfying
-machine — so this backstop is post-verification, not root-cause repair. The proposed "fix" PR had a
-genuinely wrong plan (attack the UI + the CREATE) plus a hidden Phase 3 unlock (drop the shipment
-UNIQUE) that would take the order→a-single-shipment invariant from static enforcement into a
-runtime-only vision; this pass rejects that architecture. The only ALLOWED change here is a separate,
-conservative additive backstop: schema-level `UNIQUE(order_id)` (acceptable because the machine
-already enforces the same invariant and legacy rows show zero violations) + a unique INSERT error
-message so both fulfillment routes return the same chosen 409. The legacy `shipments.goods_left_the_warehouse`
-boolean was already dead code before this pass — the shipped state is now canonical — so the BP2
-plan to "cease treating it as the shipped signal" is obsolete; the only useful edit was integrity:
-`NOT NULL`, unique index, removed writer duplication. Coverage is against the fixed machine
-(§§41–61): dead lock path (cancel before fulfillment rejected), bad-mark dead run (unresolved
-then nonterminal transition rejected), duplicate transition (fixed intended behavior, escalation
-frozen), broken transition (FREEZE fails when already terminal), duplicated machine query (no-buffer
-implementation, recompute each call), and wrong state writes (REJECT fails for a dead order, no
-speculative success, guarded terminal noop, no-clobber edge case, honored chosen terminal nonterminal).
-
-**This pass's evidence — `backend/tests/shipment-idempotency.test.ts` (new, 16 cases):**
-backward-compat commercial count confirms the BP-2 migration interpretation, regression `{order_id} already
-has a shipment` is staged ONLY from legacy addresses (BP-2 mitigation), adversary documents are staged but
-rejected by the `guarantees` = 0 filter, `payments` are authorized to claim payments not make them
-(money does not move), every shipped/no-status/problem-hole + endpoint-hole assertion matches the Performer's
-`guarantees` table field-by-field, null stimuli return 500 (Performer proof), guarantees seed round-trips
-into SQL `REINDEX`-d `shipmentGuarantees` fixtures and survives both API + SQL reads, `payments` CAN
-supersede while `comments` cannot, and the cash-wire edge cases the Performer raised (manual suffixed,
-HIP-type inventory-peg seller, `meta.promise` CAN mark the row CANT_PAY but `StatusFatal` CANNOT) are all
-verified.
-
-**Gaps that remain (unchanged, and NOT this pass's):** real Stripe TEST E2E **BLOCKED** (no keys) ·
-production migration + reconciler counts **BLOCKED** (no `NEON_PRODUCTION_DATABASE_URL`) · rebuild
-phases 5, 7–17 not started (`MIGRATION_PLAN.md` §3; Phase 6's gate is met by this pass) ·
-`ledger_entries`/`settlements` still have no writers (P0-2) and no reconciler runs in production
-(P0-3) · production verdict stays **NOT READY**.
-
-**Housekeeping:** §65–§66 moved verbatim to
-[`history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md`](history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md)
-(index row added); nothing discarded.
-
-**2026-10-07 — §73 moved.** §65 of this file and §4 and §7.2–§7.3 of `.ai/rebuild/TARGET_ARCHITECTURE.md`
-reduced the same INTERNALLY CONTRADICTORY requirement to the same conclusion: `MetaProps.active_campaign != null
-⟺ Order.has_a_campaign`,with the only construction beingMerchant integration + Manager setting `OrderMeta.has_a_campaign = true`.
-**Remaining gaps this pass does not close:** STOP 6 items still out of scope (Stripe / payment / checkout
-architectural touch) and the production-migration blockers below.
+Full record: [`history/archive/AI_Handoff-2026-10-07-orders-status-derived-projection.md`](history/archive/AI_Handoff-2026-10-07-orders-status-derived-projection.md).
+The rule is unchanged and still in force: `orders.status` is DERIVED from the three lifecycle axes,
+never written independently.
 
 ---
 
@@ -846,54 +769,62 @@ had (`shipped_at` on handoff, `delivered_at` on arrival) are stamped once.
 
 ---
 
-## §75. MVP repositioned: buy & sell — VelRepeat + Customer Memory PARKED (2026-10-14)
+## §75. MVP repositioned: buy & sell — VelRepeat + Customer Memory PARKED (2026-10-14) — **ARCHIVED**
 
-**Full plan / brief:** [`.ai/tasks/active/mvp-marketplace-restructure-2026-10-14.md`](tasks/active/mvp-marketplace-restructure-2026-10-14.md)
-— **§5 is what SHIPPED; §6–§9 are PROPOSED DESIGN and implement nothing.**
-
-**The decision.** The owner re-scoped Velnox: a normal marketplace first (ordinary customers buy and
-pay normally), plus a **second buyer track for community / village shops** — order by line item, buy
-**per piece or per pack**, and pay **less per unit** on a pack, so a weekly restock of only the items
-that ran out is a normal order. Velnox does not build its own branch network; it connects shops to
-real sellers. **VelRepeat and Customer Memory are out of the product for now and return later.**
-
-**Shipped (Phase 1) — parking, not deletion.** Two fail-closed switches per module:
-`packages/shared/src/lib/features.ts` (const) and `backend/lib/features.ts` (env, only the literal
-`"true"` enables) — `VELREPEAT_ENABLED`, `CUSTOMER_MEMORY_ENABLED`. With them off: the **6 VelRepeat
-route modules are not mounted** (404), **both VelRepeat schedulers do not start**,
-`ensureVelRepeatV2Tables()` does not run, `/api/events/{track,merge}` and `/api/memory/insights`
-answer 404 through `parkedModule()`, `useTracking()` is a no-op (no event, no anonymous id), the two
-velShop VelRepeat routes are unregistered, and every VelRepeat / memory rail, button, dialog, footer
-link, help category, seller authoring section and VelCenter card is hidden behind the flag.
-**Every table, migration, route, job, page, component, test and i18n key remains in the repository.**
-
-**Captions rewritten (th/en/my values only, parity intact):** `footer.tagline`,
-`footer.shopDesc`, `cartDrawer.tagline`, `home.seoDesc` → "ซื้อขายของจริง · ปลีกและส่ง ในที่เดียว";
-the whole corporate site (`CorporateHome.tsx` rewritten, `corporate/content.ts`, `CorporateLayout.tsx`)
-now tells the retail + community-shop wholesale story, and its wholesale illustration is labelled
-**ตัวอย่าง (example)** so no marketing block reads as live storefront data.
-
-**Verified this pass (no DB available — see below):** `bun run typecheck` 4/4 exit 0 ·
-`bunx tsc --noEmit -p backend/tsconfig.json` exit 0 · `bun run i18n:check` →
-**th=1496 en=1496 my=1496, all locales at parity** · `bun run build:apps` 4/4 exit 0 ·
-`bun test backend/tests` → **1715 pass / 382 skip / 1 fail**, the one failure being
-`ECONNREFUSED 127.0.0.1:5432` in `checkout-group-payment-visibility.test.ts`'s DB-backed `describe`
-(**pre-existing gap: that describe is not gated on `hasTestDatabase()`**; nothing listens on 5432
-here and the file imports only untouched modules). **No browser E2E ran; `bun run lint` is not
-configured.**
-
-**NOT built (do not describe as working):** the wholesale buyer track itself — pack pricing, shop
-accounts, MOQ, restock lists. Today a shop can only order the same retail lines as anyone else.
-Phase 2's model is specified in the brief (§6): `product_pack_sizes` + `cart_items`/`order_items`
-(`pack_size_id`, `pack_pieces`, `pack_name`), where `quantity` = **selling units**, the pack price is
-authoritative, the per-unit price is **derived for display only**, and inventory sees only
-`quantity * pack_pieces` — one inventory authority, one `sold_count` authority, legacy rows
-bit-identical at `pack_pieces = 1`. **§9 of the brief lists the owner decisions that must be answered
-before that code is written.**
+Full record: [`history/archive/AI_Handoff-2026-10-14-mvp-parking-and-phase2-design.md`](history/archive/AI_Handoff-2026-10-14-mvp-parking-and-phase2-design.md).
+The **parking contract** it defines is still the live rule (both flags fail closed; parked
+modules are not mounted, not scheduled, not re-enabled by deleting anything). Its Phase-2
+"designed, not built" block is superseded by §76 below.
 
 ---
 
-**Note on this file's size:** it is ~61 KB, PAST the ~55 KB edit-tool ceiling — the next append to
-this file will fail. Move a section to `history/archive/` with a pointer BEFORE appending
-(`## 9.4–9.6` is the oldest still-live block; §5/§8/§10–§22/§37–§72 are already pointers or
-archived). The 2026-10-14 pass could only append because the tail it matched was itself the size note.
+## §76. Selling units (sets / packs) — BUILT, with real-PostgreSQL proof (2026-10-16)
+
+**Model:** `product_selling_units` (product, optional variant, `name`, `pieces > 0`, `price >= 0`,
+`status active/inactive`, one LIVE row per `(product, variant, pieces)`). `cart_items` and
+`order_items` gained `selling_unit_id` / `selling_unit_pieces` / `selling_unit_name`.
+
+**The one rule:** `quantity` counts SELLING units; **base units = `quantity * selling_unit_pieces`**
+is the ONLY quantity inventory, variant stock and `sold_count` ever see. One authority
+(`lib/selling-units.ts` + `orderItemBaseQuantitySql()` in `lib/inventory.ts`), no per-pack stock
+column, legacy rows bit-identical at `pieces = 1`.
+
+**Server authority:** the definition's price is authoritative (a crafted body cannot set price,
+pieces or another product's pack); checkout re-resolves every line, refuses a retired/mismatched
+pack, and applies the `MAX_ORDER_QUANTITY` cap to BASE units. `idx_cart_items_unique` was widened
+to include the selling unit, so a set and a piece of one product are two lines.
+
+**Shipped this pass:** migration `058`, both canonical SQL files (+ column/index/FK passes),
+`CANON` re-measured **76|302|347|823**, seller CRUD `routes/product-selling-units.ts`
+(create/patch/**retire**, never delete), catalog + detail expose `sellingUnits`, cart add/update/
+remove/reorder carry the unit, `StoreSellingUnit` type, velShop product-page selector + cart
+display, 3 i18n keys (th/en/my at 1499).
+
+**Verified:** `bun test backend/tests` with a real PostgreSQL 16 → **2123 pass / 2 skip / 0 fail**
+(includes the new `selling-units.test.ts`, 19 tests: 2 sets of 12 reserve/settle 24 exactly once,
+release returns 24, legacy unchanged, cap, immutability, reorder, crafted requests) ·
+`bun run db:verify` → **ALL SCENARIOS PASSED** · `bun run typecheck` 4/4 + backend 0 ·
+velShop build 0 · `bun run i18n:check` 1499/1499/1499.
+
+**VERIFIED (same pass, VelRepeat/Memory closure):** the parked module was still reachable —
+`GET /api/seller/subscriptions`, `POST /api/subscriptions/process-due` (which called
+`processPlan()` and MINTED recurring orders), the four legacy `/api/subscriptions*` endpoints and
+the velSeller recurring panel were live. All are now parked (proof: flag OFF → 6/6 paths 404,
+buy/sell paths still mounted; flag ON → all restored), `getAnonymousId()` no longer mints an id
+while parked, and `IdentityMerge` is no longer mounted in velSeller/velCenter.
+
+**REMAINING (NOT DONE — do not describe as working):**
+1. **Seller authoring UI** for sets/packs in velSeller (`ProductFormDialog` / MyShop). The API is
+   built and tested; only the form is missing, so the seller acceptance path is **API-only = FAIL**.
+2. **Set name not yet rendered** in velCheckout summary, seller/center order views, or the Stripe
+   line-item label.
+3. `MyOrders`/checkout "order these again" reuses `/api/customer/reorder`, which now preserves the
+   set (tested), but the storefront does not yet label the pack line.
+4. Not verified in a browser (no browser E2E in this environment) — the selector's rendering is
+   proven by types + build only.
+
+---
+
+**Note on this file's size:** §75 was archived on 2026-10-16 to get back under the ~55 KB edit-tool
+ceiling. When it approaches ~40 KB again, move the oldest still-live block to
+`history/archive/` and leave a pointer, BEFORE appending.

@@ -103,6 +103,33 @@ export interface StoreProduct {
   variants?: ProductVariant[];
   /** Map of variantId → { groupId → optionValueId } */
   variantOptions?: Record<string, Record<string, string>>;
+  /**
+   * ACTIVE selling units (sets / packs) — how this product can ALSO be bought:
+   * one piece at `price`, or "Set 6" / "ลัง 12" at their own price. Empty or
+   * absent means the product is only sold by the piece, which is what every
+   * product was before selling units existed.
+   */
+  sellingUnits?: StoreSellingUnit[];
+}
+
+/**
+ * A selling unit: a named set/pack of a product.
+ *
+ * `pieces` is how many BASE units one of it is worth, and inventory is only ever
+ * counted in base pieces (`quantity * pieces`), so `quantity` below is always a
+ * count of SETS/PACKS — never of pieces. `pricePerPiece` is derived for display
+ * and is deliberately not stored (it drifts on rounding).
+ */
+export interface StoreSellingUnit {
+  id: string;
+  productId: string;
+  variantId: string | null;
+  name: string;
+  pieces: number;
+  price: number;
+  pricePerPiece: number;
+  status: "active" | "inactive";
+  sortOrder: number;
 }
 
 export interface ProductOptionGroup {
