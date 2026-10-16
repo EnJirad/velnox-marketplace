@@ -28,6 +28,7 @@ import {
   LifeBuoy,
   LogOut,
   MapPin,
+  Store,
   MessageCircle,
   Package,
   RefreshCw,
@@ -88,6 +89,9 @@ const COMMUNICATION: ProfileRow[] = [
 
 const ACCOUNT: ProfileRow[] = [
   { to: "/profile/account", labelKey: "profile.account", descKey: "profile.accountDesc", icon: CircleUserRound },
+  // The wholesale buyer track: apply for a store account so the packs a seller
+  // marked wholesale (and their prices) become visible to this account.
+  { to: "/profile/store", labelKey: "profile.storeAccount", descKey: "profile.storeAccountDesc", icon: Store },
 ];
 
 interface NotificationRow {

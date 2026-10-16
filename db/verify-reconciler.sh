@@ -126,7 +126,7 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # `idx_cart_items_unique` was REPLACED under the same name (its key gained
 # `selling_unit_id`), so it contributes no net index.
 # Measured on a fresh database built from db/run-sqleditor.sql.
-CANON="76|302|347|823"
+CANON="77|305|352|837"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────

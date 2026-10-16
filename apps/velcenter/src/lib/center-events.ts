@@ -12,6 +12,7 @@ export type CenterRealtimeEvent =
   | "audit" // a new audit_logs row may exist
   | "products" // product moderation queue changed
   | "sellers" // seller / verification queue changed
+  | "stores" // store-account (wholesale buyer) queue changed
   | "orders" // order list changed
   | "staff" // an employee account was created or updated
   | "config"; // a platform config surface changed (categories / settings)
@@ -22,6 +23,7 @@ const listeners: Record<CenterRealtimeEvent, Set<Listener>> = {
   audit: new Set(),
   products: new Set(),
   sellers: new Set(),
+  stores: new Set(),
   orders: new Set(),
   staff: new Set(),
   config: new Set(),

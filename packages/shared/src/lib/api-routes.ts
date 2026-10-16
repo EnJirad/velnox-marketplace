@@ -180,6 +180,10 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.customer.updateProfileAction": (a) => apiPut("/api/customer/profile", a),
   "api.customer.getProfileImageUploadIntent": (a) => apiPost("/api/customer/profile-image/upload-intent", a),
   "api.customer.saveProfileImage": (a) => apiPost("/api/customer/profile-image/save", a),
+  // Store account (wholesale buyer track). The read is FRESH: the applicant must
+  // see a review decision the moment it lands, not a 60s-old cached body.
+  "api.customer.myStoreAccount": () => apiGetFresh("/api/customer/store-account"),
+  "api.customer.saveStoreAccount": (a) => apiPost("/api/customer/store-account", a),
   "api.customer.myAddresses": () => apiGet("/api/customer/addresses"),
   "api.customer.saveAddress": (a) => apiPost("/api/customer/addresses", a),
   "api.customer.deleteAddressAction": (a) => apiDelete(`/api/customer/addresses/${a.addressId}`),
@@ -366,6 +370,20 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
       })}`,
     ),
   "api.centerAdmin.permissionCatalog": () => apiGet("/api/admin/permissions"),
+  // Store accounts — the wholesale review queue (needs `stores.manage`).
+  // FRESH reads: a reviewer must see another session's decision (and the exact
+  // pending count on the tab) without waiting out the 60s GET cache.
+  "api.centerAdmin.storeAccounts": (a) =>
+    apiGetFresh(
+      `/api/admin/store-accounts${buildQuery({
+        status: a?.status,
+        q: a?.q,
+        page: a?.page,
+        limit: a?.limit,
+      })}`,
+    ),
+  "api.centerAdmin.reviewStoreAccount": (a) =>
+    apiPatch(`/api/admin/store-accounts/${a.accountId}`, { decision: a.decision, reviewNote: a.reviewNote }),
   "api.centerAdmin.setStaffProfileAction": (a) => apiPatch("/api/admin/staff", a),
 
 

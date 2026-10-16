@@ -38,6 +38,7 @@ import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
 import { loadSellingUnits } from "../lib/selling-units.js";
+import { isApprovedStore } from "../lib/store-accounts.js";
 import {
   buildOptionValueIndex,
   normalizeVariantOptions,
@@ -2151,7 +2152,12 @@ export function setupProductRoutes(app: Express): void {
   // ═════════════════════════════════════════════════════════════════════════
 
   // ── GET /api/products/catalog ───────────────────────────────────────────
-  app.get("/api/products/catalog", async (req: Request, res: Response) => {
+  // `optionalAuth`, not anonymous: the catalog has to know WHO is asking.
+  // An approved store account additionally receives the selling units a seller
+  // marked wholesale; everyone else (including anonymous) receives only the
+  // public ones. Nothing else about the response depends on the viewer, and a
+  // signed-out request is read exactly as it was before this feature.
+  app.get("/api/products/catalog", optionalAuth, async (req: Request, res: Response) => {
     try {
       const { q, category, shopId, minPrice, maxPrice, inStock, sortBy, limit: limitStr, offset: offsetStr } = req.query;
       const limit = Math.min(Number(limitStr) || 50, 200);
@@ -2231,7 +2237,9 @@ export function setupProductRoutes(app: Express): void {
       // Selling units (sets / packs) for this page, in ONE query. A product with
       // none is served as a plain single-unit line, which is what every product
       // was before selling units existed.
-      const sellingUnitsByProduct = await loadSellingUnits(query, productIds);
+      const sellingUnitsByProduct = await loadSellingUnits(query, productIds, {
+        includeWholesale: await isApprovedStore(query, req.user?.userId),
+      });
 
       const products = result.rows.map((row: any) => {
         const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
@@ -2305,7 +2313,7 @@ export function setupProductRoutes(app: Express): void {
   });
 
   // ── GET /api/products/:productId ────────────────────────────────────────
-  app.get("/api/products/:productId", async (req: Request, res: Response) => {
+  app.get("/api/products/:productId", optionalAuth, async (req: Request, res: Response) => {
     try {
       const productId = param(req, "productId");
       console.log(`[products] detail request: id=${productId}`);
@@ -2351,7 +2359,11 @@ export function setupProductRoutes(app: Express): void {
       formatted.variants = variantsByProduct.get(productId) ?? [];
       // Selling units (sets / packs): the "by the piece or by the pack" choice the
       // product page renders. Only ACTIVE definitions are exposed.
-      formatted.sellingUnits = (await loadSellingUnits(query, [productId])).get(productId) ?? [];
+      formatted.sellingUnits = (
+        await loadSellingUnits(query, [productId], {
+          includeWholesale: await isApprovedStore(query, req.user?.userId),
+        })
+      ).get(productId) ?? [];
       applyVariantStock(formatted, formatted.variants);
 
       // Detail images for the product detail page

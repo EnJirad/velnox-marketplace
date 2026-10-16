@@ -9,6 +9,7 @@ import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 import CategoriesManagement from "../components/CategoriesManagement";
 import ProductModerationQueue from "../components/ProductModerationQueue";
 import SellerVerificationQueue from "../components/SellerVerificationQueue";
+import StoreAccountQueue from "../components/StoreAccountQueue";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
 import EmployeeManager from "../components/EmployeeManager";
@@ -98,7 +99,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings";
+type Tab = "overview" | "orders" | "incidents" | "intel" | "products" | "sellers" | "stores" | "categories" | "staff" | "audit" | "settings";
 
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
@@ -192,6 +193,11 @@ function canSeeTab(
       return holds("products.moderate");
     case "sellers":
       return holds("sellers.manage");
+    // Store accounts (wholesale buyers): the code `/api/admin/store-accounts`
+    // enforces. Approving one unlocks a shop's wholesale prices, so the tab is
+    // offered only to an account that could actually decide.
+    case "stores":
+      return holds("stores.manage");
 
     case "categories":
       return role === "owner" || role === "admin";
@@ -473,6 +479,11 @@ export default function Center() {
             // tree and the settings form both re-read from the API.
             if (msg.type === "config:updated") {
               emitCenterEvent("config");
+            }
+            // A store-account decision in ANOTHER session: the audit broadcast
+            // carries the entity type, so the queue re-reads the API.
+            if (msg.type === "audit:created" && msg.data?.entityType === "store_account") {
+              emitCenterEvent("stores");
             }
             if (
               msg.type === "audit:created" ||
@@ -1035,6 +1046,11 @@ export default function Center() {
                 </span>
               )}
             </TabsTrigger>
+            {canSee("stores") && (
+              <TabsTrigger value="stores" className="gap-1.5 rounded-[10px]">
+                <Store className="size-4" /> ร้านค้าส่ง
+              </TabsTrigger>
+            )}
             {canSee("categories") && (
               <TabsTrigger value="categories" className="gap-1.5 rounded-[10px]">
                 <Tag className="size-4" /> หมวดหมู่
@@ -1764,6 +1780,20 @@ export default function Center() {
             </div>
             <SellerVerificationQueue />
           </TabsContent>
+
+          {/* ============ Store accounts — wholesale buyers (migration 059) =====
+              Approving here is the ONLY write that grants a buyer's account the
+              wholesale units a seller marked wholesale; the endpoint re-checks
+              `stores.manage` and refuses a reviewer's own application. */}
+          {canSee("stores") && (
+            <TabsContent value="stores" className="mt-6">
+              <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
+                <Store className="size-4 text-[#10B981]" />
+                อนุมัติบัญชีร้านค้าที่ขอซื้อส่ง — อนุมัติแล้วร้านนั้นจะเห็นราคาส่งที่ผู้ขายเปิดไว้
+              </div>
+              <StoreAccountQueue />
+            </TabsContent>
+          )}
 
           {/* ============ Categories (admin/owner) ============ */}
           {canSee("categories") && (

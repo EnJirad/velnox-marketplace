@@ -76,6 +76,7 @@ const ShopWishlist = lazy(() => import("@/pages/ShopWishlist"));
 const ShopAddresses = lazy(() => import("@/pages/ShopAddresses"));
 const ShopProfile = lazy(() => import("@/pages/ShopProfile"));
 const ShopAccount = lazy(() => import("@/pages/ShopAccount"));
+const ShopStoreAccount = lazy(() => import("@/pages/ShopStoreAccount"));
 const ShopHelp = lazy(() => import("@/pages/ShopHelp"));
 const ShopNotifications = lazy(() => import("@/pages/ShopNotifications"));
 const ShopChat = lazy(() => import("@/pages/ShopChat"));
@@ -197,6 +198,17 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireAuth>
                 <ShopAccount />
+              </RequireAuth>
+            }
+          />
+          {/* Store account — the ONE wholesale application surface. Approval is
+              VelCenter's decision; this page only collects the request and shows
+              the outcome. */}
+          <Route
+            path="/profile/store"
+            element={
+              <RequireAuth>
+                <ShopStoreAccount />
               </RequireAuth>
             }
           />

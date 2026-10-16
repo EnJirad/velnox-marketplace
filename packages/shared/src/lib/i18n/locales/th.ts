@@ -1192,6 +1192,8 @@ export const th = {
     velrepeatDesc: "การสั่งซื้ออัตโนมัติที่กำลังใช้งาน",
     account: "บัญชีของฉัน",
     accountDesc: "แก้ไขชื่อ เบอร์โทร และข้อมูลบัญชี",
+    storeAccount: "บัญชีร้านค้า (ซื้อส่ง)",
+    storeAccountDesc: "สมัครเปิดบิลซื้อส่ง — ต้องได้รับการอนุมัติ",
     help: "ความช่วยเหลือ",
     helpDesc: "ติดต่อทีมงาน Velnox",
     chat: "แชท",
@@ -1554,6 +1556,40 @@ export const th = {
     evidencePhotosCount: "รูปภาพหลักฐาน ({count})",
     evidenceDocsCount: "เอกสารหลักฐาน ({count})",
     evidenceNoEvidence: "ไม่มีหลักฐานที่แนบ",
+  },
+
+  // Store accounts (wholesale buyers, migration 059).
+  //
+  // The copy for the ONE buyer-side application the storefront collects: a
+  // community shop asks to see wholesale prices, VelCenter decides, and only an
+  // approved account is sent the selling units a seller marked wholesale. The
+  // retail half of the storefront never shows any of this.
+  storeAccount: {
+    title: "บัญชีร้านค้า (ซื้อส่ง)",
+    lead: "สมัครเพื่อเห็นราคาส่งและสั่งซื้อแบบยกแพ็ค — ใช้กับสินค้าที่ผู้ขายเปิดขายส่งเท่านั้น",
+    statusPending: "รอตรวจสอบ",
+    statusApproved: "อนุมัติแล้ว",
+    statusRejected: "ไม่ผ่านการอนุมัติ",
+    pendingNote: "ส่งคำขอแล้ว ทีมงานจะตรวจสอบและแจ้งผล",
+    approvedNote: "ปลดล็อกราคาส่งแล้ว — สินค้าที่ร้านค้าเปิดขายส่งจะแสดงให้คุณเห็น",
+    rejectedNote: "คำขอยังไม่ผ่าน — แก้ไขข้อมูลแล้วส่งใหม่ได้",
+    reviewNoteLabel: "หมายเหตุจากผู้ตรวจสอบ",
+    storeName: "ชื่อร้านค้า",
+    storeNamePlaceholder: "เช่น ร้านชำสุขใจ",
+    contactName: "ชื่อผู้ติดต่อ",
+    contactPhone: "เบอร์โทรติดต่อ",
+    address: "ที่อยู่ร้าน (ไม่บังคับ)",
+    note: "รายละเอียดเพิ่มเติม (ไม่บังคับ)",
+    apply: "ส่งคำขอเปิดบัญชีร้านค้า",
+    update: "อัปเดตข้อมูล",
+    resubmit: "ส่งคำขออีกครั้ง",
+    saved: "บันทึกแล้ว",
+    requiredError: "กรอกชื่อร้าน ชื่อผู้ติดต่อ และเบอร์โทรให้ครบ",
+    phoneError: "เบอร์โทรไม่ถูกต้อง",
+    loadError: "โหลดข้อมูลบัญชีร้านค้าไม่สำเร็จ ลองใหม่อีกครั้ง",
+    saveError: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง",
+    wholesaleBadge: "ราคาส่ง",
+    wholesaleOnly: "เฉพาะบัญชีร้านค้าที่อนุมัติแล้ว",
   },
 
 // __APPEND__

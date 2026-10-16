@@ -14,20 +14,30 @@
  *   `routes/product-options.ts` exists for option groups and variants.
  *
  * WHAT A SELLING UNIT IS NOT
- *   It is not wholesale: there is no wholesale account, permission, minimum-order
- *   engine, tier table or per-pack stock. A set/pack is simply a way to sell the
- *   same product — its own name, its own `pieces`, its own price — and inventory
- *   is always counted in base pieces (`pieces * quantity` reserve/settle through
- *   the ONE existing authority in lib/inventory.ts).
+ *   It is not a minimum-order engine, a tier table or a per-pack stock: a set/pack
+ *   is simply a way to sell the same product — its own name, its own `pieces`, its
+ *   own price — and inventory is always counted in base pieces (`pieces * quantity`
+ *   reserve/settle through the ONE existing authority in lib/inventory.ts).
+ *
+ * WHOLESALE (`isWholesale`)
+ *   A unit may be marked wholesale: it and its price are then sent to, and buyable
+ *   by, an APPROVED store account only (`lib/store-accounts.ts` is the one gate,
+ *   `lib/selling-units.ts` the one place it is applied). It is still ONE price per
+ *   unit rather than a second price table, and the flag defaults to false — so
+ *   every set/pack authored before this feature keeps behaving exactly as it did.
+ *   A seller may therefore offer the SAME size to both audiences (a retail
+ *   "แพ็ค 12" and a wholesale "แพ็ค 12" at a different price); that is what the
+ *   live-definition index below is keyed on `is_wholesale` for.
  *
  * VALIDATION (every rule is enforced HERE, on the server)
  *   * pieces : whole number > 0 (the database CHECK restates it)
  *   * price  : finite number >= 0 (the database CHECK restates it)
  *   * name   : non-empty, <= 60 characters
  *   * variant: must belong to THIS product
- *   * one LIVE definition per (product, variant, pieces) — a second active row
- *     for the same size is refused, so a shopper is never offered two different
- *     prices for the same thing
+ *   * isWholesale: a real boolean, never a truthy string
+ *   * one LIVE definition per (product, variant, pieces, audience) — a second
+ *     active row for the same size AND the same audience is refused, so a shopper
+ *     is never offered two different prices for the same thing
  *   * ownership: the product must belong to the calling, APPROVED seller
  *
  * RETIRE, NEVER DELETE
@@ -70,10 +80,19 @@ interface UnitInput {
   variantId?: unknown;
   status?: unknown;
   sortOrder?: unknown;
+  isWholesale?: unknown;
 }
 
 type ValidationResult =
-  | { ok: true; name: string; pieces: number; price: number; status: "active" | "inactive"; sortOrder: number | undefined }
+  | {
+      ok: true;
+      name: string;
+      pieces: number;
+      price: number;
+      status: "active" | "inactive";
+      sortOrder: number | undefined;
+      isWholesale: boolean | undefined;
+    }
   | { ok: false; message: string };
 
 /**
@@ -131,6 +150,17 @@ function validateUnit(body: UnitInput, partial: boolean): ValidationResult {
     sortOrder = n;
   }
 
+  // isWholesale — a real boolean. Deliberately NOT `Boolean(value)`: the string
+  // "false" is truthy, and quietly publishing a wholesale-only pack because a
+  // form sent it as text would hide a product from every retail shopper.
+  let isWholesale: boolean | undefined;
+  if (body.isWholesale !== undefined) {
+    if (typeof body.isWholesale !== "boolean") {
+      return { ok: false, message: "isWholesale must be true or false" };
+    }
+    isWholesale = body.isWholesale;
+  }
+
   return {
     ok: true,
     name: name ?? "",
@@ -138,6 +168,7 @@ function validateUnit(body: UnitInput, partial: boolean): ValidationResult {
     price: price ?? 0,
     status: status ?? "active",
     sortOrder,
+    isWholesale,
   };
 }
 
@@ -157,7 +188,7 @@ export function setupProductSellingUnitRoutes(app: Express): void {
       }
 
       const result = await query(
-        `SELECT id, product_id, variant_id, name, pieces, price, status, sort_order
+        `SELECT id, product_id, variant_id, name, pieces, price, status, sort_order, is_wholesale
            FROM product_selling_units
           WHERE product_id = $1
           ORDER BY sort_order ASC, pieces ASC, created_at ASC`,
@@ -220,10 +251,10 @@ export function setupProductSellingUnitRoutes(app: Express): void {
 
       try {
         const result = await query(
-          `INSERT INTO product_selling_units (product_id, variant_id, name, pieces, price, status, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id, product_id, variant_id, name, pieces, price, status, sort_order`,
-          [productId, variantId, parsed.name, parsed.pieces, parsed.price, parsed.status, sortOrder],
+          `INSERT INTO product_selling_units (product_id, variant_id, name, pieces, price, status, sort_order, is_wholesale)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING id, product_id, variant_id, name, pieces, price, status, sort_order, is_wholesale`,
+          [productId, variantId, parsed.name, parsed.pieces, parsed.price, parsed.status, sortOrder, parsed.isWholesale ?? false],
         );
         res.json({ success: true, data: formatSellingUnit(result.rows[0]) });
       } catch (insertErr: any) {
@@ -233,7 +264,7 @@ export function setupProductSellingUnitRoutes(app: Express): void {
         if (insertErr?.code === "23505") {
           res.status(409).json({
             success: false,
-            error: { code: "DUPLICATE_SELLING_UNIT", message: "An active selling unit with this many pieces already exists" },
+            error: { code: "DUPLICATE_SELLING_UNIT", message: "An active selling unit with this many pieces already exists for this audience" },
           });
           return;
         }
@@ -283,6 +314,7 @@ export function setupProductSellingUnitRoutes(app: Express): void {
       if (req.body?.price !== undefined) { fields.push(`price = $${i++}`); values.push(parsed.price); }
       if (req.body?.status !== undefined) { fields.push(`status = $${i++}`); values.push(parsed.status); }
       if (parsed.sortOrder !== undefined) { fields.push(`sort_order = $${i++}`); values.push(parsed.sortOrder); }
+      if (parsed.isWholesale !== undefined) { fields.push(`is_wholesale = $${i++}`); values.push(parsed.isWholesale); }
 
       if (fields.length === 0) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "No updatable field was provided" } });
@@ -295,7 +327,7 @@ export function setupProductSellingUnitRoutes(app: Express): void {
           `UPDATE product_selling_units
               SET ${fields.join(", ")}, updated_at = NOW()
             WHERE id = $${i++} AND product_id = $${i}
-          RETURNING id, product_id, variant_id, name, pieces, price, status, sort_order`,
+          RETURNING id, product_id, variant_id, name, pieces, price, status, sort_order, is_wholesale`,
           values,
         );
         if (result.rows.length === 0) {
@@ -307,7 +339,7 @@ export function setupProductSellingUnitRoutes(app: Express): void {
         if (updateErr?.code === "23505") {
           res.status(409).json({
             success: false,
-            error: { code: "DUPLICATE_SELLING_UNIT", message: "An active selling unit with this many pieces already exists" },
+            error: { code: "DUPLICATE_SELLING_UNIT", message: "An active selling unit with this many pieces already exists for this audience" },
           });
           return;
         }
@@ -340,7 +372,7 @@ export function setupProductSellingUnitRoutes(app: Express): void {
         `UPDATE product_selling_units
             SET status = 'inactive', updated_at = NOW()
           WHERE id = $1 AND product_id = $2
-        RETURNING id, product_id, variant_id, name, pieces, price, status, sort_order`,
+        RETURNING id, product_id, variant_id, name, pieces, price, status, sort_order, is_wholesale`,
         [unitId, productId],
       );
       if (result.rows.length === 0) {

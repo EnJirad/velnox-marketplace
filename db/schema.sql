@@ -36,6 +36,35 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- A STORE ACCOUNT is the buyer-side, wholesale-eligible account: a community
+-- shop that applied once and was reviewed by VelCenter. It is NOT a seller and
+-- NOT a role — the same user may be an ordinary customer, and gaining the
+-- account changes only what wholesale rows the API will send them.
+--
+-- UNIQUE(user_id) via idx_store_accounts_user: one application per user, so a
+-- re-application after a rejection updates this row (status back to 'pending')
+-- instead of stacking duplicates a reviewer would have to reconcile by hand.
+--
+-- `approved` is the ONLY value that grants wholesale visibility; `pending` is a
+-- real review state, not "not yet approved", which is why it is a CHECK
+-- vocabulary rather than a boolean.
+CREATE TABLE IF NOT EXISTS store_accounts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  store_name TEXT NOT NULL CHECK (length(btrim(store_name)) > 0),
+  contact_name TEXT NOT NULL,
+  contact_phone TEXT NOT NULL,
+  address TEXT,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  review_note TEXT,
+  reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_store_accounts_user ON store_accounts (user_id);
+CREATE INDEX IF NOT EXISTS idx_store_accounts_status ON store_accounts (status, created_at DESC);
 CREATE TABLE IF NOT EXISTS addresses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -272,9 +301,10 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'products
 -- this schema, and every pack line is converted to base pieces before it reaches
 -- it: base_units = quantity * pieces (see backend/lib/inventory.ts).
 --
--- One LIVE definition per (product, variant, pieces) — the partial unique index
--- below. Retired rows stay as status = 'inactive' so retiring "Set 6" and later
--- publishing a differently priced "Set 6" never rewrites what history refers to.
+-- One LIVE definition per (product, variant, pieces, audience) — the partial
+-- unique index below. Retired rows stay as status = 'inactive' so retiring
+-- "Set 6" and later publishing a differently priced "Set 6" never rewrites what
+-- history refers to.
 CREATE TABLE IF NOT EXISTS product_selling_units (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -282,6 +312,12 @@ CREATE TABLE IF NOT EXISTS product_selling_units (
   name TEXT NOT NULL,
   pieces INTEGER NOT NULL CHECK (pieces > 0),
   price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
+  -- WHOLESALE is a property of the unit, not a second price table: a unit whose
+  -- `is_wholesale` is true is only ever sent to (or sold to) an approved store
+  -- account. FALSE for every pre-existing row, so the retail catalog is
+  -- unchanged and this flag can never take a pack away from a buyer who could
+  -- already see it.
+  is_wholesale BOOLEAN NOT NULL DEFAULT FALSE,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -290,7 +326,14 @@ CREATE TABLE IF NOT EXISTS product_selling_units (
 CREATE INDEX IF NOT EXISTS idx_product_selling_units_product ON product_selling_units (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_selling_units_live ON product_selling_units (product_id, status) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_product_selling_units_variant ON product_selling_units (variant_id) WHERE variant_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_product_selling_units_unique ON product_selling_units (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), pieces) WHERE status = 'active';
+-- One LIVE definition per (product, variant, pieces, AUDIENCE) — migration 059
+-- added `is_wholesale` to the key, under the SAME index name. Without it a seller
+-- could not offer the same size to both audiences (a retail "แพ็ค 12" and a
+-- wholesale "แพ็ค 12" at a different price): the two rows would collide, and the
+-- seller would be forced to publish ONE price for both. Distinct audiences are
+-- distinct offers, exactly as a set and a piece of one product are distinct cart
+-- lines.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_selling_units_unique ON product_selling_units (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), pieces, is_wholesale) WHERE status = 'active';
 CREATE TABLE IF NOT EXISTS cart_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,

@@ -34,6 +34,7 @@ import { startPaymentReservationScheduler } from "./jobs/payment-reservation-sch
 import { VELREPEAT_ENABLED } from "./lib/features.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupProductSellingUnitRoutes } from "./routes/product-selling-units.js";
+import { setupStoreAccountRoutes } from "./routes/store-accounts.js";
 import { setupChatRoutes } from "./routes/chat.js";
 import { broadcast, CHANNELS, setupWebSocket } from "./realtime/index.js";
 
@@ -483,6 +484,13 @@ setupProductOptionRoutes(app);
 // The authoring surface for "sell it by the piece or by the pack". Inventory is
 // untouched by it: a set only states its own name, pieces and price.
 setupProductSellingUnitRoutes(app);
+
+// ─── Store accounts (wholesale buyers) ──────────────────────────────────
+// A community shop applies once and VelCenter approves it; only an approved
+// account is sent (or may order) the selling units a seller marked wholesale.
+// This mount is inert for the retail path: an unapproved or anonymous viewer
+// simply never receives those rows.
+setupStoreAccountRoutes(app);
 
 // ─── VelRepeat (PARKED 2026-10-14) ──────────────────────────────
 // The owner re-scoped the MVP to buy-and-sell (retail + wholesale by the pack)

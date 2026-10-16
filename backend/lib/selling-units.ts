@@ -20,6 +20,18 @@
  * it meant when it was written: a line that sold 12 pieces consumes 12 for ever,
  * even if the seller later changes that pack to 24. `selling_unit_id` is only a
  * reference for display and re-validation.
+ *
+ * WHOLESALE (migration 059)
+ * -------------------------
+ * A unit may be marked `is_wholesale`: a pack (and its price) offered only to an
+ * APPROVED store account. The flag is a property of the unit, NOT a second price,
+ * so there is still one price per selling unit and one money authority. Every
+ * existing row is `false`, which is why the retail path is unchanged.
+ *
+ * The gate is enforced HERE, in the same two functions that already resolve and
+ * load units (plus the matching SQL filter), so visibility and purchasability can
+ * never disagree: a viewer who cannot see a wholesale unit cannot buy it either,
+ * and a crafted cart body naming one is refused rather than silently re-priced.
  */
 import type pg from "pg";
 
@@ -90,6 +102,7 @@ export async function resolveSellingUnit(
   sellingUnitId: unknown,
   productId: string,
   variantId: string | null,
+  opts: { wholesaleAllowed?: boolean } = {},
 ): Promise<SellingUnitResolution> {
   if (sellingUnitId === undefined || sellingUnitId === null || sellingUnitId === "") {
     return { ok: true, unit: null };
@@ -98,12 +111,28 @@ export async function resolveSellingUnit(
     return { ok: false, code: "VALIDATION_ERROR", message: "sellingUnitId must be a string" };
   }
 
-  const res = await exec(
-    `SELECT id, product_id, variant_id, name, pieces, price, status
-       FROM product_selling_units WHERE id = $1`,
-    [sellingUnitId],
-  );
-  const row = res.rows[0];
+  let rows: any[];
+  try {
+    rows = (
+      await exec(
+        `SELECT id, product_id, variant_id, name, pieces, price, status, is_wholesale
+           FROM product_selling_units WHERE id = $1`,
+        [sellingUnitId],
+      )
+    ).rows;
+  } catch (err: any) {
+    // 42703 = the wholesale column does not exist yet (migration 059 has not run).
+    // Nothing is wholesale on such a database, so the 058-shaped read is exact.
+    if (err?.code !== "42703") throw err;
+    rows = (
+      await exec(
+        `SELECT id, product_id, variant_id, name, pieces, price, status
+           FROM product_selling_units WHERE id = $1`,
+        [sellingUnitId],
+      )
+    ).rows;
+  }
+  const row = rows[0];
   if (!row) {
     return { ok: false, code: "SELLING_UNIT_NOT_FOUND", message: "Selling unit was not found." };
   }
@@ -115,6 +144,16 @@ export async function resolveSellingUnit(
   }
   if ((row.variant_id ?? null) !== (variantId ?? null)) {
     return { ok: false, code: "VALIDATION_ERROR", message: "Selling unit does not belong to the selected variant." };
+  }
+  // WHOLESALE: refused for anyone who is not an approved store. This is a
+  // permission, not a stock problem, so it carries its own code — the cart maps
+  // it to 403 and the message names the requirement instead of blaming stock.
+  if (row.is_wholesale === true && opts.wholesaleAllowed !== true) {
+    return {
+      ok: false,
+      code: "SELLING_UNIT_WHOLESALE_ONLY",
+      message: "This wholesale pack is available to approved store accounts only.",
+    };
   }
 
   const pieces = Math.floor(Number(row.pieces));
@@ -152,34 +191,56 @@ export function formatSellingUnit(row: any) {
     pricePerPiece: Math.round((price / pieces) * 100) / 100,
     status: row.status,
     sortOrder: row.sort_order ?? 0,
+    /** Wholesale-only: shown to (and buyable by) approved store accounts only. */
+    isWholesale: row.is_wholesale === true,
   };
 }
 
-/** Every ACTIVE selling unit of a product, grouped as the product payload needs it. */
+/**
+ * Every ACTIVE selling unit of a product, grouped as the product payload needs it.
+ *
+ * `includeWholesale` is the VIEWER's access — an approved store account gets the
+ * wholesale packs, everyone else (including anonymous) does not. The filter is
+ * part of this one query rather than a post-filter in the routes, so a new caller
+ * cannot forget it and leak a wholesale price.
+ */
 export async function loadSellingUnits(
   exec: SqlExecutor,
   productIds: string[],
+  opts: { includeWholesale?: boolean } = {},
 ): Promise<Map<string, ReturnType<typeof formatSellingUnit>[]>> {
   const byProduct = new Map<string, ReturnType<typeof formatSellingUnit>[]>();
   if (productIds.length === 0) return byProduct;
+  const withWholesale = opts.includeWholesale === true;
+  const SELECT = `id, product_id, variant_id, name, pieces, price, status, sort_order, is_wholesale`;
+  const WHERE = `product_id = ANY($1) AND status = 'active'`;
+  const ORDER = `ORDER BY sort_order ASC, pieces ASC, created_at ASC`;
   let rows: any[];
+  const read = async (select: string, where: string) =>
+    (await exec(`SELECT ${select} FROM product_selling_units WHERE ${where} ${ORDER}`, [productIds])).rows;
   try {
-    rows = (
-      await exec(
-        `SELECT id, product_id, variant_id, name, pieces, price, status, sort_order
-           FROM product_selling_units
-          WHERE product_id = ANY($1) AND status = 'active'
-          ORDER BY sort_order ASC, pieces ASC, created_at ASC`,
-        [productIds],
-      )
-    ).rows;
+    rows = await read(SELECT, withWholesale ? WHERE : `${WHERE} AND is_wholesale = FALSE`);
   } catch (err: any) {
-    // 42P01 = the table does not exist on a database that has not run migration
-    // 058 yet. Marketing a product without its sets/packs is the correct
-    // degradation: the plain single-unit line is still sellable.
-    if (err?.code !== "42P01") throw err;
-    console.warn("[selling-units] product_selling_units table not found — serving single-unit lines only");
-    return byProduct;
+    // 42703 = the wholesale column does not exist yet (migration 059 has not run).
+    // Nothing on such a database is wholesale, so serving every unit is exactly
+    // the pre-059 behaviour and needs no filter.
+    if (err?.code === "42703") {
+      try {
+        rows = await read("id, product_id, variant_id, name, pieces, price, status, sort_order", WHERE);
+      } catch (inner: any) {
+        if (inner?.code !== "42P01") throw inner;
+        console.warn("[selling-units] product_selling_units table not found — serving single-unit lines only");
+        return byProduct;
+      }
+    } else if (err?.code === "42P01") {
+      // 42P01 = the table does not exist on a database that has not run migration
+      // 058 yet. Marketing a product without its sets/packs is the correct
+      // degradation: the plain single-unit line is still sellable.
+      console.warn("[selling-units] product_selling_units table not found — serving single-unit lines only");
+      return byProduct;
+    } else {
+      throw err;
+    }
   }
   for (const row of rows) {
     const list = byProduct.get(row.product_id) ?? [];

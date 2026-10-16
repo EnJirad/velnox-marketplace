@@ -29,6 +29,7 @@ const permissionsSrc = read("backend/lib/permissions.ts");
 const centerSrc = read("backend/routes/center.ts");
 const adminSrc = read("backend/routes/admin.ts");
 const verificationSrc = read("backend/routes/verification.ts");
+const storeAccountsSrc = read("backend/routes/store-accounts.ts");
 const sellerSrc = read("backend/routes/seller.ts");
 const productsSrc = read("backend/routes/products.ts");
 const authSrc = read("backend/routes/auth.ts");
@@ -45,12 +46,20 @@ const realtimeSrc = read("backend/realtime/index.ts");
 const categoriesMgmtSrc = read("apps/velcenter/src/components/CategoriesManagement.tsx");
 
 /** Every backend file that must not re-implement authorization itself. */
+/**
+ * Every backend file that must not re-implement authorization itself.
+ *
+ * `storeAccounts` joined with migration 059: the store-account queue decides who
+ * may buy wholesale, so it resolves its guard through the SAME permission module
+ * as everything else and is held to the same invariants below.
+ */
 const routeSources = {
   center: centerSrc,
   admin: adminSrc,
   verification: verificationSrc,
   seller: sellerSrc,
   products: productsSrc,
+  storeAccounts: storeAccountsSrc,
 };
 
 describe("one permission system", () => {
@@ -152,6 +161,18 @@ describe("business surfaces are gated by their catalog code", () => {
 
   test("seller administration", () => {
     expect(sellerSrc.split('userHasPermission(userId, "sellers.manage")').length - 1).toBeGreaterThanOrEqual(3);
+  });
+
+  test("store-account review (the wholesale buyer queue)", () => {
+    // Membership to open VelCenter, then the specific grant — a role alone would
+    // leave `stores.manage` decorative and let any staff account hand out
+    // wholesale prices.
+    expect(storeAccountsSrc).toContain("isCenterMember(userId)");
+    expect(storeAccountsSrc).toContain('const REVIEW_PERMISSION = "stores.manage";');
+    expect(storeAccountsSrc).toContain("userHasPermission(userId, REVIEW_PERMISSION)");
+    // The applicant's own endpoints act on the SESSION id only.
+    expect(storeAccountsSrc).toContain('getStoreAccount(query, req.user!.userId)');
+    expect(storeAccountsSrc).not.toContain("req.body.userId");
   });
 
   test("role / permission management stays owner-only", () => {

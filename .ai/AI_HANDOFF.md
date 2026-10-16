@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-16 · **Branch:** `freebuff/d4296b7210b943b805a8cf6d` (from `main`) · **Latest pass:** **selling units (sets / packs) BUILT + the VelRepeat/Memory parking holes CLOSED** (**§76**) — inventory still a single authority in BASE units; full suite **2123 pass / 2 skip / 0 fail** against a real PostgreSQL 16, `db:verify` all scenarios passed; **seller authoring UI still to build**; production DB + real Stripe TEST E2E remain BLOCKED (owner action)
+**Last updated:** 2026-10-16 · **Branch:** `freebuff/d4296b7210b943b805a8cf6d` (from `main`) · **Latest pass:** **store accounts + GATED wholesale BUILT** (**§78**) — wholesale packs and their prices reach an approved store account only, the retail path is unchanged, full suite **2152 pass / 2 skip / 0 fail** against a real PostgreSQL 16.15 and `db:verify` ALL SCENARIOS PASSED (CANON `77|305|352|837`); no browser E2E exists here; production DB + real Stripe TEST E2E remain BLOCKED (owner action)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -483,71 +483,15 @@ is verified. Owner action restated by **§69**.
 
 ---
 
-## §69. Production `payments.checkout_group_id` — the gap is real, applying it is **BLOCKED** (2026-10-05)
+## §69. Production `payments.checkout_group_id` — the gap is real, applying it is **BLOCKED** (2026-10-05) — **ARCHIVED**
 
-**Second, independent incident on the same missing column.** Order
-`2aa736e9-0010-43c2-8f0e-19142b25189b` / `017911658804352200`, PromptPay, group
-`c86fb8fe-758d-4907-aedf-3e8f6bde8de2`. Production logged `[checkout-group] payments.checkout_group_id is
-missing — apply db/run-sqleditor.sql (migration 054).` with `code: 42703`, `failure_stage:
-group_column_missing`, `stripe_session_id: null`. **That log line is the §68 guard working** — production ran the
-fixed build, the probe saw the column absent, and it refused with 503 *before* Stripe. The build is current; the
-**database** is not.
-
-**Root cause confirmed: production Neon never received migration 054 §3.**
-
-**Source of truth for `payments.checkout_group_id`** — from `db/migrations/054_…sql` §3, `db/schema.sql:460` and
-`db/run-sqleditor.sql:461,1378,3416-3421,4035-4036`: `UUID`, **nullable** (no `NOT NULL`), FK
-`payments_checkout_group_id_fkey` → `checkout_groups(id) ON DELETE SET NULL`; indexes `idx_payments_checkout_group`
-(partial) and the unique partial `idx_payments_one_active_stripe_group`; it participates in
-`payments_at_least_one_parent_check` + `payments_single_domain_check`; and `payments.order_id` becomes NULLABLE.
-§3 also drops `payments_exactly_one_parent_check`. **Nothing was changed** — the repository was already consistent,
-and no datatype, constraint or index was invented.
-
-**Repository side: COMPLETE.** `db/schema.sql` ↔ `db/run-sqleditor.sql` declaration parity passes
-(`backend/tests/helpers/canonical-schema.ts`), `db/run-update.sql` does not exist, and `db/verify-reconciler.sh`
-**scenario H reproduces this exact production shape** — a populated `payments` with real Stripe rows and the column
-dropped — then proves the statement 42703s before, runs clean after, leaves the payment row, its provider ids and its
-`paid` settlement state untouched, never re-points it at the group, and is idempotent on a second run. `bun run
-db:verify` → `RECONCILER PROOF: ALL SCENARIOS PASSED` (52 PASS / 0 FAIL).
-
-**New regressions (4, `backend/tests/checkout-group-session-open.test.ts`, 14 → 18).** The single-shop rail was
-**uncovered**, which is the risk 054 §3 itself creates — it makes `order_id` nullable and swaps the parent CHECK:
-**(1)** one order still opens a session and records `order_id` with `checkout_group_id IS NULL`, the session id, and a
-row satisfying `payments_at_least_one_parent_check` (old constraint gone); **(2)** a retry with a FRESH idempotency key
-reuses that session — one `sessions.create`, one active attempt; **(3)** the reported order's exact state (group +
-orders, **no** payment row) reads **not paid** on `GET /api/orders/:orderId`; its retry opens exactly one attempt with
-the session recorded and `paid_at` null, a second retry reuses it, and no order is ever `paid`; **(4)** static — the
-open path between the two `app.post` registrations contains **no** `paid` write at all, so a missing column can never be
-"fixed" by paying an order Stripe never charged. Suite: **1992 pass / 2 skip / 0 fail**, typecheck 4/4 + backend 0,
-build 4/4, `db:verify` 52/0, `git diff --check` clean.
-
-**PRODUCTION: NOT APPLIED — BLOCKED, and it must be reported as such.** `NEON_PRODUCTION_DATABASE_URL` is absent:
-`freebuff-env list` returns no keys, the GitHub App token gets **403** on both `secrets` and `workflow_dispatch`, and
-CI run **37249675032** of `Production DB Verify` fails with `##[error]BLOCKED: NEON_PRODUCTION_DATABASE_URL is not
-configured.` — the identical pre-change baseline. The repository therefore **cannot prove** the migration reaches the
-same Neon Render serves, and no Stripe TEST E2E was executed. **The payment architecture was not changed**: no
-multi-shop removal, no single-shop fallback, no bypassed column, no session-before-payment-row, no disabled schema
-validation, no 42703 catch-and-pass, no frontend "paid", no blind retry, no sleep, no disabled idempotency.
-
-**Owner action — unchanged, and still the whole remaining gap.** Create the `NEON_PRODUCTION_DATABASE_URL` secret
-pointing at the SAME Neon project/branch Render's `DATABASE_URL` uses, confirm the printed identity against the
-backend's boot `[db]` line, then run `db/run-sqleditor.sql` (or `db/migrations/054_*.sql`) via
-`production-db-migrate.yml`; `Production DB Verify` must then go BLOCKED → PASS on all 11 objects. Only then can a
-real PromptPay TEST round trip be attempted. **STATUS: BLOCKED — never PASS.**
-
-**Verified on a real database reconciled by `db/run-sqleditor.sql`** (disposable, dropped after): the incident's exact
-statement — `SELECT id FROM payments WHERE checkout_group_id = $1 AND provider = $2 ORDER BY created_at DESC LIMIT 1`
-(verbatim `backend/routes/stripe.ts:844-851`) — answers `ERROR: column "checkout_group_id" does not exist` when the
-column is absent and returns the attempt id when it is present, so it is a real detector, not a tautology. All of
-054 §3 lands: column `uuid`/nullable, both `ON DELETE SET NULL` FKs, the group indexes, both payment CHECKs,
-`payments.order_id` nullable.
-
-**One hazard found while proving it (NOT a production blocker).** `db/run-sqleditor.sql:4038` adds
-`payments_at_least_one_parent_check` under `ON_ERROR_STOP`, guarded only by a name check: if any `payments` row has
-`order_id`, `plan_id` and `checkout_group_id` **all** NULL the reconciler aborts mid-file and the rest — including the
-PART 8 self-assertion — never runs. Production cannot reach that state (`payments_exactly_one_parent_check`, migration
-051, has always required exactly one of `order_id`/`plan_id`, and a parentless INSERT is rejected on a reconciled
-database). Only a database that stored a group payment and then lost the column can hit it.
+Moved **verbatim** to
+[`history/archive/AI_Handoff-2026-10-16-section-69-production-group-column.md`](history/archive/AI_Handoff-2026-10-16-section-69-production-group-column.md)
+on 2026-10-16 (added §78; edit-headroom housekeeping). Still-live claim, do not re-derive it:
+production Neon never received migration 054 §3, so `payments.checkout_group_id` is missing there —
+the fix is applying `db/run-sqleditor.sql` to the SAME Neon Render serves, and it stays **BLOCKED**
+until `NEON_PRODUCTION_DATABASE_URL` exists (see §71). `db/verify-reconciler.sh` scenario H still
+reproduces that exact shape and proves the fix.
 
 ---
 
@@ -758,3 +702,78 @@ summed `quantity`, i.e. SETS. It now sums `quantity * selling_unit_pieces`, so o
    (see §70/§71).
 3. The PostgreSQL used for this proof was installed inside the workspace (`/tmp/pgroot`, 16.15). It does
    not survive an archive: reinstall it to re-run the DB suite.
+
+---
+
+## §78. Store accounts + gated wholesale — Phase 3 BUILT, with real-PostgreSQL proof (2026-10-16)
+
+**Phase 3 of the MVP brief is built, and it took the brief's decision 2 as GATED:** a wholesale pack
+and its price are visible to APPROVED store accounts only. The retail path is untouched — provably,
+because every pre-existing selling unit is `is_wholesale = false`.
+
+**Model (migration 059 + both canonical SQL files).**
+* `store_accounts` — ONE row per user (`idx_store_accounts_user` UNIQUE, so a re-application after a
+  rejection UPDATES the same row): `store_name` / `contact_name` / `contact_phone` required,
+  `address` / `note` optional, `status` in `pending | approved | rejected`, plus `review_note`,
+  `reviewed_by`, `reviewed_at`. `tax_id` is deliberately absent — invoicing is an owner decision not
+  yet made, and a column nothing reads lies about the product.
+* `product_selling_units.is_wholesale BOOLEAN NOT NULL DEFAULT FALSE`.
+* `idx_product_selling_units_unique` is keyed on `(product, variant, pieces, is_wholesale)` — replaced
+  under the SAME name — so ONE size can be sold retail AND wholesale at different prices. Without it a
+  seller who marked a pack wholesale could not also offer a retail pack of that size.
+
+**The one rule:** `status = 'approved'` and NOTHING else grants wholesale visibility. It is not a role
+and rewrites no session — a wholesale buyer is still an ordinary customer of the storefront.
+
+**One authority, total by construction.** `backend/lib/store-accounts.ts` answers `isApprovedStore()`;
+`backend/lib/selling-units.ts` is the ONLY place it is applied — the loader adds
+`AND is_wholesale = FALSE` for everyone else, and `resolveSellingUnit()` refuses a wholesale unit with
+`SELLING_UNIT_WHOLESALE_ONLY`. The gate is TOTAL: an id that is not a `users.id` answers false instead
+of raising 22P02, so a stale or crafted session can never turn "no access" into a 500 — and can never
+be granted access either.
+
+**Enforced server-side end to end.** Catalog + detail are `optionalAuth` and pass the VIEWER's access
+(`includeWholesale`); cart ADD refuses a wholesale pack (403, nothing written); cart UPDATE cannot
+ENLARGE a line whose approval is gone; CHECKOUT re-resolves every line and refuses; REORDER skips it
+with `selling_unit_restricted`. The lookup runs AFTER the cheap refusals, so a malformed or empty
+request costs no query and the COD boundary stays first.
+
+**VelCenter decides.** New permission `stores.manage` (in the catalog, so a staff account needs the
+grant), `GET/PATCH /api/admin/store-accounts`, and a "ร้านค้าส่ง" tab. A rejection NEEDS a reason, a
+re-approval is a 409, and `isSelfApproval()` refuses a reviewer's own application. Every decision
+writes an audit row (`STORE_ACCOUNT_APPROVED` / `STORE_ACCOUNT_REJECTED`).
+
+**Seller + storefront.** `SellingUnitsManager` carries a "ขายส่ง" toggle (create + edit) and a badge;
+`isWholesale` must be a real boolean (the STRING "false" is refused rather than quietly hiding a
+product). velShop gains `/profile/store` (`ShopStoreAccount`: apply, re-apply, see the outcome and the
+reviewer's note) plus a wholesale badge on the product page.
+
+**Verified (PostgreSQL 16.15, disposable DB rebuilt from `db/run-sqleditor.sql`):**
+
+| Check | Result |
+|---|---|
+| `bun test backend/tests` | **2152 pass / 2 skip / 0 fail** — 75 files |
+| New `backend/tests/store-accounts.test.ts` (19) | one row per user + re-apply clears the old review; an approved account keeps approval while editing; catalog/detail show the pack to an approved store ONLY while the retail fields stay identical for every viewer; the cart refuses without access and writes nothing; approval withdrawn → UPDATE 403, checkout 403, ZERO orders; reorder skips; queue 403 without the grant, audited approve, 409 on re-approve, reason required, 404, self-approval refused; authoring boolean + both audiences |
+| `bun run db:verify` | **ALL SCENARIOS PASSED** — CANON re-measured **77\|305\|352\|837** |
+| `bun run typecheck` 4/4 + backend 0 · `bun run build:apps` 4/4 | exit 0 |
+| `bun run i18n:check` | `th=1526 en=1526 my=1526` (+27: the `storeAccount` group + the profile row) |
+
+**Two durable lessons.** (1) A route may not query the database BEFORE its cheap refusals: the COD
+refusal tests sign a session for a NON-uuid user id, and an early `store_accounts` lookup turned a 400
+into a 500 — fixed by a total gate AND by moving the lookup after validation. (2) A new permission
+code must be enforced in a file the RBAC test's `routeSources` map covers;
+`backend/routes/store-accounts.ts` joined it, and `center-rbac.test.ts` now holds it to the same
+one-permission-system invariants.
+
+**REMAINING (NOT DONE — do not describe as working):**
+1. No browser E2E; the storefront dev server here cannot reach a backend from the owner's browser, so
+   the apply page, the toggle and the queue are proven by types + build + API tests, not by a click.
+2. The applicant is NOT notified of a decision (no notification helper exists in this backend) — they
+   learn it by reopening `/profile/store`.
+3. MOQ / tiered pricing, store-specific price lists, and invoice / tax-id are NOT built: the brief's
+   Phase 3 later items and its decisions 3-7 are still owner input.
+4. Real Stripe TEST E2E + production Neon stay BLOCKED (owner credentials — §70/§71).
+5. The PostgreSQL used here is disposable and does not survive an archive: server binaries from the
+   zonky `embedded-postgres-binaries-linux-amd64:16.15.0` jar, client tools from
+   `apt-get download postgresql-client-16 libpq5` extracted under `/tmp/psqlroot`, data dir
+   `/tmp/pgdata` on port 5433, schema loaded from `db/run-sqleditor.sql` (§77 note 3 still applies).

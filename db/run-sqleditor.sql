@@ -93,6 +93,26 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- A STORE ACCOUNT is the buyer-side, wholesale-eligible account: a community
+-- shop that applied once and was reviewed by VelCenter. UNIQUE(user_id) makes
+-- one application per user, and 'approved' is the only value that grants
+-- wholesale visibility.
+CREATE TABLE IF NOT EXISTS store_accounts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  store_name TEXT NOT NULL CHECK (length(btrim(store_name)) > 0),
+  contact_name TEXT NOT NULL,
+  contact_phone TEXT NOT NULL,
+  address TEXT,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  review_note TEXT,
+  reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS addresses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -306,6 +326,11 @@ CREATE TABLE IF NOT EXISTS product_selling_units (
   name TEXT NOT NULL,
   pieces INTEGER NOT NULL CHECK (pieces > 0),
   price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
+  -- WHOLESALE is a property of the unit, not a second price table: a unit whose
+  -- `is_wholesale` is true is only ever sent to (or sold to) an approved store
+  -- account. FALSE for every pre-existing row, so the retail catalog is
+  -- unchanged.
+  is_wholesale BOOLEAN NOT NULL DEFAULT FALSE,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1348,6 +1373,20 @@ ALTER TABLE public.customer_profiles ADD COLUMN IF NOT EXISTS preferences JSONB 
 ALTER TABLE public.customer_profiles ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.customer_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS store_name TEXT;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS contact_name TEXT;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS contact_phone TEXT;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending' NOT NULL;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS review_note TEXT;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS reviewed_by UUID;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+ALTER TABLE public.store_accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+
 ALTER TABLE public.addresses ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.addresses ADD COLUMN IF NOT EXISTS user_id UUID;
 ALTER TABLE public.addresses ADD COLUMN IF NOT EXISTS label TEXT DEFAULT 'Home' NOT NULL;
@@ -1508,6 +1547,7 @@ ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS pieces INTEGER
 ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS price NUMERIC(12, 2);
 ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' NOT NULL;
 ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0 NOT NULL;
+ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS is_wholesale BOOLEAN DEFAULT FALSE NOT NULL;
 ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.product_selling_units ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
@@ -3516,6 +3556,8 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON public.users (email);
 CREATE INDEX IF NOT EXISTS idx_auth_identities_provider ON public.auth_identities (provider, provider_id);
 CREATE INDEX IF NOT EXISTS idx_auth_identities_email ON public.auth_identities (email);
 CREATE INDEX IF NOT EXISTS idx_addresses_user ON public.addresses (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_store_accounts_user ON public.store_accounts (user_id);
+CREATE INDEX IF NOT EXISTS idx_store_accounts_status ON public.store_accounts (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_media_key ON public.media (key);
 CREATE INDEX IF NOT EXISTS idx_media_owner ON public.media (uploaded_by);
 CREATE INDEX IF NOT EXISTS idx_media_owner_key ON public.media (uploaded_by, key);
@@ -3545,7 +3587,22 @@ CREATE INDEX IF NOT EXISTS idx_cart_items_variant ON public.cart_items (variant_
 CREATE INDEX IF NOT EXISTS idx_product_selling_units_product ON public.product_selling_units (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_selling_units_live ON public.product_selling_units (product_id, status) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_product_selling_units_variant ON public.product_selling_units (variant_id) WHERE variant_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_product_selling_units_unique ON public.product_selling_units (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), pieces) WHERE status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_selling_units_unique ON public.product_selling_units (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), pieces, is_wholesale) WHERE status = 'active';
+-- Migration 059 keyed the live definition on the AUDIENCE too, so one size
+-- can be offered to retail and to wholesale at different prices. Replaced in
+-- place, same name, only when its key does not already carry the column.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'public' AND indexname = 'idx_product_selling_units_unique'
+       AND indexdef LIKE '%is_wholesale%'
+  ) THEN
+    DROP INDEX IF EXISTS public.idx_product_selling_units_unique;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_product_selling_units_unique ON public.product_selling_units (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), pieces, is_wholesale) WHERE status = 'active';
+    RAISE NOTICE 'velnox: idx_product_selling_units_unique keyed on is_wholesale - a retail pack and a wholesale pack of the same size are now distinct offers';
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_cart_items_selling_unit ON public.cart_items (selling_unit_id) WHERE selling_unit_id IS NOT NULL;
 -- A CART LINE IS (product, variant, SELLING UNIT). The 3-column version of this
 -- index predates selling units, and on such a database "1 pack" and "1 piece" of
@@ -3857,6 +3914,20 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'customer
   AND to_regclass('public.users') IS NOT NULL THEN
   ALTER TABLE public.customer_profiles ADD CONSTRAINT customer_profiles_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'store_accounts_user_id_fkey')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='store_accounts' AND column_name='user_id')
+  AND to_regclass('public.users') IS NOT NULL THEN
+  ALTER TABLE public.store_accounts ADD CONSTRAINT store_accounts_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'store_accounts_reviewed_by_fkey')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='store_accounts' AND column_name='reviewed_by')
+  AND to_regclass('public.users') IS NOT NULL THEN
+  ALTER TABLE public.store_accounts ADD CONSTRAINT store_accounts_reviewed_by_fkey
+    FOREIGN KEY (reviewed_by) REFERENCES public.users(id) ON DELETE SET NULL;
 END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'addresses_user_id_fkey')
   AND EXISTS (SELECT 1 FROM information_schema.columns

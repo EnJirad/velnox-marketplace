@@ -1852,10 +1852,25 @@ export default function ShopProductDetail() {
                       }`}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate font-medium">{u.name}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate font-medium">{u.name}</span>
+                          {/* Wholesale-only: this row reaches only an APPROVED
+                              store account (the server does not send it to
+                              anyone else), so the badge states its audience. */}
+                          {u.isWholesale && (
+                            <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                              {t("storeAccount.wholesaleBadge")}
+                            </span>
+                          )}
+                        </span>
                         <span className="block text-[11px] text-slate-400">
                           {t("productDetail.sellingUnitPerPiece", { price: formatBaht(u.pricePerPiece) })}
                         </span>
+                        {u.isWholesale && (
+                          <span className="block text-[10px] font-medium text-amber-700">
+                            {t("storeAccount.wholesaleOnly")}
+                          </span>
+                        )}
                       </span>
                       <span className="shrink-0 tabular-nums font-semibold">{formatBaht(u.price)}</span>
                     </button>

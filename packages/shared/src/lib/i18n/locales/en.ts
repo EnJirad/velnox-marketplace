@@ -1166,6 +1166,8 @@ export const en: Dict = {
     velrepeatDesc: "Your active automatic orders",
     account: "My account",
     accountDesc: "Edit your name, phone and account info",
+    storeAccount: "Store account (wholesale)",
+    storeAccountDesc: "Apply for wholesale pricing — approval required",
     help: "Help & support",
     helpDesc: "Contact the Velnox team",
     chat: "Chat",
@@ -1529,6 +1531,40 @@ export const en: Dict = {
     evidencePhotosCount: "Evidence Photos ({count})",
     evidenceDocsCount: "Evidence Documents ({count})",
     evidenceNoEvidence: "No evidence attached",
+  },
+
+  // Store accounts (wholesale buyers, migration 059).
+  //
+  // The copy for the ONE buyer-side application the storefront collects: a
+  // community shop asks to see wholesale prices, VelCenter decides, and only
+  // an approved account is sent the selling units a seller marked wholesale.
+  // The retail half of the storefront never shows any of this.
+  storeAccount: {
+    title: "Store account (wholesale)",
+    lead: "Apply to see wholesale prices and order by the pack — it only applies to the products a seller offers wholesale.",
+    statusPending: "Pending review",
+    statusApproved: "Approved",
+    statusRejected: "Not approved",
+    pendingNote: "Your application is in — our team will review it and let you know.",
+    approvedNote: "Wholesale is unlocked — products a seller offers wholesale now show for you.",
+    rejectedNote: "The application was not approved — correct your details and submit again.",
+    reviewNoteLabel: "Reviewer note",
+    storeName: "Store name",
+    storeNamePlaceholder: "e.g. Sukjai Grocery",
+    contactName: "Contact name",
+    contactPhone: "Contact phone",
+    address: "Store address (optional)",
+    note: "Additional details (optional)",
+    apply: "Apply for a store account",
+    update: "Update details",
+    resubmit: "Submit again",
+    saved: "Saved",
+    requiredError: "Enter the store name, contact name and phone.",
+    phoneError: "That phone number is not valid",
+    loadError: "Could not load your store account. Try again.",
+    saveError: "Could not save. Try again.",
+    wholesaleBadge: "Wholesale",
+    wholesaleOnly: "Approved store accounts only",
   },
 
 // __APPEND__

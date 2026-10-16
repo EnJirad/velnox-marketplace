@@ -10,8 +10,10 @@
  *   (`backend/routes/product-selling-units.ts`, velShop's product page).
  *
  * THE MODEL (one authority: `backend/lib/selling-units.ts`)
- *   * a selling unit is `{ name, pieces, price }` — nothing else. No wholesale
- *     account, no minimum-order engine, no tier table, no per-pack stock;
+ *   * a selling unit is `{ name, pieces, price, isWholesale }` — nothing else. No
+ *     minimum-order engine, no tier table, no per-pack stock, and no second price
+ *     table: `isWholesale` decides WHO is offered the unit (an approved store
+ *     account, `lib/store-accounts.ts`), never WHAT it costs;
  *   * `pieces` is how many BASE pieces one of it is worth, and INVENTORY IS ALWAYS
  *     COUNTED IN BASE PIECES: 2 sets of 12 reserve, settle and count 24 sold
  *     through the one existing stock path;
@@ -55,6 +57,8 @@ interface SellingUnitRow {
   pricePerPiece: number;
   status: "active" | "inactive";
   sortOrder: number;
+  /** Wholesale-only: an approved store account is its only audience. */
+  isWholesale: boolean;
 }
 
 interface VariantChoice {
@@ -75,9 +79,10 @@ interface UnitFormState {
   pieces: string;
   price: string;
   variantId: string;
+  isWholesale: boolean;
 }
 
-const EMPTY_FORM: UnitFormState = { name: "", pieces: "", price: "", variantId: "" };
+const EMPTY_FORM: UnitFormState = { name: "", pieces: "", price: "", variantId: "", isWholesale: false };
 
 function baht(value: number): string {
   return `฿${(Math.round(value * 100) / 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}`;
@@ -198,6 +203,7 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
         body: JSON.stringify({
           ...parsed,
           variantId: form.variantId || null,
+          isWholesale: form.isWholesale,
         }),
       });
       const data = await readJson(res);
@@ -226,6 +232,7 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
       pieces: String(unit.pieces),
       price: String(unit.price),
       variantId: unit.variantId ?? "",
+      isWholesale: unit.isWholesale === true,
     });
   };
 
@@ -239,7 +246,7 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(parsed),
+        body: JSON.stringify({ ...parsed, isWholesale: editFields.isWholesale }),
       });
       const data = await readJson(res);
       if (data?.success) {
@@ -372,6 +379,19 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
               </div>
             )}
           </div>
+          <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg bg-white px-2 py-1.5">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-3.5 shrink-0 accent-[#10B981]"
+              checked={form.isWholesale}
+              onChange={(e) => setForm((f) => ({ ...f, isWholesale: e.target.checked }))}
+            />
+            <span className="min-w-0 text-[10px] leading-4 text-slate-600">
+              <span className="font-semibold text-slate-700">ขายส่ง — เฉพาะร้านค้าที่อนุมัติ</span>
+              <br />
+              ลูกค้าทั่วไปจะไม่เห็นชุดนี้และราคานี้ ต้องมีบัญชีร้านค้าที่ผ่านการอนุมัติจาก VelCenter
+            </span>
+          </label>
           <p className="mt-1.5 text-[10px] text-slate-500">
             ฿ ต่อชิ้นที่แสดงให้ลูกค้า:{" "}
             <span className="font-medium text-slate-700">
@@ -449,6 +469,18 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
                     />
                   </div>
                 </div>
+                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[10px] text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="size-3.5 shrink-0 accent-[#10B981]"
+                    checked={editFields.isWholesale}
+                    onChange={(e) => setEditFields((f) => ({ ...f, isWholesale: e.target.checked }))}
+                  />
+                  <span>
+                    <span className="font-semibold text-slate-700">ขายส่ง (เฉพาะร้านค้าที่อนุมัติ)</span>
+                    {" "}— ลูกค้าทั่วไปไม่เห็นชุดนี้
+                  </span>
+                </label>
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <Button type="button" size="sm" className="h-7 gap-1 text-xs" onClick={() => saveEdit(unit)} disabled={busyId === unit.id}>
                     {busyId === unit.id ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
@@ -467,16 +499,19 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
                 <div className="flex items-center gap-1.5">
                   <Layers className="size-3.5 shrink-0 text-[#10B981]" />
                   <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{unit.name}</span>
+                  {unit.isWholesale && (
+                    <Badge className="shrink-0 bg-amber-50 text-[10px] text-amber-700">ขายส่ง</Badge>
+                  )}
                   <Badge className={`shrink-0 text-[10px] ${unit.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                     {unit.status === "active" ? "ขายอยู่" : "เลิกขาย"}
                   </Badge>
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span className="tabular-nums font-semibold text-slate-900">{baht(unit.price)}</span>
-                  <span className="text-slate-500">/ ชุด · {unit.pieces} {baseUnit}</span>
-                  <span className="text-slate-400">
-                    = {baht(unit.pricePerPiece)} / {baseUnit}
-                  </span>
+                  <span className="text-slate-500">/ ชุด · {unit.pieces} {baseUnit}</span>                  <span className="text-slate-400">= {baht(unit.pricePerPiece)} / {baseUnit}</span>
+                  {unit.isWholesale && (
+                    <span className="text-amber-700">เห็นเฉพาะร้านค้าที่อนุมัติ</span>
+                  )}
                   {basePrice > 0 && (
                     <span className={unit.pricePerPiece < basePrice ? "text-emerald-600" : "text-slate-400"}>
                       {unit.pricePerPiece < basePrice

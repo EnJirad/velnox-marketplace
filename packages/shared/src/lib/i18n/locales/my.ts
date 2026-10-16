@@ -1268,5 +1268,39 @@ export const my = {
     supportNote: "ပံ့ပိုးကူညီမှုချတ်သည် ဆိုင်ချတ်စနစ်နှင့် ချိတ်ဆက်ထားသည် — အဖွဲ့က ဤနေရာတွင် ကူညီနိုင်သည်",
   },
 
+  // Store accounts (wholesale buyers, migration 059).
+  //
+  // The copy for the ONE buyer-side application the storefront collects: a
+  // community shop asks to see wholesale prices, VelCenter decides, and only
+  // an approved account is sent the selling units a seller marked wholesale.
+  // The retail half of the storefront never shows any of this.
+  storeAccount: {
+    title: "ဆိုင်အကောင့် (လက်ကား)",
+    lead: "လက်ကားဈေးနှုန်းကို ကြည့်ပြီး အထုပ်လိုက် မှာယူရန် လျှောက်ထားပါ — ရောင်းချသူ လက်ကားရောင်းသည့် ပစ္စည်းများအတွက်သာ",
+    statusPending: "စစ်ဆေးရန် စောင့်ဆိုင်းနေသည်",
+    statusApproved: "အတည်ပြုပြီး",
+    statusRejected: "အတည်မပြုပါ",
+    pendingNote: "လျှောက်လွှာ ရရှိပါပြီ — အဖွဲ့မှ စစ်ဆေးပြီး အကြောင်းကြားပါမည်",
+    approvedNote: "လက်ကားဈေးနှုန်း ဖွင့်ပြီးပါပြီ — လက်ကားရောင်းသည့် ပစ္စည်းများကို တွေ့နိုင်ပါပြီ",
+    rejectedNote: "လျှောက်လွှာ အတည်မပြုပါ — အချက်အလက် ပြင်ပြီး ပြန်လည် လျှောက်ထားနိုင်ပါသည်",
+    reviewNoteLabel: "စစ်ဆေးသူ၏ မှတ်ချက်",
+    storeName: "ဆိုင်အမည်",
+    storeNamePlaceholder: "ဥပမာ — ရွှေလင်း ကုန်စုံဆိုင်",
+    contactName: "ဆက်သွယ်ရန် အမည်",
+    contactPhone: "ဆက်သွယ်ရန် ဖုန်း",
+    address: "ဆိုင်လိပ်စာ (မလိုအပ်)",
+    note: "အသေးစိတ် (မလိုအပ်)",
+    apply: "ဆိုင်အကောင့် လျှောက်ထားရန်",
+    update: "အချက်အလက် ပြင်ဆင်ရန်",
+    resubmit: "ပြန်လည် လျှောက်ထားရန်",
+    saved: "သိမ်းဆည်းပြီးပါပြီ",
+    requiredError: "ဆိုင်အမည်၊ ဆက်သွယ်ရန် အမည်နှင့် ဖုန်းနံပါတ် ဖြည့်ပါ",
+    phoneError: "ဖုန်းနံပါတ် မမှန်ပါ",
+    loadError: "ဆိုင်အကောင့် အချက်အလက် မရနိုင်ပါ — ထပ်စမ်းပါ",
+    saveError: "သိမ်းဆည်း မရပါ — ထပ်စမ်းပါ",
+    wholesaleBadge: "လက်ကား",
+    wholesaleOnly: "အတည်ပြုပြီး ဆိုင်အကောင့်များအတွက်သာ",
+  },
+
   // __APPEND__
 };

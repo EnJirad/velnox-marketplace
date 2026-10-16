@@ -33,6 +33,7 @@ export const PERMISSION_CATALOG: { code: string; label: string; description: str
   { code: "orders.manage", label: "จัดการออเดอร์", description: "เปลี่ยนสถานะออเดอร์" },
   { code: "products.moderate", label: "ตรวจสอบสินค้า", description: "อนุมัติ/ปฏิเสธสินค้าที่รอตรวจสอบ" },
   { code: "sellers.manage", label: "จัดการผู้ขาย", description: "อนุมัติ/ระงับผู้ขาย" },
+  { code: "stores.manage", label: "จัดการบัญชีร้านค้า", description: "อนุมัติ/ปฏิเสธบัญชีร้านค้าที่ขอซื้อส่ง" },
   { code: "users.manage", label: "ดูบัญชีผู้ใช้", description: "ดูบัญชีผู้ใช้และลูกค้า (เปลี่ยนบทบาทเป็นสิทธิ์ของเจ้าของเท่านั้น)" },
   { code: "staff.manage", label: "จัดการพนักงาน", description: "ดูบัญชีพนักงาน" },
   { code: "audit.view", label: "ดู Audit Logs", description: "ดูบันทึกการดำเนินการสำคัญ" },

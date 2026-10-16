@@ -23,6 +23,7 @@ import { query, withTransaction } from "../db/index.js";
 import { VELREPEAT_ENABLED } from "../lib/features.js";
 import { MAX_ORDER_QUANTITY, releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
 import { baseUnits, resolveSellingUnit } from "../lib/selling-units.js";
+import { isApprovedStore } from "../lib/store-accounts.js";
 // The ONE order-row lock and the money-outranks-cancel rule (see the module
 // header: every transaction writing orders + payments takes the order lock
 // first, so cancellation and the Stripe webhook can never deadlock).
@@ -410,14 +411,18 @@ export function setupCartRoutes(app: Express): void {
       // The line's PRICE and PIECES come from the definition row, never from the
       // request body, and the definition must belong to this exact product and
       // variant — a crafted body cannot attach another product's pack price.
+      // Wholesale access for THIS buyer, resolved once — after every cheap
+      // refusal, so a malformed or out-of-stock request costs no query.
+      const wholesaleAllowed = await isApprovedStore(query, userId);
       const resolvedUnit = await resolveSellingUnit(
         query,
         req.body?.sellingUnitId ?? null,
         productId,
         validatedVariantId,
+        { wholesaleAllowed },
       );
       if (!resolvedUnit.ok) {
-        res.status(resolvedUnit.code === "SELLING_UNIT_NOT_FOUND" ? 404 : 400).json({
+        res.status(resolvedUnit.code === "SELLING_UNIT_NOT_FOUND" ? 404 : resolvedUnit.code === "SELLING_UNIT_WHOLESALE_ONLY" ? 403 : 400).json({
           success: false,
           error: { code: resolvedUnit.code, message: resolvedUnit.message },
         });
@@ -584,6 +589,21 @@ export function setupCartRoutes(app: Express): void {
       // Stock is in BASE units, this line is in SELLING units: only whole units
       // the stock can cover are allowed. A plain line has pieces = 1, so its
       // behaviour is bit-identical to before.
+      // A wholesale line may not be INCREASED by a buyer without wholesale
+      // access: an account whose approval was withdrawn can still see its own
+      // cart, but it cannot raise what it would be charged for. Checkout
+      // re-applies the same gate to every line.
+      const lineUnit = await resolveSellingUnit(
+        query,
+        item.selling_unit_id ?? null,
+        item.product_id,
+        item.variant_id ?? null,
+        { wholesaleAllowed: await isApprovedStore(query, userId) },
+      );
+      if (!lineUnit.ok && lineUnit.code === "SELLING_UNIT_WHOLESALE_ONLY") {
+        res.status(403).json({ success: false, error: { code: lineUnit.code, message: lineUnit.message } });
+        return;
+      }
       const linePieces = Math.max(1, Math.floor(Number(item.selling_unit_pieces) || 1));
       const finalQty = Math.min(qty, Math.floor(availableStock / linePieces));
 
@@ -856,6 +876,9 @@ export function setupCartRoutes(app: Express): void {
         return;
       }
 
+      // Wholesale access for THIS buyer, resolved once for every line below.
+      const wholesaleAllowed = await isApprovedStore(query, userId);
+
       // Validate all items — variant-aware stock check. Also re-read the CURRENT
       // server price for every item: the final price must never come from a stale
       // cart snapshot. If a price changed, we charge the current price and flag it
@@ -889,9 +912,10 @@ export function setupCartRoutes(app: Express): void {
           item.selling_unit_id ?? null,
           item.product_id,
           item.variant_id ?? null,
+          { wholesaleAllowed },
         );
         if (!resolvedUnit.ok) {
-          res.status(resolvedUnit.code === "SELLING_UNIT_NOT_FOUND" ? 404 : 400).json({
+          res.status(resolvedUnit.code === "SELLING_UNIT_NOT_FOUND" ? 404 : resolvedUnit.code === "SELLING_UNIT_WHOLESALE_ONLY" ? 403 : 400).json({
             success: false,
             error: { code: resolvedUnit.code, message: `${resolvedUnit.message} ("${item.product_name}")` },
           });
@@ -1758,6 +1782,8 @@ export function setupCartRoutes(app: Express): void {
   app.post("/api/customer/reorder", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
+      // Wholesale access for THIS buyer, resolved once for every line below.
+      const wholesaleAllowed = await isApprovedStore(query, userId);
       const { orderId } = req.body as { orderId?: string };
       if (!orderId || typeof orderId !== "string") {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "orderId is required" } });
@@ -1843,9 +1869,13 @@ export function setupCartRoutes(app: Express): void {
           item.selling_unit_id ?? null,
           item.product_id,
           item.variant_id ?? null,
+          { wholesaleAllowed },
         );
         if (!resolvedUnit.ok) {
-          skipped.push({ productName: item.product_name || "สินค้า", reason: "selling_unit_unavailable" });
+          skipped.push({
+            productName: item.product_name || "สินค้า",
+            reason: resolvedUnit.code === "SELLING_UNIT_WHOLESALE_ONLY" ? "selling_unit_restricted" : "selling_unit_unavailable",
+          });
           continue;
         }
         const unit = resolvedUnit.unit;
