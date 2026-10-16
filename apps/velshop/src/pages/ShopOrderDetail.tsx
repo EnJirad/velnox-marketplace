@@ -97,6 +97,10 @@ interface OrderItemRow {
   quantity: number;
   subtotal: number;
   variantName?: string | null;
+  /** The set / pack as sold, or null for a plain single-piece line. */
+  sellingUnitName?: string | null;
+  /** Base pieces per selling unit (1 for a plain line). */
+  sellingUnitPieces?: number;
   imageUrl?: string | null;
   shopId?: string | null;
   /** Current product status — null/absent means the product was deleted */
@@ -875,6 +879,13 @@ export default function ShopOrderDetail() {
                       )}
                       {item.variantName && (
                         <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{item.variantName}</p>
+                      )}
+                      {/* The SET / PACK bought, so "× 2" cannot be read as 2
+                          pieces when the line is 2 sets of 12. */}
+                      {item.sellingUnitName && (
+                        <p className="mt-0.5 truncate text-xs font-medium text-[#10B981]">
+                          {item.sellingUnitName} × {item.quantity}
+                        </p>
                       )}
                       {!productAvailable && (
                         <p className="mt-0.5 text-xs text-amber-600">{t("orderDetail.productUnavailable")}</p>

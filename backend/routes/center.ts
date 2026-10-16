@@ -443,6 +443,7 @@ export function setupCenterRoutes(app: Express): void {
       if (orderIds.length > 0) {
         const items = await query(
           `SELECT oi.order_id, oi.id, oi.quantity, oi.subtotal,
+                  oi.selling_unit_name, oi.selling_unit_pieces,
                   COALESCE(NULLIF(oi.product_name_snapshot, ''), NULLIF(oi.product_name, ''), p.name, '') AS product_name,
                   p.unit AS unit
            FROM order_items oi
@@ -458,6 +459,13 @@ export function setupCenterRoutes(app: Express): void {
             productName: it.product_name || "สินค้า",
             unit: it.unit ?? "",
             quantity: it.quantity,
+            /**
+             * The set/pack as sold, and its size in BASE pieces. `quantity`
+             * counts SETS, so the company console must be able to show
+             * "เซ็ต 12 × 2" instead of a bare 2. Null / 1 for plain lines.
+             */
+            sellingUnitName: it.selling_unit_name ?? null,
+            sellingUnitPieces: Math.max(1, Math.floor(Number(it.selling_unit_pieces) || 1)),
             subtotal: parseFloat(it.subtotal) || 0,
           });
           itemsByOrder.set(it.order_id, list);
@@ -490,7 +498,13 @@ export function setupCenterRoutes(app: Express): void {
             total: parseFloat(r.total_amount) || 0,
             customerName: customer?.name ?? null,
             customerPhone: customer?.phone ?? null,
-            itemCount: items.reduce((s: number, i: any) => s + i.quantity, 0),
+            // BASE PIECES, not selling units: the console column is captioned
+            // "ชิ้น" and ops must pick and pack 24 bottles for 2 sets of 12.
+            // A plain line is `quantity * 1`, so this is unchanged legacy-wise.
+            itemCount: items.reduce(
+              (s: number, i: any) => s + Math.floor(Number(i.quantity) || 0) * Math.max(1, Math.floor(Number(i.selling_unit_pieces) || 1)),
+              0,
+            ),
             shopName: r.shop_name ?? null,
             items,
           };

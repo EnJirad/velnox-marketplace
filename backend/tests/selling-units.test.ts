@@ -31,6 +31,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { commitOrderInventory, releaseOrderInventory } from "../lib/inventory.js";
 import { baseUnits } from "../lib/selling-units.js";
+import { buildCheckoutLineItems } from "../routes/stripe.js";
 import { setupCartRoutes } from "../routes/cart.js";
 import { setupProductSellingUnitRoutes } from "../routes/product-selling-units.js";
 import { withTransaction } from "../db/index.js";
@@ -87,6 +88,63 @@ describe("the inventory authority converts, it does not re-implement", () => {
     expect(body).toContain("pieces INTEGER NOT NULL CHECK (pieces > 0)");
     expect(body).toContain("price NUMERIC(12, 2) NOT NULL CHECK (price >= 0)");
     expect(body).not.toContain("stock");
+  });
+});
+
+// ─── What the money line and the order reads SAY (pure, no database) ────────
+
+describe("the receipt says which set was bought", () => {
+  const labels = (lines: ReturnType<typeof buildCheckoutLineItems>) =>
+    lines.map((l) => l.price_data.product_data.name);
+
+  test("a set line is labelled with the definition, and charged the SET price", () => {
+    const lines = buildCheckoutLineItems(
+      [{ product_name_snapshot: "น้ำมะพร้าว", selling_unit_name: "เซ็ต 12", quantity: 2, price: 100 }],
+      20000,
+      "THB",
+      "VNX-1",
+    );
+    expect(labels(lines)).toEqual(["น้ำมะพร้าว · เซ็ต 12"]);
+    // 2 × ฿100 — the set's own price, never 2 × the single-piece ฿10.
+    expect(lines.reduce((sum, l) => sum + l.price_data.unit_amount * l.quantity, 0)).toBe(20000);
+  });
+
+  test("a plain line keeps its exact old label — no separator is invented", () => {
+    const lines = buildCheckoutLineItems(
+      [{ product_name_snapshot: "น้ำมะพร้าว", selling_unit_name: null, quantity: 3, price: 10 }],
+      3000,
+      "THB",
+      "VNX-1",
+    );
+    expect(labels(lines)).toEqual(["น้ำมะพร้าว"]);
+  });
+
+  test("a blank set name never leaves a stray separator", () => {
+    const lines = buildCheckoutLineItems(
+      [{ product_name_snapshot: "X", selling_unit_name: "   ", quantity: 1, price: 5 }],
+      500,
+      "THB",
+      "VNX-1",
+    );
+    expect(labels(lines)).toEqual(["X"]);
+  });
+});
+
+describe("every reader of an order line names the set — one shared projection", () => {
+  test("the customer, the seller and the company reads all select the snapshot", () => {
+    // Three inline SQL readers, one contract: a set line must be recognisable in
+    // every order view, or "2" is read as two pieces and two bottles are packed.
+    for (const file of ["backend/lib/order-read.ts", "backend/routes/seller-orders.ts", "backend/routes/center.ts"]) {
+      const src = read(file);
+      expect(src).toContain("selling_unit_name");
+      expect(src).toContain("selling_unit_pieces");
+    }
+  });
+
+  test("the company console counts BASE pieces in its ชิ้น column, not sets", () => {
+    expect(read("backend/routes/center.ts")).toContain(
+      "Math.floor(Number(i.quantity) || 0) * Math.max(1, Math.floor(Number(i.selling_unit_pieces) || 1))",
+    );
   });
 });
 
@@ -519,5 +577,72 @@ describe("selling units (requires TEST_DATABASE_URL)", () => {
     // Only ACTIVE definitions are offered, ordered by sort_order then size.
     expect(units.map((u) => u.pieces)).toEqual([6, 12]);
     expect(units.map((u) => u.status)).toEqual(["active", "active"]);
+  });
+
+  testFn("the customer order read names the set and how many pieces it was", async () => {
+    const seller = await seedSellerWithProduct("su-order-read");
+    const unit = (await createUnit(seller, { name: "เซ็ต 6", pieces: 6, price: 55 })).json.data;
+    const buyer = await seedCustomer("su-order-read-buyer");
+
+    await api("POST", "/api/customer/cart/add", buyer, {
+      productId: seller.productId,
+      quantity: 2,
+      sellingUnitId: unit.id,
+    });
+    const checkout = await api("POST", "/api/customer/checkout", buyer, { paymentMethod: "CARD" });
+    const orderId = checkout.json.data.orders[0].orderId as string;
+
+    // This is the payload the storefront renders (ShopOrderDetail / MyOrders):
+    // without the name, "× 2" on the order page reads as two bottles.
+    const detail = await api("GET", `/api/customer/orders/${orderId}`, buyer);
+    expect(detail.status).toBe(200);
+    expect(detail.json.data.items).toHaveLength(1);
+    expect(detail.json.data.items[0]).toMatchObject({
+      productName: "su-order-read water",
+      sellingUnitName: "เซ็ต 6",
+      sellingUnitPieces: 6,
+      quantity: 2,
+    });
+  });
+
+  testFn("a plain order line still reads as a plain line", async () => {
+    const seller = await seedSellerWithProduct("su-order-plain");
+    const buyer = await seedCustomer("su-order-plain-buyer");
+
+    await api("POST", "/api/customer/cart/add", buyer, { productId: seller.productId, quantity: 3 });
+    const checkout = await api("POST", "/api/customer/checkout", buyer, { paymentMethod: "CARD" });
+    const orderId = checkout.json.data.orders[0].orderId as string;
+
+    const detail = await api("GET", `/api/customer/orders/${orderId}`, buyer);
+    expect(detail.json.data.items[0]).toMatchObject({
+      sellingUnitName: null,
+      sellingUnitPieces: 1,
+      quantity: 3,
+    });
+  });
+
+  testFn("the seller order read names the set too", async () => {
+    const seller = await seedSellerWithProduct("su-seller-read");
+    const unit = (await createUnit(seller, { name: "ลัง 12", pieces: 12, price: 100 })).json.data;
+    const buyer = await seedCustomer("su-seller-read-buyer");
+
+    await api("POST", "/api/customer/cart/add", buyer, {
+      productId: seller.productId,
+      quantity: 2,
+      sellingUnitId: unit.id,
+    });
+    const checkout = await api("POST", "/api/customer/checkout", buyer, { paymentMethod: "CARD" });
+    const orderId = checkout.json.data.orders[0].orderId as string;
+
+    // The exact function the seller order routes use — a seller must be able to
+    // see that the line is 2 packs of 12, not 2 bottles.
+    const { fetchSellerItemsForOrders } = await import("../routes/seller-orders.js");
+    const byOrder = await fetchSellerItemsForOrders([orderId], seller.sellerId);
+    expect(byOrder[orderId]).toHaveLength(1);
+    expect(byOrder[orderId][0]).toMatchObject({
+      sellingUnitName: "ลัง 12",
+      sellingUnitPieces: 12,
+      quantity: 2,
+    });
   });
 });

@@ -219,7 +219,14 @@ export default function Income() {
                               <div className="max-w-52 space-y-0.5">
                                 {items.slice(0, 2).map((item) => (
                                   <p key={item.id} className="truncate text-sm text-slate-600">
-                                    {item.productName} × {item.quantity} {item.unit}
+                                    {item.productName} × {item.quantity}{" "}
+                                    {/* A set / pack line counts SETS: "× 2 เซ็ต 12",
+                                        not "× 2 ขวด". */}
+                                    {item.sellingUnitName ? (
+                                      <span className="font-medium text-[#10B981]">{item.sellingUnitName}</span>
+                                    ) : (
+                                      item.unit
+                                    )}
                                   </p>
                                 ))}
                                 {items.length > 2 && (
@@ -277,7 +284,12 @@ export default function Income() {
                           {items.slice(0, 2).map((item) => (
                             <p key={item.id} className="truncate text-sm text-slate-600">
                               {item.productName}{" "}
-                              <span className="text-slate-400">× {item.quantity} {item.unit}</span>
+                              <span className="text-slate-400">× {item.quantity} </span>
+                              {item.sellingUnitName ? (
+                                <span className="font-medium text-[#10B981]">{item.sellingUnitName}</span>
+                              ) : (
+                                <span className="text-slate-400">{item.unit}</span>
+                              )}
                             </p>
                           ))}
                           {items.length > 2 && (

@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { CategoryPicker } from "@velnox/shared/components/seller/CategoryPicker";
+import { SellingUnitsManager } from "@velnox/shared/components/seller/SellingUnitsManager";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -1294,6 +1295,19 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             <h3 className="mb-1 text-sm font-semibold text-slate-900">จัดการ Variants</h3>
             <p className="mb-2 text-xs text-slate-500">แก้ไขราคา, สต็อก, รูปภาพ และ SKU ของแต่ละ Variant</p>
             <VariantManager productId={current.id} price={current.price} />
+          </div>
+        )}
+
+        {/* ═══ Section 9b: Edit Mode — Sets & Packs (selling units) ═══
+            A set/pack is authored against a SAVED product (the definition
+            references the product and optional variant by id), which is why this
+            lives in edit mode beside the variant manager. Inventory stays in
+            base pieces — see SellingUnitsManager and lib/selling-units.ts. */}
+        {isEdit && current && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="mb-1 text-sm font-semibold text-slate-900">ชุด / แพ็ค — ขายยกชุด</h3>
+            <p className="mb-2 text-xs text-slate-500">ขายสินค้าเดียวกันเป็นเซ็ตหรือแพ็ค เช่น เซ็ต 6 ราคา ฿55 ให้ร้านค้าสั่งยกชุดได้ในราคาต่อชิ้นที่ถูกกว่า</p>
+            <SellingUnitsManager productId={current.id} basePrice={current.price} baseUnit={current.unit} />
           </div>
         )}
 

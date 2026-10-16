@@ -282,6 +282,11 @@ export default function ShopCart() {
                                 {line.variantOptionLabels}
                               </p>
                             )}
+                            {/* The SET / PACK this line is, so the quantity below
+                                cannot be read as pieces when it is sets of 12. */}
+                            {line.sellingUnitName && (
+                              <p className="mt-0.5 text-xs font-medium text-[#10B981]">{line.sellingUnitName}</p>
+                            )}
                             <p className="mt-0.5 text-xs text-slate-400">
                               {formatBaht(line.price)} {t("cart.perUnit", { unit: line.unit })}
                               {line.qty >= line.stock && (
@@ -431,6 +436,9 @@ export default function ShopCart() {
                               <p className="mt-0.5 truncate text-xs text-[#10B981]">
                                 {line.variantOptionLabels}
                               </p>
+                            )}
+                            {line.sellingUnitName && (
+                              <p className="mt-0.5 truncate text-xs text-[#10B981]">{line.sellingUnitName}</p>
                             )}
                             <p className="mt-0.5 text-xs tabular-nums text-slate-400">
                               {formatBaht(line.price)} × {line.qty}

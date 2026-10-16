@@ -527,10 +527,27 @@ export function sessionConfirmsPayment(session: { payment_status?: string | null
  * for the authoritative total. Stripe is therefore never asked to charge a sum
  * the backend did not compute.
  */
+/**
+ * The label Stripe prints for one order line.
+ *
+ * A line sold as a set / pack carries the definition's own name, so the receipt
+ * reads a product name plus "· เซ็ต 12" instead of a bare name beside a quantity that counts
+ * SETS — 2 with a pack of 12 must never read as 2 pieces. A plain single-piece line
+ * (every line that existed before selling units) is unchanged, and an empty name
+ * never leaves a stray separator.
+ */
+function stripeLineName(productName?: string | null, sellingUnitName?: string | null): string {
+  const base = productName || "Product";
+  const unit = typeof sellingUnitName === "string" ? sellingUnitName.trim() : "";
+  return unit ? `${base} · ${unit}` : base;
+}
+
 export function buildCheckoutLineItems(
   items: ReadonlyArray<{
     product_name_snapshot?: string | null;
     product_name?: string | null;
+    /** The set/pack this line is (`quantity` counts SETS, price is per set). */
+    selling_unit_name?: string | null;
     image_url_snapshot?: string | null;
     quantity?: unknown;
     price?: unknown;
@@ -552,7 +569,7 @@ export function buildCheckoutLineItems(
       price_data: {
         currency: code,
         product_data: {
-          name: item.product_name_snapshot || item.product_name || "Product",
+          name: stripeLineName(item.product_name_snapshot || item.product_name, item.selling_unit_name),
           ...(item.image_url_snapshot ? { images: [item.image_url_snapshot] } : {}),
         },
         unit_amount: unitAmount,
@@ -840,6 +857,7 @@ async function openCheckoutGroupSession(args: {
   // charged total are the same figure derived from the same rows.
   const itemsResult = await query(
     `SELECT oi.order_id, oi.product_name_snapshot, oi.product_name,
+            oi.selling_unit_name,
             oi.image_url_snapshot, oi.quantity, oi.price
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
@@ -2256,7 +2274,7 @@ export function setupStripeRoutes(app: Express): void {
       failureAmountMinor = expectedMinor;
 
       const itemsResult = await query(
-        `SELECT product_name_snapshot, product_name, image_url_snapshot, quantity, price
+        `SELECT product_name_snapshot, product_name, selling_unit_name, image_url_snapshot, quantity, price
            FROM order_items WHERE order_id = $1 ORDER BY created_at ASC`,
         [orderId],
       );

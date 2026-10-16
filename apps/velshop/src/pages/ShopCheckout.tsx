@@ -696,6 +696,9 @@ export default function ShopCheckout() {
                   <div className="min-w-0 flex-1">
                     <p className="min-w-0 truncate text-sm font-medium text-slate-900" title={line.name} style={{ overflowWrap: "anywhere" }}>{line.name}</p>
                     {line.variantOptionLabels && <p className="min-w-0 truncate text-xs text-[#10B981]">{line.variantOptionLabels}</p>}
+                    {/* The SET / PACK bought, so "× 2" reads as 2 sets of 12 and
+                        not as 2 pieces. */}
+                    {line.sellingUnitName && <p className="min-w-0 truncate text-xs font-medium text-[#10B981]">{line.sellingUnitName}</p>}
                     <p className="text-xs text-slate-400">× {line.qty}</p>
                   </div>
                   <span className="shrink-0 text-sm font-medium tabular-nums text-slate-900">{formatBaht(line.qty * line.price)}</span>
@@ -877,6 +880,7 @@ export default function ShopCheckout() {
                           <div className="min-w-0 flex-1">
                             <span className="block min-w-0 truncate font-medium text-slate-700" title={line.name} style={{ overflowWrap: "anywhere" }}>{line.name}</span>
                             {line.variantOptionLabels && <span className="block min-w-0 truncate text-xs text-[#10B981]">{line.variantOptionLabels}</span>}
+                            {line.sellingUnitName && <span className="block min-w-0 truncate text-xs font-medium text-[#10B981]">{line.sellingUnitName}</span>}
                             <span className="block min-w-0 truncate text-xs text-slate-400">{formatBaht(line.price)} / {line.unit} × {line.qty}</span>
                           </div>
                           <span className="shrink-0 font-medium tabular-nums text-slate-900">{formatBaht(line.qty * line.price)}</span>

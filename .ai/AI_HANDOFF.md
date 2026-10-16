@@ -459,69 +459,16 @@ DB-backed assertion inside a *static* `describe` must be gated on `hasTestDataba
 
 ---
 
-## Payment integrity — a captured Stripe charge could never settle in production (2026-10-04)
+## Payment integrity — a captured Stripe charge could never settle in production (2026-10-04) — **ARCHIVED**
 
-**Reported symptom.** Checkout → first attempt seen as failed → customer retried → the NEW Stripe
-attempt was genuinely charged → Velnox still showed "รอดำเนินการชำระ" and offered payment again.
-Retrying made it worse: every retry captured another real charge that also could not settle.
-
-**Root cause: failure class H (production schema ≠ backend code), surfacing as class D
-(`handleStripeEvent()` throws).** `checkoutGroupIdForAttempt()` (`backend/routes/stripe.ts`) decided
-which parent a charge belongs to by reading `payments.checkout_group_id` — added by migration
-**054**, which production never received. Naming an absent column raises `undefined_column` (42703),
-which is a THROWN ERROR, and it was thrown on the one query **every** order's settlement runs,
-before the order or payment row is touched:
-
-```
-payment_intent.succeeded → checkoutGroupIdForAttempt() throws 42703 → handleStripeEvent() throws
-  → payment_events.status = 'failed' → HTTP 500 → Stripe redelivers → the identical error
-  → payments.status and orders.status NEVER move → the storefront keeps offering payment
-```
-
-**Why partial application, not total absence.** `POST /api/customer/checkout` writes
-`checkout_groups` + `orders.checkout_group_id` unconditionally, so checkout demonstrably worked in
-production ⇒ 054's sections 1–2 landed ⇒ only section 3 (`payments.checkout_group_id`) did not.
-That is exactly the state `db/verify-reconciler.sh` scenario H reproduces, and it is the
-direct consequence of §66 (migrations reaching a different Neon than Render's `DATABASE_URL`).
-
-**Ruled out with live evidence, not reasoning.** `GET /api/stripe/configured?selfTest=1` on
-`velnox-api.onrender.com` → `configured: true, mode: "test", webhookConfigured: true`,
-`webhookSecretHealth.shapeUsable: true`, `webhookSignatureSelfTest.verified: true` ⇒ **A** (not
-sent) and **B** (signature) are out; an unsigned `POST /api/payments/stripe/webhook` → 400 ⇒ the
-endpoint is live and refusing. **G** is out too: `ShopCheckoutSuccess.tsx` polls
-`GET /api/orders/:orderId` until the payment settles, so the UI reported the truth.
-
-**The fix (code).** The column is read as a JSON KEY — `to_jsonb(p) ->> 'checkout_group_id'` —
-so ONE statement is correct against both schemas and cannot raise 42703; the companion `?`
-operator distinguishes "no group" from "no column" so the process can say so ONCE, naming
-`db/run-sqleditor.sql`. This is the same pattern `selectOrderPaymentRow()` already uses for
-`orders.payment_expires_at` in `lib/payment-reservation.ts`. It is **not** a bypass: the
-signature check, the `payment_events` claim, the 500-on-failure redelivery policy and the
-`status IN ('pending','pending_payment')` settlement guards are unchanged, and NULL is the safe
-answer — the column is what links a payment to a purchase, so on a database without it there is
-no group payment to route.
-
-**Tests.** `backend/tests/payment-webhook-schema-lag.test.ts` (new, 12 cases): the production
-routing SQL executed against a `payments`-shaped table **without** the column returns NULL and
-detects the absence where the pre-fix statement raises 42703 (the regression, demonstrated); a real
-group payment is still routed; attempt A failed then attempt B succeeds settles B and the order;
-a duplicate delivery settles nothing twice; an UNPAID `checkout.session.completed` never marks paid;
-an event identifying no attempt writes nothing; a processing failure answers **500** and records the
-event `failed`; and Stripe's retry of that same event id re-processes it. Suite: **1974 pass /
-2 skip / 0 fail** (67 files). `checkout-group-sql-scope.test.ts` was updated to pin the new
-statement (in scope for `payments`, no bare column reference left).
-
-**STILL BLOCKED — owner action, unchanged.** Production `payments` has no `checkout_group_id`, so a
-MULTI-SHOP checkout still cannot be paid for until `db/run-sqleditor.sql` is run against the
-database Render's `DATABASE_URL` actually points at. Confirm with `Production DB Verify`
-(`backend/routes/stripe.ts` is in its trigger paths), which needs the
-`NEON_PRODUCTION_DATABASE_URL` secret. Live `payment_events` / `payments` / `orders` reads are
-likewise BLOCKED in this workspace (no production DB access). **Real Stripe TEST E2E is BLOCKED,
-not PASS**: Stripe TEST mode is configured and verifiable in production, but payment is a Stripe
-**hosted** Checkout Session, so only a human in a browser can complete it and only then can Stripe
-deliver the webhook; this workspace has no browser and no test account.
+Moved **verbatim** to
+[`history/archive/AI_Handoff-2026-10-16-payment-integrity-capture.md`](history/archive/AI_Handoff-2026-10-16-payment-integrity-capture.md)
+on 2026-10-16 (added §77; edit-headroom housekeeping). **Superseded by §70**: the failure class it
+documents — a captured charge resolved through `payments.order_id` alone, i.e. against no order —
+is what the covering-set resolver (`lib/payment-attempt.ts`) and `terminateCheckoutGroup()` remove.
 
 ---
+
 
 ## §68. Multi-shop PromptPay — "Failed to create checkout session" (2026-10-05) — **ARCHIVED**
 
@@ -604,83 +551,19 @@ database). Only a database that stored a group payment and then lost the column 
 
 ---
 
-## §70. Payment + Checkout + Order + Inventory + Webhook — rebuilt as ONE system (2026-10-06)
+## §70. Payment + Checkout + Order + Inventory + Webhook — rebuilt as ONE system (2026-10-06) — **ARCHIVED**
 
-**Full record:** [`docs/PAYMENT_CURRENT_STATE.md`](../docs/PAYMENT_CURRENT_STATE.md) (25-question audit) ·
-[`docs/PAYMENT_TARGET_ARCHITECTURE.md`](../docs/PAYMENT_TARGET_ARCHITECTURE.md) ·
-[`docs/PAYMENT_IMPLEMENTATION.md`](../docs/PAYMENT_IMPLEMENTATION.md) (19 sections) ·
-[`docs/PAYMENT_E2E_CHECKLIST.md`](../docs/PAYMENT_E2E_CHECKLIST.md) (58 PASS / 8 BLOCKED / **0 FAIL**).
-
-### Root cause
-
-Every per-order payment **read and decision** resolved the ledger by `payments.order_id` alone, while a
-multi-shop purchase stores **ONE** payment row with `order_id IS NULL, checkout_group_id = <group>` → NULL →
-`COALESCE(…, 'unpaid')` → the UI showed `orders.status='paid'` beside "ยังไม่ชำระ". The same blindness broke the
-**decisions**: confirm gate (409 forever on a paid order), release guard (would return **sold** stock),
-cancellation gate (a paid purchase could be cancelled), expiry sweep (could expire a purchase mid-payment).
-**A seventh, more severe defect was found this pass** (`docs/PAYMENT_CURRENT_STATE.md`, defect 7): a group session's
-`metadata.orderId` is the REPRESENTATIVE order, so the four failure/expiry paths resolved to it, searched
-`payments WHERE order_id = <order>` → NULL → `moved: false` → **nothing happened at all** (payment stuck
-`requires_action`, orders stuck `pending_payment` holding stock, session never closed); the sweep then expired
-**one** order, leaving the session payable, and the late charge settled against `expired` orders — money taken,
-nothing sold, **no incident** — silently.
-
-### What was built
-
-1. **`backend/lib/payment-attempt.ts`** (new, 490 lines) — the ONE covering-set resolver: predicates, the SQL
-   fragments, the **precedence fold** (`refunded > partially_refunded > paid > processing > NEWEST`), row
-   accessors and purchase-scope readers. **24 blind subqueries across 8 files now use it**
-   (`routes/{cart,stripe,seller-orders,center}.ts`, `lib/{order-lock,order-fulfillment,inventory}.ts`,
-   `jobs/payment-reservation-scheduler.ts`).
-2. **`backend/lib/checkout-group-lifecycle.ts`** (new, 200 lines) — `terminateCheckoutGroup()`: locks every
-   member order (id ASC), refuses when any covering payment is settled or in flight (`blockedBy`), claims each
-   order, releases stock through the ONE release path, and voids the charge **last**. Used by the cancel route,
-   the expiry sweep and all four failure/expiry webhook cases.
-3. **`routes/stripe.ts`** — failure/expiry paths group-aware; purchase scope derived **server-side from the order
-   row** (closes the retry hole where an `orderId`-only request charged ONE shop's total beside a live group
-   charge); settlement records a durable late-payment incident when captured money has no payable order; refunds
-   are group-aware. **Migration 055** (mirrored in both canonical SQL files): nullable `refunds.order_id`,
-   `refunds.checkout_group_id` + index, `refunds_parent_check`, `payments_status_check` (added **conditionally**
-   — production is unreadable from a workspace). `db/verify-reconciler.sh` counts `66|243|255|652` →
-   `66|244|258|653`.
-4. **One frontend file**, `apps/velshop/src/pages/ShopCheckoutSuccess.tsx`: the payment line is no longer hidden
-   when the backend sends `payment: null`. No new i18n keys.
-
-### Verified (all observed, none assumed)
-
-| Check | Result |
-|---|---|
-| `bun test backend/tests` on a freshly reconciled disposable DB | **2011 pass / 2 skip / 0 fail**, 2013 tests, 69 files |
-| `backend/tests/checkout-group-payment-visibility.test.ts` (new, 539 lines) | **18/18** |
-| `bun run db:verify` | exit 0 — **52 PASS**, ALL SCENARIOS PASSED |
-| `bun run typecheck` (4 frontends) + `@velnox/backend` | exit 0 |
-| `bun run build:apps` | exit 0 (4/4) |
-| `bun run i18n:check` · `git diff --check` | exit 0 · clean |
-
-Five pre-existing source-shape tests failed because they pinned the OLD blind SQL verbatim; each was updated to
-pin the new architecture, and the cancel contract gained a **stronger** assertion (a grouped refusal is decided
-under the member-order locks and returns before the provider session is closed or any socket event published).
-No assertion was weakened, skipped or deleted. `bun run lint` is **not configured** in this repo.
-
-### Still BLOCKED (unchanged, do not read as PASS)
-
-1. **Real Stripe TEST-mode E2E** — no `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` /
-   `STRIPE_WEBHOOK_SECRET` (`freebuff-env list` → `{"files":{}}`), no browser, no test account. Phase 19 is
-   verified at **DB level with prototype-spied Stripe sessions** and labelled as a simulation. Requires: set the
-   three Stripe keys in the backend env and register the webhook for `POST /api/payments/stripe/webhook`.
-2. **Production Neon unreachable** — migration 055 could not be read against or applied to production (no
-   `NEON_PRODUCTION_DATABASE_URL`; GitHub App token 403 on secrets and workflow dispatch). Apply 055, confirm the
-   two new constraints, re-run the count assertion.
-3. **Owner follow-ups from this pass:** reconcile historical rows where a charge landed on `expired` orders
-   (start from `payment_incidents`); decide/implement seller payout (Stripe Connect or an internal ledger) and
-   persist commission per order — neither exists today (`docs/PAYMENT_IMPLEMENTATION.md` §19).
-
-### Conflict flagged in the task brief
-
-The brief lists `db/run-update.sql` as a schema sync target. `AGENTS.md` rule 4 forbids recreating that file, so
-only `db/schema.sql`, `db/run-sqleditor.sql` and the migration were written. `db/run-update.sql` remains absent.
+Moved **verbatim** to
+[`history/archive/AI_Handoff-2026-10-16-section-70-payment-rebuilt.md`](history/archive/AI_Handoff-2026-10-16-section-70-payment-rebuilt.md)
+on 2026-10-16 (added §77; edit-headroom housekeeping). Still-live rules it established, do not
+re-derive them: **ONE** covering-set resolver (`lib/payment-attempt.ts` — no blind
+`payments.order_id` subquery), `terminateCheckoutGroup()` (`lib/checkout-group-lifecycle.ts`) as
+the only group teardown, migration 055 (group-scoped refunds) mirrored in both canonical SQL
+files, `db/verify-reconciler.sh` counts `66|244|258|653`, and the four long-form documents under
+`docs/PAYMENT_*.md`. Its BLOCKED list (real Stripe TEST E2E, production Neon) is restated in §71.
 
 ---
+
 
 ## §71. Production e-commerce full-system rebuild — phases 0-4 DONE, 5-17 not started (2026-10-06)
 
@@ -813,7 +696,8 @@ the velSeller recurring panel were live. All are now parked (proof: flag OFF →
 buy/sell paths still mounted; flag ON → all restored), `getAnonymousId()` no longer mints an id
 while parked, and `IdentityMerge` is no longer mounted in velSeller/velCenter.
 
-**REMAINING (NOT DONE — do not describe as working):**
+**REMAINING — items 1–3 are CLOSED by §77 (2026-10-16); the historical list stays here on
+purpose:**
 1. **Seller authoring UI** for sets/packs in velSeller (`ProductFormDialog` / MyShop). The API is
    built and tested; only the form is missing, so the seller acceptance path is **API-only = FAIL**.
 2. **Set name not yet rendered** in velCheckout summary, seller/center order views, or the Stripe
@@ -828,3 +712,49 @@ while parked, and `IdentityMerge` is no longer mounted in velSeller/velCenter.
 **Note on this file's size:** §75 was archived on 2026-10-16 to get back under the ~55 KB edit-tool
 ceiling. When it approaches ~40 KB again, move the oldest still-live block to
 `history/archive/` and leave a pointer, BEFORE appending.
+
+## §77. Selling units, second pass — seller authoring UI + the set name in every view (2026-10-16)
+
+**§76's open items 1–3 are closed.** A seller can now author sets/packs from the product form, and
+the set's name reaches every surface that renders an order line. §76 remains the record of the model
+and the BASE-PIECES invariant; nothing below changes that invariant.
+
+**Seller authoring UI (the acceptance gap).** New
+`packages/shared/src/components/seller/SellingUnitsManager.tsx` — create / edit / retire /
+re-activate, the DERIVED per-piece price shown beside the set price, optional per-variant scoping —
+mounted in `ProductFormDialog` as §9b in edit mode (a definition references a saved product, and
+optionally one of its variants, by id). It talks only to the existing seller CRUD endpoints:
+validation, ownership and "one live definition per size" stay server-side, and the server's own
+error message is surfaced verbatim. Retire is a two-step confirm because it is not a delete.
+
+**The set name now reaches the receipt and every order view.**
+`buildCheckoutLineItems` labels a set line `"<product> · <set>"`; the amount charged is unchanged
+(`quantity` counts sets, `unit_amount` is the set price). The readers project the snapshot:
+`lib/order-read.ts` (customer), `routes/seller-orders.ts` (seller) and `routes/center.ts` (company)
+now return `sellingUnitName` + `sellingUnitPieces`; both Stripe line-item SELECTs and `StoreOrderItem`
+carry them. velShop (cart, checkout summary, MyOrders, ShopOrderDetail), velSeller
+(SellerOrderDetail, Income) and velCenter (order table + cards) render the set name where the base
+unit word used to sit, so "× 2" beside "เซ็ต 12" can never be read as 2 bottles.
+
+**One correction, from the same contract.** The company console's `itemCount` — captioned "ชิ้น" —
+summed `quantity`, i.e. SETS. It now sums `quantity * selling_unit_pieces`, so ops pick and pack the
+24 bottles a 2-set line needs. A plain line is `quantity * 1`: legacy values are unchanged.
+
+**Verified (real PostgreSQL 16.15, disposable DB rebuilt from `db/run-sqleditor.sql`):**
+
+| Check | Result |
+|---|---|
+| `bun test backend/tests` | **2131 pass / 2 skip / 0 fail** — 74 files, 18,270 expect() calls |
+| New tests (`backend/tests/selling-units.test.ts`, +8) | the Stripe label (set price, plain line unchanged, blank name); the three readers select the snapshot; the base-piece `itemCount`; end-to-end the customer order read AND the seller order read returning `sellingUnitName` / `sellingUnitPieces` |
+| `bun run typecheck` (4 apps) + `bunx tsc --noEmit -p backend/tsconfig.json` | exit 0 |
+| `bun run build:apps` | exit 0 — 4/4 |
+| `bun run i18n:check` | `th=1499 en=1499 my=1499` — no new keys this pass |
+
+**NOT verified / still open — do not read as PASS:**
+1. **No browser E2E exists** in this environment, and the storefront dev server cannot reach a backend
+   from the owner's browser here: the authoring form is proven by types + build + the API tests, **not**
+   by a rendered page or a click.
+2. Real **Stripe TEST-mode E2E** and **production Neon** verification stay BLOCKED — owner credentials
+   (see §70/§71).
+3. The PostgreSQL used for this proof was installed inside the workspace (`/tmp/pgroot`, 16.15). It does
+   not survive an archive: reinstall it to re-run the DB suite.

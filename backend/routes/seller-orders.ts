@@ -208,6 +208,7 @@ export async function fetchSellerItemsForOrders(
   const itemsRes = await query(
     `SELECT oi.id, oi.order_id, oi.product_id, oi.shop_id, oi.variant_id,
             oi.quantity, oi.price, oi.subtotal,
+            oi.selling_unit_name, oi.selling_unit_pieces,
             COALESCE(NULLIF(oi.product_name_snapshot, ''), NULLIF(oi.product_name, ''), p.name, '') AS product_name,
             oi.variant_name_snapshot AS variant_name_snapshot,
             COALESCE(oi.image_url_snapshot,
@@ -265,6 +266,13 @@ export async function fetchSellerItemsForOrders(
       subtotal: parseFloat(r.subtotal) || unitPrice * r.quantity,
       commissionRate: 0,
       variantName: r.variant_name_snapshot || variantLabels.get(r.variant_id) || null,
+      /**
+       * The set/pack as sold, and its size in BASE pieces: `quantity` counts
+       * SETS, so the seller order view must show "เซ็ต 12 × 2", never a bare 2.
+       * Null / 1 for every plain line, which is every legacy order.
+       */
+      sellingUnitName: r.selling_unit_name ?? null,
+      sellingUnitPieces: Math.max(1, Math.floor(Number(r.selling_unit_pieces) || 1)),
       imageUrl: r.image_url || null,
       productStatus: r.product_status,
     };

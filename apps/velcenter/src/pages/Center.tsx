@@ -670,6 +670,10 @@ export default function Center() {
     productName: string;
     unit: string;
     quantity: number;
+    /** The set / pack as sold (e.g. "เซ็ต 12"), or null for a plain line. */
+    sellingUnitName?: string | null;
+    /** Base pieces per selling unit — 1 for a plain line. */
+    sellingUnitPieces?: number;
     subtotal: number;
   }
   interface CenterOrderRow {
@@ -1262,7 +1266,14 @@ export default function Center() {
                             <div className="max-w-56 space-y-0.5">
                               {order.items.slice(0, 2).map((item) => (
                                 <p key={item.id} className="truncate text-sm text-slate-600">
-                                  {item.productName} × {item.quantity} {item.unit}
+                                  {item.productName} × {item.quantity}{" "}
+                                  {/* A set / pack line counts SETS, never pieces:
+                                      "× 2 เซ็ต 12", not "× 2 ขวด". */}
+                                  {item.sellingUnitName ? (
+                                    <span className="font-medium text-[#10B981]">{item.sellingUnitName}</span>
+                                  ) : (
+                                    item.unit
+                                  )}
                                 </p>
                               ))}
                               {order.items.length > 2 && (
@@ -1358,7 +1369,12 @@ export default function Center() {
                         {order.items.slice(0, 2).map((item) => (
                           <p key={item.id} className="truncate text-sm text-slate-600">
                             {item.productName}{" "}
-                            <span className="text-slate-400">× {item.quantity} {item.unit}</span>
+                            <span className="text-slate-400">× {item.quantity} </span>
+                            {item.sellingUnitName ? (
+                              <span className="font-medium text-[#10B981]">{item.sellingUnitName}</span>
+                            ) : (
+                              <span className="text-slate-400">{item.unit}</span>
+                            )}
                           </p>
                         ))}
                         {order.items.length > 2 && (

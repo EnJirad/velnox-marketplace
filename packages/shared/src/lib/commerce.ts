@@ -288,6 +288,14 @@ export interface StoreOrderItem {
   /** Purchased variant snapshot / resolved label (e.g. "Black / AI") */
   variantName?: string | null;
   variantId?: string | null;
+  /**
+   * The set / pack this line was sold as, as sold (e.g. "เซ็ต 12"), or null for
+   * a plain single-piece line. `quantity` counts SELLING UNITS, so "2" beside a
+   * set name means 2 sets — `sellingUnitPieces` (base pieces per unit) is what
+   * turns that into the 24 pieces inventory actually moved.
+   */
+  sellingUnitName?: string | null;
+  sellingUnitPieces?: number;
   /** Purchased snapshot image or current variant/product image */
   imageUrl?: string | null;
   productStatus?: string | null;

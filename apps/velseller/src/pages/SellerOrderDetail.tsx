@@ -444,6 +444,14 @@ export default function SellerOrderDetail() {
                         {t("sellerOrders.variant")}: {item.variantName}
                       </span>
                     )}
+                    {/* The SET / PACK this line was sold as. `quantity` counts
+                        sets, so the seller must not read "2" as 2 pieces when
+                        the line is 2 sets of 12 — and must not pack 2 bottles. */}
+                    {item.sellingUnitName && (
+                      <span className="mt-0.5 block truncate text-xs font-medium text-[#10B981]">
+                        {item.sellingUnitName} × {item.quantity}
+                      </span>
+                    )}
                     {!available && (
                       <span className="mt-0.5 block text-xs text-amber-600">
                         {t("orderDetail.productUnavailable")}

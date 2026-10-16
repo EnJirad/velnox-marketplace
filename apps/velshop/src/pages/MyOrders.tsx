@@ -496,6 +496,11 @@ export default function MyOrders() {
                               {item.variantName && (
                                 <span className="block truncate text-xs text-slate-400">{item.variantName}</span>
                               )}
+                              {/* The SET / PACK bought — the quantity beside it
+                                  counts sets, never pieces. */}
+                              {item.sellingUnitName && (
+                                <span className="block truncate text-xs font-medium text-[#10B981]">{item.sellingUnitName}</span>
+                              )}
                               {!productAvailable && (
                                 <span className="block truncate text-xs text-amber-600">
                                   {t("orderDetail.productUnavailable")}

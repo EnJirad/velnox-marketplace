@@ -26,6 +26,7 @@ export async function fetchOrderItemsForOrders(orderIds: string[]): Promise<Reco
   const itemsRes = await query(
     `SELECT oi.id, oi.order_id, oi.product_id, oi.shop_id, oi.variant_id,
             oi.quantity, oi.price, oi.subtotal,
+            oi.selling_unit_name, oi.selling_unit_pieces,
             COALESCE(NULLIF(oi.product_name_snapshot, ''), NULLIF(oi.product_name, ''), p.name, '') AS product_name,
             oi.variant_name_snapshot AS variant_name_snapshot,
             COALESCE(oi.image_url_snapshot,
@@ -83,6 +84,13 @@ export async function fetchOrderItemsForOrders(orderIds: string[]): Promise<Reco
       quantity: r.quantity,
       subtotal: parseFloat(r.subtotal) || unitPrice * r.quantity,
       variantName,
+      /**
+       * The set/pack this line is, and how many BASE pieces it is worth:
+       * `quantity` counts SETS, so "2" beside "เซ็ต 12" must never read as 2
+       * pieces. Null/1 for every plain line, which is every legacy order.
+       */
+      sellingUnitName: r.selling_unit_name ?? null,
+      sellingUnitPieces: Math.max(1, Math.floor(Number(r.selling_unit_pieces) || 1)),
       imageUrl,
       productStatus: r.product_status,
     };
