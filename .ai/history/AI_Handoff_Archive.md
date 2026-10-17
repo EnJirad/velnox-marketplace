@@ -302,3 +302,9 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-10-16-section-69-production-group-column.md`](./archive/AI_Handoff-2026-10-16-section-69-production-group-column.md) | handoff `## §69. Production \`payments.checkout_group_id\` — the gap is real, applying it is BLOCKED` | Moved **verbatim** on 2026-10-16 while adding §78 (edit-headroom housekeeping; the current-state file was at ~54 KB against the ~55 KB edit-tool limit). Kept because its finding is still the open production gap and still **BLOCKED**: production Neon never received migration 054 §3, so `payments.checkout_group_id` is absent on the database Render serves and the multi-shop OPEN path answers 503 `CHECKOUT_GROUP_UNAVAILABLE`, while `db/verify-reconciler.sh` scenario H reproduces that exact shape and proves the fix. The fix is applying `db/run-sqleditor.sql` to the **same** Neon Render points at, which needs `NEON_PRODUCTION_DATABASE_URL` (still absent — §71). The handoff keeps a short pointer with the same claim. |
+
+### 2026-10-17 — §79 (wholesale discoverability) added; §71 archived
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-16-section-71-production-rebuild.md`](./archive/AI_Handoff-2026-10-16-section-71-production-rebuild.md) | handoff `## §71. Production e-commerce full-system rebuild — phases 0-4 DONE, 5-17 not started` | Moved **verbatim** on 2026-10-17 while adding §79 (edit-headroom housekeeping). Kept because it is still the map of the remaining rebuild: Phase 4 (migration 056 commerce-core invariants) is DONE and the 13 design documents under `.ai/rebuild/` are the authority for phases 5-17, with `FINAL_VERIFICATION.md` §2/§3.1 as the regression floor. Its blocked items (real Stripe TEST E2E, the production Neon migration) are restated in §78/§79 of the handoff. |

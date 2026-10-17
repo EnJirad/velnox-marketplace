@@ -1565,6 +1565,18 @@ export const en: Dict = {
     saveError: "Could not save. Try again.",
     wholesaleBadge: "Wholesale",
     wholesaleOnly: "Approved store accounts only",
+    // The product page's wholesale callout. The fact that a wholesale tier
+    // exists is PUBLIC; the pack names and prices are not, so this copy speaks
+    // about the tier without ever naming or pricing a pack.
+    wholesaleTierTitle: "Wholesale pricing available",
+    wholesaleTierNone: "This product has {count} wholesale pack(s) for shops — apply for a store account to see the prices and order.",
+    wholesaleTierAnonymous: "This product has {count} wholesale pack(s) for shops — sign in to apply for a store account.",
+    wholesaleTierPending: "Your store-account application is being reviewed — wholesale prices appear once it is approved.",
+    wholesaleTierRejected: "Your store-account application was not approved — review the reason and apply again.",
+    wholesaleApply: "Apply for a store account",
+    wholesaleSignIn: "Sign in to apply",
+    wholesaleCheckStatus: "View application status",
+    wholesaleFixApplication: "See the reason",
   },
 
 // __APPEND__

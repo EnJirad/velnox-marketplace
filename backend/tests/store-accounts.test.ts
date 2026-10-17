@@ -34,7 +34,7 @@ import { join } from "path";
 import cookieParser from "cookie-parser";
 import express from "express";
 import jwt from "jsonwebtoken";
-import { isApprovedStore, validateStoreApplication } from "../lib/store-accounts.js";
+import { getWholesaleAccess, isApprovedStore, validateStoreApplication } from "../lib/store-accounts.js";
 import { formatSellingUnit } from "../lib/selling-units.js";
 import { setupCartRoutes } from "../routes/cart.js";
 import { setupProductRoutes } from "../routes/products.js";
@@ -54,14 +54,19 @@ const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 describe("the wholesale gate lives in one place", () => {
   test("the authority module owns the question", () => {
     const lib = read("backend/lib/store-accounts.ts");
+    expect(lib).toContain("export async function getWholesaleAccess");
     expect(lib).toContain("export async function isApprovedStore");
     expect(lib).toContain("export async function getStoreAccount");
     expect(lib).toContain("export function validateStoreApplication");
-    // The rule is the status, and nothing else.
-    expect(lib).toContain("WHERE user_id = $1 AND status = 'approved'");
+    // The rule is the viewer's status, and nothing else. The status is read from
+    // ONE row and the boolean every gate speaks is derived from it, so a public
+    // "may I see wholesale?" answer and the "why not?" the page shows cannot
+    // disagree.
+    expect(lib).toContain('return { status, approved: status === "approved" };');
+    expect(lib).toContain("return (await getWholesaleAccess(exec, userId)).approved;");
     // Anonymous / unset / malformed can never be approved: the gate is TOTAL, so
     // an id that is not a `users.id` is false rather than a database error.
-    expect(lib).toContain("if (!isUserId(userId)) return false;");
+    expect(lib).toContain('if (!isUserId(userId)) return { status: "none", approved: false };');
     expect(lib).toContain("if (!isUserId(userId)) return null;");
   });
 
@@ -72,22 +77,42 @@ describe("the wholesale gate lives in one place", () => {
     expect(units).toContain("withWholesale ? WHERE : `${WHERE} AND is_wholesale = FALSE`");
     // `isWholesale` travels in the payload so a storefront can label the row.
     expect(units).toContain("isWholesale: row.is_wholesale === true");
+    // The PUBLIC half of the gate is a COUNT, and only a count: enough for the
+    // page to say the tier exists, never enough to name or price a pack. The
+    // slice is the function body only (the next export ends it).
+    const counterEnd = units.indexOf("export async function loadSellingUnits");
+    const counter = units.slice(
+      units.indexOf("export async function countWholesaleUnits"),
+      // The next function's doc comment is not part of this body.
+      units.lastIndexOf("/**", counterEnd),
+    );
+    expect(counter).toContain("COUNT(*)::int AS unit_count");
+    expect(counter).toContain("is_wholesale = TRUE");
+    expect(counter).toContain("GROUP BY product_id");
+    expect(counter).not.toContain("name");
+    expect(counter).not.toContain("price");
+    expect(counter).not.toContain("sort_order");
   });
 
   test("no route re-implements the gate", () => {
     // Every surface asks the authority: catalog, detail, cart add, cart update,
     // checkout and reorder. A second `SELECT ... FROM store_accounts` outside the
     // lib would be the drift this test exists to catch.
-    for (const file of [
-      "backend/routes/products.ts",
-      "backend/routes/cart.ts",
-      "backend/routes/store-accounts.ts",
-    ]) {
-      expect(read(file)).toContain("isApprovedStore");
-    }
+    // The catalog/detail ask the status-aware accessor; the cart's writers ask
+    // the boolean it derives from; the applicant endpoints use the account read.
+    expect(read("backend/routes/products.ts")).toContain("getWholesaleAccess");
+    expect(read("backend/routes/cart.ts")).toContain("isApprovedStore");
+    expect(read("backend/routes/store-accounts.ts")).toContain("getStoreAccount");
+    // No route may read the table itself — that is how two surfaces start
+    // disagreeing about who a wholesale price belongs to.
+    expect(read("backend/routes/products.ts")).not.toContain("FROM store_accounts");
+    expect(read("backend/routes/cart.ts")).not.toContain("FROM store_accounts");
     const products = read("backend/routes/products.ts");
-    // Both the catalog and the detail read the VIEWER's access.
-    expect(products.split("includeWholesale: await isApprovedStore(query, req.user?.userId)").length - 1).toBe(2);
+    // Both the catalog and the detail resolve the VIEWER's access — exactly once
+    // each, and the same answer gates the rows and labels the page.
+    expect(products.split("const storeAccess = await getWholesaleAccess(query, req.user?.userId);").length - 1).toBe(2);
+    expect(products.split("includeWholesale: storeAccess.approved").length - 1).toBe(2);
+    expect(products).toContain("formatWholesale(wholesaleCounts.get(row.id) ?? 0, storeAccess)");
     // …and both are `optionalAuth`, so a signed-out read still resolves the viewer.
     expect(products).toContain('app.get("/api/products/catalog", optionalAuth');
     expect(products).toContain('app.get("/api/products/:productId", optionalAuth');
@@ -365,6 +390,24 @@ describe("store accounts + wholesale access (requires TEST_DATABASE_URL)", () =>
     const detailStore = await api("GET", `/api/products/${seller.productId}`, store);
     expect((detailAnon.json.data.sellingUnits as any[]).map((u) => u.name)).toEqual(["เซ็ต 6"]);
     expect((detailStore.json.data.sellingUnits as any[]).map((u) => u.name)).toEqual(["เซ็ต 6", "ลัง 24"]);
+
+    // ── PUBLIC AVAILABILITY, PRIVATE PACKS ─────────────────────────────────
+    // Every viewer learns THAT the tier exists (and how many packs)…
+    expect(anon.product.wholesale).toEqual({ available: true, unitCount: 1, access: "anonymous" });
+    expect(ordinary.product.wholesale).toEqual({ available: true, unitCount: 1, access: "none" });
+    expect(approved.product.wholesale).toEqual({ available: true, unitCount: 1, access: "approved" });
+    // …and the pack name / price / id never leave the gate for anyone else.
+    // (Asserted on the unit rows, not on raw JSON: a random uuid can contain any
+    // digit sequence, so a substring check on "180" would be flaky.)
+    expect((anon.product.sellingUnits as any[]).every((u) => u.isWholesale === false)).toBe(true);
+    expect(JSON.stringify(anon.product.sellingUnits)).not.toContain(wholesaleUnit.id);
+    expect(JSON.stringify(anon.product.sellingUnits)).not.toContain("ลัง 24");
+    expect(ordinary.product.wholesale.available).toBe(true);
+    expect(JSON.stringify(detailAnon.json.data.sellingUnits)).not.toContain(wholesaleUnit.id);
+    // The detail payload carries the same block, so the product page can offer
+    // the application without a second request.
+    expect(detailAnon.json.data.wholesale).toEqual({ available: true, unitCount: 1, access: "anonymous" });
+    expect(detailStore.json.data.wholesale).toEqual({ available: true, unitCount: 1, access: "approved" });
   });
 
   testFn("the cart refuses a wholesale pack without access, and writes nothing", async () => {
@@ -552,6 +595,48 @@ describe("store accounts + wholesale access (requires TEST_DATABASE_URL)", () =>
     expect(duplicate.json.error.code).toBe("DUPLICATE_SELLING_UNIT");
   });
 
+  testFn("the page learns WHY the packs are hidden, not just that they are", async () => {
+    const owner = await seedUser("sa-callout-owner", "owner");
+    const seller = await seedSellerWithProduct("sa-callout");
+    await createUnit(seller, { name: "ลัง 24", pieces: 24, price: 180, isWholesale: true });
+    const buyer = await seedUser("sa-callout-buyer");
+
+    const accessOf = async (who: { userId: string; email: string } | null) => {
+      const res = await api("GET", `/api/products/${seller.productId}`, who);
+      expect(res.status).toBe(200);
+      return res.json.data.wholesale;
+    };
+
+    // The callout's CTA changes with the applicant's own state: sign in → apply
+    // → wait → re-apply. The server is the only thing that answers it.
+    expect(await accessOf(null)).toEqual({ available: true, unitCount: 1, access: "anonymous" });
+    expect(await accessOf(buyer)).toEqual({ available: true, unitCount: 1, access: "none" });
+
+    const applied = await applyForStore(buyer);
+    expect(await accessOf(buyer)).toEqual({ available: true, unitCount: 1, access: "pending" });
+
+    const rejected = await review(owner, applied.json.data.id as string, "reject", "ข้อมูลร้านไม่ครบ");
+    expect(rejected.status).toBe(200);
+    expect(await accessOf(buyer)).toEqual({ available: true, unitCount: 1, access: "rejected" });
+
+    // An approved store needs no callout: it already receives the packs.
+    const store = await seedUser("sa-callout-store");
+    const storeApplied = await applyForStore(store);
+    await review(owner, storeApplied.json.data.id as string, "approve");
+    const approved = await accessOf(store);
+    expect(approved.access).toBe("approved");
+    expect(approved.available).toBe(true);
+  });
+
+  testFn("a product with no wholesale pack advertises no tier", async () => {
+    const seller = await seedSellerWithProduct("sa-no-wholesale");
+    await createUnit(seller, { name: "เซ็ต 6", pieces: 6, price: 55 });
+    const detail = await api("GET", `/api/products/${seller.productId}`, null);
+    expect(detail.status).toBe(200);
+    // Nothing to apply for, so the storefront shows no wholesale callout at all.
+    expect(detail.json.data.wholesale).toEqual({ available: false, unitCount: 0, access: "anonymous" });
+  });
+
   testFn("the authority answers false for an unknown account and for a non-uuid id", async () => {
     const { query } = await import("../db/index.js");
     const missing = await seedUser("sa-authority");
@@ -562,5 +647,11 @@ describe("store accounts + wholesale access (requires TEST_DATABASE_URL)", () =>
     // be a 500 (22P02) where the honest answer is "not an approved store".
     expect(await isApprovedStore(query, "user-payment-test")).toBe(false);
     expect(await isApprovedStore(query, "")).toBe(false);
+    // The status-aware read makes the same answer explainable…
+    expect(await getWholesaleAccess(query, missing.userId)).toEqual({ status: "none", approved: false });
+    expect(await getWholesaleAccess(query, null)).toEqual({ status: "anonymous", approved: false });
+    expect(await getWholesaleAccess(query, "user-payment-test")).toEqual({ status: "none", approved: false });
+    // …and the boolean helper is the SAME answer, not a second rule.
+    expect(await isApprovedStore(query, null)).toBe((await getWholesaleAccess(query, null)).approved);
   });
 });

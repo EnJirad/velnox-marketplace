@@ -32,6 +32,13 @@
  * load units (plus the matching SQL filter), so visibility and purchasability can
  * never disagree: a viewer who cannot see a wholesale unit cannot buy it either,
  * and a crafted cart body naming one is refused rather than silently re-priced.
+ *
+ * WHAT IS PUBLIC
+ *   Only the FACT that a product offers wholesale, and how many packs it holds
+ *   (`countWholesaleUnits`). A signed-out visitor may be told the tier exists —
+ *   otherwise the application could never be discovered — but a pack name or a
+ *   price stays behind the gate. The count selects no name/price column, so it
+ *   cannot become a side channel.
  */
 import type pg from "pg";
 
@@ -194,6 +201,45 @@ export function formatSellingUnit(row: any) {
     /** Wholesale-only: shown to (and buyable by) approved store accounts only. */
     isWholesale: row.is_wholesale === true,
   };
+}
+
+/**
+ * How many ACTIVE wholesale-only units each product offers — a COUNT, and only a
+ * count.
+ *
+ * WHY A COUNT AND NOT THE ROWS
+ *   A signed-out or not-yet-approved visitor is told that a wholesale tier EXISTS
+ *   (so the storefront can offer the application) without being told what the
+ *   packs are called or what they cost. `loadSellingUnits` stays the only reader
+ *   of the rows themselves, and it still filters wholesale out for that viewer,
+ *   so the count is the ONLY wholesale fact that escapes the gate.
+ *
+ * A database without migration 059 has no wholesale units at all, so both the
+ * missing-column and missing-table cases answer an empty map rather than an
+ * error: "nothing wholesale here" is the exact pre-059 truth.
+ */
+export async function countWholesaleUnits(
+  exec: SqlExecutor,
+  productIds: string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (productIds.length === 0) return counts;
+  try {
+    const rows = (
+      await exec(
+        `SELECT product_id, COUNT(*)::int AS unit_count
+           FROM product_selling_units
+          WHERE product_id = ANY($1) AND status = 'active' AND is_wholesale = TRUE
+          GROUP BY product_id`,
+        [productIds],
+      )
+    ).rows;
+    for (const row of rows) counts.set(row.product_id, Number(row.unit_count) || 0);
+  } catch (err: any) {
+    if (err?.code === "42703" || err?.code === "42P01") return counts;
+    throw err;
+  }
+  return counts;
 }
 
 /**

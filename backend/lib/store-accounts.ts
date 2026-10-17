@@ -96,33 +96,76 @@ export function formatStoreAccount(row: any): FormattedStoreAccount {
 }
 
 /**
- * Is this user an APPROVED store?
+ * What the VIEWER is, as far as wholesale is concerned.
  *
- * The single gate for wholesale. Anonymous (`null` / `undefined`) is never
- * approved, so a public catalog request is gated by construction rather than by
- * the caller remembering to check.
+ *   anonymous  no session at all (a public read)
+ *   none       signed in, never applied
+ *   pending    applied, waiting for VelCenter
+ *   approved   the one status that grants wholesale visibility
+ *   rejected   applied and refused (may re-apply)
+ *
+ * This is the ONLY read of `store_accounts` that answers "may this viewer see a
+ * wholesale price?". It returns the status so a storefront can also say WHY the
+ * packs are hidden (apply / wait / re-apply) instead of guessing from a boolean.
+ * The status travels only to the caller's own request — it is never attached to
+ * another user's payload.
  */
-export async function isApprovedStore(
+export type WholesaleAccessStatus = "anonymous" | "none" | StoreAccountStatus;
+
+export interface WholesaleAccess {
+  status: WholesaleAccessStatus;
+  /** True for `approved` only. Every gate reads this, never `status` directly. */
+  approved: boolean;
+}
+
+/**
+ * Resolve the caller's wholesale access in ONE query.
+ *
+ * Anonymous (`null` / `undefined`) is never approved, so a public catalog read
+ * is gated by construction rather than by the caller remembering to check. A
+ * status the CHECK constraint would not allow is read as `none`: the gate is
+ * total, and an unrecognised value must never be treated as approved.
+ */
+export async function getWholesaleAccess(
   exec: SqlExecutor,
   userId: string | null | undefined,
-): Promise<boolean> {
-  if (!isUserId(userId)) return false;
+): Promise<WholesaleAccess> {
+  if (userId === null || userId === undefined || userId === "") {
+    return { status: "anonymous", approved: false };
+  }
+  // An id that cannot own a row is not an approved store — asking the database
+  // about it would only turn "no access" into a 500.
+  if (!isUserId(userId)) return { status: "none", approved: false };
   try {
-    const res = await exec(
-      `SELECT 1 FROM store_accounts WHERE user_id = $1 AND status = 'approved' LIMIT 1`,
-      [userId],
-    );
-    return res.rows.length > 0;
+    const res = await exec(`SELECT status FROM store_accounts WHERE user_id = $1`, [userId]);
+    const raw = res.rows[0]?.status;
+    const status: WholesaleAccessStatus = (STORE_ACCOUNT_STATUSES as readonly string[]).includes(raw)
+      ? (raw as StoreAccountStatus)
+      : "none";
+    return { status, approved: status === "approved" };
   } catch (err: any) {
     // 42P01 = the table does not exist yet (migration 059 has not run). Nobody is
     // an approved store on such a database, and the wholesale units stay hidden —
     // the fail-closed direction.
     if (err?.code === "42P01") {
       console.warn("[store-accounts] store_accounts table not found — no wholesale access is granted");
-      return false;
+      return { status: "none", approved: false };
     }
     throw err;
   }
+}
+
+/**
+ * Is this user an APPROVED store?
+ *
+ * Kept as the boolean shape the cart/checkout/reorder paths already speak; it is
+ * a thin read of `getWholesaleAccess`, so there is still exactly one rule.
+ */
+export async function isApprovedStore(
+  exec: SqlExecutor,
+  userId: string | null | undefined,
+): Promise<boolean> {
+  return (await getWholesaleAccess(exec, userId)).approved;
 }
 
 /** The caller's own account row (any status), or null when they never applied. */

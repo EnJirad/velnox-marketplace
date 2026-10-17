@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-16 · **Branch:** `freebuff/d4296b7210b943b805a8cf6d` (from `main`) · **Latest pass:** **store accounts + GATED wholesale BUILT** (**§78**) — wholesale packs and their prices reach an approved store account only, the retail path is unchanged, full suite **2152 pass / 2 skip / 0 fail** against a real PostgreSQL 16.15 and `db:verify` ALL SCENARIOS PASSED (CANON `77|305|352|837`); no browser E2E exists here; production DB + real Stripe TEST E2E remain BLOCKED (owner action)
+**Last updated:** 2026-10-17 · **Branch:** `freebuff/d4296b7210b943b805a8cf6d` (from `main`) · **Latest pass:** **wholesale is DISCOVERABLE** (**§79**) — a public pack COUNT plus the per-status application CTA on the product page; pack names and prices still reach an approved store only; full suite **2154 pass / 2 skip / 0 fail** against a real PostgreSQL 16.15; no browser E2E exists here; production DB + real Stripe TEST E2E remain BLOCKED (owner action)
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -509,34 +509,14 @@ files, `db/verify-reconciler.sh` counts `66|244|258|653`, and the four long-form
 ---
 
 
-## §71. Production e-commerce full-system rebuild — phases 0-4 DONE, 5-17 not started (2026-10-06)
+## §71. Production e-commerce full-system rebuild — phases 0-4 DONE, 5-17 not started (2026-10-06) — **ARCHIVED**
 
-**PHASE 4 (DB invariants) IS DONE AND VERIFIED; phases 5-17 have not started.** The 13 required
-design documents live in **`.ai/rebuild/`** — that directory is the authority for this
-work, and `FINAL_VERIFICATION.md` is the ONLY record of what passed: its §2 is the untouched
-pre-change floor and its §3.1 the Phase 4 evidence. Read `CURRENT_ARCHITECTURE.md` (evidence-backed
-audit, findings A1-A19), `TARGET_ARCHITECTURE.md`, `DOMAIN_MODEL.md`, `STATE_MACHINES.md` and
-`MIGRATION_PLAN.md` (the 17-phase plan and its gates).
-
-**Phase 4 shipped** `db/migrations/056_commerce_core_invariants.sql` — additive and rerunnable: the 9
-new tables, both order axes, the SAME four counters on BOTH stock axes, the ledger append-only trigger
-and the retry metadata. No `DROP CONSTRAINT` and no `DROP INDEX` anywhere in it. It is mirrored into
-BOTH canonical files and **distributed into the reconciler's real passes**, never a late block — a late
-block puts `ADD COLUMN` after the index pass and the contract tests refuse it.
-`db/verify-reconciler.sh` expects `75|296|339|807` and derives scenario G's table count from `CANON`
-instead of a literal. `commerce-core-invariants.test.ts` asserts the SQLSTATEs.
-
-`orders_total_matches_parts_check` was written and DELIBERATELY REVERTED — §43's "a constraint would
-reject valid data": a production-shaped order can hold a total with no line breakdown. Do not
-reintroduce it; the reconcilers report the relationship instead.
-
-**Blocker status unchanged — not PASS:** Stripe TEST E2E **BLOCKED** (no keys; `freebuff-env list` →
-`{"files":{}}`); production migration **BLOCKED** (no `NEON_PRODUCTION_DATABASE_URL`). `bun run lint` is
-**not configured**. §39's `db/run-update.sql` demand conflicts with `AGENTS.md` rule 4 — that file stays
-absent; only `db/schema.sql`, `db/run-sqleditor.sql` and `db/migrations/056_*.sql` get written.
-
-Next: **Phase 5 (Checkout)**, then 6-17 per `MIGRATION_PLAN.md` §3. Re-read §2 and §3.1 of
-`FINAL_VERIFICATION.md` first: a regression is a difference from §2, never from the last edit.
+Moved **verbatim** to
+[`history/archive/AI_Handoff-2026-10-16-section-71-production-rebuild.md`](history/archive/AI_Handoff-2026-10-16-section-71-production-rebuild.md)
+on 2026-10-17 (added §79; edit-headroom housekeeping). Still-live claim, do not re-derive it:
+Phase 4 (DB invariants, migration 056) is DONE; phases 5-17 have not started and the plan lives in
+`.ai/rebuild/MIGRATION_PLAN.md`. Real Stripe TEST E2E and the production Neon migration stay
+**BLOCKED** on owner credentials (§78 note 4).
 
 ---
 
@@ -777,3 +757,47 @@ one-permission-system invariants.
    zonky `embedded-postgres-binaries-linux-amd64:16.15.0` jar, client tools from
    `apt-get download postgresql-client-16 libpq5` extracted under `/tmp/psqlroot`, data dir
    `/tmp/pgdata` on port 5433, schema loaded from `db/run-sqleditor.sql` (§77 note 3 still applies).
+
+## §79. Wholesale is discoverable — the tier is public, its packs are not (2026-10-17)
+
+**§78 hid the whole tier, so nobody could ever find the application.** A product page showed nothing at
+all to a signed-out or pending visitor, and `/profile/store` was reachable only from the profile menu.
+Now every product payload carries `wholesale: { available, unitCount, access }`, and the page renders
+one callout with the single action that viewer can take.
+
+**The public half is a COUNT.** `lib/selling-units.ts#countWholesaleUnits` is a separate read:
+`COUNT(*) … WHERE is_wholesale = TRUE AND status = 'active'` grouped by product. It selects no name, no
+price and no sort order, so a viewer who cannot see a pack cannot infer its contents. Catalog and detail
+call it once per request; a database without migration 059 (42703 / 42P01) gets an empty map — "no
+wholesale tier", never an error.
+
+**Access is explainable now, not just a boolean.** `lib/store-accounts.ts#getWholesaleAccess` reads the
+viewer's ONE row and answers `status` (`anonymous` / `none` / `pending` / `approved` / `rejected`) plus
+`approved`; `isApprovedStore()` is a thin read of it, so there is still ONE rule and ONE query per
+request. Catalog + detail resolve it once and pass `storeAccess.approved` to `loadSellingUnits`, so the
+count and the rows cannot disagree about who the viewer is.
+
+**Storefront.** `ShopProductDetail` shows the amber callout only when `available && access !==
+'approved'`: anonymous → `/auth?returnTo=/profile/store`, `none` → apply, `pending` → view status,
+`rejected` → see the reason and re-apply. An approved store already receives the real packs and sees no
+callout. Copy added under `storeAccount.*` in th / en / my.
+
+**Verified (PostgreSQL 16.15, disposable DB rebuilt from `db/run-sqleditor.sql`):**
+
+| Check | Result |
+|---|---|
+| `bun test backend/tests` | **2154 pass / 2 skip / 0 fail** — 75 files, 18,470 assertions |
+| `store-accounts.test.ts` (21) | every access state observed through the real detail endpoint; no pack id or name in a non-approved payload; a product with no pack reports `available: false`; the boolean helper equals `getWholesaleAccess().approved` |
+| `bun run typecheck` 4/4 + `tsc -p backend` · `bun run build:apps` 4/4 | exit 0 |
+| `bun run i18n:check` | `th=1535 en=1535 my=1535` (+9 keys) |
+| `git diff --check` | clean |
+
+**NOT verified / still open — do not read as PASS:**
+1. No browser E2E here: the callout is proven by payload tests + types + build, **not** by a rendered
+   click. The storefront dev server still cannot reach a backend from the owner's browser.
+2. The applicant is still NOT notified of a decision (no notification helper exists); they learn it by
+   reopening `/profile/store` or the product page.
+3. MOQ / tiered prices, store-specific price lists and invoice / tax-id remain unbuilt.
+4. Real Stripe TEST E2E + production Neon stay **BLOCKED** (owner credentials — §70/§71).
+5. This proof's PostgreSQL is disposable: micromamba `postgresql=16` under `/tmp/pgroot`, data dir
+   `/tmp/pgdata`, port 55432. It does not survive an archive.

@@ -1590,6 +1590,18 @@ export const th = {
     saveError: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง",
     wholesaleBadge: "ราคาส่ง",
     wholesaleOnly: "เฉพาะบัญชีร้านค้าที่อนุมัติแล้ว",
+    // The product page's wholesale callout. The fact that a wholesale tier
+    // exists is PUBLIC; the pack names and prices are not, so this copy speaks
+    // about the tier without ever naming or pricing a pack.
+    wholesaleTierTitle: "สินค้านี้มีราคาขายส่ง",
+    wholesaleTierNone: "มี {count} แพ็คขายส่งสำหรับร้านค้า — สมัครบัญชีร้านค้าเพื่อดูราคาและสั่งซื้อ",
+    wholesaleTierAnonymous: "มี {count} แพ็คขายส่งสำหรับร้านค้า — เข้าสู่ระบบเพื่อสมัครบัญชีร้านค้า",
+    wholesaleTierPending: "ใบสมัครบัญชีร้านค้าของคุณอยู่ระหว่างตรวจสอบ — ราคาส่งจะแสดงเมื่อได้รับอนุมัติ",
+    wholesaleTierRejected: "ใบสมัครบัญชีร้านค้าของคุณยังไม่ผ่านการอนุมัติ — ตรวจสอบเหตุผลและส่งใหม่ได้",
+    wholesaleApply: "สมัครบัญชีร้านค้า",
+    wholesaleSignIn: "เข้าสู่ระบบเพื่อสมัคร",
+    wholesaleCheckStatus: "ดูสถานะใบสมัคร",
+    wholesaleFixApplication: "ดูเหตุผลและสมัครใหม่",
   },
 
 // __APPEND__

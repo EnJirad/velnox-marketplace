@@ -110,6 +110,25 @@ export interface StoreProduct {
    * product was before selling units existed.
    */
   sellingUnits?: StoreSellingUnit[];
+  /**
+   * The WHOLESALE tier this product offers — public availability, private packs.
+   *
+   * `available`/`unitCount` say only that the tier exists (and how many packs it
+   * holds), never a pack name or a price; those rows arrive in `sellingUnits`
+   * only for an approved store. `access` is the VIEWER's own store-account
+   * status, so the product page can offer the application instead of dead air.
+   */
+  wholesale?: StoreWholesaleAvailability;
+}
+
+/** The caller's store-account status, as far as wholesale is concerned. */
+export type WholesaleAccessStatus = "anonymous" | "none" | "pending" | "approved" | "rejected";
+
+/** Public availability of a product's wholesale tier (names/prices stay gated). */
+export interface StoreWholesaleAvailability {
+  available: boolean;
+  unitCount: number;
+  access: WholesaleAccessStatus;
 }
 
 /**
@@ -130,6 +149,11 @@ export interface StoreSellingUnit {
   pricePerPiece: number;
   status: "active" | "inactive";
   sortOrder: number;
+  /**
+   * Wholesale-only: this unit and its price are sent to (and buyable by) an
+   * APPROVED store account only. Absent/false on every public unit.
+   */
+  isWholesale: boolean;
 }
 
 export interface ProductOptionGroup {

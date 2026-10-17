@@ -37,8 +37,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
 import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
-import { loadSellingUnits } from "../lib/selling-units.js";
-import { isApprovedStore } from "../lib/store-accounts.js";
+import { countWholesaleUnits, loadSellingUnits } from "../lib/selling-units.js";
+import { getWholesaleAccess, type WholesaleAccess } from "../lib/store-accounts.js";
 import {
   buildOptionValueIndex,
   normalizeVariantOptions,
@@ -269,6 +269,26 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
       row.verification_status,
       row.seller_verification_status,
     ),
+  };
+}
+
+/**
+ * The wholesale block on a product payload.
+ *
+ * AVAILABILITY IS PUBLIC; THE PACKS ARE NOT. A signed-out or pending visitor is
+ * told that this product HAS a wholesale tier, and how many packs it holds — a
+ * count is enough to offer the application and reveals neither a pack name nor a
+ * price. The rows themselves stay behind `loadSellingUnits`, which returns them
+ * to an approved store only.
+ *
+ * `access` is the VIEWER's own status, so the storefront can say what to do next
+ * (apply / wait for review / re-apply) instead of showing one generic button.
+ */
+function formatWholesale(unitCount: number, access: WholesaleAccess) {
+  return {
+    available: unitCount > 0,
+    unitCount,
+    access: access.status,
   };
 }
 
@@ -2234,18 +2254,28 @@ export function setupProductRoutes(app: Express): void {
       const productIds = result.rows.map((r: any) => r.id);
       const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
 
+      // WHO is asking, resolved ONCE per request. The answer gates the wholesale
+      // rows below and tells the storefront whether to offer the application.
+      const storeAccess = await getWholesaleAccess(query, req.user?.userId);
+
       // Selling units (sets / packs) for this page, in ONE query. A product with
       // none is served as a plain single-unit line, which is what every product
       // was before selling units existed.
       const sellingUnitsByProduct = await loadSellingUnits(query, productIds, {
-        includeWholesale: await isApprovedStore(query, req.user?.userId),
+        includeWholesale: storeAccess.approved,
       });
+
+      // How many wholesale packs each product holds — a COUNT, so the page can
+      // say the tier exists without sending a name or a price to a viewer who
+      // may not see the packs themselves.
+      const wholesaleCounts = await countWholesaleUnits(query, productIds);
 
       const products = result.rows.map((row: any) => {
         const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
         const productVariants = variantsByProduct.get(row.id) ?? [];
         formatted.variants = productVariants;
         formatted.sellingUnits = sellingUnitsByProduct.get(row.id) ?? [];
+        formatted.wholesale = formatWholesale(wholesaleCounts.get(row.id) ?? 0, storeAccess);
         applyVariantStock(formatted, productVariants);
         // Attach featured variant for product card pricing + image
         if (row.featured_variant_id && productVariants.length > 0) {
@@ -2357,13 +2387,25 @@ export function setupProductRoutes(app: Express): void {
         inventoryByProduct.get(productId) ?? null
       );
       formatted.variants = variantsByProduct.get(productId) ?? [];
+      // WHO is asking, resolved ONCE: it gates the wholesale rows and tells the
+      // page whether to offer the store-account application.
+      const storeAccess = await getWholesaleAccess(query, req.user?.userId);
+
       // Selling units (sets / packs): the "by the piece or by the pack" choice the
-      // product page renders. Only ACTIVE definitions are exposed.
+      // product page renders. Only ACTIVE definitions are exposed, and a wholesale
+      // one only to an approved store.
       formatted.sellingUnits = (
         await loadSellingUnits(query, [productId], {
-          includeWholesale: await isApprovedStore(query, req.user?.userId),
+          includeWholesale: storeAccess.approved,
         })
       ).get(productId) ?? [];
+
+      // The pack COUNT (never the names or the prices) of the wholesale tier, so
+      // every other viewer still learns the tier exists and can apply.
+      formatted.wholesale = formatWholesale(
+        (await countWholesaleUnits(query, [productId])).get(productId) ?? 0,
+        storeAccess,
+      );
       applyVariantStock(formatted, formatted.variants);
 
       // Detail images for the product detail page

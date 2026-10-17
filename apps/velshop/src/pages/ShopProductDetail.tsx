@@ -842,6 +842,34 @@ export default function ShopProductDetail() {
     : unitBaseStock;
   const outOfStock = displayStock <= 0;
   const lowStock = !outOfStock && displayStock <= 5;
+
+  /* ── Wholesale tier: public existence, private packs ──────────────────────
+     The payload tells every viewer THAT the tier exists (and how many packs),
+     but the pack rows themselves reach an approved store only. So an approved
+     store already has the rows in `sellingUnits` above and needs no prompt;
+     everyone else is offered the one action that can unlock them — sign in,
+     wait for review, fix a rejected application, or apply. */
+  const wholesaleAvailability = product?.wholesale;
+  const wholesaleAccess = wholesaleAvailability?.access ?? "none";
+  const showWholesaleCallout =
+    wholesaleAvailability?.available === true && wholesaleAccess !== "approved";
+  const wholesalePacks = wholesaleAvailability?.unitCount ?? 0;
+  const wholesaleBody =
+    wholesaleAccess === "pending"
+      ? t("storeAccount.wholesaleTierPending")
+      : wholesaleAccess === "rejected"
+        ? t("storeAccount.wholesaleTierRejected")
+        : wholesaleAccess === "anonymous"
+          ? t("storeAccount.wholesaleTierAnonymous", { count: wholesalePacks })
+          : t("storeAccount.wholesaleTierNone", { count: wholesalePacks });
+  const wholesaleCta =
+    wholesaleAccess === "anonymous"
+      ? { to: `/auth?returnTo=${encodeURIComponent("/profile/store")}`, label: t("storeAccount.wholesaleSignIn") }
+      : wholesaleAccess === "pending"
+        ? { to: "/profile/store", label: t("storeAccount.wholesaleCheckStatus") }
+        : wholesaleAccess === "rejected"
+          ? { to: "/profile/store", label: t("storeAccount.wholesaleFixApplication") }
+          : { to: "/profile/store", label: t("storeAccount.wholesaleApply") };
   const avgRating = reviewSummary.total > 0 ? reviewSummary.avgRating : null;
   const hasOptionGroups = optionGroups.length > 0;
   const allRequiredSelected = useMemo(() => {
@@ -1330,6 +1358,31 @@ export default function ShopProductDetail() {
                 </div>
               </div>
             </div>
+
+            {/* Wholesale tier — its existence is public, its packs are not.
+                Shown to a signed-out / pending / rejected viewer only, with the
+                one action that can unlock the prices. The copy names no pack and
+                no price: those never reach this page without approval. */}
+            {showWholesaleCallout && (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+                <div className="flex items-start gap-2.5">
+                  <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                    <Store className="size-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-amber-900">{t("storeAccount.wholesaleTierTitle")}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-amber-800">{wholesaleBody}</p>
+                    <Button
+                      asChild
+                      size="sm"
+                      className="mt-2.5 h-8 gap-1 rounded-lg bg-amber-600 px-3 text-xs font-semibold text-white hover:bg-amber-700"
+                    >
+                      <Link to={wholesaleCta.to}>{wholesaleCta.label}</Link>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ═══════════ COMPACT VARIANT SELECTOR ═══════════ */}
             {hasOptionGroups && (

@@ -1300,6 +1300,18 @@ export const my = {
     saveError: "သိမ်းဆည်း မရပါ — ထပ်စမ်းပါ",
     wholesaleBadge: "လက်ကား",
     wholesaleOnly: "အတည်ပြုပြီး ဆိုင်အကောင့်များအတွက်သာ",
+    // The product page's wholesale callout. The fact that a wholesale tier
+    // exists is PUBLIC; the pack names and prices are not, so this copy speaks
+    // about the tier without ever naming or pricing a pack.
+    wholesaleTierTitle: "လက်ကားဈေးနှုန်း ရနိုင်ပါသည်",
+    wholesaleTierNone: "ဤပစ္စည်းတွင် ဆိုင်များအတွက် လက်ကားအထုပ် {count} ခု ရှိသည် — ဈေးနှုန်းကြည့်ရန်နှင့် မှာယူရန် ဆိုင်အကောင့် လျှောက်ထားပါ။",
+    wholesaleTierAnonymous: "ဤပစ္စည်းတွင် ဆိုင်များအတွက် လက်ကားအထုပ် {count} ခု ရှိသည် — ဆိုင်အကောင့် လျှောက်ရန် ဝင်ရောက်ပါ။",
+    wholesaleTierPending: "သင့်ဆိုင်အကောင့် လျှောက်လွှာကို စစ်ဆေးနေပါသည် — အတည်ပြုပြီးမှ လက်ကားဈေးနှုန်းများ ပေါ်လာပါမည်။",
+    wholesaleTierRejected: "သင့်ဆိုင်အကောင့် လျှောက်လွှာ အတည်မပြုရပါ — အကြောင်းရင်းကို ကြည့်ပြီး ပြန်လည် လျှောက်ထားနိုင်ပါသည်။",
+    wholesaleApply: "ဆိုင်အကောင့် လျှောက်ထားရန်",
+    wholesaleSignIn: "လျှောက်ရန် ဝင်ရောက်ပါ",
+    wholesaleCheckStatus: "လျှောက်လွှာ အခြေအနေ ကြည့်ရန်",
+    wholesaleFixApplication: "အကြောင်းရင်း ကြည့်ရန်",
   },
 
   // __APPEND__
