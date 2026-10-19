@@ -308,3 +308,9 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-10-16-section-71-production-rebuild.md`](./archive/AI_Handoff-2026-10-16-section-71-production-rebuild.md) | handoff `## §71. Production e-commerce full-system rebuild — phases 0-4 DONE, 5-17 not started` | Moved **verbatim** on 2026-10-17 while adding §79 (edit-headroom housekeeping). Kept because it is still the map of the remaining rebuild: Phase 4 (migration 056 commerce-core invariants) is DONE and the 13 design documents under `.ai/rebuild/` are the authority for phases 5-17, with `FINAL_VERIFICATION.md` §2/§3.1 as the regression floor. Its blocked items (real Stripe TEST E2E, the production Neon migration) are restated in §78/§79 of the handoff. |
+
+### 2026-10-19 — §80 (MVP = BUY + SELL + CONTROL) added; §78 + §79 archived
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-17-wholesale-store-accounts.md`](./archive/AI_Handoff-2026-10-17-wholesale-store-accounts.md) | handoff `## §78. Store accounts + gated wholesale` + `## §79. Wholesale is discoverable` | Moved **verbatim** (byte-verified) on 2026-10-19 while adding §80 (edit-headroom housekeeping; the current-state file was at ~52.8 KB). Kept because they are the full record of how the wholesale track worked: migration 059, `store_accounts`, `is_wholesale`, the one-gate rule (`status = 'approved'`), the total/fail-closed accessor, the count-only public half, and the apply → review → buy-by-the-pack proof. Superseded as a PRODUCT by §80, which parks the track with `WHOLESALE_ENABLED`; the schema and every column stay in place, so re-enabling is a flag flip rather than a rebuild. |

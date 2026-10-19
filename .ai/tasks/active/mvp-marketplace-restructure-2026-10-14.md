@@ -1,4 +1,28 @@
-# MVP Restructure — buy & sell: retail + community-store wholesale
+# ⛔ SUPERSEDED IN PART (2026-10-19) — MVP = BUY + SELL + CONTROL
+
+> **Read this before anything below.** The owner re-scoped the MVP on 2026-10-19.
+>
+> * **BUY + SELL + CONTROL is the whole MVP.** Customer buys retail; seller lists and sells;
+>   VelCenter controls the marketplace.
+> * **Wholesale / B2B / store accounts are OUT OF SCOPE and PARKED in code** —
+>   `WHOLESALE_ENABLED = false` in `packages/shared/src/lib/features.ts` and
+>   `backend/lib/features.ts`. See `AI_HANDOFF.md` §80 for the parked surfaces and the exact
+>   guard on each one. Nothing was deleted and no schema changed.
+> * **`Selling Unit / Set / Pack` is CORE and stays on.** Retail sets and packs, their own price,
+>   and the single base-unit stock authority are unaffected by the park.
+> * VelRepeat and Customer Memory remain parked exactly as §4 describes.
+>
+> **What this brief still owns:** §5 (the Phase-1 parking + captions that shipped) and §6 (the
+> selling-unit model, shipped as handoff §76/§77). **§7 (store accounts) and §8 (restock) are parked
+> with wholesale**, and §9's owner decisions 2–7 are moot until it returns. §6.6's acceptance
+> criteria remain valid for **retail** sets/packs only.
+>
+> The repository and `AI_HANDOFF.md` are authoritative; the text below is kept as the record of the
+> decision trail, not as a current plan.
+
+---
+
+# MVP Restructure — buy & sell: retail + community-store wholesale (historical)
 
 **Status:** **Phase 1 COMPLETE (shipped 2026-10-14)** · Phases 2–4 **DESIGNED, NOT BUILT**
 **Assigned:** 2026-10-14 · **Branch:** `main` · **Owner brief:** in-session (Thai), summarised in §2
