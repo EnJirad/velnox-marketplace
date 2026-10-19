@@ -4,7 +4,7 @@ import { VelRepeatPlanDialog } from "@/components/shop/VelRepeatPlanDialog";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { VBadge } from "@velnox/shared/components/VBadge";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
+import { VELREPEAT_ENABLED, WHOLESALE_ENABLED } from "@velnox/shared/lib/features";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@velnox/shared/components/ui/sheet";
@@ -851,8 +851,11 @@ export default function ShopProductDetail() {
      wait for review, fix a rejected application, or apply. */
   const wholesaleAvailability = product?.wholesale;
   const wholesaleAccess = wholesaleAvailability?.access ?? "none";
+  // PARKED 2026-10-19: no wholesale CTA while B2B is out of the MVP. The API
+  // already reports `available: false` for every product (the count is not read
+  // while parked); the flag keeps the callout off even against an older API.
   const showWholesaleCallout =
-    wholesaleAvailability?.available === true && wholesaleAccess !== "approved";
+    WHOLESALE_ENABLED && wholesaleAvailability?.available === true && wholesaleAccess !== "approved";
   const wholesalePacks = wholesaleAvailability?.unitCount ?? 0;
   const wholesaleBody =
     wholesaleAccess === "pending"
@@ -1910,7 +1913,7 @@ export default function ShopProductDetail() {
                           {/* Wholesale-only: this row reaches only an APPROVED
                               store account (the server does not send it to
                               anyone else), so the badge states its audience. */}
-                          {u.isWholesale && (
+                          {WHOLESALE_ENABLED && u.isWholesale && (
                             <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                               {t("storeAccount.wholesaleBadge")}
                             </span>
@@ -1919,7 +1922,7 @@ export default function ShopProductDetail() {
                         <span className="block text-[11px] text-slate-400">
                           {t("productDetail.sellingUnitPerPiece", { price: formatBaht(u.pricePerPiece) })}
                         </span>
-                        {u.isWholesale && (
+                        {WHOLESALE_ENABLED && u.isWholesale && (
                           <span className="block text-[10px] font-medium text-amber-700">
                             {t("storeAccount.wholesaleOnly")}
                           </span>

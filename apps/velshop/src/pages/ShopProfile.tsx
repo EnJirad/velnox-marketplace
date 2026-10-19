@@ -17,7 +17,7 @@ import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useAction } from "@velnox/shared/lib/api-routes";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
+import { VELREPEAT_ENABLED, WHOLESALE_ENABLED } from "@velnox/shared/lib/features";
 import { AvatarImage } from "@velnox/shared/components/ui/avatar-image";
 import {
   Bell,
@@ -89,9 +89,12 @@ const COMMUNICATION: ProfileRow[] = [
 
 const ACCOUNT: ProfileRow[] = [
   { to: "/profile/account", labelKey: "profile.account", descKey: "profile.accountDesc", icon: CircleUserRound },
-  // The wholesale buyer track: apply for a store account so the packs a seller
-  // marked wholesale (and their prices) become visible to this account.
-  { to: "/profile/store", labelKey: "profile.storeAccount", descKey: "profile.storeAccountDesc", icon: Store },
+  // PARKED 2026-10-19: the wholesale buyer track is out of the MVP, so no
+  // "store account" row is offered and the customer buys retail immediately.
+  // The row and the page stay in source (not deleted) for when B2B returns.
+  ...(WHOLESALE_ENABLED
+    ? [{ to: "/profile/store", labelKey: "profile.storeAccount", descKey: "profile.storeAccountDesc", icon: Store }]
+    : []),
 ];
 
 interface NotificationRow {

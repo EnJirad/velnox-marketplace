@@ -32,6 +32,7 @@
  *   who a wholesale price belongs to.
  */
 import type { SqlExecutor } from "./selling-units.js";
+import { WHOLESALE_ENABLED } from "./features.js";
 
 /** The review vocabulary, mirrored by the `store_accounts_status_check` CHECK. */
 export const STORE_ACCOUNT_STATUSES = ["pending", "approved", "rejected"] as const;
@@ -132,6 +133,14 @@ export async function getWholesaleAccess(
 ): Promise<WholesaleAccess> {
   if (userId === null || userId === undefined || userId === "") {
     return { status: "anonymous", approved: false };
+  }
+  // PARKED (2026-10-19): the wholesale buyer track is out of the MVP. Nobody is
+  // an approved store while it is off, so `isApprovedStore` — and therefore
+  // every cart / checkout / reorder gate that delegates to it — is false without
+  // touching any of those call sites. The row is still read by nobody: this is a
+  // FLAG, not a data change, so re-enabling restores each shop's stored status.
+  if (!WHOLESALE_ENABLED) {
+    return { status: "none", approved: false };
   }
   // An id that cannot own a row is not an approved store — asking the database
   // about it would only turn "no access" into a 500.

@@ -41,6 +41,7 @@
  *   cannot become a side channel.
  */
 import type pg from "pg";
+import { WHOLESALE_ENABLED } from "./features.js";
 
 /** A `query`-shaped executor: the pool helper and a transaction client both fit. */
 export type SqlExecutor = (
@@ -155,7 +156,12 @@ export async function resolveSellingUnit(
   // WHOLESALE: refused for anyone who is not an approved store. This is a
   // permission, not a stock problem, so it carries its own code — the cart maps
   // it to 403 and the message names the requirement instead of blaming stock.
-  if (row.is_wholesale === true && opts.wholesaleAllowed !== true) {
+  // The flag is checked HERE as well as at the caller: while wholesale is parked
+  // no caller can open the gate, not even one that computed `wholesaleAllowed`
+  // before the flag changed or that passes `true` by mistake. `is_wholesale`
+  // rows stay in the database, invisible and unbuyable, and come back with the
+  // flag — nothing is deleted.
+  if (row.is_wholesale === true && (!WHOLESALE_ENABLED || opts.wholesaleAllowed !== true)) {
     return {
       ok: false,
       code: "SELLING_UNIT_WHOLESALE_ONLY",
@@ -223,6 +229,10 @@ export async function countWholesaleUnits(
   productIds: string[],
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
+  // PARKED: a parked tier is not advertised at all. Returning an empty map means
+  // every product payload reports `wholesale.available = false`, so the
+  // storefront callout disappears without the product route needing a branch.
+  if (!WHOLESALE_ENABLED) return counts;
   if (productIds.length === 0) return counts;
   try {
     const rows = (
@@ -257,7 +267,9 @@ export async function loadSellingUnits(
 ): Promise<Map<string, ReturnType<typeof formatSellingUnit>[]>> {
   const byProduct = new Map<string, ReturnType<typeof formatSellingUnit>[]>();
   if (productIds.length === 0) return byProduct;
-  const withWholesale = opts.includeWholesale === true;
+  // PARKED: `includeWholesale` is ANDed with the flag, so a caller that still
+  // passes the viewer's (now always false) access cannot resurrect the rows.
+  const withWholesale = WHOLESALE_ENABLED && opts.includeWholesale === true;
   const SELECT = `id, product_id, variant_id, name, pieces, price, status, sort_order, is_wholesale`;
   const WHERE = `product_id = ANY($1) AND status = 'active'`;
   const ORDER = `ORDER BY sort_order ASC, pieces ASC, created_at ASC`;

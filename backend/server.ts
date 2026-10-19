@@ -31,7 +31,7 @@ import { registerVerificationRoutes } from "./routes/verification.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
 import { startVelRepeatV2CycleScheduler } from "./jobs/velrepeat-v2-cycle-scheduler.js";
 import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
-import { VELREPEAT_ENABLED } from "./lib/features.js";
+import { VELREPEAT_ENABLED, WHOLESALE_ENABLED } from "./lib/features.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupProductSellingUnitRoutes } from "./routes/product-selling-units.js";
 import { setupStoreAccountRoutes } from "./routes/store-accounts.js";
@@ -485,12 +485,17 @@ setupProductOptionRoutes(app);
 // untouched by it: a set only states its own name, pieces and price.
 setupProductSellingUnitRoutes(app);
 
-// ─── Store accounts (wholesale buyers) ──────────────────────────────────
-// A community shop applies once and VelCenter approves it; only an approved
-// account is sent (or may order) the selling units a seller marked wholesale.
-// This mount is inert for the retail path: an unapproved or anonymous viewer
-// simply never receives those rows.
-setupStoreAccountRoutes(app);
+// ─── Store accounts (wholesale buyers) — PARKED 2026-10-19 ───────────────
+// The MVP is BUY + SELL + CONTROL and B2B / wholesale is out of scope, so this
+// block is NOT mounted while `WHOLESALE_ENABLED` is off: `/api/customer/store-account`
+// and `/api/admin/store-accounts*` answer 404 instead of accepting an application
+// nobody will review. Selling units (sets / packs) are unaffected — only this
+// second buyer track is parked. Nothing was deleted: the routes, the table, the
+// VelCenter queue and the tests stay in the repository, and setting
+// WHOLESALE_ENABLED=true restores the exact call below.
+if (WHOLESALE_ENABLED) {
+  setupStoreAccountRoutes(app);
+}
 
 // ─── VelRepeat (PARKED 2026-10-14) ──────────────────────────────
 // The owner re-scoped the MVP to buy-and-sell (retail + wholesale by the pack)

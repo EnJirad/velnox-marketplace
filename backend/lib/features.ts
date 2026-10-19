@@ -17,3 +17,20 @@
 export const VELREPEAT_ENABLED = process.env.VELREPEAT_ENABLED === "true";
 
 export const CUSTOMER_MEMORY_ENABLED = process.env.CUSTOMER_MEMORY_ENABLED === "true";
+
+/**
+ * Wholesale (store accounts + `is_wholesale` selling units) — PARKED 2026-10-19.
+ *
+ * The MVP is BUY + SELL + CONTROL; B2B / wholesale is out of scope. Selling
+ * units (set / pack) are core and are NOT gated by this flag — only the second
+ * buyer track is.
+ *
+ * FAIL CLOSED, like the two above: only the exact string `"true"` opens it. When
+ * off, the three wholesale authorities answer as if no store were ever approved
+ * (`lib/store-accounts.ts`), wholesale units are never loaded, resolved or
+ * counted (`lib/selling-units.ts`), the store-account routes are not mounted, and
+ * the `stores.manage` code leaves the permission catalog — so a crafted request, a
+ * stale cached page or a misconfigured environment can all only see the retail
+ * marketplace.
+ */
+export const WHOLESALE_ENABLED = process.env.WHOLESALE_ENABLED === "true";

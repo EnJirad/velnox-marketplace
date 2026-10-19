@@ -22,8 +22,23 @@
  *   6. The seller marks a unit wholesale with a real boolean, and the same size
  *      may be offered to both audiences at different prices.
  *
- * The integration half is gated on `hasTestDatabase()` — the same gate every
- * other DB-backed suite in this repository uses.
+ *   7. PARKED (2026-10-19). The MVP is BUY + SELL + CONTROL and B2B / wholesale
+ *      is out of scope, so the whole track is switched off in code — not deleted.
+ *      The tests below therefore describe TWO states of the same source:
+ *
+ *        • always: the schema, the shared gate module and the parking contract
+ *          (`$4` at the end of this file) — those must hold in either state;
+ *        • while `WHOLESALE_ENABLED` is off: every retail invariant that says a
+ *          wholesale price can never reach a shopper, enforced a second time by
+ *          the flag itself (a unit marked wholesale is not even counted);
+ *        • while it is on: the original apply → review → buy-by-the-pack suite,
+ *          kept intact so re-enabling does not silently drop its coverage.
+ *
+ *      Nothing here was weakened to make the suite green: a parked test SKIPS and
+ *      says so, and the parked contract is asserted instead.
+ *
+ * The integration half is gated on `hasTestDatabase()` (and on the module being
+ * enabled) — the same gate every other DB-backed suite in this repository uses.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Server } from "http";
@@ -35,7 +50,10 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import jwt from "jsonwebtoken";
 import { getWholesaleAccess, isApprovedStore, validateStoreApplication } from "../lib/store-accounts.js";
-import { formatSellingUnit } from "../lib/selling-units.js";
+import { countWholesaleUnits, formatSellingUnit, loadSellingUnits, resolveSellingUnit } from "../lib/selling-units.js";
+import { WHOLESALE_ENABLED } from "../lib/features.js";
+import { PERMISSION_CATALOG } from "../lib/permissions.js";
+import { WHOLESALE_ENABLED as SHARED_WHOLESALE_ENABLED } from "../../packages/shared/src/lib/features.js";
 import { setupCartRoutes } from "../routes/cart.js";
 import { setupProductRoutes } from "../routes/products.js";
 import { setupProductSellingUnitRoutes } from "../routes/product-selling-units.js";
@@ -72,7 +90,9 @@ describe("the wholesale gate lives in one place", () => {
 
   test("selling units apply it — visibility and purchasability use the same flag", () => {
     const units = read("backend/lib/selling-units.ts");
-    expect(units).toContain('if (row.is_wholesale === true && opts.wholesaleAllowed !== true)');
+    // TWO conditions, in this order: the buyer's access AND the module flag. A
+    // parked module cannot be opened by a caller that passes `true`.
+    expect(units).toContain("if (row.is_wholesale === true && (!WHOLESALE_ENABLED || opts.wholesaleAllowed !== true))");
     expect(units).toContain('code: "SELLING_UNIT_WHOLESALE_ONLY"');
     expect(units).toContain("withWholesale ? WHERE : `${WHERE} AND is_wholesale = FALSE`");
     // `isWholesale` travels in the payload so a storefront can label the row.
@@ -179,15 +199,17 @@ describe("the wholesale gate lives in one place", () => {
 
 // ─── Integration ─────────────────────────────────────────────────────────────
 
-describe("store accounts + wholesale access (requires TEST_DATABASE_URL)", () => {
-  const testFn = hasTestDatabase() ? test : test.skip;
+describe("store accounts + wholesale access (requires TEST_DATABASE_URL + WHOLESALE_ENABLED)", () => {
+  // PARKED while the module is off: the source is intact, so these assertions
+  // are kept verbatim and simply do not run. Nothing is deleted or relaxed.
+  const testFn = hasTestDatabase() && WHOLESALE_ENABLED ? test : test.skip;
 
   let server: Server | undefined;
   let base = "";
   const createdUserIds: string[] = [];
 
   beforeAll(async () => {
-    if (!hasTestDatabase()) return;
+    if (!(hasTestDatabase() && WHOLESALE_ENABLED)) return;
     process.env.STRIPE_SECRET_KEY = "sk_test_000000000000000000000000";
     process.env.STRIPE_WEBHOOK_SECRET = "whsec_test_000000000000000000000000";
     const app = express();
@@ -653,5 +675,88 @@ describe("store accounts + wholesale access (requires TEST_DATABASE_URL)", () =>
     expect(await getWholesaleAccess(query, "user-payment-test")).toEqual({ status: "none", approved: false });
     // …and the boolean helper is the SAME answer, not a second rule.
     expect(await isApprovedStore(query, null)).toBe((await getWholesaleAccess(query, null)).approved);
+  });
+});
+
+// ─── PARKED (2026-10-19) — MVP = BUY + SELL + CONTROL ────────────────────────
+//
+// Wholesale is out of scope. These run while the module is off and SKIP when it
+// is switched back on. They prove the park is a real gate on the server rather
+// than a hidden button:
+//   • the switch exists in BOTH halves and fails closed;
+//   • the store-account routes are not mounted at all;
+//   • no seller can author a new wholesale mark;
+//   • the selling-unit authorities stay shut even when a caller asks to open them;
+//   • the permission catalog stops offering a grant that guards nothing.
+
+const parkedFn = WHOLESALE_ENABLED ? test.skip : test;
+
+describe("wholesale is PARKED — retail is the only buyer track", () => {
+  parkedFn("both halves of the switch are OFF and fail closed", () => {
+    expect(WHOLESALE_ENABLED).toBe(false);
+    expect(SHARED_WHOLESALE_ENABLED).toBe(false);
+    expect(read("backend/lib/features.ts")).toContain(
+      'export const WHOLESALE_ENABLED = process.env.WHOLESALE_ENABLED === "true";',
+    );
+    expect(read("packages/shared/src/lib/features.ts")).toContain(
+      "export const WHOLESALE_ENABLED = false;",
+    );
+  });
+
+  parkedFn("the store-account routes are not mounted, so every endpoint is a 404", () => {
+    const server = read("backend/server.ts");
+    const at = server.indexOf("if (WHOLESALE_ENABLED) {");
+    expect(at).toBeGreaterThan(-1);
+    expect(server.slice(at, at + 220)).toContain("setupStoreAccountRoutes(app);");
+    // …and there is no second, unconditional mount anywhere else.
+    expect(server.split("setupStoreAccountRoutes(app);").length - 1).toBe(1);
+  });
+
+  parkedFn("a wholesale mark cannot be authored while parked", () => {
+    expect(read("backend/routes/product-selling-units.ts")).toContain(
+      "if (body.isWholesale === true && !WHOLESALE_ENABLED)",
+    );
+  });
+
+  parkedFn("the gate stays shut even when the caller asks for wholesale", async () => {
+    // A stub executor that would happily return a wholesale row: this is the
+    // strongest case, because the ONLY thing standing between it and a retail
+    // shopper is the flag.
+    const rows = [
+      {
+        id: "unit-1",
+        product_id: "p1",
+        variant_id: null,
+        name: "แพ็ค 12",
+        pieces: 12,
+        price: 100,
+        status: "active",
+        is_wholesale: true,
+      },
+    ];
+    const exec = async () => ({ rows });
+    const resolved = await resolveSellingUnit(exec, "unit-1", "p1", null, { wholesaleAllowed: true });
+    expect(resolved.ok).toBe(false);
+    if (!resolved.ok) expect(resolved.code).toBe("SELLING_UNIT_WHOLESALE_ONLY");
+  });
+
+  parkedFn("no wholesale row is loaded, and the tier is not even counted", async () => {
+    const sql: string[] = [];
+    const exec = async (text: string) => {
+      sql.push(text);
+      return { rows: [] as any[] };
+    };
+    await loadSellingUnits(exec, ["p1"], { includeWholesale: true });
+    expect(sql.length).toBe(1);
+    expect(sql[0]).toContain("AND is_wholesale = FALSE");
+    // The count is not executed at all: a parked tier is not advertised, not
+    // even as a number, so no payload can suggest that applying would help.
+    const counts = await countWholesaleUnits(exec, ["p1"]);
+    expect(counts.size).toBe(0);
+    expect(sql.length).toBe(1);
+  });
+
+  parkedFn("the permission catalog does not offer a grant that guards nothing", () => {
+    expect(PERMISSION_CATALOG.map((p) => p.code)).not.toContain("stores.manage");
   });
 });

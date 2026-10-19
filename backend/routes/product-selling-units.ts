@@ -49,6 +49,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import { formatSellingUnit } from "../lib/selling-units.js";
+import { WHOLESALE_ENABLED } from "../lib/features.js";
 
 function param(req: Request, key: string): string {
   const val = req.params[key] as string | string[] | undefined;
@@ -157,6 +158,13 @@ function validateUnit(body: UnitInput, partial: boolean): ValidationResult {
   if (body.isWholesale !== undefined) {
     if (typeof body.isWholesale !== "boolean") {
       return { ok: false, message: "isWholesale must be true or false" };
+    }
+    // PARKED 2026-10-19: wholesale is out of the MVP, so a crafted body cannot
+    // create a new hidden tier. Refusing (rather than silently writing `false`)
+    // keeps the seller's intent explicit; `false` is still accepted so an
+    // existing mark can be cleared once the seller UI stops offering it.
+    if (body.isWholesale === true && !WHOLESALE_ENABLED) {
+      return { ok: false, message: "Wholesale selling units are not available." };
     }
     isWholesale = body.isWholesale;
   }

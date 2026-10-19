@@ -44,7 +44,7 @@ import {
 } from "@velnox/shared/components/ui/table";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { api } from "@velnox/shared/lib/api-routes";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
+import { VELREPEAT_ENABLED, WHOLESALE_ENABLED } from "@velnox/shared/lib/features";
 import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES } from "@velnox/shared/lib/i18n/config";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 // Id type replaced with string
@@ -196,8 +196,12 @@ function canSeeTab(
     // Store accounts (wholesale buyers): the code `/api/admin/store-accounts`
     // enforces. Approving one unlocks a shop's wholesale prices, so the tab is
     // offered only to an account that could actually decide.
+    //
+    // PARKED 2026-10-19: wholesale is out of the MVP and its routes are not
+    // mounted, so the tab is never offered. The tab, its content block and the
+    // queue component stay in source; WHOLESALE_ENABLED restores all of it.
     case "stores":
-      return holds("stores.manage");
+      return WHOLESALE_ENABLED && holds("stores.manage");
 
     case "categories":
       return role === "owner" || role === "admin";

@@ -36,6 +36,7 @@
  * definition per size); this component validates only enough to give an immediate
  * message, and always surfaces the server's own error text verbatim.
  */
+import { WHOLESALE_ENABLED } from "@velnox/shared/lib/features";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
@@ -379,19 +380,24 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
               </div>
             )}
           </div>
-          <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg bg-white px-2 py-1.5">
-            <input
-              type="checkbox"
-              className="mt-0.5 size-3.5 shrink-0 accent-[#10B981]"
-              checked={form.isWholesale}
-              onChange={(e) => setForm((f) => ({ ...f, isWholesale: e.target.checked }))}
-            />
-            <span className="min-w-0 text-[10px] leading-4 text-slate-600">
-              <span className="font-semibold text-slate-700">ขายส่ง — เฉพาะร้านค้าที่อนุมัติ</span>
-              <br />
-              ลูกค้าทั่วไปจะไม่เห็นชุดนี้และราคานี้ ต้องมีบัญชีร้านค้าที่ผ่านการอนุมัติจาก VelCenter
-            </span>
-          </label>
+          {/* PARKED 2026-10-19: the wholesale audience is out of the MVP, so a
+              seller authors ordinary sets/packs only. The control, its copy and
+              the `isWholesale` field all stay in source for when B2B returns. */}
+          {WHOLESALE_ENABLED && (
+            <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg bg-white px-2 py-1.5">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-3.5 shrink-0 accent-[#10B981]"
+                checked={form.isWholesale}
+                onChange={(e) => setForm((f) => ({ ...f, isWholesale: e.target.checked }))}
+              />
+              <span className="min-w-0 text-[10px] leading-4 text-slate-600">
+                <span className="font-semibold text-slate-700">ขายส่ง — เฉพาะร้านค้าที่อนุมัติ</span>
+                <br />
+                ลูกค้าทั่วไปจะไม่เห็นชุดนี้และราคานี้ ต้องมีบัญชีร้านค้าที่ผ่านการอนุมัติจาก VelCenter
+              </span>
+            </label>
+          )}
           <p className="mt-1.5 text-[10px] text-slate-500">
             ฿ ต่อชิ้นที่แสดงให้ลูกค้า:{" "}
             <span className="font-medium text-slate-700">
@@ -469,18 +475,20 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
                     />
                   </div>
                 </div>
-                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[10px] text-slate-600">
-                  <input
-                    type="checkbox"
-                    className="size-3.5 shrink-0 accent-[#10B981]"
-                    checked={editFields.isWholesale}
-                    onChange={(e) => setEditFields((f) => ({ ...f, isWholesale: e.target.checked }))}
-                  />
-                  <span>
-                    <span className="font-semibold text-slate-700">ขายส่ง (เฉพาะร้านค้าที่อนุมัติ)</span>
-                    {" "}— ลูกค้าทั่วไปไม่เห็นชุดนี้
-                  </span>
-                </label>
+                {WHOLESALE_ENABLED && (
+                  <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[10px] text-slate-600">
+                    <input
+                      type="checkbox"
+                      className="size-3.5 shrink-0 accent-[#10B981]"
+                      checked={editFields.isWholesale}
+                      onChange={(e) => setEditFields((f) => ({ ...f, isWholesale: e.target.checked }))}
+                    />
+                    <span>
+                      <span className="font-semibold text-slate-700">ขายส่ง (เฉพาะร้านค้าที่อนุมัติ)</span>
+                      {" "}— ลูกค้าทั่วไปไม่เห็นชุดนี้
+                    </span>
+                  </label>
+                )}
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <Button type="button" size="sm" className="h-7 gap-1 text-xs" onClick={() => saveEdit(unit)} disabled={busyId === unit.id}>
                     {busyId === unit.id ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
@@ -499,7 +507,7 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
                 <div className="flex items-center gap-1.5">
                   <Layers className="size-3.5 shrink-0 text-[#10B981]" />
                   <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{unit.name}</span>
-                  {unit.isWholesale && (
+                  {WHOLESALE_ENABLED && unit.isWholesale && (
                     <Badge className="shrink-0 bg-amber-50 text-[10px] text-amber-700">ขายส่ง</Badge>
                   )}
                   <Badge className={`shrink-0 text-[10px] ${unit.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
@@ -509,7 +517,7 @@ export function SellingUnitsManager({ productId, basePrice = 0, baseUnit = "ช�
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span className="tabular-nums font-semibold text-slate-900">{baht(unit.price)}</span>
                   <span className="text-slate-500">/ ชุด · {unit.pieces} {baseUnit}</span>                  <span className="text-slate-400">= {baht(unit.pricePerPiece)} / {baseUnit}</span>
-                  {unit.isWholesale && (
+                  {WHOLESALE_ENABLED && unit.isWholesale && (
                     <span className="text-amber-700">เห็นเฉพาะร้านค้าที่อนุมัติ</span>
                   )}
                   {basePrice > 0 && (

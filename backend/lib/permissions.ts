@@ -19,6 +19,7 @@
  * for a pass.
  */
 import { query } from "../db/index.js";
+import { WHOLESALE_ENABLED } from "./features.js";
 
 /**
  * The catalog VelCenter offers when granting permissions.
@@ -33,7 +34,14 @@ export const PERMISSION_CATALOG: { code: string; label: string; description: str
   { code: "orders.manage", label: "จัดการออเดอร์", description: "เปลี่ยนสถานะออเดอร์" },
   { code: "products.moderate", label: "ตรวจสอบสินค้า", description: "อนุมัติ/ปฏิเสธสินค้าที่รอตรวจสอบ" },
   { code: "sellers.manage", label: "จัดการผู้ขาย", description: "อนุมัติ/ระงับผู้ขาย" },
-  { code: "stores.manage", label: "จัดการบัญชีร้านค้า", description: "อนุมัติ/ปฏิเสธบัญชีร้านค้าที่ขอซื้อส่ง" },
+  // PARKED 2026-10-19: wholesale store accounts are out of the MVP, and their
+  // routes are unmounted — so this code guards nothing while the flag is off.
+  // The catalog's own rule is that a code is offered only while an endpoint
+  // enforces it, so the checkbox is withheld instead of lying to the owner.
+  // The code (and any employee row that already stores it) returns with the flag.
+  ...(WHOLESALE_ENABLED
+    ? [{ code: "stores.manage", label: "จัดการบัญชีร้านค้า", description: "อนุมัติ/ปฏิเสธบัญชีร้านค้าที่ขอซื้อส่ง" }]
+    : []),
   { code: "users.manage", label: "ดูบัญชีผู้ใช้", description: "ดูบัญชีผู้ใช้และลูกค้า (เปลี่ยนบทบาทเป็นสิทธิ์ของเจ้าของเท่านั้น)" },
   { code: "staff.manage", label: "จัดการพนักงาน", description: "ดูบัญชีพนักงาน" },
   { code: "audit.view", label: "ดู Audit Logs", description: "ดูบันทึกการดำเนินการสำคัญ" },

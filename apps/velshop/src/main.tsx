@@ -13,7 +13,7 @@ import { initMonitoring } from "@velnox/shared/lib/monitoring";
 
 initMonitoring();
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
-import { CUSTOMER_MEMORY_ENABLED, VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
+import { CUSTOMER_MEMORY_ENABLED, VELREPEAT_ENABLED, WHOLESALE_ENABLED } from "@velnox/shared/lib/features";
 import { IdentityMerge } from "@velnox/shared/lib/track";
 import { useCart } from "@/lib/cart";
 import { Home, Package, ReceiptText, ShoppingCart, User } from "lucide-react";
@@ -201,17 +201,21 @@ createRoot(document.getElementById("root")!).render(
               </RequireAuth>
             }
           />
-          {/* Store account — the ONE wholesale application surface. Approval is
-              VelCenter's decision; this page only collects the request and shows
-              the outcome. */}
-          <Route
-            path="/profile/store"
-            element={
-              <RequireAuth>
-                <ShopStoreAccount />
-              </RequireAuth>
-            }
-          />
+          {/* Store account — the ONE wholesale application surface. PARKED
+              2026-10-19 with the rest of the wholesale buyer track (B2B is out
+              of the MVP), so the route is not registered and no customer is
+              asked to apply for anything before buying. The page, its API and
+              the table stay in the repository; WHOLESALE_ENABLED restores it. */}
+          {WHOLESALE_ENABLED && (
+            <Route
+              path="/profile/store"
+              element={
+                <RequireAuth>
+                  <ShopStoreAccount />
+                </RequireAuth>
+              }
+            />
+          )}
           <Route
             path="/chat"
             element={
