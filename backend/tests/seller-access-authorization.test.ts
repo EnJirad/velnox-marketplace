@@ -14,8 +14,9 @@
  *      approval and that the revision flow prefills data + documents;
  *   3. DB-gated HTTP tests over the REAL routes and a disposable PostgreSQL:
  *      the five statuses against `GET /api/seller/status`,
- *      `GET /api/seller/profile` and `PATCH /api/seller/shop`, plus ownership
- *      isolation between two accounts.
+ *      `GET /api/seller/profile` and `PATCH /api/seller/shop`, a suspended
+ *      seller against the PRODUCT edit / stock APIs, plus ownership isolation
+ *      between two accounts.
  *
  * Nothing here invents endpoints, schema, or statuses: the status list is the
  * `sellers.status` CHECK constraint from `db/schema.sql`.
@@ -36,6 +37,7 @@ import {
 } from "../../packages/shared/src/lib/seller-access.ts";
 import { query } from "../db/index.js";
 import { setupSellerRoutes } from "../routes/seller.js";
+import { setupProductRoutes } from "../routes/products.js";
 import { registerVerificationRoutes } from "../routes/verification.js";
 import { purgeUsers } from "./helpers/purge.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
@@ -188,6 +190,7 @@ describe("seller access over HTTP (needs a test database + JWT_SECRET)", () => {
     app.use(cookieParser());
     app.use(express.json({ limit: "1mb" }));
     setupSellerRoutes(app);
+    setupProductRoutes(app);
     registerVerificationRoutes(app);
     server = app.listen(0);
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
@@ -355,6 +358,41 @@ describe("seller access over HTTP (needs a test database + JWT_SECRET)", () => {
       );
       expect(rows.rows[0]?.name).not.toBe("ชื่อที่ต้องไม่ถูกบันทึก");
     }
+  });
+
+  itDb("a suspended seller cannot edit a product or its stock", async () => {
+    // The product APIs are the one seller surface that resolved the seller row
+    // WITHOUT its status, so a shop suspended by VelCenter could still re-price
+    // or restock through a raw request. The rule is the same one this file
+    // pins for every other seller API: only `approved` may write.
+    const { userId, email } = await seedUser();
+    const sellerId = await seedApplication(userId, "approved", { shop: true });
+    const shop = await query("SELECT id FROM shops WHERE seller_id = $1", [sellerId]);
+    const product = await query(
+      `INSERT INTO products (shop_id, name, slug, price, status)
+       VALUES ($1, $2, $3, 100, 'published') RETURNING id`,
+      [shop.rows[0].id, "Suspended Edit Product", `${marker}-edit-${crypto.randomUUID().slice(0, 8)}`],
+    );
+    const productId = product.rows[0].id as string;
+
+    // Control: the SAME request from an approved seller succeeds, so the test
+    // proves the status gate rather than a broken route.
+    const allowed = await patch(`/api/seller/products/${productId}`, userId, email, { price: 111 });
+    expect(allowed.status).toBe(200);
+
+    await query("UPDATE sellers SET status = 'suspended' WHERE id = $1", [sellerId]);
+
+    const edit = await patch(`/api/seller/products/${productId}`, userId, email, { price: 999 });
+    expect(edit.status).toBe(403);
+
+    const stock = await patch(`/api/seller/products/${productId}/stock`, userId, email, { quantity: 0 });
+    expect(stock.status).toBe(403);
+
+    // Nothing was written by either refused call.
+    const after = await query("SELECT price FROM products WHERE id = $1", [productId]);
+    expect(Number(after.rows[0].price)).toBe(111);
+    const inventory = await query("SELECT quantity FROM inventory WHERE product_id = $1", [productId]);
+    expect(inventory.rows.length).toBe(0);
   });
 
   itDb("an approved seller reaches the same APIs", async () => {

@@ -104,7 +104,16 @@ function slugify(text: string): string {
 }
 
 async function getSellerForUser(userId: string): Promise<{ id: string; status: string } | null> {
-  const r = await query("SELECT id, status FROM sellers WHERE user_id = $1", [userId]);
+  // APPROVED ONLY — the same rule as `middleware/seller.ts`, `chat.ts`,
+  // `product-options.ts` and `product-selling-units.ts` (`.ai/context/seller.md`:
+  // "seller access = sellers.status === 'approved' ONLY"). Every route in this
+  // file is a seller-dashboard route, and most handlers only test that a seller
+  // row EXISTS, so returning a suspended / pending row here let a raw request
+  // re-price, restock or re-image a product after VelCenter suspended the shop.
+  const r = await query(
+    "SELECT id, status FROM sellers WHERE user_id = $1 AND status = 'approved'",
+    [userId],
+  );
   return r.rows[0] ?? null;
 }
 
