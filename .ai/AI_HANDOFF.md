@@ -530,49 +530,10 @@ never written independently.
 
 ## §74. Phase 3 — shipment lifecycle (`P1-3`) (2026-10-08) — **DONE**
 
-Full record: [`.ai/audit/PHASE_3_SHIPMENT_LIFECYCLE.md`](audit/PHASE_3_SHIPMENT_LIFECYCLE.md).
-**Starting HEAD `6e24bd546e37e4db65a578cf90bdc9f407c0cd24`** (= `origin/main`, Phase 2).
-**Final HEAD (implementation commit):** `b9824fec170926af6cbc7e03890b61d361a58adc`
-— `feat(shipping): implement shipment lifecycle transitions`. The `docs(ai)` commit
-that carries this section is the tip after it (`git log -1 --format=%H` on `main`);
-both are pushed in the same pass and `origin/main` was re-read to confirm.
-
-`shipments.status` had a nine-value CHECK constraint and exactly ONE writer that
-ever wrote it (`created`). Phase 3 adds the missing transition: the canonical
-vocabulary is read off the database (`pending, created, picked_up, in_transit,
- out_for_delivery, delivered, returned, lost, cancelled` — an invented
-`packed/ready_to_ship/shipped` draft was withdrawn because those values would be
-refused by `23514`), the machine is forward-only and terminal-protected, repeats
-are write-free idempotent successes, and the two timestamps the schema already
-had (`shipped_at` on handoff, `delivered_at` on arrival) are stamped once.
-
-- **Atomicity:** the order row lock FIRST (`lib/order-lock.ts`), then a
-  CONDITIONAL `UPDATE … WHERE id = $n AND status = $current` — proven with 8 real
-  concurrent transactions on a local PostgreSQL 14: exactly one move, one
-  timestamp, one order-axis advance.
-- **No duplicate machine:** the order's own fulfilment axis is advanced only
-  through `canTransitionFulfillment` + `projectOrderStatus`
-  (`advanceOrderFulfillmentAxis` in `lib/order-state.ts`), so a parcel move the
-  order's machine has no edge for is refused `409 ORDER_NOT_READY` instead of
-  letting the two lifecycles diverge; `orders.status` stays a projection.
-- **Surfaces:** `PATCH /api/seller/orders/:id/shipment` (approved seller +
-  ownership under the lock) and `PATCH /api/admin/orders/:orderId/shipment`
-  (center member + `orders.manage`, audited). `CHANNELS.SHIPMENT_UPDATED`.
-- **Schema:** NO migration needed — every column, the CHECK and the Phase-2
-  unique index already existed in 056/057, `db/schema.sql` and
-  `db/run-sqleditor.sql`; nothing additive was outstanding.
-- **Tests:** `backend/tests/shipment-lifecycle.test.ts` (27 cases; 13 run without
-  a database, 14 are DB-gated) plus the whole existing suite green.
-- **Verified this pass:** backend typecheck 0 · all four frontend typechecks 0 ·
-  targeted suite 27 pass / 0 fail · full suite **2103 pass / 2 skip / 0 fail** ·
-  `bash db/verify-reconciler.sh` ALL SCENARIOS PASSED · `git diff --check` clean.
-- **Protected (unchanged):** payment, checkout, inventory, the Phase-1 order-state
-  authority and the Phase-2 `UNIQUE(order_id)` invariant.
-- **BLOCKED (unchanged, owner action):** production database verification and
-  real Stripe TEST E2E; and the endpoints have no frontend consumer yet
-  (deliberately backend-scoped).
-- **Not started (out of scope):** P1-4 returns/RMA, P1-5 `fulfillment_orders`
-  (Phase 4), settlement, commission, ledger, reconciliation.
+Full record moved to [`.ai/audit/PHASE_3_SHIPMENT_LIFECYCLE.md`](audit/PHASE_3_SHIPMENT_LIFECYCLE.md)
+(2026-10-19, edit-ceiling housekeeping). Still live: shipments are advanced only through
+`canTransitionFulfillment` + `projectOrderStatus`, under the order row lock, and `orders.status`
+stays a derived projection. No migration was needed.
 
 ---
 
@@ -583,107 +544,23 @@ The **parking contract** it defines is still the live rule (both flags fail clos
 modules are not mounted, not scheduled, not re-enabled by deleting anything). Its Phase-2
 "designed, not built" block is superseded by §76 below.
 
----
+---## §76–77. Selling units (sets / packs) — BUILT (2026-10-16) — **ARCHIVED**
 
-## §76. Selling units (sets / packs) — BUILT, with real-PostgreSQL proof (2026-10-16)
+Full record (both sections verbatim):
+[`history/archive/AI_Handoff-2026-10-16-selling-units-built.md`](history/archive/AI_Handoff-2026-10-16-selling-units-built.md).
 
-**Model:** `product_selling_units` (product, optional variant, `name`, `pieces > 0`, `price >= 0`,
-`status active/inactive`, one LIVE row per `(product, variant, pieces)`). `cart_items` and
-`order_items` gained `selling_unit_id` / `selling_unit_pieces` / `selling_unit_name`.
-
-**The one rule:** `quantity` counts SELLING units; **base units = `quantity * selling_unit_pieces`**
-is the ONLY quantity inventory, variant stock and `sold_count` ever see. One authority
-(`lib/selling-units.ts` + `orderItemBaseQuantitySql()` in `lib/inventory.ts`), no per-pack stock
-column, legacy rows bit-identical at `pieces = 1`.
-
-**Server authority:** the definition's price is authoritative (a crafted body cannot set price,
-pieces or another product's pack); checkout re-resolves every line, refuses a retired/mismatched
-pack, and applies the `MAX_ORDER_QUANTITY` cap to BASE units. `idx_cart_items_unique` was widened
-to include the selling unit, so a set and a piece of one product are two lines.
-
-**Shipped this pass:** migration `058`, both canonical SQL files (+ column/index/FK passes),
-`CANON` re-measured **76|302|347|823**, seller CRUD `routes/product-selling-units.ts`
-(create/patch/**retire**, never delete), catalog + detail expose `sellingUnits`, cart add/update/
-remove/reorder carry the unit, `StoreSellingUnit` type, velShop product-page selector + cart
-display, 3 i18n keys (th/en/my at 1499).
-
-**Verified:** `bun test backend/tests` with a real PostgreSQL 16 → **2123 pass / 2 skip / 0 fail**
-(includes the new `selling-units.test.ts`, 19 tests: 2 sets of 12 reserve/settle 24 exactly once,
-release returns 24, legacy unchanged, cap, immutability, reorder, crafted requests) ·
-`bun run db:verify` → **ALL SCENARIOS PASSED** · `bun run typecheck` 4/4 + backend 0 ·
-velShop build 0 · `bun run i18n:check` 1499/1499/1499.
-
-**VERIFIED (same pass, VelRepeat/Memory closure):** the parked module was still reachable —
-`GET /api/seller/subscriptions`, `POST /api/subscriptions/process-due` (which called
-`processPlan()` and MINTED recurring orders), the four legacy `/api/subscriptions*` endpoints and
-the velSeller recurring panel were live. All are now parked (proof: flag OFF → 6/6 paths 404,
-buy/sell paths still mounted; flag ON → all restored), `getAnonymousId()` no longer mints an id
-while parked, and `IdentityMerge` is no longer mounted in velSeller/velCenter.
-
-**REMAINING — items 1–3 are CLOSED by §77 (2026-10-16); the historical list stays here on
-purpose:**
-1. **Seller authoring UI** for sets/packs in velSeller (`ProductFormDialog` / MyShop). The API is
-   built and tested; only the form is missing, so the seller acceptance path is **API-only = FAIL**.
-2. **Set name not yet rendered** in velCheckout summary, seller/center order views, or the Stripe
-   line-item label.
-3. `MyOrders`/checkout "order these again" reuses `/api/customer/reorder`, which now preserves the
-   set (tested), but the storefront does not yet label the pack line.
-4. Not verified in a browser (no browser E2E in this environment) — the selector's rendering is
-   proven by types + build only.
+**Live rule, unchanged:** `quantity` counts SELLING units; **base units =
+`quantity * selling_unit_pieces`** is the ONLY quantity inventory, variant stock and `sold_count` ever
+see. One authority (`lib/selling-units.ts` + `orderItemBaseQuantitySql()`), one LIVE definition per
+`(product, variant, pieces)`, retirement instead of deletion, and the definition's price is
+server-authoritative. `product_selling_units` + the three snapshot columns on `cart_items` and
+`order_items` (migrations 058/059) are canonical and **required** — their absence is the §82
+incident. The seller form (`SellingUnitsManager.tsx`) and the set name in every order view shipped
+in §77.
 
 ---
 
-**Note on this file's size:** §75 was archived on 2026-10-16 to get back under the ~55 KB edit-tool
-ceiling. When it approaches ~40 KB again, move the oldest still-live block to
-`history/archive/` and leave a pointer, BEFORE appending.
 
-## §77. Selling units, second pass — seller authoring UI + the set name in every view (2026-10-16)
-
-**§76's open items 1–3 are closed.** A seller can now author sets/packs from the product form, and
-the set's name reaches every surface that renders an order line. §76 remains the record of the model
-and the BASE-PIECES invariant; nothing below changes that invariant.
-
-**Seller authoring UI (the acceptance gap).** New
-`packages/shared/src/components/seller/SellingUnitsManager.tsx` — create / edit / retire /
-re-activate, the DERIVED per-piece price shown beside the set price, optional per-variant scoping —
-mounted in `ProductFormDialog` as §9b in edit mode (a definition references a saved product, and
-optionally one of its variants, by id). It talks only to the existing seller CRUD endpoints:
-validation, ownership and "one live definition per size" stay server-side, and the server's own
-error message is surfaced verbatim. Retire is a two-step confirm because it is not a delete.
-
-**The set name now reaches the receipt and every order view.**
-`buildCheckoutLineItems` labels a set line `"<product> · <set>"`; the amount charged is unchanged
-(`quantity` counts sets, `unit_amount` is the set price). The readers project the snapshot:
-`lib/order-read.ts` (customer), `routes/seller-orders.ts` (seller) and `routes/center.ts` (company)
-now return `sellingUnitName` + `sellingUnitPieces`; both Stripe line-item SELECTs and `StoreOrderItem`
-carry them. velShop (cart, checkout summary, MyOrders, ShopOrderDetail), velSeller
-(SellerOrderDetail, Income) and velCenter (order table + cards) render the set name where the base
-unit word used to sit, so "× 2" beside "เซ็ต 12" can never be read as 2 bottles.
-
-**One correction, from the same contract.** The company console's `itemCount` — captioned "ชิ้น" —
-summed `quantity`, i.e. SETS. It now sums `quantity * selling_unit_pieces`, so ops pick and pack the
-24 bottles a 2-set line needs. A plain line is `quantity * 1`: legacy values are unchanged.
-
-**Verified (real PostgreSQL 16.15, disposable DB rebuilt from `db/run-sqleditor.sql`):**
-
-| Check | Result |
-|---|---|
-| `bun test backend/tests` | **2131 pass / 2 skip / 0 fail** — 74 files, 18,270 expect() calls |
-| New tests (`backend/tests/selling-units.test.ts`, +8) | the Stripe label (set price, plain line unchanged, blank name); the three readers select the snapshot; the base-piece `itemCount`; end-to-end the customer order read AND the seller order read returning `sellingUnitName` / `sellingUnitPieces` |
-| `bun run typecheck` (4 apps) + `bunx tsc --noEmit -p backend/tsconfig.json` | exit 0 |
-| `bun run build:apps` | exit 0 — 4/4 |
-| `bun run i18n:check` | `th=1499 en=1499 my=1499` — no new keys this pass |
-
-**NOT verified / still open — do not read as PASS:**
-1. **No browser E2E exists** in this environment, and the storefront dev server cannot reach a backend
-   from the owner's browser here: the authoring form is proven by types + build + the API tests, **not**
-   by a rendered page or a click.
-2. Real **Stripe TEST-mode E2E** and **production Neon** verification stay BLOCKED — owner credentials
-   (see §70/§71).
-3. The PostgreSQL used for this proof was installed inside the workspace (`/tmp/pgroot`, 16.15). It does
-   not survive an archive: reinstall it to re-run the DB suite.
-
----
 ## §78–79. Store accounts + gated wholesale — BUILT, then **PARKED** (2026-10-19) — **ARCHIVED**
 
 Full record: [`history/archive/AI_Handoff-2026-10-17-wholesale-store-accounts.md`](history/archive/AI_Handoff-2026-10-17-wholesale-store-accounts.md)
@@ -742,3 +619,112 @@ DB) · no browser E2E · real Stripe TEST E2E and production Neon remain BLOCKED
 **Remaining decision:** `apps/velnox` corporate marketing copy still says "ปลีกและส่ง" / "ซื้อส่ง —
 ร้านค้าชุมชน" (`pages/corporate/content.ts`). It is marketing, not a storefront flow, and rewriting
 positioning is an owner decision — flagged, not changed.
+
+---
+
+## §81. MVP verification pass — BUY + SELL + CONTROL on a real database (2026-10-19)
+
+**Scope:** audit + proof only, no new features. A disposable PostgreSQL 14 was started in this
+workspace, bootstrapped from `db/run-sqleditor.sql`, and the whole suite was run against it.
+
+| Check | Result |
+|---|---|
+| Fresh-DB bootstrap ×3 (idempotency) | 77 tables / 837 columns / 305 indexes, unchanged |
+| `bash db/verify-reconciler.sh` | **ALL SCENARIOS PASSED** |
+| `bun test backend/tests` (real DB) | **2147 pass / 16 skip / 0 fail** — 2163 tests, 75 files |
+| `bun run typecheck` 4/4 + `tsc -p backend` | exit 0 |
+| `bun run build:apps` | 4/4 exit 0 |
+| Browser E2E | **none exists** in the repository |
+| Real Stripe TEST round trip | **BLOCKED** — no keys, no provider access in this workspace |
+
+The 16 skips are by design: 14 parked-wholesale tests (`WHOLESALE_ENABLED=false`) and 2 R2 upload
+tests that need R2 credentials.
+
+**ONE REAL BUG FOUND AND FIXED.** `backend/routes/products.ts#getSellerForUser`
+resolved the seller row **without its status** — the only seller module that did (`chat.ts`,
+`product-options.ts`, `product-selling-units.ts` all filter `status = 'approved'`). Because most of
+its 19 handlers only test that a seller row exists, a **suspended / pending seller could still
+re-price, restock, re-image or edit a product** with a raw request; the velseller UI hid the screens,
+which made it a frontend-only guard — exactly what `.ai/context/seller.md` forbids. Fix: the lookup
+now filters `status = 'approved'` (one query, no handler change). Regression test:
+`seller-access-authorization.test.ts` → "a suspended seller cannot edit a product or its stock"
+(approved seller = 200 control; suspended = 403, and neither `products.price` nor `inventory` was
+written). Proven failing before the fix (200) and passing after.
+
+**Still open:** the seller-status rule is now enforced in five modules by convention, not by one
+shared helper; consolidating them into `requireApprovedSeller` would remove the class of bug, but
+that is a refactor outside this task's "fix only real problems" scope.
+
+---
+
+## §82. Production schema mismatch — `product_selling_units` + `orders.order_state` (2026-10-19)
+
+**Reported from Render logs:** `42P01 relation "product_selling_units" does not exist` and
+`42703 column "order_state" of relation "orders" does not exist` (thrown by
+`routes/cart.ts#insertOrderWithUniqueNumber`, whose INSERT names `order_state`).
+
+**ROOT CAUSE — Case A/D (migration exists, production is behind).** Both objects are declared in
+both canonical files and by migrations `056` (the order axes, with the 9b backfill) and `058`/`059`
+(selling units, `is_wholesale`). Nothing in the code or schema was missing. Production simply never
+received them. `production-db-migrate.yml` hard-stops when `NEON_PRODUCTION_DATABASE_URL` is absent,
+and this workspace has **no database env at all** (`freebuff-env list` → `{}`), so the ledger could
+not be read either. The database identity must be confirmed before applying anything (§66: the two
+Neons).
+
+**REPO-SIDE DEFECT FOUND while proving the repair — and fixed.** `db/run-sqleditor.sql` (the
+documented production repair path) added `orders.order_state` / `fulfillment_status`, set their
+defaults, then guarded `SET NOT NULL` on "no NULL remains" — but the **9b backfill was missing**, even
+though the comment above it said "Section 9b backfills". Consequence on a database with history:
+the run exits 0, the two columns stay **nullable and NULL for every pre-056 order**, and the
+projection reads a shipped order back as `pending`. `db/schema.sql` carried the same omission, so the
+snapshot and the reconciler agreed with each other and disagreed with migration 056. Both now carry
+`056`'s exact `CASE status …` backfill (statement-identical, `WHERE … IS NULL`, rerunnable).
+
+**Verification workflow was blind to the incident.** `production-db-verify.yml` probed only the
+checkout-group objects, so it would have gone green on this exact database. It now has three
+read-only probes: `product_selling_units` (11 columns, `is_wholesale` NOT NULL DEFAULT false —
+wholesale stays fail-closed), both order axes NOT NULL with the canonical defaults, and the six
+`cart_items`/`order_items` snapshot columns. Proved non-vacuous: 3 FAILs on the reported shape,
+PASS after repair.
+
+**Proof (disposable PostgreSQL 14, real databases):**
+
+| Check | Result |
+|---|---|
+| Reported 42P01 + 42703 reproduced on a production-shaped DB | **reproduced**, then gone after one reconciler run |
+| `bash db/verify-reconciler.sh` (now scenarios A-J) | **ALL SCENARIOS PASSED** — new **J** seeds 6 legacy orders, strips both objects, asserts the exact errors, then asserts backfill `processing/shipped, completed/delivered, pending/unfulfilled, cancelled/cancelled, processing/delivered, processing/packing`, NOT NULL, CHECK, index, 11 columns, 4 indexes, 4 FKs, 6 snapshot columns, and that no order id/status changed |
+| Repaired-DB checkout surface (`selling-units`, `checkout-payment-flow`, `multi-shop-checkout`, `cart-selection`, `order-state-projection`, `customer-order-cancel`, `order-fulfillment-state-machine`, `payment-reservation-expiry`) | **272 pass / 0 fail** |
+| `bun test backend/tests` (fresh canonical DB) | **2147 pass / 16 skip / 0 fail** — 2163 tests, 75 files |
+| `bun run typecheck` 4/4 + `tsc -p backend` | exit 0 |
+| `bun run build:apps` | 4/4 exit 0 |
+| `git diff --check` | clean |
+
+**NOT applied to production — BLOCKED.** No production credential exists here, and the hard-stop rule
+forbids inventing one. Owner action, **in this order**:
+
+1. Set `NEON_PRODUCTION_DATABASE_URL` to the SAME Neon Render's `DATABASE_URL` uses, and confirm the
+   identity (`[db]` boot line vs `current_database()`).
+2. Run **`db/run-sqleditor.sql` once** against that Neon (SQL Editor is fine). This is the proven
+   path for the reported shape: scenario J starts from "table missing + column missing + real
+   orders" and converges additively, but scenarios **C** and **H** already prove the older
+   shapes too.
+3. Run **Actions → Production DB Verify**; it now fails loudly if either object (or the backfilled
+   NOT NULL axes) is still missing.
+4. Use **Production DB Migrate** for *future* migrations, not as the first repair. Measured this
+   pass: `db/migrations/056_commerce_core_invariants.sql:178` declares
+   `purchase_id UUID REFERENCES checkout_groups(id)` and 056 **exits 3** when `checkout_groups` is
+   absent (`relation "checkout_groups" does not exist`) — while the workflow skips any migration
+   the ledger already records. On a database whose ledger claims 054 but lacks the table (§66), the
+   migration path alone would fail exactly there.
+
+No destructive statement, no data deletion, no payment/inventory/checkout change, and
+wholesale/VelRepeat stay parked in this work.
+
+**PERF-1 — separate issue, recorded only, deliberately NOT optimised in this fix.** From the same
+Render log as the 42703: statement latencies of **~198-215 ms** on `product_images`,
+`product_variant_images`, `cart`, `addresses`, `revoked_tokens`, `orders`; intermittent **pool
+acquisition ~1203 ms** (checkout waits behind the scheduler); and the payment-reservation worker
+re-scanning every ~30 s with
+`SELECT id FROM orders WHERE payment_expires_at IS NOT NULL AND payment_expires_at <= NOW() AND status = ANY($2::text[]) AND inventory_released = FALSE`.
+P0 stayed "checkout cannot create an order"; changing indexes/queries/pool size in the same pass would
+have made the schema repair unverifiable. Needs its own task, measured before/after.

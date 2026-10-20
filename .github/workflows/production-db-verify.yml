@@ -348,6 +348,57 @@ jobs:
                              WHERE schemaname = 'public' AND indexname = 'idx_checkout_groups_user'),
                           'missing');
 
+          -- ── selling units + the order lifecycle axes (2026-10-19 incident) ──
+          -- Render logged BOTH of these while this job would have gone green:
+          --
+          --   relation "product_selling_units" does not exist        (42P01)
+          --   column "order_state" of relation "orders" does not exist (42703)
+          --
+          -- A verifier that cannot see the objects the checkout INSERT names is
+          -- not verifying checkout, so they are probed here from now on. Shape,
+          -- not just existence: `is_wholesale` must keep DEFAULT false (wholesale
+          -- stays PARKED/fail-closed) and both order axes must be NOT NULL with
+          -- migration 056's defaults — a nullable column is the signature of a
+          -- reconciler run that never backfilled the historic orders.
+          SELECT CASE WHEN to_regclass('public.product_selling_units') IS NULL THEN 'FAIL'
+                      WHEN (SELECT count(*) FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'product_selling_units') <> 11 THEN 'FAIL'
+                      WHEN (SELECT is_nullable || '|' || column_default FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'product_selling_units'
+                               AND column_name = 'is_wholesale') <> 'NO|false' THEN 'FAIL'
+                      ELSE 'PASS' END,
+                 'product_selling_units has its 11 canonical columns, is_wholesale NOT NULL DEFAULT false',
+                 COALESCE((SELECT (SELECT count(*) FROM information_schema.columns
+                                    WHERE table_schema = 'public' AND table_name = 'product_selling_units')::text
+                                  || ' column(s); is_wholesale ' || is_nullable || ' ' || column_default
+                             FROM information_schema.columns
+                            WHERE table_schema = 'public' AND table_name = 'product_selling_units'
+                              AND column_name = 'is_wholesale'),
+                          COALESCE(to_regclass('public.product_selling_units')::text, 'relation not found'));
+
+          SELECT CASE WHEN (SELECT count(*) FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'orders'
+                               AND column_name || '|' || is_nullable || '|' || column_default
+                                   IN ('order_state|NO|''pending''::text',
+                                       'fulfillment_status|NO|''unfulfilled''::text')) = 2
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'orders.order_state + fulfillment_status are NOT NULL with their canonical defaults',
+                 COALESCE((SELECT string_agg(column_name || ' ' || is_nullable || ' ' || column_default, ', ' ORDER BY column_name)
+                             FROM information_schema.columns
+                            WHERE table_schema = 'public' AND table_name = 'orders'
+                              AND column_name IN ('order_state','fulfillment_status')),
+                          'columns absent');
+
+          SELECT CASE WHEN (SELECT count(*) FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name IN ('cart_items','order_items')
+                               AND column_name IN ('selling_unit_id','selling_unit_pieces','selling_unit_name')) = 6
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'cart_items + order_items carry the selling-unit snapshot columns',
+                 (SELECT count(*)::text || ' of 6 snapshot columns present'
+                    FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name IN ('cart_items','order_items')
+                     AND column_name IN ('selling_unit_id','selling_unit_pieces','selling_unit_name'));
+
           -- ── the payment parent CHECKs from migration 054 ────────────────────
           SELECT CASE WHEN (SELECT count(*) FROM pg_constraint
                              WHERE conrelid = to_regclass('public.payments')

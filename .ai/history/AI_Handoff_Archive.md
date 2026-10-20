@@ -314,3 +314,9 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-10-17-wholesale-store-accounts.md`](./archive/AI_Handoff-2026-10-17-wholesale-store-accounts.md) | handoff `## §78. Store accounts + gated wholesale` + `## §79. Wholesale is discoverable` | Moved **verbatim** (byte-verified) on 2026-10-19 while adding §80 (edit-headroom housekeeping; the current-state file was at ~52.8 KB). Kept because they are the full record of how the wholesale track worked: migration 059, `store_accounts`, `is_wholesale`, the one-gate rule (`status = 'approved'`), the total/fail-closed accessor, the count-only public half, and the apply → review → buy-by-the-pack proof. Superseded as a PRODUCT by §80, which parks the track with `WHOLESALE_ENABLED`; the schema and every column stay in place, so re-enabling is a flag flip rather than a rebuild. |
+
+### 2026-10-19 — §82 (production schema mismatch) added; §76 + §77 archived
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-16-selling-units-built.md`](./archive/AI_Handoff-2026-10-16-selling-units-built.md) | handoff `## §76. Selling units (sets / packs) — BUILT, with real-PostgreSQL proof` + `## §77. Selling units, second pass — seller authoring UI + the set name in every view` | Moved **verbatim** on 2026-10-19 while adding §82 (edit-headroom housekeeping; the current-state file was ~53 KB). Kept because they are the full record of the selling-unit model and its first two passes: migration 058, the `base units = quantity * selling_unit_pieces` authority, server-side price/ownership, the seller authoring form, and the set name reaching every order view. The live invariant stays in the handoff's compact §76–77 block — read that first; this file is the narrative and the historical test counts. |

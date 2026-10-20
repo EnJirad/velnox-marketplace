@@ -354,8 +354,114 @@ q "$DB" -q -f /tmp/velnox_part8.sql >/tmp/velnox_part8_fk.log 2>&1 && fail "PART
 }
 q "$DB" -q -f "$FILE" >/dev/null 2>&1
 
+# ── J. The 2026-10-19 production incident, reproduced ──────────────────────
+section "J. REPORTED SHAPE — product_selling_units absent, orders.order_state absent"
+# Render logged, on the checkout path:
+#
+#   ERROR: relation "product_selling_units" does not exist   (42P01)
+#   ERROR: column "order_state" of relation "orders" does not exist   (42703)
+#
+# Both objects are declared by the canonical schema (migration 056 for the order
+# axes, 058/059 for selling units), so the database is simply behind — the
+# reconciler is the documented repair. This scenario is the acceptance test for
+# that repair: it seeds REAL ORDERS FIRST, strips the objects, proves both
+# statements fail, runs the file, and then proves the database reached the
+# canonical shape WITHOUT losing a row.
+#
+# The backfill assertions are the part that used to fail. Without 9b, `ADD
+# COLUMN` leaves every historic order NULL, the guarded `SET NOT NULL` skips
+# itself, and a shipped order reads back through the projection as `pending` —
+# silently rewriting history while the ledger claims the schema is current.
+DB=velnox_verify_sellingunits
+fresh_db "$DB"
+q "$DB" -q -f "$FILE" >/dev/null 2>&1
+
+q "$DB" -q >/dev/null 2>&1 <<'SQL'
+INSERT INTO users (id, email, name) VALUES ('77777777-7777-4777-8777-777777777777','sellingunits@example.test','Selling Units');
+INSERT INTO orders (id, user_id, order_number, status, subtotal, total_amount) VALUES
+  ('88888888-0000-4000-8000-00000000000a','77777777-7777-4777-8777-777777777777','SU-A','shipped',1.00,1.00),
+  ('88888888-0000-4000-8000-00000000000b','77777777-7777-4777-8777-777777777777','SU-B','completed',1.00,1.00),
+  ('88888888-0000-4000-8000-00000000000c','77777777-7777-4777-8777-777777777777','SU-C','pending',1.00,1.00),
+  ('88888888-0000-4000-8000-00000000000d','77777777-7777-4777-8777-777777777777','SU-D','cancelled',1.00,1.00),
+  ('88888888-0000-4000-8000-00000000000e','77777777-7777-4777-8777-777777777777','SU-E','delivered',1.00,1.00),
+  ('88888888-0000-4000-8000-00000000000f','77777777-7777-4777-8777-777777777777','SU-F','packing',1.00,1.00);
+
+-- Migration 058 absent: the definition table and the three snapshot columns on
+-- each line table. Migration 056 absent: both lifecycle axes.
+ALTER TABLE public.cart_items  DROP COLUMN IF EXISTS selling_unit_id;
+ALTER TABLE public.cart_items  DROP COLUMN IF EXISTS selling_unit_pieces;
+ALTER TABLE public.cart_items  DROP COLUMN IF EXISTS selling_unit_name;
+ALTER TABLE public.order_items DROP COLUMN IF EXISTS selling_unit_id;
+ALTER TABLE public.order_items DROP COLUMN IF EXISTS selling_unit_pieces;
+ALTER TABLE public.order_items DROP COLUMN IF EXISTS selling_unit_name;
+DROP TABLE IF EXISTS public.product_selling_units CASCADE;
+ALTER TABLE public.orders DROP COLUMN IF EXISTS order_state;
+ALTER TABLE public.orders DROP COLUMN IF EXISTS fulfillment_status;
+SQL
+
+SELLING_LOOKUP="SELECT id FROM product_selling_units WHERE product_id = ANY('{}'::uuid[]) AND status = 'active' AND is_wholesale = FALSE ORDER BY sort_order ASC, pieces ASC, created_at ASC"
+ORDER_INSERT="INSERT INTO orders (user_id, order_number, status, order_state, fulfillment_status, total_amount) VALUES ('77777777-7777-4777-8777-777777777777','SU-NEW','pending_payment','pending','unfulfilled',5.00) RETURNING id"
+
+eq "fixture really lacks product_selling_units" "$(t "$DB" "select count(*) from information_schema.tables where table_schema='public' and table_name='product_selling_units'")" "0"
+eq "fixture really lacks orders.order_state"     "$(t "$DB" "select count(*) from information_schema.columns where table_schema='public' and table_name='orders' and column_name='order_state'")" "0"
+
+BEFORE_SELLING=$(q "$DB" -tAc "$SELLING_LOOKUP" 2>&1)
+case "$BEFORE_SELLING" in
+  *'relation "product_selling_units" does not exist'*) pass "before: the reported 42P01 reproduces" ;;
+  *) fail "before: expected 42P01 for product_selling_units, got [$BEFORE_SELLING]" ;;
+esac
+BEFORE_ORDER=$(q "$DB" -tAc "$ORDER_INSERT" 2>&1)
+case "$BEFORE_ORDER" in
+  *'column "order_state" of relation "orders" does not exist'*) pass "before: the reported 42703 reproduces" ;;
+  *) fail "before: expected 42703 for orders.order_state, got [$BEFORE_ORDER]" ;;
+esac
+
+ORDER_COUNT_BEFORE=$(t "$DB" "select count(*) from orders")
+ORDER_IDS_BEFORE=$(t "$DB" "select md5(string_agg(id::text,'|' order by id)) from orders")
+
+q "$DB" -q -f "$FILE" >/tmp/velnox_verify_sellingunits.log 2>&1 && pass "whole file executed, exit=0" || { fail "exit=$?"; grep -n ERROR /tmp/velnox_verify_sellingunits.log | head -3; }
+
+# Both reported statements must now execute.
+AFTER_SELLING=$(q "$DB" -tAc "$SELLING_LOOKUP" 2>&1)
+[ "$AFTER_SELLING" = "" ] && pass "after: the selling-unit lookup runs clean (0 rows)" || case "$AFTER_SELLING" in
+  *does*not*exist*) fail "after: the selling-unit lookup still raises [$AFTER_SELLING]" ;;
+  *) fail "after: unexpected result [$AFTER_SELLING]" ;;
+esac
+AFTER_ORDER=$(q "$DB" -tAc "$ORDER_INSERT" 2>&1)
+case "$AFTER_ORDER" in
+  *does*not*exist*) fail "after: the checkout INSERT still raises [$AFTER_ORDER]" ;;
+  *) pass "after: the checkout INSERT succeeds" ;;
+esac
+
+# The definition table, its columns and its constraints.
+eq "product_selling_units CREATED" "$(t "$DB" "select count(*) from information_schema.tables where table_schema='public' and table_name='product_selling_units'")" "1"
+eq "product_selling_units has its 11 canonical columns" "$(t "$DB" "select count(*) from information_schema.columns where table_schema='public' and table_name='product_selling_units'")" "11"
+eq "is_wholesale is NOT NULL DEFAULT false (wholesale stays fail-closed)" "$(t "$DB" "select is_nullable||'|'||column_default from information_schema.columns where table_schema='public' and table_name='product_selling_units' and column_name='is_wholesale'")" "NO|false"
+for ix in idx_product_selling_units_product idx_product_selling_units_live idx_product_selling_units_variant idx_product_selling_units_unique; do
+  eq "index $ix present" "$(t "$DB" "select count(*) from pg_indexes where schemaname='public' and indexname='$ix'")" "1"
+done
+for fk in product_selling_units_product_id_fkey product_selling_units_variant_id_fkey cart_items_selling_unit_id_fkey order_items_selling_unit_id_fkey; do
+  eq "foreign key $fk present" "$(t "$DB" "select count(*) from pg_constraint where conname='$fk'")" "1"
+done
+eq "six selling-unit snapshot columns re-added" "$(t "$DB" "select count(*) from information_schema.columns where table_schema='public' and table_name in ('cart_items','order_items') and column_name like 'selling_unit%'")" "6"
+
+# The order axes converge on migration 056's shape, not merely "column exists".
+eq "orders.order_state is NOT NULL DEFAULT 'pending'" "$(t "$DB" "select is_nullable||'|'||column_default from information_schema.columns where table_schema='public' and table_name='orders' and column_name='order_state'")" "NO|'pending'::text"
+eq "orders.fulfillment_status is NOT NULL DEFAULT 'unfulfilled'" "$(t "$DB" "select is_nullable||'|'||column_default from information_schema.columns where table_schema='public' and table_name='orders' and column_name='fulfillment_status'")" "NO|'unfulfilled'::text"
+eq "orders_order_state_check present" "$(t "$DB" "select count(*) from pg_constraint where conname='orders_order_state_check'")" "1"
+eq "idx_orders_order_state present" "$(t "$DB" "select count(*) from pg_indexes where schemaname='public' and indexname='idx_orders_order_state'")" "1"
+
+# HISTORIC ORDERS: every legacy status maps exactly as 056 defines, and the
+# orders that were already in the table are the same orders afterwards.
+eq "legacy statuses backfilled deterministically" \
+   "$(t "$DB" "select string_agg(order_number||'='||order_state||'/'||fulfillment_status, ',' order by order_number) from orders where order_number like 'SU-%' and order_number <> 'SU-NEW'")" \
+   "SU-A=processing/shipped,SU-B=completed/delivered,SU-C=pending/unfulfilled,SU-D=cancelled/cancelled,SU-E=processing/delivered,SU-F=processing/packing"
+eq "no historic order was deleted" "$(t "$DB" "select count(*) from orders where order_number like 'SU-%' and order_number <> 'SU-NEW'")" "$ORDER_COUNT_BEFORE"
+eq "no historic order id changed" "$(t "$DB" "select md5(string_agg(id::text,'|' order by id)) from orders where order_number <> 'SU-NEW'")" "$ORDER_IDS_BEFORE"
+eq "legacy status column untouched" "$(t "$DB" "select string_agg(order_number||'='||status, ',' order by order_number) from orders where order_number like 'SU-%' and order_number <> 'SU-NEW'")" "SU-A=shipped,SU-B=completed,SU-C=pending,SU-D=cancelled,SU-E=delivered,SU-F=packing"
+
 # ── cleanup ───────────────────────────────────────────────────────────────
-for d in velnox_verify_fresh velnox_verify_reported velnox_verify_legacy velnox_verify_path velnox_verify_prod; do
+for d in velnox_verify_fresh velnox_verify_reported velnox_verify_legacy velnox_verify_path velnox_verify_prod velnox_verify_sellingunits; do
   adminsql -q -c "DROP DATABASE IF EXISTS $d" >/dev/null 2>&1
 done
 

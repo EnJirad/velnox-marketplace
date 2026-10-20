@@ -1619,6 +1619,37 @@ ALTER TABLE shipments ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ;
 ALTER TABLE shipments ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
 ALTER TABLE shipments ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 
+-- ─── 9b. backfill (deterministic, guarded, rerunnable) ────────────────────
+-- The two axes are DERIVED from the legacy projection, never the reverse. A row
+-- whose `status` is already in the target vocabulary keeps its meaning.
+--
+-- These two statements are what make the existing-orders path converge: without
+-- them `ADD COLUMN` leaves every pre-056 order NULL, the NOT NULL below is
+-- skipped by its own guard (NULLs remain), and a shipped order reads back as
+-- `pending`. On an empty database both are no-ops.
+UPDATE orders SET order_state = CASE status
+    WHEN 'cancelled'      THEN 'cancelled'
+    WHEN 'completed'      THEN 'completed'
+    WHEN 'packing'        THEN 'processing'
+    WHEN 'shipped'        THEN 'processing'
+    WHEN 'delivered'      THEN 'processing'
+    WHEN 'confirmed'      THEN 'confirmed'
+    ELSE 'pending'
+  END
+ WHERE order_state IS NULL;
+
+UPDATE orders SET fulfillment_status = CASE status
+    WHEN 'cancelled'      THEN 'cancelled'
+    WHEN 'completed'      THEN 'delivered'
+    WHEN 'delivered'      THEN 'delivered'
+    WHEN 'shipped'        THEN 'shipped'
+    WHEN 'packing'        THEN 'packing'
+    WHEN 'confirmed'      THEN 'ready'
+    WHEN 'paid'           THEN 'ready'
+    ELSE 'unfulfilled'
+  END
+ WHERE fulfillment_status IS NULL;
+
 ALTER TABLE orders ALTER COLUMN order_state SET DEFAULT 'pending';
 ALTER TABLE orders ALTER COLUMN fulfillment_status SET DEFAULT 'unfulfilled';
 DO $$
