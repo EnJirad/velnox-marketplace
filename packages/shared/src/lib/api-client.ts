@@ -5,12 +5,37 @@
  * the Express backend API.
  *
  * Auth is cookie-based (httpOnly JWT). No tokens in localStorage.
+ *
+ * In MVP mode (`mvp/config.ts`, staging/dev only) the SAME session state is read
+ * from `/api/mvp/auth/me` and cleared through `/api/mvp/auth/logout`; everything
+ * else here stays legacy, and legacy remains the default.
  */
 import { useCallback, useEffect, useState } from "react";
 
 // ─── API Base URL ───────────────────────────────────────────────────────────
 
 import { apiBaseUrl as API_BASE } from "./sites";
+import { getApiMode } from "../mvp/config.js";
+import { MVP_ROUTES } from "../mvp/routes.js";
+
+/**
+ * Where the SESSION lives for this build.
+ *
+ * The MVP API uses the same httpOnly cookie and the same `{success,data}`
+ * envelope as the legacy API, so only the two session paths change. Legacy is
+ * the default (`mvp/config.ts`), which is why no existing app behaves
+ * differently until a staging build opts in.
+ */
+function sessionEndpoints(): { me: string; logout: string } {
+  const mode = getApiMode();
+  if (mode.mode === "mvp") {
+    return {
+      me: `${mode.mvpBaseUrl}${MVP_ROUTES.auth.me}`,
+      logout: `${mode.mvpBaseUrl}${MVP_ROUTES.auth.logout}`,
+    };
+  }
+  return { me: `${API_BASE}/auth/me`, logout: `${API_BASE}/auth/logout` };
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -74,7 +99,7 @@ function notifyAuthListeners() {
 
 async function fetchCurrentUser(): Promise<ApiUser | null> {
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    const res = await fetch(sessionEndpoints().me, {
       credentials: "include",
     });
     if (!res.ok) return null;
@@ -177,8 +202,9 @@ export async function signInWithGoogle(_code?: string): Promise<ApiUser> {
 
 /** Sign out — invalidate server session and clear all local auth state. */
 export async function signOut(): Promise<void> {
+  const endpoints = sessionEndpoints();
   try {
-    await fetch(`${API_BASE}/auth/logout`, {
+    await fetch(endpoints.logout, {
       method: "POST",
       credentials: "include",
     });
@@ -193,13 +219,13 @@ export async function signOut(): Promise<void> {
     sessionStorage.removeItem("velnox.googleAuthStart");
   } catch { /* ignore */ }
 
-  // Verify session is actually cleared by checking /api/auth/me
+  // Verify session is actually cleared by re-reading the session endpoint.
   try {
-    const verifyRes = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
+    const verifyRes = await fetch(endpoints.me, { credentials: "include" });
     if (verifyRes.ok) {
       // Session still valid — this shouldn't happen but handle gracefully
       console.warn("[auth] Session still valid after logout — retrying");
-      await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+      await fetch(endpoints.logout, { method: "POST", credentials: "include" });
     }
   } catch { /* expected — session cleared */ }
 

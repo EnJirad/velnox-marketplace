@@ -24,6 +24,20 @@ interface ImportMetaEnv {
 
   /** Sentry DSN for error monitoring (optional) */
   readonly VITE_SENTRY_DSN?: string;
+
+  /**
+   * API tree this build talks to: omit or `legacy` (default) | `mvp`.
+   * MVP mode is refused in production unless `VITE_DEPLOY_ENV=staging`.
+   * See `packages/shared/src/mvp/config.ts`.
+   */
+  readonly VITE_API_MODE?: string;
+
+  /**
+   * Deployment environment used ONLY for the MVP-mode safety decision:
+   * `production` | `staging` | `development` | `preview` | … . A `vite build`
+   * always reports `PROD=true`, so a staging build must declare `staging` here.
+   */
+  readonly VITE_DEPLOY_ENV?: string;
 }
 
 interface ImportMeta {
