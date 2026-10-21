@@ -177,6 +177,12 @@ For Vercel deployment, set in the Vercel dashboard for each project.
 
 ### 5. Set Up Neon PostgreSQL Database
 
+> **Phase 2 note.** The database described in this section is the **pre-MVP**
+> database. The clean MVP schema is `db/mvp/schema.sql` and is **not deployed
+> yet** — the cutover is designed in `db/mvp/cutover.md`. Keep using
+> `db/run-sqleditor.sql` for the current deployment; never apply the MVP schema
+> to the production database by hand.
+
 1. Create a Neon project at https://neon.tech
 2. Create a database
 3. Copy the connection string to `DATABASE_URL` in `backend/.env`
@@ -185,7 +191,10 @@ For Vercel deployment, set in the Vercel dashboard for each project.
 
 This creates all tables, indexes, and constraints.
 
-**Important:** `db/run-sqleditor.sql` and `db/schema.sql` must always be identical and synchronized.
+**Important:** `db/schema.sql` and `db/run-sqleditor.sql` describe the same
+pre-MVP database and are held to **declaration parity** (not byte identity), by
+`backend/tests/helpers/canonical-schema.ts`. Both are **frozen** until the
+cutover: do not add tables, columns or migrations to them.
 
 ### 6. Database Migration System
 

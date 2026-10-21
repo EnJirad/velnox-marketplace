@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-17 · **Branch:** `freebuff/d4296b7210b943b805a8cf6d` (from `main`) · **Latest pass:** **wholesale is DISCOVERABLE** (**§79**) — a public pack COUNT plus the per-status application CTA on the product page; pack names and prices still reach an approved store only; full suite **2154 pass / 2 skip / 0 fail** against a real PostgreSQL 16.15; no browser E2E exists here; production DB + real Stripe TEST E2E remain BLOCKED (owner action)
+**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 2 — clean MVP database** (**§85**) — `db/mvp/schema.sql` is the canonical 19-table MVP model with a fail-closed reset and **81/81 real-PostgreSQL checks**; the pre-MVP pair + 62 migrations are FROZEN; cutover designed, not executed. Full suite **2166 pass / 16 skip / 0 fail** against PostgreSQL 14. No production DB or real Stripe TEST E2E was touched (owner action).
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -789,3 +789,40 @@ No test was skipped or weakened to make the run green; no `DATABASE_URL` exists 
 workspace.
 
 **Next = Phase 2 (database), blocked on D1/D3/D4/D10.** Do not start route deletion before it.
+
+---
+
+## §85. Phase 2 — CLEAN MVP DATABASE (2026-10-21)
+
+**Status: Phase 2 complete — baseline `dd8c567` (local == `origin/main` == GitHub); no destructive production action.**
+Full report: [`.ai/tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md). Cutover: [`db/mvp/cutover.md`](../db/mvp/cutover.md).
+
+**Canonical MVP schema: `db/mvp/schema.sql`** — 19 tables, zero extensions, 6 lifecycle
+triggers. One order axis (`pending_payment|paid|processing|shipped|delivered|cancelled`),
+one stock authority (`inventory`, `product_variants` has no stock), one seller per cart/order
+(composite FKs), product lifecycle `draft→submitted→approved→published` + `rejected` with
+`approval_status` GENERATED, Stripe-only payments with `payment_events.event_id` claim and one
+live session per order, NUMERIC(12,2) money everywhere.
+
+**Reset:** `db/mvp/reset.sql` + `db/mvp/reset.sh` — destructive, requires a `_dev`/`_test`
+database name AND `velnox.allow_reset=yes`; never reads `DATABASE_URL`; reuses
+`backend/db/test-database.ts`. **Seed:** categories only. **Proof:** `db/mvp/verify.sh`
+(**81/81**) + `backend/tests/mvp-schema-contract.test.ts` (**19/19**).
+
+**Frozen, not deleted:** `db/schema.sql`, `db/run-sqleditor.sql`, `db/verify-reconciler.sh`,
+all 62 migrations, and the four boot-time `ensure*` functions. They serve the deployed
+pre-MVP backend and are removed only at cutover, after Phase 3 rewrites the code. Do not edit
+them and do not add migrations.
+
+**Verified:** typecheck 4/4 + backend 0 · i18n `1535×3` · full suite **2147→2166 pass /
+16 skip / 0 fail** (the +19 are the new contract tests) · `db/mvp/verify.sh` **81/81** ·
+`git diff --check` clean. **Not verified:** browser E2E, real Stripe TEST round trip, any
+production DB read/write. PostgreSQL 14 locally vs 16 in CI/Neon.
+
+**Open flags:** the repo's third locale is `my` = Burmese while D11 says Malay (no language
+change made) · editing a published product does not force re-approval (Phase 3 policy) ·
+refunds are outside the MVP · data carry-over is a separate project · production identity must
+be proven before cutover.
+
+**Next = Phase 3 (core backend rewrite against `db/mvp/schema.sql`). Do not start it here,
+and do not execute the cutover from this phase.**

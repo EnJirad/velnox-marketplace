@@ -1,8 +1,19 @@
-# Active Tasks — none
+# Active Tasks
 
-No task brief is currently assigned.
+Current MVP rewrite records:
 
-When work is assigned, the brief is written here from `../TEMPLATE.md` and the agent session reads:
+| Phase | File | Status |
+|---|---|---|
+| 0 — audit | `mvp-clean-rewrite-phase0-audit-2026-10-21.md` | complete; owner decisions recorded in Phase 2 |
+| 1 — clean foundation | `mvp-clean-rewrite-phase1-2026-10-21.md` | complete |
+| 2 — clean MVP database | `mvp-clean-rewrite-phase2-2026-10-21.md` | complete; cutover designed, not executed |
+| 3 — core backend rewrite | not started | blocked until Phase 2 is reviewed |
+
+Do not start Phase 3 from these records. The current database contract is
+`db/mvp/schema.sql`; the pre-MVP pair is frozen (`db/README.md`).
+
+When new work is assigned, the brief is written here from `../TEMPLATE.md` and
+the agent session reads:
 
 1. `.ai/AI_RULES.md`
 2. `.ai/AI_HANDOFF.md`

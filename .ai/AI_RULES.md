@@ -94,10 +94,19 @@ Do not create a second competing source of truth. Frontend is never the source o
 
 ## 6. Database Rules
 
+> **Phase 2 state (2026-10-21).** The **MVP canonical schema is `db/mvp/schema.sql`**
+> (reset `db/mvp/reset.sql`, proof `db/mvp/verify.sh`, contract
+> `backend/tests/mvp-schema-contract.test.ts`). The pre-MVP pair described below is
+> **FROZEN** until the Phase 3 cutover (`db/mvp/cutover.md`): the deployed backend
+> still reads it, so it must not be edited and **no new migration may be added**.
+> `db/README.md` is the map.
+
+### Pre-MVP pair (frozen — reference only until cutover)
+
 - **Canonical files:** `db/schema.sql` = complete current schema SNAPSHOT. `db/run-sqleditor.sql` = the rerunnable ADDITIVE RECONCILER (pasted into Neon SQL Editor and Run, repeatedly). They are no longer byte-identical: the reconciler additionally carries the column / NOT NULL / index / foreign-key / constraint / trigger passes an EXISTING database needs, which the snapshot has no use for. The contract between them is **declaration parity** — every table, column, index, constraint, function, trigger and extension the snapshot declares must still be declared by the reconciler, unchanged (asserted by `backend/tests/helpers/canonical-schema.ts`).
 - **Reconciler safety:** `db/run-sqleditor.sql` must never `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`, and must never swallow an error with `EXCEPTION WHEN OTHERS THEN NULL`. It creates what is missing and leaves every existing row alone. The single `DROP CONSTRAINT` it carries is the one migration 054 superseded and is commented in place.
 - **Deprecated:** `db/run-update.sql` is deprecated — never recreate, update, or depend on it.
-- **Whenever schema changes**, update **both** canonical files (tables, columns, types, constraints, indexes, functions, triggers, views) and regenerate the reconciler's additive passes from `db/schema.sql`. No SQL comments inside them.
+- **Pre-MVP changes are frozen.** If the pre-MVP schema ever had to change before the cutover, it would require updating **both** canonical files (tables, columns, types, constraints, indexes, functions, triggers, views) and regenerating the reconciler's additive passes from `db/schema.sql`. In Phase 2/3 it does not change: the MVP model is `db/mvp/schema.sql`.
 - **Fresh DB contract:** an empty Postgres must become the complete current Velnox DB by running `db/run-sqleditor.sql` once — no prior migrations required — and running it a second and third time must change nothing (no duplicate table, column, constraint, index or trigger).
 - **Dependency order:** respect PG dependency order; use deferred `ALTER TABLE ADD CONSTRAINT` for circular FKs. Histor
   migrations in `db/migrations/` remain history — do not rewrite them to clean the bootstrap.

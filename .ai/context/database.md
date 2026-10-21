@@ -1,10 +1,27 @@
 # DATABASE
 
-## Source of Truth
+## Phase 2 state — ONE canonical MVP schema
+
+**Canonical now:** `db/mvp/schema.sql` — 19 tables, one order status axis, one
+inventory authority, one seller per cart/order, Stripe-only payments. Reset:
+`db/mvp/reset.sql` (fail-closed dev/test only). Seed: `db/mvp/seed.sql`
+(categories only). Proof: `db/mvp/verify.sh` + `backend/tests/mvp-schema-contract.test.ts`.
+
+**Frozen, not canonical:** `db/schema.sql`, `db/run-sqleditor.sql` and
+`db/migrations/*.sql` describe the **pre-MVP** database. The backend deployed
+today still reads it, so it is byte-for-byte unchanged and must stay that way
+until the Phase 3 cutover (`db/mvp/cutover.md`). Do not add a migration and do
+not edit either canonical pre-MVP file.
+
+Everything below this banner documents the **pre-MVP** pair. It remains the
+operational truth for the currently deployed database, but it is **not** the
+MVP data model and must not be extended.
+
+## Source of Truth (runtime)
 
 Neon PostgreSQL. Single `pg.Pool` in `backend/db/index.ts` (SSL `verify-full`). Frontend never connects directly.
 
-## Canonical Files — MUST Stay Synchronized
+## Pre-MVP pair (FROZEN until cutover) — historic contract
 
 | File | Purpose | Rule |
 |------|---------|------|

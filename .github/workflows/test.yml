@@ -124,6 +124,14 @@ jobs:
             exit 1
           fi
 
+      - name: Verify the clean MVP schema
+        run: |
+          # Creates and drops its own disposable databases on the same service
+          # container (never a secret, never production). Proves bootstrap,
+          # constraints, lifecycles, inventory, payment persistence and the
+          # fail-closed reset against a real PostgreSQL.
+          bash db/mvp/verify.sh
+
       - name: Run the test suite
         run: bun test backend/tests
 

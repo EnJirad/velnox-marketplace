@@ -78,8 +78,9 @@ velnox-marketplace/
 │           ├── pages/             # Auth, NotFound
 │           └── index.css          # Velnox Design Theme v1.0
 ├── db/
-│   ├── schema.sql     # Complete database schema
-│   └── migrations/    # Migration files
+│   ├── mvp/           # CANONICAL MVP schema + guarded reset + proof (db/README.md)
+│   ├── schema.sql     # Pre-MVP schema (FROZEN until cutover)
+│   └── migrations/    # Pre-MVP migration history (FROZEN)
 ├── docs/              # Documentation
 └── .ai/               # AI agent workspace (rules, handoff, context, tasks, history)
 ```
