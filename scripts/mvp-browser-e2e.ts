@@ -8,10 +8,11 @@
  * `packages/shared/src/mvp` and the per-app `src/mvp` trees actually work in a
  * browser:
  *
- *   seller signup → apply → admin approves → product draft + variant → submit →
- *   admin approves → publish → buyer signup → catalogue → variant → cart →
- *   checkout → order confirmation → cancel → stock restored
- *   → second order expires via the admin sweep → stock restored again
+ *   seller signup → apply → admin approves → product draft + variant
+ *   + retail pack (Pack 6) → submit → admin approves → publish → buyer signup →
+ *   catalogue → variant → 6-pack → cart → checkout → order confirmation
+ *   (pack snapshot + 6 base units held) → cancel → stock restored
+ *   → second 6-pack order expires via the admin sweep → stock restored again
  *
  * HOW IT IS ISOLATED
  * ──────────────────
@@ -197,6 +198,20 @@ async function clickButton(page: Page, name: string | RegExp): Promise<void> {
   await page.getByRole("button", { name }).first().click();
 }
 
+/** Read one row from the disposable database (the E2E's own assertions). */
+async function one<T>(sql: string, params: unknown[] = []): Promise<T> {
+  const result = await query(sql, params);
+  const row = result.rows[0] as T | undefined;
+  if (!row) fail(`expected a row from: ${sql}`);
+  return row;
+}
+
+function assertEqual(actual: unknown, expected: unknown, label: string): void {
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(expected);
+  if (a !== e) fail(`${label}: expected ${e}, got ${a}`);
+}
+
 /** Fill the checkout address form and place the order. */
 async function placeOrder(page: Page, quantity: number): Promise<string> {
   const plus = page.getByRole("button", { name: "Increase quantity" });
@@ -300,13 +315,27 @@ try {
   await sellerPage.getByRole("link", { name: new RegExp(PRODUCT) }).click();
 
   await sellerPage.getByPlaceholder("Variant name").fill("Large");
-  await sellerPage.getByPlaceholder("Price").fill("300.00");
-  await sellerPage.getByPlaceholder("Stock").fill("10");
-  await clickButton(sellerPage, "Add");
+  // Exact: "Pack price" also contains "Price".
+  await sellerPage.getByPlaceholder("Price", { exact: true }).fill("300.00");
+  await sellerPage.getByPlaceholder("Stock", { exact: true }).fill("10");
+  // Exact: "Add pack" also contains "Add".
+  await sellerPage.getByRole("button", { name: "Add", exact: true }).click();
   await waitForText(sellerPage, "10 available", "variant stock");
+
+  // ── A retail pack on the variant: 6 base units for ฿500 ──────────────────
+  await sellerPage.getByPlaceholder("Label (e.g. Pack 6)").fill("Pack 6");
+  await sellerPage.getByPlaceholder("Units in pack").fill("6");
+  await sellerPage.getByPlaceholder("Pack price").fill("500.00");
+  await clickButton(sellerPage, "Add pack");
+  // The row renders the label and "6 units · <price> · active" as separate
+  // nodes, so assert on the size line and then on the label itself.
+  await waitForText(sellerPage, /6 units/, "pack configuration");
+  await waitForText(sellerPage, "Pack 6", "pack label");
+  log("seller added a 6-unit retail pack at ฿500.00 to the variant");
+
   await clickButton(sellerPage, "Submit for review");
   await waitForText(sellerPage, /submitted/i, "product submission");
-  log("seller created a draft, added a variant and submitted it");
+  log("seller created a draft, added a variant + pack and submitted it");
 
   // ── Admin approves the product, seller publishes it ───────────────────────
   await adminPage.goto(`https://localhost:${CENTER}/products`);
@@ -330,34 +359,79 @@ try {
   await buyerPage.goto(`https://localhost:${SHOP}/products`);
   await buyerPage.getByRole("link", { name: new RegExp(PRODUCT) }).click();
   await buyerPage.getByRole("button", { name: /Large/ }).click();
-  const firstOrderUrl = await placeOrder(buyerPage, 2);
+  await waitForText(buyerPage, /Pack 6/, "pack option on the product page");
+  await buyerPage.getByRole("button", { name: /Pack 6/ }).click();
+  await waitForText(buyerPage, /6 units per pack/, "pack meaning explained");
+  const firstOrderUrl = await placeOrder(buyerPage, 1);
   await waitForText(buyerPage, "Awaiting payment", "order status");
-  await waitForText(buyerPage, /600\.00/, "order total from the server");
+  // The pack's OWN price, never 6 × the single-unit price.
+  await waitForText(buyerPage, /500\.00/, "pack total from the server");
+  await waitForText(buyerPage, /Pack 6/, "order item snapshot");
+  await waitForText(buyerPage, /6 units/, "base units in the order line");
   const orderNumber = (await buyerPage.locator("h1").first().textContent())?.trim() ?? "";
-  log("buyer completed catalogue → cart → checkout", `${orderNumber} = ฿600.00`);
+  log("buyer completed catalogue → pack → cart → checkout", `${orderNumber} = ฿500.00`);
 
-  // Stock is reserved by the order (10 − 2).
+  const firstOrderId = new URL(buyerPage.url()).pathname.split("/").pop()!;
+  const productRow = await one<{ id: string }>(`SELECT id FROM products WHERE name = $1`, [PRODUCT]);
+  const variantRow = await one<{ id: string }>(
+    `SELECT id FROM product_variants WHERE product_id = $1 ORDER BY sort_order LIMIT 1`,
+    [productRow.id],
+  );
+
+  // The order snapshot is the durable record of WHICH pack was bought.
+  const snapshot = await one<Record<string, unknown>>(
+    `SELECT selling_unit_label, selling_unit_base_quantity, base_quantity_total,
+            quantity, unit_price::text AS unit_price, subtotal::text AS subtotal
+       FROM order_items WHERE order_id = $1`,
+    [firstOrderId],
+  );
+  assertEqual(
+    snapshot,
+    {
+      selling_unit_label: "Pack 6",
+      selling_unit_base_quantity: 6,
+      base_quantity_total: 6,
+      quantity: 1,
+      unit_price: "500.00",
+      subtotal: "500.00",
+    },
+    "order_items pack snapshot",
+  );
+
+  // Stock is reserved by BASE quantity: 1 pack × 6 = 6 of the 10 units.
+  const held = await one<{ quantity: number; reserved: number }>(
+    `SELECT quantity, reserved FROM inventory WHERE product_id = $1 AND variant_id = $2`,
+    [productRow.id, variantRow.id],
+  );
+  assertEqual(held, { quantity: 10, reserved: 6 }, "reservation after buying one 6-pack");
+  log("checkout reserved 1 pack × 6 base units", "10 on hand, 6 reserved");
+
   const stockPage = await newPage(browser);
   await stockPage.goto(`https://localhost:${SHOP}/products`);
   await stockPage.getByRole("link", { name: new RegExp(PRODUCT) }).click();
   await stockPage.getByRole("button", { name: /Large/ }).click();
-  await waitForText(stockPage, "8 available", "reservation visible to the next buyer");
-  log("checkout reserved 2 units", "10 → 8 available");
+  await waitForText(stockPage, "4 available", "reservation visible to the next buyer");
 
-  // ── Buyer cancels: stock returns ──────────────────────────────────────────
+  // ── Buyer cancels: the full 6 units come back ───────────────────────────
   await buyerPage.reload();
   await clickButton(buyerPage, "Cancel order");
   await waitForText(buyerPage, "Cancelled", "order cancellation");
+  const released = await one<{ quantity: number; reserved: number }>(
+    `SELECT quantity, reserved FROM inventory WHERE product_id = $1 AND variant_id = $2`,
+    [productRow.id, variantRow.id],
+  );
+  assertEqual(released, { quantity: 10, reserved: 0 }, "release after cancelling a 6-pack order");
   await stockPage.reload();
   await stockPage.getByRole("button", { name: /Large/ }).click();
   await waitForText(stockPage, "10 available", "stock released on cancel");
-  log("cancelling the order released the reservation", "8 → 10 available");
+  log("cancelling released the pack's 6 base units", "6 → 0 reserved");
 
-  // ── A second order expires through the admin sweep ───────────────────────
+  // ── A second pack order expires through the admin sweep ─────────────────
   await (async () => {
     await buyerPage.goto(`https://localhost:${SHOP}/products`);
     await buyerPage.getByRole("link", { name: new RegExp(PRODUCT) }).click();
     await buyerPage.getByRole("button", { name: /Large/ }).click();
+    await buyerPage.getByRole("button", { name: /Pack 6/ }).click();
     return placeOrder(buyerPage, 1);
   })();
   const secondOrderId = new URL(buyerPage.url()).pathname.split("/").pop()!;
@@ -372,7 +446,12 @@ try {
   await stockPage.reload();
   await stockPage.getByRole("button", { name: /Large/ }).click();
   await waitForText(stockPage, "10 available", "stock released on expiry");
-  log("admin expiry sweep cancelled the unpaid order and released its stock");
+  const expired = await one<{ quantity: number; reserved: number }>(
+    `SELECT quantity, reserved FROM inventory WHERE product_id = $1 AND variant_id = $2`,
+    [productRow.id, variantRow.id],
+  );
+  assertEqual(expired, { quantity: 10, reserved: 0 }, "release after an expired 6-pack order");
+  log("admin expiry sweep cancelled the unpaid pack order and released its 6 units");
 
   // ── The seller sees both orders (permitted orders only) ─────────────────
   await sellerPage.goto(`https://localhost:${SELLER}/seller/orders`);

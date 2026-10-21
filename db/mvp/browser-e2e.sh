@@ -6,10 +6,11 @@
 # VITE_API_MODE=mvp, serves them over local HTTPS against a real MVP API, and
 # drives Chromium through:
 #
-#   seller signup → apply → admin approve → product + variant → submit →
-#   admin approve → publish → buyer signup → catalogue → cart → checkout →
-#   order confirmation → cancel (stock returns) → admin expiry sweep (stock
-#   returns again)
+#   seller signup → apply → admin approve → product + variant + retail 6-pack →
+#   submit → admin approve → publish → buyer signup → catalogue → variant →
+#   6-pack → cart → checkout → order confirmation (pack snapshot, 6 base units
+#   reserved) → cancel (6 units return) → admin expiry sweep (6 units return
+#   again)
 #
 # WHAT IT NEVER TOUCHES
 #   * `DATABASE_URL` is not read: the target comes from TEST_DATABASE_URL only.
