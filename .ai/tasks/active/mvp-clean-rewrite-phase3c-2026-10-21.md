@@ -12,7 +12,8 @@
 
 - **Starting SHA (verified):** `9083127070d81c482ecfacb0604d330d0f79f07b`
   (`HEAD` = `origin/main` = `git ls-remote origin refs/heads/main`, tree clean).
-- **Final SHA:** the commit series in §7; the docs commit is last on `main`.
+- **Final SHA:** `dd6dbbb5101b4e3069f7ba43cfbc77f63e01b505` (`HEAD` = `origin/main` =
+  GitHub `commits/main` after the push).
 - Blueprint: [`docs/MVP_STAGING.md`](../../docs/MVP_STAGING.md).
 - Previous passes: [Phase 3](../.ai/tasks/active/mvp-clean-rewrite-phase3-2026-10-21.md) ·
   [Phase 3b](mvp-clean-rewrite-phase3b-2026-10-21.md) · cutover (not executed):
@@ -172,15 +173,15 @@ the disposable staging database. Production: nothing to roll back.
 
 ## 7. Git
 
-| Commit | Scope |
-|---|---|
-| `feat(velshop,velseller,velcenter): reload after sign-in/sign-out` | session-staleness fix |
-| `feat(backend): MVP_COOKIE_SECURE seam + tests` | cookie flag, 4 tests |
-| `test(mvp): real browser E2E for the staged MVP flow` | Playwright harness + wrapper + script + devDependency |
-| `docs(ai): Phase 3c report and staging runbook` | this file, handoff, `docs/MVP_STAGING.md` |
+| SHA | Commit | Scope |
+|---|---|---|
+| `49b7651` | `fix(mvp): make the shell re-read the session after sign-in and sign-out` | session-staleness fix, `MVP_COOKIE_SECURE` seam + 4 cookie tests |
+| `a8865e5` | `test(mvp): drive the whole MVP flow in Chromium against the real API` | Playwright harness + wrapper + script + devDependency |
+| `dd6dbbb` | `docs(ai): Phase 3c staging runbook, report and handoff` | this file, handoff §88, `docs/MVP_STAGING.md`, archive |
 
-Pushed to `main` without force; `HEAD` = `origin/main` = `ls-remote` re-verified after
-the push (final SHA in the handoff §88 and the completion report).
+Pushed to `main` without force; `HEAD` = `origin/main` = GitHub `commits/main`
+(`dd6dbbb5101b4e3069f7ba43cfbc77f63e01b505`) re-verified after the push. The browser
+E2E was re-run on that exact tree afterwards: `[mvp-browser] PASS`, exit 0.
 
 ## 8. Production confirmation
 
