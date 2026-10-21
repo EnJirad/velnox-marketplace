@@ -320,3 +320,9 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-10-16-selling-units-built.md`](./archive/AI_Handoff-2026-10-16-selling-units-built.md) | handoff `## §76. Selling units (sets / packs) — BUILT, with real-PostgreSQL proof` + `## §77. Selling units, second pass — seller authoring UI + the set name in every view` | Moved **verbatim** on 2026-10-19 while adding §82 (edit-headroom housekeeping; the current-state file was ~53 KB). Kept because they are the full record of the selling-unit model and its first two passes: migration 058, the `base units = quantity * selling_unit_pieces` authority, server-side price/ownership, the seller authoring form, and the set name reaching every order view. The live invariant stays in the handoff's compact §76–77 block — read that first; this file is the narrative and the historical test counts. |
+
+### 2026-10-21 — §82 archived while adding §88 (Phase 3c)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-19-production-schema-mismatch.md`](./archive/AI_Handoff-2026-10-19-production-schema-mismatch.md) | handoff `## §82. Production schema mismatch — product_selling_units + orders.order_state` | Moved **verbatim** on 2026-10-21 (edit-headroom housekeeping; the current-state file was at ~53.8 KB). Pre-MVP production history: the object-level repair of two pre-MVP schema drifts. Superseded by the MVP schema/cutover; the durable rules (a `42703` never proves which database or build you are on; verification never repairs) stay in `.ai/context/database.md`. |

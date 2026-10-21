@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3b — MVP client integration** (**§87**) — `packages/shared/src/mvp` (client, route table, fail-closed mode switch) now drives VelShop, VelSeller and VelCenter behind `VITE_API_MODE`, proved by a **client-level E2E through the real API** plus **86/86 MVP** and **2166/2166 legacy** tests. Staging backend/DB deployment and the Stripe TEST round trip are **NOT done** (no credentials/infrastructure here). Cutover **not executed**; production untouched.
+**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3c — staging readiness** (**§88**) — staging env matrix + runbook written, CI already runs the MVP suite, and a **real Chromium E2E passes** (seller apply → approve → product → moderation → publish → buyer cart → checkout → order → cancel → expiry). Staging is **NOT deployed** (no provider access) and product scope is **BLOCKED on retail sets/packs**, absent from the MVP schema/API (§2 of the report). Production untouched; cutover **not executed**.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -626,79 +626,12 @@ that is a refactor outside this task's "fix only real problems" scope.
 
 ---
 
-## §82. Production schema mismatch — `product_selling_units` + `orders.order_state` (2026-10-19)
+## §82. Production schema mismatch — `product_selling_units` + `orders.order_state` (2026-10-19) — **ARCHIVED**
 
-**Reported from Render logs:** `42P01 relation "product_selling_units" does not exist` and
-`42703 column "order_state" of relation "orders" does not exist` (thrown by
-`routes/cart.ts#insertOrderWithUniqueNumber`, whose INSERT names `order_state`).
-
-**ROOT CAUSE — Case A/D (migration exists, production is behind).** Both objects are declared in
-both canonical files and by migrations `056` (the order axes, with the 9b backfill) and `058`/`059`
-(selling units, `is_wholesale`). Nothing in the code or schema was missing. Production simply never
-received them. `production-db-migrate.yml` hard-stops when `NEON_PRODUCTION_DATABASE_URL` is absent,
-and this workspace has **no database env at all** (`freebuff-env list` → `{}`), so the ledger could
-not be read either. The database identity must be confirmed before applying anything (§66: the two
-Neons).
-
-**REPO-SIDE DEFECT FOUND while proving the repair — and fixed.** `db/run-sqleditor.sql` (the
-documented production repair path) added `orders.order_state` / `fulfillment_status`, set their
-defaults, then guarded `SET NOT NULL` on "no NULL remains" — but the **9b backfill was missing**, even
-though the comment above it said "Section 9b backfills". Consequence on a database with history:
-the run exits 0, the two columns stay **nullable and NULL for every pre-056 order**, and the
-projection reads a shipped order back as `pending`. `db/schema.sql` carried the same omission, so the
-snapshot and the reconciler agreed with each other and disagreed with migration 056. Both now carry
-`056`'s exact `CASE status …` backfill (statement-identical, `WHERE … IS NULL`, rerunnable).
-
-**Verification workflow was blind to the incident.** `production-db-verify.yml` probed only the
-checkout-group objects, so it would have gone green on this exact database. It now has three
-read-only probes: `product_selling_units` (11 columns, `is_wholesale` NOT NULL DEFAULT false —
-wholesale stays fail-closed), both order axes NOT NULL with the canonical defaults, and the six
-`cart_items`/`order_items` snapshot columns. Proved non-vacuous: 3 FAILs on the reported shape,
-PASS after repair.
-
-**Proof (disposable PostgreSQL 14, real databases):**
-
-| Check | Result |
-|---|---|
-| Reported 42P01 + 42703 reproduced on a production-shaped DB | **reproduced**, then gone after one reconciler run |
-| `bash db/verify-reconciler.sh` (now scenarios A-J) | **ALL SCENARIOS PASSED** — new **J** seeds 6 legacy orders, strips both objects, asserts the exact errors, then asserts backfill `processing/shipped, completed/delivered, pending/unfulfilled, cancelled/cancelled, processing/delivered, processing/packing`, NOT NULL, CHECK, index, 11 columns, 4 indexes, 4 FKs, 6 snapshot columns, and that no order id/status changed |
-| Repaired-DB checkout surface (`selling-units`, `checkout-payment-flow`, `multi-shop-checkout`, `cart-selection`, `order-state-projection`, `customer-order-cancel`, `order-fulfillment-state-machine`, `payment-reservation-expiry`) | **272 pass / 0 fail** |
-| `bun test backend/tests` (fresh canonical DB) | **2147 pass / 16 skip / 0 fail** — 2163 tests, 75 files |
-| `bun run typecheck` 4/4 + `tsc -p backend` | exit 0 |
-| `bun run build:apps` | 4/4 exit 0 |
-| `git diff --check` | clean |
-
-**NOT applied to production — BLOCKED.** No production credential exists here, and the hard-stop rule
-forbids inventing one. Owner action, **in this order**:
-
-1. Set `NEON_PRODUCTION_DATABASE_URL` to the SAME Neon Render's `DATABASE_URL` uses, and confirm the
-   identity (`[db]` boot line vs `current_database()`).
-2. Run **`db/run-sqleditor.sql` once** against that Neon (SQL Editor is fine). This is the proven
-   path for the reported shape: scenario J starts from "table missing + column missing + real
-   orders" and converges additively, but scenarios **C** and **H** already prove the older
-   shapes too.
-3. Run **Actions → Production DB Verify**; it now fails loudly if either object (or the backfilled
-   NOT NULL axes) is still missing.
-4. Use **Production DB Migrate** for *future* migrations, not as the first repair. Measured this
-   pass: `db/migrations/056_commerce_core_invariants.sql:178` declares
-   `purchase_id UUID REFERENCES checkout_groups(id)` and 056 **exits 3** when `checkout_groups` is
-   absent (`relation "checkout_groups" does not exist`) — while the workflow skips any migration
-   the ledger already records. On a database whose ledger claims 054 but lacks the table (§66), the
-   migration path alone would fail exactly there.
-
-No destructive statement, no data deletion, no payment/inventory/checkout change, and
-wholesale/VelRepeat stay parked in this work.
-
-**PERF-1 — separate issue, recorded only, deliberately NOT optimised in this fix.** From the same
-Render log as the 42703: statement latencies of **~198-215 ms** on `product_images`,
-`product_variant_images`, `cart`, `addresses`, `revoked_tokens`, `orders`; intermittent **pool
-acquisition ~1203 ms** (checkout waits behind the scheduler); and the payment-reservation worker
-re-scanning every ~30 s with
-`SELECT id FROM orders WHERE payment_expires_at IS NOT NULL AND payment_expires_at <= NOW() AND status = ANY($2::text[]) AND inventory_released = FALSE`.
-P0 stayed "checkout cannot create an order"; changing indexes/queries/pool size in the same pass would
-have made the schema repair unverifiable. Needs its own task, measured before/after.
-
----
+**Record moved verbatim** on 2026-10-21 → [`history/archive/AI_Handoff-2026-10-19-production-schema-mismatch.md`](history/archive/AI_Handoff-2026-10-19-production-schema-mismatch.md).
+Pre-MVP production history; the MVP schema and cutover supersede the object-level repair. The durable
+rules stay in [`context/database.md`](context/database.md): a `42703` never proves which database or
+build you are on, and verification never repairs.
 
 ## §83. Phase 0 audit for the CLEAN MVP REWRITE (2026-10-21)
 
@@ -846,3 +779,50 @@ duplicate/amount checks, never paid by redirect), R2 upload (proven incompatible
 Production env, database, Stripe mode and deployments were NOT touched.
 
 **Next = Phase 3c:** deploy that staging stack, run the checklist, then settle OAuth + media.
+
+---
+
+## §88. Phase 3c — STAGING READINESS (2026-10-21) — condensed
+
+**Status: staging CONFIGURATION ready; staging NOT deployed; product scope BLOCKED on retail sets/packs.**
+Baseline `9083127070d81c482ecfacb0604d330d0f79f07b` = `origin/main` = GitHub. Report:
+[`tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md)
+· runbook: [`docs/MVP_STAGING.md`](../docs/MVP_STAGING.md).
+
+**BLOCKING GAP — sets/packs are absent from the MVP.** `db/mvp/schema.sql` has **zero**
+`selling_unit`/`pieces` references; `backend/mvp` mentions the pre-MVP table only in a comment
+forbidding it; no MVP client/UI field exists. The legacy schema, `backend/lib/inventory.ts`
+(`quantity × selling_unit_pieces`) and the archived §76–77 record still have the feature. The MVP
+therefore sells a product/variant at one price and cannot offer “Set 6 at ฿1,200” against base-unit
+stock. **Do not sign off retail scope or cut over until Phase 3d restores it.** Nothing was deleted
+to cause this; it was never carried into the clean schema.
+
+**Shipped this pass:** the shared auth panel now hard-navigates after sign-in and shells reload after
+sign-out (the MVP session is read once per mount — a client-side redirect left every guard and header
+on the pre-login snapshot); `MVP_COOKIE_SECURE=true` in `backend/mvp/session.ts` (one-way: can only
+ADD `Secure`, production always secure) so Chromium accepts `SameSite=None` over the E2E's HTTPS;
+`db/mvp/browser-e2e.sh` + `scripts/mvp-browser-e2e.ts` (Playwright devDependency) build all three
+apps in MVP mode, serve each over local HTTPS against the real API, and drive Chromium through the
+whole flow; `docs/MVP_STAGING.md` carries the Render/Vercel/Neon matrix, verification order,
+scheduling, blockers and rollback. CI needed nothing: `test.yml` already runs `db/mvp/verify.sh`,
+`bun run test:mvp`, the legacy suite and `git diff --check`.
+
+**Verified:** browser E2E **exit 0** (admin sign-in via UI · seller signup+apply · admin approve ·
+draft+variant(10)+submit · admin approve · publish · buyer signup → catalogue → variant → cart →
+checkout → **฿600.00 server total** → reservation 10→8 · cancel → 8→10 · admin expiry sweep →
+Cancelled → 10 · seller order list) · MVP suite **90 pass / 0 fail** (12 files) · legacy **2166 /
+16 skip / 0 fail** · typecheck **4/4** + backend tsc 0 · builds 4/4 (three in MVP mode) · i18n
+`1535×3` · `git diff --check` clean. **NOT verified:** any provider deployment (no Render/Vercel/
+Neon access here) and the Stripe TEST round trip (no `STRIPE_SECRET_KEY`; contract-only proof).
+Image upload is still not MVP-compatible (legacy writes `media.key`, the MVP table is
+`media.object_key`) — sellers paste URLs.
+
+**Owner actions:** Neon DB from `db/mvp/schema.sql` → Render staging service with
+`MVP_API_ENABLED=true`, staging `DATABASE_URL`/`JWT_SECRET`, `MVP_COOKIE_SECURE=true`, staging
+origins → three Vercel projects with `VITE_API_MODE=mvp`, `VITE_DEPLOY_ENV=staging`,
+`VITE_API_URL` → run the runbook's checklist (+ Stripe TEST if keys supplied). Production env,
+database, Stripe mode and deployments were NOT touched.
+
+**Next = Phase 3d:** restore retail sets/packs in the MVP (schema + cart/order snapshots + server
+pricing + `base_units = qty × pieces` stock + product-page selector), then deploy the staging stack
+and run the browser + Stripe TEST pass on it.
