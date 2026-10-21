@@ -798,7 +798,8 @@ refunds out of scope · data carry-over a separate project · production DB iden
 ## §86. Phase 3 — CORE BACKEND REWRITE against `db/mvp/schema.sql` (2026-10-21)
 
 **Status: Phase 3 scope COMPLETE (9/9 domains).** Baseline `1275a11` == `origin/main` == GitHub;
-final SHA in the commit that contains this section. Full report:
+implementation commit **`b775cb46112ba2099570886550d54fd9f1c7c042`** (this docs record is the next
+commit). Full report:
 [`tasks/active/mvp-clean-rewrite-phase3-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3-2026-10-21.md).
 
 **Architecture — two trees, one database each.** `backend/mvp/*` serves **`/api/mvp/*`** and reads

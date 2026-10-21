@@ -17,10 +17,14 @@
 
 GitHub had not advanced past the Phase 2 baseline, so no remote work was superseded.
 
-**Final commit:** the `feat(mvp): …` commit on `main` containing this report (SHA recorded in
-`.ai/AI_HANDOFF.md` §86 and in the delivery message — a later commit cannot contain its own hash).
-Verified with `git rev-parse HEAD`, `git rev-parse origin/main` and
-`git ls-remote origin refs/heads/main` all equal after push.
+| Phase 3 implementation commit (code + tests + this report) | `b775cb46112ba2099570886550d54fd9f1c7c042` |
+| Push | `1275a11..b775cb4  main -> main` |
+
+`git rev-parse HEAD`, `git rev-parse origin/main` and `git ls-remote origin refs/heads/main` were all
+`b775cb46112ba2099570886550d54fd9f1c7c042` immediately after the push. A `docs(ai)` follow-up then
+writes that SHA into this table and into `.ai/AI_HANDOFF.md` §86 (a commit cannot contain its own
+hash); GitHub `main` therefore advances by exactly that one documentation commit,
+`b775cb4..<docs SHA>`.
 
 ---
 
