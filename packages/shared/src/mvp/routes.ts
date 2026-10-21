@@ -47,6 +47,9 @@ export const MVP_ROUTES = {
     variants: (id: string) => `/seller/products/${encodeURIComponent(id)}/variants`,
     variant: (id: string, variantId: string) =>
       `/seller/products/${encodeURIComponent(id)}/variants/${encodeURIComponent(variantId)}`,
+    sellingUnits: (id: string) => `/seller/products/${encodeURIComponent(id)}/selling-units`,
+    sellingUnit: (id: string, unitId: string) =>
+      `/seller/products/${encodeURIComponent(id)}/selling-units/${encodeURIComponent(unitId)}`,
     inventory: (id: string) => `/seller/products/${encodeURIComponent(id)}/inventory`,
     orders: "/seller/orders",
     orderStatus: (id: string) => `/seller/orders/${encodeURIComponent(id)}/status`,

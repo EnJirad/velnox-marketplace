@@ -33,6 +33,7 @@ import type {
   MvpSellerProduct,
   MvpSellerProfile,
   MvpSellerStatusResponse,
+  MvpSellingUnitInput,
   MvpShippingAddress,
   MvpUser,
 } from "./types.js";
@@ -84,6 +85,8 @@ export interface MvpApi {
     addItem(input: {
       productId: string;
       variantId?: string | null;
+      /** `null`/absent = the implicit base unit. */
+      sellingUnitId?: string | null;
       quantity?: number;
     }): Promise<MvpCart | null>;
     updateItem(itemId: string, quantity: number): Promise<MvpCart | null>;
@@ -129,6 +132,12 @@ export interface MvpApi {
       productId: string,
       variantId: string,
       input: { name?: string; sku?: string | null; price?: string; status?: "active" | "inactive" },
+    ): Promise<MvpSellerProduct>;
+    addSellingUnit(productId: string, input: MvpSellingUnitInput): Promise<MvpSellerProduct>;
+    updateSellingUnit(
+      productId: string,
+      unitId: string,
+      input: Partial<Omit<MvpSellingUnitInput, "variantId">>,
     ): Promise<MvpSellerProduct>;
     setInventory(
       productId: string,
@@ -227,6 +236,7 @@ export function createMvpApi(http: MvpHttp): MvpApi {
           body: {
             productId: input.productId,
             variantId: input.variantId ?? null,
+            sellingUnitId: input.sellingUnitId ?? null,
             quantity: input.quantity ?? 1,
           },
         });
@@ -337,6 +347,20 @@ export function createMvpApi(http: MvpHttp): MvpApi {
       updateVariant: async (productId, variantId, input) => {
         const data = await http.request<{ product: MvpSellerProduct }>(
           R.seller.variant(productId, variantId),
+          { method: "PATCH", body: input },
+        );
+        return data.product;
+      },
+      addSellingUnit: async (productId, input) => {
+        const data = await http.request<{ product: MvpSellerProduct }>(
+          R.seller.sellingUnits(productId),
+          { method: "POST", body: input },
+        );
+        return data.product;
+      },
+      updateSellingUnit: async (productId, unitId, input) => {
+        const data = await http.request<{ product: MvpSellerProduct }>(
+          R.seller.sellingUnit(productId, unitId),
           { method: "PATCH", body: input },
         );
         return data.product;

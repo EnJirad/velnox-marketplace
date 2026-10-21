@@ -174,6 +174,17 @@ export async function sellerProductPayload(product: ProductRow): Promise<Record<
     `SELECT quantity, reserved FROM inventory WHERE product_id = $1 AND variant_id IS NULL`,
     [product.id],
   );
+  // Selling units are what the buyer chooses between (single / 3-pack / 6-pack).
+  // They carry no stock of their own — `baseQuantity` is how much of the scope's
+  // inventory one of them consumes. Inactive units are listed so the seller can
+  // reactivate them, and they are never purchasable.
+  const sellingUnits = await query(
+    `SELECT id, variant_id, label, base_quantity, price, is_active, sort_order
+       FROM product_selling_units
+      WHERE product_id = $1
+      ORDER BY sort_order, base_quantity, created_at`,
+    [product.id],
+  );
 
   return {
     id: product.id,
@@ -223,6 +234,25 @@ export async function sellerProductPayload(product: ProductRow): Promise<Record<
           available: Number(baseStock.quantity) - Number(baseStock.reserved),
         }
       : null,
+    sellingUnits: (
+      sellingUnits.rows as Array<{
+        id: string;
+        variant_id: string | null;
+        label: string;
+        base_quantity: number;
+        price: string;
+        is_active: boolean;
+        sort_order: number;
+      }>
+    ).map((row) => ({
+      id: row.id,
+      variantId: row.variant_id,
+      label: row.label,
+      baseQuantity: Number(row.base_quantity),
+      price: row.price,
+      isActive: row.is_active,
+      sortOrder: Number(row.sort_order),
+    })),
   };
 }
 
@@ -652,6 +682,184 @@ export function setupMvpSellerProductRoutes(app: Express): void {
               WHERE id = $${params.length - 1} AND product_id = $${params.length}`,
             params,
           );
+        }
+        await demotePublishedIfMaterial(client, product, material);
+      });
+
+      const product = await queryOne<ProductRow>(
+        `SELECT id, seller_id, category_slug, name, slug, description, price, status,
+                rejection_reason, submitted_at, approved_at, published_at, created_at, updated_at
+           FROM products WHERE id = $1 AND seller_id = $2`,
+        [productId, seller.id],
+      );
+      ok(res, { product: await sellerProductPayload(product!) });
+    }),
+  );
+
+  // ── Add a selling unit (set / pack) ──────────────────────────────────────
+  // A selling unit NEVER creates stock. It says "this many base units for this
+  // price"; checkout multiplies it against `inventory` for the same
+  // (product, variant) scope. Editing it is a MATERIAL change to the listing
+  // (price + what the buyer receives), so a published product returns to draft.
+  app.post(
+    "/api/mvp/seller/products/:id/selling-units",
+    ...guard,
+    route(async (req: Request, res: Response) => {
+      const seller = sellerOf(req);
+      const productId = pathUuid(req.params.id);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const label = requireString(body.label, "label", { min: 1, max: 80 });
+      const baseQuantity = requireInt(body.baseQuantity, "baseQuantity", {
+        min: 1,
+        max: 1_000_000,
+      });
+      const price = requireMoney(body.price, "price");
+      const variantId =
+        body.variantId === undefined || body.variantId === null
+          ? null
+          : pathUuid(body.variantId, "variantId");
+      if (body.isActive !== undefined && typeof body.isActive !== "boolean") {
+        throw badRequest("INVALID_INPUT", "isActive must be a boolean");
+      }
+      const isActive = body.isActive === undefined ? true : body.isActive;
+
+      await withTransaction(async (client) => {
+        const product = await loadOwnedProduct(client, productId, seller.id, { forUpdate: true });
+        assertEditable(product);
+        if (variantId) {
+          const variant = await client.query(
+            `SELECT id FROM product_variants WHERE id = $1 AND product_id = $2`,
+            [variantId, productId],
+          );
+          if (variant.rowCount === 0) throw notFound("VARIANT_NOT_FOUND", "Variant not found");
+        }
+        const count = await client.query(
+          `SELECT COUNT(*)::int AS n FROM product_selling_units WHERE product_id = $1`,
+          [productId],
+        );
+        await client.query(
+          `INSERT INTO product_selling_units
+             (product_id, variant_id, label, base_quantity, price, is_active, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            productId,
+            variantId,
+            label,
+            baseQuantity,
+            price,
+            isActive,
+            (count.rows[0] as { n: number }).n,
+          ],
+        );
+        await writeMvpAudit(client, null, "SELLING_UNIT_CREATED", "product", productId, {
+          label,
+          baseQuantity,
+          price,
+          variantId,
+        });
+        await demotePublishedIfMaterial(client, product, true);
+      });
+
+      const product = await queryOne<ProductRow>(
+        `SELECT id, seller_id, category_slug, name, slug, description, price, status,
+                rejection_reason, submitted_at, approved_at, published_at, created_at, updated_at
+           FROM products WHERE id = $1 AND seller_id = $2`,
+        [productId, seller.id],
+      );
+      ok(res, { product: await sellerProductPayload(product!) }, 201);
+    }),
+  );
+
+  // ── Edit / activate / deactivate a selling unit ──────────────────────────
+  // No DELETE route: an order snapshots the unit, and a sold unit must stay
+  // readable. Retire it with `isActive: false` instead.
+  app.patch(
+    "/api/mvp/seller/products/:id/selling-units/:unitId",
+    ...guard,
+    route(async (req: Request, res: Response) => {
+      const seller = sellerOf(req);
+      const productId = pathUuid(req.params.id);
+      const unitId = pathUuid(req.params.unitId, "unitId");
+      const body = (req.body ?? {}) as Record<string, unknown>;
+
+      await withTransaction(async (client) => {
+        const product = await loadOwnedProduct(client, productId, seller.id, { forUpdate: true });
+        assertEditable(product);
+        const existing = await client.query(
+          `SELECT id, variant_id, label, base_quantity, price, is_active
+             FROM product_selling_units
+            WHERE id = $1 AND product_id = $2
+            FOR UPDATE`,
+          [unitId, productId],
+        );
+        const unit = existing.rows[0] as
+          | {
+              id: string;
+              variant_id: string | null;
+              label: string;
+              base_quantity: number;
+              price: string;
+              is_active: boolean;
+            }
+          | undefined;
+        if (!unit) throw notFound("SELLING_UNIT_NOT_FOUND", "Selling unit not found");
+
+        const sets: string[] = [];
+        const params: unknown[] = [];
+        let material = false;
+
+        if (body.label !== undefined) {
+          const label = requireString(body.label, "label", { min: 1, max: 80 });
+          if (label !== unit.label) {
+            params.push(label);
+            sets.push(`label = $${params.length}`);
+            material = true;
+          }
+        }
+        if (body.baseQuantity !== undefined) {
+          const baseQuantity = requireInt(body.baseQuantity, "baseQuantity", {
+            min: 1,
+            max: 1_000_000,
+          });
+          if (baseQuantity !== Number(unit.base_quantity)) {
+            params.push(baseQuantity);
+            sets.push(`base_quantity = $${params.length}`);
+            material = true;
+          }
+        }
+        if (body.price !== undefined) {
+          const price = requireMoney(body.price, "price");
+          if (price !== unit.price) {
+            params.push(price);
+            sets.push(`price = $${params.length}`);
+            material = true;
+          }
+        }
+        if (body.isActive !== undefined) {
+          if (typeof body.isActive !== "boolean") {
+            throw badRequest("INVALID_INPUT", "isActive must be a boolean");
+          }
+          if (body.isActive !== unit.is_active) {
+            params.push(body.isActive);
+            sets.push(`is_active = $${params.length}`);
+            // Retiring an option is operational, like stock — the reviewed
+            // listing (label, size, price) does not change and a retired unit
+            // can never be bought. Adding or re-pricing a unit IS material.
+          }
+        }
+
+        if (sets.length > 0) {
+          params.push(unitId, productId);
+          await client.query(
+            `UPDATE product_selling_units SET ${sets.join(", ")}, updated_at = NOW()
+              WHERE id = $${params.length - 1} AND product_id = $${params.length}`,
+            params,
+          );
+          await writeMvpAudit(client, null, "SELLING_UNIT_UPDATED", "product", productId, {
+            sellingUnitId: unitId,
+            label: typeof body.label === "string" ? body.label : unit.label,
+            isActive: typeof body.isActive === "boolean" ? body.isActive : unit.is_active,
+          });
         }
         await demotePublishedIfMaterial(client, product, material);
       });

@@ -227,6 +227,21 @@ export function setupMvpAdminRoutes(app: Express): void {
                 sp.id AS seller_id, sp.store_name,
                 (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id
                   ORDER BY pi.sort_order, pi.created_at LIMIT 1) AS image_url,
+                -- What the buyer will actually be able to choose, so moderation
+                -- reviews the packs as well as the base price. Read-only: the
+                -- approve/reject routes never touch this table.
+                COALESCE((
+                  SELECT json_agg(json_build_object(
+                           'id', su.id,
+                           'variantId', su.variant_id,
+                           'label', su.label,
+                           'baseQuantity', su.base_quantity,
+                           'price', su.price::text,
+                           'isActive', su.is_active
+                         ) ORDER BY su.sort_order, su.base_quantity, su.created_at)
+                    FROM product_selling_units su
+                   WHERE su.product_id = p.id
+                ), '[]'::json) AS selling_units,
                 COUNT(*) OVER ()::int AS total_count
            FROM products p
            JOIN seller_profiles sp ON sp.id = p.seller_id

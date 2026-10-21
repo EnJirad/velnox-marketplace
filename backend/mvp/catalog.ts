@@ -53,6 +53,67 @@ export function buildCategoryTree(rows: CategoryRow[]): CategoryNode[] {
   return roots;
 }
 
+interface SellingUnitRow {
+  id: string;
+  variant_id: string | null;
+  label: string;
+  base_quantity: number;
+  price: string;
+}
+
+export interface SellingUnitOption {
+  /** `null` = the implicit base unit (one base unit at the scope's price). */
+  id: string | null;
+  /** `null` for the implicit base unit; the UI labels it. */
+  label: string | null;
+  baseQuantity: number;
+  price: string;
+  /** How many of THIS option the current stock supports (packs left, not bags). */
+  available: number;
+  isBase: boolean;
+}
+
+/**
+ * The buyable options of ONE inventory scope (base product or one variant).
+ *
+ * The implicit base unit is offered only when the seller has not defined an
+ * explicit one (`base_quantity = 1`): otherwise the buyer would see two entries
+ * for the same single unit at two possibly different prices.
+ */
+export function sellingUnitOptions(
+  units: SellingUnitRow[],
+  scopeVariantId: string | null,
+  scopePrice: string,
+  scopeAvailable: number,
+): SellingUnitOption[] {
+  const scoped = units.filter((unit) => unit.variant_id === scopeVariantId);
+  const options: SellingUnitOption[] = [];
+
+  if (!scoped.some((unit) => Number(unit.base_quantity) === 1)) {
+    options.push({
+      id: null,
+      label: null,
+      baseQuantity: 1,
+      price: scopePrice,
+      available: scopeAvailable,
+      isBase: true,
+    });
+  }
+
+  for (const unit of scoped) {
+    const baseQuantity = Number(unit.base_quantity);
+    options.push({
+      id: unit.id,
+      label: unit.label,
+      baseQuantity,
+      price: unit.price,
+      available: Math.floor(scopeAvailable / baseQuantity),
+      isBase: baseQuantity === 1,
+    });
+  }
+  return options;
+}
+
 export function setupMvpCatalogRoutes(app: Express): void {
   // ── Category tree (public) ───────────────────────────────────────────────
   app.get(
@@ -168,6 +229,18 @@ export function setupMvpCatalogRoutes(app: Express): void {
           WHERE product_id = $1 AND variant_id IS NULL`,
         [productId],
       );
+      // Only ACTIVE units are buyable, so only active units are published.
+      const sellingUnits = await query(
+        `SELECT id, variant_id, label, base_quantity, price
+           FROM product_selling_units
+          WHERE product_id = $1 AND is_active
+          ORDER BY sort_order, base_quantity, created_at`,
+        [productId],
+      );
+      const unitRows = sellingUnits.rows as SellingUnitRow[];
+      const baseAvailable = Number(
+        (baseStock.rows[0] as { available: number } | undefined)?.available ?? 0,
+      );
 
       ok(res, {
         product: {
@@ -188,6 +261,12 @@ export function setupMvpCatalogRoutes(app: Express): void {
           images: (images.rows as Array<{ url: string; alt: string; sort_order: number }>).map(
             (row) => ({ url: row.url, alt: row.alt, sortOrder: row.sort_order }),
           ),
+          sellingUnits: sellingUnitOptions(
+            unitRows,
+            null,
+            String(product.price),
+            baseAvailable,
+          ),
           variants: (
             variants.rows as Array<{
               id: string;
@@ -204,10 +283,14 @@ export function setupMvpCatalogRoutes(app: Express): void {
             price: row.price,
             status: row.status,
             available: Number(row.available),
+            sellingUnits: sellingUnitOptions(
+              unitRows,
+              row.id,
+              row.price,
+              Number(row.available),
+            ),
           })),
-          available: Number(
-            (baseStock.rows[0] as { available: number } | undefined)?.available ?? 0,
-          ),
+          available: baseAvailable,
         },
       });
     }),

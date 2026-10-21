@@ -11,6 +11,13 @@
  * every price, product status and stock level from the database inside its own
  * transaction (`checkout.ts`), which is why editing a cart line can never change
  * what an order costs.
+ *
+ * SELLING UNITS (SETS / PACKS). A line names the selling unit the buyer chose;
+ * `null` is the implicit base unit. The unit's own price is copied into the
+ * display snapshot and its `base_quantity` decides how much stock the line will
+ * hold (quantity × base_quantity, reserved in `checkout.ts`). A pack never gets
+ * its own stock. The unit is part of the line's identity, so "2 × single" and
+ * "1 × Pack 6" stay two lines instead of merging into one wrong one.
  */
 import type { Express, Request, Response } from "express";
 import { query, withTransaction } from "../db/index.js";
@@ -40,6 +47,7 @@ interface CartLineRow {
   item_id: string | null;
   product_id: string | null;
   variant_id: string | null;
+  selling_unit_id: string | null;
   quantity: number | null;
   price: string | null;
   product_name: string | null;
@@ -47,8 +55,11 @@ interface CartLineRow {
   product_status: string | null;
   variant_name: string | null;
   variant_status: string | null;
+  selling_unit_label: string | null;
+  selling_unit_base_quantity: number | null;
+  selling_unit_active: boolean | null;
   image_url: string | null;
-  available: number | null;
+  available_base: number | null;
 }
 
 export interface CartPayload {
@@ -77,6 +88,13 @@ function groupCarts(rows: CartLineRow[]): CartPayload[] {
     const quantity = Number(row.quantity ?? 0);
     const price = row.price ?? "0.00";
     const lineTotal = toMoneyString(multiplyByQuantity(parseDecimal(price), quantity));
+    const baseQuantity = Number(row.selling_unit_base_quantity ?? 1);
+    const availableBase = Number(row.available_base ?? 0);
+    // `available` is expressed in THIS selling unit (packs left, not bags), and
+    // a deactivated pack reports 0 so the UI can say it is no longer available.
+    const available = row.selling_unit_active === false
+      ? 0
+      : Math.floor(availableBase / baseQuantity);
     cart.items.push({
       id: row.item_id,
       productId: row.product_id,
@@ -86,11 +104,17 @@ function groupCarts(rows: CartLineRow[]): CartPayload[] {
       variantId: row.variant_id,
       variantName: row.variant_name,
       variantStatus: row.variant_status,
+      sellingUnitId: row.selling_unit_id,
+      sellingUnitLabel: row.selling_unit_label,
+      sellingUnitBaseQuantity: baseQuantity,
+      sellingUnitActive: row.selling_unit_active !== false,
+      baseQuantityTotal: quantity * baseQuantity,
       imageUrl: row.image_url,
       quantity,
       unitPrice: toMoneyString(parseDecimal(price)),
       lineTotal,
-      available: Number(row.available ?? 0),
+      available,
+      availableBase,
     });
     cart.itemCount += quantity;
     cart.subtotal = toMoneyString(add(parseDecimal(cart.subtotal), parseDecimal(lineTotal)));
@@ -101,17 +125,22 @@ function groupCarts(rows: CartLineRow[]): CartPayload[] {
 async function loadCarts(userId: string): Promise<CartPayload[]> {
   const result = await query(
     `SELECT c.id AS cart_id, c.seller_id, sp.store_name, sp.slug AS seller_slug,
-            ci.id AS item_id, ci.product_id, ci.variant_id, ci.quantity, ci.price,
+            ci.id AS item_id, ci.product_id, ci.variant_id, ci.selling_unit_id,
+            ci.quantity, ci.price,
             p.name AS product_name, p.slug AS product_slug, p.status AS product_status,
             v.name AS variant_name, v.status AS variant_status,
+            su.label AS selling_unit_label,
+            COALESCE(su.base_quantity, 1) AS selling_unit_base_quantity,
+            su.is_active AS selling_unit_active,
             (SELECT pi.url FROM product_images pi
               WHERE pi.product_id = p.id ORDER BY pi.sort_order, pi.created_at LIMIT 1) AS image_url,
-            COALESCE(i.quantity - i.reserved, 0)::int AS available
+            COALESCE(i.quantity - i.reserved, 0)::int AS available_base
        FROM carts c
        JOIN seller_profiles sp ON sp.id = c.seller_id
        LEFT JOIN cart_items ci ON ci.cart_id = c.id
        LEFT JOIN products p ON p.id = ci.product_id
        LEFT JOIN product_variants v ON v.product_id = ci.product_id AND v.id = ci.variant_id
+       LEFT JOIN product_selling_units su ON su.id = ci.selling_unit_id
        LEFT JOIN inventory i ON i.product_id = ci.product_id
                             AND i.variant_id IS NOT DISTINCT FROM ci.variant_id
       WHERE c.user_id = $1
@@ -152,6 +181,12 @@ export function setupMvpCartRoutes(app: Express): void {
         body.variantId === undefined || body.variantId === null
           ? null
           : requireUuid(body.variantId, "variantId");
+      // Absent/null = the implicit base unit. The server resolves the label,
+      // base quantity and price from the database; the client sends ids only.
+      const sellingUnitId =
+        body.sellingUnitId === undefined || body.sellingUnitId === null
+          ? null
+          : requireUuid(body.sellingUnitId, "sellingUnitId");
       const quantity =
         body.quantity === undefined || body.quantity === null
           ? 1
@@ -187,6 +222,25 @@ export function setupMvpCartRoutes(app: Express): void {
           unitPrice = v.price;
         }
 
+        // A pack may only be added when it is an ACTIVE unit of the exact
+        // product/variant being added. Its price is the seller's price for the
+        // pack — never base price × quantity.
+        if (sellingUnitId) {
+          const unit = await client.query(
+            `SELECT id, price, is_active
+               FROM product_selling_units
+              WHERE id = $1
+                AND product_id = $2
+                AND variant_id IS NOT DISTINCT FROM $3::uuid`,
+            [sellingUnitId, productId, variantId],
+          );
+          const u = unit.rows[0] as { id: string; price: string; is_active: boolean } | undefined;
+          if (!u || !u.is_active) {
+            throw conflict("SELLING_UNIT_NOT_AVAILABLE", "This pack is not available for sale");
+          }
+          unitPrice = u.price;
+        }
+
         const cart = await client.query(
           `INSERT INTO carts (user_id, seller_id)
            VALUES ($1, $2)
@@ -196,16 +250,32 @@ export function setupMvpCartRoutes(app: Express): void {
         );
         const cartId = (cart.rows[0] as { id: string }).id;
 
-        // The expression index makes (cart, product, variant-or-null) unique, so
-        // this is one atomic increment rather than read-then-write.
+        // The expression index makes (cart, product, variant-or-null,
+        // selling-unit-or-null) unique, so this is one atomic increment rather
+        // than read-then-write — while a different selling unit is a DIFFERENT
+        // line, never a merge into the wrong one.
         await client.query(
-          `INSERT INTO cart_items (cart_id, seller_id, product_id, variant_id, quantity, price)
-           VALUES ($1, $2, $3, $4::uuid, $5, $6)
-           ON CONFLICT (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))
-           DO UPDATE SET quantity = LEAST(cart_items.quantity + EXCLUDED.quantity, $7),
+          `INSERT INTO cart_items
+             (cart_id, seller_id, product_id, variant_id, selling_unit_id, quantity, price)
+           VALUES ($1, $2, $3, $4::uuid, $5::uuid, $6, $7)
+           ON CONFLICT (
+             cart_id, product_id,
+             COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid),
+             COALESCE(selling_unit_id, '00000000-0000-0000-0000-000000000000'::uuid)
+           )
+           DO UPDATE SET quantity = LEAST(cart_items.quantity + EXCLUDED.quantity, $8),
                          price = EXCLUDED.price,
                          updated_at = NOW()`,
-          [cartId, row.seller_id, productId, variantId, quantity, unitPrice, MAX_LINE_QUANTITY],
+          [
+            cartId,
+            row.seller_id,
+            productId,
+            variantId,
+            sellingUnitId,
+            quantity,
+            unitPrice,
+            MAX_LINE_QUANTITY,
+          ],
         );
 
         return cartId;

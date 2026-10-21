@@ -75,9 +75,13 @@ export async function loadOrderDetail(
   const row = result.rows[0] as Record<string, unknown> | undefined;
   if (!row) return null;
 
+  // The selling-unit columns are part of the immutable snapshot: the buyer (and
+  // the seller) can always see WHICH pack was bought, what it contained and how
+  // much stock it held, even after the seller renames or retires it.
   const items = await query(
-    `SELECT id, product_id, variant_id, product_name, variant_name, image_url,
-            unit_price, quantity, subtotal
+    `SELECT id, product_id, variant_id, selling_unit_id, selling_unit_label,
+            selling_unit_base_quantity, base_quantity_total,
+            product_name, variant_name, image_url, unit_price, quantity, subtotal
        FROM order_items WHERE order_id = $1 ORDER BY created_at, id`,
     [orderId],
   );

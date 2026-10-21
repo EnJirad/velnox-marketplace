@@ -76,6 +76,20 @@ export interface MvpProductSummary {
   seller: { id: string; storeName: string; slug: string };
 }
 
+/**
+ * One way to buy a single inventory scope: `baseQuantity` base units for
+ * `price`. The implicit base unit has `id: null` (and `label: null`).
+ * `available` counts THIS option (packs left), never base units.
+ */
+export interface MvpSellingUnitOption {
+  id: string | null;
+  label: string | null;
+  baseQuantity: number;
+  price: string;
+  available: number;
+  isBase: boolean;
+}
+
 export interface MvpVariantOption {
   id: string;
   name: string;
@@ -83,6 +97,7 @@ export interface MvpVariantOption {
   price: string;
   status: string;
   available: number;
+  sellingUnits: MvpSellingUnitOption[];
 }
 
 export interface MvpProductDetail {
@@ -101,6 +116,8 @@ export interface MvpProductDetail {
     description: string | null;
   };
   images: Array<{ url: string; alt: string; sortOrder: number }>;
+  /** Options for the base product (no variant selected). */
+  sellingUnits: MvpSellingUnitOption[];
   variants: MvpVariantOption[];
   available: number;
 }
@@ -114,11 +131,20 @@ export interface MvpCartItem {
   variantId: string | null;
   variantName: string | null;
   variantStatus: string | null;
+  /** `null` = the implicit base unit. */
+  sellingUnitId: string | null;
+  sellingUnitLabel: string | null;
+  sellingUnitBaseQuantity: number;
+  sellingUnitActive: boolean;
+  /** Base units this line holds (quantity × sellingUnitBaseQuantity). */
+  baseQuantityTotal: number;
   imageUrl: string | null;
   quantity: number;
   unitPrice: string;
   lineTotal: string;
+  /** How many of THIS selling unit the stock supports. */
   available: number;
+  availableBase: number;
 }
 
 export interface MvpCart {
@@ -152,10 +178,18 @@ export interface MvpOrderItem {
   id: string;
   product_id: string;
   variant_id: string | null;
+  /** `null` if the unit was deleted; the label/base quantity below are the snapshot. */
+  selling_unit_id: string | null;
+  /** Immutable label. `''` = the implicit base unit. */
+  selling_unit_label: string;
+  selling_unit_base_quantity: number;
+  /** Base units this line held (quantity × base quantity), derived by the DB. */
+  base_quantity_total: number;
   product_name: string;
   variant_name: string | null;
   image_url: string | null;
   unit_price: string;
+  /** Number of selling units bought (e.g. 2 packs). */
   quantity: number;
   subtotal: string;
 }
@@ -264,6 +298,27 @@ export interface MvpSellerProduct {
     stock: { quantity: number; reserved: number; available: number };
   }>;
   stock: { quantity: number; reserved: number; available: number } | null;
+  /** Seller-authored sets/packs. `baseQuantity` base units for `price`. */
+  sellingUnits: MvpSellerSellingUnit[];
+}
+
+export interface MvpSellerSellingUnit {
+  id: string;
+  /** `null` = applies to the base product. */
+  variantId: string | null;
+  label: string;
+  baseQuantity: number;
+  price: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface MvpSellingUnitInput {
+  label: string;
+  baseQuantity: number;
+  price: string;
+  variantId?: string | null;
+  isActive?: boolean;
 }
 
 export interface MvpSellerStatusResponse {
@@ -324,6 +379,15 @@ export interface MvpAdminProductRow {
   seller_id: string;
   store_name: string;
   image_url: string | null;
+  /** Selling units offered by the product, so moderation can see the packs. */
+  selling_units?: Array<{
+    id: string;
+    variantId: string | null;
+    label: string;
+    baseQuantity: number;
+    price: string;
+    isActive: boolean;
+  }>;
   total_count?: number;
 }
 

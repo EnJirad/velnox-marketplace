@@ -31,7 +31,7 @@ import {
   requireUuid,
   requireString,
 } from "./http.js";
-import { releaseStock, reserveStock, type StockLine } from "./inventory.js";
+import { releaseStock, reserveStock } from "./inventory.js";
 
 type Client = pg.PoolClient;
 
@@ -88,6 +88,7 @@ export function normalizeAddress(input: unknown): ShippingAddress {
 interface CartItemRow {
   product_id: string;
   variant_id: string | null;
+  selling_unit_id: string | null;
   quantity: number;
   product_name: string;
   product_status: string;
@@ -95,10 +96,29 @@ interface CartItemRow {
   variant_name: string | null;
   variant_price: string | null;
   variant_status: string | null;
+  selling_unit_label: string | null;
+  selling_unit_base_quantity: number | null;
+  selling_unit_price: string | null;
+  selling_unit_active: boolean | null;
+  selling_unit_product_id: string | null;
+  selling_unit_variant_id: string | null;
   image_url: string | null;
 }
 
-interface PricedLine extends StockLine {
+/**
+ * One priced cart line. `quantity` is the number of SELLING UNITS bought (e.g.
+ * 2 packs) and `stockQuantity` the base units that line must reserve
+ * (`quantity × sellingUnitBaseQuantity`). Keeping both on the line is what makes
+ * "2 packs of 6" hold 12 — never 2 — and what the order snapshot records.
+ */
+interface PricedLine {
+  productId: string;
+  variantId: string | null;
+  quantity: number;
+  stockQuantity: number;
+  sellingUnitId: string | null;
+  sellingUnitLabel: string | null;
+  sellingUnitBaseQuantity: number;
   productName: string;
   variantName: string | null;
   imageUrl: string | null;
@@ -170,6 +190,7 @@ async function priceCartItems(client: Client, cartId: string, sellerId: string):
   const items = await client.query(
     `SELECT ci.product_id,
             ci.variant_id,
+            ci.selling_unit_id,
             ci.quantity,
             p.name  AS product_name,
             p.status AS product_status,
@@ -177,6 +198,12 @@ async function priceCartItems(client: Client, cartId: string, sellerId: string):
             v.name  AS variant_name,
             v.price AS variant_price,
             v.status AS variant_status,
+            su.label         AS selling_unit_label,
+            su.base_quantity AS selling_unit_base_quantity,
+            su.price         AS selling_unit_price,
+            su.is_active     AS selling_unit_active,
+            su.product_id    AS selling_unit_product_id,
+            su.variant_id    AS selling_unit_variant_id,
             (SELECT pi.url FROM product_images pi
               WHERE pi.product_id = p.id
               ORDER BY pi.sort_order, pi.created_at
@@ -185,6 +212,7 @@ async function priceCartItems(client: Client, cartId: string, sellerId: string):
        JOIN products p ON p.id = ci.product_id
        LEFT JOIN product_variants v
               ON v.product_id = ci.product_id AND v.id = ci.variant_id
+       LEFT JOIN product_selling_units su ON su.id = ci.selling_unit_id
       WHERE ci.cart_id = $1
       ORDER BY ci.added_at, ci.id`,
     [cartId],
@@ -203,7 +231,26 @@ async function priceCartItems(client: Client, cartId: string, sellerId: string):
     }
     // The DB enforces the same pairing with composite foreign keys; asserting it
     // here turns a would-be 409 into a clear message about a mixed cart.
-    const unitPrice = row.variant_id ? row.variant_price! : row.base_price;
+    let baseQuantity = 1;
+    let unitPrice = row.variant_id ? row.variant_price! : row.base_price;
+    if (row.selling_unit_id) {
+      // A pack must still be an ACTIVE unit of THIS product/variant. The cart
+      // trigger enforces it on write; this is the same rule re-checked at the
+      // moment money is about to be committed, because a seller may have
+      // deactivated the pack since it was added.
+      const sameScope =
+        row.selling_unit_product_id === row.product_id &&
+        row.selling_unit_variant_id === row.variant_id;
+      if (!row.selling_unit_active || !sameScope || !row.selling_unit_price) {
+        throw conflict("SELLING_UNIT_NOT_AVAILABLE", "A pack in this cart is no longer available");
+      }
+      baseQuantity = Number(row.selling_unit_base_quantity ?? 1);
+      if (!Number.isInteger(baseQuantity) || baseQuantity < 1) {
+        throw conflict("SELLING_UNIT_NOT_AVAILABLE", "A pack in this cart has an invalid size");
+      }
+      // The SELLER's price for that pack — never base price × quantity.
+      unitPrice = row.selling_unit_price;
+    }
     const lineTotal = toMoneyString(
       multiplyByQuantity(parseDecimal(unitPrice), row.quantity),
     );
@@ -211,6 +258,10 @@ async function priceCartItems(client: Client, cartId: string, sellerId: string):
       productId: row.product_id,
       variantId: row.variant_id,
       quantity: row.quantity,
+      stockQuantity: row.quantity * baseQuantity,
+      sellingUnitId: row.selling_unit_id,
+      sellingUnitLabel: row.selling_unit_label,
+      sellingUnitBaseQuantity: baseQuantity,
       productName: row.product_name,
       variantName: row.variant_name,
       imageUrl: row.image_url,
@@ -357,16 +408,24 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     });
 
     for (const line of lines) {
+      // The snapshot keeps the selling unit's identity AND its label / base
+      // quantity, so the line stays readable after a rename, a deactivation or
+      // even a deletion of the unit. `base_quantity_total` is derived by the
+      // database (quantity × base quantity) and is what cancel/expiry release.
       await client.query(
         `INSERT INTO order_items
-           (order_id, seller_id, product_id, variant_id, product_name, variant_name,
-            image_url, unit_price, quantity, subtotal)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+           (order_id, seller_id, product_id, variant_id, selling_unit_id,
+            selling_unit_label, selling_unit_base_quantity,
+            product_name, variant_name, image_url, unit_price, quantity, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           order.id,
           cart.seller_id,
           line.productId,
           line.variantId,
+          line.sellingUnitId,
+          line.sellingUnitLabel ?? "",
+          line.sellingUnitBaseQuantity,
           line.productName,
           line.variantName,
           line.imageUrl,
@@ -378,12 +437,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     }
 
     // ── 6. Reserve stock (guarded) — a failure rolls back the whole order ───
+    // `stockQuantity` is the BASE quantity: 2 packs of 6 reserve 12, never 2.
     await reserveStock(
       client,
       lines.map((line) => ({
         productId: line.productId,
         variantId: line.variantId,
-        quantity: line.quantity,
+        quantity: line.stockQuantity,
       })),
     );
 
@@ -420,15 +480,26 @@ export async function cancelUnpaidOrder(
   const status = (locked.rows[0] as { status: string }).status;
   if (status !== "pending_payment") return false;
 
+  // Release exactly what the order reserved: the snapshot's base-quantity total,
+  // not the number of selling units. Releasing "2" for two 6-packs would leak 10
+  // units forever.
   const items = await client.query(
-    `SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1`,
+    `SELECT product_id, variant_id, base_quantity_total FROM order_items WHERE order_id = $1`,
     [orderId],
   );
   await releaseStock(
     client,
-    (items.rows as Array<{ product_id: string; variant_id: string | null; quantity: number }>).map(
-      (row) => ({ productId: row.product_id, variantId: row.variant_id, quantity: row.quantity }),
-    ),
+    (
+      items.rows as Array<{
+        product_id: string;
+        variant_id: string | null;
+        base_quantity_total: number;
+      }>
+    ).map((row) => ({
+      productId: row.product_id,
+      variantId: row.variant_id,
+      quantity: Number(row.base_quantity_total),
+    })),
   );
 
   await client.query(
