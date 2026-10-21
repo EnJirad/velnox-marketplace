@@ -32,8 +32,5 @@
   },
   "devDependencies": {
     "typescript": "~5.9.3"
-  },
-  "dependencies": {
-    "leaflet": "^1.9.4"
   }
 }

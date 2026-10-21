@@ -59,7 +59,6 @@ export { Menubar, MenubarMenu, MenubarTrigger, MenubarContent, MenubarItem, Menu
 
 // Form Components
 export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectLabel, SelectItem, SelectSeparator, SelectScrollUpButton, SelectScrollDownButton } from "./select"; // ~6KB - Dropdown select
-export { Form, FormItem, FormLabel, FormControl, FormDescription, FormMessage, FormField } from "./form"; // ~4KB - Form wrapper with validation
 export { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from "./input-otp"; // ~5KB - OTP input
 
 // Content Display
@@ -86,9 +85,6 @@ export { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, Pagi
 export { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "./resizable"; // ~8KB - Resizable panels
 export { Sidebar, SidebarProvider, SidebarTrigger, SidebarInset, SidebarHeader, SidebarFooter, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarGroupAction, SidebarGroupContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton, SidebarMenuBadge, SidebarSeparator, SidebarRail } from "./sidebar"; // ~10KB
 
-// Data Visualization
-export { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, ChartStyle } from "./chart"; // ~20KB+ (requires recharts - very large!)
-
 // Notifications
 export { Toaster } from "./sonner"; // ~8KB - Toast notifications
 
@@ -100,8 +96,7 @@ export { Toaster } from "./sonner"; // ~8KB - Toast notifications
  * Example: Building a simple form
  *
  * import { Card, CardHeader, CardTitle, CardContent } from "@velnox/shared/components/ui";
- * import { Form, FormField, FormItem, FormLabel, FormControl } from "@velnox/shared/components/ui";
- * import { Input, Button } from "@velnox/shared/components/ui";
+ * import { Input, Label, Button } from "@velnox/shared/components/ui";
  *
  * Small bundle impact: ~12KB total
  */
@@ -109,11 +104,8 @@ export { Toaster } from "./sonner"; // ~8KB - Toast notifications
 /**
  * Example: Building a complex dashboard
  *
- * import { Card, Tabs, Chart } from "@velnox/shared/components/ui";
+ * import { Card, Tabs, Table } from "@velnox/shared/components/ui";
  * import { Select, Button } from "@velnox/shared/components/ui";
- *
- * Large bundle impact: ~35KB+ (due to Chart/recharts)
- * Consider lazy loading: const Chart = lazy(() => import("@velnox/shared/components/ui/chart"));
  */
 
 /**
