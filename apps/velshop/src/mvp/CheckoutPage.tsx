@@ -279,6 +279,14 @@ export default function CheckoutPage() {
             <span className="min-w-0 text-slate-600">
               <span className="line-clamp-2">{item.productName}</span>
               {item.variantName && <span className="block text-slate-400">{item.variantName}</span>}
+              {item.sellingUnitLabel && (
+                <span className="block text-slate-400">
+                  {item.sellingUnitLabel}
+                  {item.sellingUnitBaseQuantity > 1
+                    ? ` · ${item.sellingUnitBaseQuantity} units each`
+                    : ""}
+                </span>
+              )}
               <span className="text-slate-400">× {item.quantity}</span>
             </span>
             <span className="shrink-0 font-medium text-slate-900">{formatMoney(item.lineTotal)}</span>

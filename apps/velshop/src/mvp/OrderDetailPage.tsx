@@ -151,8 +151,19 @@ export default function OrderDetailPage() {
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-sm font-medium text-slate-900">{item.product_name}</p>
                     {item.variant_name && <p className="text-xs text-slate-500">{item.variant_name}</p>}
+                    {item.selling_unit_label && (
+                      <p className="text-xs font-medium text-emerald-700">
+                        {item.selling_unit_label}
+                        {item.selling_unit_base_quantity > 1
+                          ? ` · ${item.selling_unit_base_quantity} units`
+                          : ""}
+                      </p>
+                    )}
                     <p className="text-xs text-slate-500">
                       {formatMoney(item.unit_price, detail.currency)} × {item.quantity}
+                      {item.base_quantity_total > item.quantity
+                        ? ` · ${item.base_quantity_total} units`
+                        : ""}
                     </p>
                   </div>
                   <p className="shrink-0 text-sm font-semibold text-slate-900">

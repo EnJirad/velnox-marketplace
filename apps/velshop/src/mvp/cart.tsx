@@ -21,7 +21,13 @@ interface MvpCartValue {
   loading: boolean;
   error: MvpApiError | null;
   reload: () => void;
-  addItem: (input: { productId: string; variantId?: string | null; quantity?: number }) => Promise<void>;
+  addItem: (input: {
+    productId: string;
+    variantId?: string | null;
+    /** `null`/absent = the implicit base unit. */
+    sellingUnitId?: string | null;
+    quantity?: number;
+  }) => Promise<void>;
   updateItem: (itemId: string, quantity: number) => Promise<void>;
   removeItem: (itemId: string) => Promise<void>;
 }

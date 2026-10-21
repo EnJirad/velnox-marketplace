@@ -309,6 +309,25 @@ function ProductRow({ product, onChanged }: { product: MvpAdminProductRow; onCha
         </span>
       </div>
 
+      {/* Read-only review aid: the packs the buyer can choose between. Moderation
+          never edits them — approving or rejecting only moves the product's own
+          lifecycle state. */}
+      {(product.selling_units ?? []).length > 0 && (
+        <ul className="mt-1.5 flex flex-wrap gap-1.5">
+          {(product.selling_units ?? []).map((unit) => (
+            <li
+              key={unit.id}
+              className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600"
+            >
+              {unit.label} · {unit.baseQuantity} unit{unit.baseQuantity === 1 ? "" : "s"} ·{" "}
+              {formatMoney(unit.price)}
+              {unit.isActive ? "" : " · inactive"}
+              {unit.variantId ? " · variant" : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {awaiting && (
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <Button

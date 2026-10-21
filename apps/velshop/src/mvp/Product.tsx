@@ -1,18 +1,22 @@
 /**
  * MVP product detail: `/products/:slug`.
  *
- * The page shows the seller's published listing — images, description, the base
- * price, every active variant with ITS price and available count, and the
- * product-level availability. When a variant is selected its price is displayed
- * because that is the price the server will charge for it; nothing is computed
- * locally.
+ * The page shows the seller's published listing — images, description, every
+ * active variant, and every way the seller allows the buyer to buy it: the
+ * single unit and any packs/sets the seller defined (`baseQuantity` base units
+ * for the seller's own price). When a variant is selected its options replace
+ * the product-level ones.
+ *
+ * NOTHING IS COMPUTED LOCALLY. The selected option's price, its base quantity
+ * and how many of it are available all come from `GET /products/:slug`; a pack
+ * price is never derived from the base price, and checkout re-reads both.
  *
  * Adding to the cart needs a session (the cart endpoints require one), so a
  * signed-out visitor is sent to `/auth` with a return path instead of getting a
  * silent 401.
  */
 import { Button } from "@velnox/shared/components/ui/button";
-import { getMvpApi, type MvpVariantOption } from "@velnox/shared/mvp";
+import { getMvpApi, type MvpSellingUnitOption, type MvpVariantOption } from "@velnox/shared/mvp";
 import { MvpErrorState, MvpLoading, formatMoney, toMvpError, useMvpQuery } from "@velnox/shared/mvp/ui";
 import { ArrowLeft, Loader2, Minus, Plus, Store } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -29,6 +33,9 @@ export default function Product() {
 
   const product = useMvpQuery(() => getMvpApi().catalog.product(slug), [slug]);
   const [variantId, setVariantId] = useState<string | null>(null);
+  // `null` selects the implicit base unit. When the seller defined an explicit
+  // one-unit option, the derivation below falls back to that option instead.
+  const [sellingUnitId, setSellingUnitId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [activeImage, setActiveImage] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -42,9 +49,30 @@ export default function Product() {
   );
   const selectedVariant = activeVariants.find((variant) => variant.id === variantId) ?? null;
 
-  // The server's availability for the thing being bought right now.
-  const available = selectedVariant ? selectedVariant.available : (detail?.available ?? 0);
-  const unitPrice = selectedVariant ? selectedVariant.price : (detail?.price ?? null);
+  // The sellable options of the scope being bought right now: the chosen
+  // variant's, or the product's own.
+  const options = useMemo<MvpSellingUnitOption[]>(
+    () => (selectedVariant ? selectedVariant.sellingUnits : (detail?.sellingUnits ?? [])),
+    [selectedVariant, detail],
+  );
+  const selectedOption =
+    options.find((option) => option.id === sellingUnitId) ??
+    options.find((option) => option.isBase) ??
+    options[0] ??
+    null;
+
+  // The server's availability and price for the option being bought right now.
+  const available = selectedOption
+    ? selectedOption.available
+    : selectedVariant
+      ? selectedVariant.available
+      : (detail?.available ?? 0);
+  const unitPrice = selectedOption
+    ? selectedOption.price
+    : selectedVariant
+      ? selectedVariant.price
+      : (detail?.price ?? null);
+  const baseQuantity = selectedOption?.baseQuantity ?? 1;
   const canBuy = available > 0 && (!activeVariants.length || !!selectedVariant);
 
   if (product.loading) return <MvpLoading label="Loading product…" />;
@@ -86,6 +114,7 @@ export default function Product() {
       await addItem({
         productId: detail.id,
         variantId: selectedVariant?.id ?? null,
+        sellingUnitId: selectedOption?.id ?? null,
         quantity,
       });
       setAdded(true);
@@ -145,6 +174,8 @@ export default function Product() {
           <div>
             <p className="text-2xl font-black text-slate-900">{formatMoney(unitPrice, detail.currency)}</p>
             <p className="mt-0.5 text-xs text-slate-500">
+              {selectedOption?.label ? `${selectedOption.label} · ` : ""}
+              {baseQuantity > 1 ? `${baseQuantity} units per pack · ` : ""}
               {available > 0 ? `${available} available` : "Out of stock"}
               {selectedVariant ? ` · ${selectedVariant.name}` : ""}
             </p>
@@ -164,6 +195,9 @@ export default function Product() {
                       disabled={disabled}
                       onClick={() => {
                         setVariantId(variant.id);
+                        // A variant has its own options; the previous choice
+                        // does not carry across scopes.
+                        setSellingUnitId(null);
                         setQuantity(1);
                         setAdded(false);
                       }}
@@ -184,6 +218,52 @@ export default function Product() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {options.length > 0 && (
+            <div className="grid gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Choose a size
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {options.map((option) => {
+                  const disabled = option.available <= 0;
+                  const selected = option.id === selectedOption?.id;
+                  return (
+                    <button
+                      key={option.id ?? "base"}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => {
+                        setSellingUnitId(option.id);
+                        setQuantity(1);
+                        setAdded(false);
+                      }}
+                      className={`rounded-[10px] border px-3 py-2 text-left text-xs transition-colors ${
+                        selected
+                          ? "border-[#10B981] bg-emerald-50 text-emerald-800"
+                          : disabled
+                            ? "border-slate-200 bg-slate-50 text-slate-400"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      <span className="block font-semibold">{option.label ?? "Single"}</span>
+                      <span className="block">
+                        {formatMoney(option.price, detail.currency)}
+                        {option.baseQuantity > 1 ? ` · ${option.baseQuantity} units` : " · 1 unit"}
+                        {disabled ? " · sold out" : ` · ${option.available} left`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {baseQuantity > 1 && (
+                <p className="text-[11px] leading-5 text-slate-500">
+                  One {selectedOption?.label ?? "pack"} contains {baseQuantity} units. Each unit
+                  ordered takes {baseQuantity} from the seller&apos;s stock.
+                </p>
+              )}
             </div>
           )}
 

@@ -10,6 +10,11 @@
  * Every line shows the server's unit price / line total / availability. Quantity
  * edits go to the API and the list is re-read, so a rejected edit (stock dropped,
  * product unpublished) corrects the screen instead of being swallowed.
+ *
+ * A line names the selling unit it was added as (a single unit or a pack). The
+ * pack's label and base quantity come from the server, and the quantity stepper
+ * counts PACKS — the line's base-unit total is shown so "2 packs of 6" is never
+ * read as two units.
  */
 import { Button } from "@velnox/shared/components/ui/button";
 import type { MvpCartItem } from "@velnox/shared/mvp";
@@ -53,9 +58,16 @@ function CartLine({ item }: { item: MvpCartItem }) {
           {item.productName}
         </Link>
         {item.variantName && <p className="mt-0.5 text-xs text-slate-500">{item.variantName}</p>}
+        {item.sellingUnitLabel && (
+          <p className="mt-0.5 text-xs font-medium text-emerald-700">
+            {item.sellingUnitLabel}
+            {item.sellingUnitBaseQuantity > 1 ? ` · ${item.sellingUnitBaseQuantity} units` : ""}
+          </p>
+        )}
         <p className="mt-0.5 text-xs text-slate-500">
           {formatMoney(item.unitPrice)} each
           {unavailable ? " · no longer available" : ` · ${item.available} available`}
+          {item.baseQuantityTotal > item.quantity ? ` · ${item.baseQuantityTotal} units total` : ""}
         </p>
 
         <div className="mt-2 flex items-center gap-2">

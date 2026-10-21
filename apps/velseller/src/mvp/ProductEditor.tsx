@@ -13,11 +13,22 @@
  * Images are URL references only. The MVP schema stores `product_images.url`, and
  * Phase 3b did not prove that the legacy R2 presign flow is safe against the MVP
  * auth model, so no upload control is offered here (documented limitation).
+ *
+ * SELLING UNITS (SETS / PACKS). A selling unit is "N base units for this price".
+ * It NEVER creates stock of its own: the product/variant inventory stays the one
+ * stock authority, and buying a pack of 6 reserves 6 of those units. Units are
+ * always attached to a variant when the product has variants, because that is
+ * the inventory scope they draw from. Retire a unit with Deactivate — a sold
+ * unit is never deleted, so order history stays readable.
  */
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
-import { getMvpApi, type MvpSellerProduct } from "@velnox/shared/mvp";
+import {
+  getMvpApi,
+  type MvpSellerProduct,
+  type MvpSellerSellingUnit,
+} from "@velnox/shared/mvp";
 import {
   MvpErrorState,
   MvpLoading,
@@ -283,6 +294,8 @@ export default function ProductEditor() {
           </section>
 
           <VariantsSection product={product} onChanged={query.reload} />
+
+          <SellingUnitsSection product={product} onChanged={query.reload} />
         </div>
       </div>
     </div>
@@ -359,6 +372,249 @@ function StockEditor({
         {busy === key ? <Loader2 className="size-3.5 animate-spin" /> : "Set"}
       </Button>
     </div>
+  );
+}
+
+/** A listing is editable for selling units in the same states as its variants. */
+function unitsEditable(product: MvpSellerProduct): boolean {
+  return product.status === "draft" || product.status === "rejected" || product.status === "published";
+}
+
+/** One existing selling unit: rename, resize, reprice, activate or retire. */
+function SellingUnitRow({
+  product,
+  unit,
+  onChanged,
+}: {
+  product: MvpSellerProduct;
+  unit: MvpSellerSellingUnit;
+  onChanged: () => void;
+}) {
+  const [label, setLabel] = useState(unit.label);
+  const [baseQuantity, setBaseQuantity] = useState(String(unit.baseQuantity));
+  const [price, setPrice] = useState(unit.price);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const editable = unitsEditable(product);
+  const variantName = unit.variantId
+    ? (product.variants.find((variant) => variant.id === unit.variantId)?.name ?? "Variant")
+    : "Base product";
+
+  const run = async (key: string, action: () => Promise<unknown>) => {
+    setBusy(key);
+    setError(null);
+    try {
+      await action();
+      onChanged();
+    } catch (err) {
+      setError(toMvpError(err).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-100 p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-sm font-semibold text-slate-900">{unit.label}</p>
+        <p className="text-[11px] text-slate-500">{variantName}</p>
+      </div>
+      <p className="mt-0.5 text-[11px] text-slate-500">
+        {unit.baseQuantity} unit{unit.baseQuantity === 1 ? "" : "s"} · {formatMoney(unit.price)} ·{" "}
+        {unit.isActive ? "active" : "inactive"}
+      </p>
+      {editable && (
+        <div className="mt-2 grid gap-2 sm:grid-cols-[1.4fr_0.8fr_0.9fr_auto]">
+          <Input
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            disabled={busy !== null}
+            aria-label={`Label of ${unit.label}`}
+            className="h-9 rounded-[10px] border-slate-200"
+          />
+          <Input
+            inputMode="numeric"
+            value={baseQuantity}
+            onChange={(event) => setBaseQuantity(event.target.value.replace(/[^0-9]/g, ""))}
+            disabled={busy !== null}
+            aria-label={`Units in ${unit.label}`}
+            className="h-9 rounded-[10px] border-slate-200"
+          />
+          <Input
+            inputMode="decimal"
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            disabled={busy !== null}
+            aria-label={`Price of ${unit.label}`}
+            className="h-9 rounded-[10px] border-slate-200"
+          />
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9"
+              disabled={
+                busy !== null || !label.trim() || !baseQuantity || !price.trim()
+              }
+              onClick={() =>
+                run("save", () =>
+                  getMvpApi().seller.updateSellingUnit(product.id, unit.id, {
+                    label: label.trim(),
+                    baseQuantity: Number(baseQuantity),
+                    price: price.trim(),
+                  }),
+                )
+              }
+            >
+              {busy === "save" ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9"
+              disabled={busy !== null}
+              onClick={() =>
+                run("toggle", () =>
+                  getMvpApi().seller.updateSellingUnit(product.id, unit.id, {
+                    isActive: !unit.isActive,
+                  }),
+                )
+              }
+            >
+              {busy === "toggle" ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {unit.isActive ? "Deactivate" : "Activate"}
+            </Button>
+          </div>
+        </div>
+      )}
+      <Notice message={error} />
+    </div>
+  );
+}
+
+/** Add / edit the packs a buyer can choose between. */
+function SellingUnitsSection({
+  product,
+  onChanged,
+}: {
+  product: MvpSellerProduct;
+  onChanged: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [baseQuantity, setBaseQuantity] = useState("");
+  const [price, setPrice] = useState("");
+  const [variantId, setVariantId] = useState<string | null>(product.variants[0]?.id ?? null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const editable = unitsEditable(product);
+  // A pack always draws from ONE inventory scope, so with variants present the
+  // unit must name the variant it belongs to.
+  const scopeId = variantId ?? product.variants[0]?.id ?? null;
+
+  const add = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await getMvpApi().seller.addSellingUnit(product.id, {
+        label: label.trim(),
+        baseQuantity: Number(baseQuantity),
+        price: price.trim(),
+        variantId: scopeId,
+      });
+      setLabel("");
+      setBaseQuantity("");
+      setPrice("");
+      onChanged();
+    } catch (err) {
+      setError(toMvpError(err).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+      <p className="text-sm font-bold text-slate-900">Packs &amp; sets</p>
+      <p className="mt-0.5 text-xs text-slate-500">
+        A pack is N units at its own price, e.g. 6 units for ฿500. Stock stays shared: buying one
+        6-pack takes 6 units from the same inventory.
+      </p>
+
+      {product.sellingUnits.length > 0 && (
+        <div className="mt-3 grid gap-2">
+          {product.sellingUnits.map((unit) => (
+            <SellingUnitRow key={unit.id} product={product} unit={unit} onChanged={onChanged} />
+          ))}
+        </div>
+      )}
+
+      {editable ? (
+        <form onSubmit={add} className="mt-3 grid gap-2">
+          {product.variants.length > 0 && (
+            <select
+              value={scopeId ?? ""}
+              onChange={(event) => setVariantId(event.target.value || null)}
+              aria-label="Pack applies to variant"
+              className="h-9 rounded-[10px] border border-slate-200 bg-white px-2 text-sm text-slate-700"
+            >
+              {product.variants.map((variant) => (
+                <option key={variant.id} value={variant.id}>
+                  {variant.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <Input
+            required
+            placeholder="Label (e.g. Pack 6)"
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            disabled={busy}
+            className="h-9 rounded-[10px] border-slate-200"
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input
+              required
+              inputMode="numeric"
+              placeholder="Units in pack"
+              value={baseQuantity}
+              onChange={(event) => setBaseQuantity(event.target.value.replace(/[^0-9]/g, ""))}
+              disabled={busy}
+              className="h-9 rounded-[10px] border-slate-200"
+            />
+            <Input
+              required
+              inputMode="decimal"
+              placeholder="Pack price"
+              value={price}
+              onChange={(event) => setPrice(event.target.value)}
+              disabled={busy}
+              className="h-9 rounded-[10px] border-slate-200"
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="outline"
+            className="h-9 w-fit gap-1"
+            disabled={busy || !label.trim() || !baseQuantity || !price.trim()}
+          >
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+            Add pack
+          </Button>
+        </form>
+      ) : (
+        <p className="mt-3 text-[11px] text-slate-400">
+          Packs can only be changed while the product is a draft, was rejected, or is published
+          (which sends it back for review).
+        </p>
+      )}
+      <Notice message={error} />
+    </section>
   );
 }
 
