@@ -483,7 +483,8 @@ trip, R2 credentials, and any production database read (no `DATABASE_URL` /
 | | |
 |---|---|
 | Previous SHA | `84b376793eb81e5a374f9993701da72c8ea2331d` |
-| New SHA | recorded in `.ai/AI_HANDOFF.md` §84 and in the delivery report |
+| New SHA | `54c10ae56b5060049faa87a845786cfe4659d35e` |
+| Remote verification | `git rev-parse HEAD` == `git rev-parse origin/main` == `git ls-remote origin refs/heads/main` |
 | Commit | `refactor(mvp): remove unused dependencies and dead UI primitives` |
 | Push | `git push origin main`, then `git fetch` + SHA comparison (local == remote) |
 

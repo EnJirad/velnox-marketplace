@@ -759,8 +759,8 @@ zero-decision part of Phase 1 that §84 delivered.**
 
 ## §84. Phase 1 — CLEAN MVP FOUNDATION (2026-10-21)
 
-**Status: Phase 1 complete. Baseline→new SHA recorded below. No schema, endpoint, payment,
-auth or app change.**
+**Status: Phase 1 complete — `84b3767` → `54c10ae56b5060049faa87a845786cfe4659d35e`
+(local == `origin/main` == `ls-remote`). No schema, endpoint, payment, auth or app change.**
 Full report: [`.ai/tasks/active/mvp-clean-rewrite-phase1-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase1-2026-10-21.md).
 
 Baseline verified against GitHub (`ls-remote`), not local state: `84b3767` == `origin/main`.
