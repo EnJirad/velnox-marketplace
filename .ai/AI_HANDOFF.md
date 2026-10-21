@@ -863,6 +863,11 @@ second pack order expires → 0 reserved). Inventory examples A–E, concurrent 
 12-unit release for 2 packs, double-release protection and history-after-rename/delete are in
 `backend/mvp/tests/selling-units.test.ts`.
 
+**Commits (pushed to `origin/main`, fast-forward, no force-push):** `33e7683` schema · `1b1043b`
+API/inventory · `345d309` clients · `f854be7` pack tests · `0eb7b63` browser pack flow · `87f5a07`
+Phase 3d docs (baseline `245a41d`, code tip `87f5a07`; this handoff/record commit follows it and
+`origin/main` is verified equal to local `HEAD`).
+
 **NOT verified / outstanding:** no provider deployment (no Render/Vercel/Neon access), Stripe TEST
 round trip still keyless (pack settlement proven through webhook fixtures), image upload still
 legacy-shaped. Staging untouched. Production env, Neon, Stripe mode and deployments untouched; the
