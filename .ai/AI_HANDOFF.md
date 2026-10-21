@@ -728,3 +728,28 @@ re-scanning every ~30 s with
 `SELECT id FROM orders WHERE payment_expires_at IS NOT NULL AND payment_expires_at <= NOW() AND status = ANY($2::text[]) AND inventory_released = FALSE`.
 P0 stayed "checkout cannot create an order"; changing indexes/queries/pool size in the same pass would
 have made the schema repair unverifiable. Needs its own task, measured before/after.
+
+---
+
+## §83. Phase 0 audit for the CLEAN MVP REWRITE (2026-10-21)
+
+**Status: Phase 0 complete — WAITING FOR OWNER DECISIONS. No code changed.**
+Full report: [`.ai/tasks/active/mvp-clean-rewrite-phase0-audit-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase0-audit-2026-10-21.md).
+
+Audited at `d653a37` (local == `origin/main`, tree clean). Current system: **77 tables**,
+**≥165 API paths**, **22 route modules**, **~127k TS lines**, **62 migrations**, 4 apps,
+WebSocket, 3 workers. The rewrite is deletion-led: ~10–12k backend lines, 15–18 tables,
+~120 endpoints, 2 apps, all migrations. Proven parts to preserve (do not rewrite blindly):
+server-authoritative checkout pricing/stock, guarded stock reservation, `checkout_requests`
+idempotency, Stripe raw-body signature + event claim + refund recomputation, seller
+`status='approved'` gate, JWT revocation/origin/rate-limit, R2 presign, test-DB fail-closed.
+
+**Phase 0 found no mock/fake production data and no TODO/FIXME.** It did find 16 dead
+schema tables (12 LEGACY + 4 UNUSED), boot-time DDL in `server.ts`, and an unsigned OAuth
+`state` (returnTo carrier, not CSRF protection) to fix in the auth rewrite.
+
+**Blocking decisions (report §13):** D1 reset target (recommend new empty DB, never wipe
+production first) · D2 product approval · D3 sets/packs · D4 multi-shop checkout ·
+D5 Stripe-only · D6 Google-only · D7 owner/admin only · D8 drop reviews/wishlist/chat/goals ·
+D9 delete `apps/velnox` · D10 one schema + reset script, delete migrations · D11 keep 3
+languages · D12 simple seller approval. **Do not start Phase 1 until these are answered.**
