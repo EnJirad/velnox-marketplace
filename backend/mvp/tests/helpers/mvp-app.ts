@@ -254,6 +254,37 @@ export async function createPublishedProduct(
   return { id: productId, slug, sellerId };
 }
 
+/**
+ * A selling unit (set/pack): `baseQuantity` base units for `price`.
+ *
+ * Inserted directly so DB-level invariants can be tested without going through
+ * the seller API; the API path is exercised by its own tests and the browser
+ * E2E. It creates NO inventory row — that is the point of the model.
+ */
+export async function createSellingUnit(
+  productId: string,
+  opts: {
+    label?: string;
+    baseQuantity?: number;
+    price?: string;
+    variantId?: string | null;
+    isActive?: boolean;
+  } = {},
+): Promise<{ id: string; label: string; baseQuantity: number; price: string }> {
+  const label = opts.label ?? `Pack ${opts.baseQuantity ?? 6}`;
+  const baseQuantity = opts.baseQuantity ?? 6;
+  const price = opts.price ?? "500.00";
+  const result = await query(
+    `INSERT INTO product_selling_units
+       (product_id, variant_id, label, base_quantity, price, is_active, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6,
+             COALESCE((SELECT MAX(sort_order) + 1 FROM product_selling_units WHERE product_id = $1), 0))
+     RETURNING id`,
+    [productId, opts.variantId ?? null, label, baseQuantity, price, opts.isActive ?? true],
+  );
+  return { id: (result.rows[0] as { id: string }).id, label, baseQuantity, price };
+}
+
 export async function createCategory(slug?: string): Promise<{ id: string; slug: string }> {
   const value = slug ?? `cat-${uuidPart()}`;
   const result = await query(
@@ -307,6 +338,7 @@ export async function seedCart(
     stock?: number;
     variants?: Array<{ name: string; price: string; stock: number; status?: "active" | "inactive" }>;
     variantIndex?: number;
+    sellingUnitId?: string | null;
     buyer?: TestUser;
     seller?: TestSeller;
   },
@@ -331,7 +363,12 @@ export async function seedCart(
   const added = await api(base, "/api/mvp/cart/items", {
     method: "POST",
     cookie: buyer.cookie,
-    body: { productId: product.id, variantId, quantity: opts.quantity ?? 1 },
+    body: {
+      productId: product.id,
+      variantId,
+      sellingUnitId: opts.sellingUnitId ?? null,
+      quantity: opts.quantity ?? 1,
+    },
   });
   if (added.status !== 201) {
     throw new Error(`seedCart: add-to-cart failed ${added.status}: ${JSON.stringify(added.body)}`);

@@ -31,10 +31,16 @@ function walk(dir: string): string[] {
 const mvpFiles = walk(mvpDir).map((path) => ({ path, source: readFileSync(path, "utf8") }));
 const serverSource = readFileSync(join(backendDir, "server.ts"), "utf8");
 
-/** Tables that exist ONLY in the frozen pre-MVP schema. */
+/**
+ * Tables that exist ONLY in the frozen pre-MVP schema.
+ *
+ * `product_selling_units` was on this list until Phase 3d gave the MVP its own
+ * (deliberately different: label / base_quantity / price / is_active) table of
+ * that name. The guard is about not reading a table the MVP schema does not
+ * have, so the name is no longer an offence.
+ */
 const PRE_MVP_TABLES = [
   "shops",
-  "product_selling_units",
   "checkout_groups",
   "checkout_group_orders",
   "seller_verifications",
