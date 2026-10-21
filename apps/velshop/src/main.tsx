@@ -9,6 +9,7 @@ import {
   SiteSuspense,
 } from "@velnox/shared/lib/app-shell";
 import { siteBasename } from "@velnox/shared/lib/sites";
+import { isMvpMode } from "@velnox/shared/mvp";
 import { initMonitoring } from "@velnox/shared/lib/monitoring";
 
 initMonitoring();
@@ -83,6 +84,16 @@ const ShopChat = lazy(() => import("@/pages/ShopChat"));
 const CookiePolicy = lazy(() => import("@/pages/CookiePolicy"));
 const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
 const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
+/**
+ * The MVP storefront (`/api/mvp`, staging/dev only — see
+ * `packages/shared/src/mvp/config.ts`).
+ *
+ * This is the ONLY branch that changes behaviour: when MVP mode is off (every
+ * production build, and the default everywhere) the legacy routes below render
+ * exactly as before, with the same providers and the same API client.
+ */
+const MvpShopApp = lazy(() => import("@/mvp/App"));
+const MVP_API = isMvpMode();
 
 createRoot(document.getElementById("root")!).render(
   <RootErrorBoundary>
@@ -94,6 +105,11 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter basename={siteBasename("velshop")}>
       <ScrollToTop />
       <RouteSyncer />
+      {MVP_API ? (
+        <SiteSuspense>
+          <MvpShopApp />
+        </SiteSuspense>
+      ) : (
       <CartProvider>
       <CookieConsentProvider>
       <div className="site-app">
@@ -242,6 +258,7 @@ createRoot(document.getElementById("root")!).render(
       </div>
       </CookieConsentProvider>
     </CartProvider>
+      )}
     </BrowserRouter>          <Toaster />
     </LanguageProvider>
   </RootErrorBoundary>,
