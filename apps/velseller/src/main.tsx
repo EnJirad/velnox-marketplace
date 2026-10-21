@@ -17,6 +17,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import "../../../packages/shared/src/index.css";
 import { initMonitoring } from "@velnox/shared/lib/monitoring";
+import { isMvpMode } from "@velnox/shared/mvp";
 
 /** App-like bottom navigation for mobile (velseller). */
 const SELLER_TABS: MobileTabItem[] = [
@@ -58,6 +59,12 @@ const SellerProfile = lazy(() => import("@/pages/SellerProfile"));
 const Income = lazy(() => import("@/pages/Income"));
 const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
 const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
+/**
+ * MVP seller workspace (`/api/mvp`, staging/dev only). Mounted only when
+ * `isMvpMode()` is true; a production build always takes the legacy tree below.
+ */
+const MvpSellerApp = lazy(() => import("@/mvp/App"));
+const MVP_API = isMvpMode();
 
 createRoot(document.getElementById("root")!).render(
   <RootErrorBoundary>
@@ -67,6 +74,11 @@ createRoot(document.getElementById("root")!).render(
     {CUSTOMER_MEMORY_ENABLED && <IdentityMerge />}
     <BrowserRouter basename={siteBasename("velseller")}>
       <RouteSyncer />
+      {MVP_API ? (
+        <SiteSuspense>
+          <MvpSellerApp />
+        </SiteSuspense>
+      ) : (
       <div className="site-app">
       <SiteSuspense>
         <Routes>
@@ -146,6 +158,7 @@ createRoot(document.getElementById("root")!).render(
       </SiteSuspense>
       <SellerTabBar />
       </div>
+      )}
     </BrowserRouter>
     <Toaster />
   </RootErrorBoundary>,
