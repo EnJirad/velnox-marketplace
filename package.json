@@ -30,10 +30,12 @@
     "i18n:check": "bun packages/shared/scripts/i18n-check.ts",
     "test": "bun test backend/tests",
     "test:mvp": "bash db/mvp/test-run.sh",
+    "test:mvp:browser": "bash db/mvp/browser-e2e.sh",
     "lint": "echo 'Lint not yet configured'",
     "format": "echo 'Format not yet configured'"
   },
   "devDependencies": {
+    "playwright": "^1.64.1",
     "typescript": "~5.9.3"
   }
 }
