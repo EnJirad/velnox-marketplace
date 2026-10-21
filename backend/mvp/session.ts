@@ -6,6 +6,11 @@
  *   • cookie `velnox_session`, httpOnly, SameSite=None, Secure in production,
  *     7-day expiry — a frontend built against the pre-MVP API needs no cookie
  *     change at cutover;
+ *   • `MVP_COOKIE_SECURE=true` can only ADD `Secure` (never remove it in
+ *     production). It exists for the HTTPS browser E2E: Chromium rejects a
+ *     `SameSite=None` cookie that lacks `Secure`, so the local test harness
+ *     serves TLS with a self-signed certificate and sets this flag — the exact
+ *     cookie the staging deployment already sends over HTTPS;
  *   • JWT payload `{ userId, email, jti }`, so the existing
  *     `middleware/auth.ts#requireAuth` verifies it unchanged (signature, expiry
  *     and `revoked_tokens` lookup all already read the same column names the MVP
@@ -41,11 +46,24 @@ export function createSessionToken(userId: string, email: string): string {
   return jwt.sign({ userId, email, jti }, jwtSecret(), { expiresIn: "7d" });
 }
 
+/**
+ * Whether the session cookie carries `Secure`.
+ *
+ * Production is always secure; `MVP_COOKIE_SECURE=true` can turn it ON elsewhere
+ * (HTTPS test/staging) but there is deliberately no way to turn it off in
+ * production — a flag must never be able to weaken the cookie.
+ */
+export function sessionCookieSecure(): boolean {
+  return (
+    process.env.NODE_ENV === "production" ||
+    (process.env.MVP_COOKIE_SECURE ?? "").trim().toLowerCase() === "true"
+  );
+}
+
 export function setSessionCookie(res: Response, token: string): void {
-  const isProd = process.env.NODE_ENV === "production";
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: isProd,
+    secure: sessionCookieSecure(),
     sameSite: "none",
     maxAge: SESSION_TTL_MS,
     path: "/",
@@ -56,7 +74,7 @@ export function clearSessionCookie(res: Response): void {
   res.clearCookie(SESSION_COOKIE, {
     path: "/",
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: sessionCookieSecure(),
     sameSite: "none",
   });
 }

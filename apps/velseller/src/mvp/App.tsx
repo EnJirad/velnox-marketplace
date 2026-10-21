@@ -23,7 +23,7 @@ import {
 } from "@velnox/shared/mvp/ui";
 import { LogOut } from "lucide-react";
 import { lazy, type ReactNode } from "react";
-import { Link, NavLink, Route, Routes, useNavigate } from "react-router";
+import { Link, NavLink, Route, Routes } from "react-router";
 
 const Workspace = lazy(() => import("./Workspace"));
 const ProductEditor = lazy(() => import("./ProductEditor"));
@@ -37,7 +37,6 @@ const NAV = [
 
 function Shell({ children }: { children: ReactNode }) {
   const { user } = useMvpSessionContext();
-  const navigate = useNavigate();
   return (
     <div className="site-app min-h-screen bg-[#F8FAFC]">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -75,7 +74,7 @@ function Shell({ children }: { children: ReactNode }) {
               aria-label="Sign out"
               onClick={async () => {
                 await mvpSignOut();
-                navigate("/");
+                window.location.assign("/");
               }}
             >
               <LogOut className="size-4" />

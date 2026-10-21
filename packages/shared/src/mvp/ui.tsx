@@ -362,7 +362,6 @@ export function MvpAuthPanel({
   description?: string;
   redirectAfterAuth?: string;
 }) {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get("returnTo")) ?? redirectAfterAuth;
 
@@ -386,7 +385,12 @@ export function MvpAuthPanel({
         await api.auth.login({ email: email.trim(), password });
       }
       await refetchCurrentUser();
-      navigate(returnTo, { replace: true });
+      // A HARD navigation, deliberately: the session is read once per app mount
+      // (`MvpSessionProvider`), so a client-side route change would leave every
+      // provider, guard and header on the pre-login snapshot. Reloading proves
+      // the SERVER accepted the session and makes `/auth/me` the single source
+      // of the user the pages render.
+      window.location.assign(returnTo);
     } catch (err) {
       setError(toMvpError(err).message);
     } finally {

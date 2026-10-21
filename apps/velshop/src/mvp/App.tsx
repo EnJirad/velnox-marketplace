@@ -96,7 +96,9 @@ function Header() {
                 aria-label="Sign out"
                 onClick={async () => {
                   await mvpSignOut();
-                  navigate("/");
+                  // Reload so the shared session snapshot (and every guard that
+                  // reads it) is re-read from the server, not left stale.
+                  window.location.assign("/");
                 }}
               >
                 <LogOut className="size-4" />
