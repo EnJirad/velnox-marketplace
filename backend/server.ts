@@ -33,6 +33,7 @@ import { registerVerificationRoutes } from "./routes/verification.js";
 import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
 import { startVelRepeatV2CycleScheduler } from "./jobs/velrepeat-v2-cycle-scheduler.js";
 import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
+import { startMvpOrderExpiryScheduler } from "./jobs/mvp-order-expiry-scheduler.js";
 import { VELREPEAT_ENABLED, WHOLESALE_ENABLED } from "./lib/features.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupProductSellingUnitRoutes } from "./routes/product-selling-units.js";
@@ -647,4 +648,10 @@ server.listen(PORT, "0.0.0.0", () => {
   // stock through the one release path. The DB is the source of truth; the
   // interval only triggers the scan.
   startPaymentReservationScheduler();
+
+  // ─── MVP pending-order expiry (Phase 3b) ─────────────────────────────
+  // The same sweep for the MVP tree (`expireStaleOrders`). The worker refuses to
+  // start unless MVP_API_ENABLED=true, so on the pre-MVP service this is a no-op
+  // log line and the legacy sweeper above remains the only one running.
+  startMvpOrderExpiryScheduler();
 });
