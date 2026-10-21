@@ -132,6 +132,7 @@ orders
 payment_events
 payments
 product_images
+product_selling_units
 product_variants
 products
 revoked_tokens
@@ -139,7 +140,7 @@ seller_profiles
 shipments
 users"
 ACTUAL_TABLES="$(V -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")"
-expect_eq "the schema has exactly 19 MVP tables (no legacy table survived)" "$EXPECTED_TABLES" "$ACTUAL_TABLES"
+expect_eq "the schema has exactly 20 MVP tables (no legacy table survived)" "$EXPECTED_TABLES" "$ACTUAL_TABLES"
 
 FP_INITIAL="$(fingerprint)"
 if P -f db/mvp/schema.sql >/dev/null 2>&1; then pass "a second run of schema.sql succeeds"; else fail "a second run of schema.sql failed"; fi
@@ -157,9 +158,15 @@ expect_eq "product_variants carries NO stock column (one stock authority)" "0" \
   "$(V -c "SELECT count(*) FROM information_schema.columns WHERE table_name='product_variants' AND column_name='stock'")"
 expect_eq "the one stock table is inventory" "inventory|quantity|reserved" \
   "$(V -c "SELECT table_name||'|'||string_agg(column_name,'|' ORDER BY column_name) FROM information_schema.columns WHERE table_name='inventory' AND column_name IN ('quantity','reserved') GROUP BY table_name")"
-expect_eq "no sets/packs, checkout-group or multi-shop table exists" "0" \
-  "$(V -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('product_selling_units','checkout_groups','store_accounts','subscriptions','velrepeat_plans')")"
-expect_eq "all six lifecycle triggers are installed" "6" \
+expect_eq "no checkout-group, multi-shop, subscription or VelRepeat table exists" "0" \
+  "$(V -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('checkout_groups','store_accounts','subscriptions','velrepeat_plans')")"
+# The retail selling unit is a CONVERSION, not a second stock table: it carries
+# base_quantity + price and no quantity/stock of its own.
+expect_eq "a selling unit carries a base quantity and a price, never stock" "base_quantity|is_active|price|0" \
+  "$(V -c "SELECT string_agg(column_name,'|' ORDER BY column_name)||'|'||(SELECT count(*) FROM information_schema.columns WHERE table_name='product_selling_units' AND column_name IN ('quantity','stock','reserved')) FROM information_schema.columns WHERE table_name='product_selling_units' AND column_name IN ('base_quantity','price','is_active')")"
+expect_eq "the only stock table is still inventory" "inventory" \
+  "$(V -c "SELECT string_agg(DISTINCT table_name, ',') FROM information_schema.columns WHERE table_schema='public' AND column_name='reserved'")"
+expect_eq "all seven lifecycle triggers are installed" "7" \
   "$(V -c "SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal")"
 
 # ── C. fixtures ──────────────────────────────────────────────────────────────
@@ -392,6 +399,48 @@ expect_eq "two concurrent reservations cannot both take the last unit" "1" "$(( 
 expect_eq "the row holds exactly one reservation after the race" "1" \
   "$(V -c "SELECT reserved FROM inventory WHERE product_id='00000000-0000-0000-0000-000000000021' AND variant_id='00000000-0000-0000-0000-000000000031'")"
 P -c "UPDATE inventory SET reserved=0 WHERE product_id='00000000-0000-0000-0000-000000000021' AND variant_id='00000000-0000-0000-0000-000000000031'" >/dev/null 2>&1
+
+# ── F3. retail selling units (sets / packs) ─────────────────────────────────
+section "F3. retail selling units (sets/packs)"
+if P -c "INSERT INTO product_selling_units (id, product_id, variant_id, label, base_quantity, price)
+          VALUES ('00000000-0000-0000-0000-000000000061','00000000-0000-0000-0000-000000000021','00000000-0000-0000-0000-000000000031','Pack 6',6,500.00)" >/dev/null 2>&1; then
+  pass "a seller can define a 6-unit pack at its own price"
+else
+  fail "the selling-unit fixture failed"
+fi
+expect_eq "a pack creates NO inventory row of its own (one stock authority)" "1" \
+  "$(V -c "SELECT count(*) FROM inventory WHERE product_id='00000000-0000-0000-0000-000000000021'")"
+expect_fail "a pack with base quantity 0 is refused" \
+  "INSERT INTO product_selling_units (product_id, variant_id, label, base_quantity, price) VALUES ('00000000-0000-0000-0000-000000000021','00000000-0000-0000-0000-000000000031','Pack 0',0,100.00);"
+expect_fail "two packs with the same label on one scope are refused" \
+  "INSERT INTO product_selling_units (product_id, variant_id, label, base_quantity, price) VALUES ('00000000-0000-0000-0000-000000000021','00000000-0000-0000-0000-000000000031','pack 6',12,950.00);"
+expect_fail "a cart line cannot use another product's pack" \
+  "INSERT INTO cart_items (cart_id, seller_id, product_id, selling_unit_id, quantity, price) VALUES ('00000000-0000-0000-0000-000000000042','00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000022','00000000-0000-0000-0000-000000000061',1,50.00);"
+
+if P -f - >/dev/null <<'SQL'
+INSERT INTO orders (id, order_number, user_id, seller_id, subtotal, shipping_fee, total_amount, shipping_address)
+VALUES ('00000000-0000-0000-0000-000000000052', '123456789012345679', '00000000-0000-0000-0000-000000000003',
+        '00000000-0000-0000-0000-000000000011', 1000.00, 0.00, 1000.00,
+        '{"recipient_name":"Buyer","phone":"0000000000","line1":"1 Test Rd","city":"Bangkok","state":"Bangkok","postal_code":"10000","country":"TH"}');
+INSERT INTO order_items
+  (order_id, seller_id, product_id, variant_id, selling_unit_id, selling_unit_label,
+   selling_unit_base_quantity, product_name, variant_name, unit_price, quantity, subtotal)
+VALUES ('00000000-0000-0000-0000-000000000052', '00000000-0000-0000-0000-000000000011',
+        '00000000-0000-0000-0000-000000000021', '00000000-0000-0000-0000-000000000031',
+        '00000000-0000-0000-0000-000000000061', 'Pack 6', 6,
+        'Published Product', 'Red', 500.00, 2, 1000.00);
+SQL
+then pass "an order line snapshots the pack's label, base quantity and price"; else fail "the pack order fixture failed"; fi
+expect_eq "the database derives the held base units (2 packs × 6 = 12)" "12" \
+  "$(V -c "SELECT base_quantity_total FROM order_items WHERE order_id='00000000-0000-0000-0000-000000000052'")"
+expect_eq "the pack's subtotal is price × packs, not price × base units" "1000.00" \
+  "$(V -c "SELECT subtotal FROM order_items WHERE order_id='00000000-0000-0000-0000-000000000052'")"
+
+P -c "UPDATE product_selling_units SET label='Mega Pack', base_quantity=12, price=1200.00, is_active=FALSE WHERE id='00000000-0000-0000-0000-000000000061'" >/dev/null 2>&1
+expect_eq "renaming and deactivating a pack never rewrites the order snapshot" "Pack 6|6|12|1000.00" \
+  "$(V -c "SELECT selling_unit_label||'|'||selling_unit_base_quantity||'|'||base_quantity_total||'|'||subtotal FROM order_items WHERE order_id='00000000-0000-0000-0000-000000000052'")"
+expect_fail "an inactive pack cannot enter a new order" \
+  "INSERT INTO order_items (order_id, seller_id, product_id, variant_id, selling_unit_id, selling_unit_label, selling_unit_base_quantity, product_name, unit_price, quantity, subtotal) VALUES ('00000000-0000-0000-0000-000000000052','00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000021','00000000-0000-0000-0000-000000000031','00000000-0000-0000-0000-000000000061','Mega Pack',12,'Published Product',1200.00,1,1200.00);"
 
 # ── G. payment-event idempotency ─────────────────────────────────────────────
 section "G. webhook event claim"

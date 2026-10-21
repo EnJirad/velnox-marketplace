@@ -9,7 +9,7 @@ must not run it. Production is a separate Neon database reached only by
 
 | Object | Where it lives | Cutover action |
 |---|---|---|
-| Clean MVP schema | `db/mvp/schema.sql` (19 tables) | becomes `db/schema.sql` |
+| Clean MVP schema | `db/mvp/schema.sql` (20 tables) | becomes `db/schema.sql` |
 | Guarded reset | `db/mvp/reset.sql` + `db/mvp/reset.sh` | stays; production is never reset |
 | Deterministic dev seed | `db/mvp/seed.sql` (categories only) | stays, dev/test only |
 | Behavioural proof | `db/mvp/verify.sh` | stays; CI runs it |
@@ -90,9 +90,11 @@ reviewed project with a frozen source snapshot and a row-by-row mapping:
 - 12-value `orders.status` + `order_state` + `fulfillment_status` → the six-value
   MVP axis; every legacy value needs an explicit mapping, and `refunded` /
   `payment_failed` / `expired` have no MVP order state;
-- selling-unit lines (`selling_unit_pieces`) → base quantity; prices and
-  snapshots must be recomputed from the stored snapshots, never from current
-  product prices;
+- selling-unit lines (`selling_unit_pieces` / `selling_unit_name`) → the MVP
+  `product_selling_units` shape (`label`, `base_quantity`, own `price`) and the
+  `order_items` snapshot (`selling_unit_label`, `selling_unit_base_quantity`,
+  generated `base_quantity_total`); prices and snapshots must be recomputed from
+  the stored snapshots, never from current product prices;
 - VelRepeat, chat, reviews, wishlist, memory, wholesale, employees: **not
   migrated** (non-MVP domains).
 

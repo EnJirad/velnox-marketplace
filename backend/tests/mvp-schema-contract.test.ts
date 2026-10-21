@@ -5,13 +5,16 @@
  * the only place the following are allowed to be defined, and this test fails
  * the moment the file drifts from them:
  *
- *   • 19 tables — one identity, one seller, one catalog, one stock authority,
- *     one cart per (buyer, seller), one order per seller, one payment model;
+ *   • 20 tables — one identity, one seller, one catalog, one stock authority,
+ *     one retail selling-unit table, one cart per (buyer, seller), one order
+ *     per seller, one payment model;
  *   • ONE order status axis (6 values) and ONE product lifecycle (5 values);
  *   • money is NUMERIC(12,2), never floating point;
  *   • `product_variants` has no stock column — `inventory` is the only stock;
+ *   • a selling unit (set/pack) is `base_quantity` base units for its own
+ *     price and owns NO stock — `inventory` remains the only stock table;
  *   • non-MVP domains (VelRepeat, memory, wholesale, reviews, wishlist, chat,
- *     goals, staff RBAC, sets/packs, multi-shop groups) are absent;
+ *     goals, staff RBAC, multi-shop groups) are absent;
  *   • the reset is destructive but fail-closed, and the seed contains platform
  *     categories only, never fake marketplace rows.
  *
@@ -78,6 +81,7 @@ const expectedTables = [
   "payment_events",
   "payments",
   "product_images",
+  "product_selling_units",
   "product_variants",
   "products",
   "revoked_tokens",
@@ -120,7 +124,6 @@ const forbiddenTables = [
   "product_option",
   "option_value_images",
   "product_variant_images",
-  "product_selling_units",
   "checkout_groups",
   "store_accounts",
   "notifications",
@@ -136,7 +139,7 @@ const forbiddenTables = [
 ];
 
 describe("MVP schema — table set", () => {
-  test("declares exactly the 19 MVP tables", () => {
+  test("declares exactly the 20 MVP tables", () => {
     expect([...tables.keys()].sort()).toEqual(expectedTables);
   });
 
@@ -286,6 +289,7 @@ describe("MVP schema — money and constraints", () => {
       "cart_items_cart_fk",
       "cart_items_product_fk",
       "cart_items_variant_fk",
+      "product_selling_units_variant_fk",
       "order_items_order_fk",
       "order_items_product_fk",
       "order_items_variant_fk",
@@ -302,6 +306,7 @@ describe("MVP schema — money and constraints", () => {
       "enforce_product_status_transition",
       "require_approved_seller_for_order",
       "require_published_product_for_order_item",
+      "enforce_cart_item_selling_unit",
       "enforce_order_status_transition",
     ]) {
       expect(code).toContain(`CREATE OR REPLACE FUNCTION ${fn}()`);
@@ -312,6 +317,37 @@ describe("MVP schema — money and constraints", () => {
     expect(code).toContain("(OLD.status = 'paid'            AND NEW.status IN ('processing', 'cancelled'))");
     expect(code).toContain("(OLD.status = 'processing'      AND NEW.status IN ('shipped', 'cancelled'))");
     expect(code).toContain("(OLD.status = 'shipped'         AND NEW.status = 'delivered')");
+  });
+
+  test("a selling unit describes stock instead of owning it", () => {
+    const units = tables.get("product_selling_units")!;
+    // Its own price and base quantity, exactly like the business rule.
+    expect(units).toMatch(/base_quantity INTEGER NOT NULL DEFAULT 1\s+CHECK \(base_quantity > 0/);
+    expect(units).toMatch(/price NUMERIC\(12, 2\) NOT NULL CHECK \(price >= 0\)/);
+    expect(units).toMatch(/is_active BOOLEAN NOT NULL DEFAULT TRUE/);
+    // NO stock column: `inventory` stays the ONE stock authority.
+    expect([...columns(units).keys()]).not.toContain("quantity");
+    expect([...columns(units).keys()]).not.toContain("stock");
+    expect(units).toMatch(/FOREIGN KEY \(product_id, variant_id\)\s+REFERENCES product_variants \(product_id, id\) ON DELETE RESTRICT/);
+
+    // A cart/order line names the unit, and the line's identity includes it, so
+    // "2 singles" and "1 × Pack 6" can never collapse into one line.
+    expect([...columns(tables.get("cart_items")!).keys()]).toContain("selling_unit_id");
+    expect(code).toMatch(
+      /idx_cart_items_unique_line\s+ON cart_items \([\s\S]*?COALESCE\(selling_unit_id/,
+    );
+    expect(tables.get("cart_items")!).toMatch(
+      /selling_unit_id UUID REFERENCES product_selling_units\(id\) ON DELETE RESTRICT/,
+    );
+
+    // The order keeps the durable snapshot and derives the held stock from it.
+    const items = tables.get("order_items")!;
+    expect(items).toMatch(/selling_unit_label TEXT NOT NULL DEFAULT ''/);
+    expect(items).toMatch(/selling_unit_base_quantity INTEGER NOT NULL DEFAULT 1/);
+    expect(items).toMatch(
+      /base_quantity_total INTEGER GENERATED ALWAYS AS \(quantity \* selling_unit_base_quantity\) STORED/,
+    );
+    expect(items).not.toMatch(/base_quantity_total INTEGER NOT NULL/);
   });
 
   test("schema.sql itself is non-destructive", () => {

@@ -232,6 +232,54 @@ CREATE TABLE IF NOT EXISTS inventory (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_scope_unique
   ON inventory (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
+-- ─── 3b. RETAIL SELLING UNITS (SETS / PACKS) ────────────────────────────────
+-- A selling unit is how a buyer may buy ONE inventory scope: `base_quantity`
+-- base units for `price`. It owns NO stock — `inventory` above stays the only
+-- stock table, and every purchase converts
+--
+--     required base units = purchased quantity × base_quantity
+--
+-- so a 6-pack and six singles draw from the same 10 bags and can never sell the
+-- same physical stock twice. The unit's own `price` is authoritative; a pack
+-- price is never derived from the base price.
+--
+-- THE BASE UNIT IS IMPLICIT. A cart/order line with `selling_unit_id IS NULL`
+-- buys one base unit at the product's (or variant's) price. Sellers add packs on
+-- top; a unit with `base_quantity = 1` is the explicit way to give the single
+-- unit its own label and price.
+CREATE TABLE IF NOT EXISTS product_selling_units (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  -- NULL = the base product (no variant), exactly like `inventory.variant_id`.
+  variant_id UUID,
+  label TEXT NOT NULL CHECK (btrim(label) <> ''),
+  -- Base units consumed by ONE of this selling unit. Always a positive integer.
+  base_quantity INTEGER NOT NULL DEFAULT 1
+    CHECK (base_quantity > 0 AND base_quantity <= 1000000),
+  -- This unit's own selling price. Never computed from the base price.
+  price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
+  -- Inactive units are not purchasable; retire, never delete, a sold unit.
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- A unit can only describe a variant OF ITS PRODUCT. ON DELETE RESTRICT: a
+  -- variant that still has units cannot silently take them with it.
+  CONSTRAINT product_selling_units_variant_fk
+    FOREIGN KEY (product_id, variant_id)
+    REFERENCES product_variants (product_id, id) ON DELETE RESTRICT
+);
+-- One label per (product, variant-or-null) scope — two different "Pack 6" rows
+-- on the same shelf would make the buyer's choice meaningless.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_selling_units_scope_label
+  ON product_selling_units (
+    product_id,
+    COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    lower(label)
+  );
+CREATE INDEX IF NOT EXISTS idx_selling_units_scope
+  ON product_selling_units (product_id, variant_id, sort_order);
+
 -- ─── 4. MEDIA REGISTRY (R2) ─────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS media (
@@ -291,6 +339,10 @@ CREATE TABLE IF NOT EXISTS cart_items (
   seller_id UUID NOT NULL,
   product_id UUID NOT NULL,
   variant_id UUID,
+  -- Which selling unit (set/pack) was chosen. NULL = the implicit base unit.
+  -- RESTRICT, never SET NULL: turning a 6-pack line into a single unit because
+  -- the pack was deleted would silently change what the buyer is buying.
+  selling_unit_id UUID REFERENCES product_selling_units(id) ON DELETE RESTRICT,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   -- Display snapshot only. Checkout re-reads the authoritative price.
   price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
@@ -303,8 +355,15 @@ CREATE TABLE IF NOT EXISTS cart_items (
   CONSTRAINT cart_items_variant_fk
     FOREIGN KEY (product_id, variant_id) REFERENCES product_variants (product_id, id) ON DELETE CASCADE
 );
+-- The selling unit is part of a line's identity: "2 × single" and "1 × Pack 6"
+-- are two legitimate lines for the same product/variant and must not merge.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_items_unique_line
-  ON cart_items (cart_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+  ON cart_items (
+    cart_id,
+    product_id,
+    COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    COALESCE(selling_unit_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  );
 CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items (cart_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items (product_id);
 
@@ -366,9 +425,23 @@ CREATE TABLE IF NOT EXISTS order_items (
   product_name TEXT NOT NULL CHECK (btrim(product_name) <> ''),
   variant_name TEXT,
   image_url TEXT,
+  -- Selling-unit reference, kept for traceability only: SET NULL on delete is
+  -- safe because the label and base quantity below are the snapshot history
+  -- reads. An order stays understandable after a rename or deactivation.
+  selling_unit_id UUID REFERENCES product_selling_units(id) ON DELETE SET NULL,
+  -- '' = the implicit base unit.
+  selling_unit_label TEXT NOT NULL DEFAULT '',
+  -- Base units per purchased unit at the moment of sale (1 for the base unit).
+  selling_unit_base_quantity INTEGER NOT NULL DEFAULT 1
+    CHECK (selling_unit_base_quantity > 0),
   unit_price NUMERIC(12, 2) NOT NULL CHECK (unit_price >= 0),
+  -- Number of SELLING UNITS bought (e.g. 2 packs), not base units.
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   subtotal NUMERIC(12, 2) NOT NULL CHECK (subtotal >= 0),
+  -- The stock this line holds, frozen at sale time: quantity × base_quantity.
+  -- Derived by the database so a release can never credit back '2' for a pack
+  -- of 6, and no writer can edit it.
+  base_quantity_total INTEGER GENERATED ALWAYS AS (quantity * selling_unit_base_quantity) STORED,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT order_items_order_fk
     FOREIGN KEY (order_id, seller_id) REFERENCES orders (id, seller_id) ON DELETE CASCADE,
@@ -596,9 +669,55 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
+  -- A pack/set line must name an ACTIVE unit of this exact product/variant, so
+  -- an order can never snapshot a price or base quantity from another shelf.
+  IF NEW.selling_unit_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM product_selling_units su
+    WHERE su.id = NEW.selling_unit_id
+      AND su.product_id = NEW.product_id
+      AND su.variant_id IS NOT DISTINCT FROM NEW.variant_id
+      AND su.is_active
+  ) THEN
+    RAISE EXCEPTION 'selling unit % is not active for product % / variant %',
+      NEW.selling_unit_id, NEW.product_id, NEW.variant_id
+      USING ERRCODE = '23514';
+  END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- A cart line may only name an ACTIVE selling unit of its own product/variant.
+-- (The API validates this too; the trigger makes a mismatched line impossible
+-- even for a direct SQL write.)
+CREATE OR REPLACE FUNCTION enforce_cart_item_selling_unit()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.selling_unit_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM product_selling_units su
+    WHERE su.id = NEW.selling_unit_id
+      AND su.product_id = NEW.product_id
+      AND su.variant_id IS NOT DISTINCT FROM NEW.variant_id
+      AND su.is_active
+  ) THEN
+    RAISE EXCEPTION 'selling unit % is not active for product % / variant %',
+      NEW.selling_unit_id, NEW.product_id, NEW.variant_id
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_cart_items_selling_unit ON cart_items;
+CREATE TRIGGER trg_cart_items_selling_unit
+  BEFORE INSERT OR UPDATE OF selling_unit_id, product_id, variant_id ON cart_items
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_cart_item_selling_unit();
 
 DROP TRIGGER IF EXISTS trg_order_items_published_product ON order_items;
 CREATE TRIGGER trg_order_items_published_product
