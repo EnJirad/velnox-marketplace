@@ -13,7 +13,7 @@ price. Production was not touched; staging was not touched (no access anyway).
 | Starting SHA | `245a41d5ecee0e1418cf168ad8f3ebf536ff3edc` |
 | `origin/main` at start | identical (`HEAD` == `origin/main`) |
 | Working tree at start | clean |
-| Final SHA | recorded in §8 after the push |
+| Final SHA (code) | `87f5a07` — the report-SHA commit follows it |
 
 Read before editing: `AGENTS.md`, `.ai/AI_RULES.md`, `.ai/AI_HANDOFF.md`,
 `.ai/context/{products,database,checkout,testing}.md`, the Phase 3c report,
@@ -178,12 +178,16 @@ Commits (all pushed to `origin/main`, no force-push):
 
 | SHA | Change |
 |---|---|
-| _pending_ | `feat(mvp): add retail selling units to the MVP schema` |
-| _pending_ | `feat(mvp): price and reserve packs by base quantity` |
-| _pending_ | `feat(mvp): expose packs in seller, storefront and admin clients` |
-| _pending_ | `test(mvp): prove pack inventory, release and history` |
-| _pending_ | `test(mvp): buy a retail pack in the browser flow` |
-| _pending_ | `docs(ai): Phase 3d report and handoff` |
+| `33e7683` | `feat(mvp): add retail selling units to the MVP schema` |
+| `1b1043b` | `feat(mvp): price and reserve packs by base quantity` |
+| `345d309` | `feat(mvp): expose packs in seller, storefront and admin clients` |
+| `f854be7` | `test(mvp): prove pack inventory, release and history` |
+| `0eb7b63` | `test(mvp): buy a retail pack in the browser flow` |
+| `87f5a07` | `docs(ai): Phase 3d report and handoff` |
+
+Pushed with `git push origin main` (`245a41d..87f5a07`, fast-forward). The
+report-SHA commit follows; `origin/main` is verified against local `HEAD` after
+that push and recorded in the handoff §89 commit list.
 
 ## 9. Environment / limitations
 
