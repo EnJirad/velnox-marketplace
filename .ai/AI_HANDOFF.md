@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3c — staging readiness** (**§88**) — staging env matrix + runbook written, CI already runs the MVP suite, and a **real Chromium E2E passes** (seller apply → approve → product → moderation → publish → buyer cart → checkout → order → cancel → expiry). Staging is **NOT deployed** (no provider access) and product scope is **BLOCKED on retail sets/packs**, absent from the MVP schema/API (§2 of the report). Production untouched; cutover **not executed**.
+**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3d — retail sets/packs** (**§89**) — the MVP now sells seller-defined packs (`product_selling_units`, own price, `base_units = qty × base_quantity`) against the one `inventory` table, with cart/order snapshots, seller UI, storefront selector, admin review and a **real Chromium pack-purchase E2E**. Staging is **NOT deployed** (no provider access); Stripe TEST still keyless. Production untouched; cutover **not executed**.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -690,7 +690,7 @@ workspace.
 **Phase 2 complete** — baseline `dd8c567`; no destructive production action. Full report:
 [`tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md) · cutover: [`db/mvp/cutover.md`](../db/mvp/cutover.md).
 
-**`db/mvp/schema.sql` is canonical** — 19 tables, 6 lifecycle triggers, one order axis, one stock
+**`db/mvp/schema.sql` is canonical** — 20 tables, 7 lifecycle triggers, one order axis, one stock
 authority (`inventory`; variants carry no stock), one seller per cart/order (composite FKs),
 `NUMERIC(12,2)` money, Stripe-only payments with the `payment_events.event_id` claim and one live
 session per order. Reset is fail-closed (`db/mvp/reset.{sql,sh}`); seed is categories only.
@@ -789,7 +789,8 @@ Baseline `9083127070d81c482ecfacb0604d330d0f79f07b` = `origin/main` = GitHub. Re
 [`tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md)
 · runbook: [`docs/MVP_STAGING.md`](../docs/MVP_STAGING.md).
 
-**BLOCKING GAP — sets/packs are absent from the MVP.** `db/mvp/schema.sql` has **zero**
+**BLOCKING GAP — sets/packs are absent from the MVP** — **RESOLVED in §89 (Phase 3d).**
+Kept for history: `db/mvp/schema.sql` had **zero**
 `selling_unit`/`pieces` references; `backend/mvp` mentions the pre-MVP table only in a comment
 forbidding it; no MVP client/UI field exists. The legacy schema, `backend/lib/inventory.ts`
 (`quantity × selling_unit_pieces`) and the archived §76–77 record still have the feature. The MVP
@@ -823,6 +824,46 @@ origins → three Vercel projects with `VITE_API_MODE=mvp`, `VITE_DEPLOY_ENV=sta
 `VITE_API_URL` → run the runbook's checklist (+ Stripe TEST if keys supplied). Production env,
 database, Stripe mode and deployments were NOT touched.
 
-**Next = Phase 3d:** restore retail sets/packs in the MVP (schema + cart/order snapshots + server
-pricing + `base_units = qty × pieces` stock + product-page selector), then deploy the staging stack
-and run the browser + Stripe TEST pass on it.
+**Next = Phase 3d** was retail sets/packs — **done, see §89.** After it, next is deploying the
+staging stack (`docs/MVP_STAGING.md`) and running the browser + Stripe TEST passes on it.
+
+---
+
+## §89. Phase 3d — RETAIL SETS / PACKS (2026-10-21)
+
+**Status: DONE.** The §88 product-scope blocker is removed. Baseline
+`245a41d5ecee0e1418cf168ad8f3ebf536ff3edc` = `origin/main` = GitHub. Report:
+[`tasks/active/mvp-clean-rewrite-phase3d-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3d-2026-10-21.md).
+
+**Schema (20 tables now).** `product_selling_units` = `(product_id, variant_id?, label,
+base_quantity>0, price NUMERIC(12,2), is_active, sort_order)`. It owns **no stock**: `inventory` stays
+the ONE stock authority and a purchase reserves `quantity × base_quantity`. The base unit is implicit
+(`selling_unit_id IS NULL`); an explicit `base_quantity = 1` unit replaces it in the catalogue so the
+buyer never sees duplicates. Cart-line identity now includes the unit (2 singles + 1 pack = 2 lines).
+`order_items` snapshots `selling_unit_id` (SET NULL), `selling_unit_label`, 
+`selling_unit_base_quantity` and a generated `base_quantity_total` used by reserve/commit/release.
+Triggers: the order-item guard refuses inactive/foreign units; `trg_cart_items_selling_unit` refuses
+an inactive/foreign unit on a cart line (7 triggers). No delete endpoint — a sold unit is deactivated.
+
+**API.** `POST|PATCH /seller/products/:id/selling-units` (approved seller, own product, editable
+states; no DELETE), `sellingUnits[]` in the seller payload, `sellingUnitId` on `POST /cart/items`,
+pack fields on cart lines, checkout re-reads the unit and 409s `SELLING_UNIT_NOT_AVAILABLE` if it was
+retired, cancel/expiry/settlement release or commit `base_quantity_total`, admin product rows expose
+`selling_units[]`, and `GET /products/:slug` publishes `sellingUnits[]` per scope. Clients: VelShop
+option selector + cart/checkout/order snapshots, VelSeller “Packs & sets” panel, VelCenter read-only
+review chips. Editing a pack on a published listing is material → back to `draft`; deactivating is
+operational and does not demote.
+
+**Verified on this tree:** MVP suite **113 pass / 0 fail** (13 files) · `db:verify:mvp` **93/93** ·
+schema contract **20 pass** · legacy **2167 pass / 16 skip / 0 fail** · typecheck 4/4 + backend 0 ·
+builds 4/4 · i18n `1535×3` · `git diff --check` clean · **browser E2E PASS** (seller adds a 6-unit
+Pack 6 at ฿500 on the variant → buyer sees “6 units per pack” → cart → checkout **฿500.00** → order
+snapshot `Pack 6 | 6 | total 6 | qty 1` → inventory 10 on hand / 6 reserved → cancel → 0 reserved →
+second pack order expires → 0 reserved). Inventory examples A–E, concurrent last-stock, exact
+12-unit release for 2 packs, double-release protection and history-after-rename/delete are in
+`backend/mvp/tests/selling-units.test.ts`.
+
+**NOT verified / outstanding:** no provider deployment (no Render/Vercel/Neon access), Stripe TEST
+round trip still keyless (pack settlement proven through webhook fixtures), image upload still
+legacy-shaped. Staging untouched. Production env, Neon, Stripe mode and deployments untouched; the
+pre-MVP pair and `db/migrations/*.sql` were not edited.

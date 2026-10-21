@@ -22,7 +22,7 @@ Vercel: velCenter-staging ┘                                          │
                                           Render: velnox-api-staging  (MVP_API_ENABLED=true)
                                                                      │
                                                                      ▼
-                                          Neon: velnox_mvp_staging  (db/mvp/schema.sql, 19 tables)
+                                          Neon: velnox_mvp_staging  (db/mvp/schema.sql, 20 tables)
 ```
 
 One Render service and one database. The three Vercel projects clone the existing
@@ -156,7 +156,7 @@ system is introduced.
 
 | Blocker | Evidence | Consequence |
 |---|---|---|
-| **Retail sets/packs are missing from the MVP** | `db/mvp/schema.sql` has no `product_selling_units` (or `pieces`/`selling_unit_*` anywhere); `backend/mvp` mentions the legacy table only in a comment forbidding it; no MVP client/UI field exists | The MVP cannot sell a “Set 6 / pack 12” at its own price with base-unit stock. The legacy schema and API still have it (`db/schema.sql` §Selling units, `backend/lib/inventory.ts`). **This is a product-scope gap, not a staging defect** — see the Phase 3c report |
+| ~~**Retail sets/packs are missing from the MVP**~~ **RESOLVED in Phase 3d** | `db/mvp/schema.sql` now has `product_selling_units` (`label`, `base_quantity`, own `price`, `is_active`) plus the `cart_items.selling_unit_id` and `order_items` snapshot columns | The MVP can sell a “Pack 6 / Pack 12” at its own price against base-unit stock (`base_units = quantity × base_quantity`). Proven by `backend/mvp/tests/selling-units.test.ts`, `db/mvp/verify.sh` §F3 and the browser E2E. Legacy sets/packs are untouched |
 | **Image upload is not implemented for the MVP** | legacy `backend/routes/upload.ts` writes `INSERT INTO media (url, key, …)`; the MVP table is `media.object_key` (no `key`) | Sellers paste image URLs; the editor says so. A real upload needs an MVP-aware presign route writing `media.object_key` |
 | **Google OAuth is parked** | `GET /api/mvp/auth/oauth` → 501; the MVP schema has no identity tables | email/password only; OAuth users from the legacy database cannot sign in |
 | Vercel/Render access | no provider credential in this workspace | §2–§3 are owner actions, unverified by the agent |

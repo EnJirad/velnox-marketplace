@@ -2,8 +2,11 @@
 
 ## Phase 2 state — ONE canonical MVP schema
 
-**Canonical now:** `db/mvp/schema.sql` — 19 tables, one order status axis, one
-inventory authority, one seller per cart/order, Stripe-only payments. Reset:
+**Canonical now:** `db/mvp/schema.sql` — 20 tables, one order status axis, one
+inventory authority, one seller per cart/order, Stripe-only payments, and retail
+selling units (`product_selling_units`: N base units for the seller's own price; 
+NO stock of its own — `inventory` stays the only stock table and a purchase
+reserves `quantity × base_quantity`). Reset:
 `db/mvp/reset.sql` (fail-closed dev/test only). Seed: `db/mvp/seed.sql`
 (categories only). Proof: `db/mvp/verify.sh` + `backend/tests/mvp-schema-contract.test.ts`.
 
@@ -22,9 +25,12 @@ MVP data model and must not be extended.
 The MVP API lives in `backend/mvp/` and reads ONLY `db/mvp/schema.sql`. It is
 mounted only when `MVP_API_ENABLED=true` (`routes` list in `backend/mvp/index.ts`),
 so the deployed pre-MVP service is unchanged until the cutover. The two trees
-never share a table: `backend/mvp/*.ts` must not name `shops`,
-`product_selling_units`, `checkout_groups`, `auth_identities`, … (pinned by
-`backend/mvp/tests/isolation.test.ts`).
+never share a schema: `backend/mvp/*.ts` must not name `shops`,
+`checkout_groups`, `auth_identities`, … (pinned by
+`backend/mvp/tests/isolation.test.ts`). `product_selling_units` now exists in
+BOTH, with deliberately different shapes (legacy: `pieces`/`status`/`is_wholesale`;
+MVP: `label`/`base_quantity`/`price`/`is_active`) — the MVP code must only ever
+mean the MVP one.
 
 - MVP API tests run on their OWN disposable database, built from
   `db/mvp/schema.sql`: `bun run test:mvp` (→ `db/mvp/test-run.sh`). They are not
