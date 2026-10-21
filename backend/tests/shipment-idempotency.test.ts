@@ -123,11 +123,19 @@ describe("shipment creation — one writer, one key, no second shipment system",
   test("exactly ONE non-test file inserts a shipment, and it is the keyed one", () => {
     const writers = new Bun.Glob("backend/**/*.ts").scanSync({ cwd: root });
     const found: string[] = [];
+    const mvpFound: string[] = [];
     for (const file of writers) {
       if (file.includes("/tests/")) continue;
-      if (read(file).includes("INSERT INTO shipments")) found.push(file);
+      if (!read(file).includes("INSERT INTO shipments")) continue;
+      // The Phase 3 MVP tree (`backend/mvp/`) is a SEPARATE implementation that
+      // talks to `db/mvp/schema.sql`, never to the pre-MVP tables this rule is
+      // about. It is held to the same exclusivity below, not exempted from it.
+      if (file.startsWith("backend/mvp/")) mvpFound.push(file);
+      else found.push(file);
     }
     expect(found).toEqual([SHIPMENT_LIB]);
+    // One writer per model: the MVP tree has exactly one shipment writer too.
+    expect(mvpFound).toEqual(["backend/mvp/seller.ts"]);
 
     const statement = keyedStatementFromSource();
     expect(statement).toContain("ON CONFLICT (order_id) DO UPDATE");

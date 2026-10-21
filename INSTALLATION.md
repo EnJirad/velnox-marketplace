@@ -355,6 +355,11 @@ so the suite is guarded:
    export TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/velnox_test?sslmode=disable'
    psql "$TEST_DATABASE_URL" -f db/run-sqleditor.sql
    bun test backend/tests
+
+   # The MVP API suite needs the MVP schema, not the pre-MVP one. This creates
+   # and drops its own disposable database (velnox_mvp_app_test) on the same
+   # cluster.
+   bun run test:mvp
    ```
 
 2. **Production is refused, never used as a fallback.** If the only database the
@@ -484,6 +489,8 @@ Backend must allow all four frontend origins:
 | `STRIPE_MODE` | Must agree with the key (`test`) or the configuration is refused | No |
 | `COD_ENABLED` | Cash-on-delivery rail (default OFF, fails closed) | No |
 | `COD_CUSTOMER_SELECTABLE` | Offer COD in the storefront (default OFF) | No |
+| `MVP_API_ENABLED` | Mounts the Phase 3 MVP API (`backend/mvp/`, `/api/mvp`) — only on a database built from `db/mvp/schema.sql` (default OFF) | No |
+| `BOOTSTRAP_OWNER_SECRET` | Secret for `POST /api/mvp/auth/bootstrap-owner`, which creates the FIRST owner on an empty MVP database; unset disables it | No — required once per new MVP DB |
 
 ### Frontend (ALL PUBLIC — type Config in Vercel)
 

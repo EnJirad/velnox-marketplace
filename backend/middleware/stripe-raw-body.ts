@@ -38,20 +38,38 @@ import express, { type NextFunction, type Request, type RequestHandler, type Res
 /** The one path whose body must never be JSON-parsed. Matches the route in `routes/stripe.ts`. */
 export const STRIPE_WEBHOOK_PATH = "/api/payments/stripe/webhook";
 
+/** Normalise a route path the way Express matches it. */
+function normalizePath(path: string): string {
+  const withoutTrailingSlash = path.replace(/\/+$/, "");
+  return (withoutTrailingSlash === "" ? "/" : withoutTrailingSlash).toLowerCase();
+}
+
 /**
- * Does this request belong to the Stripe webhook route?
+ * Does this request belong to one of the given payment-webhook paths?
  *
  * Mirrors Express's own route matching: the method is case-insensitive, the path
  * comparison is case-insensitive, and a trailing slash is ignored (Express's
  * default `strict routing: false` reaches `/x` from `/x/`). A query string is
  * already excluded because Express's `req.path` carries none.
+ *
+ * Parameterised so the MVP API tree (`/api/mvp/payments/webhook`, see
+ * `backend/mvp/webhook-body.ts`) reuses this exact rule instead of holding a
+ * second copy of the matching logic.
  */
-export function isStripeWebhookRequest(method: string, path: string): boolean {
+export function isPaymentWebhookRequest(
+  method: string,
+  path: string,
+  paths: readonly string[],
+): boolean {
   if (typeof method !== "string" || method.toUpperCase() !== "POST") return false;
   if (typeof path !== "string") return false;
-  const withoutTrailingSlash = path.replace(/\/+$/, "");
-  const normalized = (withoutTrailingSlash === "" ? "/" : withoutTrailingSlash).toLowerCase();
-  return normalized === STRIPE_WEBHOOK_PATH;
+  const normalized = normalizePath(path);
+  return paths.some((candidate) => normalizePath(candidate) === normalized);
+}
+
+/** Does this request belong to the pre-MVP Stripe webhook route? */
+export function isStripeWebhookRequest(method: string, path: string): boolean {
+  return isPaymentWebhookRequest(method, path, [STRIPE_WEBHOOK_PATH]);
 }
 
 /**
@@ -62,14 +80,16 @@ export function isStripeWebhookRequest(method: string, path: string): boolean {
  * not touch a body this parser already consumed, so the bytes the handler
  * verifies are the bytes Stripe signed.
  */
-export const stripeWebhookRawBody: RequestHandler = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  if (!isStripeWebhookRequest(req.method, req.path)) {
-    next();
-    return;
-  }
-  express.raw({ type: () => true })(req, res, next);
-};
+export function stripeWebhookRawBodyFor(paths: readonly string[]): RequestHandler {
+  const normalized = paths.map(normalizePath);
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!isPaymentWebhookRequest(req.method, req.path, normalized)) {
+      next();
+      return;
+    }
+    express.raw({ type: () => true })(req, res, next);
+  };
+}
+
+/** The pre-MVP webhook path only — unchanged behaviour. */
+export const stripeWebhookRawBody: RequestHandler = stripeWebhookRawBodyFor([STRIPE_WEBHOOK_PATH]);

@@ -10,6 +10,16 @@ are deliberately not mixed, and only one of them is canonical at a time.
 
 `db/run-update.sql` does not exist and must never be recreated.
 
+## Who reads which schema
+
+| Code | Schema | Test command |
+|---|---|---|
+| `backend/routes/*`, `backend/lib/*` (deployed pre-MVP API) | the frozen pre-MVP pair / 62 migrations | `bun test backend/tests` |
+| `backend/mvp/*` (Phase 3 MVP API, `/api/mvp`, `MVP_API_ENABLED=true`) | `db/mvp/schema.sql` only | `bun run test:mvp` |
+
+The two trees never share a table; `backend/mvp/tests/isolation.test.ts` fails
+the MVP suite if an MVP module ever names a pre-MVP table.
+
 ## Why the frozen pair still exists
 
 The backend deployed today reads the 77-table pre-MVP schema. Replacing
@@ -26,6 +36,10 @@ therefore kept byte-for-byte and scheduled for deletion in the cutover
 # Needs TEST_DATABASE_URL; creates and drops its own databases.
 TEST_DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/velnox_test \
   bash db/mvp/verify.sh          # or: bun run db:verify:mvp
+
+# Run the MVP API tests (backend/mvp/tests) against a disposable database
+# built from db/mvp/schema.sql. Never touches DATABASE_URL.
+bun run test:mvp                 # or: bash db/mvp/test-run.sh
 
 # Rebuild ONE disposable development/test database (destructive; guarded).
 VELNOX_RESET_DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/velnox_dev \

@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 2 — clean MVP database** (**§85**) — `db/mvp/schema.sql` is the canonical 19-table MVP model with a fail-closed reset and **81/81 real-PostgreSQL checks**; the pre-MVP pair + 62 migrations are FROZEN; cutover designed, not executed. Full suite **2166 pass / 16 skip / 0 fail** against PostgreSQL 14. No production DB or real Stripe TEST E2E was touched (owner action).
+**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3 — core backend rewrite** (**§86**) — the MVP API exists in `backend/mvp/` (17 modules, `/api/mvp`, `MVP_API_ENABLED` gate, MVP tables only), proved by **81/81 API tests on a disposable MVP database**; the pre-MVP API is unchanged and still deployed. Cutover designed, **not executed**. No production DB and no real Stripe TEST round trip (owner credentials).
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -212,18 +212,11 @@ conventions are in `AGENTS.md` and `.ai/README.md`.
 
 ## 9. Production Neon — read-only verification (TASK 001, 2026-09-23)
 
-**READ-ONLY.** No source, schema, migration, workflow or data change; nothing was
-connected to from this workspace (no database credentials are readable here, by
-platform design). Method, migration ledger and verified-object table archived →
+**READ-ONLY, and its headline conclusion is WRONG — superseded by §66.** Full record:
 [`history/archive/AI_Handoff-2026-09-23-neon-readonly-verification.md`](history/archive/AI_Handoff-2026-09-23-neon-readonly-verification.md).
-
-**⚠️ Its headline conclusion was wrong and is superseded by §66.** This pass reported the
-ledger matching `db/migrations/*.sql` **exactly** (49 rows / 49 files, none missing or
-orphaned) and was taken to be the production ledger. It was not: the secret it read
-(`NEON_DATABASE_URL`) pointed at a *different* Neon than Render uses. "49/49, nothing
-missing" was a true statement about the wrong database — which is exactly why the ledger
-is no longer treated as evidence about production. Never draw a production conclusion
-from a ledger read without proving the identity first.
+It reported the ledger matching `db/migrations/*.sql` exactly (49/49), but the secret it
+read pointed at a DIFFERENT Neon than Render serves. **Never draw a production conclusion
+from a ledger read without proving the database identity first.** Live items below only.
 
 ### 9.4 Still NOT VERIFIED (needs a fresh catalog read, now against the right database)
 
@@ -259,9 +252,7 @@ secret only as `psql "$NEON_PRODUCTION_DATABASE_URL"` and never echo it.
 ## 10. Production R2 / media — read-only verification (TASK 002, 2026-09-23)
 
 **Archived** → [`history/archive/AI_Handoff-2026-09-23-r2-media-verification.md`](history/archive/AI_Handoff-2026-09-23-r2-media-verification.md).
-Moved 2026-09-25 to keep this file small. Its findings were all fixed in §11
-except #7; #7's **root cause** is now closed by §13, and only its production
-*data* cleanup (an owner action needing no code) remains open there.
+Findings all fixed in §11 except #7 (production *data* cleanup, owner action).
 
 ---
 
@@ -351,18 +342,12 @@ dedicated customer, no real orders/payments) plus a live browser.
 
 ## 21–22. PostgreSQL 53000 — first pass + provider-quota classification (2026-09-27) — archived
 
-Both are **archived** (closed records; conclusions unchanged) →
-[`history/archive/AI_Handoff-2026-09-27-postgres-53000.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000.md)
-and [`…-postgres-53000-classified.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000-classified.md).
-What stays live: production threw `53000` on **connect AND query** (a provider consumption quota, not a
-connection or storage limit) and is **reachable again** (verified read-only 2026-09-27 08:09Z — `/api/shops`
-200 with real rows); the VelRepeat 60 s poll (≈182 CU-h/month vs the 100 CU-hour Free-plan allowance) is
-still an **owner cadence decision**, and the plan's Usage figures are still unreadable from a workspace.
-One unrelated fix from that pass is kept: `POST /api/admin/sellers/:id/revoke` leaked one pool connection
-per call (the only unreleased lease in the backend) and now releases it in `finally`
-(`backend/routes/seller.ts`, guarded by `backend/tests/db-client-release.test.ts`). `backend/db/index.ts`
-logs failed queries/connects with `operation` + PG `code`/`severity`/`message` only — never credentials or
-parameters. Pool: exactly one `pg.Pool` (`max: 20`) shared by HTTP + WS + scheduler.
+Both **archived** → [`…-postgres-53000.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000.md) and
+[`…-classified.md`](history/archive/AI_Handoff-2026-09-27-postgres-53000-classified.md). Live: `53000` was a
+provider consumption quota (connect AND query), production is reachable again; the VelRepeat 60 s poll is
+still an owner cadence decision. `POST /api/admin/sellers/:id/revoke` now releases its pool connection in
+`finally` (`db-client-release.test.ts`). One `pg.Pool` (`max: 20`) serves HTTP + WS + scheduler, and failed
+queries log `operation` + PG `code`/`severity`/`message` only.
 
 **Housekeeping (do not grow this file).** Superseded records live in [`history/archive/`](history/archive/)
 with a dated index at [`.ai/history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md) — §5, §8, §10, §11,
@@ -792,37 +777,57 @@ workspace.
 
 ---
 
-## §85. Phase 2 — CLEAN MVP DATABASE (2026-10-21)
+## §85. Phase 2 — CLEAN MVP DATABASE (2026-10-21) — condensed
 
-**Status: Phase 2 complete — baseline `dd8c567` (local == `origin/main` == GitHub); no destructive production action.**
-Full report: [`.ai/tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md). Cutover: [`db/mvp/cutover.md`](../db/mvp/cutover.md).
+**Phase 2 complete** — baseline `dd8c567`; no destructive production action. Full report:
+[`tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md) · cutover: [`db/mvp/cutover.md`](../db/mvp/cutover.md).
 
-**Canonical MVP schema: `db/mvp/schema.sql`** — 19 tables, zero extensions, 6 lifecycle
-triggers. One order axis (`pending_payment|paid|processing|shipped|delivered|cancelled`),
-one stock authority (`inventory`, `product_variants` has no stock), one seller per cart/order
-(composite FKs), product lifecycle `draft→submitted→approved→published` + `rejected` with
-`approval_status` GENERATED, Stripe-only payments with `payment_events.event_id` claim and one
-live session per order, NUMERIC(12,2) money everywhere.
+**`db/mvp/schema.sql` is canonical** — 19 tables, 6 lifecycle triggers, one order axis, one stock
+authority (`inventory`; variants carry no stock), one seller per cart/order (composite FKs),
+`NUMERIC(12,2)` money, Stripe-only payments with the `payment_events.event_id` claim and one live
+session per order. Reset is fail-closed (`db/mvp/reset.{sql,sh}`); seed is categories only.
+Proved by `db/mvp/verify.sh` (81/81) + `backend/tests/mvp-schema-contract.test.ts` (19/19).
 
-**Reset:** `db/mvp/reset.sql` + `db/mvp/reset.sh` — destructive, requires a `_dev`/`_test`
-database name AND `velnox.allow_reset=yes`; never reads `DATABASE_URL`; reuses
-`backend/db/test-database.ts`. **Seed:** categories only. **Proof:** `db/mvp/verify.sh`
-(**81/81**) + `backend/tests/mvp-schema-contract.test.ts` (**19/19**).
+**Frozen, not deleted:** `db/schema.sql`, `db/run-sqleditor.sql`, `db/verify-reconciler.sh`, all
+62 migrations and the four boot-time `ensure*` functions — they serve the deployed pre-MVP backend.
+Do not edit them and do not add migrations. Open flags unchanged: `my`=Burmese vs D11 Malay ·
+refunds out of scope · data carry-over a separate project · production DB identity unproven.
 
-**Frozen, not deleted:** `db/schema.sql`, `db/run-sqleditor.sql`, `db/verify-reconciler.sh`,
-all 62 migrations, and the four boot-time `ensure*` functions. They serve the deployed
-pre-MVP backend and are removed only at cutover, after Phase 3 rewrites the code. Do not edit
-them and do not add migrations.
+---
 
-**Verified:** typecheck 4/4 + backend 0 · i18n `1535×3` · full suite **2147→2166 pass /
-16 skip / 0 fail** (the +19 are the new contract tests) · `db/mvp/verify.sh` **81/81** ·
-`git diff --check` clean. **Not verified:** browser E2E, real Stripe TEST round trip, any
-production DB read/write. PostgreSQL 14 locally vs 16 in CI/Neon.
+## §86. Phase 3 — CORE BACKEND REWRITE against `db/mvp/schema.sql` (2026-10-21)
 
-**Open flags:** the repo's third locale is `my` = Burmese while D11 says Malay (no language
-change made) · editing a published product does not force re-approval (Phase 3 policy) ·
-refunds are outside the MVP · data carry-over is a separate project · production identity must
-be proven before cutover.
+**Status: Phase 3 scope COMPLETE (9/9 domains).** Baseline `1275a11` == `origin/main` == GitHub;
+final SHA in the commit that contains this section. Full report:
+[`tasks/active/mvp-clean-rewrite-phase3-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3-2026-10-21.md).
 
-**Next = Phase 3 (core backend rewrite against `db/mvp/schema.sql`). Do not start it here,
-and do not execute the cutover from this phase.**
+**Architecture — two trees, one database each.** `backend/mvp/*` serves **`/api/mvp/*`** and reads
+ONLY `db/mvp/schema.sql`; it is mounted only when `MVP_API_ENABLED=true` (`backend/mvp/index.ts`),
+so the deployed pre-MVP service is byte-identical until the cutover. The pre-MVP routes, tables,
+migrations and boot DDL are untouched and still live. `isolation.test.ts` fails the MVP suite if an
+MVP module ever names a pre-MVP table, mounts a route outside `/api/mvp`, or converts money to a
+float.
+
+**Implemented:** auth (scrypt + `revoked_tokens`, owner bootstrap, OAuth 501) · seller
+apply/approve/reject/suspend with `requireApprovedSeller` on every write · product lifecycle +
+material-change re-review (price/name/description/category/images/variants; stock exempt) ·
+public catalogue (published-only SQL) · cart (one per user+seller, DB composite FKs) · checkout
+(server pricing, snapshots, `checkout_requests` idempotency, guarded reserve, full rollback) ·
+Stripe TEST-only session + signed webhook with `payment_events` claim, amount/currency checks and
+one stock commit · order reads/cancel + seller fulfilment · admin queues, category CRUD, metrics
+and an idempotent expiry sweep.
+
+**Verified:** backend `tsc` 0 · `bun run typecheck` 4/4 · `build:apps` 4/4 · i18n `1535×3` · MVP API
+suite **81 pass / 0 fail** (439 assertions, 9 files, own disposable DB via `bun run test:mvp`) ·
+`db/mvp/verify.sh` **81/81** · schema contract **19/19** · legacy suite **2162 pass / 20 skip /
+0 fail** · `git diff --check` clean. Two real money defects (100× Stripe minor units, same bug in
+`amountMatches`) were caught by the new tests before commit and are pinned by `money.test.ts`.
+
+**Not verified / open:** no real Stripe TEST round trip (no credentials — session creation never
+reached Stripe) · Google OAuth parked (decision needed before cutover) · R2 upload not in the MVP
+API (images are URLs) · expiry sweep needs a timer at cutover · no frontend consumes `/api/mvp`, so
+no browser E2E · production DB identity still unproven. Schema facts, not bugs: no seller
+withdrawal from `submitted`/`approved`; no refund edges; shipping fee fixed `0.00`.
+
+**Next = Phase 3b:** MVP client in `packages/shared`, staging wiring + first browser E2E, OAuth and
+media decisions, then cutover steps 1–6. Do not execute the cutover or delete pre-MVP modules here.

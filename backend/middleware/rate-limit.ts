@@ -205,6 +205,14 @@ const RULES: Array<{ match: (req: Request) => boolean; limiter: RequestHandler }
   { match: (req) => req.method === "GET" && /^\/api\/products\/[^/]+\/reviews$/.test(req.path), limiter: createRateLimiter({ name: "reviews-read", windowMs: 60_000, max: 300, key: ip }) },
   { match: (req) => req.method === "GET" && /^\/api\/(products|categories|shops|memory|auth\/me)/.test(req.path), limiter: createRateLimiter({ name: "public-read", windowMs: 60_000, max: 300, key: ip }) },
 
+  // ── MVP API (/api/mvp) ───────────────────────────────────────────────────
+  // The Phase 3 tree has its own rules so a credential-stuffing attempt or a
+  // checkout retry storm cannot ride the generous public-read bucket.
+  { match: (req) => req.method === "POST" && /^\/api\/mvp\/auth\/(signup|login|bootstrap-owner)$/.test(req.path), limiter: createRateLimiter({ name: "mvp-auth", windowMs: 60_000, max: 20, key: ip }) },
+  { match: (req) => req.method === "POST" && req.path === "/api/mvp/checkout", limiter: createRateLimiter({ name: "mvp-checkout", windowMs: 60_000, max: 10 }) },
+  { match: (req) => req.method === "POST" && /^\/api\/mvp\/orders\/[^/]+\/payment-session$/.test(req.path), limiter: createRateLimiter({ name: "mvp-payment-session", windowMs: 60_000, max: 10 }) },
+  { match: (req) => req.method === "POST" && /^\/api\/mvp\/(seller|admin)\//.test(req.path), limiter: createRateLimiter({ name: "mvp-mutations", windowMs: 60_000, max: 60 }) },
+
   // ── Catch-all floor ──────────────────────────────────────────────────────
   { match: () => true, limiter: createRateLimiter({ name: "global", windowMs: 60_000, max: 600, key: ip }) },
 ];

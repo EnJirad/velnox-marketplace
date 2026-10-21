@@ -54,7 +54,8 @@ recreate them; write rules and handoff state only under `.ai/`.
 1. **Inspect before editing** — verify the file, function, route, table, and schema exist in the current repo. Previous AI memory may be stale; the repo wins.
 2. **Minimal correct change** — fix the root cause, preserve existing functionality, reuse existing systems. No duplicate tables, APIs, or components.
 3. **Source of truth** — `Neon → Backend API → Frontend`. Frontend never touches Neon or server secrets. No fake data or mock APIs unless explicitly requested.
-4. **Database source of truth (Phase 2)** — the MVP canonical schema is **`db/mvp/schema.sql`** (reset: `db/mvp/reset.sql`, proof: `db/mvp/verify.sh`). The pre-MVP pair `db/schema.sql` + `db/run-sqleditor.sql` is **FROZEN** until the Phase 3 cutover (`db/mvp/cutover.md`): do not edit either, and add no new migrations. Never recreate `db/run-update.sql`.
+4. **Database source of truth (Phase 2/3)** — the MVP canonical schema is **`db/mvp/schema.sql`** (reset: `db/mvp/reset.sql`, proof: `db/mvp/verify.sh`). The pre-MVP pair `db/schema.sql` + `db/run-sqleditor.sql` is **FROZEN** until the cutover (`db/mvp/cutover.md`): do not edit either, and add no new migrations. Never recreate `db/run-update.sql`.
+   - The MVP backend lives in **`backend/mvp/`** and is mounted at `/api/mvp` only when `MVP_API_ENABLED=true`. It reads **only** MVP tables; it must never name `shops`, `product_selling_units`, `checkout_groups`, etc. Its tests are **`bun run test:mvp`** (own disposable database) — not part of `bun test backend/tests`, which stays on the pre-MVP schema.
 5. **Verify** — `git diff --check`, typecheck/build relevant apps, and test the affected flow.
 6. **Handoff** — update `.ai/AI_HANDOFF.md` with current state + remaining gaps only (not history). Keep it small.
 7. **Auto-commit and push** — when a repository-changing task completes successfully, commit the changes and push to GitHub via Git CLI. Do not stop after editing or committing. See *Default Completion State* below and `.ai/context/workflow.md`.
@@ -79,7 +80,7 @@ If the user explicitly says *do not commit* / *do not push* / *keep changes loca
 
 ## Quick Reference
 
-- Install: `bun install` · Dev: `bun run dev:velshop` + `bun run api:dev` · Typecheck: `bun run typecheck` · DB: MVP schema = `db/mvp/schema.sql` (cutover pending), pre-MVP bootstrap = `db/run-sqleditor.sql` (`db/README.md`)
+- Install: `bun install` · Dev: `bun run dev:velshop` + `bun run api:dev` · Typecheck: `bun run typecheck` · DB: MVP schema = `db/mvp/schema.sql` (cutover pending), pre-MVP bootstrap = `db/run-sqleditor.sql` (`db/README.md`) · MVP API tests: `bun run test:mvp`
 - Docs: `INSTALLATION.md` (setup), `VELNOX_DESIGN_THEME.md` (design source of truth), `.ai/README.md` (agent workspace + full context map)
 - Repo: `https://github.com/EnJirad/velnox-marketplace.git`
 

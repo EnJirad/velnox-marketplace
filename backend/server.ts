@@ -7,6 +7,8 @@ import { rateLimitSecurity } from "./middleware/rate-limit.js";
 import { createOriginGuard } from "./middleware/origin-guard.js";
 import { requireDiagAccess } from "./middleware/diag-guard.js";
 import { stripeWebhookRawBody } from "./middleware/stripe-raw-body.js";
+import { mvpWebhookRawBody } from "./mvp/webhook-body.js";
+import { isMvpApiEnabled, setupMvpRoutes } from "./mvp/index.js";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { describeDatabaseIdentity } from "./db/index.js";
@@ -55,6 +57,9 @@ app.use(cookieParser());
 // lives in middleware/stripe-raw-body.ts and is covered by tests, so this order
 // cannot silently drift. MUST stay BEFORE express.json.
 app.use(stripeWebhookRawBody);
+// The MVP webhook lives under /api/mvp (see backend/mvp/) and needs the same
+// byte-exact body BEFORE express.json(). Same matcher, different path list.
+app.use(mvpWebhookRawBody);
 
 // JSON payload cap. All bodies here are small (chat ≤4k chars, reviews ≤2k,
 // checkout/address metadata) — R2 file bytes go straight to Cloudflare via
@@ -552,6 +557,16 @@ registerVerificationRoutes(app);
 
 // ─── Seller Intelligence (goals / income / reorder suggestions) ──────────
 setupSellerIntelligenceRoutes(app);
+
+// ─── MVP API (Phase 3) — isolated namespace, opt-in ─────────────────────
+// The MVP backend (`backend/mvp/`) reads ONLY `db/mvp/schema.sql` tables and is
+// mounted under `/api/mvp`. It stays OFF unless `MVP_API_ENABLED=true` because
+// the deployed database is still the pre-MVP one; the Phase 3 cutover flips the
+// flag together with `DATABASE_URL` (db/mvp/cutover.md §3). No pre-MVP route and
+// no pre-MVP table is touched by enabling it.
+if (isMvpApiEnabled()) {
+  setupMvpRoutes(app);
+}
 
 // ─── WebSocket ──────────────────────────────────────────
 // maxPayload caps WebSocket frames (control + presence frames only — chat

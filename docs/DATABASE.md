@@ -116,10 +116,37 @@ After the cutover, the first MVP migration strategy must be chosen before the
 first post-cutover change. Do not add files to `db/migrations/`: that directory
 is pre-MVP history and is frozen.
 
+## The MVP API (`backend/mvp/`) and its tables
+
+Phase 3 adds the MVP backend as a self-contained tree that reads **only** the
+tables above. It is mounted under `/api/mvp` and is enabled by
+`MVP_API_ENABLED=true`; the pre-MVP routes mounted in `server.ts` are untouched.
+
+| Domain | Tables it writes | Tables it reads |
+|---|---|---|
+| Auth | `users`, `revoked_tokens` | `users` |
+| Seller | `seller_profiles`, `users.role` | `seller_profiles` |
+| Catalogue | — | `categories`, `products`, `product_variants`, `product_images`, `inventory`, `seller_profiles` |
+| Seller products | `products`, `product_variants`, `product_images`, `inventory`, `audit_logs` | own product rows |
+| Cart | `carts`, `cart_items` | `products`, `product_variants`, `inventory`, `seller_profiles` |
+| Checkout / orders | `orders`, `order_items`, `checkout_requests`, `carts`, `cart_items`, `inventory`, `audit_logs` | `addresses`, `products`, `product_variants`, `seller_profiles` |
+| Payments | `payments`, `payment_events`, `orders`, `inventory`, `audit_logs` | `payments`, `order_items` |
+| Admin | `seller_profiles`, `products`, `categories`, `users`, `audit_logs` | all of the above (counts only) |
+
+Money is `NUMERIC(12,2)` everywhere; `backend/mvp/*` never converts a money
+column to a JavaScript number. The lifecycle machines stay in the database
+triggers — the API maps a refused transition to HTTP 409 instead of restating
+the machine.
+
 ## Verification
 
 ```bash
 bun run typecheck
-bun test backend/tests/mvp-schema-contract.test.ts   # static contract
-bun run db:verify:mvp                                # real PostgreSQL, 81 checks
+bun test backend/tests/mvp-schema-contract.test.ts   # static contract (pre-MVP suite)
+bun run db:verify:mvp                                # real PostgreSQL, 81 schema checks
+bun run test:mvp                                     # MVP API, disposable MVP database
 ```
+
+`bun run test:mvp` creates `velnox_mvp_app_test` on the cluster named by
+`TEST_DATABASE_URL`, applies `db/mvp/schema.sql`, runs `bun test backend/mvp/tests`
+and drops the database. It never reads `DATABASE_URL`.

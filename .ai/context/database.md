@@ -17,6 +17,23 @@ Everything below this banner documents the **pre-MVP** pair. It remains the
 operational truth for the currently deployed database, but it is **not** the
 MVP data model and must not be extended.
 
+## Phase 3 state — the MVP backend exists, isolated under `/api/mvp`
+
+The MVP API lives in `backend/mvp/` and reads ONLY `db/mvp/schema.sql`. It is
+mounted only when `MVP_API_ENABLED=true` (`routes` list in `backend/mvp/index.ts`),
+so the deployed pre-MVP service is unchanged until the cutover. The two trees
+never share a table: `backend/mvp/*.ts` must not name `shops`,
+`product_selling_units`, `checkout_groups`, `auth_identities`, … (pinned by
+`backend/mvp/tests/isolation.test.ts`).
+
+- MVP API tests run on their OWN disposable database, built from
+  `db/mvp/schema.sql`: `bun run test:mvp` (→ `db/mvp/test-run.sh`). They are not
+  part of `bun test backend/tests`, which stays on the pre-MVP schema.
+- Money is `NUMERIC(12,2)` end to end; `backend/mvp/*` never converts a money
+  column to `Number`/`parseFloat` (`isolation.test.ts`).
+- Lifecycle machines stay in the database triggers. The side that decides is
+  `db/mvp/schema.sql`; the API maps `23514`/`P0001` to **409**.
+
 ## Source of Truth (runtime)
 
 Neon PostgreSQL. Single `pg.Pool` in `backend/db/index.ts` (SSL `verify-full`). Frontend never connects directly.

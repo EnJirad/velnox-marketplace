@@ -135,5 +135,13 @@ jobs:
       - name: Run the test suite
         run: bun test backend/tests
 
+      # The MVP API (Phase 3) is written against db/mvp/schema.sql, which is NOT
+      # what db/run-sqleditor.sql bootstraps above. It therefore runs against its
+      # own disposable database, created and dropped by db/mvp/test-run.sh on the
+      # same service container. `bun test backend/tests` never picks these files
+      # up (they live in backend/mvp/tests) and vice versa.
+      - name: Run the MVP API suite (clean MVP schema)
+        run: bun run test:mvp
+
       - name: Whitespace hygiene
         run: git diff --check
