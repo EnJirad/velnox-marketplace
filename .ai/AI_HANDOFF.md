@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3 — core backend rewrite** (**§86**) — the MVP API exists in `backend/mvp/` (17 modules, `/api/mvp`, `MVP_API_ENABLED` gate, MVP tables only), proved by **81/81 API tests on a disposable MVP database**; the pre-MVP API is unchanged and still deployed. Cutover designed, **not executed**. No production DB and no real Stripe TEST round trip (owner credentials).
+**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3b — MVP client integration** (**§87**) — `packages/shared/src/mvp` (client, route table, fail-closed mode switch) now drives VelShop, VelSeller and VelCenter behind `VITE_API_MODE`, proved by a **client-level E2E through the real API** plus **86/86 MVP** and **2166/2166 legacy** tests. Staging backend/DB deployment and the Stripe TEST round trip are **NOT done** (no credentials/infrastructure here). Cutover **not executed**; production untouched.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -400,14 +400,10 @@ first · VelShop groups order history by the purchase, and the seller scope is u
 
 **Moved verbatim on 2026-10-07** (same housekeeping) →
 [`history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md`](history/archive/AI_Handoff-2026-10-04-sections-65-66-multi-shop-and-migration-routing.md).
-**Still live from it — the durable finding:** migrations were applied to the database named
-by the Actions secret `NEON_DATABASE_URL`, which is **NOT** the database Render's `DATABASE_URL`
-points at (disjoint shops/users/products), so every "production schema verified" claim resting on
-that ledger is suspect. The owner action is to set `NEON_PRODUCTION_DATABASE_URL` and dispatch
-`production-db-migrate.yml`; **do not** hand-apply 054 elsewhere and do not remove
-`checkout_groups` usage. Verdict stays **BLOCKED**, never PASS, until a real logged-in checkout is
-observed there. The general rule this produced is in [`context/database.md`](context/database.md):
-the `42703` error text can never prove which database, or which build, you are on.
+**Still live from it:** migrations were applied to the database named by `NEON_DATABASE_URL`,
+which is **NOT** Render's `DATABASE_URL` — so every "production schema verified" claim resting on
+that ledger is suspect. Rule: the `42703` error text can never prove which database or build you are
+on ([`context/database.md`](context/database.md)).
 
 ---
 
@@ -418,16 +414,6 @@ The durable rule is in [`context/database.md`](context/database.md) and applies 
 `ERROR: column "x" does not exist` is emitted both when no relation in scope owns `x` AND when the
 relation in scope simply lacks `x` — byte-identically. **The error text can never prove a query is
 unqualified or that a build is stale.** Ask the catalog, or ask which database you are on.
-
-## Boot-time database identity + PART 8 shape assertions + the reproduced incident (2026-10-04) — **ARCHIVED**
-
-**Archived** (all COMPLETE; the contracts live in [`.ai/context/database.md`](context/database.md)
-— the boot-time `describeDatabaseIdentity()` probe, PART 7/8's type/index/FK-shape assertions,
-and `db/verify-reconciler.sh` scenarios H and I) →
-[`history/archive/AI_Handoff-2026-10-04-db-identity-and-part8.md`](history/archive/AI_Handoff-2026-10-04-db-identity-and-part8.md).
-Moved 2026-10-04 to keep the current-state file small while adding the payment-integrity
-section. The owner action it recorded (run `db/run-sqleditor.sql` against Render's actual
-database) is restated there and in §6.
 
 ## Canonical production DB + GitHub Actions alignment (2026-10-04) — ARCHIVED
 
@@ -458,11 +444,9 @@ is what the covering-set resolver (`lib/payment-attempt.ts`) and `terminateCheck
 ## §68. Multi-shop PromptPay — "Failed to create checkout session" (2026-10-05) — **ARCHIVED**
 
 **Record moved verbatim** → [`history/archive/AI_Handoff-2026-10-05-section-68-checkout-group-session-open.md`](history/archive/AI_Handoff-2026-10-05-section-68-checkout-group-session-open.md).
-**Still live from it (the fix is SHIPPED):** `paymentsCheckoutGroupColumnExists()` — a cached `pg_attribute`
-probe with a `__resetPaymentsGroupColumnCache()` seam — answers **503 `CHECKOUT_GROUP_UNAVAILABLE` BEFORE
-`sessions.create`**, so no orphan payable URL is ever opened when the column is missing; the async
-`logCheckoutSessionFailure()` emits one JSON line (`failure_stage`/`order_id`/`checkout_group_id`/
-`payment_attempt_id`/`stripe_session_id`/…) while the client sees only generic text; a failed group INSERT
+**Still live from it:** the column probe answers **503 `CHECKOUT_GROUP_UNAVAILABLE` BEFORE
+`sessions.create`**, so no orphan payable URL is opened when the column is missing; failures log one
+structured line while the client sees generic text; a failed group INSERT
 **expires** the session it just created; and the request key is claimed on the group path too, after ownership
 is verified. Owner action restated by **§69**.
 
@@ -721,24 +705,15 @@ have made the schema repair unverifiable. Needs its own task, measured before/af
 **Status: Phase 0 complete — WAITING FOR OWNER DECISIONS. No code changed.**
 Full report: [`.ai/tasks/active/mvp-clean-rewrite-phase0-audit-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase0-audit-2026-10-21.md).
 
-Audited at `d653a37` (local == `origin/main`, tree clean). Current system: **77 tables**,
-**≥165 API paths**, **22 route modules**, **~127k TS lines**, **62 migrations**, 4 apps,
-WebSocket, 3 workers. The rewrite is deletion-led: ~10–12k backend lines, 15–18 tables,
-~120 endpoints, 2 apps, all migrations. Proven parts to preserve (do not rewrite blindly):
-server-authoritative checkout pricing/stock, guarded stock reservation, `checkout_requests`
-idempotency, Stripe raw-body signature + event claim + refund recomputation, seller
-`status='approved'` gate, JWT revocation/origin/rate-limit, R2 presign, test-DB fail-closed.
-
-**Phase 0 found no mock/fake production data and no TODO/FIXME.** It did find 16 dead
-schema tables (12 LEGACY + 4 UNUSED), boot-time DDL in `server.ts`, and an unsigned OAuth
-`state` (returnTo carrier, not CSRF protection) to fix in the auth rewrite.
-
-**Blocking decisions (report §13):** D1 reset target (recommend new empty DB, never wipe
-production first) · D2 product approval · D3 sets/packs · D4 multi-shop checkout ·
-D5 Stripe-only · D6 Google-only · D7 owner/admin only · D8 drop reviews/wishlist/chat/goals ·
-D9 delete `apps/velnox` · D10 one schema + reset script, delete migrations · D11 keep 3
-languages · D12 simple seller approval. **Still unanswered — they block Phase 2, not the
-zero-decision part of Phase 1 that §84 delivered.**
+Audited at `d653a37` (local == `origin/main`, tree clean): **77 tables**, **≥165 API paths**, **22
+route modules**, **62 migrations**. The rewrite is deletion-led. Proven parts to preserve: server-
+authoritative checkout pricing/stock, guarded reservation, `checkout_requests` idempotency, Stripe
+raw-body signature + event claim, seller `status='approved'` gate, JWT revocation/origin/rate-limit,
+R2 presign, test-DB fail-closed. **No mock/fake production data, no TODO/FIXME**; 16 dead tables,
+boot-time DDL and an unsigned OAuth `state` were found. Decisions D1–D12 (reset target, approval,
+sets/packs, multi-shop, Stripe-only, Google-only, admin roles, drop reviews/wishlist/chat/goals,
+`apps/velnox`, one schema, 3 languages, seller approval) are recorded in the report; the ones that
+mattered downstream were answered by Phases 2–3.
 
 ---
 
@@ -803,32 +778,71 @@ commit). Full report:
 [`tasks/active/mvp-clean-rewrite-phase3-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3-2026-10-21.md).
 
 **Architecture — two trees, one database each.** `backend/mvp/*` serves **`/api/mvp/*`** and reads
-ONLY `db/mvp/schema.sql`; it is mounted only when `MVP_API_ENABLED=true` (`backend/mvp/index.ts`),
-so the deployed pre-MVP service is byte-identical until the cutover. The pre-MVP routes, tables,
-migrations and boot DDL are untouched and still live. `isolation.test.ts` fails the MVP suite if an
-MVP module ever names a pre-MVP table, mounts a route outside `/api/mvp`, or converts money to a
-float.
+ONLY `db/mvp/schema.sql`; mounted only when `MVP_API_ENABLED=true`, so the deployed pre-MVP service
+was byte-identical until the cutover. `isolation.test.ts` fails the MVP suite if an MVP module names
+a pre-MVP table, mounts a route outside `/api/mvp`, or converts money to a float. Implemented: auth
+(scrypt + `revoked_tokens`, OAuth 501) · seller apply/review · product lifecycle + material-change
+re-review · published-only catalogue · one cart per seller · checkout (server pricing, snapshots,
+idempotency, guarded reserve, rollback) · Stripe TEST-only session + signed webhook · order
+reads/cancel + seller fulfilment · admin queues, categories, metrics, expiry sweep.
 
-**Implemented:** auth (scrypt + `revoked_tokens`, owner bootstrap, OAuth 501) · seller
-apply/approve/reject/suspend with `requireApprovedSeller` on every write · product lifecycle +
-material-change re-review (price/name/description/category/images/variants; stock exempt) ·
-public catalogue (published-only SQL) · cart (one per user+seller, DB composite FKs) · checkout
-(server pricing, snapshots, `checkout_requests` idempotency, guarded reserve, full rollback) ·
-Stripe TEST-only session + signed webhook with `payment_events` claim, amount/currency checks and
-one stock commit · order reads/cancel + seller fulfilment · admin queues, category CRUD, metrics
-and an idempotent expiry sweep.
+**Verified at the time:** backend `tsc` 0 · typecheck 4/4 · builds 4/4 · i18n `1535×3` · MVP suite
+81/81 · `db/mvp/verify.sh` 81/81 · schema contract 19/19 · legacy 2162/0. Two real money defects
+(100× Stripe minor units, same bug in `amountMatches`) were caught by the new tests.
+**Open then:** no Stripe round trip · OAuth parked · R2 not in the MVP API · no consumer of
+`/api/mvp`. All four are addressed or re-stated in §87.
 
-**Verified:** backend `tsc` 0 · `bun run typecheck` 4/4 · `build:apps` 4/4 · i18n `1535×3` · MVP API
-suite **81 pass / 0 fail** (439 assertions, 9 files, own disposable DB via `bun run test:mvp`) ·
-`db/mvp/verify.sh` **81/81** · schema contract **19/19** · legacy suite **2162 pass / 20 skip /
-0 fail** · `git diff --check` clean. Two real money defects (100× Stripe minor units, same bug in
-`amountMatches`) were caught by the new tests before commit and are pinned by `money.test.ts`.
+---
 
-**Not verified / open:** no real Stripe TEST round trip (no credentials — session creation never
-reached Stripe) · Google OAuth parked (decision needed before cutover) · R2 upload not in the MVP
-API (images are URLs) · expiry sweep needs a timer at cutover · no frontend consumes `/api/mvp`, so
-no browser E2E · production DB identity still unproven. Schema facts, not bugs: no seller
-withdrawal from `submitted`/`approved`; no refund edges; shipping fee fixed `0.00`.
+---
 
-**Next = Phase 3b:** MVP client in `packages/shared`, staging wiring + first browser E2E, OAuth and
-media decisions, then cutover steps 1–6. Do not execute the cutover or delete pre-MVP modules here.
+## §87. Phase 3b — MVP CLIENT INTEGRATION (2026-10-21) — condensed
+
+**Client work DONE and verified locally; staging deployment + Stripe TEST round trip NOT performed**
+(no infrastructure or credentials here). Baseline `11aa59c` == `origin/main` == GitHub before edits.
+Full report: [`tasks/active/mvp-clean-rewrite-phase3b-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3b-2026-10-21.md).
+
+**NEW `packages/shared/src/mvp/`** — `config.ts` (the ONE switch), `routes.ts` (`/api/mvp` table,
+separate from `lib/api-routes.ts`), `client.ts` (envelope, cookie credentials, 15 s timeout, typed
+`MvpApiError`, injectable fetch), `api.ts` (one typed fn per route), `types.ts`, `ui.tsx` (query
+hook, loading/error/empty states, money formatting, auth panel, session provider/guard). The only
+edit to an existing shared module is `lib/api-client.ts`: `me`/`logout` follow the resolved mode, so
+`RequireAuth` works in both trees. Legacy stays the default; `lib/api-routes.ts` is unchanged.
+
+**MODE SWITCH, fail-closed.** Only the literal `VITE_API_MODE=mvp` opts in. A build that sets it
+without `VITE_DEPLOY_ENV=staging` resolves to LEGACY (`MVP_FORBIDDEN_IN_PRODUCTION`) — a `vite
+build` always reports `PROD=true`, so staging must declare itself. `VITE_API_URL` must be a bare
+http(s) origin or MVP is refused (`INVALID_API_URL`). These are public `VITE_*` values; the
+credential stays the httpOnly cookie.
+
+**FRONTENDS.** Each `main.tsx` branches ONCE on `isMvpMode()`; flag off = the legacy providers,
+routes and tab bars exactly as before. velShop MVP mounts its own storefront and `MvpCartProvider`
+(the legacy `CartProvider` is NOT mounted in MVP mode). velSeller mounts workspace/apply/product
+editor/variants/absolute inventory/submit/publish/fulfilment; velCenter mounts metrics, seller and
+product review, categories and the expiry sweep. **No client-side authorisation decision exists** —
+the API answers 403 to a customer or a pending seller.
+
+**EXPIRY (Phase F).** `backend/jobs/mvp-order-expiry-scheduler.ts` follows the existing
+`backend/jobs/*` pattern, refuses to start unless `MVP_API_ENABLED=true`, is disabled by
+`MVP_ORDER_EXPIRY_SCHEDULER=off`, and inherits idempotency from `expireStaleOrders`. **R2 upload is
+NOT reusable** — legacy presign inserts `media (url, key, …)` while the MVP table is
+`media.object_key`; MVP images are URLs only.
+
+**Verified:** MVP suite **86 pass / 0 fail** (11 files, incl. `client-e2e.test.ts` driving the
+SHARED client through a cookie jar: signup → apply → 403 while pending → admin approve → draft →
+variant → inventory → submit → 404 publicly → approve → publish → cart → checkout → duplicate key
+returns the SAME order → `settled:false` → foreign order 404 → customer admin 403 → seller
+`pending_payment → processing` 409 → metrics → anonymous cart 401) · legacy **2166 / 16 skip / 0
+fail** · shared **29 pass** · typecheck 4/4 · backend tsc 0 · builds 4/4 (+ an MVP-mode staging build)
+· i18n `1535×3` · `git diff --check` clean.
+
+**NOT verified:** deployed staging stack, a real browser pass, the Stripe round trip (no
+`STRIPE_SECRET_KEY` here — only the contract: live keys refused, 503 unconfigured, signature/
+duplicate/amount checks, never paid by redirect), R2 upload (proven incompatible).
+
+**Owner actions:** staging MVP DB from `db/mvp/schema.sql` → staging backend with
+`MVP_API_ENABLED=true` + staging-only secrets → staging frontends with `VITE_API_MODE=mvp`,
+`VITE_DEPLOY_ENV=staging`, `VITE_API_URL` → one browser pass → decide Google OAuth + media upload.
+Production env, database, Stripe mode and deployments were NOT touched.
+
+**Next = Phase 3c:** deploy that staging stack, run the checklist, then settle OAuth + media.
