@@ -3,6 +3,13 @@
 **Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3d — retail sets/packs** (**§89**) — the MVP now sells seller-defined packs (`product_selling_units`, own price, `base_units = qty × base_quantity`) against the one `inventory` table, with cart/order snapshots, seller UI, storefront selector, admin review and a **real Chromium pack-purchase E2E**. Staging is **NOT deployed** (no provider access); Stripe TEST still keyless. Production untouched; cutover **not executed**.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
+> ⚠️ **OPEN PRODUCTION INCIDENT (2026-10-21, unchanged since §82):** Render checkout fails with
+> `42703 column "order_state" of relation "orders" does not exist` (plus `product_selling_units`
+> missing). The database is behind migrations 056/058/059; the repository is correct. Repair is
+> **proven and blocked** — `Production DB Migrate`/`Verify` both hard-stop because the secret
+> `NEON_PRODUCTION_DATABASE_URL` does not exist, so no migration has ever reached production.
+> Diagnosis, proof and the owner runbook: `.ai/tasks/active/production-schema-drift-repair-2026-10-21.md`.
+
 > **Keep this file small.** This environment's file-edit tools stop matching past
 > roughly **55 KB** in a file, so a handoff that grows past that can no longer be
 > edited in place. New work is appended at the bottom; if this file approaches
