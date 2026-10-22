@@ -256,6 +256,7 @@ export interface SellerProfile {
   store_name: string;
   slug: string;
   status: "pending" | "approved" | "rejected" | "suspended";
+  description?: string | null;
   rejection_reason: string | null;
   suspension_reason: string | null;
 }

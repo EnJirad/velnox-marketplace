@@ -6,6 +6,7 @@
  * by a user id it holds in the browser.
  */
 import { Button } from "@velnox/shared/components/ui/button";
+import { useLanguage } from "@velnox/shared/lib/i18n";
 import { getMvpApi } from "@velnox/shared/mvp";
 import { MvpEmpty, MvpErrorState, MvpLoading, formatDate, formatMoney, useMvpQuery } from "@velnox/shared/mvp/ui";
 import { ChevronRight } from "lucide-react";
@@ -13,23 +14,24 @@ import { Link } from "react-router";
 import { OrderStatusBadge } from "./components";
 
 export default function OrdersPage() {
+  const { t } = useLanguage();
   const orders = useMvpQuery(() => getMvpApi().orders.list(), []);
 
   return (
     <div className="grid gap-5">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">My orders</h1>
-        <p className="mt-1 text-sm text-slate-500">Every order you placed, newest first.</p>
+        <h1 className="text-2xl font-black tracking-tight text-slate-900">{t("orders.title")}</h1>
+        <p className="mt-1 text-sm text-slate-500">{t("orders.desc")}</p>
       </div>
 
       {orders.loading ? (
-        <MvpLoading label="Loading your orders…" />
+        <MvpLoading label={t("common.loading")} />
       ) : orders.error ? (
         <MvpErrorState error={orders.error} onRetry={orders.reload} />
       ) : (orders.data ?? []).length === 0 ? (
-        <MvpEmpty title="No orders yet" description="Orders you place will show up here.">
+        <MvpEmpty title={t("orders.emptyTitle")} description={t("orders.emptyDesc")}>
           <Button asChild className="bg-[#10B981] text-white hover:bg-[#059669]">
-            <Link to="/products">Start shopping</Link>
+            <Link to="/products">{t("orders.goShopping")}</Link>
           </Button>
         </MvpEmpty>
       ) : (

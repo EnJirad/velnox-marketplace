@@ -138,6 +138,19 @@ export function setupMvpCatalogRoutes(app: Express): void {
       const category = optionalString(req.query.category, "category", { max: 120 });
       const q = optionalString(req.query.q, "q", { max: 120 });
       const seller = optionalString(req.query.seller, "seller", { max: 120 });
+      // Sorting is a closed vocabulary, never interpolated user text.
+      const sortParam = optionalString(req.query.sort, "sort", { max: 20 }) ?? "newest";
+      const ORDER_BY: Record<string, string> = {
+        newest: "p.published_at DESC NULLS LAST, p.created_at DESC",
+        oldest: "p.published_at ASC NULLS LAST, p.created_at ASC",
+        price_asc: "p.price ASC, p.name ASC",
+        price_desc: "p.price DESC, p.name ASC",
+        name: "p.name ASC",
+      };
+      const orderBy = ORDER_BY[sortParam];
+      if (!orderBy) {
+        throw badRequest("INVALID_SORT", "sort must be newest, oldest, price_asc, price_desc or name");
+      }
       const sellerId = seller && UUID.test(seller) ? seller : null;
       const sellerSlug = seller && !UUID.test(seller) ? seller : null;
 
@@ -159,6 +172,10 @@ export function setupMvpCatalogRoutes(app: Express): void {
                   LIMIT 1) AS image_url,
                 COALESCE((SELECT SUM(i.quantity - i.reserved) FROM inventory i
                            WHERE i.product_id = p.id), 0)::int AS available,
+                (SELECT ROUND(AVG(r.rating)::numeric, 1) FROM product_reviews r
+                  WHERE r.product_id = p.id AND r.status = 'published') AS rating,
+                (SELECT COUNT(*)::int FROM product_reviews r
+                  WHERE r.product_id = p.id AND r.status = 'published') AS review_count,
                 COUNT(*) OVER ()::int AS total_count
            FROM products p
            JOIN seller_profiles sp ON sp.id = p.seller_id AND sp.status = 'approved'
@@ -167,7 +184,7 @@ export function setupMvpCatalogRoutes(app: Express): void {
             AND ($2::text IS NULL OR p.name ILIKE $2)
             AND ($3::uuid IS NULL OR p.seller_id = $3::uuid)
             AND ($4::text IS NULL OR sp.slug = $4)
-          ORDER BY p.published_at DESC NULLS LAST, p.created_at DESC
+          ORDER BY ${orderBy}
           LIMIT $5 OFFSET $6`,
         params,
       );
@@ -183,6 +200,8 @@ export function setupMvpCatalogRoutes(app: Express): void {
         imageUrl: row.image_url,
         available: Number(row.available),
         publishedAt: row.published_at,
+        rating: row.rating === null || row.rating === undefined ? null : Number(row.rating),
+        reviewCount: Number(row.review_count ?? 0),
         seller: { id: row.seller_id, storeName: row.store_name, slug: row.seller_slug },
       }));
 
@@ -200,7 +219,11 @@ export function setupMvpCatalogRoutes(app: Express): void {
       const productResult = await query(
         `SELECT p.id, p.slug, p.name, p.description, p.price, p.category_slug,
                 p.published_at, p.created_at,
-                sp.id AS seller_id, sp.store_name, sp.slug AS seller_slug, sp.description AS seller_description
+                sp.id AS seller_id, sp.store_name, sp.slug AS seller_slug, sp.description AS seller_description,
+                (SELECT ROUND(AVG(r.rating)::numeric, 1) FROM product_reviews r
+                  WHERE r.product_id = p.id AND r.status = 'published') AS rating,
+                (SELECT COUNT(*)::int FROM product_reviews r
+                  WHERE r.product_id = p.id AND r.status = 'published') AS review_count
            FROM products p
            JOIN seller_profiles sp ON sp.id = p.seller_id AND sp.status = 'approved'
           WHERE p.slug = $1 AND p.status = 'published'`,
@@ -252,6 +275,8 @@ export function setupMvpCatalogRoutes(app: Express): void {
           currency: "THB",
           categorySlug: product.category_slug,
           publishedAt: product.published_at,
+          rating: product.rating === null ? null : Number(product.rating),
+          reviewCount: Number(product.review_count ?? 0),
           seller: {
             id: product.seller_id,
             storeName: product.store_name,

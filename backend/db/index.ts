@@ -200,9 +200,11 @@ export const SLOW_QUERY_MS = 150;
 export const MVP_SCHEMA_OBJECTS = [
   "users",
   "revoked_tokens",
+  "user_identities",
   "seller_profiles",
   "categories",
   "products",
+  "product_favorites",
   "product_images",
   "product_variants",
   "inventory",
@@ -213,6 +215,7 @@ export const MVP_SCHEMA_OBJECTS = [
   "cart_items",
   "orders",
   "order_items",
+  "product_reviews",
   "shipments",
   "checkout_requests",
   "payments",
@@ -248,7 +251,7 @@ export function safeDatabaseLabel(connectionString: string | undefined | null): 
 }
 
 /**
- * Which database this process is talking to, and whether the 20 MVP tables are
+ * Which database this process is talking to, and whether the 23 MVP tables are
  * actually there. READ-ONLY by contract — it is a `SELECT`, never DDL, so it is
  * safe to run at boot on production.
  *

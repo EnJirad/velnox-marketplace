@@ -209,6 +209,11 @@ const RULES: Array<{ match: (req: Request) => boolean; limiter: RequestHandler }
   // The Phase 3 tree has its own rules so a credential-stuffing attempt or a
   // checkout retry storm cannot ride the generous public-read bucket.
   { match: (req) => req.method === "POST" && /^\/api\/mvp\/auth\/(signup|login|bootstrap-owner)$/.test(req.path), limiter: createRateLimiter({ name: "mvp-auth", windowMs: 60_000, max: 20, key: ip }) },
+  { match: (req) => req.method === "GET" && /^\/api\/mvp\/auth\/google\//.test(req.path), limiter: createRateLimiter({ name: "mvp-oauth", windowMs: 60_000, max: 60, key: ip }) },
+  { match: (req) => req.method === "POST" && /^\/api\/mvp\/profile\/avatar\/(presign|confirm)$/.test(req.path), limiter: createRateLimiter({ name: "mvp-avatar", windowMs: 60_000, max: 20 }) },
+  { match: (req) => req.method === "POST" && /^\/api\/mvp\/products\/[^/]+\/reviews$/.test(req.path), limiter: createRateLimiter({ name: "mvp-review-create", windowMs: 60_000, max: 10 }) },
+  { match: (req) => (req.method === "PATCH" || req.method === "DELETE") && /^\/api\/mvp\/reviews\/[^/]+$/.test(req.path), limiter: createRateLimiter({ name: "mvp-review-mutate", windowMs: 60_000, max: 10 }) },
+  { match: (req) => (req.method === "POST" || req.method === "DELETE") && /^\/api\/mvp\/favorites\//.test(req.path), limiter: createRateLimiter({ name: "mvp-favorites", windowMs: 60_000, max: 60 }) },
   { match: (req) => req.method === "POST" && req.path === "/api/mvp/checkout", limiter: createRateLimiter({ name: "mvp-checkout", windowMs: 60_000, max: 10 }) },
   { match: (req) => req.method === "POST" && /^\/api\/mvp\/orders\/[^/]+\/payment-session$/.test(req.path), limiter: createRateLimiter({ name: "mvp-payment-session", windowMs: 60_000, max: 10 }) },
   { match: (req) => req.method === "POST" && /^\/api\/mvp\/(seller|admin)\//.test(req.path), limiter: createRateLimiter({ name: "mvp-mutations", windowMs: 60_000, max: 60 }) },

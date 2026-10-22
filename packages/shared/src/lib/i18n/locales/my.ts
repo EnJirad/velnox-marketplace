@@ -58,6 +58,10 @@ export const my = {
     close: "ပိတ်မည်",
     save: "သိမ်းမည်",
     search: "ရှာဖွေမည်",
+    sortNewest: "အသစ်ဆုံး",
+    sortPriceAsc: "စျေးနှုန်း: နိမ့် → မြင့်",
+    sortPriceDesc: "စျေးနှုန်း: မြင့် → နိမ့်",
+    sortName: "အမည် A–Z",
     all: "အားလုံး",
     viewAll: "အားလုံးကြည့်ရန်",
     products: "ကုန်ပစ္စည်းများ",
@@ -84,7 +88,38 @@ export const my = {
     profile: "ပရိုဖိုင်",
     notifications: "အသိပေးချက်များ",
     velrepeat: "အလိုအလျောက်မှာယူမှု",    account: "ကျွန်ုပ်၏ အကောင့်",
+    sellerDashboard: "ရောင်းချသူ ဒက်ရှ်ဘုတ်",
     ariaMobile: "မိုဘိုင်းပေါ်ရှိ ပင်မမီနူး",
+  },
+
+  role: {
+    owner: "ကုမ္ပဏီပိုင်ရှင်",
+    admin: "စီမံခန့်ခွဲသူ",
+    seller: "ရောင်းချသူ",
+    customer: "ဖောက်သည်",
+  },
+
+  sellerNav: {
+    overview: "ခြုံငုံကြည့်ရှုမှု",
+    products: "ကျွန်ုပ်၏ ကုန်ပစ္စည်းများ",
+    orders: "အမှာစာများ",
+    profile: "ဆိုင် ပရိုဖိုင်",
+    profileTitle: "ဆိုင် ပရိုဖိုင်",
+    profileDesc: "သင့်ကုန်ပစ္စည်းများတွင် ဖောက်သည်များ မြင်ရသော အမည်နှင့် ဖော်ပြချက်",
+    profileSave: "ပရိုဖိုင် သိမ်းမည်",
+    profileSaved: "ဆိုင် ပရိုဖိုင် သိမ်းပြီးပါပြီ",
+    profileFailed: "ဆိုင် ပရိုဖိုင် မသိမ်းနိုင်ပါ",
+    verifiedBadge: "အတည်ပြုပြီး ရောင်းချသူ",
+    storeName: "ဆိုင်အမည်",
+    storeDesc: "ဘာတွေ ရောင်းပါသလဲ?",
+  },
+
+  centerNav: {
+    overview: "ခြုံငုံကြည့်ရှုမှု",
+    sellers: "ဆိုင်များ",
+    products: "ကုန်ပစ္စည်းများ",
+    categories: "အမျိုးအစားများ",
+    console: "VelCenter စီမံခန့်ခွဲမှု",
   },
 
   header: {

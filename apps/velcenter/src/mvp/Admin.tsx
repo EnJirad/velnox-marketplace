@@ -9,6 +9,14 @@
  * idempotent endpoint the Phase 3 report says must be scheduled at cutover; no
  * second scheduler is introduced in this task.
  */
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@velnox/shared/components/ui/alert-dialog";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
@@ -23,7 +31,7 @@ import {
   useMvpQuery,
 } from "@velnox/shared/mvp/ui";
 import { Loader2, Plus } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
 type Tab = "overview" | "sellers" | "products" | "categories";
 
@@ -43,13 +51,33 @@ function Notice({ message, tone = "error" }: { message: string | null; tone?: "e
   );
 }
 
-/** Run one admin action with a busy flag and the server's own error message. */
+/** Run one admin action with a busy flag and the server's own error message.
+ * `confirm` raises a confirmation window before anything is sent — the original
+ * console never mutated a store or a listing without one. */
 function useAction() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [confirmText, setConfirmText] = useState<string | null>(null);
+  const pendingConfirm = useRef<(() => void) | null>(null);
+  const cancelRef = useRef<(() => void) | null>(null);
 
-  const run = async (key: string, action: () => Promise<unknown>, success: string, after: () => void) => {
+  const run = async (
+    key: string,
+    action: () => Promise<unknown>,
+    success: string,
+    after: () => void,
+    confirm?: string,
+  ) => {
+    if (confirm) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        setConfirmText(confirm);
+        pendingConfirm.current = () => resolve(true);
+        cancelRef.current = () => resolve(false);
+      });
+      setConfirmText(null);
+      if (!proceed) return;
+    }
     setBusy(key);
     setError(null);
     setOk(null);
@@ -64,14 +92,50 @@ function useAction() {
     }
   };
 
-  return { busy, error, ok, run };
+  const dialog = (
+    <AlertDialog open={confirmText !== null} onOpenChange={(open) => {
+      if (!open) {
+        setConfirmText(null);
+        cancelRef.current?.();
+      }
+    }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+          <AlertDialogDescription>{confirmText}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setConfirmText(null);
+              cancelRef.current?.();
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="bg-slate-900 text-white hover:bg-slate-800"
+            onClick={() => {
+              setConfirmText(null);
+              pendingConfirm.current?.();
+            }}
+          >
+            Confirm
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
+  return { busy, error, ok, run, dialog };
 }
 
 // ─── Overview ───────────────────────────────────────────────────────────────
 
 function Overview() {
   const metrics = useMvpQuery(() => getMvpApi().admin.metrics(), []);
-  const { busy, error, ok, run } = useAction();
+  const { busy, error, ok, run, dialog } = useAction();
 
   const cards: Array<{ label: string; value: string | number | undefined }> = [
     { label: "Pending sellers", value: metrics.data?.pending_sellers },
@@ -146,6 +210,7 @@ function Overview() {
               () => getMvpApi().admin.expireOrders(),
               "Expiry sweep finished.",
               () => metrics.reload(),
+              "Release the stock held by unpaid orders past their payment window? The sweep is idempotent."
             )
           }
         >
@@ -153,6 +218,7 @@ function Overview() {
           Run expiry sweep
         </Button>
       </section>
+      {dialog}
     </div>
   );
 }
@@ -161,7 +227,7 @@ function Overview() {
 
 function SellerRow({ seller, onChanged }: { seller: MvpAdminSellerRow; onChanged: () => void }) {
   const [reason, setReason] = useState("");
-  const { busy, error, run } = useAction();
+  const { busy, error, run, dialog } = useAction();
   const pending = seller.status === "pending";
 
   return (
@@ -189,7 +255,13 @@ function SellerRow({ seller, onChanged }: { seller: MvpAdminSellerRow; onChanged
             className="h-9 bg-[#10B981] text-white hover:bg-[#059669]"
             disabled={busy !== null}
             onClick={() =>
-              run("approve", () => getMvpApi().admin.approveSeller(seller.id), "Seller approved.", onChanged)
+              run(
+                "approve",
+                () => getMvpApi().admin.approveSeller(seller.id),
+                "Seller approved.",
+                onChanged,
+                `Approve ${seller.store_name}? Their products become publishable immediately.`,
+              )
             }
           >
             {busy === "approve" && <Loader2 className="size-3.5 animate-spin" />}
@@ -222,12 +294,14 @@ function SellerRow({ seller, onChanged }: { seller: MvpAdminSellerRow; onChanged
                       () => getMvpApi().admin.rejectSeller(seller.id, reason.trim()),
                       "Seller rejected.",
                       onChanged,
+                      `Reject ${seller.store_name}? The seller sees your reason and can re-apply.`,
                     )
                   : run(
                       "suspend",
                       () => getMvpApi().admin.suspendSeller(seller.id, reason.trim()),
                       "Seller suspended.",
                       onChanged,
+                      `Suspend ${seller.store_name}? Their listings stop appearing immediately.`,
                     )
               }
             >
@@ -240,6 +314,7 @@ function SellerRow({ seller, onChanged }: { seller: MvpAdminSellerRow; onChanged
         )}
       </div>
       <Notice message={error} />
+      {dialog}
     </div>
   );
 }
@@ -293,7 +368,7 @@ function SellersPanel() {
 
 function ProductRow({ product, onChanged }: { product: MvpAdminProductRow; onChanged: () => void }) {
   const [reason, setReason] = useState("");
-  const { busy, error, run } = useAction();
+  const { busy, error, run, dialog } = useAction();
   const awaiting = product.status === "submitted";
 
   return (
@@ -335,7 +410,13 @@ function ProductRow({ product, onChanged }: { product: MvpAdminProductRow; onCha
             className="h-9 bg-[#10B981] text-white hover:bg-[#059669]"
             disabled={busy !== null}
             onClick={() =>
-              run("approve", () => getMvpApi().admin.approveProduct(product.id), "Product approved.", onChanged)
+              run(
+              "approve",
+              () => getMvpApi().admin.approveProduct(product.id),
+              "Product approved.",
+              onChanged,
+              `Approve “${product.name}” for publishing?`,
+            )
             }
           >
             {busy === "approve" && <Loader2 className="size-3.5 animate-spin" />}
@@ -362,6 +443,7 @@ function ProductRow({ product, onChanged }: { product: MvpAdminProductRow; onCha
                 () => getMvpApi().admin.rejectProduct(product.id, reason.trim()),
                 "Product rejected.",
                 onChanged,
+                `Reject “${product.name}”? The seller sees your reason.`,
               )
             }
           >
@@ -371,6 +453,7 @@ function ProductRow({ product, onChanged }: { product: MvpAdminProductRow; onCha
         </div>
       )}
       <Notice message={error} />
+      {dialog}
     </div>
   );
 }

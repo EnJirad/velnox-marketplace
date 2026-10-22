@@ -12,7 +12,25 @@ export const MVP_ROUTES = {
     logout: "/auth/logout",
     me: "/auth/me",
     oauth: "/auth/oauth",
+    providers: "/auth/providers",
+    googleStart: "/auth/google/start",
     bootstrapOwner: "/auth/bootstrap-owner",
+  },
+  profile: {
+    root: "/profile",
+    avatar: "/profile/avatar",
+    avatarPresign: "/profile/avatar/presign",
+    avatarConfirm: "/profile/avatar/confirm",
+  },
+  favorites: {
+    root: "/favorites",
+    ids: "/favorites/ids",
+    item: (productId: string) => `/favorites/${encodeURIComponent(productId)}`,
+  },
+  reviews: {
+    forProduct: (slug: string) => `/products/${encodeURIComponent(slug)}/reviews`,
+    mine: (slug: string) => `/products/${encodeURIComponent(slug)}/reviews/me`,
+    review: (reviewId: string) => `/reviews/${encodeURIComponent(reviewId)}`,
   },
   catalog: {
     categories: "/categories",
@@ -39,6 +57,7 @@ export const MVP_ROUTES = {
   seller: {
     apply: "/seller/apply",
     status: "/seller/status",
+    profile: "/seller/profile",
     products: "/seller/products",
     product: (id: string) => `/seller/products/${encodeURIComponent(id)}`,
     submit: (id: string) => `/seller/products/${encodeURIComponent(id)}/submit`,

@@ -14,7 +14,11 @@
  * by `tests/isolation.test.ts` rather than by a flag.
  *
  *   POST   /api/mvp/auth/signup | login | logout | bootstrap-owner
- *   GET    /api/mvp/auth/me | oauth (501, parked)
+ *   GET    /api/mvp/auth/me | providers | oauth → google/start
+ *   GET    /api/mvp/auth/google/start | google/callback
+ *
+ *   GET/PATCH /api/mvp/profile · POST /api/mvp/profile/avatar/presign | confirm
+ *   DELETE /api/mvp/profile/avatar
  *
  *   POST   /api/mvp/seller/apply
  *   GET    /api/mvp/seller/status
@@ -29,6 +33,12 @@
  *
  *   GET    /api/mvp/categories
  *   GET    /api/mvp/products[/:slug]
+ *   GET    /api/mvp/products/:slug/reviews · POST products/:slug/reviews
+ *   GET    /api/mvp/products/:slug/reviews/me
+ *   PATCH/DELETE /api/mvp/reviews/:id
+ *
+ *   GET    /api/mvp/favorites | favorites/ids
+ *   POST/DELETE /api/mvp/favorites/:productId
  *
  *   GET    /api/mvp/cart
  *   POST   /api/mvp/cart/items
@@ -54,9 +64,12 @@ import { setupMvpAdminRoutes } from "./admin.js";
 import { setupMvpAuthRoutes } from "./auth.js";
 import { setupMvpCartRoutes } from "./cart.js";
 import { setupMvpCatalogRoutes } from "./catalog.js";
+import { setupMvpFavoriteRoutes } from "./favorites.js";
 import { mvpErrorHandler } from "./http.js";
 import { setupMvpOrderRoutes } from "./orders.js";
 import { setupMvpPaymentRoutes } from "./payments.js";
+import { setupMvpProfileRoutes } from "./profile.js";
+import { setupMvpReviewRoutes } from "./reviews.js";
 import { setupMvpSellerRoutes } from "./seller.js";
 
 export const MVP_API_PREFIX = "/api/mvp";
@@ -65,6 +78,9 @@ export function setupMvpRoutes(app: Express): void {
   setupMvpAuthRoutes(app);
   setupMvpSellerRoutes(app);
   setupMvpCatalogRoutes(app);
+  setupMvpReviewRoutes(app);
+  setupMvpFavoriteRoutes(app);
+  setupMvpProfileRoutes(app);
   setupMvpCartRoutes(app);
   setupMvpOrderRoutes(app);
   setupMvpPaymentRoutes(app);

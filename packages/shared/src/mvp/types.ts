@@ -30,6 +30,9 @@ export interface MvpUser {
   email: string;
   name: string;
   role: MvpRole;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  createdAt?: string;
 }
 
 export interface MvpSellerProfile {
@@ -39,6 +42,7 @@ export interface MvpSellerProfile {
   storeName?: string;
   slug: string;
   status: MvpSellerStatus;
+  description?: string | null;
   rejection_reason?: string | null;
   suspension_reason?: string | null;
 }
@@ -73,6 +77,9 @@ export interface MvpProductSummary {
   imageUrl: string | null;
   available: number;
   publishedAt: string | null;
+  /** Published-review average, or `null` when the product has none yet. */
+  rating?: number | null;
+  reviewCount?: number;
   seller: { id: string; storeName: string; slug: string };
 }
 
@@ -109,6 +116,8 @@ export interface MvpProductDetail {
   currency: string;
   categorySlug: string | null;
   publishedAt: string | null;
+  rating: number | null;
+  reviewCount: number;
   seller: {
     id: string;
     storeName: string;
@@ -421,12 +430,73 @@ export interface MvpAdminMetrics {
   gross_settled_amount?: string;
 }
 
+export interface MvpReview {
+  id: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  updatedAt: string;
+  authorName: string;
+  authorAvatarUrl: string | null;
+  verifiedPurchase: boolean;
+}
+
+export interface MvpReviewSummary {
+  count: number;
+  average: number;
+  distribution: Record<string, number>;
+}
+
+export interface MvpReviewPage {
+  reviews: MvpReview[];
+  pagination: MvpPagination;
+  summary: MvpReviewSummary;
+}
+
+export interface MvpViewerReview {
+  review: MvpReview | null;
+  verifiedPurchase: boolean;
+}
+
+export interface MvpProfile {
+  id: string;
+  email: string;
+  name: string;
+  phone: string | null;
+  avatarUrl: string | null;
+  role: MvpRole;
+  createdAt: string;
+}
+
+export interface MvpFavorite {
+  id: string;
+  productId: string;
+  addedAt: string;
+  product: MvpProductSummary;
+}
+
+export interface MvpAuthProviders {
+  google: { enabled: boolean; startUrl: string };
+}
+
+export interface MvpAvatarPresign {
+  uploadUrl: string;
+  objectKey: string;
+  publicUrl: string;
+  expiresIn: number;
+  contentType: string;
+  maxBytes: number;
+}
+
+export type MvpProductSort = "newest" | "oldest" | "price_asc" | "price_desc" | "name";
+
 export interface MvpProductQuery {
   page?: number;
   limit?: number;
   category?: string;
   q?: string;
   seller?: string;
+  sort?: MvpProductSort;
 }
 
 export interface MvpCreateProductInput {

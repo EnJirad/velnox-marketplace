@@ -15,10 +15,13 @@ import type {
   MvpAdminMetrics,
   MvpAdminProductRow,
   MvpAdminSellerRow,
+  MvpAuthProviders,
+  MvpAvatarPresign,
   MvpCart,
   MvpCartResponse,
   MvpCategory,
   MvpCreateProductInput,
+  MvpFavorite,
   MvpOrderDetail,
   MvpOrderStatus,
   MvpOrderSummary,
@@ -29,6 +32,8 @@ import type {
   MvpProductDetail,
   MvpProductQuery,
   MvpProductSummary,
+  MvpProfile,
+  MvpReviewPage,
   MvpSellerOrderRow,
   MvpSellerProduct,
   MvpSellerProfile,
@@ -36,6 +41,7 @@ import type {
   MvpSellingUnitInput,
   MvpShippingAddress,
   MvpUser,
+  MvpViewerReview,
 } from "./types.js";
 
 function queryString(params: Record<string, string | number | undefined | null>): string {
@@ -69,6 +75,30 @@ export interface MvpApi {
     login(input: { email: string; password: string }): Promise<{ user: MvpUser }>;
     logout(): Promise<{ revoked: boolean }>;
     me(): Promise<MvpSellerSession>;
+    providers(): Promise<MvpAuthProviders>;
+  };
+
+  profile: {
+    get(): Promise<MvpProfile>;
+    update(input: { name: string; phone?: string | null }): Promise<MvpProfile>;
+    presignAvatar(input: { contentType: string; size: number }): Promise<MvpAvatarPresign>;
+    confirmAvatar(objectKey: string): Promise<{ avatarUrl: string; objectKey: string }>;
+    removeAvatar(): Promise<{ avatarUrl: null }>;
+  };
+
+  favorites: {
+    list(): Promise<MvpFavorite[]>;
+    ids(): Promise<string[]>;
+    add(productId: string): Promise<{ favorited: boolean }>;
+    remove(productId: string): Promise<{ favorited: boolean }>;
+  };
+
+  reviews: {
+    list(slug: string, page?: number): Promise<MvpReviewPage>;
+    mine(slug: string): Promise<MvpViewerReview>;
+    submit(slug: string, input: { rating: number; comment: string }): Promise<{ id: string }>;
+    update(reviewId: string, input: { rating: number; comment: string }): Promise<unknown>;
+    remove(reviewId: string): Promise<{ deleted: boolean }>;
   };
 
   catalog: {
@@ -114,6 +144,7 @@ export interface MvpApi {
 
   seller: {
     apply(input: { storeName: string; description?: string }): Promise<{ seller: MvpSellerProfile }>;
+    updateProfile(input: { storeName: string; description?: string | null }): Promise<{ seller: MvpSellerProfile }>;
     status(): Promise<MvpSellerStatusResponse>;
     products(status?: string): Promise<MvpSellerProduct[]>;
     product(productId: string): Promise<MvpSellerProduct>;
@@ -200,6 +231,67 @@ export function createMvpApi(http: MvpHttp): MvpApi {
         http.request<{ user: MvpUser }>(R.auth.login, { method: "POST", body: input }),
       logout: () => http.request<{ revoked: boolean }>(R.auth.logout, { method: "POST" }),
       me: () => http.request<MvpSellerSession>(R.auth.me),
+      providers: async () => {
+        const data = await http.request<{ providers: MvpAuthProviders }>(R.auth.providers);
+        return data.providers;
+      },
+    },
+
+    profile: {
+      get: async () => {
+        const data = await http.request<{ profile: MvpProfile }>(R.profile.root);
+        return data.profile;
+      },
+      update: async (input) => {
+        const data = await http.request<{ profile: MvpProfile }>(R.profile.root, {
+          method: "PATCH",
+          body: { name: input.name, phone: input.phone ?? null },
+        });
+        return data.profile;
+      },
+      presignAvatar: (input) =>
+        http.request<MvpAvatarPresign>(R.profile.avatarPresign, { method: "POST", body: input }),
+      confirmAvatar: (objectKey) =>
+        http.request<{ avatarUrl: string; objectKey: string }>(R.profile.avatarConfirm, {
+          method: "POST",
+          body: { objectKey },
+        }),
+      removeAvatar: () =>
+        http.request<{ avatarUrl: null }>(R.profile.avatar, { method: "DELETE" }),
+    },
+
+    favorites: {
+      list: async () => {
+        const data = await http.request<{ favorites: MvpFavorite[] }>(R.favorites.root);
+        return data.favorites ?? [];
+      },
+      ids: async () => {
+        const data = await http.request<{ productIds: string[] }>(R.favorites.ids);
+        return data.productIds ?? [];
+      },
+      add: (productId) =>
+        http.request<{ favorited: boolean }>(R.favorites.item(productId), { method: "POST" }),
+      remove: (productId) =>
+        http.request<{ favorited: boolean }>(R.favorites.item(productId), { method: "DELETE" }),
+    },
+
+    reviews: {
+      list: (slug, page = 1) =>
+        http.request<MvpReviewPage>(
+          `${R.reviews.forProduct(slug)}${queryString({ page, limit: 5 })}`,
+        ),
+      mine: (slug) => http.request<MvpViewerReview>(R.reviews.mine(slug)),
+      submit: async (slug, input) => {
+        const data = await http.request<{ review: { id: string } }>(R.reviews.forProduct(slug), {
+          method: "POST",
+          body: input,
+        });
+        return data.review;
+      },
+      update: (reviewId, input) =>
+        http.request<unknown>(R.reviews.review(reviewId), { method: "PATCH", body: input }),
+      remove: (reviewId) =>
+        http.request<{ deleted: boolean }>(R.reviews.review(reviewId), { method: "DELETE" }),
     },
 
     catalog: {
@@ -218,6 +310,7 @@ export function createMvpApi(http: MvpHttp): MvpApi {
             category: query.category,
             q: query.q,
             seller: query.seller,
+            sort: query.sort,
           })}`,
         );
         return { products: data.products ?? [], pagination: data.pagination };
@@ -303,6 +396,11 @@ export function createMvpApi(http: MvpHttp): MvpApi {
     seller: {
       apply: (input) =>
         http.request<{ seller: MvpSellerProfile }>(R.seller.apply, { method: "POST", body: input }),
+      updateProfile: (input) =>
+        http.request<{ seller: MvpSellerProfile }>(R.seller.profile, {
+          method: "PATCH",
+          body: input,
+        }),
       status: () => http.request<MvpSellerStatusResponse>(R.seller.status),
       products: async (status) => {
         const data = await http.request<{ products: MvpSellerProduct[] }>(

@@ -18,18 +18,24 @@
 import { Button } from "@velnox/shared/components/ui/button";
 import { getMvpApi, type MvpSellingUnitOption, type MvpVariantOption } from "@velnox/shared/mvp";
 import { MvpErrorState, MvpLoading, formatMoney, toMvpError, useMvpQuery } from "@velnox/shared/mvp/ui";
-import { ArrowLeft, Loader2, Minus, Plus, Store } from "lucide-react";
+import { useLanguage } from "@velnox/shared/lib/i18n";
+import { ArrowLeft, Heart, Loader2, Minus, Plus, Store } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Link, useNavigate, useParams } from "react-router";
 import { ErrorLine, ProductImage } from "./components";
+import { Reviews } from "@/components/Reviews";
 import { useMvpCart } from "./cart";
+import { useFavorites } from "./favorites";
 import { useSession } from "./session";
 
 export default function Product() {
   const { slug = "" } = useParams();
   const navigate = useNavigate();
   const { user } = useSession();
+  const { t } = useLanguage();
   const { addItem } = useMvpCart();
+  const { isFavorited, toggle: toggleFavorite, busyId } = useFavorites();
 
   const product = useMvpQuery(() => getMvpApi().catalog.product(slug), [slug]);
   const [variantId, setVariantId] = useState<string | null>(null);
@@ -166,9 +172,46 @@ export default function Product() {
               <Store className="size-3.5" />
               {detail.seller.storeName}
             </span>
-            <h1 className="mt-1.5 text-2xl font-bold leading-tight tracking-tight text-slate-900">
-              {detail.name}
-            </h1>
+            <div className="mt-1.5 flex items-start justify-between gap-3">
+              <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900">
+                {detail.name}
+              </h1>
+              <button
+                type="button"
+                aria-label={t("product.ariaWishlist")}
+                aria-pressed={isFavorited(detail.id)}
+                disabled={busyId === detail.id}
+                onClick={async () => {
+                  if (!user) {
+                    navigate(
+                      `/auth?returnTo=${encodeURIComponent(`/products/${encodeURIComponent(slug)}`)}`,
+                    );
+                    return;
+                  }
+                  try {
+                    const nowFavorited = await toggleFavorite(detail.id);
+                    toast.success(
+                      nowFavorited
+                        ? t("productDetail.wishlistAdded")
+                        : t("productDetail.wishlistRemoved"),
+                    );
+                  } catch {
+                    toast.error(t("productDetail.wishlistFailed"));
+                  }
+                }}
+                className="flex size-10 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500"
+              >
+                {busyId === detail.id ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Heart
+                    className={
+                      isFavorited(detail.id) ? "size-5 fill-rose-500 text-rose-500" : "size-5"
+                    }
+                  />
+                )}
+              </button>
+            </div>
           </div>
 
           <div>
@@ -334,6 +377,8 @@ export default function Product() {
           )}
         </div>
       </div>
+
+      <Reviews slug={slug} />
     </div>
   );
 }

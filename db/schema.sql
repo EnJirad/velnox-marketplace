@@ -26,6 +26,19 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens (expires_at);
 
+CREATE TABLE IF NOT EXISTS user_identities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('google')),
+  provider_user_id TEXT NOT NULL CHECK (btrim(provider_user_id) <> ''),
+  email TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT user_identities_provider_subject_unique UNIQUE (provider, provider_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities (user_id);
+
 CREATE TABLE IF NOT EXISTS seller_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE RESTRICT,
@@ -147,6 +160,17 @@ CREATE INDEX IF NOT EXISTS idx_products_seller ON products (seller_id, created_a
 CREATE INDEX IF NOT EXISTS idx_products_status ON products (status);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products (category_slug);
 CREATE INDEX IF NOT EXISTS idx_products_public ON products (created_at DESC) WHERE status = 'published';
+
+CREATE TABLE IF NOT EXISTS product_favorites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT product_favorites_user_product_unique UNIQUE (user_id, product_id)
+);
+CREATE INDEX IF NOT EXISTS idx_product_favorites_user ON product_favorites (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_favorites_product ON product_favorites (product_id);
 
 CREATE TABLE IF NOT EXISTS product_images (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -378,6 +402,22 @@ CREATE TABLE IF NOT EXISTS order_items (
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items (product_id);
+
+CREATE TABLE IF NOT EXISTS product_reviews (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  order_item_id UUID REFERENCES order_items(id) ON DELETE SET NULL,
+  rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment TEXT NOT NULL DEFAULT '' CHECK (char_length(comment) <= 2000),
+  status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('published', 'hidden')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT product_reviews_product_user_unique UNIQUE (product_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id, created_at DESC) WHERE status = 'published';
+CREATE INDEX IF NOT EXISTS idx_product_reviews_user ON product_reviews (user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS shipments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
