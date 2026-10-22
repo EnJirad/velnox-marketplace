@@ -21,6 +21,14 @@ export const MVP_ROUTES = {
     avatar: "/profile/avatar",
     avatarPresign: "/profile/avatar/presign",
     avatarConfirm: "/profile/avatar/confirm",
+    cover: "/profile/cover",
+    coverPresign: "/profile/cover/presign",
+    coverConfirm: "/profile/cover/confirm",
+  },
+  addresses: {
+    root: "/addresses",
+    address: (id: string) => `/addresses/${encodeURIComponent(id)}`,
+    setDefault: (id: string) => `/addresses/${encodeURIComponent(id)}/default`,
   },
   favorites: {
     root: "/favorites",
@@ -63,6 +71,10 @@ export const MVP_ROUTES = {
     submit: (id: string) => `/seller/products/${encodeURIComponent(id)}/submit`,
     publish: (id: string) => `/seller/products/${encodeURIComponent(id)}/publish`,
     variants: (id: string) => `/seller/products/${encodeURIComponent(id)}/variants`,
+    productImagePresign: (id: string) =>
+      `/seller/products/${encodeURIComponent(id)}/images/presign`,
+    productImageConfirm: (id: string) =>
+      `/seller/products/${encodeURIComponent(id)}/images/confirm`,
     variant: (id: string, variantId: string) =>
       `/seller/products/${encodeURIComponent(id)}/variants/${encodeURIComponent(variantId)}`,
     sellingUnits: (id: string) => `/seller/products/${encodeURIComponent(id)}/selling-units`,

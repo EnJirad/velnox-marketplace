@@ -164,10 +164,11 @@ export function setupMvpAuthRoutes(app: Express): void {
         name: string;
         phone: string | null;
         avatar_url: string | null;
+        cover_url: string | null;
         role: string;
         created_at: string;
       }>(
-        `SELECT id, email, name, phone, avatar_url, role, created_at
+        `SELECT id, email, name, phone, avatar_url, cover_url, role, created_at
            FROM users WHERE id = $1`,
         [user.id],
       );
@@ -184,6 +185,7 @@ export function setupMvpAuthRoutes(app: Express): void {
           name: profile.name,
           phone: profile.phone,
           avatarUrl: profile.avatar_url,
+          coverUrl: profile.cover_url,
           role: profile.role,
           createdAt: profile.created_at,
         },

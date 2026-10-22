@@ -464,8 +464,47 @@ export interface MvpProfile {
   name: string;
   phone: string | null;
   avatarUrl: string | null;
+  coverUrl: string | null;
   role: MvpRole;
   createdAt: string;
+}
+
+/** A saved delivery address. `latitude`/`longitude` are the map-picked position. */
+export interface MvpAddress {
+  id: string;
+  label: string;
+  recipientName: string;
+  phone: string;
+  line1: string;
+  line2: string | null;
+  subdistrict: string | null;
+  district: string | null;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  latitude: number | null;
+  longitude: number | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MvpAddressInput {
+  label?: string;
+  recipientName: string;
+  phone: string;
+  line1: string;
+  line2?: string | null;
+  subdistrict?: string | null;
+  district?: string | null;
+  city: string;
+  state: string;
+  postalCode: string;
+  country?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  isDefault?: boolean;
 }
 
 export interface MvpFavorite {

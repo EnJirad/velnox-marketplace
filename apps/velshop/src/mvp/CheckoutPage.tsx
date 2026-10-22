@@ -19,9 +19,17 @@
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
-import { getMvpApi, type MvpShippingAddress } from "@velnox/shared/mvp";
-import { MvpEmpty, MvpLoading, formatMoney, toMvpError } from "@velnox/shared/mvp/ui";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Skeleton } from "@velnox/shared/components/ui/skeleton";
+import { useLanguage } from "@velnox/shared/lib/i18n";
+import { getMvpApi, type MvpAddress, type MvpShippingAddress } from "@velnox/shared/mvp";
+import {
+  MvpEmpty,
+  MvpLoading,
+  formatMoney,
+  toMvpError,
+  useMvpQuery,
+} from "@velnox/shared/mvp/ui";
+import { Loader2, MapPin, ShieldCheck } from "lucide-react";
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { ErrorLine, SummaryRow } from "./components";
@@ -59,11 +67,24 @@ function newRequestKey(): string {
   return uuid ?? `mvp-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+function addressLine(a: MvpAddress): string {
+  return [a.line1, a.line2, a.subdistrict, a.district, a.city, a.postalCode]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export default function CheckoutPage() {
+  const { t } = useLanguage();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useSession();
   const { carts, loading, error, reload } = useMvpCart();
+  // The buyer's saved addresses. `/addresses` manages them; here they are only
+  // chosen. The server re-reads the row and scopes it to the session, so the id
+  // alone never grants access to someone else's address.
+  const savedAddresses = useMvpQuery(() => getMvpApi().addresses.list(), []);
+  const [chosenAddressId, setChosenAddressId] = useState<string | null>(null);
+  const [manualEntry, setManualEntry] = useState(false);
 
   const requestedCartId = params.get("cart");
   const cart = useMemo(() => {
@@ -113,6 +134,14 @@ export default function CheckoutPage() {
     );
   }
 
+  const addresses = savedAddresses.data ?? [];
+  const chosen =
+    (chosenAddressId ? addresses.find((a) => a.id === chosenAddressId) : undefined) ??
+    addresses.find((a) => a.isDefault) ??
+    addresses[0] ??
+    null;
+  const useSaved = !manualEntry && chosen !== null;
+
   const field = (key: keyof AddressForm) => ({
     value: address[key],
     onChange: (event: ChangeEvent<HTMLInputElement>) =>
@@ -144,7 +173,7 @@ export default function CheckoutPage() {
         cartId: cart.id,
         sellerId: cart.seller.id,
         requestKey: requestKey.current,
-        address: payload,
+        ...(useSaved ? { addressId: chosen!.id } : { address: payload }),
         notes: notes.trim() || null,
       });
       // The order id comes from the server; the payment state on the next page is
@@ -172,7 +201,69 @@ export default function CheckoutPage() {
         </div>
 
         <div className="grid gap-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery address</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t("checkout.addressTitle")}
+            </p>
+            <Link to="/addresses" className="text-xs font-semibold text-[#10B981] hover:underline">
+              {t("checkout.manage")}
+            </Link>
+          </div>
+
+          {savedAddresses.loading ? (
+            <Skeleton className="h-24 rounded-xl" />
+          ) : useSaved ? (
+            <div className="grid gap-2">
+              {addresses.map((a) => (
+                <button
+                  type="button"
+                  key={a.id}
+                  onClick={() => setChosenAddressId(a.id)}
+                  className={`rounded-xl border p-3 text-left transition-colors ${
+                    chosen?.id === a.id
+                      ? "border-[#10B981] bg-emerald-50/40"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-900">{a.label}</span>
+                    {a.isDefault && (
+                      <span className="rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        {t("checkout.defaultBadge")}
+                      </span>
+                    )}
+                    {(a.latitude == null || a.longitude == null) && (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                        {t("checkout.noGpsBadge")}
+                      </span>
+                    )}
+                    {chosen?.id === a.id && <MapPin className="ml-auto size-4 text-[#10B981]" />}
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">{addressLine(a)}</span>
+                  <span className="mt-0.5 block text-[11px] text-slate-400">
+                    {a.recipientName} · {a.phone}
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setManualEntry(true)}
+                className="justify-self-start text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-700"
+              >
+                {t("checkout.changeAddress")}
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {addresses.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setManualEntry(false)}
+                  className="justify-self-start text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-700"
+                >
+                  {t("checkout.changeAddress")}
+                </button>
+              )}
 
           <div className="grid gap-2">
             <Label htmlFor="recipient" className="text-xs font-medium text-slate-500">
@@ -238,6 +329,8 @@ export default function CheckoutPage() {
               <Input id="state" required {...field("state")} />
             </div>
           </div>
+            </div>
+          )}
 
           <div className="grid gap-2">
             <Label htmlFor="notes" className="text-xs font-medium text-slate-500">

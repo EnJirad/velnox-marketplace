@@ -758,8 +758,6 @@ export const en: Dict = {
     addressSheetTitle: "Select shipping address",
     addressLoadFailed: "Couldn't load your addresses",
     viewOrders: "View orders",
-    repeatOfferTitle: "Want this delivered automatically?",
-    repeatOfferDesc: "The item you just bought supports VelRepeat — pick a schedule and Velnox delivers it for you.",
     shopPending: "Shop",
     showMoreItems: "+ {count} more",
     compactAddress: "Delivery address",

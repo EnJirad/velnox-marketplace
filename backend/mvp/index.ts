@@ -18,7 +18,12 @@
  *   GET    /api/mvp/auth/google/start | google/callback
  *
  *   GET/PATCH /api/mvp/profile · POST /api/mvp/profile/avatar/presign | confirm
- *   DELETE /api/mvp/profile/avatar
+ *   POST   /api/mvp/profile/cover/presign | confirm
+ *   DELETE /api/mvp/profile/avatar | cover
+ *
+ *   GET/POST /api/mvp/addresses
+ *   PATCH/DELETE /api/mvp/addresses/:id
+ *   POST   /api/mvp/addresses/:id/default
  *
  *   POST   /api/mvp/seller/apply
  *   GET    /api/mvp/seller/status
@@ -60,6 +65,7 @@
  *   POST   /api/mvp/admin/maintenance/expire-pending-orders
  */
 import type { Express } from "express";
+import { setupMvpAddressRoutes } from "./addresses.js";
 import { setupMvpAdminRoutes } from "./admin.js";
 import { setupMvpAuthRoutes } from "./auth.js";
 import { setupMvpCartRoutes } from "./cart.js";
@@ -81,6 +87,7 @@ export function setupMvpRoutes(app: Express): void {
   setupMvpReviewRoutes(app);
   setupMvpFavoriteRoutes(app);
   setupMvpProfileRoutes(app);
+  setupMvpAddressRoutes(app);
   setupMvpCartRoutes(app);
   setupMvpOrderRoutes(app);
   setupMvpPaymentRoutes(app);

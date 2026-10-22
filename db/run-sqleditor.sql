@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL CHECK (btrim(email) <> ''),
   name TEXT NOT NULL DEFAULT '',
   avatar_url TEXT,
+  cover_url TEXT,
   phone TEXT,
   role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'seller', 'admin', 'owner')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'deleted')),
@@ -272,9 +273,18 @@ CREATE TABLE IF NOT EXISTS addresses (
   state TEXT NOT NULL CHECK (btrim(state) <> ''),
   postal_code TEXT NOT NULL CHECK (btrim(postal_code) <> ''),
   country CHAR(2) NOT NULL DEFAULT 'TH',
+  latitude NUMERIC(9, 6),
+  longitude NUMERIC(9, 6),
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT addresses_latitude_range
+    CHECK (latitude IS NULL OR (latitude >= -90 AND latitude <= 90)),
+  CONSTRAINT addresses_longitude_range
+    CHECK (longitude IS NULL OR (longitude >= -180 AND longitude <= 180)),
+  CONSTRAINT addresses_coordinates_paired
+    CHECK ((latitude IS NULL) = (longitude IS NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses (user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_addresses_one_default

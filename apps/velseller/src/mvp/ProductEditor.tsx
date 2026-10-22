@@ -10,9 +10,11 @@
  * the quantity already reserved by unpaid/paid orders (409). Editing a listed
  * product's material fields demotes it out of `published` server-side.
  *
- * Images are URL references only. The MVP schema stores `product_images.url`, and
- * Phase 3b did not prove that the legacy R2 presign flow is safe against the MVP
- * auth model, so no upload control is offered here (documented limitation).
+ * Images are uploaded through the same R2 presign → PUT → confirm flow as the
+ * rest of the product, under a key the server mints inside this seller's own
+ * `product/<seller>/<product>/` namespace. A confirmed URL is appended to the
+ * list and persisted with the normal Save, so `product_images` keeps ONE write
+ * path. Hosted URLs may still be pasted.
  *
  * SELLING UNITS (SETS / PACKS). A selling unit is "N base units for this price".
  * It NEVER creates stock of its own: the product/variant inventory stays the one
@@ -38,7 +40,7 @@ import {
   useMvpQuery,
 } from "@velnox/shared/mvp/ui";
 import { ArrowLeft, Loader2, PackageCheck, Save, Send, Plus } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
 
 function Notice({ message, tone = "error" }: { message: string | null; tone?: "error" | "ok" }) {
@@ -64,6 +66,8 @@ export default function ProductEditor() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [images, setImages] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -87,6 +91,47 @@ export default function ProductEditor() {
     );
   }
   if (!product) return null;
+
+  /**
+   * Upload one product photo: server-minted key → presigned PUT → confirm.
+   * The confirmed URL is appended to the image list; it is persisted with the
+   * rest of the form through the normal Save, so there is one write path.
+   */
+  const uploadImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const accepted = ["image/jpeg", "image/png", "image/webp"];
+    if (!accepted.includes(file.type)) {
+      setError("Unsupported image — choose JPG, PNG or WebP");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File is too large — choose an image under 10 MB");
+      return;
+    }
+    setUploadingImage(true);
+    setError(null);
+    try {
+      const signed = await getMvpApi().seller.presignProductImage(product.id, {
+        contentType: file.type,
+        size: file.size,
+      });
+      const put = await fetch(signed.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!put.ok) throw new Error("Upload failed — please try again");
+      const confirmed = await getMvpApi().seller.confirmProductImage(product.id, signed.objectKey);
+      setImages((current) => (current.trim() ? `${current.trim()}\n${confirmed.url}` : confirmed.url));
+      setOk("Image uploaded — save to attach it to the product");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed — please try again");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const run = async (key: string, action: () => Promise<unknown>, success: string) => {
     setBusy(key);
@@ -233,8 +278,32 @@ export default function ProductEditor() {
               placeholder="https://cdn.example.com/product.jpg"
               className="rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#10B981] focus:ring-2 focus:ring-[#10B981]/20"
             />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 gap-1.5 border-slate-200 text-slate-700"
+                onClick={() => imageInput.current?.click()}
+                disabled={!editable || busy !== null || uploadingImage}
+              >
+                {uploadingImage ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Plus className="size-4" />
+                )}
+                {uploadingImage ? "Uploading…" : "Upload image"}
+              </Button>
+              <input
+                ref={imageInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(event) => void uploadImage(event)}
+              />
+              <span className="text-[11px] text-slate-400">JPG, PNG or WebP · max 10 MB</span>
+            </div>
             <p className="text-[11px] leading-5 text-slate-400">
-              Image upload is not wired to the MVP API yet — paste hosted URLs. SVG and other
+              Uploaded images are stored in R2; you can also paste hosted URLs. SVG and other
               non-image URLs are stored as given and are NOT rendered by the storefront.
             </p>
           </div>

@@ -30,6 +30,7 @@ const OrdersPage = lazy(() => import("./OrdersPage"));
 const OrderDetailPage = lazy(() => import("./OrderDetailPage"));
 const WishlistPage = lazy(() => import("./Wishlist"));
 const ProfilePage = lazy(() => import("./Profile"));
+const AddressesPage = lazy(() => import("./Addresses"));
 
 function Tabs() {
   const { t } = useLanguage();
@@ -131,6 +132,14 @@ function Inner() {
               element={
                 <RequireSession>
                   <ProfilePage />
+                </RequireSession>
+              }
+            />
+            <Route
+              path="/addresses"
+              element={
+                <RequireSession>
+                  <AddressesPage />
                 </RequireSession>
               }
             />

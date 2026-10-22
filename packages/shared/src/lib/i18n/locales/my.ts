@@ -691,8 +691,6 @@ export const my = {
     addressSheetTitle: "ပို့ဆောင်မည့်လိပ်စာ ရွေးပါ",
     addressLoadFailed: "လိပ်စာများ ဖွင့်၍မရပါ",
     viewOrders: "မှာယူမှုများ ကြည့်ရန်",
-    repeatOfferTitle: "ဤပစ္စည်းကို အလိုအလျောက် မှာယူလိုပါသလား?",
-    repeatOfferDesc: "သင်ဝယ်လိုက်သော ပစ္စည်းသည် VelRepeat ကို ထောက်ခံပါသည် — အချိန်ဇယားရွေးပြီး Velnox က အလိုအလျောက် ပို့ပေးပါမည်။",
     shopPending: "ဆိုင်",
     showMoreItems: "+ နောက်ထပ် {count} ခု",
     compactAddress: "ပို့ဆောင်ရန်လိပ်စာ",

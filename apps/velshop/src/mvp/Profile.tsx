@@ -17,6 +17,7 @@ import {
   Heart,
   Loader2,
   LogOut,
+  MapPin,
   Package,
   ShieldCheck,
   Trash2,
@@ -34,11 +35,14 @@ export default function Profile() {
   const { t } = useLanguage();
   const profile = useMvpQuery(() => getMvpApi().profile.get(), []);
   const [avatarUrl, setAvatarUrl] = useState<string | null | undefined>(undefined);
+  const [coverUrl, setCoverUrl] = useState<string | null | undefined>(undefined);
   const [uploading, setUploading] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const coverInput = useRef<HTMLInputElement>(null);
 
   if (profile.loading) return <MvpLoading label={t("common.loading")} />;
   if (profile.error || !profile.data) {
@@ -51,6 +55,7 @@ export default function Profile() {
 
   const data = profile.data;
   const shownAvatar = avatarUrl === undefined ? data.avatarUrl : avatarUrl;
+  const shownCover = coverUrl === undefined ? data.coverUrl : coverUrl;
   const shownName = name ?? data.name;
   const shownPhone = phone ?? data.phone ?? "";
 
@@ -85,6 +90,53 @@ export default function Profile() {
       toast.error(toMvpError(error).message || t("profile.imageUploadFailed"));
     } finally {
       setUploading(false);
+    }
+  };
+
+  const uploadCover = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!ACCEPTED.includes(file.type)) {
+      toast.error(t("profile.imageTypeError"));
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      toast.error(t("profile.imageSizeError"));
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const signed = await getMvpApi().profile.presignCover({
+        contentType: file.type,
+        size: file.size,
+      });
+      const put = await fetch(signed.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!put.ok) throw new Error(t("profile.imageUploadFailed"));
+      const confirmed = await getMvpApi().profile.confirmCover(signed.objectKey);
+      setCoverUrl(confirmed.coverUrl);
+      toast.success(t("profile.coverUpdated"));
+    } catch (error) {
+      toast.error(toMvpError(error).message || t("profile.imageUploadFailed"));
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const removeCover = async () => {
+    setUploadingCover(true);
+    try {
+      await getMvpApi().profile.removeCover();
+      setCoverUrl(null);
+      toast.success(t("profile.coverUpdated"));
+    } catch (error) {
+      toast.error(toMvpError(error).message);
+    } finally {
+      setUploadingCover(false);
     }
   };
 
@@ -132,6 +184,51 @@ export default function Profile() {
           {t("profile.title")}
         </h1>
       </div>
+
+      <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-emerald-50 via-slate-50 to-slate-100">
+        <div className="h-32 w-full sm:h-40">
+          {shownCover ? (
+            <img
+              src={shownCover}
+              alt={t("profile.coverAlt", { name: shownName })}
+              className="size-full object-cover"
+            />
+          ) : null}
+        </div>
+        <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => coverInput.current?.click()}
+            disabled={uploadingCover}
+            className="flex h-8 items-center gap-1.5 rounded-[10px] border border-slate-200 bg-white/95 px-2.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-white"
+          >
+            {uploadingCover ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Camera className="size-3.5" />
+            )}
+            {t("profile.changeCover")}
+          </button>
+          {shownCover && (
+            <button
+              type="button"
+              onClick={() => void removeCover()}
+              disabled={uploadingCover}
+              className="flex size-8 items-center justify-center rounded-[10px] border border-slate-200 bg-white/95 text-slate-400 shadow-sm transition-colors hover:text-rose-500"
+              aria-label={t("common.remove")}
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
+          <input
+            ref={coverInput}
+            type="file"
+            accept={ACCEPTED.join(",")}
+            className="hidden"
+            onChange={(event) => void uploadCover(event)}
+          />
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -233,6 +330,7 @@ export default function Profile() {
       <section className="grid gap-2 sm:grid-cols-2">
         <ProfileLink to="/orders" icon={Package} title={t("profile.orders")} desc={t("profile.ordersDesc")} />
         <ProfileLink to="/wishlist" icon={Heart} title={t("profile.wishlist")} desc={t("profile.wishlistDesc")} />
+        <ProfileLink to="/addresses" icon={MapPin} title={t("profile.addresses")} desc={t("profile.addressesDesc")} />
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4">
