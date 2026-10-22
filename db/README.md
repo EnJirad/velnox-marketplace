@@ -10,6 +10,19 @@ are deliberately not mixed, and only one of them is canonical at a time.
 
 `db/run-update.sql` does not exist and must never be recreated.
 
+## Target structure — reached only at the cutover
+
+The end state is `db/` holding the two canonical MVP files only (`schema.sql` =
+`db/mvp/schema.sql`, `run-sqleditor.sql` = the same structure, rerunnable). That is
+**the cutover** (`db/mvp/cutover.md` §3 and §9), not a tidying step: the pre-MVP pair
+and the 62 migrations stay until the deployed Render service stops reading them,
+because `test.yml` bootstraps the disposable CI database from the reconciler and
+`production-db-migrate.yml` applies the migration chain. A fresh MVP database already
+satisfies the rerunnable-bootstrap contract from `db/mvp/schema.sql` alone —
+`db/mvp/verify.sh` proves a second and third run change nothing — so no second MVP
+SQL file is written, and inventing one would duplicate the schema. Full inventory and
+the removal evidence: `.ai/tasks/active/repo-cleanup-inventory-2026-10-22.md`.
+
 ## Who reads which schema
 
 | Code | Schema | Test command |

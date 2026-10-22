@@ -682,50 +682,17 @@ Production env, database, Stripe mode and deployments were NOT touched.
 
 ---
 
-## §88. Phase 3c — STAGING READINESS (2026-10-21) — condensed
+## §88. Phase 3c — STAGING READINESS (2026-10-21) — **ARCHIVED**
 
-**Status: staging CONFIGURATION ready; staging NOT deployed; product scope BLOCKED on retail sets/packs.**
-Baseline `9083127070d81c482ecfacb0604d330d0f79f07b` = `origin/main` = GitHub. Report:
-[`tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md)
-· runbook: [`docs/MVP_STAGING.md`](../docs/MVP_STAGING.md).
-
-**BLOCKING GAP — sets/packs are absent from the MVP** — **RESOLVED in §89 (Phase 3d).**
-Kept for history: `db/mvp/schema.sql` had **zero**
-`selling_unit`/`pieces` references; `backend/mvp` mentions the pre-MVP table only in a comment
-forbidding it; no MVP client/UI field exists. The legacy schema, `backend/lib/inventory.ts`
-(`quantity × selling_unit_pieces`) and the archived §76–77 record still have the feature. The MVP
-therefore sells a product/variant at one price and cannot offer “Set 6 at ฿1,200” against base-unit
-stock. **Do not sign off retail scope or cut over until Phase 3d restores it.** Nothing was deleted
-to cause this; it was never carried into the clean schema.
-
-**Shipped this pass:** the shared auth panel now hard-navigates after sign-in and shells reload after
-sign-out (the MVP session is read once per mount — a client-side redirect left every guard and header
-on the pre-login snapshot); `MVP_COOKIE_SECURE=true` in `backend/mvp/session.ts` (one-way: can only
-ADD `Secure`, production always secure) so Chromium accepts `SameSite=None` over the E2E's HTTPS;
-`db/mvp/browser-e2e.sh` + `scripts/mvp-browser-e2e.ts` (Playwright devDependency) build all three
-apps in MVP mode, serve each over local HTTPS against the real API, and drive Chromium through the
-whole flow; `docs/MVP_STAGING.md` carries the Render/Vercel/Neon matrix, verification order,
-scheduling, blockers and rollback. CI needed nothing: `test.yml` already runs `db/mvp/verify.sh`,
-`bun run test:mvp`, the legacy suite and `git diff --check`.
-
-**Verified:** browser E2E **exit 0** (admin sign-in via UI · seller signup+apply · admin approve ·
-draft+variant(10)+submit · admin approve · publish · buyer signup → catalogue → variant → cart →
-checkout → **฿600.00 server total** → reservation 10→8 · cancel → 8→10 · admin expiry sweep →
-Cancelled → 10 · seller order list) · MVP suite **90 pass / 0 fail** (12 files) · legacy **2166 /
-16 skip / 0 fail** · typecheck **4/4** + backend tsc 0 · builds 4/4 (three in MVP mode) · i18n
-`1535×3` · `git diff --check` clean. **NOT verified:** any provider deployment (no Render/Vercel/
-Neon access here) and the Stripe TEST round trip (no `STRIPE_SECRET_KEY`; contract-only proof).
-Image upload is still not MVP-compatible (legacy writes `media.key`, the MVP table is
-`media.object_key`) — sellers paste URLs.
-
-**Owner actions:** Neon DB from `db/mvp/schema.sql` → Render staging service with
-`MVP_API_ENABLED=true`, staging `DATABASE_URL`/`JWT_SECRET`, `MVP_COOKIE_SECURE=true`, staging
-origins → three Vercel projects with `VITE_API_MODE=mvp`, `VITE_DEPLOY_ENV=staging`,
-`VITE_API_URL` → run the runbook's checklist (+ Stripe TEST if keys supplied). Production env,
-database, Stripe mode and deployments were NOT touched.
-
-**Next = Phase 3d** was retail sets/packs — **done, see §89.** After it, next is deploying the
-staging stack (`docs/MVP_STAGING.md`) and running the browser + Stripe TEST passes on it.
+**Moved verbatim on 2026-10-22** (edit-headroom housekeeping; made room for §91) →
+[`history/archive/AI_Handoff-2026-10-21-phase3c-staging-readiness.md`](history/archive/AI_Handoff-2026-10-21-phase3c-staging-readiness.md).
+**Still live from it:** the Render/Vercel/Neon staging matrix and checklist live in
+[`docs/MVP_STAGING.md`](../docs/MVP_STAGING.md) · the shared auth panel hard-navigates after
+sign-in (the MVP session is read once per mount) · `MVP_COOKIE_SECURE=true` in
+`backend/mvp/session.ts` is one-way (can only ADD `Secure`) · `db/mvp/browser-e2e.sh` +
+`scripts/mvp-browser-e2e.ts` are the Chromium proof · image upload is still not MVP-compatible
+(legacy `media.key` vs the MVP `media.object_key`), so sellers paste URLs · its sets/packs blocker
+was closed by §89.
 
 ---
 
@@ -819,3 +786,38 @@ no force-push, no Stripe Live change.** Docs corrected with this pass: `docs/DAT
 
 **Next:** owner creates an empty Neon database → `psql -f db/mvp/schema.sql` (+`seed.sql`) →
 staging deploy with `MVP_API_ENABLED=true` → browser + Stripe TEST pass → `db/mvp/cutover.md` §3.
+
+---
+
+## §91. Full-repo cleanup — inventory, proven removals, `db/` collapse gated (2026-10-22)
+
+**Status: cleanup PASS 1 complete; no route, schema, payment, auth or deployment change.**
+Baseline `321d028` = `origin/main`. Inventory + evidence:
+[`.ai/tasks/active/repo-cleanup-inventory-2026-10-22.md`](tasks/active/repo-cleanup-inventory-2026-10-22.md).
+
+**Removed (8 files, each proven zero-consumer):** `ProductDetailModal.tsx` + `ImageUpload.tsx`
+(velshop), `LogoDropdown.tsx` + `components/reorder/*` (shared), `customer-memory-core.ts`,
+root `public/logo.svg`, and the `db:smoke` / `db:consistency` placeholder scripts.
+
+**Added:** `backend/tests/parked-modules-parking.test.ts` (15 tests, no DB) — pins that with
+the default flags every VelRepeat setup is mounted exactly once and only inside
+`if (VELREPEAT_ENABLED)`, the customer/seller subscription surfaces return before registering,
+both schedulers and the boot DDL are gated, `/api/events/track` refuses, the tracking client is
+a no-op, and the MVP trees name no parked table, endpoint or import. Parking is now tested,
+not assumed.
+
+**`db/` collapse (2 SQL files) = the cutover, not tidying** — it would leave the deployed
+Render build (which reads the pre-MVP pair) and the CI bootstrap (`test.yml` runs
+`db/run-sqleditor.sql`) broken, which the brief itself forbids. Gate: a new empty Neon
+database. What WAS proved: `db/mvp/schema.sql` alone is a complete, rerunnable bootstrap
+(`verify.sh` 93/93, reruns change nothing), so no second MVP SQL file is needed.
+
+**Verified:** typecheck 4/4 · backend `tsc` 0 · builds 4/4 · i18n `1535×3` · legacy suite
+**2182 pass / 16 skip / 0 fail** (77 files, +15 new) · MVP suite **113/0** · `db/mvp/verify.sh`
+**93/93** · `git diff --check` clean. **NOT verified:** any deployment, the Stripe TEST round
+trip, the R2 upload round trip, a browser pass, production (no credential).
+
+**Open findings:** the Stripe webhook still runs `handleVelRepeatV2PaymentEvent` unconditionally
+(a parked module on the live payment path — left untouched: payment semantics are out of
+scope); production 056/058/059 drift unchanged (§90); VelCenter MVP has no Orders/Users tab;
+image upload is not MVP-compatible (`media.key` vs `media.object_key`).

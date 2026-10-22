@@ -24,8 +24,6 @@
     "db:verify": "bash db/verify-reconciler.sh",
     "db:verify:mvp": "bash db/mvp/verify.sh",
     "db:reset": "bash db/mvp/reset.sh",
-    "db:smoke": "echo 'DB smoke test placeholder'",
-    "db:consistency": "echo 'DB consistency check placeholder'",
     "typecheck": "bun --filter '@velnox/velshop' typecheck && bun --filter '@velnox/velseller' typecheck && bun --filter '@velnox/velcenter' typecheck && bun --filter '@velnox/velnox' typecheck",
     "i18n:check": "bun packages/shared/scripts/i18n-check.ts",
     "test": "bun test backend/tests",
