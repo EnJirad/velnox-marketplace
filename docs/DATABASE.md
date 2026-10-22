@@ -17,7 +17,7 @@ Neon PostgreSQL is the runtime source of truth. The backend is the only process
 that connects to it (`backend/db/index.ts`, one pool). The frontend never holds
 `DATABASE_URL` or any other server secret.
 
-## MVP tables (19)
+## MVP tables (20)
 
 | Domain | Tables | Purpose |
 |---|---|---|
@@ -25,6 +25,7 @@ that connects to it (`backend/db/index.ts`, one pool). The frontend never holds
 | Seller | `seller_profiles` | store identity + lifecycle `pending → approved/rejected/suspended`, approver evidence, no self-approval |
 | Catalog | `categories`, `products`, `product_images`, `product_variants` | category tree (slug-keyed), product lifecycle, gallery, flat variants with their own price |
 | Inventory | `inventory` | **the only stock authority**, one row per `(product_id, variant_id)` |
+| Selling units | `product_selling_units` | seller-defined set/pack: `label`, `base_quantity` base units, its own `price`, `is_active`; **owns no stock** |
 | Customer | `addresses` | owner-scoped shipping addresses, at most one default |
 | Cart | `carts`, `cart_items` | one cart per `(buyer, seller)`; line seller is FK-locked to both cart and product |
 | Checkout | `checkout_requests` | idempotency key `(user_id, request_key)` |
@@ -143,7 +144,7 @@ the machine.
 ```bash
 bun run typecheck
 bun test backend/tests/mvp-schema-contract.test.ts   # static contract (pre-MVP suite)
-bun run db:verify:mvp                                # real PostgreSQL, 81 schema checks
+bun run db:verify:mvp                                # real PostgreSQL, 93 schema checks
 bun run test:mvp                                     # MVP API, disposable MVP database
 ```
 

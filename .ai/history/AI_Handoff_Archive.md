@@ -13,6 +13,8 @@ unchanged) in:
 | [`archive/AI_Handoff-2026-09-22-full.md`](./archive/AI_Handoff-2026-09-22-full.md) | the complete handoff as it stood at 2026-09-22, before the split (1,594 lines) |
 | [`archive/AI_Handoff-2026-09-14.md`](./archive/AI_Handoff-2026-09-14.md) | the earlier snapshot it replaced |
 | [`archive/AI_Handoff-2026-10-01-decisions-and-phase3-gate.md`](./archive/AI_Handoff-2026-10-01-decisions-and-phase3-gate.md) | §56–§58 of the handoff: V2 decision sheets + the Phase 3 gate (moved 2026-10-04, superseded by §59–§65) |
+| [`archive/AI_Handoff-2026-10-21-phase0-phase1.md`](./archive/AI_Handoff-2026-10-21-phase0-phase1.md) | §83–§84 of the handoff: the clean-rewrite Phase 0 audit + Phase 1 foundation (moved 2026-10-22, both phases complete; made room for §90) |
+| [`archive/AI_Handoff-2026-10-19-mvp-scope-and-verification.md`](./archive/AI_Handoff-2026-10-19-mvp-scope-and-verification.md) | §80–§81 of the handoff: the BUY+SELL+CONTROL scope lock with wholesale parked, and the 2026-10-19 verification pass (moved 2026-10-22; the parking contract is still live in code) |
 
 **Why the index exists:** this environment's file-edit tools stop matching past
 roughly 55 KB in a file, so the single ~109 KB handoff could no longer be edited.
