@@ -1,5 +1,10 @@
 # REALTIME
 
+> **SUPERSEDED (2026-10-22).** There is **no WebSocket** in this repository: the
+> server and `backend/realtime/` were removed in `AI_HANDOFF.md` §92. Every MVP
+> page reads `/api/mvp/*` and refetches. Do not reintroduce a channel without a
+> stated consumer.
+
 ## Purpose
 
 WebSocket delivery for cart, orders, products, inventory, and notifications. Neon remains source of truth.

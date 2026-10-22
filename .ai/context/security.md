@@ -1,5 +1,10 @@
 # SECURITY — Auth, Session, Roles
 
+> **SUPERSEDED (2026-10-22).** The pre-MVP auth paths below (`backend/routes/auth.ts`,
+> Google OAuth, staff RBAC) were removed in `AI_HANDOFF.md` §92. The live session
+> is `backend/mvp/auth.ts` + `session.ts` + `backend/middleware/auth.ts`
+> (email/password, httpOnly cookie, `revoked_tokens`; OAuth answers 501).
+
 ## Purpose
 
 Google OAuth + JWT httpOnly session cookies. Backend is the gatekeeper. Password-based staff login uses scrypt (`backend/lib/password.ts`).

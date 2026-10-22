@@ -4,8 +4,8 @@
  * Google OAuth is PARKED, not broken silently: the MVP schema has no
  * `auth_identities` table, so a provider sign-in has nowhere to persist. Until
  * that is designed, `GET /api/mvp/auth/oauth` answers 501 with an explicit code
- * instead of pretending a provider flow exists. The pre-MVP Google flow is
- * untouched in `server.ts` and keeps working against the pre-MVP database.
+ * instead of pretending a provider flow exists. There is no other OAuth flow in
+ * this repository — the pre-MVP route was removed with its route tree.
  *
  * Security decisions:
  *   • passwords are hashed with the existing scrypt helper (`lib/password.ts`);
@@ -178,7 +178,7 @@ export function setupMvpAuthRoutes(app: Express): void {
       error: {
         code: "OAUTH_PARKED",
         message:
-          "Google sign-in is not available in the MVP; use email and password. The pre-MVP OAuth flow is unchanged.",
+          "Google sign-in is not available yet; use email and password.",
       },
     });
   });

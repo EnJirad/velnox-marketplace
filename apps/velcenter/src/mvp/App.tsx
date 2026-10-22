@@ -1,8 +1,8 @@
 /**
  * VelCenter MVP admin console (Phase 3b Phase D).
  *
- * Mounted from `main.tsx` only when `isMvpMode()` is true; the legacy VelCenter
- * (owner bootstrap, staff RBAC, the pre-MVP review queues) is untouched.
+ * Mounted unconditionally from `main.tsx` — this is the admin console, and there
+ * is no second page tree to fall back to.
  *
  * ADMIN AUTHORITY IS SERVER-SIDE. There is no client role check to bypass: every
  * endpoint behind these panels requires an `admin`/`owner` session and returns

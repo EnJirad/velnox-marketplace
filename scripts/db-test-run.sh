@@ -2,10 +2,9 @@
 # ============================================================================
 # VELNOX MVP — API test suite runner (disposable database)
 # ============================================================================
-# The MVP API tests run against the MVP SCHEMA, not the pre-MVP one. The legacy
-# test database is bootstrapped from db/run-sqleditor.sql (77 tables, `shops`,
-# `products.shop_id`), so pointing the MVP suite at it would fail with confusing
-# "column does not exist" errors.
+# The MVP API tests need a database built from db/schema.sql. They create their
+# own (`velnox_mvp_app_test`) rather than reusing the job's test database, so a
+# run can never mutate the database the static contract suite inspects.
 #
 # This script:
 #   1. reads the cluster from TEST_DATABASE_URL (or PG* variables),

@@ -1,9 +1,8 @@
 /**
  * The VelShop MVP app (Phase 3b Phase C).
  *
- * Mounted from `main.tsx` ONLY when `isMvpMode()` is true, which is impossible in
- * a production build (`packages/shared/src/mvp/config.ts`). When it is not
- * mounted, the legacy storefront is byte-for-byte what it was.
+ * Mounted unconditionally from `main.tsx` — this is the storefront, and there is
+ * no second page tree to fall back to.
  *
  * Every price, stock level, payment state and order status rendered here comes
  * from `/api/mvp/*`. The browser formats and displays those values; it never

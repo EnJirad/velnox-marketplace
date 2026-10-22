@@ -1,5 +1,11 @@
 # CATEGORIES
 
+> **SUPERSEDED (2026-10-22).** The pre-MVP category paths below
+> (`backend/lib/categories.ts`, `apps/velcenter/src/pages/Center.tsx`, …) were
+> removed in `AI_HANDOFF.md` §92. The live surface is `backend/mvp/catalog.ts`
+> (public) + `backend/mvp/admin.ts` (mutations) and `apps/velcenter/src/mvp/Admin.tsx`;
+> re-check every path against source.
+
 ## Purpose
 
 Platform-owned hierarchical taxonomy. Single source of truth for discovery, filtering, and analytics.

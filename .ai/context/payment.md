@@ -1,5 +1,11 @@
 # PAYMENT — Stripe (TEST MODE ONLY), Card + PromptPay, COD OFF
 
+> **SUPERSEDED (2026-10-22).** `backend/routes/stripe.ts` and the COD/refund
+> surface it documents were removed in `AI_HANDOFF.md` §92. The live payment
+> path is `backend/mvp/payments.ts` + `settlement.ts` + `backend/lib/payment-config.ts`
+> (Stripe TEST only, webhook-settled, no refund route). Re-check every endpoint
+> against source.
+
 ## Purpose
 
 Take money for an order through Stripe Checkout, reconcile the result from

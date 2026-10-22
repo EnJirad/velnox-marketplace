@@ -3,12 +3,12 @@
 **Last updated:** 2026-10-22 · **Branch:** `cleanup/mvp-database-first` (→ `main`) · **Latest pass:** **§92 DATABASE-FIRST RESET (2026-10-22)** — `db/` is down to the two canonical files (proved equivalent on a disposable PostgreSQL, both applied twice), the pre-MVP route/page/migration tree is removed, and the MVP API + three MVP frontends are the whole product: typecheck 4/4, builds 4/4, static suite 46/46, MVP API suite **113/113** against a real database. **Prior passes:** §90 clean MVP schema audit · §89 retail sets/packs. Staging is **NOT deployed** (no provider access); Stripe TEST still keyless. Production untouched; cutover **not executed** (`docs/PRODUCTION_CUTOVER.md`).
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
-> ⚠️ **OPEN PRODUCTION INCIDENT (2026-10-21, unchanged since §82):** Render checkout fails with
-> `42703 column "order_state" of relation "orders" does not exist` (plus `product_selling_units`
-> missing). The database is behind migrations 056/058/059; the repository is correct. Repair is
-> **proven and blocked** — `Production DB Migrate`/`Verify` both hard-stop because the secret
-> `NEON_PRODUCTION_DATABASE_URL` does not exist, so no migration has ever reached production.
-> Diagnosis, proof and the owner runbook: `.ai/tasks/active/production-schema-drift-repair-2026-10-21.md`.
+> ⚠️ **OPEN PRODUCTION INCIDENT (2026-10-21; repair path changed 2026-10-22):** Render checkout
+> fails with `42703 column "order_state" of relation "orders" does not exist` (plus
+> `product_selling_units` missing). Production still runs the pre-MVP database and never received
+> migrations 056/058/059. The migration chain and `Production DB Migrate`/`Verify` were retired with
+> it (§92), so the repair is now the cutover in `docs/PRODUCTION_CUTOVER.md` — **not executed**
+> (no database credential in this workspace). No production database was touched.
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
 > roughly **55 KB** in a file, so a handoff that grows past that can no longer be
@@ -580,10 +580,14 @@ cutover, because the deployed pre-MVP service reads them.
 
 ---
 
+> **NOTE (2026-10-22):** §85–§90 were written before the reset in §92. Paths they name —
+> `db/mvp/*`, `db/migrations/*`, `MVP_API_ENABLED`, `backend/routes/*` — no longer exist.
+> Current equivalents: `db/schema.sql`, `scripts/db-*.sh`, `docs/PRODUCTION_CUTOVER.md`.
+
 ## §85. Phase 2 — CLEAN MVP DATABASE (2026-10-21) — condensed
 
 **Phase 2 complete** — baseline `dd8c567`; no destructive production action. Full report:
-[`tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md) · cutover: [`db/mvp/cutover.md`](../db/mvp/cutover.md).
+[`tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md) · cutover: [`docs/PRODUCTION_CUTOVER.md`](../docs/PRODUCTION_CUTOVER.md).
 
 **`db/mvp/schema.sql` is canonical** — 20 tables, 7 lifecycle triggers, one order axis, one stock
 authority (`inventory`; variants carry no stock), one seller per cart/order (composite FKs),
@@ -779,8 +783,9 @@ keys), staging deployment, real Stripe TEST round trip. **No production DROP/TRU
 no force-push, no Stripe Live change.** Docs corrected with this pass: `docs/DATABASE.md` now lists
 20 MVP tables (it was stale at 19, missing `product_selling_units`) and 93 schema checks.
 
-**Next:** owner creates an empty Neon database → `psql -f db/mvp/schema.sql` (+`seed.sql`) →
-staging deploy with `MVP_API_ENABLED=true` → browser + Stripe TEST pass → `db/mvp/cutover.md` §3.
+**Next:** owner creates an empty Neon database → `psql -f db/schema.sql` → staging deploy →
+browser + Stripe TEST pass → execute `docs/PRODUCTION_CUTOVER.md`. (Superseded by §92; the seed is
+development/test only, so staging categories are created through the admin API.)
 
 ---
 
@@ -823,4 +828,9 @@ retired until it runs; Render's `DATABASE_URL` still points at the old database,
 so the deployed build does not match this tree until cutover; image upload is not
 MVP-compatible (`media.key` vs `media.object_key`); the VelCenter MVP has no
 Orders/Users tab; `backend/middleware/rate-limit.ts` still carries legacy route
-rules that can never match (only its `/api/mvp` rules and the global limiter run).
+rules that can never match (only its `/api/mvp` rules and the global limiter run);
+`mvp/config.ts`'s mode no longer selects a tree (the apps mount the MVP UI
+unconditionally) — its origin resolution is live, the mode matrix is vestigial;
+the subsystem context pages (`backend.md`, `checkout.md`, `payment.md`, …) carry a
+SUPERSEDED banner and still need a full MVP rewrite, while `project-map.md` is
+reconciled with the source.

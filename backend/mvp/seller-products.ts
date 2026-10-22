@@ -7,7 +7,7 @@
  * seller is a 404, exactly like a nonexistent one — ownership is never inferred
  * from the URL.
  *
- * Lifecycle: the transitions themselves belong to `db/mvp/schema.sql`
+ * Lifecycle: the transitions themselves belong to `db/schema.sql`
  * (`enforce_product_status_transition`). This module only exposes the actions a
  * seller may take (`submit`, `publish`) and the one policy the database cannot
  * express — a MATERIAL edit to a published listing takes it back to `draft` so

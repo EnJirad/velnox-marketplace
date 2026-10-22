@@ -1,10 +1,9 @@
 /**
  * MVP API route constants — the single place the `/api/mvp` paths live.
  *
- * Deliberately SEPARATE from `lib/api-routes.ts` (the legacy table). Nothing here
- * may ever be used by a legacy screen, and no legacy constant is rewritten to
- * point at `/api/mvp`: the Phase 3 backend is opt-in per build
- * (`mvp/config.ts`) and the two trees must stay independently deployable.
+ * This is the only route table in the repository (the pre-MVP `lib/api-routes.ts`
+ * was removed with its tree). Paths are relative to `/api/mvp`; callers append
+ * them to `getApiMode().mvpBaseUrl`.
  */
 export const MVP_ROUTES = {
   auth: {

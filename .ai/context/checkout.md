@@ -1,5 +1,10 @@
 # CHECKOUT
 
+> **SUPERSEDED (2026-10-22).** The pre-MVP routes below (`backend/routes/cart.ts`,
+> `stripe.ts`, `checkout.ts` …) were removed in `AI_HANDOFF.md` §92. The live
+> checkout is `backend/mvp/cart.ts` + `checkout.ts` + `orders.ts`; re-check every
+> endpoint against source and `project-map.md`.
+
 ## Purpose
 
 Cart → order → payment → shipment lifecycle.

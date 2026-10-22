@@ -1,40 +1,42 @@
 /**
- * MVP API mode — the ONE switch that points a frontend at `/api/mvp`.
+ * Backend-origin resolution for the MVP client.
  *
- * WHY THIS EXISTS
- * ---------------
- * Phase 3 built a second backend tree (`backend/mvp/`) that reads ONLY
- * `db/mvp/schema.sql` and is mounted under `/api/mvp` behind
- * `MVP_API_ENABLED=true`. The deployed pre-MVP backend, its database and every
- * existing client must keep working unchanged until the cutover
- * (`db/mvp/cutover.md`). So the frontend needs a switch that is:
+ * WHAT IT DOES
+ * ------------
+ * Reads the public `VITE_*` values and resolves the origin every request goes
+ * to (`apiOrigin`) plus the `/api/mvp` base derived from it. Its two callers are
+ * `lib/api-client.ts` (session paths) and `mvp/client.ts` (all requests).
  *
- *   • OFF by default — no environment variable means the legacy API, exactly as
- *     today, on every app and every build;
- *   • EXPLICIT — only the literal value `mvp` selects the MVP API; a typo or a
- *     half-configured deployment falls back to legacy instead of guessing;
- *   • FAIL-CLOSED IN PRODUCTION — a production deployment cannot turn it on
- *     even if someone sets `VITE_API_MODE=mvp`, unless the build ALSO declares
- *     that it is a staging build (`VITE_DEPLOY_ENV=staging`). A staging build is
- *     a real `vite build` (so `import.meta.env.PROD` is true), which is why the
- *     deployment environment must be declared explicitly rather than inferred;
- *   • SECRET-FREE — it reads only public `VITE_*` values. Nothing here can leak
- *     a server secret into the bundle; the MVP API authenticates with the same
- *     httpOnly session cookie the legacy API uses.
+ * The validation is deliberately strict:
+ *
+ *   • `VITE_API_URL` must be a BARE http(s) origin — a path, query, fragment or
+ *     embedded credentials is refused rather than "fixed up";
+ *   • an unparseable `VITE_API_URL` is refused (`INVALID_API_URL`) rather than
+ *     guessed — the `mvp` mode is not honoured and the reason is reported;
+ *   • a `mvp` request is refused in a build that declares itself production,
+ *     because a staging build is also a `vite build` (`PROD=true`) and the
+ *     environment must be stated explicitly rather than inferred;
+ *   • only public `VITE_*` values are read — the server secret never enters the
+ *     bundle, and the session stays in the httpOnly cookie.
+ *
+ * HISTORY (2026-10-22). `VITE_API_MODE` used to choose between two API trees:
+ * `mvp` for `backend/mvp/`, default for the pre-MVP backend. That tree was
+ * removed and every app now mounts the MVP UI unconditionally, so the mode no
+ * longer selects what is served — only the origin, and the reason reported when
+ * an `mvp` request is refused. The refusal matrix is still pinned by
+ * `packages/shared/tests/mvp-config.test.ts`.
  *
  * WHERE IT IS SET
  * ---------------
- *   VITE_API_MODE=mvp          # opt in (default: legacy)
- *   VITE_DEPLOY_ENV=staging    # REQUIRED for any non-development build
  *   VITE_API_URL=<origin>      # backend origin, never includes /api
- *
- * A production build that sets `VITE_API_MODE=mvp` without
- * `VITE_DEPLOY_ENV=staging` resolves to legacy and reports
- * `MVP_FORBIDDEN_IN_PRODUCTION`. This is tested in
- * `packages/shared/tests/mvp-config.test.ts`.
+ *   VITE_API_MODE=mvp          # optional; declares the intended API mode
+ *   VITE_DEPLOY_ENV=staging    # declares a non-production build
  */
 
-/** Which API tree this build talks to. */
+/**
+ * Historical mode label: `"mvp"` only when an `mvp` request was honoured. The
+ * origin is resolved the same way for both values; see the header.
+ */
 export type ApiMode = "legacy" | "mvp";
 
 /** Why MVP mode was refused (or `null` when the resolved mode is honoured). */
@@ -176,15 +178,15 @@ export function setApiModeForTests(env: ApiModeEnv | null): void {
 }
 
 /**
- * A one-line, secret-free description for the console/log when a deployment
- * asked for MVP mode and was refused. Printed once by `reportApiMode()`.
+ * A one-line, secret-free description of the resolved origin/mode, printed by
+ * each app's footer.
  */
 export function describeApiMode(config: ResolvedApiMode = getApiMode()): string {
   if (config.mode === "mvp") {
-    return `[api] MVP mode (${config.deployEnv}) → ${config.mvpBaseUrl}`;
+    return `[api] MVP API (${config.deployEnv}) → ${config.mvpBaseUrl}`;
   }
   if (config.disabledReason && config.disabledReason !== "MODE_NOT_REQUESTED") {
-    return `[api] legacy mode — MVP refused: ${config.disabledReason} (deploy env: ${config.deployEnv})`;
+    return `[api] MVP API at ${config.mvpBaseUrl} — MVP mode refused: ${config.disabledReason} (deploy env: ${config.deployEnv})`;
   }
-  return "[api] legacy mode";
+  return `[api] MVP API at ${config.mvpBaseUrl}`;
 }

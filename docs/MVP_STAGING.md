@@ -1,14 +1,13 @@
 # MVP staging — deployment runbook
 
-> **SUPERSEDED PARTIALLY (2026-10-22).** Three things this runbook assumes no
-> longer exist: the `MVP_API_ENABLED` flag (the MVP API is now mounted
-> unconditionally — `backend/mvp/` is the only route tree), `db/mvp/*` (the
-> canonical schema is `db/schema.sql` + `db/run-sqleditor.sql`, and
-> `db/mvp/cutover.md` moved to [`PRODUCTION_CUTOVER.md`](./PRODUCTION_CUTOVER.md))
-> and `db/mvp/reset.sh` (`bun run db:reset` → `scripts/db-reset.sh`). Everything
-> provider-side below (create the Neon database, deploy staging, keep production
-> untouched) still applies. Read this as "how to stand up staging", with the
-> paths above corrected.
+> **RECONCILED WITH THE MVP-ONLY TREE (2026-10-22).** Commands and variables
+> below were corrected after the `db/` collapse: the canonical schema is
+> `db/schema.sql`, the reset is `scripts/db-reset.sh`, the cutover is
+> [`PRODUCTION_CUTOVER.md`](./PRODUCTION_CUTOVER.md), and there is no
+> `MVP_API_ENABLED` flag — `backend/mvp/` is the only route tree and `/api/mvp`
+> is always mounted. Everything provider-side (create the Neon database, deploy
+> staging, keep production untouched) still applies; staging is still **NOT
+> deployed**.
 
 **Status:** ready to deploy, **not deployed**. No staging database, backend or Vercel
 project is reachable from this workspace, and no production resource was touched.
@@ -24,21 +23,22 @@ Vercel: velShop-staging  ─┐
 Vercel: velSeller-staging ├─ HTTPS + cookies (SameSite=None; Secure) ─┐
 Vercel: velCenter-staging ┘                                          │
                                                                      ▼
-                                          Render: velnox-api-staging  (MVP_API_ENABLED=true)
+                                          Render: velnox-api-staging  (/api/mvp, no flag)
                                                                      │
                                                                      ▼
-                                          Neon: velnox_mvp_staging  (db/mvp/schema.sql, 20 tables)
+                                          Neon: velnox_mvp_staging  (db/schema.sql, 20 tables)
 ```
 
 One Render service and one database. The three Vercel projects clone the existing
 production project settings and change **only** the environment variables in §3.
-The production Render service keeps `MVP_API_ENABLED` unset, so it mounts no
-`/api/mvp` route and starts no MVP worker.
+The production Render service still points at the pre-MVP database until the
+cutover ([`PRODUCTION_CUTOVER.md`](./PRODUCTION_CUTOVER.md)) moves its
+`DATABASE_URL`.
 
-> A staging backend with `MVP_API_ENABLED=true` is an **MVP-only** backend: its
-> pre-MVP routes still query the legacy tables, which the MVP database does not
-> have. Do not point staging frontend traffic at a service that must also serve
-> the legacy apps.
+> The backend serves **only** the 20 MVP tables. Pointing it at the pre-MVP
+> database (77 tables, `shops`, `orders.order_state`) is reported once at boot as
+> `MVP SCHEMA INCOMPLETE`, and every request then fails against missing columns.
+> Do not deploy staging against anything but the database from §2.
 
 ---
 
@@ -49,7 +49,7 @@ The production Render service keeps `MVP_API_ENABLED` unset, so it mounts no
 2. Bootstrap it once:
 
    ```bash
-   psql "$MVP_STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/mvp/schema.sql
+   psql "$MVP_STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
    ```
 
 3. Record the identity (no secrets) and keep it with the staging ticket:
@@ -57,18 +57,21 @@ The production Render service keeps `MVP_API_ENABLED` unset, so it mounts no
    ```sql
    SELECT current_database(), inet_server_addr(), current_setting('server_version');
    SELECT to_regclass('public.shops') IS NULL AS no_legacy_tables;   -- must be true
-   SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'; -- 19
+   SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'; -- 20
    ```
 
-4. Optional categories seed: `psql "$MVP_STAGING_DATABASE_URL" -f db/mvp/seed.sql`.
+4. Categories are created through the admin API (`POST /api/mvp/admin/categories`).
+   `scripts/db-seed.sql` is development/test only — it refuses any database whose
+   name does not end in `_dev`/`_test`, so it cannot seed `velnox_mvp_staging`.
 5. Create the staging owner/admin account through the API
    (`POST /api/mvp/auth/bootstrap-owner` with `BOOTSTRAP_OWNER_SECRET`) or sign up
    and promote the row once. Use a staging-only password.
 
-The database name **must not** be the production database. `db/mvp/reset.sh`
+The database name **must not** be the production database. `scripts/db-reset.sh`
 refuses any target that does not end in `_dev`/`_test`, refuses `DATABASE_URL`,
-and refuses a production-marked process — but the provider-side creation is still
-the owner's responsibility.
+and refuses a production-marked process, so it cannot be used to rebuild staging —
+create that database once and leave it alone. Provider-side creation is the
+owner's responsibility.
 
 ---
 
@@ -79,7 +82,6 @@ the owner's responsibility.
 | Variable | Value | Notes |
 |---|---|---|
 | `DATABASE_URL` | the staging Neon URL | must be the database from §2 |
-| `MVP_API_ENABLED` | **`true`** | mounts `/api/mvp/*` and starts the expiry worker |
 | `JWT_SECRET` | a **new** 64+ char random secret | never the production value |
 | `NODE_ENV` | `production` | providers usually set this; see the cookie note |
 | `MVP_COOKIE_SECURE` | `true` | only ever *adds* `Secure`; harmless if `NODE_ENV=production` |
@@ -112,17 +114,19 @@ unchanged) and set only:
 
 | Variable | Value |
 |---|---|
-| `VITE_API_MODE` | `mvp` |
-| `VITE_DEPLOY_ENV` | `staging` |
 | `VITE_API_URL` | `https://<velnox-api-staging host>` (origin only, no `/api`) |
+| `VITE_API_MODE` | `mvp` (optional; still read by `mvp/config.ts`) |
+| `VITE_DEPLOY_ENV` | `staging` (optional; declares the build to `mvp/config.ts`) |
+
+`VITE_API_URL` is the value that decides where requests go: every app mounts the
+MVP UI unconditionally, and the shared client resolves `<origin>/api/mvp` from
+it. The two `VITE_API_MODE` / `VITE_DEPLOY_ENV` values are still resolved by
+`packages/shared/src/mvp/config.ts` (pinned by
+`packages/shared/tests/mvp-config.test.ts`) but no longer choose which screen is
+mounted.
 
 Everything else (`VITE_VELSHOP_URL`, …) follows the existing production pattern
 with staging hosts.
-
-**Production projects must not receive these three variables.** A production
-build that sets `VITE_API_MODE=mvp` without `VITE_DEPLOY_ENV=staging` resolves to
-the legacy API and logs `MVP_FORBIDDEN_IN_PRODUCTION`; that fail-closed path is
-covered by `packages/shared/tests/mvp-config.test.ts`.
 
 ---
 
@@ -131,9 +135,10 @@ covered by `packages/shared/tests/mvp-config.test.ts`.
 1. `GET https://<api>/api/health` → 200.
 2. `GET https://<api>/api/mvp/payments/status` → `usable:false` unless Stripe test
    keys were set (never `mode:"live"`).
-3. Open `https://<shop-staging>/` → the header shows the **MVP** chip and the
-   footer prints `[api] MVP mode (staging) → …`. If it shows the legacy storefront,
-   `VITE_API_MODE` did not reach the build.
+3. Open `https://<shop-staging>/` → the catalogue is served by
+   `GET /api/mvp/products` (DevTools → Network) and the footer prints the
+   `describeApiMode()` line. There is no legacy storefront to fall back to; an
+   empty catalogue with 404s means `VITE_API_URL` is wrong.
 4. Sign up, browse, add to cart, check out (no payment configured → order stays
    `pending_payment`), cancel → stock returns.
 5. Seller apply → admin approve → product → submit → admin approve → publish →
@@ -151,27 +156,28 @@ covered by `packages/shared/tests/mvp-config.test.ts`.
 
 ## 5. Scheduling (expiry worker)
 
-`backend/jobs/mvp-order-expiry-scheduler.ts` starts only when
-`MVP_API_ENABLED=true`, polls every 60 s (floor 30 s) and calls the same
-`expireStaleOrders` the admin endpoint uses. `MVP_ORDER_EXPIRY_SCHEDULER=off`
-keeps it manual (admin → Overview → “Run expiry sweep”). No second scheduler
-system is introduced.
+`backend/jobs/mvp-order-expiry-scheduler.ts` starts with the server, polls every
+60 s (floor 30 s) and calls the same `expireStaleOrders` the admin endpoint uses.
+`MVP_ORDER_EXPIRY_SCHEDULER=off` keeps it manual (admin → Overview → “Run expiry
+sweep”). No second scheduler system is introduced.
 
 ## 6. Known blockers (do not paper over)
 
 | Blocker | Evidence | Consequence |
 |---|---|---|
-| ~~**Retail sets/packs are missing from the MVP**~~ **RESOLVED in Phase 3d** | `db/mvp/schema.sql` now has `product_selling_units` (`label`, `base_quantity`, own `price`, `is_active`) plus the `cart_items.selling_unit_id` and `order_items` snapshot columns | The MVP can sell a “Pack 6 / Pack 12” at its own price against base-unit stock (`base_units = quantity × base_quantity`). Proven by `backend/mvp/tests/selling-units.test.ts`, `db/mvp/verify.sh` §F3 and the browser E2E. Legacy sets/packs are untouched |
-| **Image upload is not implemented for the MVP** | legacy `backend/routes/upload.ts` writes `INSERT INTO media (url, key, …)`; the MVP table is `media.object_key` (no `key`) | Sellers paste image URLs; the editor says so. A real upload needs an MVP-aware presign route writing `media.object_key` |
+| ~~**Retail sets/packs are missing from the MVP**~~ **RESOLVED in Phase 3d** | `db/schema.sql` has `product_selling_units` (`label`, `base_quantity`, own `price`, `is_active`) plus the `cart_items.selling_unit_id` and `order_items` snapshot columns | The MVP can sell a “Pack 6 / Pack 12” at its own price against base-unit stock (`base_units = quantity × base_quantity`). Proven by `backend/mvp/tests/selling-units.test.ts` and the browser E2E |
+| **Image upload is not implemented for the MVP** | there is no upload route in `backend/mvp/`; the schema stores `media.object_key`, and sellers supply image URLs | Sellers paste image URLs; the editor says so. A real upload needs an MVP presign route writing `media.object_key` |
 | **Google OAuth is parked** | `GET /api/mvp/auth/oauth` → 501; the MVP schema has no identity tables | email/password only; OAuth users from the legacy database cannot sign in |
 | Vercel/Render access | no provider credential in this workspace | §2–§3 are owner actions, unverified by the agent |
 
 ## 7. Rollback
 
-- **Frontends:** remove `VITE_API_MODE` (or set `legacy`) and redeploy → the
-  legacy storefront returns; no code change needed.
-- **Backend:** set `MVP_API_ENABLED=false` (or delete the staging service).
-  `/api/mvp/*` unmounts and the expiry worker does not start.
+- **Frontends:** redeploy the previous build (or remove `VITE_API_URL` so the
+  client falls back to `http://localhost:3001` — which fails loudly). There is no
+  legacy storefront to switch back to.
+- **Backend:** delete the staging Render service (or point its `DATABASE_URL`
+  back at the pre-MVP database and redeploy the older build); `/api/mvp/*` is
+  always mounted, so there is no flag to turn it off.
 - **Database:** the staging database is disposable; drop it with the Neon console.
 - **Production:** nothing to roll back — no production resource is referenced by
   this runbook's changes.
@@ -180,8 +186,9 @@ system is introduced.
 
 - Never point production `DATABASE_URL` at the staging database, or staging at
   production.
-- Never run `db/mvp/reset.sql` / `reset.sh` against an unidentified database.
-- Never enable `MVP_API_ENABLED` on the production Render service while it points
-  at the legacy database.
+- Never run `scripts/db-reset.sh` against an unidentified database (it refuses
+  anything that is not a `_dev`/`_test` name).
+- Never repoint the production Render service at the MVP database outside the
+  approved cutover, and never run anything from `db/` against production.
 - Never put a secret in a `VITE_*` variable (they are public and inlined).
 - No production cutover in this phase.

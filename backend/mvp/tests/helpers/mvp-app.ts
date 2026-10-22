@@ -3,13 +3,13 @@
  *
  * There are no mocks here. Every assertion in `backend/mvp/tests/` drives the
  * actual route handlers, which issue the actual SQL against a database built
- * from `db/mvp/schema.sql`. That is the only way the schema's triggers, CHECKs,
+ * from `db/schema.sql`. That is the only way the schema's triggers, CHECKs,
  * composite foreign keys and unique indexes can be proven — a mocked `query()`
  * would prove nothing about them.
  *
  * WHICH DATABASE
  * --------------
- * `db/mvp/test-run.sh` creates a dedicated, disposable database
+ * `scripts/db-test-run.sh` creates a dedicated, disposable database
  * (`velnox_mvp_app_test`), applies the MVP schema, and exports it as
  * `TEST_DATABASE_URL` before `bun test` starts. `backend/db/index.ts` therefore
  * points the shared pool at it.

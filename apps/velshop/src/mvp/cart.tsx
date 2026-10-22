@@ -8,9 +8,8 @@
  * the server rejected (out of stock, unpublished product) disappears instead of
  * lingering.
  *
- * This is intentionally NOT the legacy `@/lib/cart` provider: that one talks to
- * the pre-MVP API and carries selling units / shop grouping. MVP mode mounts
- * only this provider, and legacy mode never mounts it (see `main.tsx`).
+ * This is the only cart provider in the app: it is mounted once by `App.tsx`, and
+ * every mutation goes through `/api/mvp/cart`.
  */
 import { MvpApiError, getMvpApi, type MvpCart } from "@velnox/shared/mvp";
 import { useCallback, createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";

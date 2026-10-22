@@ -9,7 +9,7 @@
 -- edited category.
 --
 -- Development/test only: refuses a database whose name does not end in
--- `_dev` or `_test`. `db/mvp/reset.sh --seed` runs it after a reset.
+-- `_dev` or `_test`. `scripts/db-reset.sh --seed` runs it after a reset.
 -- ============================================================================
 
 \set ON_ERROR_STOP on

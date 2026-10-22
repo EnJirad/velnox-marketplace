@@ -1,5 +1,10 @@
 # MEDIA — Cloudflare R2
 
+> **SUPERSEDED (2026-10-22).** Every path below (`backend/routes/upload.ts`,
+> the presign/confirm flow, the R2 helpers) was removed in `AI_HANDOFF.md` §92.
+> The MVP has **no upload route**: listings carry image URLs and the schema
+> stores `media.object_key`. R2 is not used by this tree.
+
 ## Purpose
 
 Binary storage for avatars, covers, product images, shop media, and evidence. Neon holds metadata.

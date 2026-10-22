@@ -1,5 +1,9 @@
 # VERIFICATION — the single V system
 
+> **SUPERSEDED (2026-10-22).** The pre-MVP verification routes and tables this
+> page names were removed in `AI_HANDOFF.md` §92. The live model is an approved
+> `seller_profiles` row; re-check every path against source and `project-map.md`.
+
 ## Purpose
 
 Velnox has **one** verification system: **SELLER / SHOP identity verification**.

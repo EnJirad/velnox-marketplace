@@ -68,7 +68,7 @@ if [ -z "$DB_URL" ]; then
   exit 2
 fi
 
-# Shipped as `bash db/mvp/reset.sh` from anywhere; resolve repository-relative
+# Shipped as `bash scripts/db-reset.sh` from anywhere; resolve repository-relative
 # paths and the bun import below against the repo root.
 cd "$(dirname "$0")/.."
 

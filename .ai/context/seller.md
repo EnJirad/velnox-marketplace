@@ -1,5 +1,10 @@
 # SELLER
 
+> **SUPERSEDED (2026-10-22).** The pre-MVP seller paths below (`backend/routes/seller.ts`,
+> `backend/middleware/seller.ts`, …) were removed in `AI_HANDOFF.md` §92. The live
+> seller surface is `backend/mvp/seller.ts` + `seller-products.ts`,
+> `apps/velseller/src/mvp/*`; re-check every path against source.
+
 ## Purpose
 
 Seller identity, onboarding, shop/profile, products, orders, and verification.

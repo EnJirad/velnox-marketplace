@@ -1,9 +1,8 @@
 /**
  * VelSeller MVP workspace (Phase 3b Phase D).
  *
- * Mounted from `main.tsx` only when `isMvpMode()` is true. The legacy seller app
- * (goals, shop, income, chat, the pre-MVP application gate) is untouched and
- * remains what a production build renders.
+ * Mounted unconditionally from `main.tsx` — this is the seller workspace, and
+ * there is no second page tree to fall back to.
  *
  * AUTHORISATION IS THE BACKEND'S. Every route here is wrapped in a session guard
  * for the UX, but each mutation is re-authorised server-side
