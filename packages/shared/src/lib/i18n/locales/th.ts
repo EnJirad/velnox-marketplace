@@ -75,6 +75,10 @@ export const th = {
     close: "ปิด",
     save: "บันทึก",
     search: "ค้นหา",
+    sortNewest: "ล่าสุด",
+    sortPriceAsc: "ราคา: ต่ำ → สูง",
+    sortPriceDesc: "ราคา: สูง → ต่ำ",
+    sortName: "ชื่อ ก–ฮ",
     all: "ทั้งหมด",
     viewAll: "ดูทั้งหมด",
     products: "สินค้า",
@@ -102,7 +106,38 @@ export const th = {
     notifications: "การแจ้งเตือน",
     velrepeat: "การสั่งซื้ออัตโนมัติ",
     account: "บัญชีของฉัน",
+    sellerDashboard: "แดชบอร์ดผู้ขาย",
     ariaMobile: "เมนูหลักบนมือถือ",
+  },
+
+  role: {
+    owner: "เจ้าของบริษัท",
+    admin: "ผู้ดูแลระบบ",
+    seller: "ผู้ขาย",
+    customer: "ลูกค้า",
+  },
+
+  sellerNav: {
+    overview: "ภาพรวม",
+    products: "สินค้าของฉัน",
+    orders: "ออเดอร์",
+    profile: "โปรไฟล์ร้านค้า",
+    profileTitle: "โปรไฟล์ร้านค้า",
+    profileDesc: "ชื่อและคำอธิบายที่ลูกค้าเห็นบนสินค้าของคุณ",
+    profileSave: "บันทึกโปรไฟล์",
+    profileSaved: "บันทึกโปรไฟล์ร้านค้าแล้ว",
+    profileFailed: "ไม่สามารถบันทึกโปรไฟล์ร้านค้าได้",
+    verifiedBadge: "ผู้ขายที่ยืนยันตัวตนแล้ว",
+    storeName: "ชื่อร้านค้า",
+    storeDesc: "คุณขายอะไร?",
+  },
+
+  centerNav: {
+    overview: "ภาพรวม",
+    sellers: "ร้านค้า",
+    products: "สินค้า",
+    categories: "หมวดหมู่",
+    console: "ศูนย์บริหาร VelCenter",
   },
 
   header: {

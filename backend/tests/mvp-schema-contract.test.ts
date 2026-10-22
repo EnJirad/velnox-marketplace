@@ -15,10 +15,11 @@
  *     `docs/DATABASE.md`, not in the DDL;
  *   • neither file destroys anything: no DROP TABLE/COLUMN/DATABASE, no
  *     TRUNCATE, no DELETE, no INSERT/UPDATE. They only ever create;
- *   • the model is the 20-table MVP: ONE order axis, ONE stock authority
+ *   • the model is the 23-table MVP: ONE order axis, ONE stock authority
  *     (`inventory`), one retail selling-unit table that owns no stock, money
- *     as NUMERIC(12,2), and no VelRepeat / memory / wholesale / review /
- *     wishlist / chat / staff-RBAC objects;
+ *     as NUMERIC(12,2), provider identities, one-row-per-user reviews and
+ *     favourites, and no VelRepeat / memory / wholesale / chat / staff-RBAC
+ *     objects;
  *   • the installer is rerunnable: every CREATE is IF NOT EXISTS (functions
  *     CREATE OR REPLACE, triggers preceded by DROP TRIGGER IF EXISTS);
  *   • the seed is platform configuration only — categories, never a fake
@@ -55,9 +56,11 @@ const installer = readSql(RUN_SQLEDITOR_SQL);
 const MVP_TABLES = [
   "users",
   "revoked_tokens",
+  "user_identities",
   "seller_profiles",
   "categories",
   "products",
+  "product_favorites",
   "product_images",
   "product_variants",
   "inventory",
@@ -68,6 +71,7 @@ const MVP_TABLES = [
   "cart_items",
   "orders",
   "order_items",
+  "product_reviews",
   "shipments",
   "checkout_requests",
   "payments",
@@ -87,7 +91,6 @@ const FORBIDDEN_TABLES = [
   "store_accounts",
   "shops",
   "checkout_groups",
-  "product_reviews",
   "conversations",
   "chat_messages",
   "customer_wishlist",
@@ -165,7 +168,7 @@ describe("the two canonical files", () => {
 });
 
 describe("the model", () => {
-  test("declares exactly the 20 MVP tables", () => {
+  test("declares exactly the 23 MVP tables", () => {
     expect(declaredTables(schema).sort()).toEqual([...MVP_TABLES].sort());
   });
 

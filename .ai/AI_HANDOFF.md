@@ -830,7 +830,72 @@ MVP-compatible (`media.key` vs `media.object_key`); the VelCenter MVP has no
 Orders/Users tab; `backend/middleware/rate-limit.ts` still carries legacy route
 rules that can never match (only its `/api/mvp` rules and the global limiter run);
 `mvp/config.ts`'s mode no longer selects a tree (the apps mount the MVP UI
-unconditionally) — its origin resolution is live, the mode matrix is vestigial;
-the subsystem context pages (`backend.md`, `checkout.md`, `payment.md`, …) carry a
-SUPERSEDED banner and still need a full MVP rewrite, while `project-map.md` is
+unconditionally) — its origin resolution is live, the mode matrix is vestigial;the subsystem context pages
+(`backend.md`, `checkout.md`, `payment.md`, …) carry
+a SUPERSEDED banner and still need a full MVP rewrite, while `project-map.md` is
 reconciled with the source.
+
+---
+
+## §93. UI/UX + feature-parity restoration after the database-first reset (2026-10-22)
+
+**Status: code complete and verified locally; NOT deployed; external configuration required.**
+Branch `feat/restore-original-ui-and-feature-parity` off `main` (`44d191e`). Baseline for the
+restoration was the pre-reset tree at commit `f001697^` = `44d191e~2`, read from Git history —
+the last known-good source of the original UI inventory (2,040 lines of `db/schema.sql` history
+is irrelevant here; the 244 legacy frontend files were the reference, not a thing to re-copy).
+
+The reset removed the pre-MVP route/page tree but left the three MVP frontends and the whole
+design system intact. This pass restores the **original shopper experience** on top of the
+canonical MVP backend and the two-file database — it does **not** resurrect the legacy API, the
+legacy tables, or the deleted route tree. Every restored feature calls a real `/api/mvp/*`
+endpoint against the real schema.
+
+### What was restored
+
+| Surface | Restored | How
+|---|---|---|
+| Google Login | Yes, code complete | `backend/mvp/oauth.ts` — start/callback routes, signed 10-minute HMAC state cookie, JWKS ID-token verification (`iss`/`aud`/`exp`/`email_verified`), ONE-person identity resolution through `user_identities`, same `velnox_session` httpOnly cookie, allow-listed redirect origin. **Needs `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` to actually run.** |
+| Favourites / wishlist | Yes | `product_favorites` table (`UNIQUE(user_id, product_id)`), `GET/POST/DELETE /api/mvp/favorites`, the product-card heart, `/wishlist` page, optimistic flip with rollback |
+| Comments / reviews | Yes | `product_reviews` table (one row per shopper, author-only edit/delete, derived `verified_purchase`), public list + summary + viewer-review routes, the product-page review block |
+| Profile image | Yes, code complete | `backend/lib/r2.ts` + `/api/mvp/profile/avatar/{presign,confirm}` — server-minted key, presigned PUT straight to R2, confirm re-reads size/type from storage, `media.object_key` (resolves the `media.key` mismatch), replace/remove. **Needs the `R2_*` env vars to actually run.** |
+| Seller store profile | Yes | `PATCH /api/mvp/seller/profile` (pending/approved only) + `/seller/profile` settings page |
+| Catalogue sorting | Yes | `sort` (`newest`/`price_asc`/`price_desc`/`name`) added to `GET /products`, closed-vocabulary order-by, sort control in the UI |
+| Storefront chrome | Yes | Original header, language switcher (th/en/my), floating mobile tab bar, full footer, `ProductCard` with the green V badge |
+| VelCenter admin console | Yes | Icon-tab header, mobile tab bar, account menu, and a **confirmation window** on every seller/product decision and the expiry sweep |
+| VelSeller workspace | Yes | Original store navigation + account menu + mobile tab bar, plus the store-profile page |
+
+The schema grew deliberately from **20 → 23 tables** (`user_identities`, `product_favorites`,
+`product_reviews`) — only the three the restored features actually require. Both canonical files
+stay declaration-identical and comment-free.
+
+### Verified
+
+typecheck 4/4 · backend `tsc` 0 · builds 4/4 · `bun test backend/tests packages/shared/tests`
+**46/46** · `bun run test:mvp` **125/125** (13 files, incl. a new `social.test.ts` proving the
+favourites constraint, review authorship, profile PATCH and Google identity creation/linking
+against a real database) · `bun run db:check` **PASS (23 tables · 226 columns · 86 indexes ·
+164 constraints · 7 triggers, both files applied twice and byte-identical)** · `bun run db:verify`
+**17/17** · `bun i18n:check` **th=en=my 1561 keys at parity** · `git diff --check` clean.
+
+### Remaining gaps
+
+- **Google Login and image upload are CODE-COMPLETE, EXTERNAL-CONFIGURATION-REQUIRED.** No
+  `GOOGLE_CLIENT_ID`/`SECRET`/`REDIRECT_URI` and no `R2_*` in this workspace, so neither real
+  round trip was executed — the automated tests cover verification, identity resolution and the
+  fail-closed paths only. A real Google round trip and a real presign → PUT → confirm against
+  R2 remain unproven.
+- **A real Stripe TEST round trip is still not executed** (unchanged from §92): settlement is
+  proven only through signed-webhook fixtures; the payment UI entry points are wired to the
+  existing MVP session + webhook path, but no live charge was ever completed.
+- **Buyer/seller/admin translation coverage is now partial.** The restored surfaces are fully
+  th/en/my (parity enforced), but the older MVP pages (`CartPage`, `CheckoutPage`,
+  `OrderDetailPage`, `ProductEditor`, `OrdersPanel`, the VelCenter panels) still carry hardcoded
+  English copy. Keys exist; the older pages were not re-authored.
+- **Screens that were deleted in the reset are still absent**: addresses book, notifications,
+  chat, VelRepeat, goals, and the pre-MVP Orders/Users tabs in VelCenter. None is reachable in
+  the canonical API and no table supports them — restoring any needs a schema + API decision, not
+  a UI change.
+- **Not deployed** (no provider access from this workspace) and **production is untouched** —
+  the cutover (`docs/PRODUCTION_CUTOVER.md`) is still unexecuted, so production still runs the
+  pre-MVP database and none of the three new tables exist there.

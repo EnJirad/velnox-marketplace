@@ -11,8 +11,8 @@
  *     needs a retry" (Phase 3b requires all four explicitly);
  *   • `formatMoney` — display ONLY. The value always comes from the API as a
  *     `NUMERIC` string; the browser never recomputes a price or a total;
- *   • `MvpAuthPanel` — email/password sign-in and sign-up, which is the only auth
- *     the MVP backend implements (Google OAuth is parked: `auth/oauth` → 501).
+ *   • `MvpAuthPanel` — the original sign-in screen: Google first, email/password
+ *     as the alternative (both end in the same httpOnly session cookie).
  *
  * These components are deliberately plain: they render the existing shadcn
  * tokens (`bg-background`, `text-muted-foreground`, slate borders) so the MVP
@@ -24,6 +24,8 @@ import { Label } from "../components/ui/label.js";
 import { refetchCurrentUser } from "../lib/api-client.js";
 import { getMvpApi, type MvpSellerSession } from "./api.js";
 import { MvpApiError } from "./client.js";
+import { getApiMode } from "./config.js";
+import { MVP_ROUTES } from "./routes.js";
 import type { MvpUser } from "./types.js";
 import { AlertCircle, Loader2, PackageOpen, RefreshCw } from "lucide-react";
 import {
@@ -355,12 +357,15 @@ export function MvpEmpty({
  */
 export function MvpAuthPanel({
   title = "Sign in to Velnox",
-  description = "Use the email and password you registered with.",
+  description = "Sign in with Google, or use the email and password you registered with.",
   redirectAfterAuth = "/",
+  oauthApp = "velshop",
 }: {
   title?: string;
   description?: string;
   redirectAfterAuth?: string;
+  /** Which frontend the backend should return to (allowlisted server-side). */
+  oauthApp?: "velshop" | "velseller" | "velcenter" | "velnox";
 }) {
   const [searchParams] = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get("returnTo")) ?? redirectAfterAuth;
@@ -371,6 +376,47 @@ export function MvpAuthPanel({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Google is offered only when the SERVER says the client is configured; the
+  // button is never a link to a fake flow.
+  const [googleEnabled, setGoogleEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    getMvpApi()
+      .auth.providers()
+      .then((providers) => {
+        if (active) setGoogleEnabled(Boolean(providers.google?.enabled));
+      })
+      .catch(() => {
+        if (active) setGoogleEnabled(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // A refused Google round trip comes back as `?error=…` on this page.
+  useEffect(() => {
+    const code = searchParams.get("error");
+    if (!code) return;
+    const message =
+      code === "google_not_configured"
+        ? "Google sign-in is not configured on this server. Use email and password."
+        : code === "google_denied"
+          ? "Google sign-in was cancelled."
+          : code === "google_email_unverified"
+            ? "Google did not verify that email address."
+            : code === "google_account_inactive"
+              ? "This account is not active."
+              : "Could not sign in with Google. Please try again.";
+    setError(message);
+  }, [searchParams]);
+
+  const startGoogle = () => {
+    const base = getApiMode().mvpBaseUrl;
+    const params = new URLSearchParams({ returnTo, app: oauthApp });
+    window.location.assign(`${base}${MVP_ROUTES.auth.googleStart}?${params}`);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -402,6 +448,31 @@ export function MvpAuthPanel({
     <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.06)] sm:p-8">
       <h1 className="text-xl font-bold tracking-tight text-slate-900">{title}</h1>
       <p className="mt-1 text-sm text-slate-500">{description}</p>
+
+      {googleEnabled && (
+        <>
+          <button
+            type="button"
+            onClick={startGoogle}
+            className="mt-5 flex h-11 w-full items-center justify-center gap-2.5 rounded-[10px] border border-slate-200 bg-white text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50"
+          >
+            <svg viewBox="0 0 48 48" className="size-5" aria-hidden="true">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+            </svg>
+            Continue with Google
+          </button>
+          <div className="my-4 flex items-center gap-3">
+            <span className="h-px flex-1 bg-slate-200" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              or
+            </span>
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+        </>
+      )}
 
       <div className="mt-5 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
         {(["login", "signup"] as const).map((value) => (

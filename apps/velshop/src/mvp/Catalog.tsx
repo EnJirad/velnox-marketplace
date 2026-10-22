@@ -7,19 +7,28 @@
  */
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
-import { getMvpApi } from "@velnox/shared/mvp";
+import { useLanguage } from "@velnox/shared/lib/i18n";
+import { getMvpApi, type MvpProductSummary, type MvpProductSort } from "@velnox/shared/mvp";
 import { MvpEmpty, MvpErrorState, MvpLoading, useMvpQuery } from "@velnox/shared/mvp/ui";
 import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
-import { ProductTile } from "./components";
+import { useNavigate, useSearchParams } from "react-router";
+import { toast } from "sonner";
+import { ProductCard } from "@/components/ProductCard";
+import { useFavorites } from "./favorites";
+import { useSession } from "./session";
 
 const PAGE_SIZE = 20;
 
 export default function Catalog() {
   const [params, setParams] = useSearchParams();
+  const { t } = useLanguage();
+  const { user } = useSession();
+  const { isFavorited, toggle, busyId } = useFavorites();
+  const navigate = useNavigate();
   const category = params.get("category") ?? "";
   const q = params.get("q") ?? "";
+  const sort = (params.get("sort") as MvpProductSort | null) ?? "newest";
   const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
   const [search, setSearch] = useState(q);
 
@@ -34,9 +43,23 @@ export default function Catalog() {
         limit: PAGE_SIZE,
         category: category || undefined,
         q: q || undefined,
+        sort,
       }),
-    [page, category, q],
+    [page, category, q, sort],
   );
+
+  const toggleFavorite = async (product: MvpProductSummary) => {
+    if (!user) {
+      navigate(`/auth?returnTo=${encodeURIComponent(`/products/${product.slug}`)}`);
+      return;
+    }
+    try {
+      const nowFavorited = await toggle(product.id);
+      toast.success(nowFavorited ? t("productDetail.wishlistAdded") : t("productDetail.wishlistRemoved"));
+    } catch {
+      toast.error(t("productDetail.wishlistFailed"));
+    }
+  };
 
   const update = (next: Record<string, string | null>) => {
     const merged = new URLSearchParams(params);
@@ -53,9 +76,9 @@ export default function Catalog() {
   return (
     <div className="grid gap-5">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Products</h1>
+        <h1 className="text-2xl font-black tracking-tight text-slate-900">{t("nav.products")}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {pagination ? `${pagination.total} published product${pagination.total === 1 ? "" : "s"}` : "Published listings from approved sellers"}
+          {pagination ? `${pagination.total} · ${t("nav.products")}` : t("home.shopsDesc")}
         </p>
       </div>
 
@@ -71,8 +94,8 @@ export default function Catalog() {
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search products"
-            aria-label="Search products"
+            placeholder={t("home.searchPlaceholder")}
+            aria-label={t("header.ariaSearch")}
             className="h-11 rounded-[10px] border-slate-200 pl-9"
           />
         </div>
@@ -83,15 +106,26 @@ export default function Catalog() {
             aria-label="Category"
             className="h-11 rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-700"
           >
-            <option value="">All categories</option>
+            <option value="">{t("nav.categories")}</option>
             {(categories.data ?? []).map((entry) => (
               <option key={entry.id} value={entry.slug}>
                 {entry.name}
               </option>
             ))}
           </select>
+          <select
+            value={sort}
+            onChange={(event) => update({ sort: event.target.value, page: null })}
+            aria-label="Sort"
+            className="h-11 rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-700"
+          >
+            <option value="newest">{t("common.sortNewest")}</option>
+            <option value="price_asc">{t("common.sortPriceAsc")}</option>
+            <option value="price_desc">{t("common.sortPriceDesc")}</option>
+            <option value="name">{t("common.sortName")}</option>
+          </select>
           <Button type="submit" className="h-11 bg-slate-900 px-5 text-white hover:bg-slate-800">
-            Search
+            {t("common.search")}
           </Button>
         </div>
       </form>
@@ -122,7 +156,13 @@ export default function Catalog() {
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {(products.data?.products ?? []).map((product) => (
-              <ProductTile key={product.id} product={product} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                favorited={isFavorited(product.id)}
+                favoriteBusy={busyId === product.id}
+                onToggleFavorite={(entry) => void toggleFavorite(entry)}
+              />
             ))}
           </div>
 

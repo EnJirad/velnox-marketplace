@@ -1,60 +1,61 @@
 /**
- * VelSeller MVP workspace (Phase 3b Phase D).
+ * VelSeller workspace shell.
  *
- * Mounted unconditionally from `main.tsx` — this is the seller workspace, and
- * there is no second page tree to fall back to.
+ * Restored original chrome: the top header with store navigation, the floating
+ * mobile tab bar and the shared account menu — all over the MVP seller API.
  *
- * AUTHORISATION IS THE BACKEND'S. Every route here is wrapped in a session guard
- * for the UX, but each mutation is re-authorised server-side
- * (`requireApprovedSeller`, seller ownership scoping, order-status allow-lists).
- * Hiding a button is never the control.
+ * AUTHORISATION IS THE BACKEND'S. Every route is guarded here for the UX, but
+ * each mutation is re-authorised server-side (`requireApprovedSeller`, seller
+ * ownership scoping, order-status allow-lists).
  */
 import { Logo } from "@velnox/shared/components/Logo";
+import { MobileTabBar } from "@velnox/shared/components/MobileTabBar";
+import { UserMenu } from "@velnox/shared/components/UserMenu";
 import { Button } from "@velnox/shared/components/ui/button";
-import { describeApiMode } from "@velnox/shared/mvp";
+import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
   MvpAuthPanel,
   MvpLoading,
   MvpRequireSession,
   MvpSessionProvider,
-  mvpSignOut,
   useMvpSessionContext,
 } from "@velnox/shared/mvp/ui";
-import { LogOut } from "lucide-react";
+import { Package, ShoppingBag, Store, Target } from "lucide-react";
 import { lazy, type ReactNode } from "react";
 import { Link, NavLink, Route, Routes } from "react-router";
 
 const Workspace = lazy(() => import("./Workspace"));
 const ProductEditor = lazy(() => import("./ProductEditor"));
 const OrdersPanel = lazy(() => import("./OrdersPanel"));
-
-const NAV = [
-  { to: "/seller", label: "Overview", end: true },
-  { to: "/seller/products", label: "Products" },
-  { to: "/seller/orders", label: "Orders" },
-];
+const StoreProfile = lazy(() => import("./StoreProfile"));
 
 function Shell({ children }: { children: ReactNode }) {
-  const { user } = useMvpSessionContext();
+  const { t } = useLanguage();
+  const NAV = [
+    { to: "/seller", label: t("sellerNav.overview"), end: true },
+    { to: "/seller/products", label: t("sellerNav.products") },
+    { to: "/seller/orders", label: t("sellerNav.orders") },
+    { to: "/seller/profile", label: t("sellerNav.profile") },
+  ];
+
   return (
     <div className="site-app min-h-screen bg-[#F8FAFC]">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-2 px-4 sm:px-6">
-          <Link to="/seller" className="flex items-center gap-2">
+        <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-2 px-4 sm:px-6">
+          <Link to="/seller" aria-label="Velnox seller" className="shrink-0">
             <Logo wordmarkClassName="hidden sm:inline" />
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-              Seller · MVP
-            </span>
           </Link>
-          <nav className="ml-3 hidden items-center gap-1 md:flex" aria-label="Seller">
+          <nav className="ml-3 hidden items-center gap-1 lg:flex" aria-label={t("role.seller")}>
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
-                  `rounded-[10px] px-3 py-2 text-sm font-medium ${
-                    isActive ? "bg-slate-100 text-slate-900" : "text-slate-500 hover:bg-slate-50"
+                  `flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-slate-100 text-slate-900"
+                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                   }`
                 }
               >
@@ -62,42 +63,36 @@ function Shell({ children }: { children: ReactNode }) {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="hidden max-w-40 truncate text-xs text-slate-500 sm:inline">
-              {user?.email}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-9 text-slate-500"
-              aria-label="Sign out"
-              onClick={async () => {
-                await mvpSignOut();
-                window.location.assign("/");
-              }}
-            >
-              <LogOut className="size-4" />
-            </Button>
+          <div className="ml-auto flex items-center gap-1">
+            <UserMenu align="end" />
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">{children}</main>
-      <footer className="mx-auto w-full max-w-5xl px-4 pb-10 text-[11px] text-slate-400 sm:px-6">
-        {describeApiMode()} · staging surface, not the production seller console.
-      </footer>
+
+      <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+
+      <MobileTabBar
+        items={[
+          { to: "/seller", label: t("nav.home"), icon: Target },
+          { to: "/seller/products", label: t("sellerNav.products"), icon: Package },
+          { to: "/seller/orders", label: t("sellerNav.orders"), icon: ShoppingBag },
+          { to: "/seller/profile", label: t("sellerNav.profile"), icon: Store },
+        ]}
+      />
     </div>
   );
 }
 
 function AuthRoute() {
   const { user, loading } = useMvpSessionContext();
+  const { t } = useLanguage();
   if (loading) return <MvpLoading />;
   if (user) {
     return (
       <div className="mx-auto max-w-md py-10 text-center">
-        <p className="text-sm text-slate-600">Signed in as {user.email}</p>
+        <p className="text-sm text-slate-600">{user.email}</p>
         <Button asChild className="mt-4 bg-slate-900 text-white hover:bg-slate-800">
-          <Link to="/seller">Go to the seller workspace</Link>
+          <Link to="/seller">{t("nav.account")}</Link>
         </Button>
       </div>
     );
@@ -105,9 +100,10 @@ function AuthRoute() {
   return (
     <div className="py-8">
       <MvpAuthPanel
-        title="Seller sign in"
-        description="Use the account you registered with Velnox."
+        title={t("role.seller")}
+        description={t("footer.sellerJoin")}
         redirectAfterAuth="/seller"
+        oauthApp="velseller"
       />
     </div>
   );
@@ -147,6 +143,14 @@ export default function MvpSellerApp() {
             element={
               <MvpRequireSession>
                 <OrdersPanel />
+              </MvpRequireSession>
+            }
+          />
+          <Route
+            path="/seller/profile"
+            element={
+              <MvpRequireSession>
+                <StoreProfile />
               </MvpRequireSession>
             }
           />

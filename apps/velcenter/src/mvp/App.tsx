@@ -1,100 +1,111 @@
 /**
- * VelCenter MVP admin console (Phase 3b Phase D).
+ * VelCenter admin console shell.
  *
- * Mounted unconditionally from `main.tsx` — this is the admin console, and there
- * is no second page tree to fall back to.
+ * Restored original chrome: the header with icon tabs, the mobile tab bar and
+ * the shared account menu. ADMIN AUTHORITY STAYS SERVER-SIDE: the role check
+ * here is a UX gate (it sends a non-admin to the sign-in page instead of
+ * rendering panels that will 403); every endpoint re-checks the session and
+ * returns 403 otherwise.
  *
- * ADMIN AUTHORITY IS SERVER-SIDE. There is no client role check to bypass: every
- * endpoint behind these panels requires an `admin`/`owner` session and returns
- * 403 otherwise, which the panels render as "Not allowed". Staff RBAC is out of
- * scope for the MVP, so no permission codes are consulted here.
+ * Staff RBAC (department permissions) is not restored: the canonical MVP schema
+ * has no staff/department objects, and inventing a second permission axis here
+ * would not be a restoration.
  */
 import { Logo } from "@velnox/shared/components/Logo";
+import { MobileTabBar } from "@velnox/shared/components/MobileTabBar";
+import { UserMenu } from "@velnox/shared/components/UserMenu";
 import { Button } from "@velnox/shared/components/ui/button";
-import { describeApiMode } from "@velnox/shared/mvp";
+import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
   MvpAuthPanel,
   MvpLoading,
   MvpRequireSession,
   MvpSessionProvider,
-  mvpSignOut,
   useMvpSessionContext,
 } from "@velnox/shared/mvp/ui";
-import { LogOut } from "lucide-react";
+import { FolderTree, Package, ShieldCheck, Users } from "lucide-react";
 import { lazy, type ReactNode } from "react";
-import { Link, NavLink, Route, Routes } from "react-router";
+import { Link, NavLink, Navigate, Route, Routes } from "react-router";
 
 const Admin = lazy(() => import("./Admin"));
 
-const NAV = [
-  { to: "/", label: "Overview", end: true },
-  { to: "/sellers", label: "Sellers" },
-  { to: "/products", label: "Products" },
-  { to: "/categories", label: "Categories" },
-];
+function AdminOnly({ children }: { children: ReactNode }) {
+  const { user, loading } = useMvpSessionContext();
+  const { t } = useLanguage();
+  if (loading) return <MvpLoading />;
+  if (!user) return <Navigate to="/auth" replace />;
+  if (user.role !== "admin" && user.role !== "owner") {
+    return (
+      <div className="mx-auto w-full max-w-lg py-16 text-center">
+        <h1 className="text-xl font-bold text-slate-900">{t("auth.noAccess")}</h1>
+        <p className="mt-2 text-sm text-slate-500">{user.email}</p>
+        <Button asChild className="mt-5 bg-slate-900 text-white hover:bg-slate-800">
+          <Link to="/auth">{t("header.login")}</Link>
+        </Button>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function Shell({ children }: { children: ReactNode }) {
-  const { user } = useMvpSessionContext();
+  const { t } = useLanguage();
+  const NAV = [
+    { to: "/", label: t("centerNav.overview"), icon: ShieldCheck, end: true },
+    { to: "/sellers", label: t("centerNav.sellers"), icon: Users },
+    { to: "/products", label: t("centerNav.products"), icon: Package },
+    { to: "/categories", label: t("centerNav.categories"), icon: FolderTree },
+  ];
+
   return (
     <div className="site-app min-h-screen bg-[#F8FAFC]">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-2 px-4 sm:px-6">
+          <Link to="/" aria-label={t("centerNav.console")} className="shrink-0">
             <Logo wordmarkClassName="hidden sm:inline" />
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-              Center · MVP
-            </span>
           </Link>
-          <nav className="ml-3 hidden items-center gap-1 md:flex" aria-label="Admin">
+          <nav className="ml-3 hidden items-center gap-1 md:flex" aria-label={t("centerNav.console")}>
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
-                  `rounded-[10px] px-3 py-2 text-sm font-medium ${
-                    isActive ? "bg-slate-100 text-slate-900" : "text-slate-500 hover:bg-slate-50"
+                  `flex items-center gap-1.5 rounded-[10px] px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-slate-100 text-slate-900"
+                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                   }`
                 }
               >
+                <item.icon className="size-4" />
                 {item.label}
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="hidden max-w-40 truncate text-xs text-slate-500 sm:inline">{user?.email}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-9 text-slate-500"
-              aria-label="Sign out"
-              onClick={async () => {
-                await mvpSignOut();
-                window.location.assign("/");
-              }}
-            >
-              <LogOut className="size-4" />
-            </Button>
+          <div className="ml-auto flex items-center gap-1">
+            <UserMenu align="end" />
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">{children}</main>
-      <footer className="mx-auto w-full max-w-6xl px-4 pb-10 text-[11px] text-slate-400 sm:px-6">
-        {describeApiMode()} · admin actions are authorised by the API on every request.
-      </footer>
+
+      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+
+      <MobileTabBar items={NAV.map(({ to, label, icon }) => ({ to, label, icon }))} />
     </div>
   );
 }
 
 function AuthRoute() {
   const { user, loading } = useMvpSessionContext();
+  const { t } = useLanguage();
   if (loading) return <MvpLoading />;
   if (user) {
     return (
       <div className="mx-auto max-w-md py-10 text-center">
-        <p className="text-sm text-slate-600">Signed in as {user.email}</p>
+        <p className="text-sm text-slate-600">{user.email}</p>
         <Button asChild className="mt-4 bg-slate-900 text-white hover:bg-slate-800">
-          <Link to="/">Open the console</Link>
+          <Link to="/">{t("centerNav.console")}</Link>
         </Button>
       </div>
     );
@@ -102,9 +113,10 @@ function AuthRoute() {
   return (
     <div className="py-8">
       <MvpAuthPanel
-        title="Administrator sign in"
-        description="Only an admin or owner account can use this console."
+        title={t("centerNav.console")}
+        description={t("auth.noAccess")}
         redirectAfterAuth="/"
+        oauthApp="velcenter"
       />
     </div>
   );
@@ -126,24 +138,30 @@ export default function MvpAdminApp() {
     <MvpSessionProvider>
       <Shell>
         <Routes>
+          {/* `/auth` must stay OUTSIDE the admin gate: the gate sends an
+              anonymous visitor here, so guarding it would loop. */}
+          <Route path="/auth" element={<AuthRoute />} />
           {PANEL_ROUTES.map((entry) => (
             <Route
               key={entry.path}
               path={entry.path}
               element={
-                <MvpRequireSession>
-                  <Admin tab={entry.tab} />
-                </MvpRequireSession>
+                <AdminOnly>
+                  <MvpRequireSession>
+                    <Admin tab={entry.tab} />
+                  </MvpRequireSession>
+                </AdminOnly>
               }
             />
           ))}
-          <Route path="/auth" element={<AuthRoute />} />
           <Route
             path="*"
             element={
-              <MvpRequireSession>
-                <Admin tab="overview" />
-              </MvpRequireSession>
+              <AdminOnly>
+                <MvpRequireSession>
+                  <Admin tab="overview" />
+                </MvpRequireSession>
+              </AdminOnly>
             }
           />
         </Routes>

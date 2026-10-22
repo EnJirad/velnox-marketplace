@@ -100,7 +100,7 @@ export function setupMvpSellerRoutes(app: Express): void {
     route(async (req: Request, res: Response) => {
       const user = req.sessionUser!;
       const seller = await queryOne<SellerProfile>(
-        `SELECT id, user_id, store_name, slug, status, rejection_reason, suspension_reason
+        `SELECT id, user_id, store_name, slug, status, rejection_reason, suspension_reason, description
            FROM seller_profiles WHERE user_id = $1`,
         [user.id],
       );
@@ -117,6 +117,38 @@ export function setupMvpSellerRoutes(app: Express): void {
         productCounts[row.status] = Number(row.n);
       }
       ok(res, { seller, productCounts });
+    }),
+  );
+
+  // ── Update own store profile ──────────────────────────────────────────────
+  app.patch(
+    "/api/mvp/seller/profile",
+    requireActiveUser,
+    route(async (req: Request, res: Response) => {
+      const user = req.sessionUser!;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const storeName = requireString(body.storeName, "storeName", { min: 2, max: 120 });
+      const description = optionalString(body.description, "description", { max: 2000 });
+
+      // Only the caller's own row, and only while the store is not being
+      // reviewed/suspended — an admin decides those states, not the seller.
+      const updated = await query(
+        `UPDATE seller_profiles
+            SET store_name = $2,
+                description = COALESCE($3, description),
+                updated_at = NOW()
+          WHERE user_id = $1 AND status IN ('pending', 'approved')
+          RETURNING id, user_id, store_name, slug, status, rejection_reason, suspension_reason,
+                    description`,
+        [user.id, storeName, description],
+      );
+      if (updated.rowCount === 0) {
+        throw forbidden("PROFILE_NOT_EDITABLE", "This store profile cannot be edited right now");
+      }
+      await writeMvpAudit(null, user.id, "SELLER_PROFILE_UPDATED", "seller_profile", (updated.rows[0] as { id: string }).id, {
+        storeName,
+      });
+      ok(res, { seller: updated.rows[0] });
     }),
   );
 
