@@ -94,29 +94,26 @@ Do not create a second competing source of truth. Frontend is never the source o
 
 ## 6. Database Rules
 
-> **Phase 2 state (2026-10-21).** The **MVP canonical schema is `db/mvp/schema.sql`**
-> (reset `db/mvp/reset.sql`, proof `db/mvp/verify.sh`, contract
-> `backend/tests/mvp-schema-contract.test.ts`). The pre-MVP pair described below is
-> **FROZEN** until the Phase 3 cutover (`db/mvp/cutover.md`): the deployed backend
-> still reads it, so it must not be edited and **no new migration may be added**.
-> `db/README.md` is the map.
+> **State (2026-10-22).** `db/` contains exactly two files, both canonical. The
+> pre-MVP schema, its reconciler passes and all 62 migrations are gone from the
+> repository; production still runs that database until
+> `docs/PRODUCTION_CUTOVER.md` is executed.
 
-### Pre-MVP pair (frozen — reference only until cutover)
+### The two canonical files
 
-- **Canonical files:** `db/schema.sql` = complete current schema SNAPSHOT. `db/run-sqleditor.sql` = the rerunnable ADDITIVE RECONCILER (pasted into Neon SQL Editor and Run, repeatedly). They are no longer byte-identical: the reconciler additionally carries the column / NOT NULL / index / foreign-key / constraint / trigger passes an EXISTING database needs, which the snapshot has no use for. The contract between them is **declaration parity** — every table, column, index, constraint, function, trigger and extension the snapshot declares must still be declared by the reconciler, unchanged (asserted by `backend/tests/helpers/canonical-schema.ts`).
-- **Reconciler safety:** `db/run-sqleditor.sql` must never `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`, and must never swallow an error with `EXCEPTION WHEN OTHERS THEN NULL`. It creates what is missing and leaves every existing row alone. The single `DROP CONSTRAINT` it carries is the one migration 054 superseded and is commented in place.
-- **Deprecated:** `db/run-update.sql` is deprecated — never recreate, update, or depend on it.
-- **Pre-MVP changes are frozen.** If the pre-MVP schema ever had to change before the cutover, it would require updating **both** canonical files (tables, columns, types, constraints, indexes, functions, triggers, views) and regenerating the reconciler's additive passes from `db/schema.sql`. In Phase 2/3 it does not change: the MVP model is `db/mvp/schema.sql`.
-- **Fresh DB contract:** an empty Postgres must become the complete current Velnox DB by running `db/run-sqleditor.sql` once — no prior migrations required — and running it a second and third time must change nothing (no duplicate table, column, constraint, index or trigger).
-- **Dependency order:** respect PG dependency order; use deferred `ALTER TABLE ADD CONSTRAINT` for circular FKs. Histor
-  migrations in `db/migrations/` remain history — do not rewrite them to clean the bootstrap.
+- **Canonical files:** `db/schema.sql` = the canonical MVP DDL (20 tables, one order status axis, `inventory` as the only stock authority, `NUMERIC(12,2)` for money). `db/run-sqleditor.sql` = the same DDL in dependency order for the Neon SQL Editor, ending in a read-only install check. They declare identical objects — proven textually by `backend/tests/mvp-schema-contract.test.ts` (helper `backend/tests/helpers/canonical-schema.ts`) and against a real PostgreSQL by `bash scripts/db-verify.sh` (`bun run db:check`), which applies EACH file TWICE and diffs the two dumps.
+- **No comments, no destructive SQL** in either file: no `--`, no `/* */`, no `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`, and no data-writing statement. Explanations live outside `db/` (`docs/DATABASE.md`, `docs/PRODUCTION_CUTOVER.md`, `.ai/context/database.md`).
+- **No migration chain.** `db/migrations/`, the migration runner and `production-db-migrate.yml` were removed together; nothing applies incremental SQL any more. Never recreate `db/run-update.sql`.
+- **Fresh DB contract:** an empty Postgres becomes the complete Velnox schema by running either file ONCE, and running it a SECOND time changes nothing (no duplicate table, column, constraint, index or trigger).
+- **Dependency order:** respect PG dependency order; use deferred `ALTER TABLE ADD CONSTRAINT` for circular FKs.
+- **Production is a separate change.** Production still runs the pre-MVP database; the switch is planned in `docs/PRODUCTION_CUTOVER.md`. Never run anything in `db/` against production, and never let a test reach it (`backend/db/test-database.ts` fails closed).
 
 Full rules: `.ai/context/database.md`.
 
 ## 7. API Rules
 
 - `/api/*` returns JSON only, correct HTTP status codes, validated auth/authz/ownership, and consistent error shapes. No HTML, no silent redirects.
-- Do not create duplicate endpoints when a canonical one exists. Reuse `packages/shared/src/lib/api-routes.ts` and `backend/routes/`.
+- Do not create duplicate endpoints when a canonical one exists. Reuse `packages/shared/src/mvp/routes.ts` (`MVP_ROUTES`); the backend namespaces every route under `/api/mvp` and `backend/mvp/index.ts` owns the inventory.
 
 See `.ai/context/architecture.md` and `docs/API.md`.
 

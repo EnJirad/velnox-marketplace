@@ -1,297 +1,165 @@
 /**
- * The canonical SQL files contract.
+ * The canonical schema pair, parsed.
  *
- * WHY THIS FILE EXISTS
- * --------------------
- * These two files used to be asserted byte-identical, and that was correct for
- * as long as they were the same artifact: a fresh-database snapshot.
+ * `db/schema.sql` is the one and only data model of the marketplace MVP.
+ * `db/run-sqleditor.sql` installs exactly the same model from a Neon SQL
+ * Editor and finishes with a read-only verification query. This helper parses
+ * both so a test can assert on what they declare instead of pattern-matching
+ * prose — neither file may contain a single SQL comment, so there is no prose
+ * to trip over.
  *
- * `db/run-sqleditor.sql` is now a rerunnable ADDITIVE RECONCILER, because the
- * database it runs against is not a fresh one — production already has tables
- * and rows, and a rerun has to add what is missing without touching what is
- * there. To do that it carries passes the snapshot never needed:
- *
- *     PART 1   tables                 (the snapshot)
- *     PART 2   ALTER TABLE ... ADD COLUMN IF NOT EXISTS, for every column
- *     PART 2c  DROP NOT NULL on columns the canonical schema made optional
- *     PART 3   indexes, after the column pass
- *     PART 4   foreign keys, guarded on pg_constraint
- *     PART 5   unique and check constraints, guarded on pg_constraint
- *     PART 5c  checks schema.sql deliberately re-declares, re-applied only
- *              when the stored definition differs
- *     PART 6   triggers, guarded on pg_trigger
- *     PART 7   read-only verification SELECTs
- *
- * So byte-identity is no longer the contract, and pretending it is would either
- * forbid the reconciler from doing its job or push the additive passes into the
- * snapshot, where they cannot help an existing database.
- *
- * WHAT IS PINED HERE
- * ------------------
- * Something strictly stronger than the old check, in the direction that
- * actually matters: every schema OBJECT the canonical snapshot declares must
- * still be declared by the reconciler, with the same name and the same
- * definition. That is the property production depends on — paste the reconciler
- * into Neon and the database ends up describing the schema the repo documents.
- * The extra passes the reconciler carries are allowed to be additions; they may
- * never remove or redefine something the snapshot declares.
- *
- * `db/schema.sql` remains the canonical SNAPSHOT, `db/run-sqleditor.sql` the
- * rerunnable bootstrap/updater. Migration files stay the historical record and
- * are never compared byte-for-byte against either.
+ * No destructive statement exists in either file: they only ever create. The
+ * development/test reset is `scripts/db-reset.sh`, which refuses any database
+ * that is not named `*_dev` / `*_test`.
  */
 import { readFileSync } from "fs";
 import { join } from "path";
 
-const DB_DIR = join(import.meta.dir, "..", "..", "..", "db");
+export const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
+export const SCHEMA_SQL = "db/schema.sql";
+export const RUN_SQLEDITOR_SQL = "db/run-sqleditor.sql";
 
-export const SCHEMA_SQL = join(DB_DIR, "schema.sql");
-export const RUN_SQLEDITOR_SQL = join(DB_DIR, "run-sqleditor.sql");
+export const readSql = (rel: string): string => readFileSync(join(REPO_ROOT, rel), "utf8");
 
-export function readCanonical(path: string): string {
-  return readFileSync(path, "utf8");
-}
-
-/** Comment text documents intent and may legitimately differ; statements may not. */
+/**
+ * Remove `--` and `/* … *\/` comments while respecting single-quoted strings,
+ * double-quoted identifiers and dollar-quoted function bodies (comments inside
+ * a function body are removed too, by recursing into it).
+ */
 export function stripSqlComments(sql: string): string {
-  return sql
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
-}
+  let out = "";
+  let i = 0;
+  const n = sql.length;
 
-/** `CREATE TABLE IF NOT EXISTS <name> (` -> the name, in declaration order. */
-export function declaredTables(sql: string): string[] {
-  return [
-    ...stripSqlComments(sql).matchAll(
-      /CREATE TABLE (?:IF NOT EXISTS )?([a-z_][a-z_0-9]*)/g,
-    ),
-  ].map((m) => m[1]!);
-}
+  while (i < n) {
+    const c = sql[i]!;
+    const c2 = sql.slice(i, i + 2);
 
-/**
- * The full `CREATE TABLE` body for one table, closing paren included, so the
- * column list, the inline CHECKs and the inline UNIQUE/REFERENCES clauses are
- * compared as written rather than re-derived.
- */
-export function createTableBlock(sql: string, table: string): string {
-  const code = stripSqlComments(sql);
-  const start = code.indexOf(`CREATE TABLE IF NOT EXISTS ${table} (`);
-  if (start === -1) return "";
-  const end = code.indexOf("\n);", start);
-  return end === -1 ? "" : code.slice(start, end + 3);
-}
-
-/** Column names declared inside one `CREATE TABLE` block. */
-export function declaredColumns(sql: string, table: string): string[] {
-  const block = createTableBlock(sql, table);
-  if (!block) return [];
-  const body = block.slice(block.indexOf("(") + 1, block.lastIndexOf(")"));
-  const names: string[] = [];
-  for (const raw of body.split("\n")) {
-    const line = raw.trim().replace(/,$/, "");
-    if (!line) continue;
-    // table-level clauses are not columns
-    if (/^(CONSTRAINT|PRIMARY KEY|UNIQUE|CHECK|FOREIGN KEY)\b/i.test(line)) continue;
-    const m = /^([a-z_][a-z_0-9]*)\s/.exec(line);
-    if (m) names.push(m[1]!);
-  }
-  return names;
-}
-
-/** Index names from `CREATE [UNIQUE] INDEX IF NOT EXISTS <name>`. */
-export function declaredIndexNames(sql: string): string[] {
-  return [
-    ...stripSqlComments(sql).matchAll(
-      /CREATE (?:UNIQUE )?INDEX IF NOT EXISTS ([a-z_][a-z_0-9]*)/g,
-    ),
-  ].map((m) => m[1]!);
-}
-
-/**
- * Every named constraint the file declares, mapped to its definition text.
- * Table-level `CONSTRAINT <name> ...` and `ADD CONSTRAINT <name> ...` both count,
- * which is what lets a caller check a definition rather than only a name.
- *
- * The snapshot writes a multi-line constraint inside its CREATE TABLE body while
- * the reconciler writes the same constraint as a one-line ADD CONSTRAINT, so the
- * definition is compared with ALL whitespace removed. The token sequence is what
- * has to match; where the author chose to break the line is not a schema change.
- */
-export function declaredConstraints(sql: string): Map<string, string> {
-  const code = stripSqlComments(sql);
-  // The snapshot writes a multi-line constraint inside its CREATE TABLE body and
-  // the reconciler writes the same constraint as a one-line ADD CONSTRAINT, so the
-  // definition is compared with all whitespace removed: the token sequence has to
-  // match, where the author broke the line is not a schema change.
-  const squash = (text: string) => text.replace(/\s+/g, "");
-  const out = new Map<string, string>();
-  // A definition ends at the paren that closes the constraint, not at the next
-  // semicolon: a multi-line CHECK inside a CREATE TABLE body is followed by more
-  // statements, and a greedy read would swallow them.
-  const readDefinition = (from: number): string => {
-    const open = code.indexOf("(", from);
-    if (open === -1) return "";
-    let depth = 0;
-    for (let i = open; i < code.length; i += 1) {
-      if (code[i] === "(") depth += 1;
-      else if (code[i] === ")") {
-        depth -= 1;
-        if (depth === 0) return code.slice(from, i + 1);
-      }
+    if (c2 === "--") {
+      i += 2;
+      while (i < n && sql[i] !== "\n") i++;
+      continue;
     }
-    return "";
-  };
-
-  for (const m of code.matchAll(
-    /ADD CONSTRAINT ([a-z_][a-z_0-9]*)\s+(FOREIGN KEY|UNIQUE|CHECK)\s/g,
-  )) {
-    out.set(m[1]!, squash(readDefinition(m.index! + m[0].length - 1)));
-  }
-  for (const m of code.matchAll(
-    /^\s+CONSTRAINT ([a-z_][a-z_0-9]*)\s+(UNIQUE|CHECK)\s/gm,
-  )) {
-    out.set(m[1]!, squash(readDefinition(m.index! + m[0].length - 1)));
+    if (c2 === "/*") {
+      i += 2;
+      while (i < n && sql.slice(i, i + 2) !== "*/") {
+        if (sql[i] === "\n") out += "\n";
+        i++;
+      }
+      i += 2;
+      continue;
+    }
+    if (c === "'") {
+      out += c;
+      i++;
+      while (i < n) {
+        out += sql[i];
+        if (sql[i] === "'") {
+          if (sql[i + 1] === "'") {
+            out += sql[i + 1];
+            i += 2;
+            continue;
+          }
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === '"') {
+      out += c;
+      i++;
+      while (i < n) {
+        out += sql[i];
+        if (sql[i] === '"') {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    const dollar = /^\$[A-Za-z_]*\$/.exec(sql.slice(i));
+    if (dollar) {
+      const tag = dollar[0];
+      const end = sql.indexOf(tag, i + tag.length);
+      const stop = end === -1 ? n : end;
+      out += tag + stripSqlComments(sql.slice(i + tag.length, stop)) + tag;
+      i = stop + tag.length;
+      continue;
+    }
+    out += c;
+    i++;
   }
   return out;
 }
 
-export function declaredFunctions(sql: string): string[] {
-  return [
-    ...stripSqlComments(sql).matchAll(
-      /CREATE OR REPLACE FUNCTION ([a-z_][a-z_0-9]*)/g,
-    ),
-  ].map((m) => m[1]!);
+/** Comment tokens left in a file — an empty array is the only accepted answer. */
+export const commentTokens = (sql: string): string[] =>
+  sql.match(/--[^\n]*|\/\*[\s\S]*?\*\//g) ?? [];
+
+/** Statements that may destroy data or schema. Neither file may contain one. */
+export const DANGEROUS = [
+  /\bDROP\s+TABLE\b/i,
+  /\bDROP\s+COLUMN\b/i,
+  /\bDROP\s+DATABASE\b/i,
+  /\bDROP\s+SCHEMA\b/i,
+  /\bTRUNCATE\b/i,
+  /\bDELETE\s+FROM\b/i,
+  /\bUPDATE\s+\w+\s+SET\b/i,
+  /\bINSERT\s+INTO\b/i,
+];
+
+export const dangerousStatements = (sql: string): string[] =>
+  DANGEROUS.filter((re) => re.test(stripSqlComments(sql))).map(String);
+
+/** The verification block `run-sqleditor.sql` appends; `schema.sql` has none. */
+export const VERIFY_BLOCK_MARKER = "SELECT\n  (SELECT count(*) FROM information_schema.tables";
+
+/** The DDL both files must declare identically. */
+export function ddlOf(sql: string): string {
+  const clean = stripSqlComments(sql);
+  const at = clean.indexOf(VERIFY_BLOCK_MARKER);
+  return (at === -1 ? clean : clean.slice(0, at)).trim();
 }
 
-export function declaredTriggers(sql: string): string[] {
-  return [
-    ...stripSqlComments(sql).matchAll(/CREATE TRIGGER ([a-z_][a-z_0-9]*)/g),
-  ].map((m) => m[1]!);
-}
+/** Table names declared by `CREATE TABLE [IF NOT EXISTS] <name>`. */
+export const declaredTables = (sql: string): string[] =>
+  [...stripSqlComments(sql).matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)/g)].map((m) => m[1]!);
 
-export function declaredExtensions(sql: string): string[] {
-  return [
-    ...stripSqlComments(sql).matchAll(
-      /CREATE EXTENSION IF NOT EXISTS "([a-z_0-9-]+)"/g,
-    ),
-  ].map((m) => m[1]!);
-}
-
-/**
- * Drop `public.` from table references.
- *
- * `db/schema.sql` uses unqualified names, which is the repo-wide convention in
- * every migration and every backend query. `db/run-sqleditor.sql` qualifies the
- * statements that MUTATE an existing table (`ALTER TABLE public.orders …`,
- * `CREATE INDEX … ON public.orders …`) so a run cannot act on a same-named
- * table in another schema, and pins `search_path` so the unqualified names in its
- * table section resolve to `public` too. Both therefore name the same object.
- *
- * A test whose subject is "does this index / column / constraint exist", rather
- * than "is it spelled exactly this way", compares through this so the two files
- * can spell it differently without the test becoming vacuous.
- */
-export function unqualified(sql: string): string {
-  return sql.replace(/\bpublic\./g, "");
-}
-
-/**
- * The one shape `canonicalParity()` may take when nothing has drifted.
- *
- * Assert against this rather than checking each key by hand, so a new kind of
- * drift added to `canonicalParity()` later is covered by every existing call
- * site automatically instead of silently going unchecked.
- */
-export const NO_CANONICAL_DRIFT = {
-  missingTables: [],
-  alteredTables: [],
-  missingColumns: {},
-  missingIndexes: [],
-  missingConstraints: [],
-  redefinedConstraints: [],
-  missingFunctions: [],
-  missingTriggers: [],
-  missingExtensions: [],
-} as const;
-
-/**
- * "The reconciler still describes the canonical schema."
- *
- * The additive passes (columns, indexes, foreign keys, constraints, triggers) are
- * allowed to ADD what an old database is missing. What they may never do is drop
- * or redefine something `db/schema.sql` declares — that is what this reports.
- */
-export function canonicalParity(schema: string, reconciler: string): {
-  missingTables: string[];
-  alteredTables: string[];
-  missingColumns: Record<string, string[]>;
-  missingIndexes: string[];
-  missingConstraints: string[];
-  redefinedConstraints: string[];
-  missingFunctions: string[];
-  missingTriggers: string[];
-  missingExtensions: string[];
-} {
-  const snapTables = declaredTables(schema);
-  const recTables = new Set(declaredTables(reconciler));
-
-  const missingTables = snapTables.filter((t) => !recTables.has(t));
-
-  // A table must be declared with the SAME body. Part 1 of the reconciler carries
-  // the snapshot's CREATE TABLE blocks, so this is an equality, not a subset.
-  const alteredTables = snapTables.filter(
-    (t) => recTables.has(t) && createTableBlock(schema, t) !== createTableBlock(reconciler, t),
-  );
-
-  const missingColumns: Record<string, string[]> = {};
-  for (const table of snapTables) {
-    if (!recTables.has(table)) continue;
-    const have = new Set(declaredColumns(reconciler, table));
-    const gone = declaredColumns(schema, table).filter((c) => !have.has(c));
-    if (gone.length) missingColumns[table] = gone;
+/** `(table.column, dataType)` for every `name TYPE` line inside a CREATE TABLE. */
+export function declaredColumns(sql: string): Array<{ table: string; column: string; dataType: string }> {
+  const clean = stripSqlComments(sql);
+  const out: Array<{ table: string; column: string; dataType: string }> = [];
+  const tables = /CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)([\s\S]*?);/g;
+  for (const match of clean.matchAll(tables)) {
+    const table = match[1]!;
+    const body = match[2]!;
+    for (const line of body.split("\n")) {
+      const col = /^\s{2}([a-z_]+)\s+([A-Z][A-Z0-9_]*(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?)/.exec(line);
+      if (col) out.push({ table, column: col[1]!, dataType: col[2]!.replace(/\s+/g, " ") });
+    }
   }
+  return out;
+}
 
-  const snapIndexes = new Set(declaredIndexNames(schema));
-  const recIndexes = new Set(declaredIndexNames(reconciler));
-  const missingIndexes = [...snapIndexes].filter((i) => !recIndexes.has(i));
+export const declaredIndexNames = (sql: string): string[] =>
+  [...stripSqlComments(sql).matchAll(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?([a-z_0-9]+)/g)].map((m) => m[1]!);
 
-  const snapConstraints = declaredConstraints(schema);
-  const recConstraints = declaredConstraints(reconciler);
-  const missingConstraints: string[] = [];
-  const redefinedConstraints: string[] = [];
-  for (const [name, definition] of snapConstraints) {
-    const have = recConstraints.get(name);
-    if (have === undefined) missingConstraints.push(name);
-    else if (have !== definition) redefinedConstraints.push(name);
-  }
+export const declaredTriggerNames = (sql: string): string[] =>
+  [...stripSqlComments(sql).matchAll(/CREATE TRIGGER ([a-z_0-9]+)/g)].map((m) => m[1]!);
 
-  const recFunctions = new Set(declaredFunctions(reconciler));
-  const recTriggers = new Set(declaredTriggers(reconciler));
-  const recExtensions = new Set(declaredExtensions(reconciler));
-
+/** Parity: both files declare byte-identical DDL. */
+export const canonicalParity = (): { ok: boolean; diff: string } => {
+  const a = ddlOf(readSql(SCHEMA_SQL));
+  const b = ddlOf(readSql(RUN_SQLEDITOR_SQL));
+  if (a === b) return { ok: true, diff: "" };
+  const aLines = a.split("\n");
+  const bLines = b.split("\n");
+  const at = aLines.findIndex((line, idx) => line !== bLines[idx]);
   return {
-    missingTables,
-    alteredTables,
-    missingColumns,
-    missingIndexes,
-    missingConstraints,
-    redefinedConstraints,
-    missingFunctions: declaredFunctions(schema).filter((f) => !recFunctions.has(f)),
-    missingTriggers: declaredTriggers(schema).filter((t) => !recTriggers.has(t)),
-    missingExtensions: declaredExtensions(schema).filter((e) => !recExtensions.has(e)),
+    ok: false,
+    diff: `first difference at line ${at + 1}:\n  schema.sql:        ${aLines[at] ?? "<eof>"}\n  run-sqleditor.sql: ${bLines[at] ?? "<eof>"}`,
   };
-}
-
-/**
- * `db/run-update.sql` was retired (see .ai/AI_RULES.md §98). The snapshot plus
- * the rerunnable reconciler replaced it, and it must not come back.
- */
-export function runUpdateSqlResurrected(): boolean {
-  try {
-    readFileSync(join(DB_DIR, "run-update.sql"), "utf8");
-    return true;
-  } catch {
-    return false;
-  }
-}
+};

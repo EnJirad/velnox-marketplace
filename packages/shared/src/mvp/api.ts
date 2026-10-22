@@ -236,7 +236,11 @@ export function createMvpApi(http: MvpHttp): MvpApi {
           body: {
             productId: input.productId,
             variantId: input.variantId ?? null,
-            sellingUnitId: input.sellingUnitId ?? null,
+            // Omitted, not `null`: the server reads an absent unit as the
+            // implicit base unit (`cart.ts` treats undefined and null the same),
+            // so declaring one only when the caller picked it keeps the request
+            // to the fields it actually chose — never a price, never a stock.
+            ...(input.sellingUnitId ? { sellingUnitId: input.sellingUnitId } : {}),
             quantity: input.quantity ?? 1,
           },
         });

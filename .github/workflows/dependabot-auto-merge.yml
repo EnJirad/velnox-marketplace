@@ -51,7 +51,7 @@ jobs:
 
       - name: Run tests
         id: tests
-        run: bun test backend/tests
+        run: bun test backend/tests packages/shared/tests
 
       - name: Approve Dependabot PR
         if: steps.tests.outcome == 'success'

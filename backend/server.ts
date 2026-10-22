@@ -1,621 +1,116 @@
+/**
+ * Velnox Marketplace — API service.
+ *
+ * ONE backend tree (`backend/mvp/`) serves ONE API (`/api/mvp/*`) against ONE
+ * database (Neon, `db/schema.sql`). There is no legacy surface, no feature flag
+ * hiding a second model, and no WebSocket: the client reads from the API.
+ *
+ * Order of middleware matters and is covered by tests:
+ *
+ *   1. the two webhook body buffers MUST run before `express.json()` — Stripe
+ *      verifies its signature over the exact bytes it sent, so the raw body has
+ *      to be captured first;
+ *   2. `express.json({ limit: "1mb" })` — every remaining body is small (cart,
+ *      address, checkout metadata); file bytes go straight to storage and never
+ *      transit this process;
+ *   3. CORS + the Origin guard — the session is an httpOnly cookie, so a
+ *      cross-site state-changing request must be refused unless it comes from a
+ *      trusted Velnox origin;
+ *   4. rate limiting, then the routes.
+ *
+ * At boot the service prints the database it actually opened (name and server
+ * version only — never a host, user or password) and verifies that the 20 MVP
+ * tables are present. A database that is missing them is a configuration error,
+ * and saying so once at boot is cheaper than discovering it at checkout.
+ */
 import "dotenv/config";
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
+import { createServer } from "http";
+
+import { describeDatabaseIdentity } from "./db/index.js";
 import { rateLimitSecurity } from "./middleware/rate-limit.js";
 import { createOriginGuard } from "./middleware/origin-guard.js";
-import { requireDiagAccess } from "./middleware/diag-guard.js";
-import { stripeWebhookRawBody } from "./middleware/stripe-raw-body.js";
-import { mvpWebhookRawBody } from "./mvp/webhook-body.js";
-import { isMvpApiEnabled, setupMvpRoutes } from "./mvp/index.js";
-import { createServer } from "http";
-import { WebSocketServer } from "ws";
-import { describeDatabaseIdentity } from "./db/index.js";
-import { setupRoutes } from "./routes/index.js";
-import { setupAdminRoutes } from "./routes/admin.js";
-import { setupCartRoutes } from "./routes/cart.js";
-import { setupGoogleAuth } from "./routes/auth.js";
-import { setupUploadRoutes } from "./routes/upload.js";
-import { setupSellerRoutes } from "./routes/seller.js";
-import { setupProductRoutes } from "./routes/products.js";
-import { setupStripeRoutes } from "./routes/stripe.js";
-import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
-import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
-import { setupVelRepeatPackageRoutes } from "./routes/velrepeat-packages.js";
-import { setupVelRepeatV2PlanRoutes } from "./routes/velrepeat-v2-plans.js";
-import { setupVelRepeatV2PaymentRoutes } from "./routes/velrepeat-v2-payments.js";
-import { setupVelRepeatV2StatusRoutes } from "./routes/velrepeat-v2-status.js";
-import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
-import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
-import { setupCenterRoutes } from "./routes/center.js";
-import { registerVerificationRoutes } from "./routes/verification.js";
-import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
-import { startVelRepeatV2CycleScheduler } from "./jobs/velrepeat-v2-cycle-scheduler.js";
-import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
 import { startMvpOrderExpiryScheduler } from "./jobs/mvp-order-expiry-scheduler.js";
-import { VELREPEAT_ENABLED, WHOLESALE_ENABLED } from "./lib/features.js";
-import { setupProductOptionRoutes } from "./routes/product-options.js";
-import { setupProductSellingUnitRoutes } from "./routes/product-selling-units.js";
-import { setupStoreAccountRoutes } from "./routes/store-accounts.js";
-import { setupChatRoutes } from "./routes/chat.js";
-import { broadcast, CHANNELS, setupWebSocket } from "./realtime/index.js";
+import { setupMvpRoutes } from "./mvp/index.js";
+import { mvpWebhookRawBody } from "./mvp/webhook-body.js";
 
 const app = express();
 const server = createServer(app);
 
-// ─── Middleware ──────────────────────────────────────────
 app.use(helmet());
-// Render sits behind a single proxy hop — required for correct req.ip
-// (used by IP-keyed rate limits). trust proxy = 1 trusts only the
-// immediate peer's X-Forwarded-For value, not arbitrary spoofing.
+// Render sits behind a single proxy hop — required for a correct req.ip, which
+// the IP-keyed rate limits read.
 app.set("trust proxy", 1);
 app.use(cookieParser());
 
-// Stripe webhook needs the raw body for signature verification, so its body is
-// buffered as a Buffer here and NOT parsed by express.json below. The matcher
-// (path/method, and the fact that the content type must not gate this route)
-// lives in middleware/stripe-raw-body.ts and is covered by tests, so this order
-// cannot silently drift. MUST stay BEFORE express.json.
-app.use(stripeWebhookRawBody);
-// The MVP webhook lives under /api/mvp (see backend/mvp/) and needs the same
-// byte-exact body BEFORE express.json(). Same matcher, different path list.
 app.use(mvpWebhookRawBody);
-
-// JSON payload cap. All bodies here are small (chat ≤4k chars, reviews ≤2k,
-// checkout/address metadata) — R2 file bytes go straight to Cloudflare via
-// presigned URLs and never transit the API. 10mb was more than any legit
-// request needs and invited oversized-body abuse.
 app.use(express.json({ limit: "1mb" }));
 
-const corsOrigins = process.env.CORS_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean) || [];
-
-// Always include known production origins so CORS never silently blocks
-// a valid frontend domain when CORS_ORIGINS is misconfigured.
-const knownOrigins: string[] = [
+const knownOrigins = [
   process.env.VITE_VELSHOP_URL,
   process.env.VITE_VELSELLER_URL,
   process.env.VITE_VELCENTER_URL,
   process.env.VITE_CORPORATE_URL,
-].filter((u): u is string => typeof u === "string" && u.length > 0);
+].filter((value): value is string => typeof value === "string" && value.length > 0);
 
-const devOrigins: string[] = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:5175",
-  "http://localhost:5176",
-];
+const declaredOrigins = (process.env.CORS_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-// Merge: explicit CORS_ORIGINS + known production origins + dev origins, deduplicated
-const allOrigins = [...new Set([...corsOrigins, ...knownOrigins, ...devOrigins])];
+const devOrigins = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176"];
 
-app.use(cors({
-  origin: allOrigins,
-  credentials: true,
-}));
+// Merged and deduplicated so a misconfigured CORS_ORIGINS can never silently
+// block a valid Velnox origin.
+const allOrigins = [...new Set([...declaredOrigins, ...knownOrigins, ...devOrigins])];
 
-// ─── CSRF / Origin validation ──────────────────────────────
-// Cookie auth + SameSite=None means browsers will attach the session cookie
-// to cross-site state-changing requests. The Origin header (always sent by
-// browsers on POST/PUT/PATCH/DELETE) must be a trusted Velnox origin.
+app.use(cors({ origin: allOrigins, credentials: true }));
 app.use(createOriginGuard(allOrigins));
-
-// ─── Rate limiting ─────────────────────────────────────────
-// Differentiated limits per route class (see middleware/rate-limit.ts).
 app.use(rateLimitSecurity);
 
-// ─── Config-change realtime choke point ────────────────────────────────
-// Categories and platform settings are VelCenter's two configuration
-// surfaces. Both must announce a change so every OTHER open VelCenter session
-// re-reads it (the acting session already refetches on its own).
-//
-// The publish lives here, once, instead of inside each handler, because the
-// category CRUD routes sit in the 3.8k-line products route module where a new
-// category route could silently forget its broadcast. Scoped to exactly these
-// two admin paths, and only when the mutation actually succeeded — a rejected
-// or read-only request publishes nothing. The payload carries the scope alone:
-// never a setting value and never a category name.
-const CONFIG_SCOPES: Array<[string, string]> = [
-  ["/api/admin/categories", "categories"],
-  ["/api/admin/settings", "settings"],
-];
-
-app.use((req, res, next) => {
-  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
-    next();
-    return;
-  }
-  const scope = CONFIG_SCOPES.find(
-    ([prefix]) => req.path === prefix || req.path.startsWith(`${prefix}/`),
-  )?.[1];
-  if (!scope) {
-    next();
-    return;
-  }
-  res.on("finish", () => {
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      try { broadcast(CHANNELS.CONFIG_UPDATED, "config:updated", { scope }); } catch { /* best-effort */ }
-    }
-  });
-  next();
-});
-
-// ─── Auto-create variant tables if missing (V0028) ─────────────────────
-async function ensureVariantTables(): Promise<void> {
-  const { query } = await import("./db/index.js");
-  const startMs = Date.now();
-  try {
-    // Single batch query to check ALL table existence at once (1 round-trip instead of 5)
-    const checks = ["product_variants", "product_option_groups", "product_option_values", "product_variant_values", "product_variant_images"];
-    const placeholders = checks.map((_, i) => `$${i + 1}`).join(", ");
-    const tableCheck = await query(
-      `SELECT table_name FROM information_schema.tables WHERE table_name IN (${placeholders})`,
-      checks,
-    );
-    const existingTables = new Set(tableCheck.rows.map((r: any) => r.table_name));
-    const missing = checks.filter((t) => !existingTables.has(t));
-
-    if (missing.length > 0) {
-      console.log(`[startup] missing variant tables: ${missing.join(", ")} — creating...`);
-      const fs = await import("fs");
-      const pathMod = await import("path");
-      const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "028_create_variant_tables_if_missing.sql");
-      const sql = fs.readFileSync(sqlPath, "utf-8");
-      await query(sql);
-      try {
-        await query(`
-          CREATE TABLE IF NOT EXISTS product_variant_images (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
-            product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-            url TEXT NOT NULL,
-            alt TEXT DEFAULT '',
-            storage_key TEXT,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          );
-          CREATE INDEX IF NOT EXISTS idx_variant_images_variant ON product_variant_images (variant_id);
-          CREATE INDEX IF NOT EXISTS idx_variant_images_product ON product_variant_images (product_id);
-        `);
-      } catch { /* may already exist */ }
-    }
-
-    // Batch all column additions + index creation into 2 queries instead of 10+
-    await query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='product_variants' AND column_name='compare_at_price') THEN
-          ALTER TABLE product_variants ADD COLUMN compare_at_price NUMERIC(12,2);
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='product_variants' AND column_name='discount_percent') THEN
-          ALTER TABLE product_variants ADD COLUMN discount_percent NUMERIC(5,2);
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='product_images' AND column_name='image_type') THEN
-          ALTER TABLE product_images ADD COLUMN image_type TEXT NOT NULL DEFAULT 'gallery';
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='product_images' AND column_name='variant_id') THEN
-          ALTER TABLE product_images ADD COLUMN variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='inventory' AND column_name='reorder_level') THEN
-          ALTER TABLE inventory ADD COLUMN reorder_level INTEGER NOT NULL DEFAULT 0;
-        END IF;
-      END$$;
-    `);
-    await query(`
-      CREATE INDEX IF NOT EXISTS idx_product_images_type ON product_images (product_id, image_type);
-      CREATE INDEX IF NOT EXISTS idx_product_images_variant ON product_images (variant_id) WHERE variant_id IS NOT NULL;
-      CREATE INDEX IF NOT EXISTS idx_variant_images_variant ON product_variant_images (variant_id);
-      CREATE INDEX IF NOT EXISTS idx_variant_images_product ON product_variant_images (product_id);
-    `);
-    console.log(`[startup] variant/option tables and columns ensured in ${Date.now() - startMs}ms`);
-  } catch (err: any) {
-    console.error("[startup] ensureVariantTables failed:", err?.message ?? err);
-  }
-}
-ensureVariantTables();
-
-// ─── Auto-create VelRepeat V2 tables if missing (V0034) ────────────────
-async function ensureVelRepeatV2Tables(): Promise<void> {
-  const { query } = await import("./db/index.js");
-  const startMs = Date.now();
-  try {
-    const tableCheck = await query(
-      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'velrepeat_plans') AS exists`,
-    );
-    if (tableCheck.rows[0]?.exists) {
-      console.log("[startup] velrepeat_plans already exists — skipping V0034 apply");
-      return;
-    }
-    console.log("[startup] velrepeat_plans missing — applying V0034 (VelRepeat V2)...");
-    const fs = await import("fs");
-    const pathMod = await import("path");
-    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "034_velrepeat_v2.sql");
-    const sql = fs.readFileSync(sqlPath, "utf-8");
-    await query(sql);
-    console.log(`[startup] VelRepeat V2 tables ensured in ${Date.now() - startMs}ms`);
-  } catch (err: any) {
-    console.error("[startup] ensureVelRepeatV2Tables failed:", err?.message ?? err);
-  }
-}
-// PARKED (2026-10-14): VelRepeat is off, so its tables are NOT created at boot.
-// The tables, migrations and the code above stay in the repository — setting
-// VELREPEAT_ENABLED=true restores this call unchanged.
-if (VELREPEAT_ENABLED) ensureVelRepeatV2Tables();
-
-// ─── Auto-create checkout idempotency table if missing (V0035) ──────────
-async function ensureCheckoutIdempotencyTable(): Promise<void> {
-  const { query } = await import("./db/index.js");
-  const startMs = Date.now();
-  try {
-    const tableCheck = await query(
-      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'checkout_requests') AS exists`,
-    );
-    if (tableCheck.rows[0]?.exists) {
-      return;
-    }
-    console.log("[startup] checkout_requests missing — applying V0035 (checkout idempotency)...");
-    const fs = await import("fs");
-    const pathMod = await import("path");
-    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "035_checkout_idempotency.sql");
-    const sql = fs.readFileSync(sqlPath, "utf-8");
-    await query(sql);
-    console.log(`[startup] checkout_requests ensured in ${Date.now() - startMs}ms`);
-  } catch (err: any) {
-    console.error("[startup] ensureCheckoutIdempotencyTable failed:", err?.message ?? err);
-  }
-}
-ensureCheckoutIdempotencyTable();
-
-// ─── Auto-create chat tables if missing (V0036) ──────────────────────────
-async function ensureChatTables(): Promise<void> {
-  const { query } = await import("./db/index.js");
-  const startMs = Date.now();
-  try {
-    const tableCheck = await query(
-      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'conversations') AS exists`,
-    );
-    if (tableCheck.rows[0]?.exists) {
-      return;
-    }
-    console.log("[startup] conversations missing — applying V0036 (comments & chat)...");
-    const fs = await import("fs");
-    const pathMod = await import("path");
-    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "036_comments_chat.sql");
-    const sql = fs.readFileSync(sqlPath, "utf-8");
-    await query(sql);
-    console.log(`[startup] chat tables ensured in ${Date.now() - startMs}ms`);
-  } catch (err: any) {
-    console.error("[startup] ensureChatTables failed:", err?.message ?? err);
-  }
-}
-ensureChatTables();
-
-// ─── Health Check ───────────────────────────────────────
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// ─── Schema Diagnostic (temporary — check production tables) ─────────────
-// OWNER/ADMIN ONLY. Applied at the prefix so every future /api/_diag route is
-// guarded by default — this endpoint used to be publicly reachable.
-app.use("/api/_diag", ...requireDiagAccess);
-app.get("/api/_diag/schema", async (_req, res) => {
-  try {
-    const { query } = await import("./db/index.js");
-    const tables = [
-      "product_variants", "product_option_groups", "product_option_values",
-      "product_variant_values", "product_attributes", "customer_wishlist",
-      "product_reviews", "cart_items", "categories",
-      "seller_verifications", "product_verifications", "seller_review_history",
-    ];
-    const results: Record<string, any> = {};
-    for (const t of tables) {
-      try {
-        const r = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1) AS exists`, [t]);
-        results[t] = r.rows[0]?.exists ?? false;
-      } catch { results[t] = false; }
-    }
-    // Check cart_items.variant_id
-    try {
-      const r = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'cart_items' AND column_name = 'variant_id'`);
-      results["cart_items.variant_id"] = r.rows.length > 0;
-    } catch { results["cart_items.variant_id"] = false; }
-    // Category schema columns required by the Product API (V0040)
-    for (const col of ["is_active", "names", "description", "description_names", "image_url"]) {
-      try {
-        const r = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'categories' AND column_name = $1`, [col]);
-        results[`categories.${col}`] = r.rows.length > 0;
-      } catch { results[`categories.${col}`] = false; }
-    }
-    // Seller verification contract (V0043) — the columns the reviewer queue
-    // (GET /api/admin/verifications) selects. Reported as booleans so a schema
-    // drift like `column sv.review_reason_code does not exist` is visible
-    // without a DATABASE_URL in the coding sandbox.
-    for (const col of ["review_reason_code", "review_note", "suspension_reason", "rejection_reason", "verification_type", "evidence_urls", "submitted_at", "reviewed_at"]) {
-      try {
-        const r = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'seller_verifications' AND column_name = $1`, [col]);
-        results[`seller_verifications.${col}`] = r.rows.length > 0;
-      } catch { results[`seller_verifications.${col}`] = false; }
-    }
-    // media column naming — V0008 renamed the columns, V0045 renames them back
-    // to the canonical set that every backend media query uses.
-    for (const col of ["url", "key", "content_type", "size", "uploaded_by", "owner_id", "object_key", "cdn_url", "mime_type", "file_size"]) {
-      try {
-        const r = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'media' AND column_name = $1`, [col]);
-        results[`media.${col}`] = r.rows.length > 0;
-      } catch { results[`media.${col}`] = false; }
-    }
-    // Option-group aggregation probe — the exact statement VelCenter's product
-    // moderation detail runs. The shape shipped until now
-    // (`json_agg(DISTINCT … ORDER BY pov.sort_order)`) raised PostgreSQL 42P10
-    // ("in an aggregate with DISTINCT, ORDER BY expressions must appear in
-    // argument list") for every product with option groups, so the reviewer
-    // dialog always failed. This reports whether the shipped shape now executes
-    // against the live database, using the product with the most option groups.
-    // Aggregated counts only — no option names or labels are exposed.
-    const optionAggregation: Record<string, unknown> = {};
-    try {
-      const target = await query(
-        `SELECT pog.product_id, COUNT(*)::int AS groups
-           FROM product_option_groups pog
-          GROUP BY pog.product_id
-          ORDER BY groups DESC
-          LIMIT 1`,
-      );
-      const probeProductId = target.rows[0]?.product_id ?? null;
-      optionAggregation.productId = probeProductId;
-      if (probeProductId) {
-        const agg = await query(
-          `SELECT pog.*, json_agg(jsonb_build_object('id', pov.id, 'value', pov.value, 'label', pov.label, 'sort_order', pov.sort_order, 'is_enabled', pov.is_enabled) ORDER BY pov.sort_order) as values
-             FROM product_option_groups pog
-             LEFT JOIN product_option_values pov ON pov.option_group_id = pog.id
-            WHERE pog.product_id = $1
-            GROUP BY pog.id
-            ORDER BY pog.sort_order ASC`,
-          [probeProductId],
-        );
-        optionAggregation.ok = true;
-        optionAggregation.groups = agg.rows.length;
-        optionAggregation.values = agg.rows.reduce(
-          (n: number, r: any) => n + (Array.isArray(r.values) ? r.values.filter((v: any) => v && v.id).length : 0),
-          0,
-        );
-      }
-    } catch (e: any) {
-      optionAggregation.ok = false;
-      optionAggregation.error = `${e?.code ?? ""} ${e?.message ?? "query failed"}`.trim();
-    }
-    // Notification delivery probe — aggregate counts per type only (no user ids,
-    // no titles or messages). VelSeller's correction bell reads these rows via
-    // GET /api/customer/notifications, so this shows whether a VelCenter review
-    // action is actually producing seller-visible notifications.
-    const notifications: Record<string, unknown> = {};
-    try {
-      const byType = await query(`SELECT type, COUNT(*)::int AS n FROM notifications GROUP BY type ORDER BY n DESC`);
-      notifications.byType = byType.rows;
-      const unread = await query(`SELECT COUNT(*)::int AS n FROM notifications WHERE read = FALSE`);
-      notifications.unread = unread.rows[0]?.n ?? 0;
-    } catch (e: any) {
-      notifications.error = `${e?.code ?? ""} ${e?.message ?? "query failed"}`.trim();
-    }
-    // VelCenter Audit Logs probe — the statement behind GET /api/admin/audit-logs
-    // labelled a seller with `s.name`, but `sellers` has no `name` column, so
-    // PostgreSQL raised 42703 for EVERY request and the Audit Logs tab rendered
-    // empty. This executes the exact exported statement (the very same string the
-    // route runs) and reports only aggregate counts — no actor names, no emails,
-    // no IPs — so schema drift is visible without a DATABASE_URL in the sandbox.
-    const auditLogs: Record<string, unknown> = {};
-    try {
-      const { auditLogsListSql } = await import("./routes/center.js");
-      const total = await query(`SELECT COUNT(*)::int AS n FROM audit_logs`);
-      auditLogs.totalRows = total.rows[0]?.n ?? 0;
-      const probe = await query(
-        `SELECT COUNT(*)::int AS n FROM (${auditLogsListSql("", "$1", "$2")}) t`,
-        [5, 0],
-      );
-      auditLogs.ok = true;
-      auditLogs.sampled = probe.rows[0]?.n ?? 0;
-    } catch (e: any) {
-      auditLogs.ok = false;
-      auditLogs.error = `${e?.code ?? ""} ${e?.message ?? "query failed"}`.trim();
-    }
-    // Check migration state
-    let migrations: string[] = [];
-    try {
-      const r = await query(`SELECT migration_name FROM schema_migrations ORDER BY id`);
-      migrations = r.rows.map((r: any) => r.migration_name);
-    } catch { migrations = ["schema_migrations table missing"];
-    }
+setupMvpRoutes(app);
 
-    // ── Product visibility diagnostics ──────────────────────────────────
-    // Read-only, AGGREGATE-ONLY (no ids, names or PII). This exists because a
-    // coding sandbox has no DATABASE_URL, so the only way to see WHY products
-    // are missing from the catalog is to count them by status here.
-    const productVisibility: Record<string, any> = {};
-    const countQuery = async (key: string, sql: string) => {
-      try {
-        const r = await query(sql);
-        productVisibility[key] = r.rows;
-      } catch (e: any) {
-        productVisibility[key] = `ERROR: ${e?.message ?? "query failed"}`;
-      }
-    };
-    await countQuery("total", `SELECT COUNT(*)::int AS n FROM products`);
-    await countQuery("byStatus", `SELECT status, COUNT(*)::int AS n FROM products GROUP BY status ORDER BY n DESC`);
-    await countQuery("byVerification", `SELECT verification_status, COUNT(*)::int AS n FROM products GROUP BY verification_status ORDER BY n DESC`);
-    // Join integrity — an INNER JOIN on a broken relation silently hides rows.
-    await countQuery("orphanProductsNoShop", `SELECT COUNT(*)::int AS n FROM products p LEFT JOIN shops sh ON sh.id = p.shop_id WHERE sh.id IS NULL`);
-    await countQuery("orphanShopsNoSeller", `SELECT COUNT(*)::int AS n FROM shops sh LEFT JOIN sellers s ON s.id = sh.seller_id WHERE s.id IS NULL`);
-    await countQuery("orphanSellersNoUser", `SELECT COUNT(*)::int AS n FROM sellers s LEFT JOIN users u ON u.id = s.user_id WHERE u.id IS NULL`);
-    // Category key compatibility: products.category_id stores the canonical
-    // SLUG (V0015/V0029) — a uuid-vs-slug join can never match.
-    await countQuery("categoryJoinBySlug", `SELECT COUNT(*)::int AS n FROM products p JOIN categories c ON c.slug = p.category_id`);
-    await countQuery("categoryJoinByUuid", `SELECT COUNT(*)::int AS n FROM products p JOIN categories c ON c.id::text = p.category_id`);
-    await countQuery("productsWithoutImages", `SELECT COUNT(*)::int AS n FROM products p WHERE NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id = p.id)`);
-
-    res.json({ tables: results, migrations, productVisibility, optionAggregation, notifications, auditLogs });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+// JSON for anything unrecognised under /api — an unknown path is a client bug,
+// not a server error, and it must never fall through to an HTML error page.
+app.use("/api", (_req: Request, res: Response) => {
+  res.status(404).json({
+    success: false,
+    error: { code: "NOT_FOUND", message: "Unknown API endpoint" },
+  });
 });
 
-// ─── Google OAuth ─────────────────────────────────────
-setupGoogleAuth(app);
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const code = (err as { code?: string })?.code ?? null;
+  console.error("[api] unhandled error", {
+    code,
+    message: err instanceof Error ? err.message : String(err),
+  });
+  res.status(500).json({
+    success: false,
+    error: { code: "INTERNAL_ERROR", message: "Something went wrong" },
+  });
+});
 
-// ─── Upload (R2 presigned URLs) ────────────────────────
-setupUploadRoutes(app);
-
-// ─── Routes ─────────────────────────────────────────────
-setupRoutes(app);
-
-// ─── Seller (onboarding & approval) ────────────────────
-setupSellerRoutes(app);
-
-// ─── Seller Orders (list / detail / status / subscriptions) ─────────────
-setupSellerOrderRoutes(app);
-
-// ─── Products (CRUD, images, catalog) ────────────────────
-setupProductRoutes(app);
-
-// ─── Cart, Wishlist, Orders ──────────────────────────────
-setupCartRoutes(app);
-
-// ─── Stripe Payments ──────────────────────────────────────
-setupStripeRoutes(app);
-
-// ─── Product Options & Attributes ──────────────────────────────
-setupProductOptionRoutes(app);
-
-// ─── Selling units (sets / packs a seller authors) ──────────────────────
-// The authoring surface for "sell it by the piece or by the pack". Inventory is
-// untouched by it: a set only states its own name, pieces and price.
-setupProductSellingUnitRoutes(app);
-
-// ─── Store accounts (wholesale buyers) — PARKED 2026-10-19 ───────────────
-// The MVP is BUY + SELL + CONTROL and B2B / wholesale is out of scope, so this
-// block is NOT mounted while `WHOLESALE_ENABLED` is off: `/api/customer/store-account`
-// and `/api/admin/store-accounts*` answer 404 instead of accepting an application
-// nobody will review. Selling units (sets / packs) are unaffected — only this
-// second buyer track is parked. Nothing was deleted: the routes, the table, the
-// VelCenter queue and the tests stay in the repository, and setting
-// WHOLESALE_ENABLED=true restores the exact call below.
-if (WHOLESALE_ENABLED) {
-  setupStoreAccountRoutes(app);
-}
-
-// ─── VelRepeat (PARKED 2026-10-14) ──────────────────────────────
-// The owner re-scoped the MVP to buy-and-sell (retail + wholesale by the pack)
-// and parked recurring / prepaid repeat commerce. The six route modules are NOT
-// mounted while the flag is off, so every /api/velrepeat*, /api/subscriptions and
-// /api/velrepeat-packages endpoint answers 404 instead of being reachable by a
-// crafted request. Nothing was deleted — all six setup functions, their handlers,
-// their tables and their tests are still in the repository, and setting
-// VELREPEAT_ENABLED=true restores the exact block below.
-//
-// The payment half of the V2 flow is deliberately included in the parked set:
-// an unmounted payment-initiation route cannot open a Stripe Session for a
-// feature the storefront no longer offers. The Stripe settlement webhook itself
-// is NOT touched — it stays mounted in routes/stripe.ts because it also settles
-// ordinary orders.
-if (VELREPEAT_ENABLED) {
-  // ─── VelRepeat Packages (V1 — buy-ahead) ──────────────────────
-  setupVelRepeatRoutes(app);
-
-  // ─── VelRepeat Plans (V2 — recurring commerce engine) ─────────
-  setupVelRepeatPlanRoutes(app);
-
-  // ─── VelRepeat Packages (V2 — seller package authoring, G3=B) ─
-  setupVelRepeatPackageRoutes(app);
-
-  // ─── VelRepeat V2 (package → draft plan → pricing snapshot, Phase 3) ───
-  setupVelRepeatV2PlanRoutes(app);
-
-  // ─── VelRepeat V2 (prepaid plan-level Stripe payment, Phase 4) ───
-  // Only the payment-initiation endpoint is mounted here. The settlement half of
-  // this phase runs inside the EXISTING /api/payments/stripe/webhook handler
-  // (routes/stripe.ts), so there is still exactly one signature check, one event
-  // claim and one redelivery policy for all Stripe events.
-  setupVelRepeatV2PaymentRoutes(app);
-
-  // ─── VelRepeat V2 (customer plan status: plan + pricing + cycles + orders) ───
-  // The read side of the same flow, so the storefront can poll the SERVER's
-  // verdict after Stripe returns the customer instead of assuming a redirect
-  // means the payment succeeded.
-  setupVelRepeatV2StatusRoutes(app);
-}
-
-// ─── Chat, Messaging & Notifications ────────────────────
-setupChatRoutes(app);
-
-// ─── Admin (bootstrap / owner setup) ────────────────────
-setupAdminRoutes(app);
-
-// ─── Center (company dashboard: overview/orders/intel/staff/audit) ──────
-setupCenterRoutes(app);
-
-// ─── Verification (dual seller + product verification system) ──────
-registerVerificationRoutes(app);
-
-// ─── Seller Intelligence (goals / income / reorder suggestions) ──────────
-setupSellerIntelligenceRoutes(app);
-
-// ─── MVP API (Phase 3) — isolated namespace, opt-in ─────────────────────
-// The MVP backend (`backend/mvp/`) reads ONLY `db/mvp/schema.sql` tables and is
-// mounted under `/api/mvp`. It stays OFF unless `MVP_API_ENABLED=true` because
-// the deployed database is still the pre-MVP one; the Phase 3 cutover flips the
-// flag together with `DATABASE_URL` (db/mvp/cutover.md §3). No pre-MVP route and
-// no pre-MVP table is touched by enabling it.
-if (isMvpApiEnabled()) {
-  setupMvpRoutes(app);
-}
-
-// ─── WebSocket ──────────────────────────────────────────
-// maxPayload caps WebSocket frames (control + presence frames only — chat
-// messages themselves go over REST, which is rate-limited separately).
-const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 16 * 1024 });
-setupWebSocket(wss);
-
-// ─── Start ──────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Velnox API running on port ${PORT}`);
-  console.log(`📡 WebSocket available at ws://0.0.0.0:${PORT}/ws`);
 
-  // Startup health check — log missing env vars
-  const required = ["DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI", "JWT_SECRET"];
-  const missing = required.filter((k) => !process.env[k]);
-  if (missing.length > 0) {
-    console.error(`⚠️  MISSING ENV VARS: ${missing.join(", ")}`);
-    console.error("   Google OAuth will not work until these are set in Render Environment.");
-  } else {
-    console.log("✅ All required env vars are configured.");
-  }
-  // BOOTSTRAP_OWNER_SECRET is optional but must be set for owner initialization.
-  // Logged as boolean only — the actual value is never exposed.
-  console.log(`[bootstrap] BOOTSTRAP_OWNER_SECRET configured: ${Boolean(process.env.BOOTSTRAP_OWNER_SECRET)}`);
-
-  // ─── Which database, and is the payment schema actually there? ──────────
-  // READ-ONLY (a `SELECT`, never DDL — startup must not migrate). This exists
-  // because the payment path failed three times against a database nobody could
-  // name: a `42P01` for checkout_groups and two `42703`s for checkout_group_id
-  // were each diagnosed by reasoning about the connection string instead of
-  // asking the server. One line at boot answers it before a customer ever pays.
-  // Only the database NAME is printed — never the host, user, password or the
-  // `?sslmode=…` parameters.
   void describeDatabaseIdentity()
     .then((identity) => {
       const where = `database=${identity.database} server=${identity.serverVersion}`;
       if (identity.missing.length === 0) {
-        console.log(`[db] ✅ payment schema complete (${where})`);
+        console.log(`[db] ✅ MVP schema complete (${where})`);
       } else {
-        console.error(
-          `[db] ❌ PAYMENT SCHEMA INCOMPLETE (${where}) — missing: ${identity.missing.join(", ")}`,
-        );
-        console.error(
-          "   The checkout-group feature will fail at runtime until this is reconciled.",
-        );
-        console.error("   Run db/run-sqleditor.sql against THIS database in the Neon SQL Editor (it asserts when it finishes).");
+        console.error(`[db] ❌ MVP SCHEMA INCOMPLETE (${where}) — missing: ${identity.missing.join(", ")}`);
+        console.error("   Run db/schema.sql (or db/run-sqleditor.sql in the Neon SQL Editor) against THIS database.");
       }
     })
     .catch((err: unknown) => {
@@ -625,33 +120,7 @@ server.listen(PORT, "0.0.0.0", () => {
       });
     });
 
-  if (VELREPEAT_ENABLED) {
-    // ─── VelRepeat V2 Scheduler (recurring commerce worker) ──────────
-    // The V1 pay-per-run worker above. Untouched by Phase 5.
-    startVelRepeatScheduler();
-
-    // ─── VelRepeat V2 due-cycle worker (Phase 5) ─────────────────────
-    // Generates a cycle's order when the cycle reaches its `scheduled_at`. A
-    // separate worker from the V1 one on purpose: V1 claims PLAN rows by
-    // `next_run_at` and writes `velrepeat_runs`; this one claims CYCLE rows by
-    // `scheduled_at` and writes no run row. They never contend for the same row,
-    // and the exactly-once guarantee for a cycle is the database's, not this
-    // process's — so running two instances of either is safe.
-    //
-    // PARKED (2026-10-14): a parked feature must not write orders, payments or
-    // inventory in the background. Both workers are off with the flag.
-    startVelRepeatV2CycleScheduler();
-  }
-
-  // ─── Payment reservation sweep (FIXED 30-minute window) ──────────────
-  // Ends unpaid orders whose reservation window has lapsed and returns their
-  // stock through the one release path. The DB is the source of truth; the
-  // interval only triggers the scan.
-  startPaymentReservationScheduler();
-
-  // ─── MVP pending-order expiry (Phase 3b) ─────────────────────────────
-  // The same sweep for the MVP tree (`expireStaleOrders`). The worker refuses to
-  // start unless MVP_API_ENABLED=true, so on the pre-MVP service this is a no-op
-  // log line and the legacy sweeper above remains the only one running.
   startMvpOrderExpiryScheduler();
 });
+
+export { app, server };

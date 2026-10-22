@@ -197,12 +197,27 @@ export const SLOW_QUERY_MS = 150;
  * question every past incident answered wrongly: "is this the database I think
  * it is, and is it the schema I think it is?"
  */
-export const PAYMENT_CRITICAL_SCHEMA_OBJECTS = [
-  "checkout_groups",
-  "orders.checkout_group_id",
-  "payments.checkout_group_id",
-  "payments_checkout_group_id_fkey",
-  "idx_payments_checkout_group",
+export const MVP_SCHEMA_OBJECTS = [
+  "users",
+  "revoked_tokens",
+  "seller_profiles",
+  "categories",
+  "products",
+  "product_images",
+  "product_variants",
+  "inventory",
+  "product_selling_units",
+  "media",
+  "addresses",
+  "carts",
+  "cart_items",
+  "orders",
+  "order_items",
+  "shipments",
+  "checkout_requests",
+  "payments",
+  "payment_events",
+  "audit_logs",
 ] as const;
 
 export interface DatabaseIdentity {
@@ -210,7 +225,7 @@ export interface DatabaseIdentity {
   database: string;
   serverVersion: string;
   /** Object name -> present, with the column's `udt_name` where it is a column. */
-  paymentSchema: Record<string, string>;
+  schema: Record<string, string>;
   /** Every name above that is absent, as one line an operator can act on. */
   missing: string[];
 }
@@ -233,16 +248,14 @@ export function safeDatabaseLabel(connectionString: string | undefined | null): 
 }
 
 /**
- * Which database this process is talking to, and whether the payment path's
- * schema is actually there. READ-ONLY by contract — it is a `SELECT`, never
- * DDL, so it is safe to run at boot on production.
+ * Which database this process is talking to, and whether the 20 MVP tables are
+ * actually there. READ-ONLY by contract — it is a `SELECT`, never DDL, so it is
+ * safe to run at boot on production.
  *
- * WHY IT EXISTS. Four incidents in a row were diagnosed against the WRONG
- * database or the wrong assumption: `checkout_groups` "missing" (42P01),
- * `order_items.checkout_group_id` "missing" (42703), and now
- * `payments.checkout_group_id` genuinely missing (42703). Each was answered by
- * reasoning about the connection string instead of asking the server. This
- * answers it in one line at boot, before any customer request.
+ * WHY IT EXISTS. The one recurring production incident in this project was a
+ * backend querying columns its database did not have, diagnosed by reasoning
+ * about the connection string instead of asking the server. This answers the
+ * identity question in one line at boot, before any customer request.
  */
 export async function describeDatabaseIdentity(): Promise<DatabaseIdentity> {
   const identity = await query(
@@ -251,41 +264,18 @@ export async function describeDatabaseIdentity(): Promise<DatabaseIdentity> {
   const row = identity.rows[0];
   const database = row?.database ?? "(unknown)";
 
-  // One round trip for all five objects. `pg_class` covers the table and the
-  // indexes, `pg_attribute` the columns (with their type), `pg_constraint` the
-  // foreign keys — the same three catalogs PART 8 of db/run-sqleditor.sql
-  // asserts against, so the two agree by construction.
   const catalog = await query(
-    `SELECT 'checkout_groups' AS object,
-            CASE WHEN to_regclass('public.checkout_groups') IS NULL THEN 'MISSING' ELSE 'table' END AS detail
-     UNION ALL
-     SELECT 'orders.checkout_group_id',
-            coalesce((SELECT 'uuid' FROM pg_attribute a
-                       JOIN pg_class c ON c.oid = a.attrelid
-                      WHERE c.relname = 'orders' AND a.attname = 'checkout_group_id'
-                        AND a.attnum > 0 AND NOT a.attisdropped), 'MISSING')
-     UNION ALL
-     SELECT 'payments.checkout_group_id',
-            coalesce((SELECT 'uuid' FROM pg_attribute a
-                       JOIN pg_class c ON c.oid = a.attrelid
-                      WHERE c.relname = 'payments' AND a.attname = 'checkout_group_id'
-                        AND a.attnum > 0 AND NOT a.attisdropped), 'MISSING')
-     UNION ALL
-     SELECT 'payments_checkout_group_id_fkey',
-            coalesce((SELECT 'foreign key' FROM pg_constraint WHERE conname = 'payments_checkout_group_id_fkey'), 'MISSING')
-     UNION ALL
-     SELECT 'idx_payments_checkout_group',
-            coalesce((SELECT 'index' FROM pg_class WHERE relname = 'idx_payments_checkout_group'
-                        AND relkind = 'i'), 'MISSING')`,
+    `SELECT table_name::text AS object,
+            'table' AS detail
+       FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
   );
 
-  const paymentSchema: Record<string, string> = {};
-  for (const r of catalog.rows) paymentSchema[r.object] = r.detail;
-  const missing = [...PAYMENT_CRITICAL_SCHEMA_OBJECTS].filter(
-    (name) => (paymentSchema[name] ?? "MISSING") === "MISSING",
-  );
+  const schema: Record<string, string> = {};
+  for (const r of catalog.rows) schema[r.object as string] = r.detail as string;
+  const missing = [...MVP_SCHEMA_OBJECTS].filter((name) => !schema[name]);
 
-  return { database, serverVersion: row?.server_version ?? "(unknown)", paymentSchema, missing };
+  return { database, serverVersion: row?.server_version ?? "(unknown)", schema, missing };
 }
 
 /**

@@ -11,15 +11,11 @@
  * uses for its other workers (`backend/jobs/*.ts`: one module, one exported tick,
  * one `setInterval`, started from `server.ts`). No second scheduler system.
  *
- * WHY IT CANNOT RUN AGAINST THE LEGACY DATABASE
+ * WHY IT RUNS BY DEFAULT
  * ─────────────────────────────────────────────
- * It refuses to start unless `MVP_API_ENABLED=true`. That flag is the SAME switch
- * that mounts `/api/mvp/*`, and the deployment rule is that it is set only on a
- * service whose `DATABASE_URL` is the MVP database (`db/mvp/cutover.md` §3). On
- * the pre-MVP Render service the flag is unset, so this worker is never created
- * and the legacy payment-reservation scheduler stays the only sweeper. The
- * scheduler is also disabled by `MVP_ORDER_EXPIRY_SCHEDULER=off` for an operator
- * who wants the endpoint manual.
+ * The MVP API is the only API, so the sweeper that frees reserved stock starts
+ * with the service; an environment that does not want it sets
+ * `MVP_ORDER_EXPIRY_SCHEDULER=off` and drives the admin endpoint instead.
  *
  * IDEMPOTENCY IS THE DATABASE'S
  * ─────────────────────────────
@@ -30,7 +26,6 @@
  * is not a correctness mechanism.
  */
 import { expireStaleOrders } from "../mvp/checkout.js";
-import { isMvpApiEnabled } from "../mvp/index.js";
 
 /** Floor on the poll interval; the payment window is 30 minutes, not 30 seconds. */
 const MIN_INTERVAL_MS = 30_000;
@@ -47,18 +42,24 @@ export async function runMvpExpiryTick(limit = DEFAULT_BATCH): Promise<number> {
 }
 
 /**
+ * Has the operator opted the background sweep OUT?
+ *
+ * Only the exact word `off` (trimmed, case-insensitive) means "no": a typo or a
+ * half-set variable must never silently stop reserved stock from coming back.
+ * Pure, so the rule can be asserted without creating a timer.
+ */
+export function isMvpExpiryDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.MVP_ORDER_EXPIRY_SCHEDULER ?? "").trim().toLowerCase() === "off";
+}
+
+/**
  * Start polling for expired pending orders.
  *
- * Returns `null` (and starts nothing) unless the MVP API is enabled, which is the
- * fail-closed default: an environment that has not explicitly opted into the MVP
- * tree can never have this worker touch its database.
+ * Returns `null` (and starts nothing) when the operator has opted out with
+ * `MVP_ORDER_EXPIRY_SCHEDULER=off`; otherwise the sweep runs with the service.
  */
 export function startMvpOrderExpiryScheduler(intervalMs = 60_000): NodeJS.Timeout | null {
-  if (!isMvpApiEnabled()) {
-    console.log("[mvp-expiry] not started: MVP_API_ENABLED is not 'true'");
-    return null;
-  }
-  if ((process.env.MVP_ORDER_EXPIRY_SCHEDULER ?? "").trim().toLowerCase() === "off") {
+  if (isMvpExpiryDisabled()) {
     console.log("[mvp-expiry] disabled by MVP_ORDER_EXPIRY_SCHEDULER=off (use the admin endpoint)");
     return null;
   }

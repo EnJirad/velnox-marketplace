@@ -1,5 +1,14 @@
 # PAYMENT — CURRENT STATE (Phase 1 audit)
 
+> **HISTORICAL (2026-10-22).** This audit documents the **pre-MVP** payment
+> surface — `backend/routes/stripe.ts`, `backend/routes/cart.ts`,
+> `checkout_groups`, `velrepeat-v2-payments` — all of which were removed from the
+> repository in the database-first cleanup. The payment system that exists today
+> is `backend/mvp/payments.ts` + `backend/mvp/checkout.ts` against
+> `db/schema.sql` (`payments`, `payment_events`, `checkout_requests`), described
+> in [`DATABASE.md`](./DATABASE.md) and proved by `bun run test:mvp`. Keep this
+> file only as the record of what the legacy flow did.
+
 Audited from **source code, the DB schema, the API surface and the frontend flows in
 this repository** — not from filenames or from older documentation. Every answer below
 cites the artifact that proves it. Line numbers are from the commit this document was

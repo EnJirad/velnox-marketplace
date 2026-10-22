@@ -1,21 +1,17 @@
 /**
  * MVP API — entry point and route inventory.
  *
- * ROUTING STRATEGY (Phase 3)
- * --------------------------
- * The MVP API is mounted in its OWN namespace, `/api/mvp/*`, and is enabled by
- * `MVP_API_ENABLED=true`. The pre-MVP routes keep serving the deployed
- * frontends unchanged; nothing here reads a pre-MVP table and nothing there
- * reads an MVP table. That is what lets the rewrite land incrementally without
- * switching production traffic onto a backend whose database has not been cut
- * over yet (`db/mvp/cutover.md` §3).
+ * ROUTING STRATEGY
+ * ----------------
+ * This is the ONLY API. It lives in its own namespace, `/api/mvp/*`, mounted
+ * unconditionally from `server.ts` against the one database the repository
+ * ships a schema for (`db/schema.sql`). There is no second route tree and no
+ * flag selecting between them: a switch whose default hid the API would 404
+ * every frontend call, and a switch guarding a deleted tree would be a lie. The
+ * database a deployment points at is a deployment concern, not a route concern.
  *
- * Why a flag whose default is OFF: the deployed Render service points
- * `DATABASE_URL` at the pre-MVP Neon database, which has no MVP tables. Mounting
- * these routes there would not break existing traffic, but it would expose
- * endpoints that can only 500. Off by default means production behaviour is
- * byte-identical until the owner performs the cutover; the Phase 3 staging
- * deployment (new database) sets `MVP_API_ENABLED=true`.
+ * Nothing here reads a table outside `db/schema.sql` — that boundary is asserted
+ * by `tests/isolation.test.ts` rather than by a flag.
  *
  *   POST   /api/mvp/auth/signup | login | logout | bootstrap-owner
  *   GET    /api/mvp/auth/me | oauth (501, parked)
@@ -64,11 +60,6 @@ import { setupMvpPaymentRoutes } from "./payments.js";
 import { setupMvpSellerRoutes } from "./seller.js";
 
 export const MVP_API_PREFIX = "/api/mvp";
-
-/** The MVP tree is opt-in; see the routing strategy above. */
-export function isMvpApiEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.MVP_API_ENABLED === "true";
-}
 
 export function setupMvpRoutes(app: Express): void {
   setupMvpAuthRoutes(app);

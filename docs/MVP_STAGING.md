@@ -1,14 +1,19 @@
 # MVP staging — deployment runbook
 
+> **SUPERSEDED PARTIALLY (2026-10-22).** Three things this runbook assumes no
+> longer exist: the `MVP_API_ENABLED` flag (the MVP API is now mounted
+> unconditionally — `backend/mvp/` is the only route tree), `db/mvp/*` (the
+> canonical schema is `db/schema.sql` + `db/run-sqleditor.sql`, and
+> `db/mvp/cutover.md` moved to [`PRODUCTION_CUTOVER.md`](./PRODUCTION_CUTOVER.md))
+> and `db/mvp/reset.sh` (`bun run db:reset` → `scripts/db-reset.sh`). Everything
+> provider-side below (create the Neon database, deploy staging, keep production
+> untouched) still applies. Read this as "how to stand up staging", with the
+> paths above corrected.
+
 **Status:** ready to deploy, **not deployed**. No staging database, backend or Vercel
 project is reachable from this workspace, and no production resource was touched.
-This document is the exact owner checklist; everything in it has been verified
-locally except the provider-side steps, which need dashboard access.
-
-Related: [`db/mvp/cutover.md`](../db/mvp/cutover.md) (production cutover, **do not
-execute**) · [`.ai/tasks/active/mvp-clean-rewrite-phase3b-2026-10-21.md`](../.ai/tasks/active/mvp-clean-rewrite-phase3b-2026-10-21.md)
-(client pass) · [`.ai/tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md`](../.ai/tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md)
-(this pass's report).
+Everything in it has been verified locally except the provider-side steps, which
+need dashboard access.
 
 ---
 
