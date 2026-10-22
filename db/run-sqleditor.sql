@@ -704,6 +704,54 @@ CREATE TRIGGER trg_orders_status_transition
   FOR EACH ROW
   EXECUTE FUNCTION enforce_order_status_transition();
 
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS cover_url TEXT;
+
+ALTER TABLE addresses
+  ADD COLUMN IF NOT EXISTS latitude NUMERIC(9, 6);
+
+ALTER TABLE addresses
+  ADD COLUMN IF NOT EXISTS longitude NUMERIC(9, 6);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'addresses_latitude_range'
+       AND conrelid = 'addresses'::regclass
+  ) THEN
+    ALTER TABLE addresses
+      ADD CONSTRAINT addresses_latitude_range
+      CHECK (latitude IS NULL OR (latitude >= -90 AND latitude <= 90));
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'addresses_longitude_range'
+       AND conrelid = 'addresses'::regclass
+  ) THEN
+    ALTER TABLE addresses
+      ADD CONSTRAINT addresses_longitude_range
+      CHECK (longitude IS NULL OR (longitude >= -180 AND longitude <= 180));
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'addresses_coordinates_paired'
+       AND conrelid = 'addresses'::regclass
+  ) THEN
+    ALTER TABLE addresses
+      ADD CONSTRAINT addresses_coordinates_paired
+      CHECK ((latitude IS NULL) = (longitude IS NULL));
+  END IF;
+END $$;
+
 SELECT
   (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE') AS tables,
   (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public') AS columns,

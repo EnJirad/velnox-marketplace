@@ -50,11 +50,22 @@ describe("MVP catalogue (needs a test database + JWT_SECRET)", () => {
     );
     const draftRow = draft.rows[0] as { id: string; slug: string };
 
+    // The list query aggregates product_reviews; a database without that table
+    // answers 500 here (42P01), so the rating/review_count keys are the
+    // regression pin for that drift.
     const list = await api(app.base, "/api/mvp/products?q=Catalog");
     expect(list.status).toBe(200);
-    const ids = (list.body.data.products as Array<{ id: string }>).map((p) => p.id);
+    const rows = list.body.data.products as Array<{
+      id: string;
+      rating: string | null;
+      reviewCount: number;
+    }>;
+    const ids = rows.map((p) => p.id);
     expect(ids).toContain(visible.id);
     expect(ids).not.toContain(draftRow.id);
+    const visibleRow = rows.find((p) => p.id === visible.id)!;
+    expect(visibleRow.reviewCount).toBe(0);
+    expect(visibleRow.rating).toBeNull();
 
     const draftDetail = await api(app.base, `/api/mvp/products/${draftRow.slug}`);
     expect(draftDetail.status).toBe(404);

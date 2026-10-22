@@ -49,9 +49,14 @@ describe("MVP auth (needs a test database + JWT_SECRET)", () => {
     const rawCookie = res.setCookie.find((v) => v.startsWith("velnox_session="))!;
     expect(rawCookie).toContain("HttpOnly");
 
+    // `/auth/me` reads users.avatar_url AND users.cover_url. A database without
+    // the cover column answers 500 here (42703), so this assertion is the
+    // regression pin for that drift.
     const me = await api(app.base, "/api/mvp/auth/me", { cookie: cookie! });
     expect(me.status).toBe(200);
     expect(me.body.data.user.email).toBe(email);
+    expect(me.body.data.user.avatarUrl).toBeNull();
+    expect(me.body.data.user.coverUrl).toBeNull();
     expect(me.body.data.seller).toBeNull();
     expect(JSON.stringify(me.body)).not.toContain("scrypt");
   });

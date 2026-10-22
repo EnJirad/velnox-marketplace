@@ -1,14 +1,16 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-22 · **Branch:** `main` · **Latest pass:** **§93 LEGACY RESTORATION COMPLETION (2026-10-22)** — the restored storefront is finished on the MVP stack: the address book (`/addresses`, `/api/mvp/addresses`, GPS via Leaflet `MapPicker`) and the profile cover photo (`users.cover_url`, `profile/cover` presign/confirm/remove) were the two systems still absent. Both SQL files gained `addresses.latitude/longitude` (NUMERIC(9,6)) and `users.cover_url`; seller product photos now upload through R2 (`/seller/products/:id/images/presign|confirm`) instead of URL-only; the MVP suite is **135/135** against a real database. **§92 DATABASE-FIRST RESET** — `db/` is down to the two canonical files (proved equivalent on a disposable PostgreSQL, both applied twice), the pre-MVP route/page/migration tree is removed, and the MVP API + three MVP frontends are the whole product: typecheck 4/4, builds 4/4, static suite 46/46, MVP API suite **113/113** against a real database. **Prior passes:** §90 clean MVP schema audit · §89 retail sets/packs. Staging is **NOT deployed** (no provider access); Stripe TEST still keyless. Production untouched; cutover **not executed** (`docs/PRODUCTION_CUTOVER.md`).
+**Last updated:** 2026-10-22 · **Branch:** `main` · **Latest pass:** **§94 DRIFT-REPAIR PATH (2026-10-22)** — the canonical files already declared `product_reviews` and `users.cover_url`, but `CREATE TABLE IF NOT EXISTS` cannot add a column to a table that already exists, so an installed database could never be brought forward. `db/run-sqleditor.sql` now carries a guarded additive upgrade (3 columns + 3 CHECKs) after the DDL; `db:check` stages the old state, repairs it twice and compares catalog fingerprints with a fresh install. The exact `42703`/`42P01` failures were reproduced pre-repair and disappear post-repair; MVP suite **135/135**, static **47/47**. **§93 LEGACY RESTORATION COMPLETION** — address book, cover photo, R2 product images. **§92 DATABASE-FIRST RESET** — `db/` is down to the two canonical files (proved equivalent on a disposable PostgreSQL, both applied twice), the pre-MVP route/page/migration tree is removed, and the MVP API + three MVP frontends are the whole product: typecheck 4/4, builds 4/4, static suite 46/46, MVP API suite **113/113** against a real database. **Prior passes:** §90 clean MVP schema audit · §89 retail sets/packs. Staging is **NOT deployed** (no provider access); Stripe TEST still keyless. Production untouched; cutover **not executed** (`docs/PRODUCTION_CUTOVER.md`).
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
-> ⚠️ **OPEN PRODUCTION INCIDENT (2026-10-21; repair path changed 2026-10-22):** Render checkout
-> fails with `42703 column "order_state" of relation "orders" does not exist` (plus
-> `product_selling_units` missing). Production still runs the pre-MVP database and never received
-> migrations 056/058/059. The migration chain and `Production DB Migrate`/`Verify` were retired with
-> it (§92), so the repair is now the cutover in `docs/PRODUCTION_CUTOVER.md` — **not executed**
-> (no database credential in this workspace). No production database was touched.
+> ⚠️ **PRODUCTION SCHEMA INCIDENT (2026-10-21, updated 2026-10-22):** the deployed API has
+> reported two distinct states. `42703 column "order_state" …` (plus `product_selling_units`
+> missing) means the target is still pre-MVP. `42P01 relation "product_reviews" does not exist`
+> and `42703 column "cover_url" does not exist` mean the target IS the MVP model but predates the
+> post-baseline additions (three tables, `cover_url`, the address coordinates). Repair path:
+> `docs/PRODUCTION_CUTOVER.md` §3a (run `db/run-sqleditor.sql`; additive, no data rewrite) for the
+> latter, §3 (fresh database) for the former. **Not executed** (no production credential in this
+> workspace). No production database was touched.
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
 > roughly **55 KB** in a file, so a handoff that grows past that can no longer be

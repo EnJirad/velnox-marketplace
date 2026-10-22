@@ -5,13 +5,16 @@
 | File | Purpose |
 |---|---|
 | `db/schema.sql` | The canonical MVP DDL. The only description of the data model there is. |
-| `db/run-sqleditor.sql` | The same DDL in dependency order for the Neon SQL Editor, ending in a read-only install check. |
+| `db/run-sqleditor.sql` | The same DDL in dependency order for the Neon SQL Editor, then a guarded **additive upgrade** (missing columns/constraints for a database installed from an older version), then a read-only install check. |
 
-Both files are **declaration-identical**, carry **no SQL comments** and contain
-**no destructive or data-writing statement**. There is no `db/mvp/`, no
-`db/migrations/`, no seed, no reset SQL and no third schema file, and
-`db/run-update.sql` must never be recreated. How they are proved: `bun run
-db:check` (installs both twice on a disposable PostgreSQL and diffs the dumps)
+The CREATE sections are **declaration-identical**, both files carry **no SQL
+comments** and contain **no destructive or data-writing statement**. The
+installer's extra upgrade section only ever adds: `ALTER TABLE … ADD COLUMN IF
+NOT EXISTS` and `ADD CONSTRAINT` guarded by `IF NOT EXISTS`. There is no
+`db/mvp/`, no `db/migrations/`, no seed, no reset SQL and no third schema file,
+and `db/run-update.sql` must never be recreated. How they are proved: `bun run
+db:check` (installs both twice, diffs the dumps, then drops the post-baseline
+objects, repairs with the installer twice and compares catalog fingerprints)
 and `bun run db:verify` (static contract).
 
 The production switch to this schema is planned, **not executed**:
@@ -25,11 +28,13 @@ Neon PostgreSQL is the runtime source of truth. The backend is the only process
 that connects to it (`backend/db/index.ts`, one pool). The frontend never holds
 `DATABASE_URL` or any other server secret.
 
-## MVP tables (20)
+## MVP tables (23)
 
 | Domain | Tables | Purpose |
 |---|---|---|
-| Identity | `users`, `revoked_tokens` | email + password (scrypt hash), roles `customer/seller/admin/owner`, JWT `jti` revocation |
+| Identity | `users`, `revoked_tokens`, `user_identities` | email + password (scrypt hash), roles `customer/seller/admin/owner`, JWT `jti` revocation, linked Google identity |
+| Profile | `users.avatar_url`, `users.cover_url` | profile photo and cover photo; R2 object key + URL recorded in `media` |
+| Social | `product_favorites`, `product_reviews` | one favourite/review row per `(user, product)`; review `rating 1–5`, `comment`, `published`/`hidden` |
 | Seller | `seller_profiles` | store identity + lifecycle `pending → approved/rejected/suspended`, approver evidence, no self-approval |
 | Catalog | `categories`, `products`, `product_images`, `product_variants` | category tree (slug-keyed), product lifecycle, gallery, flat variants with their own price |
 | Inventory | `inventory` | **the only stock authority**, one row per `(product_id, variant_id)` |
@@ -121,8 +126,22 @@ A schema change is an edit to **both** canonical files **in the same commit** �
 the model in `db/schema.sql` and the same DDL in dependency order in
 `db/run-sqleditor.sql` — followed by `bun run db:check`, `bun run db:verify` and
 `bun run test:mvp`. There is no migration chain and there are no migration files
-to add: an existing database is brought forward by re-running the guarded file,
-which changes nothing that is already there.
+to add.
+
+A **new table** needs no extra work: `CREATE TABLE IF NOT EXISTS` creates it on
+an existing database. A **new column on an existing table** does, because
+`CREATE TABLE IF NOT EXISTS` skips a table that is already there. Such a change
+must also add, to the installer's upgrade section:
+
+```sql
+ALTER TABLE <table>
+  ADD COLUMN IF NOT EXISTS <column> <type>;
+```
+
+and, for a new CHECK/constraint, a `DO $$ … IF NOT EXISTS (SELECT 1 FROM
+pg_constraint …) THEN ALTER TABLE … ADD CONSTRAINT …; END IF; END $$;` block.
+Both must be idempotent and must not rewrite a row. `bun run db:check` fails if
+a repaired older database differs from a fresh install.
 
 After the cutover, the first post-cutover change must pick a migration strategy
 before it lands. Until then, do not reintroduce `db/migrations/`.

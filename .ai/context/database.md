@@ -5,22 +5,27 @@
 | File | Purpose |
 |------|---------|
 | `db/schema.sql` | **The canonical MVP DDL.** The only description of the data model there is. |
-| `db/run-sqleditor.sql` | The same DDL in dependency order for the Neon SQL Editor, ending in a read-only install check. |
+| `db/run-sqleditor.sql` | The same DDL in dependency order for the Neon SQL Editor, then a guarded **additive upgrade** for a database installed from an older version, then a read-only install check. |
 
 Nothing else lives in `db/`: no `db/mvp/`, no `db/migrations/`, no `db/README.md`,
 no seed, no reset, no verifier scripts. Tooling lives in `scripts/` and docs live
 outside `db/` entirely.
 
-**Both files are contractually identical** — same tables, columns, types,
-constraints, indexes, triggers, same names, same definitions — and neither may
-carry a comment (`--`, `/* */`) or a destructive/data-writing statement
-(`DROP`, `TRUNCATE`, `DELETE`, `INSERT`, `UPDATE`). Explanations belong in
-`docs/DATABASE.md`, `docs/PRODUCTION_CUTOVER.md` and this file.
+The **CREATE DDL is contractually identical** in both files — same tables,
+columns, types, constraints, indexes, triggers, same names, same definitions.
+The installer may additionally carry an additive upgrade section
+(`ALTER TABLE … ADD COLUMN IF NOT EXISTS`, guarded `ADD CONSTRAINT` blocks) so
+an existing database can be brought forward; `db/schema.sql` stays a pure
+snapshot. Neither file may carry a comment (`--`, `/* */`) or a
+destructive/data-writing statement (`DROP`, `TRUNCATE`, `DELETE`, `INSERT`,
+`UPDATE`). Explanations belong in `docs/DATABASE.md`,
+`docs/PRODUCTION_CUTOVER.md` and this file.
 
 ## The schema, in one paragraph
 
-20 tables · 206 columns · 75 indexes · 147 constraints · 7 triggers. Users with
-`revoked_tokens`; `seller_profiles` with an approval `status` gating every
+23 tables · 229 columns · 86 indexes · 167 constraints · 7 triggers. Users with
+`revoked_tokens`, `user_identities` (Google linking) and `cover_url`;
+`seller_profiles` with an approval `status` gating every
 product write; categories, products, product variants (no stock of their own),
 product images, `product_selling_units` (N base units for the seller's own
 price — **no stock column**: `inventory` is the only stock authority and a pack
@@ -29,8 +34,9 @@ purchase reserves `quantity × base_quantity`); one `inventory` row per
 with **one six-value status axis** (`pending_payment`, `paid`, `processing`,
 `shipped`, `delivered`, `cancelled`) and JSONB/item snapshots; `payments` +
 `payment_events` for webhook idempotency; `checkout_requests(user_id,
-request_key)` for checkout idempotency; shipments; `audit_logs`;
-`platform_settings`.
+request_key)` for checkout idempotency; `product_favorites` and
+`product_reviews` (one row per user per product, `rating 1–5`, `published`/
+`hidden`); shipments; `audit_logs`.
 
 Rules that must never drift:
 
@@ -43,6 +49,10 @@ Rules that must never drift:
   by the API to **409**), not in application code;
 - every creation statement is guarded (`IF NOT EXISTS` / `ON CONFLICT`), so a
   second run changes nothing;
+- a column added to an **existing** table after the first install must also
+  appear in the installer's upgrade section, or a re-run cannot repair a
+  database that predates it (`users.cover_url`, `addresses.latitude`,
+  `addresses.longitude` today);
 - no `order_state`, no `shops`, no `checkout_groups`, no `velrepeat_*`, no
   `wholesale`/`is_wholesale` — pinned by
   `backend/tests/mvp-schema-contract.test.ts` and
@@ -53,7 +63,7 @@ Rules that must never drift:
 | Command | What it proves | Needs a DB? |
 |---|---|---|
 | `bun run db:check` (`scripts/db-verify.sh`) | **Both** files apply to an empty database, **both apply a second time**, and the two `pg_dump --schema-only` results are identical | yes (disposable) |
-| `bun run db:verify` (`backend/tests/mvp-schema-contract.test.ts`) | Declaration parity, the 20-table inventory, no non-MVP column, one order axis, one stock authority, `NUMERIC(12,2)`, seven lifecycle triggers, rerunnability, no comments/destructive SQL, `db/` contains only the two files | no |
+| `bun run db:verify` (`backend/tests/mvp-schema-contract.test.ts`) | Declaration parity, the 23-table inventory, no non-MVP column, one order axis, one stock authority, `NUMERIC(12,2)`, seven lifecycle triggers, rerunnability, no comments/destructive SQL, `db/` contains only the two files | no |
 | `bun run test:mvp` (`scripts/db-test-run.sh`) | Builds `velnox_mvp_app_test` from `db/schema.sql` and runs `backend/mvp/tests/**` — auth, cart, checkout, overselling, inventory, payments/webhook idempotency, seller/admin authorisation, selling units | yes (disposable) |
 
 Never point any of these at production. See *Test Database* below.

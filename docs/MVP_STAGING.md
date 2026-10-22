@@ -26,7 +26,7 @@ Vercel: velCenter-staging ┘                                          │
                                           Render: velnox-api-staging  (/api/mvp, no flag)
                                                                      │
                                                                      ▼
-                                          Neon: velnox_mvp_staging  (db/schema.sql, 20 tables)
+                                          Neon: velnox_mvp_staging  (db/schema.sql, 23 tables)
 ```
 
 One Render service and one database. The three Vercel projects clone the existing

@@ -14,7 +14,7 @@ because `db/` holds exactly two files: `db/schema.sql` and
 
 | | Repository (done) | Production database (untouched) |
 |---|---|---|
-| Schema | `db/schema.sql` — 20 tables, 206 columns, 75 indexes, 147 constraints, 7 triggers — and `db/run-sqleditor.sql`, proven byte-identical by `bash scripts/db-verify.sh` | pre-MVP schema: ~77 tables, `shops`, `checkout_groups`, a `schema_migrations` ledger |
+| Schema | `db/schema.sql` — 23 tables, 229 columns, 86 indexes, 167 constraints, 7 triggers — and `db/run-sqleditor.sql` (same DDL + a guarded additive upgrade), proven by `bash scripts/db-verify.sh` | pre-MVP schema: ~77 tables, `shops`, `checkout_groups`, a `schema_migrations` ledger |
 | Backend | `backend/mvp/` only — no `backend/routes/`, no boot-time `ensure*` DDL, no migration runner | serves the previous API surface |
 | Frontends | `apps/*/src/mvp/` only — they call `/api/mvp/*` unconditionally | served the previous pages |
 | Migrations | `db/migrations/` removed (62 files) | `schema_migrations` ledger still present and still authoritative |
@@ -37,7 +37,7 @@ The repository can no longer talk to the production database, and the
    be verified against an unidentified target.
 2. **Bootstrap it once** with `db/schema.sql`, then verify:
    `psql "$URL" -v ON_ERROR_STOP=1 -f db/schema.sql`, then
-   `psql "$URL" -c "SELECT count(*) FROM pg_class …"` expecting 20 tables.
+   `psql "$URL" -c "SELECT count(*) FROM pg_class …"` expecting 23 tables.
 3. **Deploy the MVP backend and frontends to staging** with `DATABASE_URL` (and
    `VITE_API_URL`) pointing at the new database. Prove in order: signup/login →
    seller apply → owner approve → product draft → submit → approve → publish →
@@ -59,6 +59,44 @@ The repository can no longer talk to the production database, and the
    Replace their assertions with MVP object checks in the same change.
 8. **Update the documents in one commit:** `AGENTS.md` rule 4, `.ai/AI_RULES.md`,
    `.ai/context/database.md`, `INSTALLATION.md`, `docs/DATABASE.md`.
+
+## 3a. Drift repair — a database that is ALREADY on the MVP schema
+
+Use this when production is already the MVP model but is missing objects added
+later (the observed errors are `42P01 relation "product_reviews" does not exist`
+on `/api/mvp/products` and `42703 column "cover_url" does not exist` on
+`/api/mvp/auth/me`). Do **not** recreate the database and do **not** hand-write
+`ALTER TABLE` statements: run the canonical installer, which creates missing
+tables and adds the post-baseline columns/constraints in one guarded pass.
+
+1. **Prove the target's identity first:** `SELECT current_database(), version();`
+   plus Neon project/branch and host. Record it. If the database still holds the
+   pre-MVP model (`shops`, `checkout_groups`, ~77 tables), stop — this is the full
+   cutover (§3), not a repair.
+2. **Branch or snapshot it** (Neon branch or PITR bookmark). The repair is
+   additive, but a rollback point is mandatory before any production DDL.
+3. **Apply the installer twice** in the Neon SQL Editor (or
+   `psql "$URL" -v ON_ERROR_STOP=1 -f db/run-sqleditor.sql`). The first pass
+   creates `user_identities`, `product_favorites`, `product_reviews` and adds
+   `users.cover_url`, `addresses.latitude`, `addresses.longitude` plus their
+   three CHECK constraints; the second must report no change and no error.
+4. **Verify the repair:**
+   ```sql
+   SELECT to_regclass('public.product_reviews');
+   SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'users' AND column_name = 'cover_url';
+   ```
+   and the install check the file ends with: 23 tables, 229 columns, 86 indexes,
+   38 foreign keys, 86 checks, 7 triggers.
+5. **Verify at the API:** `GET /api/mvp/products` and `GET /api/mvp/auth/me`
+   must answer `200`; then walk profile → cover upload → review → favourite →
+   address → cart → checkout (Stripe TEST) → order.
+6. **No row is rewritten.** The repair never drops a table, column or row and
+   never truncates; if any step would need one of those, stop (§7).
+
+The same proof runs locally, against disposable databases, in `bun run db:check`
+— it stages the pre-repair state, runs the installer twice, and compares the
+repaired catalog fingerprint with a fresh install.
 
 ## 4. Downtime and rollback
 

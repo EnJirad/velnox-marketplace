@@ -9,8 +9,8 @@
  *
  * What this file pins, and why:
  *
- *   • the two files declare byte-identical DDL, so an editor install and a
- *     `psql -f` install can never diverge;
+ *   • the installer's DDL is byte-identical to `db/schema.sql`, so an editor
+ *     install and a `psql -f` install can never diverge;
  *   • neither file contains a SQL comment — the design rationale lives in
  *     `docs/DATABASE.md`, not in the DDL;
  *   • neither file destroys anything: no DROP TABLE/COLUMN/DATABASE, no
@@ -21,7 +21,10 @@
  *     favourites, and no VelRepeat / memory / wholesale / chat / staff-RBAC
  *     objects;
  *   • the installer is rerunnable: every CREATE is IF NOT EXISTS (functions
- *     CREATE OR REPLACE, triggers preceded by DROP TRIGGER IF EXISTS);
+ *     CREATE OR REPLACE, triggers preceded by DROP TRIGGER IF EXISTS), and its
+ *     additive upgrade section only adds missing columns/constraints, so an
+ *     already-installed database can be brought forward without a migration
+ *     chain and without touching a row;
  *   • the seed is platform configuration only — categories, never a fake
  *     seller, product, order or payment.
  *
@@ -37,6 +40,7 @@ import {
   RUN_SQLEDITOR_SQL,
   REPO_ROOT,
   SCHEMA_SQL,
+  VERIFY_BLOCK_MARKER,
   canonicalParity,
   commentTokens,
   dangerousStatements,
@@ -47,6 +51,8 @@ import {
   declaredTriggerNames,
   readSql,
   stripSqlComments,
+  upgradeOf,
+  upgradedColumns,
 } from "./helpers/canonical-schema.js";
 
 const schema = readSql(SCHEMA_SQL);
@@ -155,12 +161,38 @@ describe("the two canonical files", () => {
     expect(parity.ok).toBe(true);
   });
 
-  test("are byte-identical apart from the installer's read-only verification", () => {
-    const installerDdl = ddlOf(installer);
+  test("the installer is the canonical DDL plus a guarded upgrade and a read-only check", () => {
+    // DDL parity is unchanged: the CREATE section must be the schema, verbatim.
     const schemaDdl = ddlOf(schema);
+    expect(ddlOf(installer)).toBe(schemaDdl);
     expect(installer.startsWith(schemaDdl)).toBe(true);
-    // The tail is a single SELECT of catalog counts — it changes nothing.
-    const tail = installer.slice(installerDdl.length).trim();
+
+    // The upgrade section exists so a database installed from an OLDER version
+    // of this schema can be brought forward. It is additive only.
+    const upgrade = upgradeOf(installer);
+    expect(upgrade.length).toBeGreaterThan(0);
+    expect(/drop|truncate|delete|insert|update/i.test(upgrade)).toBe(false);
+    for (const statement of upgrade.split(/;\s*\n(?=ALTER TABLE|DO \$\$)/)) {
+      expect(
+        /^ALTER TABLE [a-z_]+\s+ADD COLUMN IF NOT EXISTS [a-z_]+ [A-Z]/.test(statement) ||
+          /^DO \$\$/.test(statement),
+      ).toBe(true);
+    }
+
+    // Every column the upgrade adds must be a canonical column of the same
+    // type, or a repaired database would not equal a freshly installed one.
+    const added = upgradedColumns(installer);
+    expect(added.map((c) => `${c.table}.${c.column}`).sort()).toEqual([
+      "addresses.latitude",
+      "addresses.longitude",
+      "users.cover_url",
+    ]);
+    for (const column of added) {
+      expect(columnOf(column.table, column.column)?.dataType).toBe(column.dataType);
+    }
+
+    // Everything after the upgrade is the read-only catalog check.
+    const tail = installer.slice(installer.indexOf(VERIFY_BLOCK_MARKER)).trim();
     expect(tail.startsWith("SELECT")).toBe(true);
     expect(tail.endsWith(";")).toBe(true);
     expect(/insert|update|delete|drop|alter/i.test(tail)).toBe(false);
@@ -180,6 +212,21 @@ describe("the model", () => {
   test("declares no non-MVP column", () => {
     const names = columns.map((c) => c.column);
     for (const forbidden of FORBIDDEN_COLUMNS) expect(names).not.toContain(forbidden);
+  });
+
+  test("declares the cover, review, favourite and address-model columns the restored UI reads", () => {
+    // The two deployed-database failures this contract now pins: `/auth/me`
+    // selects users.cover_url, and the product list aggregates product_reviews.
+    expect(columnOf("users", "cover_url")?.dataType).toBe("TEXT");
+    expect(declaredTables(schema)).toContain("product_reviews");
+    expect(columnOf("product_reviews", "rating")?.dataType).toBe("SMALLINT");
+    expect(columnOf("product_reviews", "comment")?.dataType).toBe("TEXT");
+    expect(columnOf("product_reviews", "status")?.dataType).toBe("TEXT");
+    expect(columnOf("product_favorites", "user_id")).toBeDefined();
+    expect(columnOf("product_favorites", "product_id")).toBeDefined();
+    // Map-picked addresses: a coordinate pair, never a float.
+    expect(columnOf("addresses", "latitude")?.dataType).toBe("NUMERIC(9, 6)");
+    expect(columnOf("addresses", "longitude")?.dataType).toBe("NUMERIC(9, 6)");
   });
 
   test("keeps ONE order status axis", () => {

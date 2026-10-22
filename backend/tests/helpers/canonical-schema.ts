@@ -3,10 +3,11 @@
  *
  * `db/schema.sql` is the one and only data model of the marketplace MVP.
  * `db/run-sqleditor.sql` installs exactly the same model from a Neon SQL
- * Editor and finishes with a read-only verification query. This helper parses
- * both so a test can assert on what they declare instead of pattern-matching
- * prose — neither file may contain a single SQL comment, so there is no prose
- * to trip over.
+ * Editor (the canonical DDL), then brings an EXISTING database forward with a
+ * guarded additive upgrade, then finishes with a read-only verification query.
+ * This helper parses all three sections so a test can assert on what they
+ * declare instead of pattern-matching prose — neither file may contain a single
+ * SQL comment, so there is no prose to trip over.
  *
  * No destructive statement exists in either file: they only ever create. The
  * development/test reset is `scripts/db-reset.sh`, which refuses any database
@@ -117,11 +118,54 @@ export const dangerousStatements = (sql: string): string[] =>
 /** The verification block `run-sqleditor.sql` appends; `schema.sql` has none. */
 export const VERIFY_BLOCK_MARKER = "SELECT\n  (SELECT count(*) FROM information_schema.tables";
 
-/** The DDL both files must declare identically. */
+/**
+ * The first statement of the installer's additive upgrade section — the point
+ * where `run-sqleditor.sql` stops being a byte-for-byte copy of `schema.sql`
+ * and starts repairing an existing database. `schema.sql` has no upgrade
+ * section: a fresh database is fully described by its CREATE statements.
+ */
+export const UPGRADE_MARKER =
+  "ALTER TABLE users\n  ADD COLUMN IF NOT EXISTS cover_url TEXT;";
+
+/** The DDL both files must declare identically (everything before any upgrade). */
 export function ddlOf(sql: string): string {
   const clean = stripSqlComments(sql);
-  const at = clean.indexOf(VERIFY_BLOCK_MARKER);
-  return (at === -1 ? clean : clean.slice(0, at)).trim();
+  const cuts = [clean.indexOf(UPGRADE_MARKER), clean.indexOf(VERIFY_BLOCK_MARKER)].filter(
+    (at) => at !== -1,
+  );
+  return (cuts.length ? clean.slice(0, Math.min(...cuts)) : clean).trim();
+}
+
+/**
+ * The additive section that brings an EXISTING database to the canonical model.
+ * Empty for `schema.sql`; for the installer it sits between the DDL and the
+ * read-only verification query.
+ */
+export function upgradeOf(sql: string): string {
+  const clean = stripSqlComments(sql);
+  const at = clean.indexOf(UPGRADE_MARKER);
+  if (at === -1) return "";
+  const end = clean.indexOf(VERIFY_BLOCK_MARKER);
+  return clean.slice(at, end === -1 ? undefined : end).trim();
+}
+
+/**
+ * Columns the installer adds to a table that may already exist. Each one must
+ * match the type `declaredColumns` reads from the CREATE TABLE, or a repaired
+ * database would not equal a freshly installed one.
+ */
+export function upgradedColumns(
+  sql: string,
+): Array<{ table: string; column: string; dataType: string }> {
+  return [
+    ...upgradeOf(sql).matchAll(
+      /ALTER TABLE ([a-z_]+)\s+ADD COLUMN IF NOT EXISTS ([a-z_]+)\s+([A-Z][A-Z0-9_]*(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?)/g,
+    ),
+  ].map((match) => ({
+    table: match[1]!,
+    column: match[2]!,
+    dataType: match[3]!.replace(/\s+/g, " "),
+  }));
 }
 
 /** Table names declared by `CREATE TABLE [IF NOT EXISTS] <name>`. */
