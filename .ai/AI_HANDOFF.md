@@ -677,8 +677,9 @@ before that code is written.**
 
 **Base SHA:** `af9841b0daa0b2b29feba890a7c36dfdd229e8d2` (= `origin/main` at task start; local HEAD
 == remote at fetch time, working tree changes only, no branch divergence).
-**Resulting commit SHA:** recorded in the follow-up `docs(ai)` commit that touches only this file
-(this file cannot carry its own commit hash).
+**Resulting commit SHA:** `cc3e9eacff063585d35b22428cf81723c795ad86` (the cleanup commit — this
+file cannot carry its own commit hash, so the SHA is recorded here in the follow-up `docs(ai)`
+commit that touches only this line).
 
 **What went — VelRepeat at every layer:** the 6 backend route modules + both schedulers +
 `lib/velrepeat-{cycles,pricing}.ts`; velShop `VelRepeatPage` / `VelRepeatV2Page` /
