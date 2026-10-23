@@ -63,7 +63,7 @@ const read = (rel: string) => readFileSync(join(root, rel), "utf8");
  * payment-lifecycle half.
  */
 const BACKEND_ORDER_STATUSES: StoreOrderStatus[] = [
-  "pending", // cart.ts checkout INSERT / velrepeat-scheduler.ts
+  "pending", // cart.ts checkout INSERT
   "pending_payment", // stripe.ts: Checkout Session created
   "paid", // stripe.ts: confirming webhook
   "payment_failed", // stripe.ts: failed charge

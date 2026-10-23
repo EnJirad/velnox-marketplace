@@ -30,12 +30,11 @@ Each module exports a `setup*Routes(app)` (verification exports `registerVerific
 | `upload.ts` | R2 presign + confirm | 6 |
 | `index.ts` | Customer profile, public product/category reads, and the `errorHandler` mount | 7 |
 | `seller.ts` | Onboarding, approval, shop, profile | 8 |
-| `seller-orders.ts` | Seller order list/detail/status/subscriptions | 5 |
+| `seller-orders.ts` | Seller order list/detail/status | 5 |
 | `products.ts` | Product CRUD, images, catalog, moderation | 40 |
 | `cart.ts` | Cart, wishlist, orders | 15 |
 | `stripe.ts` | Stripe payment sessions + webhook | 5 |
 | `product-options.ts` | Option groups/values, variant mapping, attributes | 22 |
-| `velrepeat.ts` / `velrepeat-plans.ts` | VelRepeat V1 (buy-ahead) / V2 (recurring) | 7 / 12 |
 | `chat.ts` | Conversations, messages, notifications | 13 |
 | `admin.ts` | Bootstrap / owner claim, platform settings, employees | 4 |
 | `center.ts` | VelCenter: overview, orders, staff, audit, settings | 17 |
@@ -72,7 +71,7 @@ Owner-only by design (not a gap): changing roles, granting permissions, creating
 
 `categories.ts` (taxonomy), `product-lifecycle.ts` (status transitions), `variant-options.ts` (option/variant mapping), `inventory.ts` (stock, race-safe), `media-config.ts`, `password.ts` (scrypt `$scrypt$N$r$p$salt$hash`, timing-safe verify), `permissions.ts`, `reviews.ts`, `seller-stats.ts` (the single commission source), `audit-log.ts` (`writeAuditLog`, `sanitizeAuditDetails` redaction, `auditClientIp`).
 
-`backend/jobs/velrepeat-scheduler.ts` — scheduled VelRepeat runs. `backend/db/index.ts` — single `pg.Pool` (SSL `verify-full`) and the `query()` helper; all SQL is parameterized.
+`backend/jobs/payment-reservation-scheduler.ts` — the payment-reservation expiry sweep (started in `server.ts`). `backend/db/index.ts` — single `pg.Pool` (SSL `verify-full`) and the `query()` helper; all SQL is parameterized.
 
 ## Verification
 

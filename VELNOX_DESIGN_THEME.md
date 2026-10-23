@@ -118,7 +118,6 @@ Red is for real error/destructive states only.
 |---|---|
 | Buy Now / ซื้อทันที | Dark primary `#0f172a` + white |
 | Add to Cart / เพิ่มลงตะกร้า | Emerald `#10B981` + white where appropriate |
-| VelRepeat | Existing VelRepeat component/brand styling |
 | Cancel | Neutral outline/slate |
 | Back | Ghost/neutral |
 | Edit | Neutral/contextual |
@@ -138,7 +137,6 @@ If the user enters a Selection Sheet through a specific action, that same action
 
 - Buy button outside = dark → Buy inside = dark
 - Add to Cart outside = emerald → Add to Cart inside = emerald
-- VelRepeat outside = VelRepeat color → VelRepeat inside = same color
 - Product Options opened directly → show all 3 actions, each using its own semantic color
 
 Do not make all Selection Sheet buttons the same color.
@@ -415,10 +413,9 @@ Current entry modes:
 
 | Entry mode | Actions | Color |
 |---|---|---|
-| `options` | Buy + Add to Cart + VelRepeat | Each action's semantic color |
+| `options` | Buy + Add to Cart | Each action's semantic color |
 | `buy` | Buy only | Dark primary |
 | `cart` | Add to Cart only | Emerald |
-| `velrepeat` | VelRepeat only | Existing VelRepeat color |
 
 Rules:
 - Entry mode must be explicit
@@ -677,7 +674,6 @@ Before finishing a UI task:
 - [ ] Use semantic colors
 - [ ] Buy = dark primary
 - [ ] Add to Cart = emerald
-- [ ] VelRepeat = existing VelRepeat style
 - [ ] Error = red
 - [ ] Warning = amber
 - [ ] Success = emerald

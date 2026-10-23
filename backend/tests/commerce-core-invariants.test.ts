@@ -16,7 +16,8 @@
  *   • there was no attempt layer, no ledger, no outbox, no retry metadata and no
  *     reconciliation record at all.
  *
- * Migration `db/migrations/056_commerce_core_invariants.sql` adds them. A
+ * The canonical SQL (`db/schema.sql` plus the additive passes in
+ * `db/run-sqleditor.sql`) adds them. A
  * constraint that is declared but wrong is worse than no constraint, because it
  * reads as protection — so every assertion below EXECUTES the statement the
  * constraint is meant to refuse and checks the SQLSTATE PostgreSQL answered with.

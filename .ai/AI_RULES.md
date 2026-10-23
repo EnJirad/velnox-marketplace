@@ -95,12 +95,11 @@ Do not create a second competing source of truth. Frontend is never the source o
 ## 6. Database Rules
 
 - **Canonical files:** `db/schema.sql` = complete current schema SNAPSHOT. `db/run-sqleditor.sql` = the rerunnable ADDITIVE RECONCILER (pasted into Neon SQL Editor and Run, repeatedly). They are no longer byte-identical: the reconciler additionally carries the column / NOT NULL / index / foreign-key / constraint / trigger passes an EXISTING database needs, which the snapshot has no use for. The contract between them is **declaration parity** — every table, column, index, constraint, function, trigger and extension the snapshot declares must still be declared by the reconciler, unchanged (asserted by `backend/tests/helpers/canonical-schema.ts`).
-- **Reconciler safety:** `db/run-sqleditor.sql` must never `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`, and must never swallow an error with `EXCEPTION WHEN OTHERS THEN NULL`. It creates what is missing and leaves every existing row alone. The single `DROP CONSTRAINT` it carries is the one migration 054 superseded and is commented in place.
+- **Reconciler safety:** `db/run-sqleditor.sql` must never `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`, and must never swallow an error with `EXCEPTION WHEN OTHERS THEN NULL`. It creates what is missing and leaves every existing row alone. The single `DROP CONSTRAINT` it carries is a superseded CHECK, commented in place.
 - **Deprecated:** `db/run-update.sql` is deprecated — never recreate, update, or depend on it.
 - **Whenever schema changes**, update **both** canonical files (tables, columns, types, constraints, indexes, functions, triggers, views) and regenerate the reconciler's additive passes from `db/schema.sql`. No SQL comments inside them.
 - **Fresh DB contract:** an empty Postgres must become the complete current Velnox DB by running `db/run-sqleditor.sql` once — no prior migrations required — and running it a second and third time must change nothing (no duplicate table, column, constraint, index or trigger).
-- **Dependency order:** respect PG dependency order; use deferred `ALTER TABLE ADD CONSTRAINT` for circular FKs. Histor
-  migrations in `db/migrations/` remain history — do not rewrite them to clean the bootstrap.
+- **Dependency order:** respect PG dependency order; use deferred `ALTER TABLE ADD CONSTRAINT` for circular FKs. There is no migration directory any more — only the two canonical files get written.
 
 Full rules: `.ai/context/database.md`.
 

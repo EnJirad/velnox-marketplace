@@ -176,8 +176,8 @@ describe("payment reservation policy — the stored record and the sweep's scope
 
   test("only `undefined_column` is tolerated — a deploy may precede its migration", () => {
     // The reservation write runs inside a SAVEPOINT and swallows EXACTLY this
-    // code, so a backend deployed before `db/migrations/048_payment_reservation.sql`
-    // keeps checkout working instead of breaking every order. Any other error
+    // code, so a backend deployed before the reconciler adds the columns keeps
+    // checkout working instead of breaking every order. Any other error
     // must still abort the caller's transaction.
     expect(isUndefinedColumnError({ code: "42703" })).toBe(true);
     expect(isUndefinedColumnError({ code: "42P01" })).toBe(false);

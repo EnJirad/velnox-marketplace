@@ -20,7 +20,7 @@ Each app: `src/main.tsx` (router), `src/pages/`, `src/components/` (app-local), 
 
 | App | Key routes / pages | Notes |
 |-----|-------------------|-------|
-| velshop | `/`, `/products`, `/products/:id`, `/cart`, `/checkout`, `/orders`, `/wishlist`, `/velrepeat` | Customer browsing, cart, checkout |
+| velshop | `/`, `/products`, `/products/:id`, `/cart`, `/checkout`, `/orders`, `/wishlist` | Customer browsing, cart, checkout |
 | velseller | `/`, `/seller/goals`, `/seller/shop`, `/seller/orders`, `/seller/income`, `/seller/reorder`, `/seller/profile` | Seller management, `RequireRole` onboarding |
 | velcenter | `/` (tabs: Users, Employees, Sellers, Products, Orders, Audit, Settings, Categories), `/auth` | Admin; `Center.tsx` is the main page, `CategoriesManagement.tsx` for categories |
 | velnox | `/`, `/about`, `/vision`, `/business`, `/ecosystem`, `/technology`, `/careers`, `/news`, `/privacy`, `/terms`, `/contact` | Pure marketing, no marketplace logic |
@@ -52,20 +52,21 @@ Import examples: `@velnox/shared/components/ui/button`, `@velnox/shared/lib/comm
 | Auth | `routes/auth.ts`, `middleware/auth.ts` | Google OAuth, JWT session, `requireAuth`/`optionalAuth`, revocation |
 | Products | `routes/products.ts`, `lib/categories.ts`, `lib/product-lifecycle.ts` | Catalog, product CRUD, category API, lifecycle |
 | Seller | `routes/seller.ts`, `routes/seller-orders.ts`, `routes/verification.ts` | Apply, profile, shop, orders, verification/evidence |
-| Cart/Checkout | `routes/cart.ts`, `routes/stripe.ts`, `routes/velrepeat*.ts` | Cart, Stripe, VelRepeat |
+| Cart/Checkout | `routes/cart.ts`, `routes/stripe.ts` | Cart, Stripe |
 | Admin/Center | `routes/admin.ts`, `routes/center.ts` | Bootstrap/owner, admin operations |
 | Upload | `routes/upload.ts` | R2 presign + confirm |
 | Variants/Options | `routes/product-options.ts`, `lib/variant-options.ts`, `lib/inventory.ts` | Option groups/values, variant mapping, stock |
 | Realtime | `realtime/index.ts` | WebSocket server, channel subscriptions |
 | Middleware | `middleware/error.ts`, `middleware/origin-guard.ts`, `middleware/rate-limit.ts` | Error handling, origin, rate limiting |
-| Jobs | `jobs/velrepeat-scheduler.ts` | Scheduled VelRepeat |
+| Jobs | `jobs/payment-reservation-scheduler.ts` | Payment-reservation expiry sweep |
 
 Route table is centralized in `packages/shared/src/lib/api-routes.ts` and `backend/routes/index.ts`.
 
 ## Database (db/)
 
-- `db/schema.sql` / `db/run-sqleditor.sql` — canonical, byte-identical bootstrap
-- `db/migrations/001_*.sql` … `042_*.sql` — historical migrations (do not rewrite)
+- `db/schema.sql` — canonical schema snapshot
+- `db/run-sqleditor.sql` — rerunnable additive reconciler (declaration parity with the snapshot)
+- `db/verify-reconciler.sh` — validates the two files declare the same objects
 
 See `.ai/context/database.md`.
 
@@ -87,6 +88,5 @@ See `.ai/context/database.md`.
 | Uploads/images | `.ai/context/media.md` → `backend/routes/upload.ts` |
 | Orders/checkout | `.ai/context/checkout.md` → `backend/routes/cart.ts`, `backend/routes/stripe.ts` |
 | Payments / Stripe / COD flags | `.ai/context/payment.md` → `backend/lib/payment-config.ts`, `backend/routes/stripe.ts` |
-| **VelRepeat (recurring commerce)** | **`.ai/context/velrepeat-contract.md`** (authoritative contract, 2026-09-30) → `backend/jobs/velrepeat-scheduler.ts`, `backend/routes/velrepeat-plans.ts` |
 | Seller verification / V badge | `.ai/context/verification.md` → `backend/routes/verification.ts`, `backend/lib/verification-guard.ts` |
 | Styling/theme | `.ai/context/frontend.md` → `VELNOX_DESIGN_THEME.md`, `packages/shared/src/index.css` |

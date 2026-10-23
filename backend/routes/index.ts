@@ -24,7 +24,8 @@ export function invalidateCustomerProfileCache(userId: string): void {
 }
 
 // NOTE: Address columns (recipient_name, subdistrict, district, latitude,
-// longitude) are managed by migration V0013 (db/migrations/013_schema_migrations_and_address_fixes.sql).
+// longitude) are declared by the canonical schema (db/schema.sql) and applied to
+// an existing database by db/run-sqleditor.sql.
 // Do NOT add startup ALTER TABLE statements here.
 
 export function setupRoutes(app: Express): void {
@@ -258,7 +259,6 @@ export function setupRoutes(app: Express): void {
       const out: Record<string, number | null> = {
         orders: null,
         wishlist: null,
-        velrepeat: null,
         addresses: null,
         notificationsUnread: null,
         chatUnread: null,
@@ -278,15 +278,6 @@ export function setupRoutes(app: Express): void {
           [userId],
         );
         out.wishlist = r.rows[0]?.c ?? 0;
-      } catch { /* table may not exist */ }
-
-      // VelRepeat — active recurring plans
-      try {
-        const r = await query(
-          "SELECT COUNT(*)::int AS c FROM velrepeat_plans WHERE user_id = $1 AND status = 'active'",
-          [userId],
-        );
-        out.velrepeat = r.rows[0]?.c ?? 0;
       } catch { /* table may not exist */ }
 
       try {

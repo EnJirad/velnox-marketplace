@@ -18,7 +18,6 @@ import {
   shortOrderNumber,
   type StoreOrder,
   type StoreOrderStatus,
-  type StoreSubscription,
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
@@ -65,16 +64,10 @@ type StatusFilter = "all" | StoreOrderStatus;
 export default function SellerOrders() {
   const { t } = useLanguage();
   const sellerOrdersAction = useAction(api.commerce.sellerOrders);
-  const sellerSubscriptionsAction = useAction(api.commerce.sellerSubscriptions);
-  const processDue = useAction(api.commerce.processDueSubscriptions);
 
   const [orders, setOrders] = useState<StoreOrder[]>([]);
-  const [subscriptions, setSubscriptions] = useState<StoreSubscription[]>([]);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  // "now" captured outside render so subscription due-dates are pure
-  const [now, setNow] = useState(0);
 
   /**
    * The filter the newest in-flight request belongs to. A slow answer for "all"
@@ -83,62 +76,29 @@ export default function SellerOrders() {
    */
   const requestFilter = useRef<StatusFilter>("all");
 
-  useEffect(() => {
-    const timer = setTimeout(() => setNow(Date.now()), 0);
-    return () => clearTimeout(timer);
-  }, []);
-
   const load = useCallback(async () => {
     const filter = statusFilter;
     requestFilter.current = filter;
-    const [o, s] = await Promise.all([
-      sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter }),
-      sellerSubscriptionsAction(),
-    ]);
+    const o = await sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter });
     if (requestFilter.current !== filter) return;
     setOrders(o);
-    setSubscriptions(s);
-  }, [sellerOrdersAction, sellerSubscriptionsAction, statusFilter]);
+  }, [sellerOrdersAction, statusFilter]);
 
   useEffect(() => {
     let alive = true;
     const filter = statusFilter;
     requestFilter.current = filter;
-    Promise.all([
-      sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter }),
-      sellerSubscriptionsAction(),
-    ])
-      .then(([o, s]) => {
+    sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter })
+      .then((o) => {
         if (!alive || requestFilter.current !== filter) return;
         setOrders(o);
-        setSubscriptions(s);
       })
       .catch((err) => console.error("Load seller orders error:", err))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [sellerOrdersAction, sellerSubscriptionsAction, statusFilter]);
-
-  const handleProcessDue = async () => {
-    setProcessing(true);
-    try {
-      const result = await processDue();
-      toast.success(
-        result.created > 0
-          ? `สร้างออเดอร์รายเดือนแล้ว ${result.created} ออเดอร์${result.skipped > 0 ? ` (ข้าม ${result.skipped} — สต็อกไม่พอ)` : ""}`
-          : result.skipped > 0
-            ? `ข้าม ${result.skipped} ออเดอร์ (สต็อกไม่พอ)`
-            : "ยังไม่มีรอบครบกำหนด",
-      );
-      await load();
-    } catch (error) {
-      console.error("Process due subscriptions error:", error);
-      toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
-    } finally {
-      setProcessing(false);
-    }
-  };
+  }, [sellerOrdersAction, statusFilter]);
 
   /** Translated label for the order's payment status, falling back to the raw value. */
   const paymentLabel = useCallback(
@@ -178,135 +138,6 @@ export default function SellerOrders() {
           </h1>
           <p className="mt-1.5 text-sm text-slate-500">{t("sellerOrders.desc")}</p>
         </div>
-
-        {/* Monthly subscriptions (velshop สั่งรายเดือน) */}
-        <section className="mt-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="flex size-9 items-center justify-center rounded-[10px] bg-[#ECFDF5]">
-                <CalendarClock className="size-4 text-[#10B981]" />
-              </span>
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">การสั่งรายเดือนของลูกค้า</h2>
-                <p className="text-xs text-slate-400">
-                  ลูกค้าสมัครรับสินค้าเป็นรอบ — กดสร้างออเดอร์เมื่อถึงรอบครบกำหนด
-                </p>
-              </div>
-            </div>
-            <Button
-              className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-              onClick={handleProcessDue}
-              disabled={processing}
-            >
-              {processing ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <RefreshCw className="size-4" />
-              )}
-              สร้างออเดอร์รอบครบกำหนด
-            </Button>
-          </div>
-
-          {loading ? (
-            <div className="mt-3 flex h-20 items-center justify-center rounded-xl border border-slate-200 bg-white">
-              <Loader2 className="size-5 animate-spin text-slate-300" />
-            </div>
-          ) : subscriptions.length === 0 ? (
-            <div className="mt-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-5">
-              <CalendarClock className="size-5 text-slate-300" />
-              <p className="text-sm text-slate-500">ยังไม่มีลูกค้าสมัครสั่งรายเดือน</p>
-            </div>
-          ) : (
-            <>
-              {/* Desktop: table */}
-              <div className="mt-3 hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
-                <Table className="min-w-[640px]">
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="pl-5 text-slate-400">ลูกค้า</TableHead>
-                      <TableHead className="text-slate-400">สินค้า</TableHead>
-                      <TableHead className="text-slate-400">รอบ</TableHead>
-                      <TableHead className="pr-5 text-right text-slate-400">รอบถัดไป</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {subscriptions.map((sub) => {
-                      const due = new Date(`${sub.nextOrderDate}T00:00:00`).getTime() - now;
-                      return (
-                        <TableRow key={sub.id} className="hover:bg-slate-50/60">
-                          <TableCell className="pl-5">
-                            <p className="font-medium text-slate-900">{sub.customerName || "สมาชิก"}</p>
-                            <p className="text-xs text-slate-400">{sub.customerEmail ?? "—"}</p>
-                          </TableCell>
-                          <TableCell>
-                            <p className="text-sm text-slate-600">
-                              {sub.productName ?? "สินค้าถูกลบ"}{" "}
-                              <span className="text-slate-400">× {sub.quantity}</span>
-                            </p>
-                          </TableCell>
-                          <TableCell>
-                            <p className="text-sm text-slate-600">ทุก {sub.intervalDays} วัน</p>
-                          </TableCell>
-                          <TableCell className="pr-5 text-right">
-                            <p className="text-sm text-slate-600">{formatIsoDate(sub.nextOrderDate)}</p>
-                            <p className={`text-xs ${due <= 0 ? "font-medium text-rose-600" : "text-slate-400"}`}>
-                              {due <= 0 ? "ถึงรอบแล้ว" : `อีก ${Math.max(0, Math.round(due / DAY_MS))} วัน`}
-                            </p>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Mobile: app-like subscription cards */}
-              <div className="mt-3 space-y-3 md:hidden">
-                {subscriptions.map((sub) => {
-                  const due = new Date(`${sub.nextOrderDate}T00:00:00`).getTime() - now;
-                  return (
-                    <div
-                      key={sub.id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 transition-all duration-200 active:scale-[0.99]"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-slate-900">
-                            {sub.customerName || "สมาชิก"}
-                          </p>
-                          <p className="mt-0.5 truncate text-xs text-slate-400">{sub.customerEmail ?? "—"}</p>
-                        </div>
-                        <span
-                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                            due <= 0
-                              ? "bg-rose-50 text-rose-600"
-                              : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
-                          {due <= 0 ? "ถึงรอบแล้ว" : `อีก ${Math.max(0, Math.round(due / DAY_MS))} วัน`}
-                        </span>
-                      </div>
-
-                      <div className="mt-3 rounded-[10px] bg-slate-50 px-3 py-2.5 text-sm">
-                        <p className="truncate text-slate-700">
-                          {sub.productName ?? "สินค้าถูกลบ"}{" "}
-                          <span className="text-slate-400">× {sub.quantity}</span>
-                        </p>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between">
-                        <p className="text-xs text-slate-400">รอบ: ทุก {sub.intervalDays} วัน</p>
-                        <p className="text-xs font-medium text-slate-700">
-                          ถัดไป {formatIsoDate(sub.nextOrderDate)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </section>
 
         {/* ── Customer orders ──────────────────────────────────────────────── */}
         <section className="mt-8">

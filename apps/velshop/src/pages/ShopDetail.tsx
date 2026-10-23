@@ -2,13 +2,11 @@ import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { ProductSelectionSheet } from "@/components/shop/ProductSelectionSheet";
-import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
 import { useLanguage } from "@/lib/i18n";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { useCart } from "@/lib/cart";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
 import { useTracking } from "@velnox/shared/lib/track";
@@ -60,7 +58,6 @@ export default function ShopDetail() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<string>("newest");
   const [selectedProduct, setSelectedProduct] = useState<StoreProduct | null>(null);
-  const [subProduct, setSubProduct] = useState<StoreProduct | null>(null);
 
   // Load wishlist if authenticated
   useEffect(() => {
@@ -367,17 +364,7 @@ export default function ShopDetail() {
         open={selectedProduct !== null}
         onOpenChange={(open) => { if (!open) setSelectedProduct(null); }}
         entryMode="options"
-        /* PARKED (2026-10-14): passing no handler is what hides the sheet's
-           VelRepeat action, so the prop is spread only while the module is on. */
-        {...(VELREPEAT_ENABLED ? { onVelRepeat: (p: StoreProduct) => setSubProduct(p) } : {})}
       />
-      {VELREPEAT_ENABLED && (
-        <SubscriptionDialog
-          product={subProduct}
-          open={subProduct !== null}
-          onOpenChange={(open) => { if (!open) setSubProduct(null); }}
-        />
-      )}
       <ShopFooter />
     </div>
   );

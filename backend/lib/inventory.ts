@@ -4,8 +4,8 @@ import { PAYMENT_SETTLED_STATUSES } from "./order-lock.js";
 import { coveringPaymentsPredicate } from "./payment-attempt.js";
 
 /**
- * Sanity cap for a single order line. Checkout / VelRepeat orders are not
- * allowed to reserve more than this many units of one product per line.
+ * Sanity cap for a single order line. Checkout is not allowed to reserve more
+ * than this many units of one product per line.
  * The frontend clamps to available stock, this is a server-side backstop.
  */
 export const MAX_ORDER_QUANTITY = 999;
@@ -161,8 +161,7 @@ export async function commitOrderInventory(
  * is the read side of the same domain, not an independent opinion about which
  * states exist:
  *
- *   pending          — INSERT at checkout (routes/cart.ts) and VelRepeat
- *                      (jobs/velrepeat-scheduler.ts)
+ *   pending          — INSERT at checkout (routes/cart.ts)
  *   pending_payment  — the Checkout Session was created (routes/stripe.ts)
  *   cancelled        — customer / seller / operator / session-expired cancel
  *   payment_failed   — `payment_intent.payment_failed` (routes/stripe.ts)

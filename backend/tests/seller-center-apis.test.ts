@@ -131,13 +131,13 @@ describe("purchase cycle helpers", () => {
   });
 });
 
-// ─── Migration + schema sync (pure, always runs) ───────────────────────────
+// ─── Schema sync (pure, always runs) ───────────────────────────────────────
 
-describe("P1 #4 migration + schema sync", () => {
+describe("P1 #4 schema sync", () => {
   const root = join(import.meta.dir, "../..");
 
-  test("migration 039 adds seller_goals + department + employee columns", () => {
-    const sql = readFileSync(join(root, "db/migrations/039_seller_goals_and_center.sql"), "utf8");
+  test("the reconciler adds seller_goals + department + employee columns", () => {
+    const sql = readFileSync(join(root, "db/run-sqleditor.sql"), "utf8");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS seller_goals");
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS department");
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS permissions");

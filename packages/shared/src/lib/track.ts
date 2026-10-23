@@ -31,8 +31,6 @@ export type CustomerEventType =
   | "CHECKOUT_START"
   | "PURCHASE"
   | "REORDER"
-  | "VELREPEAT_START"
-  | "VELREPEAT_CANCEL"
   | "RECOMMENDATION_CLICK";
 
 const ANON_KEY = "velnox_anon_id";

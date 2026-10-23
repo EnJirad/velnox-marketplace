@@ -55,8 +55,8 @@ import { axesForFulfillmentStatus, projectOrderStatus, type PaymentState } from 
 
 /**
  * The terminal NON-PAID states a purchase can be moved to. Every one is a
- * member of `orders_status_check` (db/migrations/050_orders_status_check.sql)
- * and of `RELEASABLE_STATUSES` (lib/inventory.ts), so the claim below can always
+ * member of `orders_status_check` (db/schema.sql) and of `RELEASABLE_STATUSES`
+ * (lib/inventory.ts), so the claim below can always
  * release the stock it held.
  */
 export type GroupTerminalStatus = "cancelled" | "expired" | "payment_failed";

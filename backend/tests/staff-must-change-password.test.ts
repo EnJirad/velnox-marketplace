@@ -27,7 +27,6 @@ const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf-8");
 
 const schema = read("db/schema.sql");
 const bootstrap = read("db/run-sqleditor.sql");
-const migration = read("db/migrations/046_staff_must_change_password.sql");
 const authRoute = read("backend/routes/auth.ts");
 const centerRoute = read("backend/routes/center.ts");
 const auditLog = read("backend/lib/audit-log.ts");
@@ -101,16 +100,17 @@ describe("must_change_password column", () => {
     }
   });
 
-  test("migration 046 is idempotent and non-destructive", () => {
-    expect(migration).toContain("ADD COLUMN IF NOT EXISTS must_change_password");
-    expect(migration).not.toMatch(/DROP COLUMN|SET NOT NULL|DELETE FROM|UPDATE users/i);
-  });
-
-  test("migration 046 does not reuse an existing number", () => {
-    // 045 is `045_media_column_naming.sql`; a collision makes the runner
-    // apply only one of them (see the V0035 incident).
-    expect(migration).toContain("-- Migration: V0046");
-    expect(migration).not.toContain("V0045");
+  test("the canonical SQL is idempotent and non-destructive", () => {
+    for (const file of [schema, bootstrap]) {
+      expect(file).toContain("ADD COLUMN IF NOT EXISTS must_change_password");
+      // Prose legitimately describes what the file must never do; only the
+      // executable statements are judged.
+      const statements = file
+        .split("\n")
+        .filter((line) => !line.trimStart().startsWith("--"))
+        .join("\n");
+      expect(statements).not.toMatch(/DROP COLUMN|\bTRUNCATE\b|DELETE FROM users|UPDATE users/i);
+    }
   });
 });
 

@@ -487,7 +487,8 @@ describe("payment reservation — the wiring contracts", () => {
     expect(lib).toContain("RELEASE SAVEPOINT velnox_payment_reservation");
     expect(lib).toContain("isUndefinedColumnError(err)");
     expect(lib).toContain("throw err;");
-    expect(lib).toContain("048_payment_reservation.sql");
+    // The guidance names the file an operator actually runs today.
+    expect(lib).toContain("db/run-sqleditor.sql");
     // The sweep says so once and keeps serving rather than crashing every tick.
     const job = read(SWEEP_JOB);
     expect(job).toContain("sweep disabled");
@@ -502,7 +503,9 @@ describe("payment reservation — the wiring contracts", () => {
     // its raw text legitimately mentions these columns more times than the
     // snapshot does.
     const snapshotOrders = declaredColumns(schema, "orders");
-    expect(snapshotOrders.length).toBeGreaterThanOrEqual(20);
+    // 19 inline columns; every commerce-core column (order_state,
+    // fulfillment_status, correlation_id, …) is carried by the column pass.
+    expect(snapshotOrders.length).toBeGreaterThanOrEqual(19);
     expect(declaredColumns(bootstrap, "orders")).toEqual(snapshotOrders);
     expect(snapshotOrders).toContain("payment_expires_at");
     expect(snapshotOrders).toContain("reservation_policy");
@@ -513,16 +516,18 @@ describe("payment reservation — the wiring contracts", () => {
     }
   });
 
-  test("the migration is additive and idempotent, and the deprecated file is untouched", () => {
-    const migration = read("db/migrations/048_payment_reservation.sql");
-    // The header comment explains the safety rules, so only executable lines are judged.
-    const statements = migration
+  test("the reconciler adds both columns additively, and the deprecated file is untouched", () => {
+    // The two columns reached an existing database through the additive column
+    // pass; that pass — not a migration file — is the contract now.
+    const bootstrap = read("db/run-sqleditor.sql");
+    expect(bootstrap).toContain("ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ;");
+    expect(bootstrap).toContain("ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS reservation_policy JSONB;");
+    expect(bootstrap).toContain("CREATE INDEX IF NOT EXISTS idx_orders_payment_expires_at");
+    const statements = bootstrap
       .split("\n")
       .filter((line) => !line.trim().startsWith("--"))
       .join("\n");
-    expect((statements.match(/ADD COLUMN IF NOT EXISTS/g) ?? []).length).toBe(2);
-    expect(statements).toContain("CREATE INDEX IF NOT EXISTS idx_orders_payment_expires_at");
-    expect(statements).not.toMatch(/\b(DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM|UPDATE )\b/);
+    expect(statements).not.toMatch(/^\s*(DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM)\b/im);
     if (existsSync(join(root, "db/run-update.sql"))) {
       expect(read("db/run-update.sql")).not.toContain("payment_expires_at");
     }

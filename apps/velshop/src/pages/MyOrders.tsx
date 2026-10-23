@@ -5,23 +5,7 @@ import { useLanguage } from "@/lib/i18n";
 import { OrderStatusBadge } from "@velnox/shared/components/order/OrderStatusBadge";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@velnox/shared/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@velnox/shared/components/ui/select";
 import { api } from "@velnox/shared/lib/api-routes";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   formatBaht,
@@ -37,7 +21,6 @@ import {
   shortOrderNumber,
   type PaymentReservationTone,
   type StoreOrder,
-  type StoreSubscription,
 } from "@velnox/shared/lib/commerce";
 import {
   CalendarClock,
@@ -55,7 +38,6 @@ import { toast } from "sonner";
 
 interface Loaded {
   orders: StoreOrder[];
-  subscriptions: StoreSubscription[];
 }
 
 /**
@@ -85,19 +67,11 @@ const RESERVATION_TONE_FILL: Record<PaymentReservationTone, string> = {
 export default function MyOrders() {
   const { t } = useLanguage();
   const myOrdersAction = useAction(api.commerce.myOrders);
-  const mySubscriptionsAction = useAction(api.commerce.mySubscriptions);
-  const pauseSubscription = useAction(api.commerce.pauseSubscription);
   const stripePaymentStatus = useAction(api.stripe.stripePaymentStatusAction);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [data, setData] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [repeatOrder, setRepeatOrder] = useState<StoreOrder | null>(null);
-  const [repeatUnit, setRepeatUnit] = useState<"days" | "weeks" | "months">("days");
-  const [repeatValue, setRepeatValue] = useState(30);
-  const [repeating, setRepeating] = useState(false);
-  const repeatOrderNow = useAction(api.commerce.repeatOrderNow);
 
   // Stripe hosted-checkout return (Phase 14): `?payment=success|cancelled`
   // is appended by the session's success/cancel URLs. Verify against the
@@ -125,23 +99,20 @@ export default function MyOrders() {
   }, [searchParams]);
 
   const load = useCallback(async () => {
-    const [orders, subscriptions] = await Promise.all([
-      myOrdersAction({ limit: 50 }),
-      mySubscriptionsAction(),
-    ]);
-    setData({ orders, subscriptions });
-  }, [myOrdersAction, mySubscriptionsAction]);
+    const orders = await myOrdersAction({ limit: 50 });
+    setData({ orders });
+  }, [myOrdersAction]);
 
   useEffect(() => {
     let alive = true;
-    Promise.all([myOrdersAction({ limit: 50 }), mySubscriptionsAction()])
-      .then(([orders, subscriptions]) => alive && setData({ orders, subscriptions }))
+    myOrdersAction({ limit: 50 })
+      .then((orders) => alive && setData({ orders }))
       .catch((err) => console.error("Load orders error:", err))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [myOrdersAction, mySubscriptionsAction]);
+  }, [myOrdersAction]);
 
   /**
    * Presentation-only clock for the payment-reservation countdowns.
@@ -155,7 +126,6 @@ export default function MyOrders() {
   const [now, setNow] = useState(() => Date.now());
 
   const orders = data?.orders ?? [];
-  const subscriptions = data?.subscriptions ?? [];
 
   /**
    * ONE purchase, N fulfillment orders.
@@ -166,8 +136,8 @@ export default function MyOrders() {
    * "this order I placed today", while each shop keeps a separate, separately
    * trackable order underneath.
    *
-   * An order with no group (a legacy row, or a VelRepeat cycle order, which is
-   * its own purchase) is its own group, so nothing is ever hidden or merged.
+   * An order with no group (a legacy row) is its own group, so nothing is ever
+   * hidden or merged.
    */
   const purchases = useMemo(() => {
     const byGroup = new Map<string, { key: string; groupId: string | null; orders: StoreOrder[]; createdAt: number }>();
@@ -229,47 +199,6 @@ export default function MyOrders() {
     void load();
   }, [orders, now, load]);
 
-  const handleRepeat = async () => {
-    if (!repeatOrder || repeating) return;
-    setRepeating(true);
-    try {
-      await repeatOrderNow({
-        orderId: repeatOrder.id,
-        frequencyType: repeatUnit,
-        intervalValue: repeatValue,
-      });
-      toast.success(t("velrepeatPlan.repeatSuccess"));
-      setRepeatOrder(null);
-    } catch (error) {
-      console.error("Repeat order error:", error);
-      toast.error(error instanceof Error ? error.message : t("velrepeatPlan.repeatFailed"));
-    } finally {
-      setRepeating(false);
-    }
-  };
-
-  const handleCancel = async (subscriptionId: string) => {
-    setCancellingId(subscriptionId);
-    try {
-      await pauseSubscription({ subscriptionId, status: "cancelled" });
-      toast.success(t("orders.cancelSuccess"));
-      await load();
-    } catch (error) {
-      console.error("Cancel subscription error:", error);
-      toast.error(t("orders.cancelFailed"));
-    } finally {
-      setCancellingId(null);
-    }
-  };
-
-  const daysLeft = useMemo(
-    () => (nextOrderDate: string) => {
-      const diff = new Date(`${nextOrderDate}T00:00:00`).getTime() - Date.now();
-      return Math.max(0, Math.round(diff / (24 * 60 * 60 * 1000)));
-    },
-    [],
-  );
-
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
@@ -285,96 +214,6 @@ export default function MyOrders() {
           </h1>
           <p className="mt-1.5 text-sm text-slate-500">{t("orders.desc")}</p>
         </div>
-
-        {/* Monthly subscriptions */}
-        <section className="mt-8">
-          <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]">
-              <CalendarClock className="size-4 text-[#10B981]" />
-            </span>
-            <h2 className="text-base font-semibold text-slate-900">{t("orders.monthlyTitle")}</h2>
-          </div>
-
-          {loading ? (
-            <div className="mt-3 flex h-20 items-center justify-center rounded-xl border border-slate-200 bg-white">
-              <Loader2 className="size-5 animate-spin text-slate-300" />
-            </div>
-          ) : subscriptions.length === 0 ? (
-            <div className="mt-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-5">
-              <CalendarClock className="size-5 text-slate-300" />
-              <p className="text-sm text-slate-500">{t("orders.monthlyEmpty")}</p>
-            </div>
-          ) : (
-            <div className="mt-3 space-y-3">
-              {subscriptions.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    {sub.productImageUrl ? (
-                      <img
-                        src={sub.productImageUrl}
-                        alt=""
-                        className="size-12 shrink-0 rounded-[10px] object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className="flex size-12 shrink-0 items-center justify-center rounded-[10px] bg-slate-100">
-                        <ImageOff className="size-5 text-slate-300" />
-                      </span>
-                    )}
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {sub.productName ?? t("orders.productDeleted")}{" "}
-                        <span className="font-normal text-slate-400">× {sub.quantity}</span>
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {t("orders.every", {
-                          days: sub.intervalDays,
-                          date: formatIsoDate(sub.nextOrderDate),
-                          left: daysLeft(sub.nextOrderDate),
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      className={`gap-1.5 rounded-full ring-1 ring-inset ${
-                        sub.status === "active"
-                          ? "bg-emerald-50 text-emerald-700 ring-emerald-600/15"
-                          : "bg-slate-100 text-slate-500 ring-slate-600/10"
-                      }`}
-                    >
-                      <span
-                        className={`size-1.5 rounded-full ${
-                          sub.status === "active" ? "bg-emerald-500" : "bg-slate-400"
-                        }`}
-                      />
-                      {sub.status === "active" ? t("orders.active") : t("orders.cancelled")}
-                    </Badge>
-                    {sub.status === "active" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5 border-slate-200 text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                        onClick={() => handleCancel(sub.id)}
-                        disabled={cancellingId === sub.id}
-                      >
-                        {cancellingId === sub.id ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <XCircle className="size-3.5" />
-                        )}
-                        {t("orders.cancel")}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
 
         {/* Order history */}
         <section className="mt-8">
@@ -625,24 +464,6 @@ export default function MyOrders() {
                           returnPath={`/orders/${order.id}`}
                         />
                       )}
-                      {/* PARKED (2026-10-14): "repeat this order" created a VelRepeat
-                          plan, so the action is hidden with the module. The handler,
-                          the dialog below and every string stay in source. */}
-                      {VELREPEAT_ENABLED && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5 border-[#10B981]/30 bg-[#F0FDF9] text-[#10B981] hover:bg-[#D1FAE5]"
-                          onClick={() => {
-                            setRepeatUnit("days");
-                            setRepeatValue(30);
-                            setRepeatOrder(order);
-                          }}
-                        >
-                          <RefreshCw className="size-3.5" />
-                          {t("velrepeatPlan.repeatOrder")}
-                        </Button>
-                      )}
                     </div>
                   </div>
                 );
@@ -653,67 +474,6 @@ export default function MyOrders() {
           )}
         </section>
       </main>
-
-      {/* VelRepeat repeat-now dialog (PARKED 2026-10-14 — returns with the module) */}
-      <Dialog open={VELREPEAT_ENABLED && repeatOrder !== null} onOpenChange={(open) => { if (!open) setRepeatOrder(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RefreshCw className="size-4 text-[#10B981]" />
-              {t("velrepeatPlan.repeatOrderTitle")}
-            </DialogTitle>
-            <DialogDescription>{t("velrepeatPlan.repeatOrderDesc")}</DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-600">{t("velrepeatPlan.frequency")}</label>
-              <div className="mt-1.5 flex gap-2">
-                <Select value={repeatUnit} onValueChange={(v) => setRepeatUnit(v as "days" | "weeks" | "months")}>
-                  <SelectTrigger className="w-36 border-slate-200 bg-white">
-                    <SelectValue placeholder="days" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="days">{t("velrepeatPlan.unitDay")}</SelectItem>
-                    <SelectItem value="weeks">{t("velrepeatPlan.unitWeek")}</SelectItem>
-                    <SelectItem value="months">{t("velrepeatPlan.unitMonth")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={repeatValue}
-                  onChange={(e) => setRepeatValue(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-                  className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#10B981] focus:ring-2 focus:ring-[#10B981]/20"
-                  aria-label={t("velrepeatPlan.frequency")}
-                />
-              </div>
-              <p className="mt-1.5 text-xs text-slate-500">
-                {repeatUnit === "days"
-                  ? t("velrepeatPlan.everyDays", { count: repeatValue })
-                  : repeatUnit === "weeks"
-                    ? t("velrepeatPlan.everyWeeks", { count: repeatValue })
-                    : t("velrepeatPlan.everyMonths", { count: repeatValue })}
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:justify-end">
-            <Button variant="outline" onClick={() => setRepeatOrder(null)} className="border-slate-200 text-slate-700">
-              {t("common.cancel")}
-            </Button>
-            <Button
-              className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
-              onClick={handleRepeat}
-              disabled={repeating || repeatValue <= 0}
-            >
-              {repeating && <Loader2 className="size-4 animate-spin" />}
-              {repeating ? t("velrepeatPlan.creating") : t("velrepeatPlan.start")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <ShopFooter />
     </div>

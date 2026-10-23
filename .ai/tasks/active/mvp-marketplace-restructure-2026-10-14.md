@@ -4,6 +4,15 @@
 **Assigned:** 2026-10-14 · **Branch:** `main` · **Owner brief:** in-session (Thai), summarised in §2
 **Authority:** `AGENTS.md` → `.ai/AI_RULES.md` → `.ai/context/<subsystem>.md` → source. The **repository always wins** over this document.
 
+> **SUPERSEDED UPDATE (2026-10-23) — VelRepeat is REMOVED, not parked.** The repository-cleanup
+> task deleted every VelRepeat surface: the 6 route modules, both schedulers, the lib modules,
+> the pages/components, the i18n keys, the tests, the `VELREPEAT_ENABLED` switches and all
+> VelRepeat database objects from `db/schema.sql` / `db/run-sqleditor.sql`. The §4 parking
+> contract for **VelRepeat** ("kept, restorable by a flag") is obsolete — restoring it would be
+> a rebuild, not a flag flip. **Customer Memory parking (§4 right column) still stands.** Legacy
+> objects still present in an EXISTING database are handled later by
+> `docs/VELREPEAT_REMOVAL_PLAN.md` (never executed by the cleanup).
+
 > This brief holds two things that must not be confused:
 > **§5 is what SHIPPED** (with real command output), **§6–§9 are PROPOSED DESIGN** that no code
 > implements yet. Nothing in §6–§9 may be described to the owner as working.

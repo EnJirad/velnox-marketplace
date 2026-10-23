@@ -20,8 +20,8 @@
  * The cart spans more than one shop, so the storefront always sends
  * `checkoutGroupId` and `POST /api/stripe/checkout` dispatches to
  * `openCheckoutGroupSession()`. That handler names `payments.checkout_group_id`
- * — a column added by `db/migrations/054_checkout_groups_numeric_order_number.sql`
- * §3 — as a bare COLUMN, in two statements:
+ * — a column the reconciler's additive column pass adds — as a bare COLUMN, in
+ * two statements:
  *
  *   1. the active-session lookup;
  *   2. the group `INSERT INTO payments (checkout_group_id, …)`.
@@ -292,10 +292,10 @@ function stripeError(overrides: Record<string, unknown>): Error {
  * `mock.module("stripe", …)` was the obvious alternative and is a trap here. A
  * module mock in `bun test` lives for the whole PROCESS and its effect depends
  * on which file loaded the module first, so whether a suite gets the stub or
- * the live SDK is decided by directory-walk order. In CI the VelRepeat Phase 4
- * suite got the stub, `sessions.create` "succeeded" for a test that must never
- * reach a provider, and its leftover payment row broke four more tests in the
- * same block with `idx_payments_one_active_stripe_plan`. A `spyOn` on the
+ * the live SDK is decided by directory-walk order. In CI a payment suite got the
+ * stub, `sessions.create` "succeeded" for a test that must never reach a
+ * provider, and its leftover payment row broke four more tests in the same
+ * block with `idx_payments_one_active_stripe_plan`. A `spyOn` on the
  * prototype has an explicit lifetime: `mockRestore()` in `afterAll` puts the
  * real method back before the next file starts.
  */

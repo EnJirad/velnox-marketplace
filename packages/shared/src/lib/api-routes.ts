@@ -263,47 +263,6 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.sellerOrderDetail": (a) => apiGet(`/api/seller/orders/${a.orderId}`),
   "api.commerce.setOrderStatus": (a) => apiPatch(`/api/seller/orders/${a.orderId}/status`, a),
   "api.commerce.cancelOrderAction": (a) => apiPatch(`/api/customer/orders/${a.orderId}/cancel`, {}),
-  // VelRepeat packages (new system)
-  "api.commerce.myVelRepeatPackages": () => apiGet("/api/velrepeat/packages"),
-  "api.commerce.velRepeatPackageDetail": (a) => apiGet(`/api/velrepeat/packages/${a.packageId}`),
-  "api.commerce.createVelRepeatPackage": (a) => apiPost("/api/velrepeat/packages", a),
-  "api.commerce.updateVelRepeatPackage": (a) => apiPatch(`/api/velrepeat/packages/${a.packageId}`, a),
-  "api.commerce.velRepeatDeliveries": (a) => apiGet(`/api/velrepeat/packages/${a.packageId}/deliveries`),
-  "api.commerce.sellerVelRepeatDeliveries": () => apiGet("/api/seller/velrepeat/deliveries"),
-  "api.commerce.updateVelRepeatDelivery": (a) => apiPatch(`/api/seller/velrepeat/deliveries/${a.deliveryId}`, a),
-  // VelRepeat V2 recurring plans
-  "api.commerce.myVelRepeatPlans": () => apiGet("/api/velrepeat/plans"),
-  "api.commerce.velRepeatPlanDetail": (a) => apiGet(`/api/velrepeat/plans/${a.planId}`),
-  "api.commerce.createVelRepeatPlan": (a) => apiPost("/api/velrepeat/plans", a),
-  "api.commerce.updateVelRepeatPlan": (a) => apiPatch(`/api/velrepeat/plans/${a.planId}`, a),
-  "api.commerce.pauseVelRepeatPlan": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/pause`, a),
-  "api.commerce.resumeVelRepeatPlan": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/resume`, a),
-  "api.commerce.cancelVelRepeatPlan": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/cancel`, a),
-  "api.commerce.runVelRepeatPlanNow": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/run-now`, a),
-  "api.commerce.velRepeatPlanRuns": (a) => apiGet(`/api/velrepeat/plans/${a.planId}/runs`),
-  // VelRepeat V2 — PREPAID commitments. Three endpoints, and only three:
-  // browse what may be bought, create the draft, and open the payment. The
-  // plan status is a separate READ (below) because a returned-from-Stripe
-  // browser must never be treated as proof of payment — the UI polls the server.
-  "api.velrepeatV2.packages": () => apiGet("/api/velrepeat/v2/packages"),
-  "api.velrepeatV2.packageDetail": (a) => apiGet(`/api/velrepeat/v2/packages/${a.packageId}`),
-  // The request carries ONLY packageId / commitmentCycles / frequencyType /
-  // intervalValue. Price, seller, ownership and totals are server-derived: the
-  // backend refuses a body that tries to set them.
-  "api.velrepeatV2.createPlan": (a) => apiPost("/api/velrepeat/v2/plans", a),
-  "api.velrepeatV2.payment": (a) => apiPost(`/api/velrepeat/v2/plans/${a.planId}/payment`, a),
-  "api.velrepeatV2.plans": () => apiGet("/api/velrepeat/v2/plans"),
-  "api.velrepeatV2.planDetail": (a) => apiGet(`/api/velrepeat/v2/plans/${a.planId}`),
-  "api.commerce.repeatOrderNow": (a) => apiPost("/api/velrepeat/repeat-now", a),
-  "api.commerce.sellerVelRepeatOverview": () => apiGet("/api/seller/velrepeat/overview"),
-  "api.centerAdmin.velRepeatOverview": () => apiGet("/api/admin/velrepeat/overview"),
-  // Legacy subscriptions (kept for backward compat)
-  "api.commerce.mySubscriptions": () => apiGet("/api/customer/subscriptions"),
-  "api.commerce.sellerSubscriptions": () => apiGet("/api/seller/subscriptions"),
-  "api.commerce.pauseSubscription": (a) => apiPatch(`/api/subscriptions/${a.subscriptionId}/pause`, a),
-  "api.commerce.updateSubscriptionAction": (a) => apiPatch(`/api/subscriptions/${a.subscriptionId}`, a),
-  "api.commerce.processDueSubscriptions": () => apiPost("/api/subscriptions/process-due"),
-  "api.commerce.createVelRepeat": (a) => apiPost("/api/subscriptions/create", a),
   "api.commerce.sellerIncomeReport": () => apiGet("/api/seller/income"),
   "api.commerce.sellerReorderSuggestionsAction": () => apiGet("/api/seller/reorder-suggestions"),
   "api.commerce.setProductStatusAction": (a) => apiPatch(`/api/seller/products/${a.productId}/status`, a),

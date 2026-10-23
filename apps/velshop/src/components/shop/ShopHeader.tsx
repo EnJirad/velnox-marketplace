@@ -16,7 +16,7 @@ import { Link, useLocation, useNavigate } from "react-router";
  * Mobile: logo · language · notifications · cart · account (bottom tab bar is the menu).
  * Product search lives on the products page; the header shows a notification
  * bell instead (real unread data, floating panel). Everything else
- * (wishlist, VelRepeat) lives in the profile hub.
+ * (wishlist) lives in the profile hub.
  */
 export function ShopHeader() {
   const { isAuthenticated, isLoading } = useAuth();

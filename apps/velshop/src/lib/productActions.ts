@@ -6,7 +6,7 @@
  * always render the same color for the same action.
  */
 
-export type ProductAction = "buy" | "cart" | "velrepeat";
+export type ProductAction = "buy" | "cart";
 
 /** How the selection sheet was opened. */
 export type SelectionEntryMode = "options" | ProductAction;
@@ -17,7 +17,4 @@ export const ACTION_BUTTON_CLASSES: Record<ProductAction, string> = {
   buy: "bg-slate-900 text-white hover:bg-slate-800",
   /** Add to Cart — Velnox green */
   cart: "bg-[#10B981] text-white hover:bg-emerald-600",
-  /** VelRepeat — premium recurring-purchase button (brand green accent, distinct from solid Buy/Cart) */
-  velrepeat:
-    "rounded-xl border border-[#10B981]/40 bg-gradient-to-b from-white to-[#F0FDF9] text-[#047857] shadow-sm hover:border-[#10B981]/60 hover:to-[#ECFDF5] focus-visible:ring-[#10B981]/30",
 };

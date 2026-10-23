@@ -2,12 +2,10 @@
  * DB latency attribution guard — static + unit (always runs) and DB-gated.
  *
  * Root cause this protects (2026-09-28): production logged the order-detail
- * `refunds` query (~1519–1538ms) and the VelRepeat due-plan scan (~1515ms) as
- * slow queries, while other statements in the same window ran ~205–225ms.
- * Neither statement was slow. Both already own the index their access path
- * needs — `idx_refunds_order (order_id)` and
- * `idx_velrepeat_plans_due (status, next_run_at) WHERE status = 'active'` —
- * they share no table, and a third, unrelated query reproduced the same fixed
+ * `refunds` query (~1519–1538ms) as a slow query, while other statements in the
+ * same window ran ~205–225ms. That statement was not slow. It already owns the
+ * index its access path needs — `idx_refunds_order (order_id)` — and a third,
+ * unrelated query reproduced the same fixed
  * ~1.3s penalty in production whenever it happened to be the first statement
  * after the pool had idled out (measured: 1.63s / 1.74s cold, 0.36–0.38s on an
  * immediate repeat). `pool.query()` reported lease + statement as ONE number,

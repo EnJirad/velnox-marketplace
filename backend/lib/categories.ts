@@ -2,13 +2,13 @@
  * Category validation — the canonical `products.category_id` contract.
  *
  * Source of truth: the `categories` table (`id` UUID, `slug` TEXT UNIQUE,
- * `is_active` BOOLEAN). The multilingual columns and `is_active` are added by
- * migration 040 (db/migrations/040_verification_and_categories.sql) — if that
- * migration is not applied, category queries fail with
+ * `is_active` BOOLEAN). The multilingual columns and `is_active` are declared by
+ * the canonical schema (db/schema.sql, applied to an existing database by
+ * db/run-sqleditor.sql) — if neither has been applied, category queries fail with
  * `column "is_active" does not exist`.
  *
  * `products.category_id` is TEXT and stores the canonical category SLUG
- * (migrations 015/029 converted it from UUID for exactly this reason). The slug
+ * (the schema converted it from UUID for exactly this reason). The slug
  * is also what the frontend StoreProductCategory union, category URLs and the
  * public catalog all use, so the API normalises every accepted identifier
  * (slug or UUID) to a slug.

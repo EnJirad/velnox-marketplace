@@ -1,7 +1,6 @@
 import { ProductCard } from "@/components/shop/ProductCard";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
-import { SubscriptionDialog } from "@/components/shop/SubscriptionDialog";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -14,7 +13,7 @@ import {
 } from "@velnox/shared/lib/commerce";
 import { setSeo } from "@/lib/seo";
 import { useTracking } from "@velnox/shared/lib/track";
-import { CUSTOMER_MEMORY_ENABLED, VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
+import { CUSTOMER_MEMORY_ENABLED } from "@velnox/shared/lib/features";
 import {
   Armchair,
   ArrowRight,
@@ -172,7 +171,6 @@ export default function ShopHome() {
   );
 
   const [query, setQuery] = useState("");
-  const [subProduct, setSubProduct] = useState<StoreProduct | null>(null);
   const toggleWishlist = useAction(api.customer.toggleWishlistAction);
   const myWishlist = useAction(api.customer.myWishlist);
   const categoryTree = useAction(api.customer.categoryTreeAction);
@@ -356,23 +354,10 @@ export default function ShopHome() {
         </section>
       )}
 
-      {/* PARKED (2026-10-14): the VelRepeat promo returns with the module. */}
-      {VELREPEAT_ENABLED && (
-        <section className="border-b border-slate-100 bg-white">
-          <div className="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-4 px-4 py-6 sm:flex-row sm:items-center sm:px-6">
-            <div className="flex items-start gap-3 sm:items-center"><span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#10B981]"><RefreshCw className="size-5" /></span><div><p className="text-sm font-bold text-slate-900">{t("home.velrepeatTitle")}</p><p className="mt-0.5 max-w-xl text-xs leading-5 text-slate-500">{t("home.velrepeatDesc")}</p></div></div>
-            <Button className="h-10 shrink-0 gap-1.5 rounded-full bg-[#10B981] px-5 text-white hover:bg-emerald-700" asChild><Link to={isAuthenticated ? "/velrepeat" : "/auth?returnTo=/velrepeat"}>{t("home.velrepeatCta")}</Link></Button>
-          </div>
-        </section>
-      )}
-
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
         {productsData.loading ? (<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => (<div key={i} className="h-64 animate-pulse rounded-xl border border-slate-200 bg-white" />))}</div>) : products.length === 0 ? (<div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]"><ShoppingBag className="size-7 text-[#10B981]" /></span><h2 className="mt-5 text-lg font-semibold text-slate-900">{t("home.emptyTitle")}</h2><p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("home.emptyDesc")}</p></div>) : null}
       </main>
       <ShopFooter />
-      {VELREPEAT_ENABLED && (
-        <SubscriptionDialog product={subProduct} open={subProduct !== null} onOpenChange={(open) => { if (!open) setSubProduct(null); }} />
-      )}
 
     </div>
   );

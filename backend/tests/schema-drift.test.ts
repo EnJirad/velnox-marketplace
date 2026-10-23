@@ -2,36 +2,32 @@
  * Schema drift guards.
  *
  * Production raised three 42703 ("column … does not exist") errors in a row, all
- * from the same class of bug: code, the canonical schema and the applied
- * migrations disagreeing about a column.
+ * from the same class of bug: code and the canonical schema disagreeing about a
+ * column (the schema is now the whole truth — db/schema.sql plus the
+ * rerunnable db/run-sqleditor.sql).
  *
  *   1. `sv.evidence_notes` — code selected a column the canonical schema does
  *      not define.
- *   2. `sv.review_reason_code` — the column IS canonical, but migration V0043
- *      could never be applied because the runner aborted inside V0040/V0041.
- *   3. `column "uploaded_by" does not exist` — V0008 renamed the `media` columns
- *      to names that no code and no canonical schema ever used, so every media
- *      query in production failed and the verification submit could not record
- *      its evidence.
+ *   2. `sv.review_reason_code` — the column IS canonical, but the migration that
+ *      added it could never be applied because the runner aborted earlier.
+ *   3. `column "uploaded_by" does not exist` — a media column rename moved the
+ *      `media` columns to names that no code and no canonical schema ever used,
+ *      so every media query in production failed and the verification submit
+ *      could not record its evidence.
  *
  * These tests state the invariants, so the next drift fails the suite instead of
  * production.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "fs";
+import { readFileSync } from "fs";
 import { join } from "path";
 
-import { unqualified } from "./helpers/canonical-schema.js";
 
 const root = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
 const schemaSql = read("db/schema.sql");
 const sqlEditor = read("db/run-sqleditor.sql");
-const migration008 = read("db/migrations/008_upload_auth_fixes.sql");
-const migration041 = read("db/migrations/041_media_cover_lookup_index.sql");
-const migration044 = read("db/migrations/044_velrepeat_plans_status_constraint.sql");
-const migration045 = read("db/migrations/045_media_column_naming.sql");
 
 const backendMediaSources = [
   "backend/routes/upload.ts",
@@ -41,16 +37,8 @@ const backendMediaSources = [
   "backend/routes/auth.ts",
 ].map(read);
 
-/** V0008 renamed `from` → `to`; V0045 must rename it back. */
-const RENAME_PAIRS = [
-  ["owner_id", "uploaded_by"],
-  ["object_key", "key"],
-  ["cdn_url", "url"],
-  ["mime_type", "content_type"],
-  ["file_size", "size"],
-];
-/** Legacy (V0008) column names that no application code or canonical schema uses. */
-const LEGACY_MEDIA_COLUMNS = RENAME_PAIRS.map(([legacy]) => legacy);
+/** Legacy media column names that no application code or canonical schema uses. */
+const LEGACY_MEDIA_COLUMNS = ["owner_id", "object_key", "cdn_url", "mime_type", "file_size"];
 /** Canonical column names every media query is written against. */
 const CANONICAL_MEDIA_COLUMNS = ["url", "key", "content_type", "size", "uploaded_by"];
 
@@ -75,7 +63,7 @@ describe("media table column naming", () => {
     expect(at(sqlEditor)).toBe(at(schemaSql));
   });
 
-  test("no backend media statement uses a V0008 column name", () => {
+  test("no backend media statement uses a legacy column name", () => {
     for (const src of backendMediaSources) {
       const statements = mediaStatements(src);
       expect(statements.length).toBeGreaterThan(0);
@@ -87,40 +75,33 @@ describe("media table column naming", () => {
     }
   });
 
-  test("V0041 builds idx_media_owner_key for either media naming", () => {
-    expect(migration041).toContain("('uploaded_by', 'owner_id')");
-    expect(migration041).toContain("('key', 'object_key')");
-    expect(migration041).toContain("'CREATE INDEX IF NOT EXISTS idx_media_owner_key ON media (%I, %I)'");
-    // The index name must match the canonical schema declaration.
+  test("the canonical schema declares the media lookup index on canonical columns", () => {
+    // The snapshot uses the bare table name, the reconciler the qualified one.
     expect(schemaSql).toContain("CREATE INDEX IF NOT EXISTS idx_media_owner_key ON media (uploaded_by, key)");
+    expect(sqlEditor).toMatch(/idx_media_owner_key ON (?:public\.)?media \(uploaded_by, key\)/);
   });
 
-  test("V0045 renames every V0008 column back to the canonical name", () => {
-    for (const [legacy, canonical] of RENAME_PAIRS) {
-      expect(migration008).toContain(`RENAME COLUMN ${canonical} TO ${legacy}`);
-      expect(migration045).toContain(`'${legacy}', '${canonical}'`);
+  test("no canonical SQL file uses a legacy media column name", () => {
+    // A renamed column must not survive in the snapshot or be reintroduced by
+    // the reconciler — the two files are the whole schema now.
+    for (const sql of [schemaSql, sqlEditor]) {
+      for (const legacy of LEGACY_MEDIA_COLUMNS) {
+        expect(new RegExp(`\\b${legacy}\\b`).test(sql)).toBe(false);
+      }
     }
-    // Metadata-only, guarded and idempotent: never a destructive statement.
-    expect(migration045).toContain("ALTER TABLE media RENAME COLUMN %I TO %I");
-    for (const forbidden of ["DROP COLUMN", "DROP TABLE", "TRUNCATE", "DELETE FROM"]) {
-      expect(migration045).not.toContain(forbidden);
-    }
-  });
-
-  test("RENAME COLUMN pairs are well-formed array literals", () => {
-    // A malformed pair (e.g. a missing quote) would silently skip a rename at
-    // apply time and leave the columns half-migrated.
-    const pairs = [...migration045.matchAll(/ARRAY\['([a-z_]+)', '([a-z_]+)'\]/g)];
-    expect(pairs.map(([, from, to]) => [from, to])).toEqual(RENAME_PAIRS);
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. The snapshot never alters a table it does not create
+// ═══════════════════════════════════════════════════════════════════════════
+
 describe("the canonical schema never alters a table it does not create", () => {
-  // The bootstrap file referenced `velrepeat_plan_runs`, which no migration and
-  // no backend query ever created: running db/schema.sql on a fresh database
-  // aborted, and migration V0044 aborted in production with
-  // `relation "velrepeat_plan_runs" does not exist`, blocking V0045.
-  /** Comments legitimately document the phantom name; only statements matter. */
+  // A canonical file once referenced a table that no code and no schema ever
+  // created, so running db/schema.sql on a fresh database aborted with
+  // `relation … does not exist`. Only statements are judged here: comments
+  // legitimately document history.
+  /** Comments legitimately document history; only statements matter. */
   const statements = (sql: string) =>
     sql
       .split("\n")
@@ -175,39 +156,4 @@ describe("the canonical schema never alters a table it does not create", () => {
     expect(targets.length).toBeGreaterThan(200);
     expect(targets.filter((t) => !created.has(t))).toEqual([]);
   });
-
-  test("the velrepeat run constraint targets the table V0034 creates", () => {
-    for (const sql of [schemaSql, sqlEditor, migration044]) {
-      expect(unqualified(statements(sql))).toContain("ALTER TABLE velrepeat_runs");
-      expect(statements(sql)).not.toContain("velrepeat_plan_runs");
-    }
-  });
-});
-
-describe("no migration after V0008 depends on the renamed media columns", () => {
-  // V0041 and V0045 are the two migrations that deliberately name BOTH variants:
-  // V0041 must tolerate either naming, V0045 is the rename itself.
-  const files = readdirSync(join(root, "db", "migrations"))
-    .filter((f) => f.endsWith(".sql"))
-    .filter((f) => f > "008_upload_auth_fixes.sql")
-    .filter((f) => f !== "041_media_cover_lookup_index.sql")
-    .filter((f) => f !== "045_media_column_naming.sql");
-
-  test("the migration set is non-empty (guards the filter above)", () => {
-    expect(files.length).toBeGreaterThan(20);
-  });
-
-  test("V0045 is the only place the legacy names may reappear", () => {
-    expect(migration045).toContain("owner_id");
-    expect(migration041).toContain("owner_id");
-  });
-
-  for (const file of files) {
-    test(`${file} references only canonical media columns`, () => {
-      const src = read(`db/migrations/${file}`);
-      for (const legacy of LEGACY_MEDIA_COLUMNS) {
-        expect(src).not.toContain(legacy);
-      }
-    });
-  }
 });

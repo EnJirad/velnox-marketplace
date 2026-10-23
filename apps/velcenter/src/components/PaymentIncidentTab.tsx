@@ -199,8 +199,8 @@ export default function PaymentIncidentTab() {
 
       {schemaMissing && (
         <p className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
-          ยังไม่ได้ติดตั้ง migration 049 — ระบบยังบันทึกเหตุการณ์นี้ไว้ใน log
-          เท่านั้น กรุณาติดตั้ง <code>db/migrations/049_payment_incidents.sql</code>
+          ยังไม่ได้ติดตั้งตาราง payment_incidents — ระบบยังบันทึกเหตุการณ์นี้ไว้ใน log
+          เท่านั้น กรุณารัน <code>db/run-sqleditor.sql</code>
         </p>
       )}
 

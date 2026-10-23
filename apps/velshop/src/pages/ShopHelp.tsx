@@ -8,7 +8,6 @@ import {
   AccordionTrigger,
 } from "@velnox/shared/components/ui/accordion";
 import { Button } from "@velnox/shared/components/ui/button";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { Input } from "@velnox/shared/components/ui/input";
 import {
   BadgePercent,
@@ -48,7 +47,7 @@ interface HelpCategory {
  * Content is static help copy (localized), while every action is real:
  * "Chat with Velnox Support" opens the existing customer chat system (/chat),
  * email support is config-driven via VITE_SUPPORT_EMAIL (hidden when unset),
- * and article links point to real pages (orders, wishlist, velrepeat, ...).
+ * and article links point to real pages (orders, wishlist, help, ...).
  */
 const CATEGORIES: HelpCategory[] = [
   {
@@ -88,24 +87,6 @@ const CATEGORIES: HelpCategory[] = [
       { id: "acct-security", titleKey: "help.acctSecurity", descKey: "help.acctSecurityA" },
     ],
   },
-  // PARKED (2026-10-14): the VelRepeat help category returns with the module.
-  // Help articles must never describe a flow the storefront no longer offers,
-  // so the category (and its three articles) is dropped while the flag is off.
-  ...(VELREPEAT_ENABLED
-    ? [
-        {
-          id: "velrepeat",
-          icon: RefreshCw,
-          titleKey: "help.catVelRepeat",
-          descKey: "help.catVelRepeatDesc",
-          articles: [
-            { id: "vr-how", titleKey: "help.vrHow", descKey: "help.vrHowA" },
-            { id: "vr-manage", titleKey: "help.vrManage", descKey: "help.vrManageA" },
-            { id: "vr-pause", titleKey: "help.vrPause", descKey: "help.vrPauseA" },
-          ],
-        },
-      ]
-    : []),
   {
     id: "shopping",
     icon: ShoppingBag,

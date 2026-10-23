@@ -13,13 +13,13 @@
  * canonical bootstrap (`db/run-sqleditor.sql`):
  *
  *   1. the NO ACTION children of the user's orders (product_reviews, payments,
- *      refunds, commissions, vrepeat_deliveries, payment_incidents), then the
+ *      refunds, commissions, payment_incidents), then the
  *      orders themselves — order_items and shipments cascade,
- *      checkout_requests and velrepeat_runs are SET NULL, so neither blocks;
+ *      checkout_requests is SET NULL, so it does not block;
  *   2. `seller_verifications.reviewed_by` is cleared, so those rows can leave
  *      with their seller (seller_verifications.seller_id → sellers CASCADE);
  *   3. the users — sellers, shops, products, inventory, seller goals,
- *      notifications, velrepeat plans, review history (reviewer_id → SET NULL)
+ *      notifications, review history (reviewer_id → SET NULL)
  *      and everything else cascade from here.
  *
  * Every statement is scoped to the ids passed in: nothing test-run did not
@@ -51,7 +51,6 @@ export async function purgeUsers(userIds: Array<string | null | undefined>): Pro
     "refunds",
     "payments",
     "commissions",
-    "vrepeat_deliveries",
   ]) {
     await query(
       `DELETE FROM ${table} WHERE order_id IN (SELECT id FROM orders WHERE user_id = ANY($1::uuid[]))`,

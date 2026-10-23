@@ -249,16 +249,6 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     soldCount: row.sold_count ?? 0,
     rating: row.rating ? parseFloat(row.rating) : null,
     reviewCount: row.review_count ?? 0,
-    // VelRepeat configuration (V0025 columns)
-    vrepeatEnabled: row.vrepeat_enabled ?? false,
-    vrepeatWeeklyEnabled: row.vrepeat_weekly_enabled ?? false,
-    vrepeatMonthlyEnabled: row.vrepeat_monthly_enabled ?? false,
-    vrepeatWeeklyPrice: row.vrepeat_weekly_price != null ? parseFloat(row.vrepeat_weekly_price) : null,
-    vrepeatMonthlyPrice: row.vrepeat_monthly_price != null ? parseFloat(row.vrepeat_monthly_price) : null,
-    vrepeatWeeklyQty: row.vrepeat_weekly_qty ?? null,
-    vrepeatMonthlyQty: row.vrepeat_monthly_qty ?? null,
-    vrepeatMinQty: row.vrepeat_min_qty ?? null,
-    vrepeatMaxQty: row.vrepeat_max_qty ?? null,
     featuredVariantId: row.featured_variant_id ?? null,
     // Verification fields
     verificationStatus: row.verification_status || "unverified",
@@ -749,7 +739,6 @@ export function setupProductRoutes(app: Express): void {
         optionGroups: optionGroupsData,
         variants: variantsData,
         attributes: attributesData,
-        velRepeat: velRepeatData,
       } = req.body;
 
       if (!productData?.name?.trim()) {
@@ -1035,31 +1024,6 @@ export function setupProductRoutes(app: Express): void {
           }
         }
 
-        // 8. VelRepeat configuration
-        if (velRepeatData && typeof velRepeatData === "object") {
-          const vrepeatFields: string[] = [];
-          const vrepeatValues: any[] = [];
-          let vIdx = 1;
-
-          if (velRepeatData.enabled != null) { vrepeatFields.push(`vrepeat_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.enabled)); }
-          if (velRepeatData.weeklyEnabled != null) { vrepeatFields.push(`vrepeat_weekly_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.weeklyEnabled)); }
-          if (velRepeatData.monthlyEnabled != null) { vrepeatFields.push(`vrepeat_monthly_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.monthlyEnabled)); }
-          if (velRepeatData.weeklyPrice != null) { vrepeatFields.push(`vrepeat_weekly_price = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.weeklyPrice)); }
-          if (velRepeatData.monthlyPrice != null) { vrepeatFields.push(`vrepeat_monthly_price = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.monthlyPrice)); }
-          if (velRepeatData.weeklyQty != null) { vrepeatFields.push(`vrepeat_weekly_qty = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.weeklyQty)); }
-          if (velRepeatData.monthlyQty != null) { vrepeatFields.push(`vrepeat_monthly_qty = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.monthlyQty)); }
-          if (velRepeatData.minQty != null) { vrepeatFields.push(`vrepeat_min_qty = $${vIdx++}`); vrepeatValues.push(Math.max(1, Math.floor(Number(velRepeatData.minQty) || 1))); }
-          if (velRepeatData.maxQty != null) { vrepeatFields.push(`vrepeat_max_qty = $${vIdx++}`); vrepeatValues.push(Math.max(1, Math.floor(Number(velRepeatData.maxQty) || 999))); }
-
-          if (vrepeatFields.length > 0) {
-            vrepeatValues.push(product.id);
-            await client.query(
-              `UPDATE products SET ${vrepeatFields.join(", ")}, updated_at = NOW() WHERE id = $${vIdx}`,
-              vrepeatValues
-            );
-          }
-        }
-
         // 9. Set featured variant if requested
         if (productData.featuredVariantIndex != null && Array.isArray(variantsData)) {
           const fvIdx = Number(productData.featuredVariantIndex);
@@ -1259,11 +1223,11 @@ export function setupProductRoutes(app: Express): void {
       }
 
       // Soft delete (P1 #6): archive instead of hard-deleting so customer
-      // reviews, order snapshots, and VelRepeat plan items are never silently
-      // destroyed by the ON DELETE CASCADE chain. Archived products vanish
-      // from the catalog (customer queries filter status='published'), can no
-      // longer be added to cart, and are skipped by VelRepeat runs — but the
-      // historical data survives and the seller can restore the product via
+      // reviews and order snapshots are never silently destroyed by the
+      // ON DELETE CASCADE chain. Archived products vanish from the catalog
+      // (customer queries filter status='published') and can no longer be added
+      // to cart, but the historical data survives and the seller can restore
+      // the product via
       // PATCH /api/seller/products/:productId/status.
       const before = await query("SELECT shop_id, status FROM products WHERE id = $1", [productId]);
       const shopResult = await query(

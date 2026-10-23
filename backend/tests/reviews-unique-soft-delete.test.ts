@@ -1,39 +1,25 @@
 /**
  * P1 #6 — product_reviews uniqueness + product soft-delete.
  *
- * Unit tests (always run) verify the migration/schema sync: the unique
- * constraint must be present in the migration file AND in both schema
- * files (schema.sql / run-sqleditor.sql).
+ * Unit tests (always run) verify the schema sync: the unique constraint must be
+ * present in both canonical files (schema.sql / run-sqleditor.sql).
  *
  * Integration tests (DB-gated, skipped without a test database) verify:
  *   1. The atomic ON CONFLICT upsert collapses concurrent double-submits
  *      into ONE review row per (product, user); the latest rating wins.
  *   2. The UNIQUE(product_id, user_id) constraint rejects a second row.
- *   3. Soft-delete (archive) preserves reviews + VelRepeat plan items that a
- *      hard DELETE used to CASCADE away, and removes the product from the
- *      published catalog.
+ *   3. Soft-delete (archive) preserves reviews that a hard DELETE used to
+ *      CASCADE away, and removes the product from the published catalog.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { hasTestDatabase } from "./helpers/test-db.js";
 
-// ─── Migration / schema sync (pure, always runs) ───────────────────────────
+// ─── Schema sync (pure, always runs) ────────────────────────────────────────
 
-describe("P1 #6 migration + schema sync", () => {
+describe("P1 #6 schema sync", () => {
   const root = join(import.meta.dir, "../..");
-
-  test("migration 038 adds the unique constraint and dedupe + recompute", () => {
-    const sql = readFileSync(join(root, "db/migrations/038_product_reviews_unique.sql"), "utf8");
-    expect(sql).toContain("uq_product_reviews_product_user");
-    expect(sql).toContain("ALTER TABLE product_reviews");
-    expect(sql).toContain("UNIQUE (product_id, user_id)");
-    // dedupe keeps the newest review per (product, user)
-    expect(sql).toContain("DELETE FROM product_reviews a");
-    // aggregates are recomputed after the dedupe
-    expect(sql).toContain("AVG(rating)");
-    expect(sql).toContain("review_count");
-  });
 
   test("schema.sql and run-sqleditor.sql carry the inline UNIQUE constraint", () => {
     for (const file of ["db/schema.sql", "db/run-sqleditor.sql"]) {
@@ -158,8 +144,8 @@ describe("product_reviews uniqueness + soft delete (integration)", () => {
     expect(rows.rows[0].c).toBe(1);
   });
 
-  testFn("archiving a product preserves reviews + VelRepeat items and hides it from the catalog", async () => {
-    const { query, userId, sellerId, shopId, productId } = await seed();
+  testFn("archiving a product preserves its reviews and hides it from the catalog", async () => {
+    const { query, userId, shopId, productId } = await seed();
     await ensureUniqueConstraint();
 
     // customer review
@@ -167,19 +153,6 @@ describe("product_reviews uniqueness + soft delete (integration)", () => {
       `INSERT INTO product_reviews (product_id, user_id, shop_id, rating, comment, status)
        VALUES ($1, $2, $3, 5, 'great product', 'approved')`,
       [productId, userId, shopId],
-    );
-
-    // VelRepeat plan + item referencing the product
-    const plan = await query(
-      `INSERT INTO velrepeat_plans (user_id, status, frequency_type, interval_value, next_run_at)
-       VALUES ($1, 'active', 'weeks', 2, NOW() + interval '7 days') RETURNING id`,
-      [userId],
-    );
-    const planId = plan.rows[0].id as string;
-    await query(
-      `INSERT INTO velrepeat_items (plan_id, product_id, shop_id, seller_id, quantity, unit_price)
-       VALUES ($1, $2, $3, $4, 1, 100)`,
-      [planId, productId, shopId, sellerId],
     );
 
     // What DELETE /api/seller/products/:productId now does: archive, not delete
@@ -197,9 +170,5 @@ describe("product_reviews uniqueness + soft delete (integration)", () => {
     // review survived (hard DELETE used to CASCADE it away)
     const reviews = await query("SELECT id FROM product_reviews WHERE product_id = $1", [productId]);
     expect(reviews.rows).toHaveLength(1);
-
-    // VelRepeat item survived (hard DELETE used to CASCADE it away)
-    const items = await query("SELECT id FROM velrepeat_items WHERE product_id = $1", [productId]);
-    expect(items.rows).toHaveLength(1);
   });
 });

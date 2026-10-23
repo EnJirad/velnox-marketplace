@@ -13,7 +13,6 @@ and a stale note claimed none existed. `backend/routes/stripe.ts` is real.)
 - `backend/routes/cart.ts` — cart CRUD + `POST /api/customer/checkout` (order creation)
 - `backend/routes/stripe.ts` — **all payment endpoints**: checkout session, webhook, refund, method discovery, order detail
 - `backend/lib/payment-config.ts` — the ONE payment-config decision point (test-mode enforcement, COD flags, method guard)
-- `backend/routes/velrepeat*.ts`, `backend/jobs/velrepeat-scheduler.ts` — subscriptions, VelRepeat
 - `backend/routes/index.ts`, `backend/routes/seller-orders.ts`, `backend/routes/center.ts` — order read/update
 - DB: `orders`, `order_items`, `payments`, `payment_events`, `refunds`, `commissions`, `settlements`, `shipments`, `tracking_events`, `checkout_requests`
 
@@ -25,7 +24,7 @@ cart_items → POST /api/customer/checkout (idempotent via checkout_requests[sco
 → POST /api/stripe/checkout (Checkout Session; idempotent via checkout_requests[scope=payment]
    + idx_payments_one_active_stripe) → payments
 → Stripe webhook (authoritative) → payments.status + orders.status
-→ shipments + tracking_events → VelRepeat plans/runs
+→ shipments + tracking_events
 ```
 
 ## Customer cancellation (order lifecycle)
@@ -62,7 +61,7 @@ the order (`orders.payment_expires_at` + `orders.reservation_policy`, the audite
 The value is a **constant** (`PAYMENT_RESERVATION_MINUTES = 30`, policy `version: "v2"`) taken from
 the SERVER clock — the client never supplies, extends or shortens it. Deliberately NOT dynamic:
 popularity, product views/clicks, sales velocity, demand score and customer behaviour feed nothing
-here (those belong to VelRepeat), so the storefront countdown always starts at 30:00 and the
+here, so the storefront countdown always starts at 30:00 and the
 backend always enforces the same number. COD gets **no** window (no online payment is waited on).
 
 > v1 of this module was risk-based (15/20/30/45/60 minutes from stock cover + 7-day velocity).
@@ -101,8 +100,8 @@ pre-payment status AND `inventory_released = FALSE`, records the money on the pa
 
 ## Order numbers — DIGITS ONLY (`^[0-9]{18}$`)
 
-One definition: **`backend/lib/order-number.ts` → `generateOrderNumber()`** (imported by `routes/cart.ts`,
-`routes/stripe.ts` and `lib/velrepeat-cycles.ts`; no private copy survives anywhere).
+One definition: **`backend/lib/order-number.ts` → `generateOrderNumber()`** (imported by
+`routes/cart.ts` and `routes/stripe.ts`; no private copy survives anywhere).
 
 - The public number is **18 decimal digits and nothing else** — e.g. `586322973946053945`. No prefix,
   no separator, no letters, because every surface (customer, seller, center, tracking, support forms)
@@ -115,9 +114,8 @@ One definition: **`backend/lib/order-number.ts` → `generateOrderNumber()`** (i
   every API, type and UI surface types it as `string`.
 - Uniqueness is the DATABASE's job: `idx_orders_number_unique` (partial, `WHERE order_number IS NOT NULL`)
   exists in **both** `db/schema.sql` and `db/run-sqleditor.sql`. Every creator retries that ONE
-  collision under a SAVEPOINT — `insertOrderWithUniqueNumber()` in `routes/cart.ts` and the inline
-  retry in `lib/velrepeat-cycles.ts` (`cycle_order_number_attempt`) — and `isOrderNumberCollision()`
-  refuses any other unique violation.
+  collision under a SAVEPOINT — `insertOrderWithUniqueNumber()` in `routes/cart.ts` — and
+  `isOrderNumberCollision()` refuses any other unique violation.
 - **Legacy numbers still resolve.** Orders created before this change keep their `VNX-YYYYMMDD-XXXXXX`
   value verbatim; nothing is rewritten, the column is nullable and the unique index is partial.
   `isLegacyOrderNumber()` recognises them for lookup paths.

@@ -2,8 +2,8 @@
  * Velnox Seller Order Management Endpoints
  *
  * Customer order → seller receives order → seller views order → seller
- * updates order status. Multi-vendor safe: the checkout and VelRepeat
- * scheduler both create ONE order PER SHOP, so a seller's orders are the
+ * updates order status. Multi-vendor safe: the checkout creates ONE order PER
+ * SHOP, so a seller's orders are the
  * orders containing items from that seller's shops. Every endpoint derives
  * the seller identity from the authenticated session (never from the
  * client), so sellerId spoofing is impossible.
@@ -13,8 +13,6 @@
  *   GET   /api/seller/orders/:id          — seller's order detail (IDOR-safe)
  *   PATCH /api/seller/orders/:id/status   — transition order status (state machine)
  *   PATCH /api/seller/orders/:id/shipment — transition the SHIPMENT lifecycle
- *   GET   /api/seller/subscriptions       — recurring VelRepeat plans for the seller
- *   POST  /api/subscriptions/process-due  — manually run the due-plan worker
  *
  * Authorization:
  *   - All endpoints require authentication (requireAuth).
@@ -27,7 +25,6 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
-import { processPlan } from "../jobs/velrepeat-scheduler.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import {
   FULFILLMENT_STATUSES,
@@ -99,26 +96,6 @@ export function canTransitionOrderStatus(from: string, to: string): boolean {
  * neither has anything left to fulfil.
  */
 export const normalizeSellerOrderStatus = normalizeOrderStatusToFulfillment;
-
-// ─── Subscription (VelRepeat plan) display mapping ───────────────────────────
-// velrepeat_plans.status → the compact status the seller UI understands.
-// Non-active plan states that can still recover (out_of_stock, payment_failed)
-// display as paused so sellers see they are not auto-running.
-export function mapPlanStatusToSubscriptionStatus(
-  planStatus: string,
-): "active" | "paused" | "cancelled" {
-  if (planStatus === "active" || planStatus === "processing") return "active";
-  if (planStatus === "cancelled" || planStatus === "completed") return "cancelled";
-  return "paused"; // paused / payment_failed / out_of_stock / draft
-}
-
-/** velrepeat_plans.frequency_type → StoreSubscription.frequency. */
-export function mapFrequencyType(frequencyType: string): "daily" | "weekly" | "monthly" | "custom" {
-  if (frequencyType === "days") return "daily";
-  if (frequencyType === "weeks") return "weekly";
-  if (frequencyType === "months") return "monthly";
-  return "custom";
-}
 
 // ─── HTTP error helper (used inside transactions where we must roll back) ────
 class HttpError extends Error {
@@ -793,155 +770,4 @@ export function setupSellerOrderRoutes(app: Express): void {
     }
   });
 
-  // ── GET /api/seller/subscriptions ────────────────────────────────────────
-  // Recurring VelRepeat plans that include this seller's products. Reuses the
-  // V2 velrepeat_plans/velrepeat_items tables (the real recurring engine) —
-  // no duplicate subscription tables.
-  app.get("/api/seller/subscriptions", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const sellerRes = await query(
-        `SELECT id, status FROM sellers WHERE user_id = $1 LIMIT 1`,
-        [req.user!.userId],
-      );
-      const seller = sellerRes.rows[0];
-      if (!seller || (seller.status !== "approved" && seller.status !== "active")) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Seller access required" } });
-        return;
-      }
-      const sellerId = seller.id as string;
-
-      const result = await query(
-        `SELECT vp.id AS plan_id, vp.user_id, vp.status AS plan_status,
-                vp.frequency_type, vp.interval_value, vp.next_run_at,
-                vp.created_at, vp.updated_at, vp.timezone,
-                vi.product_id, vi.shop_id, vi.seller_id, vi.quantity, vi.unit_price,
-                p.name AS product_name,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
-                u.name AS customer_name, u.email AS customer_email,
-                to_char(vp.next_run_at AT TIME ZONE COALESCE(vp.timezone, 'Asia/Bangkok'), 'YYYY-MM-DD') AS next_order_date
-         FROM velrepeat_plans vp
-         JOIN velrepeat_items vi ON vi.plan_id = vp.id
-         JOIN products p ON vi.product_id = p.id
-         JOIN users u ON vp.user_id = u.id
-         WHERE vi.seller_id = $1
-           AND vp.status IN ('active', 'paused', 'processing', 'payment_failed',
-                             'out_of_stock', 'cancelled', 'completed')
-         ORDER BY vp.next_run_at ASC`,
-        [sellerId],
-      );
-
-      const subscriptions = result.rows.map((r: any) => {
-        const status = mapPlanStatusToSubscriptionStatus(r.plan_status as string);
-        const frequency = mapFrequencyType(r.frequency_type as string);
-
-        return {
-          id: r.plan_id,
-          customerUserId: r.user_id,
-          productId: r.product_id,
-          shopId: r.shop_id,
-          sellerId: r.seller_id,
-          quantity: r.quantity,
-          unitPriceSnapshot: parseFloat(r.unit_price) || 0,
-          frequency,
-          intervalDays: r.interval_value,
-          // Date-only value in the plan's own timezone (to_char above) — the
-          // UI appends T00:00:00 when comparing, so a timezone-shifted date
-          // would be off by one day. Fall back to UTC slice for legacy rows.
-          nextOrderDate: r.next_order_date
-            ? String(r.next_order_date)
-            : r.next_run_at
-              ? String(
-                  (r.next_run_at instanceof Date ? r.next_run_at : new Date(r.next_run_at))
-                    .toISOString()
-                    .slice(0, 10),
-                )
-              : null,
-          status,
-          productName: r.product_name ?? null,
-          productImageUrl: r.product_image_url ?? null,
-          customerName: r.customer_name ?? null,
-          customerEmail: r.customer_email ?? null,
-          createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-          updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
-        };
-      });
-
-      res.json({ success: true, data: subscriptions });
-    } catch (err: any) {
-      // velrepeat_plans may not exist on legacy databases — treat as empty.
-      if (err?.code === "42P01" || String(err?.message ?? "").includes("does not exist")) {
-        console.warn("[seller-orders] velrepeat_plans table not found — returning empty subscriptions");
-        res.json({ success: true, data: [] });
-        return;
-      }
-      console.error("[seller-orders] subscriptions error:", err);
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch subscriptions" } });
-    }
-  });
-
-  // ── POST /api/subscriptions/process-due ───────────────────────────────────
-  // Force-run the due-plan worker (the same engine the VelRepeat scheduler
-  // polls) — for THIS SELLER's plans only. Reuses processPlan from
-  // jobs/velrepeat-scheduler.ts — one order per shop, idempotent runs, no
-  // duplicate subscription systems.
-  //
-  // OWNERSHIP (owner decision, 2026-09-30 — contract §35): the CENTRAL
-  // SCHEDULER owns global due-plan processing. A seller must never trigger a
-  // customer's plan that is not theirs. The selection below is therefore scoped
-  // with the SAME ownership predicate the read path already uses
-  // (`GET /api/seller/subscriptions`, `WHERE vi.seller_id = $1`): a plan is
-  // only eligible when at least one of its items belongs to the calling
-  // seller. Before this change the query had no user scope at all, so any
-  // approved seller could force-run any customer's due plans — a cross-tenant
-  // side-effect trigger.
-  app.post("/api/subscriptions/process-due", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const sellerRes = await query(
-        `SELECT id, status FROM sellers WHERE user_id = $1 LIMIT 1`,
-        [req.user!.userId],
-      );
-      const seller = sellerRes.rows[0];
-      if (!seller || (seller.status !== "approved" && seller.status !== "active")) {
-        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Seller access required" } });
-        return;
-      }
-
-      const limit = Math.min(Math.max(parseInt(req.body?.limit as string) || 25, 1), 100);
-      const due = await query(
-        `SELECT vp.id FROM velrepeat_plans vp
-         WHERE vp.status = 'active' AND vp.next_run_at <= NOW()
-           AND EXISTS (
-             SELECT 1 FROM velrepeat_items vi
-              WHERE vi.plan_id = vp.id AND vi.seller_id = $1
-           )
-         ORDER BY vp.next_run_at ASC
-         LIMIT $2`,
-        [seller.id, limit],
-      );
-
-      let created = 0;
-      let skipped = 0;
-      for (const row of due.rows) {
-        try {
-          const outcome = await processPlan(row.id as string);
-          if (outcome === null) skipped++; // claimed by a concurrent worker
-          else if (outcome === "success") created++;
-          else skipped++; // out_of_stock / item_unavailable / payment_failed / failed
-        } catch (err) {
-          console.error(`[seller-orders] process-due plan ${row.id} failed:`, err);
-          skipped++;
-        }
-      }
-
-      res.json({ success: true, data: { created, skipped, due: due.rows.length } });
-    } catch (err: any) {
-      if (err?.code === "42P01" || String(err?.message ?? "").includes("does not exist")) {
-        console.warn("[seller-orders] velrepeat_plans table not found — nothing to process");
-        res.json({ success: true, data: { created: 0, skipped: 0, due: 0 } });
-        return;
-      }
-      console.error("[seller-orders] process-due error:", err);
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to process due subscriptions" } });
-    }
-  });
 }

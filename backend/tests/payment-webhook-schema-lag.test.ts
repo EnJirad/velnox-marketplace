@@ -13,8 +13,8 @@
  * THE ROOT CAUSE THIS FILE PINS (failure class H → D)
  * ---------------------------------------------------
  * `checkoutGroupIdForAttempt()` (`backend/routes/stripe.ts`) decided which parent
- * a charge belongs to. It read `payments.checkout_group_id` — a column added by
- * `db/migrations/054_checkout_groups_numeric_order_number.sql` — with a bare
+ * a charge belongs to. It read `payments.checkout_group_id` — a column the
+ * reconciler's additive column pass adds — with a bare
  * column reference. A statement naming a column the table does not have raises
  * `undefined_column` (42703), which is a THROWN ERROR, and it was thrown on the
  * one query EVERY order's settlement runs, before the order or payment row is

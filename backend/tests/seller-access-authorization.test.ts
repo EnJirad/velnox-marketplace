@@ -141,13 +141,6 @@ describe("seller tab bar and revision flow — fail-closed wiring", () => {
     expect(sellerSrc).toContain('app.post("/api/seller/apply", requireAuth,');
     expect(sellerSrc).toContain('app.get("/api/seller/status", requireAuth,');
 
-    const velrepeatSrc = read("backend/routes/velrepeat.ts");
-    expect(velrepeatSrc).toContain('app.get("/api/seller/velrepeat/deliveries", requireAuth, requireApprovedSeller');
-    expect(velrepeatSrc).toContain('app.patch("/api/seller/velrepeat/deliveries/:deliveryId", requireAuth, requireApprovedSeller');
-
-    const plansSrc = read("backend/routes/velrepeat-plans.ts");
-    expect(plansSrc).toContain('app.get("/api/seller/velrepeat/overview", requireAuth, requireApprovedSeller');
-
     // Product option management resolves the seller through an approved-only lookup.
     const optionsSrc = read("backend/routes/product-options.ts");
     expect(optionsSrc).toContain("SELECT id, status FROM sellers WHERE user_id = $1 AND status = 'approved'");

@@ -20,7 +20,7 @@
     "build:apps": "bun --filter '@velnox/velshop' build && bun --filter '@velnox/velseller' build && bun --filter '@velnox/velcenter' build && bun --filter '@velnox/velnox' build",
     "api:dev": "bun --filter @velnox/backend dev",
     "api:start": "bun --filter @velnox/backend start",
-    "db:migrate": "echo 'Run migrations via db/migrations/'",
+    "db:migrate": "echo 'No migration directory: db/schema.sql is canonical, db/run-sqleditor.sql reconciles an existing database'",
     "db:verify": "bash db/verify-reconciler.sh",
     "db:smoke": "echo 'DB smoke test placeholder'",
     "db:consistency": "echo 'DB consistency check placeholder'",

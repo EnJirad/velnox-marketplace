@@ -1,9 +1,7 @@
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
-import { VelRepeatPlanDialog } from "@/components/shop/VelRepeatPlanDialog";
 import { useLanguage } from "@/lib/i18n";
 import { Badge } from "@velnox/shared/components/ui/badge";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@velnox/shared/components/ui/sheet";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
@@ -61,7 +59,6 @@ interface CheckoutItemSummary {
   unit: string;
   price: number;
   imageUrl: string | null;
-  vrepeatEnabled: boolean;
 }
 
 interface CheckoutResult {
@@ -187,7 +184,6 @@ export default function ShopCheckout() {
    * and resumable, so the customer gets a retry instead of a dead end.
    */
   const [paymentStartError, setPaymentStartError] = useState<{ orderId: string; orderNumber: string; method: string; message: string } | null>(null);
-  const [vrOpen, setVrOpen] = useState(false);
   const [productsExpanded, setProductsExpanded] = useState(false);
 
   const requestIdRef = useRef<string | null>(null);
@@ -448,12 +444,6 @@ export default function ShopCheckout() {
     if (redirectUrl) window.location.assign(redirectUrl);
   };
 
-  const eligibleItem = useMemo(() => result?.items?.find((i) => i.vrepeatEnabled) ?? null, [result]);
-  const offerProduct = useMemo<StoreProduct | null>(() => {
-    if (!eligibleItem) return null;
-    return { id: eligibleItem.productId, name: eligibleItem.name, price: eligibleItem.price, unit: eligibleItem.unit || "" } as unknown as StoreProduct;
-  }, [eligibleItem]);
-
   // ── Products for mobile compact list ────────────────────────────────────
   const MOBILE_PRODUCT_LIMIT = 3;
   const visibleMobileLines = productsExpanded ? checkoutLines : checkoutLines.slice(0, MOBILE_PRODUCT_LIMIT);
@@ -498,27 +488,6 @@ export default function ShopCheckout() {
               ))}
             </div>
           </div>
-          {/* PARKED (2026-10-14): the "set up a repeat plan" offer at checkout
-              returns with VelRepeat. The panel, the dialog and the eligibility
-              computation all stay in source. */}
-          {VELREPEAT_ENABLED && eligibleItem && offerProduct && (
-            <div className="mt-6 rounded-2xl border border-[#10B981]/25 bg-[#F0FDF9] p-5">
-              <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#10B981] ring-1 ring-[#10B981]/15"><RefreshCw className="size-5" /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">{t("checkout.repeatOfferTitle")}</p>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-500">{t("checkout.repeatOfferDesc")}</p>
-                  <Button className="mt-3 gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600" size="sm" onClick={() => setVrOpen(true)}>
-                    <RefreshCw className="size-3.5" />{t("velrepeatPlan.start")}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-          {VELREPEAT_ENABLED && (
-            <VelRepeatPlanDialog product={offerProduct} open={vrOpen} onOpenChange={setVrOpen}
-              selectedVariant={eligibleItem?.variantId ? { id: eligibleItem.variantId, name: "", price: eligibleItem.price } : null} />
-          )}
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {/*
               This screen is only reached by a rail that does not continue into

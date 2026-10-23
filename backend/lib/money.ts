@@ -3,10 +3,9 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * WHY THIS EXISTS
  *
- * Owner decision G2 (VelRepeat V2): prices are computed at FULL precision
- * through the pricing pipeline and rounded to 2 decimal places ONCE, at the
- * final price. No intermediate step may round, and money must never be a
- * JavaScript float.
+ * Prices are computed at FULL precision through a pricing pipeline and rounded
+ * to 2 decimal places ONCE, at the final price. No intermediate step may round,
+ * and money must never be a JavaScript float.
  *
  * A float cannot satisfy that. `1000 * 0.93 * 0.95` in binary floating point
  * is not 883.5 — it is 883.4999999999999 — and the same expression re-evaluated
@@ -39,13 +38,8 @@
  *   • Any currency table. `currency` is a plain TEXT column with a 'THB'
  *     default and no exponent metadata anywhere in the schema.
  *   • Any Stripe-boundary conversion. `backend/routes/stripe.ts` owns
- *     `toStripeMinor()` (and the VelRepeat V2 plan payment derives its charge
- *     through the exact rational arithmetic of THIS module before handing the
- *     result to that one rule) — this module does not replace it, because
- *     payment-boundary code belongs to the payment architecture. See the G1/G2
- *     audit for the note.
- *
- * @see .ai/tasks/audits/velrepeat-v2-g1-g3-implementation-2026-09-30.md
+ *     `toStripeMinor()` — this module does not replace it, because
+ *     payment-boundary code belongs to the payment architecture.
  */
 
 /** An exact non-negative-or-negative fraction. `den` is always > 0. */
@@ -232,8 +226,8 @@ export function toMoneyString(value: Rational): string {
 /**
  * Render an exact rational as its FULL decimal expansion, without rounding.
  *
- * Every value the VelRepeat pricing pipeline produces is a product of finite
- * decimals, so its reduced denominator is always of the form 2^a·5^b and the
+ * Every value a pricing pipeline produces is a product of finite decimals, so
+ * its reduced denominator is always of the form 2^a·5^b and the
  * expansion terminates. That makes "the exact value" a finite string, which is
  * what lets the audit trail prove that no intermediate step was rounded — the
  * snapshot stores this string next to the 2-decimal charge.

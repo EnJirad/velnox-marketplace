@@ -145,6 +145,11 @@ describe("a multi-shop purchase through the covering-set resolver", () => {
   let groupPayment = "";
 
   beforeAll(async () => {
+    // Every case below is DB-gated; seeding must be too. Without a test
+    // database this hook used to run anyway and fail the suite with a
+    // connection error before any (skipped) case executed.
+    if (!hasTestDatabase()) return;
+
     // Products are needed so `order_items` can satisfy its FK to `products`,
     // which is what `releaseOrderInventory` walks.
     owner = (await q(`INSERT INTO users (email, name) VALUES ($1,$2) RETURNING id`, [

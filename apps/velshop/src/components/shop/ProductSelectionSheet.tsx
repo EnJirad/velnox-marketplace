@@ -15,7 +15,6 @@ import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
 import { ACTION_BUTTON_CLASSES, type SelectionEntryMode } from "@/lib/productActions";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useTracking } from "@velnox/shared/lib/track";
 import { useIsMobile } from "@velnox/shared/hooks/use-mobile";
@@ -41,12 +40,10 @@ interface ProductSelectionSheetProps {
   /** Optional ref to the cart icon element for fly animation. */
   cartIconRef?: React.RefObject<HTMLElement | null>;
   /**
-   * How the sheet was opened. "options" (default) shows all three actions
-   * (Buy / Add to Cart / VelRepeat); a specific action shows only that one.
+   * How the sheet was opened. "options" (default) shows both actions
+   * (Buy / Add to Cart); a specific action shows only that one.
    */
   entryMode?: SelectionEntryMode;
-  /** Called when the user confirms VelRepeat from the sheet. */
-  onVelRepeat?: (product: StoreProduct) => void;
 }
 
 /**
@@ -63,7 +60,6 @@ export function ProductSelectionSheet({
   onOpenChange,
   cartIconRef,
   entryMode = "options",
-  onVelRepeat,
 }: ProductSelectionSheetProps) {
   const { add } = useCart();
   const { t } = useLanguage();
@@ -154,14 +150,6 @@ export function ProductSelectionSheet({
   }, [resolvedStock, qty]);
   const outOfStock = resolvedStock <= 0;
   const needsVariant = hasOptionGroups && !allRequiredSelected;
-  // PARKED (2026-10-14): VelRepeat is off, so the sheet never offers the
-  // recurring-purchase action. Flip the shared flag to restore it.
-  const velrepeatAvailable = VELREPEAT_ENABLED && !!(
-    product?.vrepeatEnabled ||
-    product?.vrepeatWeeklyEnabled ||
-    product?.vrepeatMonthlyEnabled
-  );
-
   // Build a map: optionValueId (UUID) → first variant image URL
   // variantOptions stores UUIDs (option_value_id) so we can key directly by value.
   const optionValueImageMap = useMemo(() => {
@@ -356,16 +344,6 @@ export function ProductSelectionSheet({
     }
     handleAddToCart("buy");
   }, [validateSelection, isAuthenticated, navigate, handleAddToCart]);
-
-  const handleVelRepeat = useCallback(() => {
-    if (!validateSelection()) return;
-    if (!isAuthenticated) {
-      navigate("/auth?returnTo=" + encodeURIComponent(window.location.pathname));
-      return;
-    }
-    onOpenChange(false);
-    onVelRepeat?.(product);
-  }, [validateSelection, isAuthenticated, navigate, onOpenChange, onVelRepeat, product]);
 
   const handleOptionSelect = (groupId: string, valueId: string) => {
     setOptionSelections((prev) => ({
@@ -680,14 +658,6 @@ export function ProductSelectionSheet({
             <Zap className="size-4" />
             {t("productDetail.buyNow")} · {formatBaht(resolvedPrice * qty)}
           </Button>
-        ) : entryMode === "velrepeat" ? (
-          <Button
-            className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
-            onClick={handleVelRepeat}
-          >
-            <CalendarClock className="size-4" />
-            VelRepeat · {formatBaht(resolvedPrice * qty)}
-          </Button>
         ) : entryMode === "cart" ? (
           <Button
             data-add-to-cart
@@ -718,15 +688,6 @@ export function ProductSelectionSheet({
                 total: formatBaht(resolvedPrice * qty),
               })}
             </Button>
-            {velrepeatAvailable && (
-              <Button
-                className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
-                onClick={handleVelRepeat}
-              >
-                <CalendarClock className="size-4" />
-                VelRepeat · {formatBaht(resolvedPrice * qty)}
-              </Button>
-            )}
           </div>
         )}
       </div>

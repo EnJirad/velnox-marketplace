@@ -1022,7 +1022,7 @@ export function setupCenterRoutes(app: Express): void {
       if (isUndefinedTableError(err)) {
         res.status(503).json({
           success: false,
-          error: { code: "SCHEMA_UNAVAILABLE", message: "Payment incidents require migration 049." },
+          error: { code: "SCHEMA_UNAVAILABLE", message: "Payment incidents require db/run-sqleditor.sql to be applied." },
         });
         return;
       }

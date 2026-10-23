@@ -1,5 +1,4 @@
 import { api } from "@velnox/shared/lib/api-routes";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import {
   type StoreProduct,
   type StoreShop,
@@ -99,17 +98,6 @@ interface DraftVariant {
   images: DraftImage[];
 }
 
-interface VelRepeatForm {
-  enabled: boolean;
-  weeklyEnabled: boolean;
-  monthlyEnabled: boolean;
-  weeklyPrice: string;
-  monthlyPrice: string;
-  weeklyQty: string;
-  monthlyQty: string;
-  minQty: string;
-  maxQty: string;
-}
 
 // ─── Variant row for existing products (edit mode) ───────────────────
 interface VariantRow {
@@ -421,12 +409,6 @@ const defaultForm = {
   published: false,
 };
 
-const defaultVelRepeat: VelRepeatForm = {
-  enabled: false, weeklyEnabled: false, monthlyEnabled: false,
-  weeklyPrice: "", monthlyPrice: "", weeklyQty: "", monthlyQty: "",
-  minQty: "", maxQty: "",
-};
-
 // ═══════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════
@@ -519,22 +501,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // ─── Variant state (auto-generated from options) ──────────────────────
   const [draftVariants, setDraftVariants] = useState<DraftVariant[]>([]);
-
-  // ─── VelRepeat state ──────────────────────────────────────────────────
-  const [velRepeat, setVelRepeat] = useState<VelRepeatForm>(() =>
-    product ? {
-      enabled: product.vrepeatEnabled ?? false,
-      weeklyEnabled: product.vrepeatWeeklyEnabled ?? false,
-      monthlyEnabled: product.vrepeatMonthlyEnabled ?? false,
-      weeklyPrice: product.vrepeatWeeklyPrice != null ? String(product.vrepeatWeeklyPrice) : "",
-      monthlyPrice: product.vrepeatMonthlyPrice != null ? String(product.vrepeatMonthlyPrice) : "",
-      weeklyQty: product.vrepeatWeeklyQty != null ? String(product.vrepeatWeeklyQty) : "",
-      monthlyQty: product.vrepeatMonthlyQty != null ? String(product.vrepeatMonthlyQty) : "",
-      minQty: (product as any).vrepeatMinQty != null ? String((product as any).vrepeatMinQty) : "",
-      maxQty: (product as any).vrepeatMaxQty != null ? String((product as any).vrepeatMaxQty) : "",
-    } : defaultVelRepeat,
-  );
-  const [velRepeatExpanded, setVelRepeatExpanded] = useState(false);
 
   // ─── Featured variant (for create mode, track by draftVariant key) ────
   const [featuredVariantKey, setFeaturedVariantKey] = useState<string | null>(null);
@@ -869,21 +835,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             value: a.value.trim(),
           })),
         };
-
-        // VelRepeat
-        if (velRepeat.enabled) {
-          payload.velRepeat = {
-            enabled: true,
-            weeklyEnabled: velRepeat.weeklyEnabled,
-            monthlyEnabled: velRepeat.monthlyEnabled,
-            weeklyPrice: velRepeat.weeklyPrice ? Number(velRepeat.weeklyPrice) : null,
-            monthlyPrice: velRepeat.monthlyPrice ? Number(velRepeat.monthlyPrice) : null,
-            weeklyQty: velRepeat.weeklyQty ? Number(velRepeat.weeklyQty) : null,
-            monthlyQty: velRepeat.monthlyQty ? Number(velRepeat.monthlyQty) : null,
-            minQty: velRepeat.minQty ? Number(velRepeat.minQty) : null,
-            maxQty: velRepeat.maxQty ? Number(velRepeat.maxQty) : null,
-          };
-        }
 
         // Featured variant: convert key to array index
         if (featuredVariantKey) {
@@ -1232,61 +1183,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-slate-300 text-sm text-slate-600" onClick={addAttribute}><Plus className="size-4" />เพิ่มข้อมูลสินค้า</Button>
           </div>
         </div>
-
-        {/* ═══ Section 8: VelRepeat ══════════════════════════════════ */}
-        {/* PARKED (2026-10-14): the VelRepeat authoring section returns with the
-            module. A seller can no longer configure a feature the storefront no
-            longer offers; the form state and the payload keys stay in source. */}
-        {VELREPEAT_ENABLED && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <button type="button" onClick={() => setVelRepeatExpanded((v) => !v)} className="flex w-full items-center gap-2">
-            <CalendarClock className="size-4 text-[#10B981]" />
-            <h3 className="flex-1 text-left text-sm font-semibold text-slate-900">VelRepeat — ซื้อซ้ำอัตโนมัติ</h3>
-            {velRepeatExpanded ? <ChevronUp className="size-4 text-slate-400" /> : <ChevronDown className="size-4 text-slate-400" />}
-          </button>
-          {velRepeatExpanded && (
-            <div className="mt-3 space-y-3">
-              <div className="flex items-center gap-2">
-                <Switch checked={velRepeat.enabled} onCheckedChange={(v) => setVelRepeat((p) => ({ ...p, enabled: v }))} />
-                <Label className="text-sm">เปิดใช้งาน VelRepeat</Label>
-              </div>
-              {velRepeat.enabled && (
-                <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Switch checked={velRepeat.weeklyEnabled} onCheckedChange={(v) => setVelRepeat((p) => ({ ...p, weeklyEnabled: v }))} />
-                      <Label className="text-xs">Weekly</Label>
-                    </div>
-                    {velRepeat.weeklyEnabled && (
-                      <>
-                        <div className="grid gap-1"><Label className="text-[10px]">ราคา/สัปดาห์</Label><Input type="number" min="0" value={velRepeat.weeklyPrice} onChange={(e) => setVelRepeat((p) => ({ ...p, weeklyPrice: e.target.value }))} className="h-7 text-xs" /></div>
-                        <div className="grid gap-1"><Label className="text-[10px]">จำนวน</Label><Input type="number" min="1" value={velRepeat.weeklyQty} onChange={(e) => setVelRepeat((p) => ({ ...p, weeklyQty: e.target.value }))} className="h-7 text-xs" /></div>
-                      </>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Switch checked={velRepeat.monthlyEnabled} onCheckedChange={(v) => setVelRepeat((p) => ({ ...p, monthlyEnabled: v }))} />
-                      <Label className="text-xs">Monthly</Label>
-                    </div>
-                    {velRepeat.monthlyEnabled && (
-                      <>
-                        <div className="grid gap-1"><Label className="text-[10px]">ราคา/เดือน</Label><Input type="number" min="0" value={velRepeat.monthlyPrice} onChange={(e) => setVelRepeat((p) => ({ ...p, monthlyPrice: e.target.value }))} className="h-7 text-xs" /></div>
-                        <div className="grid gap-1"><Label className="text-[10px]">จำนวน</Label><Input type="number" min="1" value={velRepeat.monthlyQty} onChange={(e) => setVelRepeat((p) => ({ ...p, monthlyQty: e.target.value }))} className="h-7 text-xs" /></div>
-                      </>
-                    )}
-                  </div>
-              {/* V2: min/max quantity per cycle for recurring plans */}
-              <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
-                <div className="grid gap-1"><Label className="text-[10px]">จํานวนขั้นต่ํา/รอบ</Label><Input type="number" min="1" value={velRepeat.minQty} onChange={(e) => setVelRepeat((p) => ({ ...p, minQty: e.target.value }))} className="h-7 text-xs" /></div>
-                <div className="grid gap-1"><Label className="text-[10px]">จํานวนสูงสุด/รอบ</Label><Input type="number" min="1" value={velRepeat.maxQty} onChange={(e) => setVelRepeat((p) => ({ ...p, maxQty: e.target.value }))} className="h-7 text-xs" /></div>
-              </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        )}
 
         {/* ═══ Section 9: Edit Mode — Variant Manager (existing products) ═══ */}
         {isEdit && current && (

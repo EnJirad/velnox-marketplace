@@ -13,10 +13,10 @@
  *     status IN ('pending', 'created', 'picked_up', 'in_transit',
  *                'out_for_delivery', 'delivered', 'returned', 'lost', 'cancelled')
  *
- * and that exact list is what `db/migrations/056_commerce_core_invariants.sql`,
- * `db/schema.sql` and `db/run-sqleditor.sql` install (the three agree, and
- * `backend/tests/shipment-lifecycle.test.ts` pins the three-way agreement so a
- * drifting copy fails the suite instead of production). `pending` and `created`
+ * and that exact list is what `db/schema.sql` and `db/run-sqleditor.sql`
+ * install (the two agree, and `backend/tests/shipment-lifecycle.test.ts` pins
+ * that agreement so a drifting copy fails the suite instead of production).
+ * `pending` and `created`
  * are the two legacy spellings that predate the transit vocabulary; they stay
  * accepted so no historical row is invalidated.
  *

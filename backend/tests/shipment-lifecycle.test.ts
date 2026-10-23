@@ -74,12 +74,11 @@ const SELLER_ROUTE = "backend/routes/seller-orders.ts";
 const CENTER_ROUTE = "backend/routes/center.ts";
 const SCHEMA = "db/schema.sql";
 const RECONCILER = "db/run-sqleditor.sql";
-const MIGRATION_056 = "db/migrations/056_commerce_core_invariants.sql";
 
 /**
  * The statuses the database accepts, scraped from the CHECK constraint as each
- * of the three SQL files declares it — so a change to any one copy is visible
- * here rather than at runtime.
+ * of the two canonical SQL files declares it — so a change to either copy is
+ * visible here rather than at runtime.
  */
 function declaredStatuses(sql: string): string[] {
   // Anchored to the CONSTRAINT ITSELF (`shipments_status_check`), not to the
@@ -97,18 +96,16 @@ function declaredStatuses(sql: string): string[] {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("the shipment vocabulary comes from the database, not from this module", () => {
-  test("every SQL copy declares the SAME nine statuses", () => {
-    const fromMigration = declaredStatuses(read(MIGRATION_056));
+  test("both canonical SQL files declare the SAME nine statuses", () => {
     const fromSchema = declaredStatuses(read(SCHEMA));
     const fromReconciler = declaredStatuses(read(RECONCILER));
 
-    expect(fromMigration.length).toBeGreaterThan(0);
-    expect(fromSchema).toEqual(fromMigration);
-    expect(fromReconciler).toEqual(fromMigration);
+    expect(fromSchema.length).toBe(9);
+    expect(fromReconciler).toEqual(fromSchema);
   });
 
   test("the state machine's vocabulary IS that list, and nothing else", () => {
-    const declared = declaredStatuses(read(MIGRATION_056));
+    const declared = declaredStatuses(read(SCHEMA));
     // Set equality both ways: no status in the code the database would reject
     // (`23514` at write time), and no status the database accepts that the
     // machine cannot name.

@@ -221,15 +221,6 @@ CREATE TABLE IF NOT EXISTS products (
   review_count INTEGER NOT NULL DEFAULT 0,
   sold_count INTEGER NOT NULL DEFAULT 0,
   category_id TEXT,
-  vrepeat_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  vrepeat_weekly_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  vrepeat_monthly_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  vrepeat_weekly_price NUMERIC(12, 2),
-  vrepeat_monthly_price NUMERIC(12, 2),
-  vrepeat_weekly_qty INTEGER,
-  vrepeat_monthly_qty INTEGER,
-  vrepeat_min_qty INTEGER,
-  vrepeat_max_qty INTEGER,
   featured_variant_id UUID,
   verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
   verified_at TIMESTAMPTZ,
@@ -243,7 +234,6 @@ CREATE INDEX IF NOT EXISTS idx_products_status ON products (status);
 CREATE INDEX IF NOT EXISTS idx_products_featured ON products (featured) WHERE featured = TRUE;
 CREATE INDEX IF NOT EXISTS idx_products_slug ON products (slug);
 CREATE INDEX IF NOT EXISTS idx_products_price ON products (price);
-CREATE INDEX IF NOT EXISTS idx_products_vrepeat ON products (vrepeat_enabled) WHERE vrepeat_enabled = TRUE;
 CREATE INDEX IF NOT EXISTS idx_products_verification ON products (verification_status);
 CREATE INDEX IF NOT EXISTS idx_products_featured_variant ON products (featured_variant_id) WHERE featured_variant_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS product_variants (
@@ -377,8 +367,6 @@ CREATE TABLE IF NOT EXISTS orders (
   inventory_released BOOLEAN NOT NULL DEFAULT FALSE,
   payment_expires_at TIMESTAMPTZ,
   reservation_policy JSONB,
-  velrepeat_run_id UUID,
-  velrepeat_cycle_id UUID,
   checkout_group_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -471,7 +459,6 @@ CREATE INDEX IF NOT EXISTS idx_tracking_events_shipment ON tracking_events (ship
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID REFERENCES orders(id),
-  plan_id UUID,
   checkout_group_id UUID REFERENCES checkout_groups(id) ON DELETE SET NULL,
   amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'THB',
@@ -489,10 +476,10 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT payments_at_least_one_parent_check CHECK (
-    order_id IS NOT NULL OR plan_id IS NOT NULL OR checkout_group_id IS NOT NULL
+    order_id IS NOT NULL OR checkout_group_id IS NOT NULL
   ),
   CONSTRAINT payments_single_domain_check CHECK (
-    NOT (plan_id IS NOT NULL AND (order_id IS NOT NULL OR checkout_group_id IS NOT NULL))
+    NOT (order_id IS NOT NULL AND checkout_group_id IS NOT NULL)
   ),
   -- The payment vocabulary, previously only in backend/lib/payment-config.ts
   -- (`PAYMENT_STATUS`). Migration 055; see it for the writer behind each value.
@@ -501,13 +488,11 @@ CREATE TABLE IF NOT EXISTS payments (
   )
 );
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id);
-CREATE INDEX IF NOT EXISTS idx_payments_plan ON payments (plan_id) WHERE plan_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payments_provider_session ON payments (provider_checkout_session_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_payment ON payments (provider_payment_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe ON payments (order_id) WHERE provider = 'stripe' AND status IN ('pending', 'requires_action');
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe_group ON payments (checkout_group_id) WHERE provider = 'stripe' AND checkout_group_id IS NOT NULL AND status IN ('pending', 'requires_action');
 CREATE INDEX IF NOT EXISTS idx_payments_checkout_group ON payments (checkout_group_id) WHERE checkout_group_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe_plan ON payments (plan_id) WHERE provider = 'stripe' AND plan_id IS NOT NULL AND status IN ('pending', 'requires_action');
 CREATE TABLE IF NOT EXISTS payment_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   provider TEXT NOT NULL,
@@ -528,7 +513,6 @@ CREATE TABLE IF NOT EXISTS payment_incidents (
   dedupe_key TEXT NOT NULL UNIQUE,
   provider TEXT NOT NULL DEFAULT 'stripe',
   order_id UUID REFERENCES orders(id),
-  plan_id UUID,
   payment_id UUID REFERENCES payments(id) ON DELETE SET NULL,
   provider_payment_intent_id TEXT,
   provider_checkout_session_id TEXT,
@@ -543,13 +527,9 @@ CREATE TABLE IF NOT EXISTS payment_incidents (
   resolved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT payment_incidents_exactly_one_parent_check CHECK (
-    (order_id IS NOT NULL AND plan_id IS NULL)
-    OR (order_id IS NULL AND plan_id IS NOT NULL)
-  )
+  CONSTRAINT payment_incidents_order_parent_check CHECK (order_id IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_order ON payment_incidents (order_id);
-CREATE INDEX IF NOT EXISTS idx_payment_incidents_plan ON payment_incidents (plan_id) WHERE plan_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_status ON payment_incidents (status);
 CREATE INDEX IF NOT EXISTS payment_incidents_dedupe_key ON payment_incidents (dedupe_key);
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_intent ON payment_incidents (provider_payment_intent_id);
@@ -595,21 +575,6 @@ CREATE TABLE IF NOT EXISTS settlements (
   status TEXT NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE TABLE IF NOT EXISTS subscriptions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id),
-  product_id UUID REFERENCES products(id),
-  seller_id UUID REFERENCES sellers(id),
-  shop_id UUID REFERENCES shops(id),
-  frequency TEXT NOT NULL DEFAULT 'monthly',
-  status TEXT NOT NULL DEFAULT 'active',
-  next_due_date TIMESTAMPTZ,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_next_due ON subscriptions (next_due_date) WHERE status = 'active';
 CREATE TABLE IF NOT EXISTS departments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
@@ -740,56 +705,6 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON revoked_tokens (token_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens (expires_at);
-CREATE TABLE IF NOT EXISTS vrepeat_packages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL REFERENCES products(id),
-  variant_id UUID REFERENCES product_variants(id),
-  shop_id UUID NOT NULL REFERENCES shops(id),
-  seller_id UUID NOT NULL REFERENCES sellers(id),
-  package_type TEXT NOT NULL CHECK (package_type IN ('weekly', 'monthly', 'custom')),
-  quantity_total INTEGER NOT NULL CHECK (quantity_total > 0),
-  quantity_delivered INTEGER NOT NULL DEFAULT 0 CHECK (quantity_delivered >= 0),
-  unit_price NUMERIC(12, 2) NOT NULL,
-  regular_unit_price NUMERIC(12, 2) NOT NULL,
-  discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  total_amount NUMERIC(12, 2) NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'THB',
-  status TEXT NOT NULL DEFAULT 'pending_payment' CHECK (status IN ('pending_payment', 'paid', 'active', 'paused', 'completed', 'cancelled', 'refunded')),
-  interval_days INTEGER NOT NULL DEFAULT 7,
-  started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  payment_id UUID REFERENCES payments(id),
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_user ON vrepeat_packages (user_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_product ON vrepeat_packages (product_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_shop ON vrepeat_packages (shop_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_seller ON vrepeat_packages (seller_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_status ON vrepeat_packages (status);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_user_status ON vrepeat_packages (user_id, status);
-CREATE TABLE IF NOT EXISTS vrepeat_deliveries (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  package_id UUID NOT NULL REFERENCES vrepeat_packages(id) ON DELETE CASCADE,
-  delivery_number INTEGER NOT NULL CHECK (delivery_number > 0),
-  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-  scheduled_at TIMESTAMPTZ NOT NULL,
-  shipped_at TIMESTAMPTZ,
-  delivered_at TIMESTAMPTZ,
-  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'shipped', 'delivered', 'failed', 'cancelled')),
-  tracking_number TEXT,
-  order_id UUID REFERENCES orders(id),
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (package_id, delivery_number)
-);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_package ON vrepeat_deliveries (package_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_status ON vrepeat_deliveries (status);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_scheduled ON vrepeat_deliveries (scheduled_at) WHERE status = 'scheduled';
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_order ON vrepeat_deliveries (order_id);
 CREATE TABLE IF NOT EXISTS product_reviews (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -884,162 +799,6 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON chat_messages (conversation_id, sender_id, read_at) WHERE read_at IS NULL;
-CREATE TABLE IF NOT EXISTS velrepeat_plans (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'cancelled', 'completed')),
-  frequency_type TEXT NOT NULL CHECK (frequency_type IN ('days', 'weeks', 'months')),
-  interval_value INTEGER NOT NULL DEFAULT 30 CHECK (interval_value > 0),
-  commitment_cycles INTEGER CHECK (commitment_cycles IS NULL OR commitment_cycles > 0),
-  next_run_at TIMESTAMPTZ NOT NULL,
-  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  ended_at TIMESTAMPTZ,
-  shipping_address_id UUID REFERENCES addresses(id) ON DELETE SET NULL,
-  shipping_address JSONB,
-  payment_method TEXT NOT NULL DEFAULT 'cod',
-  payment_method_ref TEXT,
-  currency TEXT NOT NULL DEFAULT 'THB',
-  timezone TEXT NOT NULL DEFAULT 'Asia/Bangkok',
-  notes TEXT,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user ON velrepeat_plans (user_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user_status ON velrepeat_plans (user_id, status);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_due ON velrepeat_plans (status, next_run_at) WHERE status = 'active';
-ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_plan_id_fkey;
-ALTER TABLE payments ADD CONSTRAINT payments_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES velrepeat_plans(id);
-ALTER TABLE payment_incidents DROP CONSTRAINT IF EXISTS payment_incidents_plan_id_fkey;
-ALTER TABLE payment_incidents ADD CONSTRAINT payment_incidents_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES velrepeat_plans(id);
-CREATE TABLE IF NOT EXISTS velrepeat_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
-  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-  unit_price NUMERIC(12, 2) NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'THB',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_items_plan ON velrepeat_items (plan_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_items_product ON velrepeat_items (product_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_items_variant ON velrepeat_items (variant_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_items_shop ON velrepeat_items (shop_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_items_unique_variant ON velrepeat_items (plan_id, product_id, variant_id) WHERE variant_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_items_unique_no_variant ON velrepeat_items (plan_id, product_id) WHERE variant_id IS NULL;
-CREATE TABLE IF NOT EXISTS velrepeat_runs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  scheduled_for TIMESTAMPTZ NOT NULL,
-  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  completed_at TIMESTAMPTZ,
-  status TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'failed', 'cancelled')),
-  order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
-  error_code TEXT,
-  error_message TEXT,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (plan_id, scheduled_for)
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_plan ON velrepeat_runs (plan_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_status ON velrepeat_runs (status);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_scheduled ON velrepeat_runs (scheduled_for);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_order ON velrepeat_runs (order_id) WHERE order_id IS NOT NULL;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_velrepeat_run_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_velrepeat_run_id_fkey FOREIGN KEY (velrepeat_run_id) REFERENCES velrepeat_runs(id) ON DELETE SET NULL; END IF; END $$;
-CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_run ON orders (velrepeat_run_id) WHERE velrepeat_run_id IS NOT NULL;
-CREATE TABLE IF NOT EXISTS velrepeat_events (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  run_id UUID REFERENCES velrepeat_runs(id) ON DELETE SET NULL,
-  event_type TEXT NOT NULL,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_events_plan ON velrepeat_events (plan_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_events_type ON velrepeat_events (event_type);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_events_run ON velrepeat_events (run_id) WHERE run_id IS NOT NULL;
-CREATE TABLE IF NOT EXISTS velrepeat_packages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  description TEXT,
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_active ON velrepeat_packages (is_active) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_seller ON velrepeat_packages (seller_id);
-CREATE TABLE IF NOT EXISTS velrepeat_package_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  package_id UUID NOT NULL REFERENCES velrepeat_packages(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
-  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_package_items_package ON velrepeat_package_items (package_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_package_items_product ON velrepeat_package_items (product_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_package_items_unique_variant ON velrepeat_package_items (package_id, product_id, variant_id) WHERE variant_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_package_items_unique_no_variant ON velrepeat_package_items (package_id, product_id) WHERE variant_id IS NULL;
-CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshots (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  commitment_cycles INTEGER NOT NULL CHECK (commitment_cycles > 0),
-  currency TEXT NOT NULL DEFAULT 'THB',
-  subtotal_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (subtotal_amount >= 0),
-  discount_type TEXT,
-  discount_value NUMERIC(12, 2),
-  discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
-  cycle_price NUMERIC(12, 2) CHECK (cycle_price IS NULL OR cycle_price >= 0),
-  total_amount NUMERIC(12, 2) NOT NULL CHECK (total_amount >= 0),
-  pricing_rule_key TEXT,
-  pricing_rule_version TEXT,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshots_plan ON velrepeat_pricing_snapshots (plan_id, created_at);
-ALTER TABLE velrepeat_pricing_snapshots DROP CONSTRAINT IF EXISTS velrepeat_pricing_snapshots_cycle_price_not_null;
-ALTER TABLE velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_cycle_price_not_null CHECK (cycle_price IS NOT NULL);
-ALTER TABLE velrepeat_pricing_snapshots DROP CONSTRAINT IF EXISTS velrepeat_pricing_snapshots_total_not_below_cycle;
-ALTER TABLE velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_total_not_below_cycle CHECK (cycle_price IS NULL OR total_amount >= cycle_price);
-CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshot_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  snapshot_id UUID NOT NULL REFERENCES velrepeat_pricing_snapshots(id) ON DELETE CASCADE,
-  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
-  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
-  quantity INTEGER NOT NULL CHECK (quantity > 0),
-  unit_price NUMERIC(12, 2) NOT NULL CHECK (unit_price >= 0),
-  line_total NUMERIC(12, 2) NOT NULL CHECK (line_total >= 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_snapshot ON velrepeat_pricing_snapshot_items (snapshot_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_unique_variant ON velrepeat_pricing_snapshot_items (snapshot_id, product_id, variant_id) WHERE variant_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_unique_no_variant ON velrepeat_pricing_snapshot_items (snapshot_id, product_id) WHERE variant_id IS NULL;
-CREATE TABLE IF NOT EXISTS velrepeat_cycles (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  cycle_number INTEGER NOT NULL CHECK (cycle_number > 0),
-  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'ordered', 'completed', 'skipped', 'cancelled', 'out_of_stock', 'item_unavailable')),
-  scheduled_at TIMESTAMPTZ NOT NULL,
-  started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  pricing_snapshot_id UUID REFERENCES velrepeat_pricing_snapshots(id) ON DELETE SET NULL,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (plan_id, cycle_number)
-);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_cycles_plan ON velrepeat_cycles (plan_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_cycles_due ON velrepeat_cycles (status, scheduled_at);
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_velrepeat_cycle_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_velrepeat_cycle_id_fkey FOREIGN KEY (velrepeat_cycle_id) REFERENCES velrepeat_cycles(id) ON DELETE SET NULL; END IF; END $$;
-CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_cycle ON orders (velrepeat_cycle_id) WHERE velrepeat_cycle_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_velrepeat_cycle_seller_unique ON orders (velrepeat_cycle_id, shop_id) WHERE velrepeat_cycle_id IS NOT NULL AND shop_id IS NOT NULL;
 INSERT INTO platform_settings (key, value, description) VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto') ON CONFLICT (key) DO NOTHING;
 INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, description, description_names, image_url, is_active) VALUES
 ('c0000001-0000-0000-0000-000000000001', 'Electronics', 'electronics', 'cpu', NULL, 1, '{"th":"อิเล็กทรอนิกส์","en":"Electronics","my":"အီလက်ထရွန်နစ်ပစ္စည်းများ"}', 'Audio, cameras, wearable tech and electronic accessories', '{"th":"อุปกรณ์เสียง กล้อง อุปกรณ์สวมใส่ และอุปกรณ์เสริมอิเล็กทรอนิกส์","en":"Audio, cameras, wearable tech and electronic accessories","my":"အသံပစ္စည်း၊ ကင်မရာ၊ ဝတ်ဆင်နည်းပညာနှင့်အီလက်ထရွန်နစ် ဖြည့်စွက်ပစ္စည်းများ"}', NULL, true),
@@ -1065,29 +824,6 @@ ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, par
 -- `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a database
 -- created before the constraint was widened keeps the old CHECK forever. These
 -- statements re-assert the canonical constraint on every bootstrap run.
---
--- V0035 (`item_unavailable` on velrepeat_plans.status) was skipped in some
--- environments because the migration number collided with
--- 035_checkout_idempotency.sql. Re-asserting it here makes the bootstrap file
--- self-healing and keeps db/schema.sql the single source of truth.
-
-ALTER TABLE velrepeat_plans DROP CONSTRAINT IF EXISTS velrepeat_plans_status_check;
-ALTER TABLE velrepeat_plans
-  ADD CONSTRAINT velrepeat_plans_status_check
-  CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed',
-                    'out_of_stock', 'item_unavailable', 'price_changed',
-                    'cancelled', 'completed'));
-
--- The run table is `velrepeat_runs` (created above). An earlier revision of this
--- block named a `velrepeat_plan_runs` table that no migration and no backend
--- query ever created, so running this file on a fresh database aborted with
--- `relation "velrepeat_plan_runs" does not exist` — and so did migration V0044.
-ALTER TABLE velrepeat_runs DROP CONSTRAINT IF EXISTS velrepeat_runs_status_check;
-ALTER TABLE velrepeat_runs
-  ADD CONSTRAINT velrepeat_runs_status_check
-  CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock',
-                    'item_unavailable', 'price_changed', 'failed', 'cancelled'));
-
 ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check;
 ALTER TABLE sellers
   ADD CONSTRAINT sellers_status_check
@@ -1196,13 +932,13 @@ INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, desc
 ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order, names = EXCLUDED.names, description = EXCLUDED.description, description_names = EXCLUDED.description_names, image_url = EXCLUDED.image_url, is_active = EXCLUDED.is_active, updated_at = NOW();
 
 -- ============================================================================
--- COMMERCE CORE (migration 056)
+-- COMMERCE CORE
 -- ============================================================================
 -- One axis per lifecycle, one stock model for products AND variants, a durable
 -- attempt layer, an append-only ledger, a transactional outbox and the
--- reconciliation register. See .ai/rebuild/DOMAIN_MODEL.md for the model and
--- db/migrations/056_commerce_core_invariants.sql for the backfill that fills the
--- new columns on an existing database.
+-- reconciliation register. See .ai/rebuild/DOMAIN_MODEL.md for the model. The
+-- new columns reach an existing database through the additive column pass in
+-- db/run-sqleditor.sql.
 
 -- ─── the nine new tables, their indexes and their guards ──────────────────
 -- This file is the SNAPSHOT: it declares the shape a database ends up in, and
@@ -1211,14 +947,12 @@ ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, par
 -- on its own -- every column below is also carried by the column pass there,
 -- which is what an existing database actually receives.
 --
--- DATA IS NOT BACKFILLED HERE. The canonical safety contract for this file is
--- that it never rewrites an existing row, so the deterministic backfill of the
--- two order axes, the attempt rows, the work units, the shipment items and the
--- webhook retry metadata lives in db/migrations/056_commerce_core_invariants.sql
--- and runs from there. This file adds STRUCTURE: a database that has run only
--- this pass has the columns, nullable and empty, and the application reads them
--- through a COALESCE fallback so a deploy is never blocked by a pending
--- migration.
+-- DATA IS NOT BACKFILLED HERE. The canonical safety contract for both
+-- canonical files is that they never rewrite an existing row, so this file adds
+-- STRUCTURE only: a database that has run it holds the columns, nullable and
+-- empty, and the application reads them through a COALESCE fallback, so a deploy
+-- is never blocked by a pending schema change. Backfilling legacy rows is a
+-- separate, operator-run data task; no SQL in this repository performs it.
 
 -- ─── 1. payment_attempts ────────────────────────────────────────────────────
 -- One row per provider interaction. `payments` stays the record of the money;

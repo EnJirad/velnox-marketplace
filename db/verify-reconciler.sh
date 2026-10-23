@@ -116,7 +116,16 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # and payment reconcilers instead. That revert is why the count is 81 and not 82;
 # the total = subtotal + shipping - discount relationship is intentionally NOT a
 # database constraint anywhere in this schema.
-CANON="75|296|339|807"
+#
+# VelRepeat removal (2026-10-23, repository cleanup) took the canonical schema
+# back DOWN by exactly: 12 tables (velrepeat_*, vrepeat_*, subscriptions), 62
+# indexes, 78 constraints (the plan_id foreign keys, the plan/cycle/run CHECKs
+# and the FKs inside the dropped tables — while payments_single_domain_check and
+# payment_incidents_order_parent_check replaced their legacy plan_id-carrying
+# forms) and 154 columns (plan_id on payments/payment_incidents, the two
+# velrepeat_* columns on orders and the nine vrepeat_* columns on products).
+# Re-measured on a fresh, thrice-rerun db/run-sqleditor.sql: 63|234|261|653.
+CANON="63|234|261|653"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────

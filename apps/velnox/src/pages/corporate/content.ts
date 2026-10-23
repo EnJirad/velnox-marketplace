@@ -5,7 +5,7 @@
  * POSITIONING (2026-10-14): Velnox is described as a marketplace that sells
  * what it does today — buy and sell, retail and wholesale, with a second buyer
  * track for community / village shops ordering by the piece or by the pack.
- * The "Customer Memory / จำแทนคุณ" promise and VelRepeat are PARKED
+ * The "Customer Memory / จำแทนคุณ" promise is PARKED
  * (`packages/shared/src/lib/features.ts`), so no page here promises them as a
  * live capability. They return to this copy when the modules do.
  */

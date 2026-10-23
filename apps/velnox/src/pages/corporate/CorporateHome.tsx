@@ -12,7 +12,7 @@ import { ArrowRight, ArrowUpRight, Check, ShoppingBag, Store } from "lucide-reac
  *   2. community / village shops, which restock by line item and can buy by the
  *      piece or by the pack at a lower unit price.
  *
- * The "Customer Memory / จำแทนคุณ" promise (and VelRepeat) is PARKED — see
+ * The "Customer Memory / จำแทนคุณ" promise is PARKED — see
  * `packages/shared/src/lib/features.ts`. It is deliberately absent from this
  * page rather than described as a live capability; the marketing illustration
  * is labelled as an example so nothing here reads as a live storefront.

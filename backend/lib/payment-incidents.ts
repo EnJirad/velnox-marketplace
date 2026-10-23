@@ -57,44 +57,19 @@ export type LatePaymentReason =
    * stock is committed, and no payment row says the money was taken — so the
    * existing refund route refuses it and the case was previously invisible.
    */
-  | "ATTEMPT_NOT_RECORDED"
-  /**
-   * VelRepeat V2: a verified, captured charge whose AMOUNT does not equal the
-   * immutable pricing snapshot's total. The money is recorded on the payment
-   * row (so it stays refundable) and the plan is NOT activated.
-   */
-  | "PLAN_AMOUNT_MISMATCH"
-  /** VelRepeat V2: the captured charge is not in the plan's committed currency. */
-  | "PLAN_CURRENCY_MISMATCH"
-  /**
-   * VelRepeat V2: a verified charge for a plan that can no longer move
-   * `draft → active` (cancelled, or already terminal). Money recorded, no
-   * activation, operator decides — exactly the order-level rule.
-   */
-  | "PLAN_NOT_ACTIVATABLE"
-  /**
-   * VelRepeat V2: the event named an attempt that no payment row backs, so the
-   * money cannot be recorded against anything. Nothing is invented.
-   */
-  | "PLAN_ATTEMPT_NOT_RECORDED";
+  | "ATTEMPT_NOT_RECORDED";
 
 /** What an operator needs to identify the case. No payload, no secret. */
 export interface LatePaymentIncidentInput {
-  /**
-   * The order parent, or null for a VelRepeat V2 plan payment. Migration 051
-   * gives `payment_incidents` the same "exactly one parent" rule as `payments`,
-   * so exactly one of these two is set.
-   */
+  /** The order the incident belongs to. */
   orderId: string | null;
-  /** The VelRepeat V2 plan parent (Q13=B). Null for every order-level case. */
-  planId?: string | null;
   /** The attempt the event resolved to, when one was found. */
   paymentId: string | null;
   providerPaymentIntentId: string | null;
   checkoutSessionId: string | null;
   eventId: string | null;
   reason: LatePaymentReason;
-  /** The order (or plan) status that refused the settlement, for the operator. */
+  /** The order status that refused the settlement, for the operator. */
   orderStatus: string | null;
   /** From OUR `payments` row — a trusted source, never the provider payload. */
   amount: string | null;
@@ -112,7 +87,6 @@ export interface LatePaymentIncidentInput {
 export function buildLatePaymentDedupeKey(input: {
   provider: string;
   orderId: string | null;
-  planId?: string | null;
   paymentId: string | null;
   providerPaymentIntentId: string | null;
   reason: string;
@@ -120,13 +94,8 @@ export function buildLatePaymentDedupeKey(input: {
   const attempt =
     input.paymentId ??
     (input.providerPaymentIntentId ? `pi:${input.providerPaymentIntentId}` : "no-attempt");
-  // The subject is namespaced so an order id and a plan id can never collide
-  // into one key, and so "no subject at all" is still deterministic.
-  const subject = input.orderId
-    ? `order:${input.orderId}`
-    : input.planId
-      ? `plan:${input.planId}`
-      : "no-subject";
+  // The subject is namespaced, so "no order at all" is still deterministic.
+  const subject = input.orderId ? `order:${input.orderId}` : "no-subject";
   return [input.provider, subject, attempt, input.reason].join(":");
 }
 
@@ -143,7 +112,7 @@ function warnIncidentSchemaMissing(effect: string): void {
   incidentSchemaWarned = true;
   console.warn(
     `[payment-incidents] payment_incidents is not present — ${effect}. ` +
-      `Apply db/migrations/049_payment_incidents.sql (PRODUCTION BLOCKED until the Neon quota is cleared).`,
+      `Apply db/run-sqleditor.sql against this database in the Neon SQL Editor.`,
   );
 }
 
@@ -170,7 +139,6 @@ export async function recordLatePaymentIncident(
   const dedupeKey = buildLatePaymentDedupeKey({
     provider,
     orderId: input.orderId,
-    planId: input.planId ?? null,
     paymentId: input.paymentId,
     providerPaymentIntentId: input.providerPaymentIntentId,
     reason: input.reason,
@@ -179,17 +147,16 @@ export async function recordLatePaymentIncident(
   try {
     const inserted = await client.query(
       `INSERT INTO payment_incidents
-         (dedupe_key, provider, order_id, plan_id, payment_id,
+         (dedupe_key, provider, order_id, payment_id,
           provider_payment_intent_id, provider_checkout_session_id, event_id,
           reason, order_status, amount, currency)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (dedupe_key) DO NOTHING
        RETURNING id`,
       [
         dedupeKey,
         provider,
         input.orderId,
-        input.planId ?? null,
         input.paymentId,
         input.providerPaymentIntentId,
         input.checkoutSessionId,
@@ -210,8 +177,8 @@ export async function recordLatePaymentIncident(
     // thrown: the settlement itself has already been decided, and failing the
     // webhook here would make Stripe redeliver a payment we already recorded.
     console.error(
-      `[payment-incidents] could not record a late-payment incident for ${
-        input.orderId ? `order ${input.orderId}` : `plan ${input.planId ?? "unknown"}`
+      `[payment-incidents] could not record a late-payment incident for order ${
+        input.orderId ?? "unknown"
       }:`,
       err instanceof Error ? err.message : "unknown error",
     );
@@ -224,8 +191,8 @@ export async function recordLatePaymentIncident(
  *
  * Used by the operator routes, which have no settlement to keep atomic with a
  * write. It shares the schema tolerance so a VelCenter screen still answers on
- * a database that has never had 049 applied — a 500 there would look like a
- * broken dashboard rather than an unapplied migration.
+ * a database that has never received db/run-sqleditor.sql — a 500 there would
+ * look like a broken dashboard rather than an unapplied schema.
  */
 export async function insertLatePaymentIncident(input: LatePaymentIncidentInput): Promise<string | null> {
   return recordLatePaymentIncident(query as never, input);

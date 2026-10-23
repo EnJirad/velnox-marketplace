@@ -15,7 +15,7 @@ import {
   type StoreProduct,
 } from "@velnox/shared/lib/commerce";
 import { useTracking } from "@velnox/shared/lib/track";
-import { CUSTOMER_MEMORY_ENABLED, VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
+import { CUSTOMER_MEMORY_ENABLED } from "@velnox/shared/lib/features";
 import {
   CalendarClock,
   Heart,
@@ -217,18 +217,6 @@ export function ProductDetailModal({ product, open, onOpenChange, onSubscribe }:
                     {t("productDetail.addToCartWithTotal", { total: formatBaht(product.price * qty) })}
                   </Button>
                 </div>
-              )}
-
-              {/* PARKED (2026-10-14): the recurring-purchase action returns with VelRepeat. */}
-              {VELREPEAT_ENABLED && !outOfStock && (
-                <Button
-                  variant="ghost"
-                  className="mt-2 h-10 w-full gap-1.5 text-xs text-slate-500 hover:bg-[#ECFDF5] hover:text-emerald-700"
-                  onClick={() => onSubscribe?.(product)}
-                >
-                  <CalendarClock className="size-3.5" />
-                  {t("productDetail.reorderCta")}
-                </Button>
               )}
 
               {/* PARKED (2026-10-14): "we remember your interests" is a Customer

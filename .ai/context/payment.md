@@ -16,8 +16,7 @@ ONLY** — a live-looking secret key is refused, never used.
   the audited `reservation_policy` written on the order)
 - `backend/jobs/payment-reservation-scheduler.ts` — the expiry sweep (`expired` + release + session close)
 - DB: `payments`, `payment_events`, `refunds`, `orders`, `checkout_requests`, `inventory`
-- `db/migrations/047_payment_foundation.sql`, `db/migrations/048_payment_reservation.sql`
-  (+ the two canonical files)
+- Canonical schema: `db/schema.sql` + `db/run-sqleditor.sql`
 - Tests: `backend/tests/payment-foundation.test.ts`, `payment-reservation-policy.test.ts`,
   `payment-reservation-expiry.test.ts`
 
@@ -38,8 +37,7 @@ ONLY** — a live-looking secret key is refused, never used.
 An unpaid order holds its reserved stock for **exactly 30 minutes**
 (`orders.payment_expires_at = created_at + 30 min`, `backend/lib/payment-reservation.ts`), not
 forever and NOT a variable window. The duration is a constant on purpose: it must not depend on
-popularity, product views or clicks, sales velocity, demand or behaviour signals — those belong to
-VelRepeat. `orders.reservation_policy` still records the policy that produced a deadline
+popularity, product views or clicks, sales velocity, demand or behaviour signals. `orders.reservation_policy` still records the policy that produced a deadline
 (`version: "v2"`, `reservationMinutes: 30`, `reason`); a `version: "v1"` row is a legacy risk-based
 window (15–60 min, superseded). COD gets no window at all (nothing online is waited on). The deadline
 is the backend's promise:
@@ -362,14 +360,14 @@ clock simply has no deadline to count down from.
 **One-line check (owner, Neon SQL Editor — read-only):**
 
 ```sql
-SELECT column_name, COALESCE(data_type, 'MISSING (048 not applied)') AS state
+SELECT column_name, COALESCE(data_type, 'MISSING') AS state
 FROM (VALUES ('payment_expires_at'), ('reservation_policy')) AS want(column_name)
 LEFT JOIN information_schema.columns c
        ON c.table_name = 'orders' AND c.column_name = want.column_name;
 ```
 
-**Fix (owner):** clear the Neon quota → run Actions *Migrate Neon Database*, or paste
-`db/migrations/048_payment_reservation.sql` (additive, idempotent) into the SQL Editor → **place a
+**Fix (owner):** clear the Neon quota → run Actions *Production DB Reconcile*, or paste
+`db/run-sqleditor.sql` (additive, idempotent) into the SQL Editor → **place a
 NEW order**. Orders created before the column exists keep `NULL` forever by design (no window was
 ever taken), so they will never show a countdown — do not treat that as a bug.
 

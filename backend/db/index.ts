@@ -45,13 +45,13 @@ const connectionString = resolveConnectionString();
 // own critical path. That fixed ~1.3s was billed to whichever statement
 // happened to open the connection — which is why two unrelated,
 // perfectly-indexed queries logged ~1.5s (`refunds` in the order-detail
-// fan-out, and the VelRepeat due-plan scan) while the same statements on an
-// already-open connection logged ~0.2s.
+// fan-out) while the same statements on an already-open connection logged
+// ~0.2s.
 //
 // `min` is the knob for exactly that: pg-pool only arms its idle-reap timer
 // while `_clients.length > min`, so the last client is never reaped, while a
-// burst still trims back down to one. It also makes the VelRepeat tick reuse
-// one warm connection instead of redialing Neon every 60s. pg-pool performs no
+// burst still trims back down to one. It also lets a scheduler tick reuse one
+// warm connection instead of redialing Neon every 60s. pg-pool performs no
 // proactive refill, so a client the server closes is replaced — and kept warm
 // again — by the next query.
 //

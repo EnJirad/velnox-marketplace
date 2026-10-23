@@ -261,15 +261,6 @@ CREATE TABLE IF NOT EXISTS products (
   review_count INTEGER NOT NULL DEFAULT 0,
   sold_count INTEGER NOT NULL DEFAULT 0,
   category_id TEXT,
-  vrepeat_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  vrepeat_weekly_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  vrepeat_monthly_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  vrepeat_weekly_price NUMERIC(12, 2),
-  vrepeat_monthly_price NUMERIC(12, 2),
-  vrepeat_weekly_qty INTEGER,
-  vrepeat_monthly_qty INTEGER,
-  vrepeat_min_qty INTEGER,
-  vrepeat_max_qty INTEGER,
   featured_variant_id UUID,
   verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')),
   verified_at TIMESTAMPTZ,
@@ -393,8 +384,6 @@ CREATE TABLE IF NOT EXISTS orders (
   inventory_released BOOLEAN NOT NULL DEFAULT FALSE,
   payment_expires_at TIMESTAMPTZ,
   reservation_policy JSONB,
-  velrepeat_run_id UUID,
-  velrepeat_cycle_id UUID,
   checkout_group_id UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -457,7 +446,6 @@ CREATE TABLE IF NOT EXISTS tracking_events (
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID REFERENCES orders(id),
-  plan_id UUID,
   checkout_group_id UUID REFERENCES checkout_groups(id) ON DELETE SET NULL,
   amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'THB',
@@ -475,10 +463,10 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT payments_at_least_one_parent_check CHECK (
-    order_id IS NOT NULL OR plan_id IS NOT NULL OR checkout_group_id IS NOT NULL
+    order_id IS NOT NULL OR checkout_group_id IS NOT NULL
   ),
   CONSTRAINT payments_single_domain_check CHECK (
-    NOT (plan_id IS NOT NULL AND (order_id IS NOT NULL OR checkout_group_id IS NOT NULL))
+    NOT (order_id IS NOT NULL AND checkout_group_id IS NOT NULL)
   ),
   CONSTRAINT payments_status_check CHECK (
     status IN ('pending', 'requires_action', 'processing', 'paid', 'failed', 'cancelled')
@@ -501,7 +489,6 @@ CREATE TABLE IF NOT EXISTS payment_incidents (
   dedupe_key TEXT NOT NULL UNIQUE,
   provider TEXT NOT NULL DEFAULT 'stripe',
   order_id UUID REFERENCES orders(id),
-  plan_id UUID,
   payment_id UUID REFERENCES payments(id) ON DELETE SET NULL,
   provider_payment_intent_id TEXT,
   provider_checkout_session_id TEXT,
@@ -516,10 +503,7 @@ CREATE TABLE IF NOT EXISTS payment_incidents (
   resolved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT payment_incidents_exactly_one_parent_check CHECK (
-    (order_id IS NOT NULL AND plan_id IS NULL)
-    OR (order_id IS NULL AND plan_id IS NOT NULL)
-  )
+  CONSTRAINT payment_incidents_order_parent_check CHECK (order_id IS NOT NULL)
 );
 CREATE TABLE IF NOT EXISTS refunds (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -554,19 +538,6 @@ CREATE TABLE IF NOT EXISTS settlements (
   amount NUMERIC(12, 2) NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS subscriptions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id),
-  product_id UUID REFERENCES products(id),
-  seller_id UUID REFERENCES sellers(id),
-  shop_id UUID REFERENCES shops(id),
-  frequency TEXT NOT NULL DEFAULT 'monthly',
-  status TEXT NOT NULL DEFAULT 'active',
-  next_due_date TIMESTAMPTZ,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS departments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -676,46 +647,6 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
   revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ NOT NULL
 );
-CREATE TABLE IF NOT EXISTS vrepeat_packages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL REFERENCES products(id),
-  variant_id UUID REFERENCES product_variants(id),
-  shop_id UUID NOT NULL REFERENCES shops(id),
-  seller_id UUID NOT NULL REFERENCES sellers(id),
-  package_type TEXT NOT NULL CHECK (package_type IN ('weekly', 'monthly', 'custom')),
-  quantity_total INTEGER NOT NULL CHECK (quantity_total > 0),
-  quantity_delivered INTEGER NOT NULL DEFAULT 0 CHECK (quantity_delivered >= 0),
-  unit_price NUMERIC(12, 2) NOT NULL,
-  regular_unit_price NUMERIC(12, 2) NOT NULL,
-  discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  total_amount NUMERIC(12, 2) NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'THB',
-  status TEXT NOT NULL DEFAULT 'pending_payment' CHECK (status IN ('pending_payment', 'paid', 'active', 'paused', 'completed', 'cancelled', 'refunded')),
-  interval_days INTEGER NOT NULL DEFAULT 7,
-  started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  payment_id UUID REFERENCES payments(id),
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS vrepeat_deliveries (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  package_id UUID NOT NULL REFERENCES vrepeat_packages(id) ON DELETE CASCADE,
-  delivery_number INTEGER NOT NULL CHECK (delivery_number > 0),
-  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-  scheduled_at TIMESTAMPTZ NOT NULL,
-  shipped_at TIMESTAMPTZ,
-  delivered_at TIMESTAMPTZ,
-  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'shipped', 'delivered', 'failed', 'cancelled')),
-  tracking_number TEXT,
-  order_id UUID REFERENCES orders(id),
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (package_id, delivery_number)
-);
 CREATE TABLE IF NOT EXISTS product_reviews (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -796,123 +727,6 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   read_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE TABLE IF NOT EXISTS velrepeat_plans (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'cancelled', 'completed')),
-  frequency_type TEXT NOT NULL CHECK (frequency_type IN ('days', 'weeks', 'months')),
-  interval_value INTEGER NOT NULL DEFAULT 30 CHECK (interval_value > 0),
-  commitment_cycles INTEGER CHECK (commitment_cycles IS NULL OR commitment_cycles > 0),
-  next_run_at TIMESTAMPTZ NOT NULL,
-  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  ended_at TIMESTAMPTZ,
-  shipping_address_id UUID REFERENCES addresses(id) ON DELETE SET NULL,
-  shipping_address JSONB,
-  payment_method TEXT NOT NULL DEFAULT 'cod',
-  payment_method_ref TEXT,
-  currency TEXT NOT NULL DEFAULT 'THB',
-  timezone TEXT NOT NULL DEFAULT 'Asia/Bangkok',
-  notes TEXT,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS velrepeat_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
-  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-  unit_price NUMERIC(12, 2) NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'THB',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS velrepeat_runs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  scheduled_for TIMESTAMPTZ NOT NULL,
-  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  completed_at TIMESTAMPTZ,
-  status TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'failed', 'cancelled')),
-  order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
-  error_code TEXT,
-  error_message TEXT,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (plan_id, scheduled_for)
-);
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_velrepeat_run_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_velrepeat_run_id_fkey FOREIGN KEY (velrepeat_run_id) REFERENCES velrepeat_runs(id) ON DELETE SET NULL; END IF; END $$;
-CREATE TABLE IF NOT EXISTS velrepeat_events (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  run_id UUID REFERENCES velrepeat_runs(id) ON DELETE SET NULL,
-  event_type TEXT NOT NULL,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS velrepeat_packages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  description TEXT,
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS velrepeat_package_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  package_id UUID NOT NULL REFERENCES velrepeat_packages(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
-  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshots (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  commitment_cycles INTEGER NOT NULL CHECK (commitment_cycles > 0),
-  currency TEXT NOT NULL DEFAULT 'THB',
-  subtotal_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (subtotal_amount >= 0),
-  discount_type TEXT,
-  discount_value NUMERIC(12, 2),
-  discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
-  cycle_price NUMERIC(12, 2) CHECK (cycle_price IS NULL OR cycle_price >= 0),
-  total_amount NUMERIC(12, 2) NOT NULL CHECK (total_amount >= 0),
-  pricing_rule_key TEXT,
-  pricing_rule_version TEXT,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS velrepeat_pricing_snapshot_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  snapshot_id UUID NOT NULL REFERENCES velrepeat_pricing_snapshots(id) ON DELETE CASCADE,
-  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
-  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
-  quantity INTEGER NOT NULL CHECK (quantity > 0),
-  unit_price NUMERIC(12, 2) NOT NULL CHECK (unit_price >= 0),
-  line_total NUMERIC(12, 2) NOT NULL CHECK (line_total >= 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS velrepeat_cycles (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES velrepeat_plans(id) ON DELETE CASCADE,
-  cycle_number INTEGER NOT NULL CHECK (cycle_number > 0),
-  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'ordered', 'completed', 'skipped', 'cancelled', 'out_of_stock', 'item_unavailable')),
-  scheduled_at TIMESTAMPTZ NOT NULL,
-  started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  pricing_snapshot_id UUID REFERENCES velrepeat_pricing_snapshots(id) ON DELETE SET NULL,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (plan_id, cycle_number)
-);
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_velrepeat_cycle_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_velrepeat_cycle_id_fkey FOREIGN KEY (velrepeat_cycle_id) REFERENCES velrepeat_cycles(id) ON DELETE SET NULL; END IF; END $$;
 INSERT INTO platform_settings (key, value, description) VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto') ON CONFLICT (key) DO NOTHING;
 INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, description, description_names, image_url, is_active) VALUES
 ('c0000001-0000-0000-0000-000000000001', 'Electronics', 'electronics', 'cpu', NULL, 1, '{"th":"อิเล็กทรอนิกส์","en":"Electronics","my":"အီလက်ထရွန်နစ်ပစ္စည်းများ"}', 'Audio, cameras, wearable tech and electronic accessories', '{"th":"อุปกรณ์เสียง กล้อง อุปกรณ์สวมใส่ และอุปกรณ์เสริมอิเล็กทรอนิกส์","en":"Audio, cameras, wearable tech and electronic accessories","my":"အသံပစ္စည်း၊ ကင်မရာ၊ ဝတ်ဆင်နည်းပညာနှင့်အီလက်ထရွန်နစ် ဖြည့်စွက်ပစ္စည်းများ"}', NULL, true),
@@ -938,18 +752,6 @@ ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, par
 -- `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a database
 -- created before the constraint was widened keeps the old CHECK forever. These
 -- statements re-assert the canonical constraint on every bootstrap run.
---
--- V0035 (`item_unavailable` on velrepeat_plans.status) was skipped in some
--- environments because the migration number collided with
--- 035_checkout_idempotency.sql. Re-asserting it here makes the bootstrap file
--- self-healing and keeps db/schema.sql the single source of truth.
-
-
--- The run table is `velrepeat_runs` (created above). An earlier revision of this
--- block named a `velrepeat_plan_runs` table that no migration and no backend
--- query ever created, so running this file on a fresh database aborted with
--- `relation "velrepeat_plan_runs" does not exist` — and so did migration V0044.
-
 
 -- `orders.status` had no CHECK at all (audit MEDIUM #9), unlike every other
 -- status column in this schema. It is the union of the FULFILMENT chain
@@ -1047,19 +849,17 @@ INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, desc
 ('c1000015-0000-0000-0000-000000000007', 'Other Products', 'other-products', 'package', 'c0000001-0000-0000-0000-000000000015', 7, '{"th":"สินค้าอื่น ๆ","en":"Other Products","my":"အခြားထုတ်ကုန်များ"}', 'Other products', '{"th":"สินค้าอื่น ๆ","en":"Other products","my":"အခြားထုတ်ကုန်များ"}', NULL, true)
 ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order, names = EXCLUDED.names, description = EXCLUDED.description, description_names = EXCLUDED.description_names, image_url = EXCLUDED.image_url, is_active = EXCLUDED.is_active, updated_at = NOW();
 
--- ─── commerce core (migration 056): the nine new tables ───────────────────
+-- ─── commerce core: the nine new tables ──────────────────────────────────
 -- One axis per lifecycle, one stock model for products AND variants, a durable
 -- attempt layer, an append-only ledger, a transactional outbox and the
 -- reconciliation register. See .ai/rebuild/DOMAIN_MODEL.md for the model.
 --
--- DATA IS NOT BACKFILLED HERE. The canonical safety contract for this file is
--- that it never rewrites an existing row, so the deterministic backfill of the
--- two order axes, the attempt rows, the work units, the shipment items and the
--- webhook retry metadata lives in db/migrations/056_commerce_core_invariants.sql
--- and runs from there. This file adds STRUCTURE: a database that has run only
--- this pass has the columns, nullable and empty, and the application reads them
--- through a COALESCE fallback so a deploy is never blocked by a pending
--- migration.
+-- DATA IS NOT BACKFILLED HERE. The canonical safety contract for both
+-- canonical files is that they never rewrite an existing row, so this file adds
+-- STRUCTURE only: a database that has run it holds the columns, nullable and
+-- empty, and the application reads them through a COALESCE fallback, so a deploy
+-- is never blocked by a pending schema change. Backfilling legacy rows is a
+-- separate, operator-run data task; no SQL in this repository performs it.
 
 -- ─── 1. payment_attempts ────────────────────────────────────────────────────
 -- One row per provider interaction. `payments` stays the record of the money;
@@ -1446,15 +1246,6 @@ ALTER TABLE public.products ADD COLUMN IF NOT EXISTS rating NUMERIC(3, 2);
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_count INTEGER DEFAULT 0 NOT NULL;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS sold_count INTEGER DEFAULT 0 NOT NULL;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS category_id TEXT;
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_enabled BOOLEAN DEFAULT FALSE NOT NULL;
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_weekly_enabled BOOLEAN DEFAULT FALSE NOT NULL;
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_monthly_enabled BOOLEAN DEFAULT FALSE NOT NULL;
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_weekly_price NUMERIC(12, 2);
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_monthly_price NUMERIC(12, 2);
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_weekly_qty INTEGER;
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_monthly_qty INTEGER;
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_min_qty INTEGER;
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS vrepeat_max_qty INTEGER;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS featured_variant_id UUID;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'unverified' CHECK (verification_status IN ('unverified','pending','verified','rejected','suspended')) NOT NULL;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
@@ -1566,8 +1357,6 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS inventory_released BOOLEAN DEFAULT FALSE NOT NULL;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS reservation_policy JSONB;
-ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS velrepeat_run_id UUID;
-ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS velrepeat_cycle_id UUID;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS checkout_group_id UUID;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
@@ -1620,7 +1409,6 @@ ALTER TABLE public.tracking_events ADD COLUMN IF NOT EXISTS occurred_at TIMESTAM
 
 ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS order_id UUID;
-ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS plan_id UUID;
 ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS checkout_group_id UUID;
 ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS amount NUMERIC(12, 2) DEFAULT 0 NOT NULL;
 ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'THB' NOT NULL;
@@ -1653,7 +1441,6 @@ ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS id UUID DEFAULT uu
 ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
 ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'stripe' NOT NULL;
 ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS order_id UUID;
-ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS plan_id UUID;
 ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS payment_id UUID;
 ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS provider_payment_intent_id TEXT;
 ALTER TABLE public.payment_incidents ADD COLUMN IF NOT EXISTS provider_checkout_session_id TEXT;
@@ -1696,18 +1483,6 @@ ALTER TABLE public.settlements ADD COLUMN IF NOT EXISTS seller_id UUID;
 ALTER TABLE public.settlements ADD COLUMN IF NOT EXISTS amount NUMERIC(12, 2);
 ALTER TABLE public.settlements ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending' NOT NULL;
 ALTER TABLE public.settlements ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS user_id UUID;
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS product_id UUID;
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS seller_id UUID;
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS shop_id UUID;
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS frequency TEXT DEFAULT 'monthly' NOT NULL;
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' NOT NULL;
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS next_due_date TIMESTAMPTZ;
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
 ALTER TABLE public.departments ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.departments ADD COLUMN IF NOT EXISTS name TEXT;
@@ -1803,42 +1578,7 @@ ALTER TABLE public.revoked_tokens ADD COLUMN IF NOT EXISTS user_id UUID;
 ALTER TABLE public.revoked_tokens ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.revoked_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS user_id UUID;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS product_id UUID;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS variant_id UUID;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS shop_id UUID;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS seller_id UUID;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS package_type TEXT;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS quantity_total INTEGER;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS quantity_delivered INTEGER DEFAULT 0 CHECK (quantity_delivered >= 0) NOT NULL;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS unit_price NUMERIC(12, 2);
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS regular_unit_price NUMERIC(12, 2);
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12, 2) DEFAULT 0 NOT NULL;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12, 2);
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'THB' NOT NULL;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending_payment' CHECK (status IN ('pending_payment', 'paid', 'active', 'paused', 'completed', 'cancelled', 'refunded')) NOT NULL;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS interval_days INTEGER DEFAULT 7 NOT NULL;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS payment_id UUID;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.vrepeat_packages ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS package_id UUID;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS delivery_number INTEGER;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1 CHECK (quantity > 0) NOT NULL;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'shipped', 'delivered', 'failed', 'cancelled')) NOT NULL;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS tracking_number TEXT;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS order_id UUID;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS notes TEXT;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.vrepeat_deliveries ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
 ALTER TABLE public.product_reviews ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.product_reviews ADD COLUMN IF NOT EXISTS product_id UUID;
@@ -1909,109 +1649,14 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 's
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS user_id UUID;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'cancelled', 'completed')) NOT NULL;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS frequency_type TEXT;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS interval_value INTEGER DEFAULT 30 CHECK (interval_value > 0) NOT NULL;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS commitment_cycles INTEGER;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS next_run_at TIMESTAMPTZ;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS shipping_address_id UUID;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS shipping_address JSONB;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cod' NOT NULL;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS payment_method_ref TEXT;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'THB' NOT NULL;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Bangkok' NOT NULL;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS notes TEXT;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.velrepeat_plans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS plan_id UUID;
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS product_id UUID;
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS variant_id UUID;
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS shop_id UUID;
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS seller_id UUID;
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1 CHECK (quantity > 0) NOT NULL;
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS unit_price NUMERIC(12, 2);
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'THB' NOT NULL;
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.velrepeat_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS plan_id UUID;
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ;
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'processing' CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'failed', 'cancelled')) NOT NULL;
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS order_id UUID;
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS error_code TEXT;
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS error_message TEXT;
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
-ALTER TABLE public.velrepeat_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_events ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_events ADD COLUMN IF NOT EXISTS plan_id UUID;
-ALTER TABLE public.velrepeat_events ADD COLUMN IF NOT EXISTS run_id UUID;
-ALTER TABLE public.velrepeat_events ADD COLUMN IF NOT EXISTS event_type TEXT;
-ALTER TABLE public.velrepeat_events ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
-ALTER TABLE public.velrepeat_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_packages ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_packages ADD COLUMN IF NOT EXISTS seller_id UUID;
-ALTER TABLE public.velrepeat_packages ADD COLUMN IF NOT EXISTS name TEXT;
-ALTER TABLE public.velrepeat_packages ADD COLUMN IF NOT EXISTS description TEXT;
-ALTER TABLE public.velrepeat_packages ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE NOT NULL;
-ALTER TABLE public.velrepeat_packages ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
-ALTER TABLE public.velrepeat_packages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.velrepeat_packages ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_package_items ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_package_items ADD COLUMN IF NOT EXISTS package_id UUID;
-ALTER TABLE public.velrepeat_package_items ADD COLUMN IF NOT EXISTS product_id UUID;
-ALTER TABLE public.velrepeat_package_items ADD COLUMN IF NOT EXISTS variant_id UUID;
-ALTER TABLE public.velrepeat_package_items ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1 CHECK (quantity > 0) NOT NULL;
-ALTER TABLE public.velrepeat_package_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.velrepeat_package_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS plan_id UUID;
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS commitment_cycles INTEGER;
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'THB' NOT NULL;
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS subtotal_amount NUMERIC(12, 2) DEFAULT 0 CHECK (subtotal_amount >= 0) NOT NULL;
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS discount_type TEXT;
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS discount_value NUMERIC(12, 2);
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12, 2) DEFAULT 0 CHECK (discount_amount >= 0) NOT NULL;
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS cycle_price NUMERIC(12, 2);
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12, 2);
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS pricing_rule_key TEXT;
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS pricing_rule_version TEXT;
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
-ALTER TABLE public.velrepeat_pricing_snapshots ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_pricing_snapshot_items ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_pricing_snapshot_items ADD COLUMN IF NOT EXISTS snapshot_id UUID;
-ALTER TABLE public.velrepeat_pricing_snapshot_items ADD COLUMN IF NOT EXISTS product_id UUID;
-ALTER TABLE public.velrepeat_pricing_snapshot_items ADD COLUMN IF NOT EXISTS variant_id UUID;
-ALTER TABLE public.velrepeat_pricing_snapshot_items ADD COLUMN IF NOT EXISTS quantity INTEGER;
-ALTER TABLE public.velrepeat_pricing_snapshot_items ADD COLUMN IF NOT EXISTS unit_price NUMERIC(12, 2);
-ALTER TABLE public.velrepeat_pricing_snapshot_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(12, 2);
-ALTER TABLE public.velrepeat_pricing_snapshot_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS plan_id UUID;
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS cycle_number INTEGER;
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'ordered', 'completed', 'skipped', 'cancelled', 'out_of_stock', 'item_unavailable')) NOT NULL;
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS pricing_snapshot_id UUID;
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
-ALTER TABLE public.velrepeat_cycles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
 -- Promote the columns that were added nullable because they are NOT NULL
 -- without a DEFAULT. This runs only when no NULL remains, so it can never
@@ -2512,13 +2157,6 @@ BEGIN
   ELSE
     RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
   END IF;
-  SELECT 'subscriptions','user_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
   SELECT 'departments','name' INTO t,c;
   EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
   IF n = 0 THEN
@@ -2701,90 +2339,6 @@ BEGIN
   ELSE
     RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
   END IF;
-  SELECT 'vrepeat_packages','user_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_packages','product_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_packages','shop_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_packages','seller_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_packages','package_type' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_packages','quantity_total' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_packages','unit_price' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_packages','regular_unit_price' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_packages','total_amount' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_deliveries','package_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_deliveries','delivery_number' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'vrepeat_deliveries','scheduled_at' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
   SELECT 'product_reviews','product_id' INTO t,c;
   EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
   IF n = 0 THEN
@@ -2919,188 +2473,6 @@ BEGIN
     RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
   END IF;
   SELECT 'chat_messages','body' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_plans','user_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_plans','frequency_type' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_plans','next_run_at' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_items','plan_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_items','product_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_items','shop_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_items','seller_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_items','unit_price' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_runs','plan_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_runs','scheduled_for' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_events','plan_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_events','event_type' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_packages','seller_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_packages','name' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_package_items','package_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_package_items','product_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_pricing_snapshots','plan_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_pricing_snapshots','commitment_cycles' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_pricing_snapshots','total_amount' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_pricing_snapshot_items','snapshot_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_pricing_snapshot_items','quantity' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_pricing_snapshot_items','unit_price' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_pricing_snapshot_items','line_total' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_cycles','plan_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_cycles','cycle_number' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
-  SELECT 'velrepeat_cycles','scheduled_at' INTO t,c;
   EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
   IF n = 0 THEN
     EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
@@ -3402,60 +2774,44 @@ BEGIN
              ('shops','subdistrict'), ('shops','district'), ('shops','city'), ('shops','state'),
              ('shops','postal_code'), ('shops','phone'), ('shops','email'), ('shops','category'),
              ('products','id'), ('products','short_description'), ('products','compare_at_price'), ('products','supplier'),
-             ('products','rejection_reason'), ('products','rating'), ('products','category_id'), ('products','vrepeat_weekly_price'),
-             ('products','vrepeat_monthly_price'), ('products','vrepeat_weekly_qty'), ('products','vrepeat_monthly_qty'), ('products','vrepeat_min_qty'),
-             ('products','vrepeat_max_qty'), ('products','featured_variant_id'), ('products','verified_at'), ('product_variants','id'),
-             ('product_variants','sku'), ('product_variants','compare_at_price'), ('product_variants','discount_percent'), ('product_variants','options'),
-             ('cart_items','id'), ('cart_items','variant_id'), ('product_images','id'), ('product_images','variant_id'),
-             ('product_variant_images','id'), ('product_variant_images','alt'), ('product_variant_images','storage_key'), ('product_verifications','id'),
-             ('product_verifications','evidence_urls'), ('product_verifications','evidence_notes'), ('product_verifications','category_requirements'), ('product_verifications','submitted_at'),
-             ('product_verifications','reviewed_at'), ('product_verifications','reviewed_by'), ('product_verifications','rejection_reason'), ('product_verifications','suspension_reason'),
-             ('inventory','id'), ('seller_settings','id'), ('seller_settings','settings'), ('seller_analytics','id'),
-             ('seller_goals','id'), ('seller_goals','description'), ('seller_goals','due_date'), ('orders','id'),
-             ('orders','shop_id'), ('orders','order_number'), ('orders','shipping_address_id'), ('orders','shipping_address'),
-             ('orders','notes'), ('orders','payment_expires_at'), ('orders','reservation_policy'), ('orders','velrepeat_run_id'),
-             ('orders','velrepeat_cycle_id'), ('orders','checkout_group_id'), ('checkout_groups','id'), ('checkout_requests','id'),
+             ('products','rejection_reason'), ('products','rating'), ('products','category_id'), ('products','featured_variant_id'),
+             ('products','verified_at'), ('product_variants','id'), ('product_variants','sku'), ('product_variants','compare_at_price'),
+             ('product_variants','discount_percent'), ('product_variants','options'), ('cart_items','id'), ('cart_items','variant_id'),
+             ('product_images','id'), ('product_images','variant_id'), ('product_variant_images','id'), ('product_variant_images','alt'),
+             ('product_variant_images','storage_key'), ('product_verifications','id'), ('product_verifications','evidence_urls'), ('product_verifications','evidence_notes'),
+             ('product_verifications','category_requirements'), ('product_verifications','submitted_at'), ('product_verifications','reviewed_at'), ('product_verifications','reviewed_by'),
+             ('product_verifications','rejection_reason'), ('product_verifications','suspension_reason'), ('inventory','id'), ('seller_settings','id'),
+             ('seller_settings','settings'), ('seller_analytics','id'), ('seller_goals','id'), ('seller_goals','description'),
+             ('seller_goals','due_date'), ('orders','id'), ('orders','shop_id'), ('orders','order_number'),
+             ('orders','shipping_address_id'), ('orders','shipping_address'), ('orders','notes'), ('orders','payment_expires_at'),
+             ('orders','reservation_policy'), ('orders','checkout_group_id'), ('checkout_groups','id'), ('checkout_requests','id'),
              ('checkout_requests','order_id'), ('checkout_requests','response'), ('order_items','id'), ('order_items','shop_id'),
              ('order_items','variant_id'), ('order_items','variant_name_snapshot'), ('order_items','image_url_snapshot'), ('shipments','id'),
              ('shipments','tracking_number'), ('shipments','estimated_delivery_date'), ('tracking_events','id'), ('tracking_events','description'),
-             ('tracking_events','location'), ('payments','id'), ('payments','order_id'), ('payments','plan_id'),
+             ('tracking_events','location'), ('payments','id'), ('payments','order_id'),
              ('payments','checkout_group_id'), ('payments','provider_payment_id'), ('payments','provider_checkout_session_id'), ('payments','paid_at'),
              ('payments','refund_status'), ('payments','failure_code'), ('payments','failure_message'), ('payments','metadata'),
              ('payment_events','id'), ('payment_events','error'), ('payment_events','payload'), ('payment_incidents','id'),
-             ('payment_incidents','order_id'), ('payment_incidents','plan_id'), ('payment_incidents','payment_id'), ('payment_incidents','provider_payment_intent_id'),
+             ('payment_incidents','order_id'), ('payment_incidents','payment_id'), ('payment_incidents','provider_payment_intent_id'),
              ('payment_incidents','provider_checkout_session_id'), ('payment_incidents','event_id'), ('payment_incidents','order_status'), ('payment_incidents','amount'),
              ('payment_incidents','currency'), ('payment_incidents','resolution_note'), ('payment_incidents','resolved_by'), ('payment_incidents','resolved_at'),
-             ('refunds','id'), ('refunds','order_id'), ('refunds','payment_id'), ('refunds','provider_refund_id'), ('refunds','reason'),
-             ('refunds','requested_by'), ('refunds','refunded_at'), ('refunds','failure_reason'), ('commissions','id'),
-             ('settlements','id'), ('subscriptions','id'), ('subscriptions','product_id'), ('subscriptions','seller_id'),
-             ('subscriptions','shop_id'), ('subscriptions','next_due_date'), ('subscriptions','metadata'), ('departments','id'),
-             ('departments','description'), ('employees','id'), ('employees','department_id'), ('employees','employee_id'),
-             ('company_settings','id'), ('company_settings','description'), ('system_settings','id'), ('system_settings','description'),
-             ('audit_logs','id'), ('audit_logs','user_id'), ('audit_logs','entity_id'), ('audit_logs','details'),
-             ('audit_logs','ip_address'), ('moderation_records','id'), ('moderation_records','moderator_id'), ('moderation_records','reason'),
-             ('notifications','id'), ('notifications','body'), ('notifications','data'), ('notifications','metadata'),
-             ('customer_wishlist','id'), ('behavioral_events','id'), ('behavioral_events','user_id'), ('behavioral_events','entity_type'),
-             ('behavioral_events','entity_id'), ('behavioral_events','metadata'), ('customer_events','id'), ('customer_events','product_id'),
-             ('customer_events','category_id'), ('customer_events','shop_id'), ('customer_events','metadata'), ('platform_settings','key'),
-             ('platform_settings','description'), ('platform_settings','updated_by'), ('schema_migrations','id'), ('revoked_tokens','id'),
-             ('vrepeat_packages','id'), ('vrepeat_packages','variant_id'), ('vrepeat_packages','started_at'), ('vrepeat_packages','completed_at'),
-             ('vrepeat_packages','payment_id'), ('vrepeat_packages','metadata'), ('vrepeat_deliveries','id'), ('vrepeat_deliveries','shipped_at'),
-             ('vrepeat_deliveries','delivered_at'), ('vrepeat_deliveries','tracking_number'), ('vrepeat_deliveries','order_id'), ('vrepeat_deliveries','notes'),
-             ('product_reviews','id'), ('product_reviews','shop_id'), ('product_reviews','order_id'), ('product_reviews','title'),
-             ('product_reviews','comment'), ('product_reviews','images'), ('product_option_groups','id'), ('product_option_values','id'),
-             ('product_option_values','image_url'), ('option_value_images','id'), ('product_variant_values','id'), ('product_attributes','id'),
-             ('conversations','id'), ('conversations','product_id'), ('conversations','last_message'), ('conversations','last_message_at'),
-             ('chat_messages','id'), ('chat_messages','read_at'), ('velrepeat_plans','id'), ('velrepeat_plans','commitment_cycles'),
-             ('velrepeat_plans','ended_at'), ('velrepeat_plans','shipping_address_id'), ('velrepeat_plans','shipping_address'), ('velrepeat_plans','payment_method_ref'),
-             ('velrepeat_plans','notes'), ('velrepeat_plans','metadata'), ('velrepeat_items','id'), ('velrepeat_items','variant_id'),
-             ('velrepeat_runs','id'), ('velrepeat_runs','completed_at'), ('velrepeat_runs','order_id'), ('velrepeat_runs','error_code'),
-             ('velrepeat_runs','error_message'), ('velrepeat_runs','metadata'), ('velrepeat_events','id'), ('velrepeat_events','run_id'),
-             ('velrepeat_events','metadata'), ('velrepeat_packages','id'), ('velrepeat_packages','description'), ('velrepeat_packages','metadata'),
-             ('velrepeat_package_items','id'), ('velrepeat_package_items','variant_id'), ('velrepeat_pricing_snapshots','id'), ('velrepeat_pricing_snapshots','discount_type'),
-             ('velrepeat_pricing_snapshots','discount_value'), ('velrepeat_pricing_snapshots','cycle_price'), ('velrepeat_pricing_snapshots','pricing_rule_key'), ('velrepeat_pricing_snapshots','pricing_rule_version'),
-             ('velrepeat_pricing_snapshots','metadata'), ('velrepeat_pricing_snapshot_items','id'), ('velrepeat_pricing_snapshot_items','product_id'), ('velrepeat_pricing_snapshot_items','variant_id'),
-             ('velrepeat_cycles','id'), ('velrepeat_cycles','started_at'), ('velrepeat_cycles','completed_at'), ('velrepeat_cycles','pricing_snapshot_id'),
-             ('velrepeat_cycles','metadata')
+             ('refunds','id'), ('refunds','order_id'), ('refunds','payment_id'), ('refunds','provider_refund_id'),
+             ('refunds','reason'), ('refunds','requested_by'), ('refunds','refunded_at'), ('refunds','failure_reason'),
+             ('commissions','id'), ('settlements','id'), ('departments','id'), ('departments','description'),
+             ('employees','id'), ('employees','department_id'), ('employees','employee_id'), ('company_settings','id'),
+             ('company_settings','description'), ('system_settings','id'), ('system_settings','description'), ('audit_logs','id'),
+             ('audit_logs','user_id'), ('audit_logs','entity_id'), ('audit_logs','details'), ('audit_logs','ip_address'),
+             ('moderation_records','id'), ('moderation_records','moderator_id'), ('moderation_records','reason'), ('notifications','id'),
+             ('notifications','body'), ('notifications','data'), ('notifications','metadata'), ('customer_wishlist','id'),
+             ('behavioral_events','id'), ('behavioral_events','user_id'), ('behavioral_events','entity_type'), ('behavioral_events','entity_id'),
+             ('behavioral_events','metadata'), ('customer_events','id'), ('customer_events','product_id'), ('customer_events','category_id'),
+             ('customer_events','shop_id'), ('customer_events','metadata'), ('platform_settings','key'), ('platform_settings','description'),
+             ('platform_settings','updated_by'), ('schema_migrations','id'), ('revoked_tokens','id'), ('product_reviews','id'),
+             ('product_reviews','shop_id'), ('product_reviews','order_id'), ('product_reviews','title'), ('product_reviews','comment'),
+             ('product_reviews','images'), ('product_option_groups','id'), ('product_option_values','id'), ('product_option_values','image_url'),
+             ('option_value_images','id'), ('product_variant_values','id'), ('product_attributes','id'), ('conversations','id'),
+             ('conversations','product_id'), ('conversations','last_message'), ('conversations','last_message_at'), ('chat_messages','id'),
+             ('chat_messages','read_at')
        )
   LOOP
     EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I DROP NOT NULL', r.table_name, r.column_name);
@@ -3493,7 +2849,6 @@ CREATE INDEX IF NOT EXISTS idx_products_status ON public.products (status);
 CREATE INDEX IF NOT EXISTS idx_products_featured ON public.products (featured) WHERE featured = TRUE;
 CREATE INDEX IF NOT EXISTS idx_products_slug ON public.products (slug);
 CREATE INDEX IF NOT EXISTS idx_products_price ON public.products (price);
-CREATE INDEX IF NOT EXISTS idx_products_vrepeat ON public.products (vrepeat_enabled) WHERE vrepeat_enabled = TRUE;
 CREATE INDEX IF NOT EXISTS idx_products_verification ON public.products (verification_status);
 CREATE INDEX IF NOT EXISTS idx_products_featured_variant ON public.products (featured_variant_id) WHERE featured_variant_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_product_variants_product ON public.product_variants (product_id);
@@ -3561,18 +2916,15 @@ BEGIN
 END $$;
 CREATE INDEX IF NOT EXISTS idx_tracking_events_shipment ON public.tracking_events (shipment_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_payments_order ON public.payments (order_id);
-CREATE INDEX IF NOT EXISTS idx_payments_plan ON public.payments (plan_id) WHERE plan_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payments_provider_session ON public.payments (provider_checkout_session_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_payment ON public.payments (provider_payment_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe ON public.payments (order_id) WHERE provider = 'stripe' AND status IN ('pending', 'requires_action');
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe_group ON public.payments (checkout_group_id) WHERE provider = 'stripe' AND checkout_group_id IS NOT NULL AND status IN ('pending', 'requires_action');
 CREATE INDEX IF NOT EXISTS idx_payments_checkout_group ON public.payments (checkout_group_id) WHERE checkout_group_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_stripe_plan ON public.payments (plan_id) WHERE provider = 'stripe' AND plan_id IS NOT NULL AND status IN ('pending', 'requires_action');
 CREATE INDEX IF NOT EXISTS idx_payment_events_provider ON public.payment_events (provider);
 CREATE INDEX IF NOT EXISTS idx_payment_events_type ON public.payment_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_payment_events_processed ON public.payment_events (processed_at);
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_order ON public.payment_incidents (order_id);
-CREATE INDEX IF NOT EXISTS idx_payment_incidents_plan ON public.payment_incidents (plan_id) WHERE plan_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_status ON public.payment_incidents (status);
 CREATE INDEX IF NOT EXISTS payment_incidents_dedupe_key ON public.payment_incidents (dedupe_key);
 CREATE INDEX IF NOT EXISTS idx_payment_incidents_intent ON public.payment_incidents (provider_payment_intent_id);
@@ -3580,8 +2932,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_refunds_provider_refund ON public.refunds 
 CREATE INDEX IF NOT EXISTS idx_refunds_order ON public.refunds (order_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_payment ON public.refunds (payment_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_checkout_group ON public.refunds (checkout_group_id) WHERE checkout_group_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON public.subscriptions (user_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_next_due ON public.subscriptions (next_due_date) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON public.audit_logs (user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON public.audit_logs (entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON public.audit_logs (created_at);
@@ -3604,16 +2954,6 @@ CREATE INDEX IF NOT EXISTS idx_platform_settings_key ON public.platform_settings
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON public.revoked_tokens (token_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON public.revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON public.revoked_tokens (expires_at);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_user ON public.vrepeat_packages (user_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_product ON public.vrepeat_packages (product_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_shop ON public.vrepeat_packages (shop_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_seller ON public.vrepeat_packages (seller_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_status ON public.vrepeat_packages (status);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_packages_user_status ON public.vrepeat_packages (user_id, status);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_package ON public.vrepeat_deliveries (package_id);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_status ON public.vrepeat_deliveries (status);
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_scheduled ON public.vrepeat_deliveries (scheduled_at) WHERE status = 'scheduled';
-CREATE INDEX IF NOT EXISTS idx_vrepeat_deliveries_order ON public.vrepeat_deliveries (order_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON public.product_reviews (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_user ON public.product_reviews (user_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_status ON public.product_reviews (product_id, status);
@@ -3628,37 +2968,6 @@ CREATE INDEX IF NOT EXISTS idx_conversations_seller ON public.conversations (sel
 CREATE INDEX IF NOT EXISTS idx_conversations_shop ON public.conversations (shop_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON public.chat_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON public.chat_messages (conversation_id, sender_id, read_at) WHERE read_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user ON public.velrepeat_plans (user_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_user_status ON public.velrepeat_plans (user_id, status);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_plans_due ON public.velrepeat_plans (status, next_run_at) WHERE status = 'active';
-CREATE INDEX IF NOT EXISTS idx_velrepeat_items_plan ON public.velrepeat_items (plan_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_items_product ON public.velrepeat_items (product_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_items_variant ON public.velrepeat_items (variant_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_items_shop ON public.velrepeat_items (shop_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_items_unique_variant ON public.velrepeat_items (plan_id, product_id, variant_id) WHERE variant_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_items_unique_no_variant ON public.velrepeat_items (plan_id, product_id) WHERE variant_id IS NULL;
-CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_plan ON public.velrepeat_runs (plan_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_status ON public.velrepeat_runs (status);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_scheduled ON public.velrepeat_runs (scheduled_for);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_runs_order ON public.velrepeat_runs (order_id) WHERE order_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_run ON public.orders (velrepeat_run_id) WHERE velrepeat_run_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_velrepeat_events_plan ON public.velrepeat_events (plan_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_events_type ON public.velrepeat_events (event_type);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_events_run ON public.velrepeat_events (run_id) WHERE run_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_active ON public.velrepeat_packages (is_active) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_velrepeat_packages_seller ON public.velrepeat_packages (seller_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_package_items_package ON public.velrepeat_package_items (package_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_package_items_product ON public.velrepeat_package_items (product_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_package_items_unique_variant ON public.velrepeat_package_items (package_id, product_id, variant_id) WHERE variant_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_package_items_unique_no_variant ON public.velrepeat_package_items (package_id, product_id) WHERE variant_id IS NULL;
-CREATE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshots_plan ON public.velrepeat_pricing_snapshots (plan_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_snapshot ON public.velrepeat_pricing_snapshot_items (snapshot_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_unique_variant ON public.velrepeat_pricing_snapshot_items (snapshot_id, product_id, variant_id) WHERE variant_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_velrepeat_pricing_snapshot_items_unique_no_variant ON public.velrepeat_pricing_snapshot_items (snapshot_id, product_id) WHERE variant_id IS NULL;
-CREATE INDEX IF NOT EXISTS idx_velrepeat_cycles_plan ON public.velrepeat_cycles (plan_id);
-CREATE INDEX IF NOT EXISTS idx_velrepeat_cycles_due ON public.velrepeat_cycles (status, scheduled_at);
-CREATE INDEX IF NOT EXISTS idx_orders_velrepeat_cycle ON public.orders (velrepeat_cycle_id) WHERE velrepeat_cycle_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_velrepeat_cycle_seller_unique ON public.orders (velrepeat_cycle_id, shop_id) WHERE velrepeat_cycle_id IS NOT NULL AND shop_id IS NOT NULL;
 
 -- ─── commerce core (migration 056) ──────────────────────────────────────
 
@@ -4133,34 +3442,6 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'settleme
   ALTER TABLE public.settlements ADD CONSTRAINT settlements_seller_id_fkey
     FOREIGN KEY (seller_id) REFERENCES public.sellers(id);
 END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'subscriptions_user_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='subscriptions' AND column_name='user_id')
-  AND to_regclass('public.users') IS NOT NULL THEN
-  ALTER TABLE public.subscriptions ADD CONSTRAINT subscriptions_user_id_fkey
-    FOREIGN KEY (user_id) REFERENCES public.users(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'subscriptions_product_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='subscriptions' AND column_name='product_id')
-  AND to_regclass('public.products') IS NOT NULL THEN
-  ALTER TABLE public.subscriptions ADD CONSTRAINT subscriptions_product_id_fkey
-    FOREIGN KEY (product_id) REFERENCES public.products(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'subscriptions_seller_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='subscriptions' AND column_name='seller_id')
-  AND to_regclass('public.sellers') IS NOT NULL THEN
-  ALTER TABLE public.subscriptions ADD CONSTRAINT subscriptions_seller_id_fkey
-    FOREIGN KEY (seller_id) REFERENCES public.sellers(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'subscriptions_shop_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='subscriptions' AND column_name='shop_id')
-  AND to_regclass('public.shops') IS NOT NULL THEN
-  ALTER TABLE public.subscriptions ADD CONSTRAINT subscriptions_shop_id_fkey
-    FOREIGN KEY (shop_id) REFERENCES public.shops(id);
-END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'employees_user_id_fkey')
   AND EXISTS (SELECT 1 FROM information_schema.columns
                WHERE table_schema='public' AND table_name='employees' AND column_name='user_id')
@@ -4251,62 +3532,6 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'revoked_
   AND to_regclass('public.users') IS NOT NULL THEN
   ALTER TABLE public.revoked_tokens ADD CONSTRAINT revoked_tokens_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_packages_user_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='vrepeat_packages' AND column_name='user_id')
-  AND to_regclass('public.users') IS NOT NULL THEN
-  ALTER TABLE public.vrepeat_packages ADD CONSTRAINT vrepeat_packages_user_id_fkey
-    FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_packages_product_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='vrepeat_packages' AND column_name='product_id')
-  AND to_regclass('public.products') IS NOT NULL THEN
-  ALTER TABLE public.vrepeat_packages ADD CONSTRAINT vrepeat_packages_product_id_fkey
-    FOREIGN KEY (product_id) REFERENCES public.products(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_packages_variant_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='vrepeat_packages' AND column_name='variant_id')
-  AND to_regclass('public.product_variants') IS NOT NULL THEN
-  ALTER TABLE public.vrepeat_packages ADD CONSTRAINT vrepeat_packages_variant_id_fkey
-    FOREIGN KEY (variant_id) REFERENCES public.product_variants(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_packages_shop_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='vrepeat_packages' AND column_name='shop_id')
-  AND to_regclass('public.shops') IS NOT NULL THEN
-  ALTER TABLE public.vrepeat_packages ADD CONSTRAINT vrepeat_packages_shop_id_fkey
-    FOREIGN KEY (shop_id) REFERENCES public.shops(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_packages_seller_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='vrepeat_packages' AND column_name='seller_id')
-  AND to_regclass('public.sellers') IS NOT NULL THEN
-  ALTER TABLE public.vrepeat_packages ADD CONSTRAINT vrepeat_packages_seller_id_fkey
-    FOREIGN KEY (seller_id) REFERENCES public.sellers(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_packages_payment_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='vrepeat_packages' AND column_name='payment_id')
-  AND to_regclass('public.payments') IS NOT NULL THEN
-  ALTER TABLE public.vrepeat_packages ADD CONSTRAINT vrepeat_packages_payment_id_fkey
-    FOREIGN KEY (payment_id) REFERENCES public.payments(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_deliveries_package_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='vrepeat_deliveries' AND column_name='package_id')
-  AND to_regclass('public.vrepeat_packages') IS NOT NULL THEN
-  ALTER TABLE public.vrepeat_deliveries ADD CONSTRAINT vrepeat_deliveries_package_id_fkey
-    FOREIGN KEY (package_id) REFERENCES public.vrepeat_packages(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_deliveries_order_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='vrepeat_deliveries' AND column_name='order_id')
-  AND to_regclass('public.orders') IS NOT NULL THEN
-  ALTER TABLE public.vrepeat_deliveries ADD CONSTRAINT vrepeat_deliveries_order_id_fkey
-    FOREIGN KEY (order_id) REFERENCES public.orders(id);
 END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'product_reviews_product_id_fkey')
   AND EXISTS (SELECT 1 FROM information_schema.columns
@@ -4420,165 +3645,6 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_mes
   ALTER TABLE public.chat_messages ADD CONSTRAINT chat_messages_sender_id_fkey
     FOREIGN KEY (sender_id) REFERENCES public.users(id) ON DELETE CASCADE;
 END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_plans_user_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_plans' AND column_name='user_id')
-  AND to_regclass('public.users') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_plans ADD CONSTRAINT velrepeat_plans_user_id_fkey
-    FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_plans_shipping_address_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_plans' AND column_name='shipping_address_id')
-  AND to_regclass('public.addresses') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_plans ADD CONSTRAINT velrepeat_plans_shipping_address_id_fkey
-    FOREIGN KEY (shipping_address_id) REFERENCES public.addresses(id) ON DELETE SET NULL;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_items_plan_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_items' AND column_name='plan_id')
-  AND to_regclass('public.velrepeat_plans') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_items ADD CONSTRAINT velrepeat_items_plan_id_fkey
-    FOREIGN KEY (plan_id) REFERENCES public.velrepeat_plans(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_items_product_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_items' AND column_name='product_id')
-  AND to_regclass('public.products') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_items ADD CONSTRAINT velrepeat_items_product_id_fkey
-    FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_items_variant_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_items' AND column_name='variant_id')
-  AND to_regclass('public.product_variants') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_items ADD CONSTRAINT velrepeat_items_variant_id_fkey
-    FOREIGN KEY (variant_id) REFERENCES public.product_variants(id) ON DELETE SET NULL;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_items_shop_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_items' AND column_name='shop_id')
-  AND to_regclass('public.shops') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_items ADD CONSTRAINT velrepeat_items_shop_id_fkey
-    FOREIGN KEY (shop_id) REFERENCES public.shops(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_items_seller_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_items' AND column_name='seller_id')
-  AND to_regclass('public.sellers') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_items ADD CONSTRAINT velrepeat_items_seller_id_fkey
-    FOREIGN KEY (seller_id) REFERENCES public.sellers(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_runs_plan_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_runs' AND column_name='plan_id')
-  AND to_regclass('public.velrepeat_plans') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_runs ADD CONSTRAINT velrepeat_runs_plan_id_fkey
-    FOREIGN KEY (plan_id) REFERENCES public.velrepeat_plans(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_runs_order_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_runs' AND column_name='order_id')
-  AND to_regclass('public.orders') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_runs ADD CONSTRAINT velrepeat_runs_order_id_fkey
-    FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE SET NULL;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_events_plan_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_events' AND column_name='plan_id')
-  AND to_regclass('public.velrepeat_plans') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_events ADD CONSTRAINT velrepeat_events_plan_id_fkey
-    FOREIGN KEY (plan_id) REFERENCES public.velrepeat_plans(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_events_run_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_events' AND column_name='run_id')
-  AND to_regclass('public.velrepeat_runs') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_events ADD CONSTRAINT velrepeat_events_run_id_fkey
-    FOREIGN KEY (run_id) REFERENCES public.velrepeat_runs(id) ON DELETE SET NULL;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_packages_seller_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_packages' AND column_name='seller_id')
-  AND to_regclass('public.sellers') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_packages ADD CONSTRAINT velrepeat_packages_seller_id_fkey
-    FOREIGN KEY (seller_id) REFERENCES public.sellers(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_package_items_package_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_package_items' AND column_name='package_id')
-  AND to_regclass('public.velrepeat_packages') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_package_items ADD CONSTRAINT velrepeat_package_items_package_id_fkey
-    FOREIGN KEY (package_id) REFERENCES public.velrepeat_packages(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_package_items_product_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_package_items' AND column_name='product_id')
-  AND to_regclass('public.products') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_package_items ADD CONSTRAINT velrepeat_package_items_product_id_fkey
-    FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_package_items_variant_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_package_items' AND column_name='variant_id')
-  AND to_regclass('public.product_variants') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_package_items ADD CONSTRAINT velrepeat_package_items_variant_id_fkey
-    FOREIGN KEY (variant_id) REFERENCES public.product_variants(id) ON DELETE SET NULL;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_pricing_snapshots_plan_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_pricing_snapshots' AND column_name='plan_id')
-  AND to_regclass('public.velrepeat_plans') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_plan_id_fkey
-    FOREIGN KEY (plan_id) REFERENCES public.velrepeat_plans(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_pricing_snapshot_items_snapshot_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_pricing_snapshot_items' AND column_name='snapshot_id')
-  AND to_regclass('public.velrepeat_pricing_snapshots') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_pricing_snapshot_items ADD CONSTRAINT velrepeat_pricing_snapshot_items_snapshot_id_fkey
-    FOREIGN KEY (snapshot_id) REFERENCES public.velrepeat_pricing_snapshots(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_pricing_snapshot_items_product_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_pricing_snapshot_items' AND column_name='product_id')
-  AND to_regclass('public.products') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_pricing_snapshot_items ADD CONSTRAINT velrepeat_pricing_snapshot_items_product_id_fkey
-    FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE SET NULL;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_pricing_snapshot_items_variant_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_pricing_snapshot_items' AND column_name='variant_id')
-  AND to_regclass('public.product_variants') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_pricing_snapshot_items ADD CONSTRAINT velrepeat_pricing_snapshot_items_variant_id_fkey
-    FOREIGN KEY (variant_id) REFERENCES public.product_variants(id) ON DELETE SET NULL;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_cycles_plan_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_cycles' AND column_name='plan_id')
-  AND to_regclass('public.velrepeat_plans') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_cycles ADD CONSTRAINT velrepeat_cycles_plan_id_fkey
-    FOREIGN KEY (plan_id) REFERENCES public.velrepeat_plans(id) ON DELETE CASCADE;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_cycles_pricing_snapshot_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='velrepeat_cycles' AND column_name='pricing_snapshot_id')
-  AND to_regclass('public.velrepeat_pricing_snapshots') IS NOT NULL THEN
-  ALTER TABLE public.velrepeat_cycles ADD CONSTRAINT velrepeat_cycles_pricing_snapshot_id_fkey
-    FOREIGN KEY (pricing_snapshot_id) REFERENCES public.velrepeat_pricing_snapshots(id) ON DELETE SET NULL;
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_plan_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='payments' AND column_name='plan_id')
-  AND to_regclass('public.velrepeat_plans') IS NOT NULL THEN
-  ALTER TABLE public.payments ADD CONSTRAINT payments_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES velrepeat_plans(id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payment_incidents_plan_id_fkey')
-  AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='payment_incidents' AND column_name='plan_id')
-  AND to_regclass('public.velrepeat_plans') IS NOT NULL THEN
-  ALTER TABLE public.payment_incidents ADD CONSTRAINT payment_incidents_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES velrepeat_plans(id);
-END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_checkout_group_id_fkey')
   AND EXISTS (SELECT 1 FROM information_schema.columns
                WHERE table_schema='public' AND table_name='orders' AND column_name='checkout_group_id')
@@ -4684,12 +3750,16 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'checkout
   ALTER TABLE public.checkout_requests ADD CONSTRAINT checkout_requests_user_scope_key UNIQUE (user_id, scope, request_key);
 END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_at_least_one_parent_check') THEN
-  ALTER TABLE public.payments ADD CONSTRAINT payments_at_least_one_parent_check CHECK (order_id IS NOT NULL OR plan_id IS NOT NULL OR checkout_group_id IS NOT NULL);
+  ALTER TABLE public.payments ADD CONSTRAINT payments_at_least_one_parent_check CHECK (order_id IS NOT NULL OR checkout_group_id IS NOT NULL);
 END IF; END $$;
+-- One payment names AT MOST one parent (order XOR checkout group) — the legacy
+-- `plan_id` term removed. Added only when MISSING: a database that still holds
+-- the legacy definition keeps it until the legacy VelRepeat cleanup swaps it
+-- (docs/VELREPEAT_REMOVAL_PLAN.md), because a legacy plan_id-only payment row
+-- would violate the new definition and this script may never fail on old data.
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_single_domain_check') THEN
-  ALTER TABLE public.payments ADD CONSTRAINT payments_single_domain_check CHECK (NOT (plan_id IS NOT NULL AND (order_id IS NOT NULL OR checkout_group_id IS NOT NULL)));
+  ALTER TABLE public.payments ADD CONSTRAINT payments_single_domain_check CHECK (NOT (order_id IS NOT NULL AND checkout_group_id IS NOT NULL));
 END IF; END $$;
-
 -- A refund must name SOMETHING. Cannot fail on an existing database: every row
 -- written before migration 055 carries an `order_id` (it was NOT NULL), and PART
 -- 2c has just relaxed that column so a purchase refund can name the group instead.
@@ -4723,14 +3793,23 @@ BEGIN
     RAISE NOTICE 'velnox: payments_status_check added';
   END IF;
 END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payment_incidents_exactly_one_parent_check') THEN
-  ALTER TABLE public.payment_incidents ADD CONSTRAINT payment_incidents_exactly_one_parent_check CHECK ((order_id IS NOT NULL AND plan_id IS NULL) OR (order_id IS NULL AND plan_id IS NOT NULL));
-END IF; END $$;
+-- A payment incident is always about an ORDER now that the plan-backed
+-- commerce path is gone. DATA-GUARDED for the same reason as the payments
+-- status check below: an old database may still hold plan-only incident rows,
+-- and ADD CONSTRAINT would abort the whole file instead of reporting it.
+DO $$
+DECLARE orphans BIGINT;
+BEGIN
+  SELECT count(*) INTO orphans FROM public.payment_incidents WHERE order_id IS NULL;
+  IF orphans > 0 THEN
+    RAISE NOTICE 'velnox: payment_incidents_order_parent_check NOT added - % row(s) have no order_id', orphans;
+  ELSIF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payment_incidents_order_parent_check') THEN
+    ALTER TABLE public.payment_incidents ADD CONSTRAINT payment_incidents_order_parent_check CHECK (order_id IS NOT NULL);
+    RAISE NOTICE 'velnox: payment_incidents_order_parent_check added';
+  END IF;
+END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'customer_wishlist_user_id_product_id_key') THEN
   ALTER TABLE public.customer_wishlist ADD CONSTRAINT customer_wishlist_user_id_product_id_key UNIQUE (user_id, product_id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vrepeat_deliveries_package_id_delivery_number_key') THEN
-  ALTER TABLE public.vrepeat_deliveries ADD CONSTRAINT vrepeat_deliveries_package_id_delivery_number_key UNIQUE (package_id, delivery_number);
 END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'product_reviews_product_id_user_id_key') THEN
   ALTER TABLE public.product_reviews ADD CONSTRAINT product_reviews_product_id_user_id_key UNIQUE (product_id, user_id);
@@ -4740,12 +3819,6 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'product_
 END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_customer_id_shop_id_key') THEN
   ALTER TABLE public.conversations ADD CONSTRAINT conversations_customer_id_shop_id_key UNIQUE (customer_id, shop_id);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_runs_plan_id_scheduled_for_key') THEN
-  ALTER TABLE public.velrepeat_runs ADD CONSTRAINT velrepeat_runs_plan_id_scheduled_for_key UNIQUE (plan_id, scheduled_for);
-END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'velrepeat_cycles_plan_id_cycle_number_key') THEN
-  ALTER TABLE public.velrepeat_cycles ADD CONSTRAINT velrepeat_cycles_plan_id_cycle_number_key UNIQUE (plan_id, cycle_number);
 END IF; END $$;
 
 -- ─── commerce core (migration 056) ──────────────────────────────────────
@@ -4950,76 +4023,12 @@ END $$;
 -- ============================================================================
 -- PART 5c - CHECKs that schema.sql deliberately re-declares
 -- ============================================================================
--- These six checks are re-declared in schema.sql because their definition
+-- These two checks are re-declared in schema.sql because their definition
 -- changed. An older database still holds the previous definition under the same
 -- name, so a name-only guard would silently keep it and reject a value the
 -- canonical schema allows. Postgres normalises the desired definition through a
 -- throwaway temp table, so the stored one is compared to it exactly: when they
 -- already match this is a no-op and no lock is taken on the real table.
-DO $$
-DECLARE have TEXT; want TEXT;
-BEGIN
-  CREATE TEMP TABLE velnox_defn_probe_1 (LIKE public.velrepeat_pricing_snapshots) ON COMMIT DROP;
-  ALTER TABLE velnox_defn_probe_1 ADD CONSTRAINT velnox_defn_probe_ck CHECK (cycle_price IS NOT NULL);
-  SELECT pg_get_constraintdef(oid) INTO want
-    FROM pg_constraint WHERE conname = 'velnox_defn_probe_ck';
-  SELECT pg_get_constraintdef(oid) INTO have FROM pg_constraint WHERE conname = 'velrepeat_pricing_snapshots_cycle_price_not_null';
-  IF have IS NULL THEN
-    ALTER TABLE public.velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_cycle_price_not_null CHECK (cycle_price IS NOT NULL);
-  ELSIF have IS DISTINCT FROM want THEN
-    RAISE NOTICE 'velnox: %.% had a stored definition that db/schema.sql no longer declares; applying the canonical one', 'velrepeat_pricing_snapshots', 'velrepeat_pricing_snapshots_cycle_price_not_null';
-    ALTER TABLE public.velrepeat_pricing_snapshots DROP CONSTRAINT velrepeat_pricing_snapshots_cycle_price_not_null;
-    ALTER TABLE public.velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_cycle_price_not_null CHECK (cycle_price IS NOT NULL);
-  END IF;
-END $$;
-DO $$
-DECLARE have TEXT; want TEXT;
-BEGIN
-  CREATE TEMP TABLE velnox_defn_probe_2 (LIKE public.velrepeat_pricing_snapshots) ON COMMIT DROP;
-  ALTER TABLE velnox_defn_probe_2 ADD CONSTRAINT velnox_defn_probe_ck CHECK (cycle_price IS NULL OR total_amount >= cycle_price);
-  SELECT pg_get_constraintdef(oid) INTO want
-    FROM pg_constraint WHERE conname = 'velnox_defn_probe_ck';
-  SELECT pg_get_constraintdef(oid) INTO have FROM pg_constraint WHERE conname = 'velrepeat_pricing_snapshots_total_not_below_cycle';
-  IF have IS NULL THEN
-    ALTER TABLE public.velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_total_not_below_cycle CHECK (cycle_price IS NULL OR total_amount >= cycle_price);
-  ELSIF have IS DISTINCT FROM want THEN
-    RAISE NOTICE 'velnox: %.% had a stored definition that db/schema.sql no longer declares; applying the canonical one', 'velrepeat_pricing_snapshots', 'velrepeat_pricing_snapshots_total_not_below_cycle';
-    ALTER TABLE public.velrepeat_pricing_snapshots DROP CONSTRAINT velrepeat_pricing_snapshots_total_not_below_cycle;
-    ALTER TABLE public.velrepeat_pricing_snapshots ADD CONSTRAINT velrepeat_pricing_snapshots_total_not_below_cycle CHECK (cycle_price IS NULL OR total_amount >= cycle_price);
-  END IF;
-END $$;
-DO $$
-DECLARE have TEXT; want TEXT;
-BEGIN
-  CREATE TEMP TABLE velnox_defn_probe_3 (LIKE public.velrepeat_plans) ON COMMIT DROP;
-  ALTER TABLE velnox_defn_probe_3 ADD CONSTRAINT velnox_defn_probe_ck CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'cancelled', 'completed'));
-  SELECT pg_get_constraintdef(oid) INTO want
-    FROM pg_constraint WHERE conname = 'velnox_defn_probe_ck';
-  SELECT pg_get_constraintdef(oid) INTO have FROM pg_constraint WHERE conname = 'velrepeat_plans_status_check';
-  IF have IS NULL THEN
-    ALTER TABLE public.velrepeat_plans ADD CONSTRAINT velrepeat_plans_status_check CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'cancelled', 'completed'));
-  ELSIF have IS DISTINCT FROM want THEN
-    RAISE NOTICE 'velnox: %.% had a stored definition that db/schema.sql no longer declares; applying the canonical one', 'velrepeat_plans', 'velrepeat_plans_status_check';
-    ALTER TABLE public.velrepeat_plans DROP CONSTRAINT velrepeat_plans_status_check;
-    ALTER TABLE public.velrepeat_plans ADD CONSTRAINT velrepeat_plans_status_check CHECK (status IN ('draft', 'active', 'paused', 'processing', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'cancelled', 'completed'));
-  END IF;
-END $$;
-DO $$
-DECLARE have TEXT; want TEXT;
-BEGIN
-  CREATE TEMP TABLE velnox_defn_probe_4 (LIKE public.velrepeat_runs) ON COMMIT DROP;
-  ALTER TABLE velnox_defn_probe_4 ADD CONSTRAINT velnox_defn_probe_ck CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'failed', 'cancelled'));
-  SELECT pg_get_constraintdef(oid) INTO want
-    FROM pg_constraint WHERE conname = 'velnox_defn_probe_ck';
-  SELECT pg_get_constraintdef(oid) INTO have FROM pg_constraint WHERE conname = 'velrepeat_runs_status_check';
-  IF have IS NULL THEN
-    ALTER TABLE public.velrepeat_runs ADD CONSTRAINT velrepeat_runs_status_check CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'failed', 'cancelled'));
-  ELSIF have IS DISTINCT FROM want THEN
-    RAISE NOTICE 'velnox: %.% had a stored definition that db/schema.sql no longer declares; applying the canonical one', 'velrepeat_runs', 'velrepeat_runs_status_check';
-    ALTER TABLE public.velrepeat_runs DROP CONSTRAINT velrepeat_runs_status_check;
-    ALTER TABLE public.velrepeat_runs ADD CONSTRAINT velrepeat_runs_status_check CHECK (status IN ('processing', 'success', 'payment_failed', 'out_of_stock', 'item_unavailable', 'price_changed', 'failed', 'cancelled'));
-  END IF;
-END $$;
 DO $$
 DECLARE have TEXT; want TEXT;
 BEGIN

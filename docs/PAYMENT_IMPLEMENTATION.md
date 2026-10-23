@@ -141,8 +141,8 @@ path, and void the charge last. A second call claims nothing and moves nothing.
 
 ## 12. Database changes
 
-Migration `db/migrations/055_group_payment_refund_parent.sql` (mirrored in
-`db/schema.sql` and `db/run-sqleditor.sql`):
+Mirrored in
+`db/schema.sql` and `db/run-sqleditor.sql`:
 
 | Change | Why |
 |---|---|
@@ -290,7 +290,7 @@ or any socket event is published. No assertion was weakened, skipped or deleted.
 - New logic: `backend/lib/payment-attempt.ts` (490 lines), 
   `backend/lib/checkout-group-lifecycle.ts` (200 lines).
 - New proof: `backend/tests/checkout-group-payment-visibility.test.ts` (539 lines).
-- New schema: `db/migrations/055_group_payment_refund_parent.sql`.
+- New schema: `db/schema.sql` + `db/run-sqleditor.sql` (`refunds.order_id` nullable, `refunds.checkout_group_id`).
 - The audit's root cause was reproduced **before** the fix and re-proved **after** it, on
   a real database, by asserting that the OLD blind subquery returns `'unpaid'` while the
   order row says `paid` — the regression stays visible in the test suite so it cannot

@@ -165,7 +165,6 @@ const RULES: Array<{ match: (req: Request) => boolean; limiter: RequestHandler }
   { match: (req) => req.method === "POST" && req.path === "/api/stripe/checkout", limiter: createRateLimiter({ name: "stripe-checkout", windowMs: 60_000, max: 10 }) },
   { match: (req) => req.method === "PATCH" && /^\/api\/customer\/orders\/[^/]+\/cancel$/.test(req.path), limiter: createRateLimiter({ name: "order-cancel", windowMs: 60_000, max: 10 }) },
   { match: (req) => req.method === "POST" && req.path === "/api/customer/reorder", limiter: createRateLimiter({ name: "reorder", windowMs: 60_000, max: 10 }) },
-  { match: (req) => req.method === "POST" && /^\/api\/velrepeat\/(plans\/[^/]+\/run-now|repeat-now)$/.test(req.path), limiter: createRateLimiter({ name: "velrepeat-run", windowMs: 60_000, max: 5 }) },
 
   // ── Reviews (user-keyed) ─────────────────────────────────────────────────
   { match: (req) => req.method === "POST" && /^\/api\/products\/[^/]+\/reviews$/.test(req.path), limiter: createRateLimiter({ name: "review-create", windowMs: 60_000, max: 10 }) },
@@ -196,7 +195,7 @@ const RULES: Array<{ match: (req: Request) => boolean; limiter: RequestHandler }
   { match: (req) => req.method === "PUT" && req.path === "/api/customer/profile", limiter: createRateLimiter({ name: "profile-update", windowMs: 60_000, max: 30 }) },
 
   // ── Seller (user-keyed) ──────────────────────────────────────────────────
-  { match: (req) => (req.method === "POST" || req.method === "PATCH" || req.method === "DELETE") && /^\/api\/seller\/(products|orders|shipments|returns|goals|subscriptions|velrepeat)/.test(req.path), limiter: createRateLimiter({ name: "seller-mutations", windowMs: 60_000, max: 60 }) },
+  { match: (req) => (req.method === "POST" || req.method === "PATCH" || req.method === "DELETE") && /^\/api\/seller\/(products|orders|shipments|returns|goals)/.test(req.path), limiter: createRateLimiter({ name: "seller-mutations", windowMs: 60_000, max: 60 }) },
 
   // ── Admin (user-keyed) ───────────────────────────────────────────────────
   { match: (req) => (req.method === "POST" || req.method === "PATCH" || req.method === "DELETE") && /^\/api\/admin\//.test(req.path), limiter: createRateLimiter({ name: "admin-mutations", windowMs: 60_000, max: 60 }) },

@@ -7,8 +7,7 @@ Neon PostgreSQL is the only source of truth. All business data lives here.
 ## Schema Files
 
 - `db/schema.sql` — Complete canonical schema
-- `db/run-sqleditor.sql` — Idempotent bootstrap (safe for empty or existing DB)
-- `db/migrations/` — Sequential migration files
+- `db/run-sqleditor.sql` — Rerunnable additive reconciler (safe for empty or existing DB)
 
 ## Tables
 
@@ -35,7 +34,6 @@ Neon PostgreSQL is the only source of truth. All business data lives here.
 - `refunds` — Refund records
 - `commissions` — Platform commissions
 - `settlements` — Seller payouts
-- `subscriptions` — Seller subscription plans
 
 ### Company Domain
 - `departments` — Internal departments
@@ -48,9 +46,9 @@ Neon PostgreSQL is the only source of truth. All business data lives here.
 - `behavioral_events` — Customer behavior tracking
 - `notifications` — User notifications
 
-## Migration Rules
+## Schema Change Rules
 
-1. All migrations must be idempotent
+1. Schema changes must be idempotent
 2. Never use DROP TABLE or TRUNCATE
 3. Use CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS
-4. After migration: update schema.sql, run-sqleditor.sql, `.ai/AI_HANDOFF.md`
+4. After a schema change: update schema.sql, run-sqleditor.sql, `.ai/AI_HANDOFF.md`

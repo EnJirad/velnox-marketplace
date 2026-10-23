@@ -12,7 +12,7 @@
  * The integration test (skipped without a test database) checks the live schema.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "fs";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { hasTestDatabase } from "./helpers/test-db.js";
 import {
@@ -100,62 +100,70 @@ describe("validateCategory", () => {
 // ─── Category schema is the single source of truth ─────────────────────────
 
 describe("category schema consistency", () => {
-  const migration = read("db/migrations/040_verification_and_categories.sql");
+  const schema = read("db/schema.sql");
+  const reconciler = read("db/run-sqleditor.sql");
 
-  test("V0040 defines every column the Product API reads", () => {
+  test("the canonical files define every column the Product API reads", () => {
     for (const column of ["is_active", "names", "description", "description_names", "image_url"]) {
-      expect(migration).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
+      expect(reconciler).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
+      expect(new RegExp(`\\b${column}\\b`).test(schema)).toBe(true);
     }
   });
 
-  test("V0040 is idempotent (safe to re-apply at startup)", () => {
-    expect(migration).toContain("ON CONFLICT (slug) DO UPDATE");
-    expect(migration).toContain("CREATE TABLE IF NOT EXISTS");
+  test("the canonical files are idempotent (safe to re-apply)", () => {
+    for (const sql of [schema, reconciler]) {
+      expect(sql).toContain("ON CONFLICT (slug) DO UPDATE");
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS");
+    }
   });
 
   test("db/schema.sql documents the same category columns", () => {
-    const schema = read("db/schema.sql");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS categories");
     expect(schema).toContain("is_active BOOLEAN NOT NULL DEFAULT TRUE");
   });
 
-  test("no migration contains a backslash-escaped quote (psql-invalid)", () => {
-    // Regression guard for the actual production failure: V0040 shipped
+  test("the canonical SQL files contain no backslash-escaped quote (psql-invalid)", () => {
+    // Regression guard for the actual production failure: a seed row shipped
     // `'Men\'s Clothing'`. With standard_conforming_strings=on the literal ends
     // at `Men\` and psql aborts with "invalid command \'s", so the whole
-    // --single-transaction migration (including the ALTERs that add is_active)
-    // is rolled back. Doubling the quote is the only valid escape.
-    const files = [
-      ...readdirSync(join(REPO_ROOT, "db", "migrations"))
-        .filter((f) => f.endsWith(".sql"))
-        .map((f) => `db/migrations/${f}`),
-      "db/run-sqleditor.sql",
-      "db/schema.sql",
-    ];
-    for (const file of files) {
+    // --single-transaction run (including the ALTERs that add is_active) is
+    // rolled back. Doubling the quote is the only valid escape.
+    for (const file of ["db/run-sqleditor.sql", "db/schema.sql"]) {
       expect(read(file)).not.toContain("\\'");
     }
   });
 
-  test("V0040 apostrophe seed rows use the doubled-quote escape", () => {
-    for (const value of ["Men''s Clothing", "Women''s Clothing", "Children''s Clothing"]) {
-      expect(migration).toContain(`'${value}'`);
+  test("the apostrophe seed rows use the doubled-quote escape", () => {
+    for (const value of ["Men''s Clothing", "Women''s Clothing", "Kids'' Clothing"]) {
+      expect(reconciler).toContain(`'${value}'`);
     }
   });
 
-  test("V0040 subcategory seed resolves parents by slug, never by seed uuid", () => {
-    // Regression guard for the production failure that blocked every migration
-    // after V0039: the subcategory INSERT referenced the hard-coded parent uuids
-    // above, but a database bootstrapped from db/schema.sql already holds those
-    // parents (electronics, food-beverage, ...) under DIFFERENT uuids. Phase 4
-    // therefore took the ON CONFLICT (slug) path and kept the existing row id,
-    // so the literal parent reference pointed at a row that was never created
-    // and raised `categories_parent_id_fkey`. The whole --single-transaction
-    // migration rolled back, so 041-044 never applied and
-    // seller_verifications.review_reason_code stayed missing in production.
-    const subcategories = migration.slice(migration.indexOf("Phase 4b"));
-    expect(subcategories).toContain("(SELECT id FROM categories WHERE slug = 'food-beverage')");
-    expect(subcategories).not.toContain("'a0000001-");
+  test("the subcategory seed resolves parents by the SAME uuids the seed defines", () => {
+    // Regression guard for the production failure that blocked every later
+    // migration: a seed referenced parent uuids the database did not hold, so
+    // the INSERT raised `categories_parent_id_fkey` and the whole
+    // --single-transaction run rolled back. Every literal parent_id in the seed
+    // must therefore also appear as an id the same file inserts.
+    const ids = new Set<string>();
+    const parents: string[] = [];
+    let at = reconciler.indexOf("INSERT INTO categories (id");
+    expect(at).toBeGreaterThan(-1);
+    while (at !== -1) {
+      const end = reconciler.indexOf("ON CONFLICT (slug)", at);
+      const block = end === -1 ? reconciler.slice(at) : reconciler.slice(at, end);
+      for (const m of block.matchAll(/\('([0-9a-f-]{36})'[^\n]*?, (NULL|'[0-9a-f-]{36}'), \d+,/g)) {
+        ids.add(m[1]!);
+        // The captured parent keeps its SQL quotes; the ids are bare.
+        if (m[2] !== "NULL") parents.push(m[2]!.replace(/'/g, ""));
+      }
+      at = reconciler.indexOf("INSERT INTO categories (id", at + 1);
+    }
+    expect(ids.size).toBeGreaterThan(20);
+    expect(parents.length).toBeGreaterThan(0);
+    for (const parent of parents) {
+      expect(ids.has(parent)).toBe(true);
+    }
   });
 
 

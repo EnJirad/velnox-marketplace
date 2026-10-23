@@ -401,9 +401,8 @@ let running = false;
 let schemaMissingWarned = false;
 
 /**
- * Start the expiry sweep. Mirrors the VelRepeat scheduler: the interval only
- * triggers a scan, the database decides, and overlapping ticks are impossible
- * within one process.
+ * Start the expiry sweep. The interval only triggers a scan, the database
+ * decides, and overlapping ticks are impossible within one process.
  */
 export function startPaymentReservationScheduler(intervalMs = 30_000): NodeJS.Timeout {
   const ms = Math.max(10_000, Number(process.env.PAYMENT_RESERVATION_SCHEDULER_INTERVAL_MS) || intervalMs);
@@ -423,7 +422,7 @@ export function startPaymentReservationScheduler(intervalMs = 30_000): NodeJS.Ti
           schemaMissingWarned = true;
           console.error(
             "[reservation] sweep disabled — orders.payment_expires_at is missing. " +
-              "Apply db/migrations/048_payment_reservation.sql; the sweep resumes on its own.",
+              "Apply db/run-sqleditor.sql; the sweep resumes on its own.",
           );
         }
       } else {

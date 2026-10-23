@@ -59,9 +59,9 @@ velnox-marketplace/
 │   └── realtime/        # WebSocket server
 ├── packages/shared/     # Shared code (components, hooks, lib, pages)
 ├── db/
-│   ├── schema.sql       # Complete database schema (canonical reference)
-│   ├── run-sqleditor.sql # Bootstrap SQL for Neon (must sync with schema.sql)
-│   └── migrations/      # Sequential migration files
+│   ├── schema.sql       # Complete database schema (canonical snapshot)
+│   ├── run-sqleditor.sql # Rerunnable reconciler (bootstrap or existing DB)
+│   └── verify-reconciler.sh # Checks both SQL files declare the same objects
 └── docs/                # Documentation
 ```
 
@@ -185,46 +185,40 @@ For Vercel deployment, set in the Vercel dashboard for each project.
 
 This creates all tables, indexes, and constraints.
 
-**Important:** `db/run-sqleditor.sql` and `db/schema.sql` must always be identical and synchronized.
+**Important:** `db/schema.sql` and `db/run-sqleditor.sql` must stay in *declaration parity* — every table, column, index, constraint, function and trigger the snapshot declares must also be declared by the reconciler (asserted by `backend/tests/db-run-sqleditor-reconciler.test.ts`).
 
-### 6. Database Migration System
+### 6. Database Schema Management
 
-Velnox uses a **two-tier migration system**:
+Velnox uses **two canonical SQL files** — there is no migration directory:
 
-| Tier | Location | When to use |
-|------|----------|-------------|
-| **GitHub Action** | `.github/workflows/migrate-neon.yml` | Production Neon — automatic on push to main |
-| **Manual** | `db/migrations/*.sql` | Development or manual production apply |
+| File | Purpose |
+|------|---------|
+| `db/schema.sql` | Complete schema snapshot for a fresh database |
+| `db/run-sqleditor.sql` | Rerunnable reconciler — brings an EXISTING database to the snapshot (additive only) |
 
-#### How migrations work
+#### How schema changes work
 
-1. **New database changes** go into `db/migrations/` as individual files (e.g., `013_schema_migrations_and_address_fixes.sql`)
-2. **Both SQL files** must also be updated: `schema.sql`, `run-sqleditor.sql`
-3. **Production** receives migrations via the GitHub Action — it detects pending migrations and applies them in order
-4. **Schema drift is tracked** via the `schema_migrations` table in Neon
+1. **New database changes** go into **both** canonical files: `db/schema.sql` and `db/run-sqleditor.sql`
+2. **Production** receives changes by running the `Production DB Reconcile` GitHub Action manually, or by pasting `db/run-sqleditor.sql` into the Neon SQL Editor
+3. **Historical migration names** remain recorded in the `schema_migrations` table (a read-only ledger)
 
-#### Migration file naming
+#### Rules
 
-```
-db/migrations/
-  001_initial.sql
-  002_auth.sql
-  ...
-  012_product_fields.sql
-  013_schema_migrations_and_address_fixes.sql
-```
+- The reconciler never `DROP TABLE`s, never `DROP COLUMN`s, never truncates or deletes.
+- Running it a second time changes nothing (idempotent).
+- `backend/tests/db-run-sqleditor-reconciler.test.ts` enforces declaration parity between the two files.
 
 #### GitHub Action setup
 
 1. Go to GitHub repo → Settings → Secrets and variables → Actions
-2. Add secret: `NEON_DATABASE_URL` = your Neon connection string
-3. The workflow runs automatically on push to main when `db/migrations/*.sql` changes
-4. It can also be triggered manually via workflow_dispatch
+2. Add secret: `NEON_PRODUCTION_DATABASE_URL` = production Neon connection string
+3. `Production DB Reconcile` (`.github/workflows/production-db-migrate.yml`) is manual-only (workflow_dispatch) and requires typing the confirmation text
+4. `Production DB Verify` checks the production database read-only — it never writes
 
 #### Never run startup DDL
 
 Backend application startup must NOT run `ALTER TABLE` statements.
-All schema changes go through the migration system.
+All schema changes go through the two canonical files.
 
 ### 6. Set Up Google OAuth
 

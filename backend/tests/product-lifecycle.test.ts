@@ -42,11 +42,9 @@ const sellerSrc = readFileSync(join(root, "backend/routes/seller.ts"), "utf8");
 const reviewDialogSrc = readFileSync(join(root, "apps/velcenter/src/components/VerificationReviewDialog.tsx"), "utf8");
 const sellerQueueSrc = readFileSync(join(root, "apps/velcenter/src/components/SellerVerificationQueue.tsx"), "utf8");
 const identityUploaderSrc = readFileSync(join(root, "packages/shared/src/components/seller/IdentityDocumentUploader.tsx"), "utf8");
-const migration043 = readFileSync(join(root, "db/migrations/043_seller_review_lifecycle.sql"), "utf8");
 const reasonsSrc = readFileSync(join(root, "packages/shared/src/lib/verification-reasons.ts"), "utf8");
 const localesSrc = readFileSync(join(root, "packages/shared/src/lib/i18n/locales/index.ts"), "utf8");
 const badgeSrc = readFileSync(join(root, "packages/shared/src/components/VBadge.tsx"), "utf8");
-const migration040 = readFileSync(join(root, "db/migrations/040_verification_and_categories.sql"), "utf8");
 const schemaSql = readFileSync(join(root, "db/schema.sql"), "utf8");
 const sqlEditor = readFileSync(join(root, "db/run-sqleditor.sql"), "utf8");
 
@@ -382,21 +380,21 @@ describe("verification rate limits", () => {
   });
 });
 
-// ─── Migration + schema sync ───────────────────────────────────────────────
+// ─── Schema sync ──────────────────────────────────────────────────────────────
 
-describe("migration 040 + schema sync", () => {
-  test("migration creates both verification tables with partial unique indexes", () => {
-    expect(migration040).toContain("CREATE TABLE IF NOT EXISTS seller_verifications");
-    expect(migration040).toContain("CREATE TABLE IF NOT EXISTS product_verifications");
-    expect(migration040).toContain("idx_seller_verifications_pending");
-    expect(migration040).toContain("idx_product_verifications_pending");
-    expect(migration040).toContain("WHERE status = 'pending'");
+describe("verification schema + canonical sync", () => {
+  test("the canonical SQL creates both verification tables with partial unique indexes", () => {
+    expect(sqlEditor).toContain("CREATE TABLE IF NOT EXISTS seller_verifications");
+    expect(sqlEditor).toContain("CREATE TABLE IF NOT EXISTS product_verifications");
+    expect(sqlEditor).toContain("idx_seller_verifications_pending");
+    expect(sqlEditor).toContain("idx_product_verifications_pending");
+    expect(sqlEditor).toContain("WHERE status = 'pending'");
   });
 
-  test("verification columns exist on sellers and products in migration 040", () => {
-    expect(migration040).toContain("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS verification_status");
-    expect(migration040).toContain("ALTER TABLE products ADD COLUMN IF NOT EXISTS verification_status");
-    expect(migration040).toContain("verified_at TIMESTAMPTZ");
+  test("verification columns exist on sellers and products", () => {
+    expect(sqlEditor).toContain("ALTER TABLE public.sellers ADD COLUMN IF NOT EXISTS verification_status");
+    expect(sqlEditor).toContain("ALTER TABLE public.products ADD COLUMN IF NOT EXISTS verification_status");
+    expect(sqlEditor).toContain("verified_at TIMESTAMPTZ");
   });
 
   test("all schema files agree on what they declare", () => {
@@ -421,9 +419,11 @@ describe("migration 040 + schema sync", () => {
     }
   });
 
-  test("category seed rows are part of the migration path", () => {
-    expect(migration040).toContain("INSERT INTO categories");
-    expect(migration040).toContain("ON CONFLICT (slug) DO UPDATE");
+  test("category seed rows are part of the canonical SQL", () => {
+    for (const sql of [schemaSql, sqlEditor]) {
+      expect(sql).toContain("INSERT INTO categories");
+      expect(sql).toContain("ON CONFLICT (slug) DO UPDATE");
+    }
   });
 });
 
@@ -729,8 +729,9 @@ describe("seller application state machine", () => {
     for (const sql of [schemaSql, sqlEditor]) {
       expect(sql).toContain("CHECK (status IN ('pending', 'under_review', 'needs_correction', 'approved', 'rejected', 'suspended'))");
     }
-    expect(migration043).toContain("ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check");
-    expect(migration043).toContain("CHECK (status IN ('pending', 'under_review', 'needs_correction', 'approved', 'rejected', 'suspended'))");
+    // The snapshot is the one that drops and re-adds the constraint plainly; the
+    // reconciler does the same inside its guarded definition probe.
+    expect(schemaSql).toContain("ALTER TABLE sellers DROP CONSTRAINT IF EXISTS sellers_status_check");
   });
 
   test("a reviewer cannot approve their own application or an empty submission", () => {
@@ -790,12 +791,11 @@ describe("structured review reasons", () => {
 });
 
 describe("review history / audit trail", () => {
-  test("the history table exists in the schema, the SQL editor bundle and the migration", () => {
+  test("the history table exists in both canonical SQL files", () => {
     for (const sql of [schemaSql, sqlEditor]) {
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS seller_review_history");
       expect(sql).toContain("idx_seller_review_history_seller");
     }
-    expect(migration043).toContain("CREATE TABLE IF NOT EXISTS seller_review_history");
   });
 
   test("every lifecycle step appends a history row", () => {
@@ -833,10 +833,10 @@ describe("seller verification code matches the canonical schema", () => {
       .filter((name) => /^[a-z_]+$/.test(name)),
   );
 
-  test("the migration only adds columns the canonical schema declares", () => {
+  test("the canonical SQL only carries columns the canonical schema declares", () => {
     for (const column of ["review_reason_code", "review_note"]) {
       expect(canonicalColumns.has(column)).toBe(true);
-      expect(migration043).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
+      expect(sqlEditor).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
     }
   });
 

@@ -70,13 +70,6 @@ import { axesForFulfillmentStatus, projectOrderStatus, projectOrderStatusSql } f
 // The ONE order-number generator; stripe.ts used to carry a second, unused copy.
 import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
-// The VelRepeat V2 prepaid plan-payment dispatcher. It is imported here (and
-// only its exported entry point is used) so the webhook stays ONE endpoint with
-// ONE signature check, ONE event claim and ONE redelivery policy. The module
-// in turn uses this file's `stripeServerClient()` / `sessionConfirmsPayment`,
-// so the two modules form a cycle whose references are ALL inside function
-// bodies — nothing is read from either module at module-evaluation time.
-import { handleVelRepeatV2PaymentEvent } from "./velrepeat-v2-payments.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { writeAuditLog, auditClientIp } from "../lib/audit-log.js";
@@ -120,16 +113,13 @@ function getStripe(): Stripe | null {
 }
 
 /**
- * The ONE Stripe client this process uses, for callers outside this module.
+ * The ONE Stripe client this process uses.
  *
- * VelRepeat V2's prepaid PLAN payment (routes/velrepeat-v2-payments.ts) needs
- * the same test-mode client and the same lazy, key-derived caching this module
- * owns. Exporting the accessor keeps that a single client instead of a second
- * configuration: a deployment therefore still has exactly one Stripe
- * credential, one mode decision (`lib/payment-config.ts`) and one key cache.
- *
- * It returns `null` whenever `stripeStatus()` is not usable, so a caller can
- * never reach Stripe with a live key or without a webhook secret. The secret
+ * Exported so callers outside this module share the same test-mode client and
+ * the same lazy, key-derived caching: a deployment therefore still has exactly
+ * one Stripe credential, one mode decision (`lib/payment-config.ts`) and one key
+ * cache. It returns `null` whenever `stripeStatus()` is not usable, so a caller
+ * can never reach Stripe with a live key or without a webhook secret. The secret
  * itself is never returned — only the client.
  */
 export function stripeServerClient(): Stripe | null {
@@ -245,10 +235,7 @@ function fail(res: Response, status: number, code: string, message: string): voi
 
 /**
  * Money → Stripe minor units. `NaN` when the value is not a usable number.
- *
- * Exported so the VelRepeat V2 plan payment derives its charge the same way an
- * order does (there is one rule for THB ↔ minor units, not two). THB is a
- * two-decimal Stripe currency, so one baht is 100 minor units.
+ * THB is a two-decimal Stripe currency, so one baht is 100 minor units.
  */
 export function toStripeMinor(amount: unknown): number {
   const n = Number(amount);
@@ -1717,17 +1704,6 @@ async function syncRefundFromStripe(
  * — a sync that did not happen must never be acknowledged as if it did.
  */
 async function handleStripeEvent(event: Stripe.Event): Promise<void> {
-  // ── VelRepeat V2 prepaid PLAN payments ─────────────────────────────────
-  // Dispatched FIRST, before any order logic. A V2 plan charge carries its own
-  // scope marker and its own parent (`payments.plan_id`), so it is NOT an order
-  // payment: letting it fall through would find no `metadata.orderId`, log
-  // "no resolvable order" and silently drop a verified commitment payment.
-  //
-  // The marker is only ever written by our own session-creation code, and only
-  // events carrying it divert — every V1 event takes exactly the path it took
-  // before this module existed.
-  if (await handleVelRepeatV2PaymentEvent(event)) return;
-
   switch (event.type) {
     // ── Checkout Session ────────────────────────────────────────────────────
     case "checkout.session.completed": {

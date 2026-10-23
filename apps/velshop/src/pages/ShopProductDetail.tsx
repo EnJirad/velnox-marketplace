@@ -1,10 +1,8 @@
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
-import { VelRepeatPlanDialog } from "@/components/shop/VelRepeatPlanDialog";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { VBadge } from "@velnox/shared/components/VBadge";
-import { VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@velnox/shared/components/ui/sheet";
@@ -85,7 +83,7 @@ interface MyReview {
 }
 
 type TabKey = "recommend" | "details" | "reviews";
-type PendingAction = "cart" | "buy" | "velrepeat" | null;
+type PendingAction = "cart" | "buy" | null;
 
 /* ─── Expandable Title ─────────────────────────────────────────────────── */
 
@@ -250,7 +248,6 @@ export default function ShopProductDetail() {
   const [reviewBusy, setReviewBusy] = useState(false);
   const [wishlisted, setWishlisted] = useState(false);
   const [wishToggling, setWishToggling] = useState(false);
-  const [planOpen, setPlanOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("recommend");
 
   /* ── Variant state ──────────────────────────────────────────────── */
@@ -826,18 +823,6 @@ export default function ShopProductDetail() {
     return optionGroups.every((g: any) => !g.required || selectedOptions[g.id]);
   }, [hasOptionGroups, optionGroups, selectedOptions]);
   const needsVariant = hasOptionGroups && !allRequiredSelected;
-  // PARKED (2026-10-14): VelRepeat is off, so the product's recurring-purchase
-  // availability is false no matter what the seller had configured. Every
-  // VelRepeat button and sheet entry on this page reads this one value, so the
-  // module disappears from the page without deleting any of its markup.
-  const velrepeatAvailable =
-    VELREPEAT_ENABLED &&
-    !!(
-      product?.vrepeatEnabled ||
-      product?.vrepeatWeeklyEnabled ||
-      product?.vrepeatMonthlyEnabled
-    );
-
   /* ── SEO ────────────────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -928,18 +913,12 @@ export default function ShopProductDetail() {
     openVariantSheet("buy");
   }, [product, isAuthenticated, navigate, outOfStock, openVariantSheet]);
 
-  const handleVelRepeat = useCallback(() => {
-    if (!product) return;
-    if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    openVariantSheet("velrepeat");
-  }, [product, isAuthenticated, navigate, openVariantSheet]);
-
   const handleSheetAction = useCallback((action: PendingAction) => {
     setPendingAction(action);
     // Trigger the same validation + execution as direct buttons
     if (!product) return;
     if (!isAuthenticated) { navigate("/auth?returnTo=" + encodeURIComponent(`/products/${product.id}`)); return; }
-    if (outOfStock && action !== "velrepeat") {
+    if (outOfStock) {
       toast.error(t("productDetail.outOfStockDesc"));
       return;
     }
@@ -982,10 +961,6 @@ export default function ShopProductDetail() {
       }, 300);
       setVariantSheetOpen(false);
       setPendingAction(null);
-    } else if (action === "velrepeat") {
-      setVariantSheetOpen(false);
-      setPendingAction(null);
-      setPlanOpen(true);
     }
   }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, t]);
 
@@ -1027,11 +1002,6 @@ export default function ShopProductDetail() {
       }, 300);
       setVariantSheetOpen(false);
       setPendingAction(null);
-    } else if (pendingAction === "velrepeat") {
-      // Close sheet, open the VelRepeat V2 plan dialog with variant info
-      setVariantSheetOpen(false);
-      setPendingAction(null);
-      setPlanOpen(true);
     }
   }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, navigate, t]);
 
@@ -1364,15 +1334,6 @@ export default function ShopProductDetail() {
                   <span className="min-w-0 max-w-full truncate sm:hidden">{t("productDetail.addToCartSm")}</span>
                 </Button>
               </div>
-              {velrepeatAvailable && (
-                <Button
-                  className={`mt-2 w-full min-w-0 max-w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
-                  onClick={handleVelRepeat}
-                >
-                  <CalendarClock className="size-4 shrink-0" />
-                  <span className="min-w-0 max-w-full">{t("productDetail.velrepeat")}</span>
-                </Button>
-              )}
             </div>
           </div>
         </div>
@@ -1838,15 +1799,6 @@ export default function ShopProductDetail() {
                     {t("productDetail.addToCart")}
                   </Button>
                 </div>
-                {velrepeatAvailable && (
-                  <Button
-                    className={`w-full gap-1.5 ${ACTION_BUTTON_CLASSES.velrepeat}`}
-                    onClick={() => handleSheetAction("velrepeat")}
-                  >
-                    <CalendarClock className="size-4" />
-                    VelRepeat
-                  </Button>
-                )}
               </div>
             ) : (
               /* ── Direct mode: show single action button ── */
@@ -1857,11 +1809,6 @@ export default function ShopProductDetail() {
               >
                 {pendingAction === "buy" ? (
                   <><Zap className="size-4" />{t("productDetail.buyNow")} · {formatBaht(displayPrice * sheetQty)}</>
-                ) : pendingAction === "velrepeat" ? (
-                  <>
-                    <CalendarClock className="size-4" />
-                    VelRepeat · {formatBaht(displayPrice * sheetQty)}
-                  </>
                 ) : (
                   <>
                     <ShoppingCart className="size-4" />
@@ -1875,10 +1822,6 @@ export default function ShopProductDetail() {
       </Sheet>
 
       <ShopFooter />
-      {/* PARKED (2026-10-14): the VelRepeat plan dialog returns with the module. */}
-      {VELREPEAT_ENABLED && (
-        <VelRepeatPlanDialog product={product} open={planOpen} onOpenChange={setPlanOpen} selectedVariant={selectedVariant ? { id: selectedVariant.id, name: selectedVariant.name, price: selectedVariant.price, sku: selectedVariant.sku } : null} />
-      )}
     </div>
   );
 }

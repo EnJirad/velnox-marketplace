@@ -138,7 +138,7 @@ async function insertOrderWithUniqueNumber(
  */
 /**
  * Copy a user's address row into the JSONB snapshot shape used by orders.
- * Mirrors addressSnapshot() in velrepeat-plans.ts — one canonical snapshot shape.
+ * The one canonical address snapshot shape used by every order writer.
  */
 function orderAddressSnapshot(a: any): Record<string, unknown> | null {
   if (!a) return null;
@@ -761,7 +761,7 @@ export function setupCartRoutes(app: Express): void {
       if (Array.isArray(cartItemIds) && cartItemIds.length > 0) {
         itemsResult = await query(
           `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
-                  p.price AS product_price, p.vrepeat_enabled, p.unit,
+                  p.price AS product_price, p.unit,
                   i.quantity AS stock_qty, i.reserved,
                   sh.name AS shop_name,
                   (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
@@ -775,7 +775,7 @@ export function setupCartRoutes(app: Express): void {
       } else {
         itemsResult = await query(
           `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
-                  p.price AS product_price, p.vrepeat_enabled, p.unit,
+                  p.price AS product_price, p.unit,
                   i.quantity AS stock_qty, i.reserved,
                   sh.name AS shop_name,
                   (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
@@ -1085,7 +1085,6 @@ export function setupCartRoutes(app: Express): void {
           unit: i.unit ?? "",
           price: parseFloat(i.price),
           imageUrl: i.product_image_url ?? null,
-          vrepeatEnabled: Boolean(i.vrepeat_enabled),
         }));
         responseData = {
           parentOrderId,
@@ -1755,132 +1754,4 @@ export function setupCartRoutes(app: Express): void {
     }
   });
 
-  // ─── SUBSCRIPTIONS (VelRepeat stubs) ──────────────────────────────────────
-
-  // ── GET /api/customer/subscriptions ────────────────────────────────────
-  app.get("/api/customer/subscriptions", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = req.user!.userId;
-      // Check if subscriptions table exists
-      const tableCheck = await query(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'subscriptions') AS exists`
-      );
-      if (!tableCheck.rows[0]?.exists) {
-        res.json({ success: true, data: [] });
-        return;
-      }
-      const result = await query(
-        `SELECT s.*, p.name AS product_name, p.unit,
-                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-         FROM subscriptions s
-         LEFT JOIN products p ON s.product_id = p.id
-         WHERE s.user_id = $1
-         ORDER BY s.created_at DESC`,
-        [userId],
-      );
-      const subs = result.rows.map((r: any) => ({
-        id: r.id,
-        productId: r.product_id,
-        productName: r.product_name,
-        unit: r.unit,
-        quantity: r.quantity ?? 1,
-        intervalDays: r.interval_days ?? 30,
-        nextOrderDate: r.next_order_date,
-        status: r.status,
-        productImageUrl: r.product_image_url,
-        createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-      }));
-      res.json({ success: true, data: subs });
-    } catch (err) {
-      console.error("[subscriptions] list error:", err);
-      res.json({ success: true, data: [] });
-    }
-  });
-
-  // ── POST /api/subscriptions/create ──────────────────────────────────────
-  app.post("/api/subscriptions/create", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = req.user!.userId;
-      const { productId, quantity = 1, intervalDays = 30 } = req.body;
-      if (!productId) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "productId is required" } });
-        return;
-      }
-      // Verify product exists and is published
-      const prod = await query("SELECT id, status FROM products WHERE id = $1", [productId]);
-      if (prod.rows.length === 0 || prod.rows[0].status !== 'published') {
-        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
-        return;
-      }
-      const tableCheck = await query(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'subscriptions') AS exists`
-      );
-      if (!tableCheck.rows[0]?.exists) {
-        res.status(501).json({ success: false, error: { code: "NOT_IMPLEMENTED", message: "Subscriptions not available yet" } });
-        return;
-      }
-      const nextDate = new Date();
-      nextDate.setDate(nextDate.getDate() + intervalDays);
-      const result = await query(
-        `INSERT INTO subscriptions (user_id, product_id, quantity, interval_days, next_order_date, status)
-         VALUES ($1, $2, $3, $4, $5, 'active')
-         RETURNING *`,
-        [userId, productId, quantity, intervalDays, nextDate.toISOString().split('T')[0]],
-      );
-      res.json({ success: true, data: { id: result.rows[0].id, status: 'active' } });
-    } catch (err) {
-      console.error("[subscriptions] create error:", err);
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to create subscription" } });
-    }
-  });
-
-  // ── PATCH /api/subscriptions/:subscriptionId/pause ──────────────────────
-  app.patch("/api/subscriptions/:subscriptionId/pause", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = req.user!.userId;
-      const subId = param(req, "subscriptionId");
-      const { status } = req.body;
-      const tableCheck = await query(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'subscriptions') AS exists`
-      );
-      if (!tableCheck.rows[0]?.exists) {
-        res.status(501).json({ success: false, error: { code: "NOT_IMPLEMENTED", message: "Subscriptions not available yet" } });
-        return;
-      }
-      await query(
-        `UPDATE subscriptions SET status = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
-        [status ?? 'cancelled', subId, userId],
-      );
-      res.json({ success: true, data: { id: subId, status: status ?? 'cancelled' } });
-    } catch (err) {
-      console.error("[subscriptions] pause error:", err);
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update subscription" } });
-    }
-  });
-
-  // ── PATCH /api/subscriptions/:subscriptionId ──────────────────────────────
-  app.patch("/api/subscriptions/:subscriptionId", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = req.user!.userId;
-      const subId = param(req, "subscriptionId");
-      const { intervalDays, quantity } = req.body;
-      const tableCheck = await query(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'subscriptions') AS exists`
-      );
-      if (!tableCheck.rows[0]?.exists) {
-        res.status(501).json({ success: false, error: { code: "NOT_IMPLEMENTED", message: "Subscriptions not available yet" } });
-        return;
-      }
-      if (intervalDays != null) {
-        await query(`UPDATE subscriptions SET interval_days = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3`, [intervalDays, subId, userId]);
-      }
-      if (quantity != null) {
-        await query(`UPDATE subscriptions SET quantity = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3`, [quantity, subId, userId]);
-      }
-      res.json({ success: true, data: { id: subId } });
-    } catch (err) {
-      console.error("[subscriptions] update error:", err);
-      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update subscription" } });
-    }
-  });
 }

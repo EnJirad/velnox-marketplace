@@ -181,20 +181,14 @@ describe("LOW #12 — every remaining guard entry has a real orders.status write
     }
   });
 
-  test("checkout and VelRepeat create orders with the pending axes", () => {
-    // Every order-creation site records all three lifecycle axes (P0-1) instead
-    // of naming a legacy literal, so the assertion moved to the new shape AND
-    // gained the behavioural half: the axes those sites write must project to
-    // the `pending` value the guard and every reader already expect.
-    for (const file of [
-      "backend/routes/cart.ts",
-      "backend/jobs/velrepeat-scheduler.ts",
-      "backend/lib/velrepeat-cycles.ts",
-    ]) {
-      const src = read(file);
-      expect(src).toMatch(/INSERT INTO orders\s*\([^)]*order_state[^)]*\)/);
-      expect(src).toMatch(/INSERT INTO orders[\s\S]{0,900}?NEW_ORDER_AXES/);
-    }
+  test("checkout creates orders with the pending axes", () => {
+    // The order-creation site records all three lifecycle axes (P0-1) instead
+    // of naming a legacy literal, so the assertion is made on the new shape AND
+    // its behavioural half: the axes it writes must project to the `pending`
+    // value the guard and every reader already expect.
+    const src = read("backend/routes/cart.ts");
+    expect(src).toMatch(/INSERT INTO orders\s*\([^)]*order_state[^)]*\)/);
+    expect(src).toMatch(/INSERT INTO orders[\s\S]{0,900}?NEW_ORDER_AXES/);
     expect(NEW_ORDER_AXES.orderState).toBe("pending");
     expect(NEW_ORDER_AXES.fulfillmentStatus).toBe("unfulfilled");
     const created = projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES });
@@ -370,7 +364,6 @@ describe("LOW #12 — the payments axis stays separate from the orders axis", ()
 describe("LOW #12 — MEDIUM #9 (orders.status CHECK) is untouched", () => {
   const SCHEMA = "db/schema.sql";
   const BOOTSTRAP = "db/run-sqleditor.sql";
-  const MIGRATION = "db/migrations/050_orders_status_check.sql";
 
   function declaredValues(sql: string): string[] {
     const match = sql.match(/ADD CONSTRAINT orders_status_check\s+CHECK \(status IN \(([^)]*)\)\)/);
@@ -407,9 +400,13 @@ describe("LOW #12 — MEDIUM #9 (orders.status CHECK) is untouched", () => {
     expect(declaredValues(read(SCHEMA)).sort()).toEqual([...ALLOWED_ORDER_STATUSES].sort());
   });
 
-  test("V0050 still declares exactly that set and still excludes `failed`", () => {
-    expect(declaredValues(read(MIGRATION)).sort()).toEqual([...ALLOWED_ORDER_STATUSES].sort());
-    expect(read(MIGRATION)).not.toMatch(/CHECK[^;]*'failed'/);
+  test("the snapshot declares exactly that set and still excludes `failed`", () => {
+    expect(declaredValues(read(SCHEMA)).sort()).toEqual([...ALLOWED_ORDER_STATUSES].sort());
+    // Scoped to the constraint itself: `payments.status` legitimately allows
+    // `failed`, and it lives in the same file.
+    const block = read(SCHEMA).match(/ADD CONSTRAINT orders_status_check[\s\S]*?\);/)?.[0];
+    expect(block).not.toBeNull();
+    expect(block).not.toContain("'failed'");
   });
 
   test("the guard is a strict subset of what the CHECK allows", () => {

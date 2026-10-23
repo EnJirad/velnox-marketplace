@@ -3,9 +3,8 @@
  *
  * WHY THIS FILE EXISTS
  * -------------------
- * The order experience is the last screen before VelRepeat, and it is the one
- * the customer stares at while a 30-minute payment window runs down. What must
- * hold, and is pinned here:
+ * The order experience is the screen the customer stares at while a 30-minute
+ * payment window runs down. What must hold, and is pinned here:
  *
  *    1. the progress line is ONE line of five REAL order statuses — the current
  *       stage comes from `orders.status`, never from a client-side guess, and a

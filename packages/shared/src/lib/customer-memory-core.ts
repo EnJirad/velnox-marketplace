@@ -18,7 +18,6 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 /** Behavioural value of each event type when building Customer Memory (CPNS §10). */
 export const EVENT_WEIGHTS: Record<string, number> = {
   PURCHASE: 12,
-  VELREPEAT_START: 8,
   CART_ADD: 6,
   WISHLIST_ADD: 5,
   INTEREST: 4,
@@ -32,7 +31,6 @@ export const EVENT_WEIGHTS: Record<string, number> = {
 /** Recency half-life (days): strong signals fade slower than light ones. */
 export const EVENT_HALF_LIFE: Record<string, number> = {
   PURCHASE: 120,
-  VELREPEAT_START: 120,
   CART_ADD: 90,
   WISHLIST_ADD: 90,
   INTEREST: 60,

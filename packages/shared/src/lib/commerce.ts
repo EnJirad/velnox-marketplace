@@ -88,15 +88,6 @@ export interface StoreProduct {
   verificationStatus?: VerificationStatus;
   /** Whether this product qualifies for V badge (seller verified AND product verified) */
   isVerifiedProduct?: boolean;
-  // VelRepeat configuration
-  vrepeatEnabled?: boolean;
-  vrepeatWeeklyEnabled?: boolean;
-  vrepeatMonthlyEnabled?: boolean;
-  vrepeatWeeklyPrice?: number | null;
-  vrepeatMonthlyPrice?: number | null;
-  vrepeatWeeklyQty?: number | null;
-  vrepeatMonthlyQty?: number | null;
-
   /** Dynamic option groups loaded from product_option_groups */
   optionGroups?: ProductOptionGroup[];
   /** Variant objects loaded from product_variants */
@@ -1009,31 +1000,6 @@ export function orderCustomerCancelability(
   return isOrderCancelableByCustomer(order.status)
     ? { cancelable: true, reason: null }
     : { cancelable: false, reason: "not_cancelable" };
-}
-
-// ---------------------------------------------------------------------------
-// subscriptions (VelRepeat)
-// ---------------------------------------------------------------------------
-export interface StoreSubscription {
-  id: string;
-  customerUserId: string;
-  productId: string;
-  shopId: string;
-  sellerId: string;
-  quantity: number;
-  unitPriceSnapshot: number;
-  frequency: "daily" | "weekly" | "monthly" | "custom";
-  intervalDays: number;
-  nextOrderDate: string; // YYYY-MM-DD
-  status: "active" | "paused" | "cancelled";
-  /** Unix ms */
-  createdAt: number;
-  updatedAt: number;
-  productName?: string;
-  productImageUrl?: string;
-  /** joined for the seller VelRepeat panel */
-  customerName?: string;
-  customerEmail?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 # Velnox Neon Schema Diagnostic — READ-ONLY
 #
 # Answers "does the deployed Neon database match the canonical schema?"
-# (db/schema.sql / db/run-sqleditor.sql / db/migrations/) without writing
+# (db/schema.sql / db/run-sqleditor.sql) without writing
 # anything to the database:
 #
 #   * every statement is a SELECT — no DDL, no DML, no TRUNCATE;
@@ -110,7 +110,7 @@ jobs:
                             WHERE table_name = 'seller_review_history'),
                           'MISSING') AS state;
 
-          -- multi-shop checkout group (migration 054) -----------------------------
+          -- multi-shop checkout group ---------------------------------------------
           -- The payment parent for "one purchase, N per-shop fulfillment orders".
           -- Every element the CURRENT backend code depends on is probed, so a
           -- 42P01 at checkout can be attributed to a specific missing object
@@ -262,49 +262,42 @@ jobs:
                             WHERE indexname = 'media_key_key'),
                           'MISSING') AS state;
 
-          -- velrepeat repair (migration 044) ----------------------------------------
-          SELECT 'velrepeat_plans.status CHECK (item_unavailable)' AS probe,
-                 COALESCE((SELECT string_agg(conname || ' = ' || pg_get_constraintdef(oid), '; ')
-                             FROM pg_constraint
-                            WHERE conrelid = to_regclass('velrepeat_plans')
-                              AND contype = 'c'
-                              AND pg_get_constraintdef(oid) LIKE '%item_unavailable%'),
-                          'MISSING (044 repair not applied)') AS state;          -- other known drift markers -----------------------------------------------
+          -- other known drift markers -----------------------------------------------
           SELECT 'shops.idx_shops_seller uniqueness' AS probe,
                  COALESCE((SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_shops_seller'), 'MISSING') AS state;
           SQL
 
-      - name: Payment reservation probes (migration 048)
+      - name: Payment reservation probes
         env:
           NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
           psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           -- The storefront countdown reads orders.payment_expires_at, so whether
-          -- migration 048 applied decides if a 30-minute countdown can exist at all.
+          -- the column exists decides if a 30-minute countdown can exist at all.
           SELECT 'orders.payment_expires_at' AS probe,
                  COALESCE((SELECT data_type FROM information_schema.columns
                             WHERE table_name = 'orders' AND column_name = 'payment_expires_at'),
-                          'MISSING (048 not applied)') AS state;
+                          'MISSING (reconciler not applied)') AS state;
           SELECT 'orders.reservation_policy' AS probe,
                  COALESCE((SELECT data_type FROM information_schema.columns
                             WHERE table_name = 'orders' AND column_name = 'reservation_policy'),
-                          'MISSING (048 not applied)') AS state;
+                          'MISSING (reconciler not applied)') AS state;
           SELECT 'idx_orders_payment_expires_at' AS probe,
                  COALESCE((SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_orders_payment_expires_at'),
-                          'MISSING (048 not applied)') AS state;
+                          'MISSING (reconciler not applied)') AS state;
           -- Aggregates only: how many orders carry a deadline, and which policy
           -- version produced it. No order id, user id or any other identifier.
           SELECT 'orders with a deadline / orders total' AS probe,
                  CASE WHEN (SELECT count(*) FROM information_schema.columns
                               WHERE table_name = 'orders' AND column_name = 'payment_expires_at') = 0
-                      THEN 'COLUMN MISSING (048 not applied)'
+                      THEN 'COLUMN MISSING (reconciler not applied)'
                       ELSE (SELECT count(*) FILTER (WHERE payment_expires_at IS NOT NULL)::text ||
                                    '/' || count(*)::text FROM orders)
                  END AS state;
           SELECT 'reservation_policy versions' AS probe,
                  CASE WHEN (SELECT count(*) FROM information_schema.columns
                               WHERE table_name = 'orders' AND column_name = 'reservation_policy') = 0
-                      THEN 'COLUMN MISSING (048 not applied)'
+                      THEN 'COLUMN MISSING (reconciler not applied)'
                       ELSE COALESCE((SELECT string_agg(v || ' n=' || n::text, ', ' ORDER BY n)
                                        FROM (SELECT COALESCE(reservation_policy->>'version', '(null)') AS v,
                                                     count(*) AS n
@@ -313,93 +306,14 @@ jobs:
                  END AS state;
           SQL
 
-      - name: VelRepeat V2 Phase 5 probes (migration 053)
+      - name: Row-count and identity probes
         env:
           NEON_PRODUCTION_DATABASE_URL: ${{ secrets.NEON_PRODUCTION_DATABASE_URL }}
         run: |
           psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
-          -- 053 is the delivery-cycle substrate Phase 5 writes to. Every probe
-          -- below is a SELECT against pg_catalog / information_schema; nothing
-          -- is written and no customer identifier is selected (counts only).
-          SELECT 'schema_migrations.053 row' AS probe,
-                 COALESCE((SELECT 'id=' || id || ' applied_at=' || applied_at FROM schema_migrations
-                            WHERE migration_name = '053_velrepeat_v2_cycle_lifecycle'),
-                          'MISSING (053 not applied)') AS state;
-
-          -- the cycle entity, column for column against db/schema.sql --------
-          SELECT 'velrepeat_cycles.exists' AS probe,
-                 CASE WHEN to_regclass('public.velrepeat_cycles') IS NULL
-                      THEN 'MISSING (053 not applied)'
-                      ELSE 'PRESENT' END AS state;
-          SELECT 'velrepeat_cycles.columns' AS probe,
-                 COALESCE((SELECT string_agg(
-                              column_name || ' ' || data_type ||
-                              CASE WHEN is_nullable = 'NO' THEN ' NOT NULL' ELSE '' END ||
-                              CASE WHEN column_default IS NOT NULL
-                                   THEN ' DEFAULT ' || column_default ELSE '' END,
-                              ' | ' ORDER BY column_name)
-                             FROM information_schema.columns
-                            WHERE table_name = 'velrepeat_cycles'),
-                          'MISSING (053 not applied)') AS state;
-          -- cycle_number > 0 and the eight-value status vocabulary are the
-          -- owner's Phase 5 state machine, carried by the canonical CHECKs.
-          SELECT 'velrepeat_cycles.CHECKs' AS probe,
-                 COALESCE((SELECT string_agg(pg_get_constraintdef(oid), ' ;; ' ORDER BY conname)
-                             FROM pg_constraint
-                            WHERE conrelid = to_regclass('velrepeat_cycles') AND contype = 'c'),
-                          'MISSING (053 not applied)') AS state;
-          -- UNIQUE (plan_id, cycle_number) is what makes a repeated activation
-          -- a no-op instead of a second schedule.
-          SELECT 'velrepeat_cycles UNIQUE constraints' AS probe,
-                 COALESCE((SELECT string_agg(pg_get_constraintdef(oid), ' ;; ' ORDER BY conname)
-                             FROM pg_constraint
-                            WHERE conrelid = to_regclass('velrepeat_cycles') AND contype = 'u'),
-                          'MISSING (053 not applied)') AS state;
-          -- one order per seller per cycle: the (cycle, shop) partial unique index
-          SELECT 'idx_orders_velrepeat_cycle_seller_unique' AS probe,
-                 COALESCE((SELECT indexdef FROM pg_indexes
-                            WHERE indexname = 'idx_orders_velrepeat_cycle_seller_unique'),
-                          'MISSING (053 not applied)') AS state;
-          SELECT 'idx_orders_velrepeat_cycle' AS probe,
-                 COALESCE((SELECT indexdef FROM pg_indexes
-                            WHERE indexname = 'idx_orders_velrepeat_cycle'),
-                          'MISSING (053 not applied)') AS state;
-          SELECT 'idx_velrepeat_cycles_plan' AS probe,
-                 COALESCE((SELECT indexdef FROM pg_indexes
-                            WHERE indexname = 'idx_velrepeat_cycles_plan'),
-                          'MISSING (053 not applied)') AS state;
-          -- the due-cycle worker's read path
-          SELECT 'idx_velrepeat_cycles_due' AS probe,
-                 COALESCE((SELECT indexdef FROM pg_indexes
-                            WHERE indexname = 'idx_velrepeat_cycles_due'),
-                          'MISSING (053 not applied)') AS state;
-
-          -- the cycle -> order link ------------------------------------------------
-          SELECT 'orders.velrepeat_cycle_id' AS probe,
-                 COALESCE((SELECT data_type ||
-                                    CASE WHEN is_nullable = 'YES' THEN ' NULLABLE' ELSE ' NOT NULL' END
-                             FROM information_schema.columns
-                            WHERE table_name = 'orders' AND column_name = 'velrepeat_cycle_id'),
-                          'MISSING (053 not applied)') AS state;
-          -- ON DELETE SET NULL, so deleting a cycle can never delete an order
-          SELECT 'orders_velrepeat_cycle_id_fkey' AS probe,
-                 COALESCE((SELECT pg_get_constraintdef(oid) FROM pg_constraint
-                            WHERE conrelid = to_regclass('orders')
-                              AND conname = 'orders_velrepeat_cycle_id_fkey'),
-                          'MISSING (053 not applied)') AS state;
-
-          -- row counts only: proves 053 added structure and rewrote nothing ---
-          SELECT 'velrepeat_cycles rowcount' AS probe,
-                 CASE WHEN to_regclass('public.velrepeat_cycles') IS NULL
-                      THEN 'MISSING (053 not applied)'
-                      ELSE (SELECT count(*)::text FROM velrepeat_cycles) END AS state;
-          SELECT 'orders linked to a cycle / orders total' AS probe,
-                 CASE WHEN (SELECT count(*) FROM information_schema.columns
-                              WHERE table_name = 'orders' AND column_name = 'velrepeat_cycle_id') = 0
-                      THEN 'COLUMN MISSING (053 not applied)'
-                      ELSE (SELECT count(*) FILTER (WHERE velrepeat_cycle_id IS NOT NULL)::text || '/' ||
-                                   count(*)::text FROM orders)
-                 END AS state;
+          -- Aggregates only: no order id, user id or any other identifier is
+          -- selected anywhere in this step. Every probe is a SELECT against
+          -- pg_catalog / information_schema; nothing is written.
           SELECT 'orders status distribution' AS probe,
                  CASE WHEN to_regclass('public.orders') IS NULL THEN 'MISSING'
                       ELSE COALESCE((SELECT string_agg(status || ' n=' || n::text, ', ' ORDER BY status)
@@ -407,8 +321,8 @@ jobs:
                                     '(no rows)')
                  END AS state;
           -- Identity probes: if this database holds none of the rows the live
-          -- backend serves, then the migration ledger proved here belongs to a
-          -- DIFFERENT database than the one Render's checkout runs against.
+          -- backend serves, then this connection belongs to a DIFFERENT
+          -- database than the one Render's checkout runs against.
           SELECT 'rowcount.users' AS probe,
                  CASE WHEN to_regclass('public.users') IS NULL THEN 'MISSING'
                       ELSE (SELECT count(*)::text FROM users) END AS state;
@@ -435,11 +349,4 @@ jobs:
                                     '(no rows)')
                  END AS state;
           SELECT 'current_database' AS probe, current_database() AS state;
-          SELECT 'velrepeat_cycles status distribution' AS probe,
-                 CASE WHEN to_regclass('public.velrepeat_cycles') IS NULL
-                      THEN 'MISSING (053 not applied)'
-                      ELSE COALESCE((SELECT string_agg(status || ' n=' || n::text, ', ' ORDER BY status)
-                                       FROM (SELECT status, count(*) AS n FROM velrepeat_cycles GROUP BY 1) s),
-                                    '(no rows)')
-                 END AS state;
           SQL

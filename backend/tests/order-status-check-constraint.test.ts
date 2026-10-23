@@ -5,7 +5,7 @@
  * --------------------
  * `orders.status` was declared `TEXT NOT NULL DEFAULT 'pending'` with no CHECK,
  * while every other status column in this schema has one (`sellers.status`,
- * `verification_status`, `velrepeat_plans.status`, `velrepeat_runs.status`).
+ * `verification_status`, `payments.status`).
  * Free text means a typo, a retired code path or a hand-edited row can store a
  * value that no state machine, no query and no UI knows about — and
  * `normalizeOrderStatusToFulfillment()` answers "pending" for anything it does
@@ -36,7 +36,7 @@
  * the domain, never whether a move between two existing values is allowed.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "fs";
+import { readFileSync } from "fs";
 import { join } from "path";
 
 import { FULFILLMENT_STATUSES } from "../lib/order-fulfillment.js";
@@ -56,7 +56,6 @@ const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
 const SCHEMA = "db/schema.sql";
 const BOOTSTRAP = "db/run-sqleditor.sql";
-const MIGRATION = "db/migrations/050_orders_status_check.sql";
 
 const INVALID_STATUS = "__INVALID_ORDER_STATUS__";
 
@@ -143,7 +142,7 @@ describe("order status CHECK — the allowed set comes from the writers, not fro
     // value from them (P0-1). The assertion is therefore made on the PROJECTION
     // OF THE AXES THE SITE WRITES — a stronger claim than matching a literal,
     // because it also pins the axes a brand-new order may carry.
-    for (const file of ["backend/routes/cart.ts", "backend/jobs/velrepeat-scheduler.ts"]) {
+    for (const file of ["backend/routes/cart.ts"]) {
       const src = read(file);
       expect(src).toMatch(/INSERT INTO orders\s*\([^)]*order_state[^)]*\)/);
       expect(src).toMatch(/INSERT INTO orders[\s\S]{0,900}?NEW_ORDER_AXES/);
@@ -233,7 +232,7 @@ describe("order status CHECK — the allowed set comes from the writers, not fro
 // 2. The constraint is declared everywhere it must be
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("order status CHECK — declared in both canonical files and in its migration", () => {
+describe("order status CHECK — declared in both canonical files", () => {
   /** The allowed values as the constraint text declares them. */
   function declaredValues(sql: string): string[] {
     const match = sql.match(
@@ -274,75 +273,30 @@ describe("order status CHECK — declared in both canonical files and in its mig
     }
   });
 
-  test("the migration exists, is idempotent and states its data-safety rule", () => {
-    const migration = read(MIGRATION);
-    expect(declaredValues(migration).sort()).toEqual([...ALLOWED_ORDER_STATUSES].sort());
-    // Re-runnable: DROP IF EXISTS before ADD.
-    expect(migration).toContain("ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;");
-    // It must not silently rewrite an order's business state.
-    expect(migration).toContain("FAILS LOUDLY");
-    expect(migration).not.toMatch(/UPDATE orders/i);
+  test("both canonical files are re-runnable and state their data-safety rule", () => {
+    // The constraint reaches an existing database through the reconciler; neither
+    // canonical file may silently rewrite an order's business state.
+    for (const [file, sql] of [
+      [SCHEMA, read(SCHEMA)],
+      [BOOTSTRAP, read(BOOTSTRAP)],
+    ] as const) {
+      expect(declaredValues(sql).sort(), file).toEqual([...ALLOWED_ORDER_STATUSES].sort());
+      expect(sql, file).not.toMatch(/UPDATE orders/i);
+    }
+    // The reconciler is the additive, guarded pass — it is re-runnable by design.
+    expect(read(BOOTSTRAP)).toContain("ADD CONSTRAINT orders_status_check");
   });
 
-  test("only V0050 ADDS the constraint — no older migration was edited to carry it", () => {
-    // V0016 legitimately mentions the name because it DROPPED the old one
-    // (see the history test below). This pins that no other migration ADDs it,
-    // which is what broke V0035 (two files numbered 035, one silently skipped).
-    const files = readdirSync(join(root, "db/migrations")).filter((f) => f.endsWith(".sql"));
-    const adding = files.filter((f) =>
-      /ADD\s+CONSTRAINT\s+orders_status_check/i.test(read(`db/migrations/${f}`)),
-    );
-    expect(adding).toEqual(["050_orders_status_check.sql"]);
-  });
-
-  test("V0050 took the next free number, and later migrations did not reuse it", () => {
-    // The number was read from the repository, not assumed: 049 was the highest
-    // before this task, so the constraint took the next free number. V0051
-    // (VelRepeat V2 plan payment parent) was added by a later task and takes
-    // the number after it — what must never happen is a REUSED number.
-    const files = readdirSync(join(root, "db/migrations")).filter((f) => /^\d{3}_/.test(f));
-    const numbers = files.map((f) => Number(f.slice(0, 3)));
-    expect(Math.max(...numbers)).toBeGreaterThanOrEqual(50);
-    // 050 must be used exactly once — a second 050 would be skipped by a
-    // prefix-keyed runner, which is the V0035 failure mode.
-    expect(numbers.filter((n) => n === 50).length).toBe(1);
-
-    // Historical collisions still exist and are NOT this task's business:
-    // 029/030/034/035 each name two files (documented VelRepeat breakage).
-    // Assert no NEW collision was introduced from V0040 on.
-    const maintained = numbers.filter((n) => n >= 40);
-    expect(new Set(maintained).size).toBe(maintained.length);
-    const duplicated = [...new Set(numbers.filter((n, i) => numbers.indexOf(n) !== i))].sort();
-    expect(duplicated).toEqual([29, 30, 34, 35]);
-  });
-
-  test("history: V0003 shipped a narrower CHECK and V0016 dropped it", () => {
-    // The constraint is being RE-ADDED, not invented. V0003 declared
-    //   ('pending','confirmed','processing','shipped','delivered','cancelled')
-    // which never included `packing`, `completed` or any payment-lifecycle
-    // value, so the real writers started failing and V0016 dropped it. The new
-    // list must therefore be the DERIVED one — and must not resurrect V0003's.
-    const v0003 = read("db/migrations/003_customer.sql");
-    expect(v0003).toMatch(/orders[\s\S]{0,400}?CHECK \(status IN \('pending', 'confirmed', 'processing'/);
-    const v0016 = read("db/migrations/016_sync_schema_discrepancies.sql");
-    expect(v0016).toContain("ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;");
-    // `processing` is a payments/velrepeat value, not an orders.status one.
-    expect(ALLOWED_ORDER_STATUSES).not.toContain("processing");
-  });
-
-  test("it is a plain CHECK — no trigger, no enum, no state table", () => {
-    // Only the executable SQL is inspected: the migration's own header explains
-    // the history in prose, and prose is not DDL.
-    const statements = read(MIGRATION)
-      .split("\n")
-      .filter((line) => !line.trimStart().startsWith("--") && line.trim().length > 0)
-      .join("\n");
-    expect(statements).not.toMatch(/CREATE\s+TRIGGER/i);
-    expect(statements).not.toMatch(/CREATE\s+TYPE/i);
-    expect(statements).not.toMatch(/CREATE\s+TABLE/i);
-    expect(statements).not.toMatch(/\bgo\b|\bnode\b|\bbun\b/i);
-    // Exactly two statements: drop-if-exists, then add.
-    expect(statements.split(";").filter((s) => s.trim().length > 0).length).toBe(2);
+  test("the constraint is declared by exactly one guarded pass per canonical file", () => {
+    // The old failure mode was two migration files applying the same change and
+    // a prefix-keyed runner silently skipping one. With a snapshot and a
+    // reconciler, "one guarded pass" is the equivalent guard: the snapshot adds
+    // it plainly once; the reconciler adds it once inside its definition probe
+    // (the second match is the drop/re-add pair for a stored definition that
+    // differs, which never runs on a database that already matches).
+    const count = (sql: string) => (sql.match(/ADD CONSTRAINT orders_status_check/g) ?? []).length;
+    expect(count(read(SCHEMA))).toBe(1);
+    expect(count(read(BOOTSTRAP))).toBe(2);
   });
 
   test("the state machine authority is untouched by the constraint", () => {

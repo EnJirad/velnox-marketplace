@@ -1,8 +1,8 @@
 /**
  * Seller Order Management — tests.
  *
- * Unit tests cover the pure functions (order status state machine,
- * subscription display mapping). The integration test (skipped when no
+ * Unit tests cover the pure functions (order status state machine).
+ * The integration test (skipped when no
  * a test database is available) verifies the core multi-vendor safety rule:
  * a seller-scoped item query returns only that seller's items even when an
  * order contains products from two different sellers.
@@ -12,8 +12,6 @@ import {
   canTransitionOrderStatus,
   fetchSellerItemsForOrders,
   isSellerOrderStatus,
-  mapFrequencyType,
-  mapPlanStatusToSubscriptionStatus,
   normalizeSellerOrderStatus,
 } from "../routes/seller-orders.js";
 import { purgeUsers } from "./helpers/purge.js";
@@ -110,36 +108,6 @@ describe("isSellerOrderStatus", () => {
     expect(isSellerOrderStatus(undefined)).toBe(false);
     expect(isSellerOrderStatus(null)).toBe(false);
     expect(isSellerOrderStatus(42)).toBe(false);
-  });
-});
-
-// ─── Subscription (VelRepeat plan) display mapping ────────────────────────────
-
-describe("mapPlanStatusToSubscriptionStatus", () => {
-  test("active/processing plans show as active", () => {
-    expect(mapPlanStatusToSubscriptionStatus("active")).toBe("active");
-    expect(mapPlanStatusToSubscriptionStatus("processing")).toBe("active");
-  });
-
-  test("terminal plans show as cancelled", () => {
-    expect(mapPlanStatusToSubscriptionStatus("cancelled")).toBe("cancelled");
-    expect(mapPlanStatusToSubscriptionStatus("completed")).toBe("cancelled");
-  });
-
-  test("recoverable-but-not-running states show as paused", () => {
-    expect(mapPlanStatusToSubscriptionStatus("paused")).toBe("paused");
-    expect(mapPlanStatusToSubscriptionStatus("out_of_stock")).toBe("paused");
-    expect(mapPlanStatusToSubscriptionStatus("payment_failed")).toBe("paused");
-    expect(mapPlanStatusToSubscriptionStatus("draft")).toBe("paused");
-  });
-});
-
-describe("mapFrequencyType", () => {
-  test("maps velrepeat frequency types", () => {
-    expect(mapFrequencyType("days")).toBe("daily");
-    expect(mapFrequencyType("weeks")).toBe("weekly");
-    expect(mapFrequencyType("months")).toBe("monthly");
-    expect(mapFrequencyType("whatever")).toBe("custom");
   });
 });
 

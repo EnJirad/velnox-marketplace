@@ -18,8 +18,8 @@ import type pg from "pg";
  *
  *   • the duration must NOT depend on popularity, product views or clicks, sales
  *     velocity, demand/starvation scores, customer behaviour or any other
- *     learned signal — those signals belong to the VelRepeat phase, and a
- *     customer must be able to predict the deal they are being offered;
+ *     learned signal — a customer must be able to predict the deal they are
+ *     being offered;
  *   • a constant window is trivially auditable: the countdown in the storefront
  *     always starts at 30:00 and the backend always enforces the same deadline;
  *   • it keeps this module PURE arithmetic — no extra query, no reading of any
@@ -62,8 +62,8 @@ export const PAYMENT_RESERVATION_EXPIRED_STATUS = "expired";
 
 /**
  * Payment methods that do NOT wait on an online payment, so they get no
- * reservation window: COD (and VelRepeat's COD orders) are settled by the
- * carrier, and expiring them would cancel a legitimate order.
+ * reservation window: COD orders are settled by the carrier, and expiring them
+ * would cancel a legitimate order.
  */
 const METHODS_WITHOUT_RESERVATION = new Set(["cod", "cash_on_delivery"]);
 
@@ -125,7 +125,7 @@ export async function applyPaymentReservationPolicy(
   const policy = calculatePaymentReservationPolicy(now);
 
   // ── Deploy-order safety ────────────────────────────────────────────────
-  // The two columns arrive with `db/migrations/048_payment_reservation.sql`, and
+  // The two columns arrive with `db/run-sqleditor.sql`, and
   // a backend deploy can reach production BEFORE that migration is applied (the
   // host deploys on push). Without this guard the missing column would abort the
   // caller's order-creation transaction and break EVERY checkout — turning a
@@ -178,7 +178,7 @@ export function warnReservationSchemaMissing(effect: string): void {
   reservationSchemaWarned = true;
   console.error(
     "[reservation] orders.payment_expires_at/reservation_policy are missing — apply " +
-      `db/migrations/048_payment_reservation.sql; ${effect}.`,
+      `db/run-sqleditor.sql; ${effect}.`,
   );
 }
 
@@ -203,7 +203,7 @@ export interface OrderPaymentRow {
  *
  * WHY THIS IS NOT OPTIONAL — deploy order is not guaranteed here. The host
  * deploys on push, so a backend that NAMES `payment_expires_at` can reach
- * production before `db/migrations/048_payment_reservation.sql` has been
+ * production before `db/run-sqleditor.sql` has been
  * applied. A statement naming a missing column fails with `undefined_column`
  * (42703), and on this path that does not degrade, it stops trading: production
  * logged `[stripe] checkout error: column "payment_expires_at" does not exist`

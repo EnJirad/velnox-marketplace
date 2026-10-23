@@ -18,20 +18,11 @@ import { setupUploadRoutes } from "./routes/upload.js";
 import { setupSellerRoutes } from "./routes/seller.js";
 import { setupProductRoutes } from "./routes/products.js";
 import { setupStripeRoutes } from "./routes/stripe.js";
-import { setupVelRepeatRoutes } from "./routes/velrepeat.js";
-import { setupVelRepeatPlanRoutes } from "./routes/velrepeat-plans.js";
-import { setupVelRepeatPackageRoutes } from "./routes/velrepeat-packages.js";
-import { setupVelRepeatV2PlanRoutes } from "./routes/velrepeat-v2-plans.js";
-import { setupVelRepeatV2PaymentRoutes } from "./routes/velrepeat-v2-payments.js";
-import { setupVelRepeatV2StatusRoutes } from "./routes/velrepeat-v2-status.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupCenterRoutes } from "./routes/center.js";
 import { registerVerificationRoutes } from "./routes/verification.js";
-import { startVelRepeatScheduler } from "./jobs/velrepeat-scheduler.js";
-import { startVelRepeatV2CycleScheduler } from "./jobs/velrepeat-v2-cycle-scheduler.js";
 import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
-import { VELREPEAT_ENABLED } from "./lib/features.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupChatRoutes } from "./routes/chat.js";
 import { broadcast, CHANNELS, setupWebSocket } from "./realtime/index.js";
@@ -148,12 +139,10 @@ async function ensureVariantTables(): Promise<void> {
     const missing = checks.filter((t) => !existingTables.has(t));
 
     if (missing.length > 0) {
-      console.log(`[startup] missing variant tables: ${missing.join(", ")} — creating...`);
-      const fs = await import("fs");
-      const pathMod = await import("path");
-      const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "028_create_variant_tables_if_missing.sql");
-      const sql = fs.readFileSync(sqlPath, "utf-8");
-      await query(sql);
+      // Startup must never migrate: the canonical schema lives in
+      // db/run-sqleditor.sql, which is the ONE bootstrap/reconciler path.
+      console.error(`[startup] missing variant tables: ${missing.join(", ")}`);
+      console.error("   Run db/run-sqleditor.sql against this database in the Neon SQL Editor.");
       try {
         await query(`
           CREATE TABLE IF NOT EXISTS product_variant_images (
@@ -206,38 +195,9 @@ async function ensureVariantTables(): Promise<void> {
 }
 ensureVariantTables();
 
-// ─── Auto-create VelRepeat V2 tables if missing (V0034) ────────────────
-async function ensureVelRepeatV2Tables(): Promise<void> {
+// ─── Report a missing checkout idempotency table (never create it) ──────
+async function reportCheckoutIdempotencyTable(): Promise<void> {
   const { query } = await import("./db/index.js");
-  const startMs = Date.now();
-  try {
-    const tableCheck = await query(
-      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'velrepeat_plans') AS exists`,
-    );
-    if (tableCheck.rows[0]?.exists) {
-      console.log("[startup] velrepeat_plans already exists — skipping V0034 apply");
-      return;
-    }
-    console.log("[startup] velrepeat_plans missing — applying V0034 (VelRepeat V2)...");
-    const fs = await import("fs");
-    const pathMod = await import("path");
-    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "034_velrepeat_v2.sql");
-    const sql = fs.readFileSync(sqlPath, "utf-8");
-    await query(sql);
-    console.log(`[startup] VelRepeat V2 tables ensured in ${Date.now() - startMs}ms`);
-  } catch (err: any) {
-    console.error("[startup] ensureVelRepeatV2Tables failed:", err?.message ?? err);
-  }
-}
-// PARKED (2026-10-14): VelRepeat is off, so its tables are NOT created at boot.
-// The tables, migrations and the code above stay in the repository — setting
-// VELREPEAT_ENABLED=true restores this call unchanged.
-if (VELREPEAT_ENABLED) ensureVelRepeatV2Tables();
-
-// ─── Auto-create checkout idempotency table if missing (V0035) ──────────
-async function ensureCheckoutIdempotencyTable(): Promise<void> {
-  const { query } = await import("./db/index.js");
-  const startMs = Date.now();
   try {
     const tableCheck = await query(
       `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'checkout_requests') AS exists`,
@@ -245,23 +205,17 @@ async function ensureCheckoutIdempotencyTable(): Promise<void> {
     if (tableCheck.rows[0]?.exists) {
       return;
     }
-    console.log("[startup] checkout_requests missing — applying V0035 (checkout idempotency)...");
-    const fs = await import("fs");
-    const pathMod = await import("path");
-    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "035_checkout_idempotency.sql");
-    const sql = fs.readFileSync(sqlPath, "utf-8");
-    await query(sql);
-    console.log(`[startup] checkout_requests ensured in ${Date.now() - startMs}ms`);
+    console.error("[startup] checkout_requests missing — checkout idempotency is unavailable");
+    console.error("   Run db/run-sqleditor.sql against this database in the Neon SQL Editor.");
   } catch (err: any) {
-    console.error("[startup] ensureCheckoutIdempotencyTable failed:", err?.message ?? err);
+    console.error("[startup] reportCheckoutIdempotencyTable failed:", err?.message ?? err);
   }
 }
-ensureCheckoutIdempotencyTable();
+reportCheckoutIdempotencyTable();
 
-// ─── Auto-create chat tables if missing (V0036) ──────────────────────────
-async function ensureChatTables(): Promise<void> {
+// ─── Report missing chat tables (never create them) ─────────────────────
+async function reportChatTables(): Promise<void> {
   const { query } = await import("./db/index.js");
-  const startMs = Date.now();
   try {
     const tableCheck = await query(
       `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'conversations') AS exists`,
@@ -269,18 +223,13 @@ async function ensureChatTables(): Promise<void> {
     if (tableCheck.rows[0]?.exists) {
       return;
     }
-    console.log("[startup] conversations missing — applying V0036 (comments & chat)...");
-    const fs = await import("fs");
-    const pathMod = await import("path");
-    const sqlPath = pathMod.join(process.cwd(), "db", "migrations", "036_comments_chat.sql");
-    const sql = fs.readFileSync(sqlPath, "utf-8");
-    await query(sql);
-    console.log(`[startup] chat tables ensured in ${Date.now() - startMs}ms`);
+    console.error("[startup] conversations missing — chat and messaging are unavailable");
+    console.error("   Run db/run-sqleditor.sql against this database in the Neon SQL Editor.");
   } catch (err: any) {
-    console.error("[startup] ensureChatTables failed:", err?.message ?? err);
+    console.error("[startup] reportChatTables failed:", err?.message ?? err);
   }
 }
-ensureChatTables();
+reportChatTables();
 
 // ─── Health Check ───────────────────────────────────────
 app.get("/api/health", (_req, res) => {
@@ -478,47 +427,6 @@ setupStripeRoutes(app);
 // ─── Product Options & Attributes ──────────────────────────────
 setupProductOptionRoutes(app);
 
-// ─── VelRepeat (PARKED 2026-10-14) ──────────────────────────────
-// The owner re-scoped the MVP to buy-and-sell (retail + wholesale by the pack)
-// and parked recurring / prepaid repeat commerce. The six route modules are NOT
-// mounted while the flag is off, so every /api/velrepeat*, /api/subscriptions and
-// /api/velrepeat-packages endpoint answers 404 instead of being reachable by a
-// crafted request. Nothing was deleted — all six setup functions, their handlers,
-// their tables and their tests are still in the repository, and setting
-// VELREPEAT_ENABLED=true restores the exact block below.
-//
-// The payment half of the V2 flow is deliberately included in the parked set:
-// an unmounted payment-initiation route cannot open a Stripe Session for a
-// feature the storefront no longer offers. The Stripe settlement webhook itself
-// is NOT touched — it stays mounted in routes/stripe.ts because it also settles
-// ordinary orders.
-if (VELREPEAT_ENABLED) {
-  // ─── VelRepeat Packages (V1 — buy-ahead) ──────────────────────
-  setupVelRepeatRoutes(app);
-
-  // ─── VelRepeat Plans (V2 — recurring commerce engine) ─────────
-  setupVelRepeatPlanRoutes(app);
-
-  // ─── VelRepeat Packages (V2 — seller package authoring, G3=B) ─
-  setupVelRepeatPackageRoutes(app);
-
-  // ─── VelRepeat V2 (package → draft plan → pricing snapshot, Phase 3) ───
-  setupVelRepeatV2PlanRoutes(app);
-
-  // ─── VelRepeat V2 (prepaid plan-level Stripe payment, Phase 4) ───
-  // Only the payment-initiation endpoint is mounted here. The settlement half of
-  // this phase runs inside the EXISTING /api/payments/stripe/webhook handler
-  // (routes/stripe.ts), so there is still exactly one signature check, one event
-  // claim and one redelivery policy for all Stripe events.
-  setupVelRepeatV2PaymentRoutes(app);
-
-  // ─── VelRepeat V2 (customer plan status: plan + pricing + cycles + orders) ───
-  // The read side of the same flow, so the storefront can poll the SERVER's
-  // verdict after Stripe returns the customer instead of assuming a redirect
-  // means the payment succeeded.
-  setupVelRepeatV2StatusRoutes(app);
-}
-
 // ─── Chat, Messaging & Notifications ────────────────────
 setupChatRoutes(app);
 
@@ -589,24 +497,6 @@ server.listen(PORT, "0.0.0.0", () => {
         message: err instanceof Error ? err.message : String(err),
       });
     });
-
-  if (VELREPEAT_ENABLED) {
-    // ─── VelRepeat V2 Scheduler (recurring commerce worker) ──────────
-    // The V1 pay-per-run worker above. Untouched by Phase 5.
-    startVelRepeatScheduler();
-
-    // ─── VelRepeat V2 due-cycle worker (Phase 5) ─────────────────────
-    // Generates a cycle's order when the cycle reaches its `scheduled_at`. A
-    // separate worker from the V1 one on purpose: V1 claims PLAN rows by
-    // `next_run_at` and writes `velrepeat_runs`; this one claims CYCLE rows by
-    // `scheduled_at` and writes no run row. They never contend for the same row,
-    // and the exactly-once guarantee for a cycle is the database's, not this
-    // process's — so running two instances of either is safe.
-    //
-    // PARKED (2026-10-14): a parked feature must not write orders, payments or
-    // inventory in the background. Both workers are off with the flag.
-    startVelRepeatV2CycleScheduler();
-  }
 
   // ─── Payment reservation sweep (FIXED 30-minute window) ──────────────
   // Ends unpaid orders whose reservation window has lapsed and returns their

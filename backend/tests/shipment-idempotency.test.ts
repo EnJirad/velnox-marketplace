@@ -63,7 +63,6 @@ const SELLER_ROUTE = "backend/routes/seller-orders.ts";
 const CENTER_ROUTE = "backend/routes/center.ts";
 const SCHEMA = "db/schema.sql";
 const RECONCILER = "db/run-sqleditor.sql";
-const MIGRATION = "db/migrations/057_shipment_canonical_unique.sql";
 
 /**
  * The SQL the writer binds — the keyed statement, taken from the source of truth
@@ -95,8 +94,8 @@ describe("shipment creation — one writer, one key, no second shipment system",
     expect(schema).not.toContain("CREATE INDEX IF NOT EXISTS idx_shipments_order");
   });
 
-  test("the reconciler and the migration create it GUARDED, and drop the stale index only then", () => {
-    for (const file of [RECONCILER, MIGRATION]) {
+  test("the reconciler creates it GUARDED, and drops the stale index only then", () => {
+    for (const file of [RECONCILER]) {
       const sql = read(file);
       expect(sql).toContain("CREATE UNIQUE INDEX IF NOT EXISTS shipments_order_id_unique");
       // Duplicate `order_id` values are a BUSINESS question (which parcel is

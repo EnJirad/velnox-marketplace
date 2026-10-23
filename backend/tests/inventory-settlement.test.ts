@@ -95,8 +95,7 @@ describe("inventory authorities — structural contract", () => {
   test("no order-lifecycle route writes inventory directly any more", () => {
     // These are the writers of an ORDER's stock. `products.ts` (set stock) and
     // `product-options.ts` (edit a variant) are product-management writes and
-    // are deliberately out of this list; `velrepeat-scheduler.ts` reserves at
-    // creation and is a known, separate finding (audit §42 MEDIUM #10).
+    // are deliberately out of this list.
     const orderPaths = [
       "backend/routes/cart.ts",
       "backend/routes/stripe.ts",

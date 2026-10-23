@@ -11,7 +11,6 @@ Neon PostgreSQL. Single `pg.Pool` in `backend/db/index.ts` (SSL `verify-full`). 
 | `db/schema.sql` | Complete current schema **snapshot** | Authoritative structure; bootstraps an empty DB in one pass |
 | `db/run-sqleditor.sql` | **Rerunnable additive reconciler** | Paste into Neon SQL Editor and Run as often as needed against a database that already has data |
 | `db/run-update.sql` | **Deprecated** — do not recreate, update, or depend on it | — |
-| `db/migrations/001_*.sql` … | Historical migrations (idempotent, `IF NOT EXISTS`) | History only; do not rewrite |
 
 The two canonical files describe the **same database** but are **not the same
 artifact**, and must not be compared byte-for-byte:
@@ -48,7 +47,7 @@ Empty Postgres  →  run db/run-sqleditor.sql  →  complete current Velnox DB
                     (run it again → nothing changes)
 ```
 
-No prior migrations required. Historical `db/migrations/` are for upgrading existing DBs, not for fresh creation. Never `DROP/TRUNCATE` prod to make it pass.
+No prior migrations required — the reconciler IS the upgrade path for an existing DB. Never `DROP/TRUNCATE` prod to make it pass.
 
 ## The Reconciler Is Additive — Never Destructive
 
@@ -138,13 +137,15 @@ It exits non-zero unless every assertion it prints actually passed.
 
 Respect PostgreSQL dependency order (extensions → types → tables → FKs → indexes → functions → triggers → views → seeds). For circular FKs, create tables without the FK then `ALTER TABLE ADD CONSTRAINT` after (deferred via `DO $$ IF NOT EXISTS (pg_constraint)`); do not weaken constraints.
 
-## Migration Workflow
+## Schema Change Workflow
 
-1. Add a new `db/migrations/NNN_*.sql` (idempotent, no `DROP TABLE`).
-2. Update **both** `db/schema.sql` and `db/run-sqleditor.sql`.
-3. Production receives migrations via `.github/workflows/production-db-migrate.yml` (secret
-   `NEON_PRODUCTION_DATABASE_URL`) or manual apply.
-4. Track via `schema_migrations` table.
+1. Update **both** `db/schema.sql` and `db/run-sqleditor.sql` (idempotent, no `DROP TABLE`).
+2. Run `bun test backend/tests/db-run-sqleditor-reconciler.test.ts` (declaration parity) and
+   `bun run db:verify`.
+3. Production receives the change via `.github/workflows/production-db-migrate.yml` (manual
+   trigger, secret `NEON_PRODUCTION_DATABASE_URL`, applies the reconciler in one transaction)
+   or by pasting `db/run-sqleditor.sql` into the Neon SQL Editor.
+4. Historical migration names remain readable in the `schema_migrations` table (read-only ledger).
 
 ## The canonical production secret: `NEON_PRODUCTION_DATABASE_URL` (2026-10-04)
 
@@ -153,7 +154,7 @@ One name, one target, one job each:
 | Workflow | Role | Secret | Writes to production? |
 |---|---|---|---|
 | `production-db-verify.yml` | verify production schema/identity | `NEON_PRODUCTION_DATABASE_URL` | **never** — SELECT only |
-| `production-db-migrate.yml` | apply `db/migrations/*.sql` | `NEON_PRODUCTION_DATABASE_URL` | yes, on an explicit trigger |
+| `production-db-migrate.yml` | apply `db/run-sqleditor.sql` (reconciler) | `NEON_PRODUCTION_DATABASE_URL` | yes, on an explicit trigger |
 | `diag-neon-schema.yml` | read-only inventory | `NEON_PRODUCTION_DATABASE_URL` | never |
 | `diag-stripe-payment-trace.yml` | read-only payment trace | `NEON_PRODUCTION_DATABASE_URL` | never |
 | `test.yml` | CI typecheck + tests | **none** (throwaway postgres service) | never |
@@ -278,19 +279,19 @@ SELECT id, amount, status, reason, created_at, refunded_at
   FROM refunds WHERE order_id = '<order-uuid>' ORDER BY created_at ASC;
 
 EXPLAIN (ANALYZE, BUFFERS)
-SELECT id FROM velrepeat_plans
- WHERE status = 'active' AND next_run_at <= NOW()
- ORDER BY next_run_at ASC LIMIT 25;
+SELECT id FROM payments
+ WHERE order_id = '<order-uuid>'
+   AND provider = 'stripe' AND status IN ('pending', 'requires_action');
 
 SELECT indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes
- WHERE relname IN ('refunds', 'velrepeat_plans') ORDER BY relname, indexrelname;
+ WHERE relname IN ('refunds', 'payments') ORDER BY relname, indexrelname;
 
 SELECT relname, n_live_tup, n_dead_tup, last_analyze, last_autoanalyze
-  FROM pg_stat_user_tables WHERE relname IN ('refunds', 'velrepeat_plans');
+  FROM pg_stat_user_tables WHERE relname IN ('refunds', 'payments');
 ```
 
-Expected: `refunds` → Index Scan on `idx_refunds_order`; `velrepeat_plans` → Index Scan on
-`idx_velrepeat_plans_due` (the partial index) with **no Sort**. Only a Seq Scan justifies an
+Expected: `refunds` → Index Scan on `idx_refunds_order`; `payments` → Index Scan on
+`idx_payments_order` or the partial `idx_payments_one_active_stripe` with **no Sort**. Only a Seq Scan justifies an
 index/statistics change — check `pg_indexes` for an equivalent index first so none is duplicated,
 then update `db/schema.sql` + `db/run-sqleditor.sql` together. This is the evidence bar for a
 composite index such as `refunds (order_id, created_at)`: the 2026-09-28 investigation rejected it
@@ -310,12 +311,12 @@ serves the sweep's range scan **and** its `ORDER BY`; the status / `inventory_re
 applied by `backend/jobs/payment-reservation-scheduler.ts` to the few due rows. The index predicate
 is deliberately loose: one index, no duplicated status list to drift out of sync.
 
-Introduced by `db/migrations/048_payment_reservation.sql` (additive, idempotent, no backfill).
-Apply it to production **before** deploying a backend that writes the column — but the order does
+Carried by both canonical files (additive, idempotent, no backfill).
+Apply the reconciler to production **before** deploying a backend that writes the column — but the order does
 not have to be perfect: the reservation write runs inside a `SAVEPOINT` and tolerates **only**
 `undefined_column`, so a backend that is newer than its database keeps checkout working (orders
 simply get no window, exactly like legacy rows) and says so in the log. The sweep logs the missing
-column once and stays disabled until a scan succeeds after the migration.
+column once and stays disabled until a scan succeeds after the reconciler run.
 
 ```sql
 -- what the sweep reads (read-only owner check)

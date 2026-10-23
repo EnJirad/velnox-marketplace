@@ -59,7 +59,6 @@ Use for:
 - Selected states
 - Success states
 - Important links
-- VelRepeat branding
 - Small visual highlights
 
 Do NOT use Velnox Green as the main page background.
@@ -138,7 +137,6 @@ Use for:
 - Dark buttons
 - Footer
 - Premium feature sections
-- VelRepeat section
 
 ---
 
@@ -351,7 +349,6 @@ Hover:
 Use when:
 - The action is strongly brand-related
 - A positive action needs emphasis
-- VelRepeat actions
 - Important promotional actions
 
 Do not make every button green.
@@ -707,43 +704,7 @@ Avoid complex illustrations.
 
 ---
 
-# 17. VelRepeat Visual Identity
-
-VelRepeat is a Velnox feature.
-
-It should use:
-
-Primary:
-#0F172A
-
-Accent:
-#10B981
-
-Background:
-Dark / Black
-
-Example:
-
-Background:
-#0F172A
-
-Heading:
-#FFFFFF
-
-Supporting text:
-#94A3B8
-
-Accent:
-#10B981
-
-Button:
-#10B981
-
-VelRepeat should feel like a premium Velnox feature, not a separate brand.
-
----
-
-# 18. Dark Sections
+# 17. Dark Sections
 
 Dark sections are allowed and encouraged for important sections.
 
@@ -764,7 +725,6 @@ Accent:
 #10B981
 
 Good use cases:
-- VelRepeat
 - Premium features
 - Trust sections
 - Promotional banners
@@ -772,7 +732,7 @@ Good use cases:
 
 ---
 
-# 19. Interaction Rules
+# 18. Interaction Rules
 
 Hover:
 
@@ -810,7 +770,7 @@ Avoid:
 
 ---
 
-# 20. Tailwind CSS Mapping
+# 19. Tailwind CSS Mapping
 
 Recommended Tailwind classes:
 
@@ -864,7 +824,7 @@ Velnox Green should be treated as an accent.
 
 ---
 
-# 21. Recommended CSS Variables
+# 20. Recommended CSS Variables
 
 ```css
 :root {
@@ -892,7 +852,7 @@ Velnox Green should be treated as an accent.
 
 ---
 
-# 22. AI Implementation Rules
+# 21. AI Implementation Rules
 
 When another AI builds a Velnox UI, follow these rules:
 
@@ -919,7 +879,7 @@ When another AI builds a Velnox UI, follow these rules:
 
 ---
 
-# 23. Brand Personality
+# 22. Brand Personality
 
 Velnox should communicate:
 
@@ -950,7 +910,7 @@ Avoid communicating:
 
 ---
 
-# 24. Design Decision Rule
+# 23. Design Decision Rule
 
 When choosing between two designs:
 
@@ -974,7 +934,7 @@ The goal is:
 
 ---
 
-# 25. Final Visual Formula
+# 24. Final Visual Formula
 
 Velnox visual identity can be summarized as:
 

@@ -9,7 +9,7 @@ Customer profile, addresses, wishlist, cart helpers, and discovery.
 - `backend/routes/index.ts` — `GET/PUT /api/customer/profile`, `GET/POST /api/customer/addresses`, `DELETE /api/customer/addresses/:id`
 - `backend/routes/cart.ts` — cart + `cart_items`
 - `packages/shared/src/lib/commerce.ts`, `packages/shared/src/lib/track.ts`, `packages/shared/src/lib/reorder.ts`
-- `apps/velshop/src/pages/*` — product browsing, cart drawer, wishlist, velrepeat
+- `apps/velshop/src/pages/*` — product browsing, cart drawer, wishlist
 
 ## Data Flow
 

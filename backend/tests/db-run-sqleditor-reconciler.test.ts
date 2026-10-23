@@ -198,16 +198,17 @@ describe("the file stays additive and honest", () => {
     });
   }
 
-  test("the one DROP CONSTRAINT is the one migration 054 superseded", () => {
+  test("the DROP CONSTRAINTs are exactly the ones the snapshot re-declares", () => {
     const drops = [...code.matchAll(/^\s*ALTER TABLE (\w+) DROP CONSTRAINT (?:IF EXISTS )?(\w+)/gim)]
       .map((m) => `${m[1]}.${m[2]}`)
       .filter((name) => !name.startsWith("velnox_defn_probe"));
-    // payments_exactly_one_parent_check is retired on purpose (migration 054);
-    // every other entry is a check the snapshot re-declares, and each one is
-    // dropped only when the STORED definition differs from db/schema.sql —
-    // PostgreSQL cannot ALTER a CHECK, so dropping and re-adding is the only way
-    // to change one, and the definition guard is what stops that from happening
-    // on every run. payments_status_check joined the set in migration 056, which
+    // payments_exactly_one_parent_check is retired on purpose (the group-payment
+    // parent superseded it); every other entry is a check the snapshot
+    // re-declares, and each one is dropped only when the STORED definition
+    // differs from db/schema.sql — PostgreSQL cannot ALTER a CHECK, so dropping
+    // and re-adding is the only way to change one, and the definition guard is
+    // what stops that from happening on every run. payments_status_check joined
+    // the set with the commerce-core pass, which
     // adds `authorized`, `expired`, `partially_refunded` and `refunded` to the
     // stored vocabulary. Adding a value cannot invalidate an existing row, which
     // is why the guard there also refuses to re-declare while a row still carries
@@ -216,10 +217,6 @@ describe("the file stays additive and honest", () => {
       expect([
         "payments.payments_exactly_one_parent_check",
         "payments.payments_status_check",
-        "velrepeat_pricing_snapshots.velrepeat_pricing_snapshots_cycle_price_not_null",
-        "velrepeat_pricing_snapshots.velrepeat_pricing_snapshots_total_not_below_cycle",
-        "velrepeat_plans.velrepeat_plans_status_check",
-        "velrepeat_runs.velrepeat_runs_status_check",
         "sellers.sellers_status_check",
         "orders.orders_status_check",
       ]).toContain(name);

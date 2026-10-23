@@ -31,7 +31,7 @@
 #
 # Triggers:
 #   - workflow_dispatch                      (ad-hoc, on demand)
-#   - push to main touching the schema, the migrations, the backend DB layer
+#   - push to main touching the schema, the reconciler, the backend DB layer
 #     or any workflow file                   (a change that could alter what
 #                                             production is expected to look like)
 #   - weekly schedule                        (production drifts on its own —
@@ -241,7 +241,7 @@ jobs:
           # Aggregates and non-secret identifiers only: counts, and the first
           # five shop id/slug pairs. No customer data, no orders, no payments.
           # This is what distinguishes production from an empty sibling Neon —
-          # the migration 054 mistake showed that schema alone cannot.
+          # a past mis-targeted run showed that schema alone cannot.
           psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL'
           SELECT 'FINGERPRINT',
                  'shops: '    || CASE WHEN to_regclass('public.shops')    IS NULL THEN 'MISSING' ELSE (SELECT count(*)::text FROM shops)    END,
@@ -262,8 +262,8 @@ jobs:
         run: |
           # Every row below is `status | probe | detail`. status is PASS or FAIL.
           # Nothing here creates, alters or repairs anything: a missing object is
-          # reported and the job fails, and the fix is a migration (or one run of
-          # the reconciler) — never this workflow.
+          # reported and the job fails, and the fix is one run of
+          # db/run-sqleditor.sql — never this workflow.
           psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' <<'SQL' > /tmp/prod-verify.txt
 
           -- ── tables ──────────────────────────────────────────────────────────
@@ -348,7 +348,7 @@ jobs:
                              WHERE schemaname = 'public' AND indexname = 'idx_checkout_groups_user'),
                           'missing');
 
-          -- ── the payment parent CHECKs from migration 054 ────────────────────
+          -- ── the payment parent CHECKs ──────────────────────────────
           SELECT CASE WHEN (SELECT count(*) FROM pg_constraint
                              WHERE conrelid = to_regclass('public.payments')
                                AND contype = 'c'
@@ -362,12 +362,11 @@ jobs:
                               AND conname IN ('payments_at_least_one_parent_check','payments_single_domain_check')),
                           'missing');
 
-          -- ── migration state ─────────────────────────────────────────────────
-          -- `schema_migrations` is created by the migration mechanism, not by
-          -- the reconciler, so it may legitimately be absent. Probe it through
-          -- the catalog so these queries cannot raise 42P01 and abort the batch
-          -- before the FAIL is counted. The 054 row itself is checked separately
-          -- below, once the ledger is known to be usable.
+          -- ── migration ledger (historical) ────────────────────────────
+          -- `schema_migrations` is created by the reconciler and holds the
+          -- historical migration rows. Probe it through the catalog so these
+          -- queries cannot raise 42P01 and abort the batch before the FAIL is
+          -- counted.
           SELECT CASE WHEN to_regclass('public.schema_migrations') IS NULL THEN 'FAIL' ELSE 'PASS' END,
                  'schema_migrations ledger exists',
                  COALESCE(to_regclass('public.schema_migrations')::text, 'table not found — run production-db-migrate.yml first');
@@ -390,24 +389,6 @@ jobs:
                       ELSE 'ledger present' END;
           SQL
 
-          # Read the ledger only when the probe above says it is usable, so a
-          # missing table is reported as a FAIL and never as a 42P01 that
-          # aborts the whole step before the rest of the checks are counted.
-          if [ "$(grep -c '^FAIL | schema_migrations ledger is usable' /tmp/prod-verify.txt || true)" -eq 0 ]; then
-            psql "$NEON_PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -t -A -F ' | ' -c "
-              SELECT CASE WHEN EXISTS (
-                              SELECT 1 FROM schema_migrations
-                               WHERE migration_name = '054_checkout_groups_numeric_order_number')
-                          THEN 'PASS' ELSE 'FAIL' END,
-                     'migration 054 recorded in the ledger',
-                     'ledger holds ' || (SELECT count(*) FROM schema_migrations)::text || ' migration(s); '
-                     || (SELECT COALESCE(max(migration_name), '(none)') FROM schema_migrations);
-            " >> /tmp/prod-verify.txt
-          else
-            echo "FAIL | migration 054 recorded in the ledger | not checked — no usable schema_migrations ledger" \
-              >> /tmp/prod-verify.txt
-          fi
-
           echo ""
           echo "── PRODUCTION SCHEMA ──"
           cat /tmp/prod-verify.txt
@@ -419,7 +400,7 @@ jobs:
           if [ "$FAILS" -ne 0 ]; then
             echo "::error::FAIL: ${FAILS} of ${TOTAL} production schema checks failed."
             echo "Migration and verification are separate on purpose — this job does NOT create"
-            echo "the missing objects. Apply the fix with db/migrations/ or one run of"
+            echo "the missing objects. Apply the fix with one run of"
             echo "db/run-sqleditor.sql against this same database, then re-run this workflow."
             exit 1
           fi

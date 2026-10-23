@@ -70,7 +70,6 @@ const code = (rel: string) =>
 
 const CART = "backend/routes/cart.ts";
 const STRIPE = "backend/routes/stripe.ts";
-const CYCLES = "backend/lib/velrepeat-cycles.ts";
 const LIB = "backend/lib/order-number.ts";
 
 describe("order numbers — digits only", () => {
@@ -178,11 +177,18 @@ describe("order numbers — one generator, one cryptographic source", () => {
     expect(lib).toContain("randomInt");
     expect(lib).toContain("node:crypto");
     // The predictable PRNG is gone from the generator AND from every caller.
-    for (const file of [LIB, CART, STRIPE, CYCLES]) {
+    for (const file of [LIB, CART, STRIPE]) {
       expect(code(file)).not.toContain("Math.random");
     }
     // …and no second copy of the generator survives anywhere in the backend.
-    for (const file of [CART, STRIPE, CYCLES]) {
+    const definingFiles = [
+      ...new Bun.Glob("backend/**/*.ts").scanSync({ cwd: root }),
+    ]
+      // The test files themselves quote the literal; they are not generators.
+      .filter((file) => !file.startsWith("backend/tests/"))
+      .filter((file) => read(file).includes("function generateOrderNumber"));
+    expect(definingFiles).toEqual([LIB]);
+    for (const file of [CART, STRIPE]) {
       expect(read(file)).not.toContain("function generateOrderNumber");
       expect(read(file)).toContain("order-number.js");
     }
@@ -266,16 +272,4 @@ describe("order numbers — collision handling", () => {
     expect(cart).not.toMatch(/INSERT INTO orders[\s\S]{0,2000}INSERT INTO orders/);
   });
 
-  test("a VelRepeat cycle order is numbered the same way, with the same retry", () => {
-    // A cycle creates a NORMAL order per shop, so it needs the same public
-    // number the customer is shown — and the same savepoint, because the cycle
-    // must be able to roll back one shop's INSERT without losing the claim.
-    const cycles = read(CYCLES);
-    expect(cycles).toContain("generateOrderNumber");
-    expect(cycles).toMatch(/INSERT INTO orders[\s\S]{0,400}?order_number/);
-    expect(cycles).toContain("SAVEPOINT cycle_order_number_attempt");
-    expect(cycles).toContain("ROLLBACK TO SAVEPOINT cycle_order_number_attempt");
-    expect(cycles).toContain("RELEASE SAVEPOINT cycle_order_number_attempt");
-    expect(cycles).toContain("isOrderNumberCollision(err)");
-  });
 });

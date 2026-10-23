@@ -78,8 +78,9 @@ velnox-marketplace/
 │           ├── pages/             # Auth, NotFound
 │           └── index.css          # Velnox Design Theme v1.0
 ├── db/
-│   ├── schema.sql     # Complete database schema
-│   └── migrations/    # Migration files
+│   ├── schema.sql     # Complete database schema (canonical snapshot)
+│   ├── run-sqleditor.sql # Rerunnable reconciler / fresh-DB bootstrap
+│   └── verify-reconciler.sh # Checks both SQL files declare the same objects
 ├── docs/              # Documentation
 └── .ai/               # AI agent workspace (rules, handoff, context, tasks, history)
 ```

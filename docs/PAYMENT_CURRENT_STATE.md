@@ -6,7 +6,7 @@ cites the artifact that proves it. Line numbers are from the commit this documen
 written in; the identifiers (function, route, constraint names) are the stable reference.
 
 Scope: `apps/velshop`, `apps/velseller`, `apps/velcenter`, `backend`, `packages/shared`,
-`db/{schema.sql,run-sqleditor.sql,migrations}`, `.ai/`, environment/config.
+`db/{schema.sql,run-sqleditor.sql}`, `.ai/`, environment/config.
 
 ---
 
@@ -103,10 +103,7 @@ status = ANY($2)` + `NOT EXISTS(settled payment)`), and expires on the policy wi
 Exactly one module: `backend/routes/stripe.ts`. It owns ONE lazily-created client
 (`getStripe()`, line 108), Checkout Session creation (single order and checkout group),
 session expiry, refunds, the webhook handler, and the payment-status/order-detail reads.
-Other names that mention payments (`backend/routes/velrepeat-v2-payments.ts`) are
-**consumers** of the same authority — they import from `./stripe.js`, use the same
-`payments` table, the same `payment_events` claim store and the same
-`backend/lib/payment-config.ts` gate. There is no second Stripe client.
+There is no second Stripe client and no other payments route module.
 
 ## 11. Is there a webhook?
 
@@ -135,11 +132,11 @@ accepting everything.
 `payments.status`, with the vocabulary the code writes:
 `pending`, `requires_action`, `processing`, `paid`, `failed`, `cancelled`
 (plus the derived refund states reported to readers: `partially_refunded`, `refunded`,
-which live on `payments.refund_status` and are folded into the answer). Migration 055
-adds `payments_status_check` so an out-of-vocabulary value is rejected by the database.
-`payments` has three possible parents — `order_id`, `checkout_group_id`, `plan_id` —
-with `payments_at_least_one_parent_check` and `payments_single_domain_check` ensuring
-exactly one.
+which live on `payments.refund_status` and are folded into the answer).
+`payments_status_check` rejects an out-of-vocabulary value at the database.
+`payments` has two possible parents — `order_id`, `checkout_group_id` — with
+`payments_at_least_one_parent_check` (at least one) and `payments_single_domain_check`
+(at most one) ensuring exactly one.
 
 ## 15. Which table holds order status?
 
@@ -240,26 +237,26 @@ prevented by the route reusing an existing open session rather than creating a n
 
 **No mock or fake payment rail exists in the payment path.** Grepping the checkout,
 webhook, refund and config modules for fake/mock markers returns nothing. Stripe is the
-only online provider and it is reached only through the real SDK. The two non-Stripe
-modes are real, flag-gated, and default **off**: **COD** (`PAYMENT_METHOD.COD`, no
-Stripe rail, `provider = 'CARRIER'`) and COD-for-VelRepeat. Both are enabled only when
-their environment flag is the literal `true`/`1`; an absent or ambiguous value disables
-them ("COD fails closed", `backend/lib/payment-config.ts:14`). Tests never stand in for
+only online provider and it is reached only through the real SDK. **COD**
+(`PAYMENT_METHOD.COD`, no Stripe rail, `provider = 'CARRIER'`) is real, flag-gated and
+default **off**: it is enabled only when its environment flag is the literal `true`/`1`;
+an absent or ambiguous value disables it ("COD fails closed",
+`backend/lib/payment-config.ts:14`), and offering it to the customer is a second,
+independent flag (`COD_CUSTOMER_SELECTABLE`). Tests never stand in for
 a payment: they use prototype-spied Stripe sessions against a real PostgreSQL, which is
 labelled as a simulation wherever it appears.
 
 ## 24. How many legacy payment implementations are there?
 
-**One** payment authority, with three payment *parents* — not three systems:
+**One** payment authority, with two payment *parents* — not two systems:
 
 ```
 payments
 ├── order_id            → a single-order charge
-├── checkout_group_id   → ONE charge for a multi-shop purchase
-└── plan_id             → a VelRepeat prepaid plan charge
+└── checkout_group_id   → ONE charge for a multi-shop purchase
 ```
 
-All three go through the same `payments` table, the same `payment_events` claim store,
+Both go through the same `payments` table, the same `payment_events` claim store,
 the same `payment_incidents` mechanism, the same `payment-config.ts` method gate, and
 the same `stripe.ts` client and webhook. Audit result for this phase: no parallel
 ledger, no duplicate webhook processor, no unused payment endpoint, no second status
