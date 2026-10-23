@@ -1,13 +1,11 @@
 /**
  * MVP audit trail — ONE writer for every important MVP action.
  *
- * `db/mvp/schema.sql` declares `audit_logs` with a different shape from the
- * pre-MVP table (`actor_id` / `metadata` instead of `user_id` / `details` /
- * `ip_address`), so the existing `lib/audit-log.ts` cannot be reused here. The
- * *policy* is reused: every approval, suspension, moderation decision, payment
- * settlement and order cancellation goes through this one function, sensitive
- * keys are stripped, and a failure to write the audit row never breaks the
- * business transaction that produced it.
+ * `db/schema.sql` declares `audit_logs` (`actor_id` + `metadata`), and this is
+ * the only audit writer in the tree: every approval, suspension, moderation
+ * decision, payment settlement and order cancellation goes through this one
+ * function, sensitive keys are stripped, and a failure to write the audit row
+ * never breaks the business transaction that produced it.
  *
  * `client` is passed by callers that already hold a transaction, so the audit
  * row commits or rolls back WITH the decision it records — an approved seller

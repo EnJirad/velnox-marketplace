@@ -51,6 +51,10 @@ export const en: Dict = {
     close: "Close",
     save: "Save",
     search: "Search",
+    sortNewest: "Newest",
+    sortPriceAsc: "Price: low → high",
+    sortPriceDesc: "Price: high → low",
+    sortName: "Name A–Z",
     all: "All",
     viewAll: "View all",
     products: "Products",
@@ -78,7 +82,38 @@ export const en: Dict = {
     notifications: "Notifications",
     velrepeat: "Auto reorder",
     account: "My account",
+    sellerDashboard: "Seller dashboard",
     ariaMobile: "Main menu on mobile",
+  },
+
+  role: {
+    owner: "Company owner",
+    admin: "Administrator",
+    seller: "Seller",
+    customer: "Customer",
+  },
+
+  sellerNav: {
+    overview: "Overview",
+    products: "My products",
+    orders: "Orders",
+    profile: "Store profile",
+    profileTitle: "Store profile",
+    profileDesc: "The name and description buyers see on your listings",
+    profileSave: "Save profile",
+    profileSaved: "Store profile saved",
+    profileFailed: "Couldn't save the store profile",
+    verifiedBadge: "Verified seller",
+    storeName: "Store name",
+    storeDesc: "What do you sell?",
+  },
+
+  centerNav: {
+    overview: "Overview",
+    sellers: "Sellers",
+    products: "Products",
+    categories: "Categories",
+    console: "VelCenter console",
   },
 
   header: {
@@ -723,8 +758,6 @@ export const en: Dict = {
     addressSheetTitle: "Select shipping address",
     addressLoadFailed: "Couldn't load your addresses",
     viewOrders: "View orders",
-    repeatOfferTitle: "Want this delivered automatically?",
-    repeatOfferDesc: "The item you just bought supports VelRepeat — pick a schedule and Velnox delivers it for you.",
     shopPending: "Shop",
     showMoreItems: "+ {count} more",
     compactAddress: "Delivery address",

@@ -8,7 +8,7 @@
  * so a 6-pack and six singles draw from the SAME `inventory` row, the seller's
  * pack price (never base × quantity) is what the buyer is charged, and cancel /
  * expiry release exactly the base units that were reserved. Everything here runs
- * against a real PostgreSQL built from `db/mvp/schema.sql`; the triggers, CHECKs
+ * against a real PostgreSQL built from `db/schema.sql`; the triggers, CHECKs
  * and generated snapshot column are what is being tested, so a mocked query would
  * prove nothing.
  */

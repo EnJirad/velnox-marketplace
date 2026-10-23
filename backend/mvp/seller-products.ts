@@ -7,7 +7,7 @@
  * seller is a 404, exactly like a nonexistent one — ownership is never inferred
  * from the URL.
  *
- * Lifecycle: the transitions themselves belong to `db/mvp/schema.sql`
+ * Lifecycle: the transitions themselves belong to `db/schema.sql`
  * (`enforce_product_status_transition`). This module only exposes the actions a
  * seller may take (`submit`, `publish`) and the one policy the database cannot
  * express — a MATERIAL edit to a published listing takes it back to `draft` so
@@ -18,11 +18,19 @@
  * "withdraw" is not a capability the MVP has. Editing is allowed in `draft`,
  * `rejected` and `published`.
  */
+import crypto from "node:crypto";
 import type { Express, Request, Response } from "express";
 import type pg from "pg";
 import { query, withTransaction } from "../db/index.js";
+import {
+  ALLOWED_IMAGE_TYPES,
+  inspectObject,
+  isR2Configured,
+  presignImagePut,
+} from "../lib/r2.js";
 import { writeMvpAudit } from "./audit.js";
 import {
+  ApiError,
   badRequest,
   conflict,
   forbidden,
@@ -61,6 +69,19 @@ export interface ProductRow {
 }
 
 const EDITABLE_STATUSES = new Set(["draft", "rejected", "published"]);
+
+/** `media` refuses anything above 10 MiB, so a product photo is capped there. */
+const MAX_PRODUCT_IMAGE_BYTES = 10 * 1024 * 1024;
+
+const IMAGE_EXTENSION: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+function imagePrefix(sellerId: string, productId: string): string {
+  return `product/${sellerId}/${productId}/`;
+}
 
 function sellerOf(req: Request): SellerProfile {
   const seller = req.mvpSeller;
@@ -289,6 +310,104 @@ function assertEditable(product: ProductRow): void {
 
 export function setupMvpSellerProductRoutes(app: Express): void {
   const guard = [requireApprovedSeller];
+
+  // ── Product image upload (R2 presign → PUT → confirm) ────────────────────
+  // The key is server-minted inside THIS seller's namespace for THIS product, so
+  // a confirm can never point a listing at someone else's object. The confirmed
+  // URL is returned; the seller then saves it through the normal `images` field,
+  // which keeps one write path for `product_images`.
+  app.post(
+    "/api/mvp/seller/products/:id/images/presign",
+    ...guard,
+    route(async (req: Request, res: Response) => {
+      const seller = sellerOf(req);
+      const productId = pathUuid(req.params.id);
+      await withTransaction((client) => loadOwnedProduct(client, productId, seller.id));
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const contentType = requireString(body.contentType, "contentType", { max: 100 });
+      if (!(ALLOWED_IMAGE_TYPES as readonly string[]).includes(contentType)) {
+        throw badRequest(
+          "UNSUPPORTED_IMAGE_TYPE",
+          `Allowed image types: ${ALLOWED_IMAGE_TYPES.join(", ")}`,
+        );
+      }
+      const size = requireInt(body.size, "size", { min: 1, max: MAX_PRODUCT_IMAGE_BYTES });
+
+      if (!isR2Configured()) {
+        throw new ApiError(
+          503,
+          "UPLOAD_NOT_CONFIGURED",
+          "Image storage is not configured (R2_* environment variables are missing)",
+        );
+      }
+
+      const objectKey = `${imagePrefix(seller.id, productId)}${crypto.randomUUID()}.${IMAGE_EXTENSION[contentType]}`;
+      const signed = await presignImagePut({ objectKey, contentType });
+      ok(res, {
+        uploadUrl: signed.uploadUrl,
+        objectKey: signed.objectKey,
+        publicUrl: signed.publicUrl,
+        expiresIn: signed.expiresIn,
+        contentType,
+        maxBytes: MAX_PRODUCT_IMAGE_BYTES,
+        declaredSize: size,
+      }, 201);
+    }),
+  );
+
+  app.post(
+    "/api/mvp/seller/products/:id/images/confirm",
+    ...guard,
+    route(async (req: Request, res: Response) => {
+      const seller = sellerOf(req);
+      const productId = pathUuid(req.params.id);
+      await withTransaction((client) => loadOwnedProduct(client, productId, seller.id));
+
+      const prefix = imagePrefix(seller.id, productId);
+      const objectKey = requireString((req.body ?? {}).objectKey, "objectKey", { max: 512 });
+      if (!objectKey.startsWith(prefix) || objectKey.slice(prefix.length).includes("/")) {
+        throw forbidden(
+          "OBJECT_NOT_OWNED",
+          "This upload does not belong to this product",
+        );
+      }
+
+      const object = await inspectObject(objectKey);
+      if (!object.found) throw badRequest("UPLOAD_NOT_FOUND", "The image was not found in storage");
+      if (object.size !== null && object.size > MAX_PRODUCT_IMAGE_BYTES) {
+        throw badRequest(
+          "UPLOAD_TOO_LARGE",
+          `Images must be at most ${MAX_PRODUCT_IMAGE_BYTES} bytes`,
+        );
+      }
+      if (
+        object.contentType &&
+        !(ALLOWED_IMAGE_TYPES as readonly string[]).includes(object.contentType)
+      ) {
+        throw badRequest("UNSUPPORTED_IMAGE_TYPE", "The stored object is not a supported image");
+      }
+
+      const publicDomain = (process.env.R2_PUBLIC_DOMAIN ?? "").trim().replace(/\/+$/, "");
+      if (!publicDomain) {
+        throw new ApiError(503, "UPLOAD_NOT_CONFIGURED", "R2_PUBLIC_DOMAIN is not configured");
+      }
+      const url = `${publicDomain}/${objectKey}`;
+
+      await query(
+        `INSERT INTO media (object_key, url, content_type, size, uploaded_by)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (object_key) DO UPDATE
+           SET url = EXCLUDED.url,
+               content_type = EXCLUDED.content_type,
+               size = EXCLUDED.size,
+               uploaded_by = EXCLUDED.uploaded_by`,
+        [objectKey, url, object.contentType ?? "image/webp", object.size ?? 1, seller.user_id],
+      );
+
+      ok(res, { url, objectKey });
+    }),
+  );
 
   // ── Create a draft ───────────────────────────────────────────────────────
   app.post(

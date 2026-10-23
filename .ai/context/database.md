@@ -1,387 +1,210 @@
 # DATABASE
 
-## Phase 2 state — ONE canonical MVP schema
+## State (2026-10-22) — `db/` holds exactly two files
 
-**Canonical now:** `db/mvp/schema.sql` — 20 tables, one order status axis, one
-inventory authority, one seller per cart/order, Stripe-only payments, and retail
-selling units (`product_selling_units`: N base units for the seller's own price; 
-NO stock of its own — `inventory` stays the only stock table and a purchase
-reserves `quantity × base_quantity`). Reset:
-`db/mvp/reset.sql` (fail-closed dev/test only). Seed: `db/mvp/seed.sql`
-(categories only). Proof: `db/mvp/verify.sh` + `backend/tests/mvp-schema-contract.test.ts`.
+| File | Purpose |
+|------|---------|
+| `db/schema.sql` | **The canonical MVP DDL.** The only description of the data model there is. |
+| `db/run-sqleditor.sql` | The same DDL in dependency order for the Neon SQL Editor, then a guarded **additive upgrade** for a database installed from an older version, then a read-only install check. |
 
-**Frozen, not canonical:** `db/schema.sql`, `db/run-sqleditor.sql` and
-`db/migrations/*.sql` describe the **pre-MVP** database. The backend deployed
-today still reads it, so it is byte-for-byte unchanged and must stay that way
-until the Phase 3 cutover (`db/mvp/cutover.md`). Do not add a migration and do
-not edit either canonical pre-MVP file.
+Nothing else lives in `db/`: no `db/mvp/`, no `db/migrations/`, no `db/README.md`,
+no seed, no reset, no verifier scripts. Tooling lives in `scripts/` and docs live
+outside `db/` entirely.
 
-Everything below this banner documents the **pre-MVP** pair. It remains the
-operational truth for the currently deployed database, but it is **not** the
-MVP data model and must not be extended.
+The **CREATE DDL is contractually identical** in both files — same tables,
+columns, types, constraints, indexes, triggers, same names, same definitions.
+The installer may additionally carry an additive upgrade section
+(`ALTER TABLE … ADD COLUMN IF NOT EXISTS`, guarded `ADD CONSTRAINT` blocks) so
+an existing database can be brought forward; `db/schema.sql` stays a pure
+snapshot. Neither file may carry a comment (`--`, `/* */`) or a
+destructive/data-writing statement (`DROP`, `TRUNCATE`, `DELETE`, `INSERT`,
+`UPDATE`). Explanations belong in `docs/DATABASE.md`,
+`docs/PRODUCTION_CUTOVER.md` and this file.
 
-## Phase 3 state — the MVP backend exists, isolated under `/api/mvp`
+## The schema, in one paragraph
 
-The MVP API lives in `backend/mvp/` and reads ONLY `db/mvp/schema.sql`. It is
-mounted only when `MVP_API_ENABLED=true` (`routes` list in `backend/mvp/index.ts`),
-so the deployed pre-MVP service is unchanged until the cutover. The two trees
-never share a schema: `backend/mvp/*.ts` must not name `shops`,
-`checkout_groups`, `auth_identities`, … (pinned by
-`backend/mvp/tests/isolation.test.ts`). `product_selling_units` now exists in
-BOTH, with deliberately different shapes (legacy: `pieces`/`status`/`is_wholesale`;
-MVP: `label`/`base_quantity`/`price`/`is_active`) — the MVP code must only ever
-mean the MVP one.
+23 tables · 229 columns · 86 indexes · 167 constraints · 7 triggers. Users with
+`revoked_tokens`, `user_identities` (Google linking) and `cover_url`;
+`seller_profiles` with an approval `status` gating every
+product write; categories, products, product variants (no stock of their own),
+product images, `product_selling_units` (N base units for the seller's own
+price — **no stock column**: `inventory` is the only stock authority and a pack
+purchase reserves `quantity × base_quantity`); one `inventory` row per
+`(product_id, variant_id)`; addresses; one cart per `(user, seller)`; orders
+with **one six-value status axis** (`pending_payment`, `paid`, `processing`,
+`shipped`, `delivered`, `cancelled`) and JSONB/item snapshots; `payments` +
+`payment_events` for webhook idempotency; `checkout_requests(user_id,
+request_key)` for checkout idempotency; `product_favorites` and
+`product_reviews` (one row per user per product, `rating 1–5`, `published`/
+`hidden`); shipments; `audit_logs`.
 
-- MVP API tests run on their OWN disposable database, built from
-  `db/mvp/schema.sql`: `bun run test:mvp` (→ `db/mvp/test-run.sh`). They are not
-  part of `bun test backend/tests`, which stays on the pre-MVP schema.
-- Money is `NUMERIC(12,2)` end to end; `backend/mvp/*` never converts a money
-  column to `Number`/`parseFloat` (`isolation.test.ts`).
-- Lifecycle machines stay in the database triggers. The side that decides is
-  `db/mvp/schema.sql`; the API maps `23514`/`P0001` to **409**.
+Rules that must never drift:
 
-## Source of Truth (runtime)
+- money is `NUMERIC(12, 2)` everywhere; nothing converts a money column to
+  `Number`/`parseFloat`/`toFixed`;
+- `inventory` is the single stock authority; checkout reserves with a guarded
+  `UPDATE … WHERE quantity - reserved >= n` inside a transaction, commits or
+  releases exactly once;
+- lifecycle machines live in **database triggers** (`23514`/`P0001` are mapped
+  by the API to **409**), not in application code;
+- every creation statement is guarded (`IF NOT EXISTS` / `ON CONFLICT`), so a
+  second run changes nothing;
+- a column added to an **existing** table after the first install must also
+  appear in the installer's upgrade section, or a re-run cannot repair a
+  database that predates it (`users.cover_url`, `addresses.latitude`,
+  `addresses.longitude` today);
+- no `order_state`, no `shops`, no `checkout_groups`, no `velrepeat_*`, no
+  `wholesale`/`is_wholesale` — pinned by
+  `backend/tests/mvp-schema-contract.test.ts` and
+  `backend/mvp/tests/isolation.test.ts`.
 
-Neon PostgreSQL. Single `pg.Pool` in `backend/db/index.ts` (SSL `verify-full`). Frontend never connects directly.
+## How the two files are proved
 
-## Pre-MVP pair (FROZEN until cutover) — historic contract
-
-| File | Purpose | Rule |
-|------|---------|------|
-| `db/schema.sql` | Complete current schema **snapshot** | Authoritative structure; bootstraps an empty DB in one pass |
-| `db/run-sqleditor.sql` | **Rerunnable additive reconciler** | Paste into Neon SQL Editor and Run as often as needed against a database that already has data |
-| `db/run-update.sql` | **Deprecated** — do not recreate, update, or depend on it | — |
-| `db/migrations/001_*.sql` … | Historical migrations (idempotent, `IF NOT EXISTS`) | History only; do not rewrite |
-
-The two canonical files describe the **same database** but are **not the same
-artifact**, and must not be compared byte-for-byte:
-
-- `db/schema.sql` is what the current schema *is*. One pass over an empty database.
-- `db/run-sqleditor.sql` is what has to happen to an **existing** database to bring it
-  to that schema without losing anything. It therefore carries extra passes the snapshot
-  has no use for — `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, a `DROP NOT NULL` relax pass,
-  and the index / foreign-key / constraint / trigger passes moved after the column pass so
-  an older database that is missing a column is not aborted by the index that needs it.
-
-The contract between them is **declaration parity**, asserted by
-`backend/tests/helpers/canonical-schema.ts`: every table, column, index, named constraint,
-function, trigger and extension `db/schema.sql` declares must still be declared by
-`db/run-sqleditor.sql` with the same name and definition. The extra passes may ADD; they may
-never drop or redefine.
-
-`db/run-sqleditor.sql` was derived from `db/schema.sql`, which stays the only source of truth.
-There is no in-repo generator: the additive passes are maintained by hand alongside the
-snapshot, and **declaration parity is not enough** — a column added to `db/schema.sql`
-without a matching `ALTER TABLE … ADD COLUMN IF NOT EXISTS` passes the parity check and
-still leaves every older database without the column, failing silently. That case, the
-index ordering, the constraint guards and the additive-only guarantee are pinned by
-`backend/tests/db-run-sqleditor-reconciler.test.ts`; run it after any schema change.
-
-## What Must Be in the Canonical Files
-
-Tables, columns, types, defaults, PKs, FKs, unique/check constraints, indexes (including partial/expression), extensions, enums, functions, triggers, views — anything the current app requires. If it was added after initial schema and is still used, it must be present. No partial bootstrap.
-
-## Fresh-DB Contract
-
-```
-Empty Postgres  →  run db/run-sqleditor.sql  →  complete current Velnox DB
-                    (run it again → nothing changes)
-```
-
-No prior migrations required. Historical `db/migrations/` are for upgrading existing DBs, not for fresh creation. Never `DROP/TRUNCATE` prod to make it pass.
-
-## The Reconciler Is Additive — Never Destructive
-
-`db/run-sqleditor.sql` is pasted into production, so it is written to the strictest rule:
-
-| Situation | What it does |
-|---|---|
-| table missing | `CREATE TABLE IF NOT EXISTS` |
-| column missing | `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` |
-| column present under the **wrong type** | **not fixed** — `ADD COLUMN IF NOT EXISTS` is a no-op; PART 8 refuses to report success |
-| column is `NOT NULL` in the old DB but nullable in the schema | `ALTER COLUMN ... DROP NOT NULL` (widens only) |
-| index missing | `CREATE [UNIQUE] INDEX IF NOT EXISTS`, emitted **after** the column pass |
-| constraint / FK missing | added once, guarded on `pg_constraint` |
-| check whose stored definition differs from the schema | re-applied only when it differs |
-| trigger missing | created once, guarded on `pg_trigger` |
-| function present | `CREATE OR REPLACE` with the canonical body |
-
-It must never contain `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` or `DELETE`, must never
-rename an object in place, and must never hide a failure behind
-`EXCEPTION WHEN OTHERS THEN NULL` — a migration that cannot be completed safely has to
-stop and say so, not report a false success. The one `DROP CONSTRAINT` it carries retires
-`payments_exactly_one_parent_check`, which migration 054 superseded; the in-file comment
-explains why, and it removes a rule rather than data.
-
-**Order is part of the contract.** Nothing may be created before what it depends on:
-tables → columns → indexes → constraints → foreign keys → triggers. An index on a column an
-older database does not have yet must come after the column pass, or the whole run aborts
-on the first such index.
-
-**Verification must check the SHAPE, not only the name.** `ALTER TABLE … ADD COLUMN IF NOT
-EXISTS <name> <type>` is a **no-op when a column of that name already exists under a different
-type**, and a foreign key is never removed by a name check. A name-only verification therefore
-passes on a database whose payment path still fails at runtime (`42804` for the type, `42703`
-for the column). PART 8 consequently also requires both group columns to be `uuid`, each group
-index to actually contain `(checkout_group_id)`, and each group foreign key to resolve to
-`checkout_groups` with `ON DELETE SET NULL`. `db/verify-reconciler.sh` scenario I breaks each of
-those on purpose and proves the run fails and names the object.
-
-### ⚠️ `42703 column "x" does not exist` does NOT mean the query is unqualified (2026-10-04)
-
-Measured, not inferred. PostgreSQL emits the **same message** in two different situations:
-
-| case | situation | message |
+| Command | What it proves | Needs a DB? |
 |---|---|---|
-| (a) | no relation in the statement's FROM/JOIN scope owns `x` | `column "x" does not exist` |
-| (b) | the relation **is** in scope, and **the table itself lacks `x`** | `column "x" does not exist` |
+| `bun run db:check` (`scripts/db-verify.sh`) | **Both** files apply to an empty database, **both apply a second time**, and the two `pg_dump --schema-only` results are identical | yes (disposable) |
+| `bun run db:verify` (`backend/tests/mvp-schema-contract.test.ts`) | Declaration parity, the 23-table inventory, no non-MVP column, one order axis, one stock authority, `NUMERIC(12,2)`, seven lifecycle triggers, rerunnability, no comments/destructive SQL, `db/` contains only the two files | no |
+| `bun run test:mvp` (`scripts/db-test-run.sh`) | Builds `velnox_mvp_app_test` from `db/schema.sql` and runs `backend/mvp/tests/**` — auth, cart, checkout, overselling, inventory, payments/webhook idempotency, seller/admin authorisation, selling units | yes (disposable) |
 
-The message never names the relation it failed against, so the error text **cannot** distinguish
-them. This caused a real misdiagnosis: a production `42703` on `payments.checkout_group_id`
-was attributed to a stale deploy and dismissed twice, when the actual cause was that
-**production had never received migration 054** — the query was correct and the database was
-behind (`.ai/AI_HANDOFF.md`, §66 and the correction that follows it).
+Never point any of these at production. See *Test Database* below.
 
-**So never diagnose a 42703 from its text.** Read the catalog
-(`information_schema.columns` / `pg_attribute` / `pg_constraint`), and confirm *which database*
-you are connected to — `describeDatabaseIdentity()` in `backend/db/index.ts` prints both at boot,
-and `.github/workflows/diag-neon-schema.yml` probes them on demand.
+## Fresh-DB and rerun contract
 
-**Schema qualification.** `db/schema.sql` — and therefore this file's table section — uses
-unqualified names, which is the repo-wide convention. The reconciler pins
-`SET search_path = public, pg_catalog;` on its first statement and qualifies every statement
-that mutates an existing table, so `orders` means `public.orders` deterministically instead of
-whatever the session happened to have. `db/verify-reconciler.sh` scenario G runs the whole file
-with a decoy schema first in `search_path` and asserts nothing is written there.
+An empty Postgres becomes the complete Velnox schema by running either file
+**once**, with no prior migrations. Running it a **second time must change
+nothing** — no duplicate table, column, constraint, index or trigger — and must
+never touch a row. Respect PostgreSQL dependency order (extensions → types →
+tables → FKs → indexes → functions → triggers → views); for circular FKs create
+the tables first and `ALTER TABLE ADD CONSTRAINT` afterwards. Do not weaken a
+constraint to break a cycle.
 
-## How the reconciler is proved
+## There is no migration chain
 
-`bash db/verify-reconciler.sh` (or `bun run db:verify`) builds disposable databases and runs the
-real file against them. It is the only check that exercises behaviour rather than text, and it
-covers the shape that actually broke production:
+`db/migrations/` (62 files), the migration runner and
+`.github/workflows/production-db-migrate.yml` were removed together. Nothing in
+this repository applies incremental SQL. `db/run-update.sql` is deprecated —
+never create, edit or reference it. A schema change is a change to **both**
+canonical files in the same commit, re-proved with `bun run db:check`.
 
-| Scenario | What it builds | What it proves |
-|---|---|---|
-| A | empty database, run ×3 | creates the full schema; runs 2 and 3 change nothing |
-| B | **the reported shape** — `checkout_groups` exists, `orders.checkout_group_id` and `payments.checkout_group_id` missing | the columns are added, with their indexes and foreign keys |
-| C | legacy — no `checkout_groups` at all | the table and both columns are created |
-| D | already-current database, run twice more | no duplicates, no errors |
-| E | populated database | existing rows are byte-identical afterwards |
-| F | after B/C | one payment with `order_id IS NULL` is accepted, i.e. a group purchase works |
-| G | a decoy schema first in `search_path` | nothing is created or altered outside `public` |
-| H | **the reported incident** — real `payments` rows with Stripe provider ids, `payments.checkout_group_id` removed | the production statement from `routes/stripe.ts` raises 42703 **before** and resolves the group **after**; the payment row, its provider ids and its `paid` status are unchanged |
-| I | a reconciled database, then deliberately broken | PART 8 exits 0 when reconciled, and **fails and names the object** on a wrong-typed column and on a `CASCADE` foreign key |
+## Production is a separate, unexecuted change
 
-It exits non-zero unless every assertion it prints actually passed.
-
-## Dependency Ordering
-
-Respect PostgreSQL dependency order (extensions → types → tables → FKs → indexes → functions → triggers → views → seeds). For circular FKs, create tables without the FK then `ALTER TABLE ADD CONSTRAINT` after (deferred via `DO $$ IF NOT EXISTS (pg_constraint)`); do not weaken constraints.
-
-## Migration Workflow
-
-1. Add a new `db/migrations/NNN_*.sql` (idempotent, no `DROP TABLE`).
-2. Update **both** `db/schema.sql` and `db/run-sqleditor.sql`.
-3. Production receives migrations via `.github/workflows/production-db-migrate.yml` (secret
-   `NEON_PRODUCTION_DATABASE_URL`) or manual apply.
-4. Track via `schema_migrations` table.
-
-## The canonical production secret: `NEON_PRODUCTION_DATABASE_URL` (2026-10-04)
-
-One name, one target, one job each:
+Production still runs the **pre-MVP** database. The repository can no longer
+talk to it (the routes that did are gone), and the switch is planned, not done:
+`docs/PRODUCTION_CUTOVER.md`.
 
 | Workflow | Role | Secret | Writes to production? |
 |---|---|---|---|
-| `production-db-verify.yml` | verify production schema/identity | `NEON_PRODUCTION_DATABASE_URL` | **never** — SELECT only |
-| `production-db-migrate.yml` | apply `db/migrations/*.sql` | `NEON_PRODUCTION_DATABASE_URL` | yes, on an explicit trigger |
-| `diag-neon-schema.yml` | read-only inventory | `NEON_PRODUCTION_DATABASE_URL` | never |
+| `diag-neon-schema.yml` | read-only schema inventory | `NEON_PRODUCTION_DATABASE_URL` | never |
 | `diag-stripe-payment-trace.yml` | read-only payment trace | `NEON_PRODUCTION_DATABASE_URL` | never |
 | `test.yml` | CI typecheck + tests | **none** (throwaway postgres service) | never |
+| ~~`production-db-verify.yml`~~ | retired with the pre-MVP object set | — | — |
+| ~~`production-db-migrate.yml`~~ | retired with the migration chain | — | — |
 
-Rules the workflows enforce on themselves (`production-db-verify.yml` → the `repository` job,
-proven non-vacuous in both directions):
+Standing rules:
 
-* **No silent fallback.** A production step never substitutes another variable when the
-  secret is absent. It stops with `BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured.`
-  A workflow that reaches the wrong Neon *on its own* is the incident this alignment exists
-  to prevent.
-* **No hard-coded credential.** No committed remote connection string in any workflow; the
-  only permitted URLs are the `localhost` service container and the `ep-ci-guard-check`
-  fixture, which nothing ever connects to.
-* **CI never touches production.** `test.yml` references no secret at all, and the guard
-  test proves the suite refuses a production-looking `DATABASE_URL`.
-* **Verification never repairs.** A missing column FAILs the job and names the fix
-  (a migration, or one run of `db/run-sqleditor.sql`). Migration and verification are
-  separate workflows on purpose.
-* **Identity is proven, not assumed.** Every production run prints
-  `current_database()`, `current_schema()`, `server_version`, `current_user` and a
-  row-count fingerprint, and never the host, password or connection string. Compare it with
-  the `[db]` line the live backend logs at boot.
+- **No silent fallback.** A production step never substitutes another variable
+  when the secret is absent; it stops with
+  `BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured.`
+- **No hard-coded credential.** No committed remote connection string in any
+  workflow; the only permitted URLs are the `localhost` service container and
+  the `ep-ci-guard-check` fixture, which nothing connects to.
+- **CI never touches production.** `test.yml` references no secret at all, and
+  the guard refuses a production-looking `DATABASE_URL`.
+- **Verification never repairs.** A missing object FAILs and names the fix.
+- **Identity is proven, not assumed.** Every production run prints
+  `current_database()`, `current_schema()`, `server_version`, `current_user`
+  and a row-count fingerprint — never the host, password or connection string.
+  `describeDatabaseIdentity()` does the same at API boot;
+  `safeDatabaseLabel()` is what you print (a Neon URL embeds its password).
 
-### ⚠️ The retired `NEON_DATABASE_URL` secret pointed at a DIFFERENT Neon (proven 2026-10-04)
+### ⚠️ `42703 column "x" does not exist` does NOT mean the query is unqualified
 
-**A green migration run proves nothing about production until you have checked which
-database it ran against.** The now-retired GitHub Actions secret `NEON_DATABASE_URL` resolved
-to a *different* Neon database from the one Render's `DATABASE_URL` connects to. Measured on
-2026-10-04:
+Measured, not inferred. PostgreSQL emits the **same message** in two different
+situations: (a) no relation in the statement's scope owns `x`, or (b) the
+relation **is** in scope and **the table itself lacks `x`**. The message never
+names the relation, so the error text cannot distinguish them. A production
+`42703` was therefore attributed to a stale deploy and dismissed twice when the
+real cause was that production had never received the migration.
 
-| | Actions `NEON_DATABASE_URL` (`current_database = neondb`) | Production, via `GET /api/shops` on `velnox-api.onrender.com` |
-|---|---|---|
-| shops | **1** — `5d56f6f8…/eloop` | **2** — `26d65318…/home-tech`, `91f4b9bf…/velnox-support` |
-| users / products / sellers | 3 / 1 / 1 | not exposed publicly |
-| orders / payments | 0 / 0 | real purchases exist |
+**Never diagnose a 42703 from its text.** Read the catalog
+(`information_schema.columns` / `pg_attribute` / `pg_constraint`) and confirm
+*which database* you are connected to first. A `42703` never proves whether the
+database or the code is wrong.
 
-The two sets are disjoint. Consequences:
+### ⚠️ Prove which database you are on before trusting any read
 
-* Migration `054_checkout_groups_numeric_order_number` **is applied and present** on the
-  Actions database, and production still raised
-  `relation "checkout_groups" does not exist` / `42P01` on real checkout. The table was
-  never missing — it was missing *from the database checkout actually ran against*.
-* Every earlier "schema is fine, it must be something else" conclusion drawn from the
-  Actions ledger is subject to this. The ledger describes the Actions database only.
-
-**Before trusting any ledger read, prove the identity first.** The read-only probes in
-`.github/workflows/production-db-verify.yml` (and the wider inventory in
-`diag-neon-schema.yml`) answer it directly — `DATABASE IDENTITY`, the row-count fingerprint
-and `current_database`. Compare them against what the live host serves before drawing a
-conclusion. Creating the `NEON_PRODUCTION_DATABASE_URL` secret and pointing it at the Neon
-project Render owns is an owner action on GitHub Secrets (the repo's app token gets `403`
-on both `secrets` and `workflow_dispatch`).
-
-Startup must never run DDL (`ALTER TABLE`).
-
-### Why the two URLs were never checked against each other (2026-10-04)
-
-Measured from the tracked tree: **no real Neon endpoint, hostname or credential is committed
-anywhere.** Every `neon.tech` in a tracked file is a placeholder (`ep-xxx`), a CI guard fixture
-(`ep-ci-guard-check`, used only to prove the suite refuses a production-looking URL), or a doc
-example. Render's `DATABASE_URL` is **not defined in this repository at all** — it exists only in
-Render's dashboard. The Actions URL is only ever referenced as
-`${{ secrets.NEON_PRODUCTION_DATABASE_URL }}` in the four production workflows
-(`production-db-verify.yml`, `production-db-migrate.yml`, `diag-neon-schema.yml`,
-`diag-stripe-payment-trace.yml`); `test.yml` references no secret at all.
-
-So the two databases **share no definition in the repo**, which means nothing in CI or in the
-codebase can ever assert they are the same endpoint — the divergence is structural, not a stale
-value that a refresh would fix. The only places identity can be established are, in order:
-
-1. `describeDatabaseIdentity()` at API boot — prints `current_database()` and whether the payment
-   schema is present, from whichever database that process actually opened.
-2. `.github/workflows/diag-neon-schema.yml` — `current_database`, `rowcount.shops`,
-   `shops.ids (first 5)`, and the `payments.checkout_group_id` type/FK probes.
-
-Compare those against what the live host serves **before** trusting any ledger read. Never print
-either connection string: a Neon URL embeds its password, so only the database name is safe to
-report (`safeDatabaseLabel()` exists for exactly this).
+The retired Actions secret `NEON_DATABASE_URL` pointed at a **different** Neon
+from Render's `DATABASE_URL` (measured 2026-10-04: disjoint shops/orders
+sets). A green run against it proved nothing about production. The two
+definitions do not share any value in this repository, so the divergence is
+structural — identity can only be established at the two places listed above,
+compared against what the live host actually serves. Creating the
+`NEON_PRODUCTION_DATABASE_URL` secret is an owner action on GitHub Secrets.
 
 ## Test Database
 
-Tests never touch `DATABASE_URL` — that value is production. `TEST_DATABASE_URL`
-names a disposable PostgreSQL the DB-gated integration tests may write to;
-bootstrap it once with `db/run-sqleditor.sql`. The guard is
-`backend/db/test-database.ts`, wired into the pool factory via
-`resolveConnectionString()` in `backend/db/index.ts`. See `testing.md`.
+Tests never touch `DATABASE_URL` — that value is production.
+`TEST_DATABASE_URL` names a disposable PostgreSQL the DB-gated tests may write
+to; its name must end in `_test`. The guard is `backend/db/test-database.ts`,
+wired into the pool through `resolveConnectionString()` in
+`backend/db/index.ts`, and `backend/tests/setup.ts` aborts the run before any
+fixture loads. Nothing configured → DB-gated tests skip; that is the normal
+state in a sandbox without credentials. See `testing.md`.
 
 ## Pool Configuration & Latency Attribution
 
-Single pool in `backend/db/index.ts`. Current shape and why:
+Single pool in `backend/db/index.ts`:
 
 | Option | Value | Why |
 |--------|-------|-----|
 | `max` | 20 | unchanged |
-| `min` | **1** | Warm floor. pg-pool arms its idle-reap timer only while `_clients.length > min`, so the last client is never reaped. Without it the pool empties 30 s after the previous query and the next statement pays the whole TCP/TLS/auth handshake to Neon (~1.3 s measured 2026-09-28) on its own critical path |
+| `min` | **1** | Warm floor. pg-pool arms its idle-reap timer only while `_clients.length > min`, so the last client is never reaped; without it the next statement pays the whole TCP/TLS/auth handshake to Neon (~1.3 s measured) on its critical path |
 | `idleTimeoutMillis` | 30000 | Bursts still trim back down to `min` |
 | `connectionTimeoutMillis` | 5000 | Bounds acquiring a connection |
 | `query_timeout` | 15000 | Client-side statement deadline — **the only** timeout that may be set here |
-| `maxLifetimeSeconds` | 1800 | Bounds the age of the now-persistent connection (client-side timer) |
+| `maxLifetimeSeconds` | 1800 | Bounds connection age (client-side timer) |
 
-**Never add a server-side/startup parameter** — `statement_timeout`, `lock_timeout`,
-`idle_in_transaction_session_timeout`, or `keepAlive` (pg sends it as `keepalives`): Neon's
-PgBouncer rejects an untracked startup parameter, which breaks **every** connection instead of one
-route. `query_timeout` is enforced in-process, which is what makes it safe on this deployment.
+**Never add a server-side/startup parameter** — `statement_timeout`,
+`lock_timeout`, `idle_in_transaction_session_timeout`, or `keepAlive`: Neon's
+PgBouncer rejects an untracked startup parameter, which breaks **every**
+connection instead of one route.
 
 **Read a slow-query log line by its split, not its total.** `query()` logs
-`acquire Xms + execute Yms = Zms, layer=pool-connection|statement, pool idle/total/waiting`. A warm
-round trip here is ~0.2 s, so the total alone cannot distinguish a bad plan from a cold pool: a
-large acquire with a small execute is connection checkout, the reverse is the statement/database.
-`classifySlowQuery()` performs that attribution (pinned by `backend/tests/db-latency.test.ts`);
-`db-client-release.test.ts` guards the lease/release half, and `webhook-resilience.test.ts` guards
-the bounded waits.
+`acquire Xms + execute Yms = Zms`. A warm round trip is ~0.2 s, so the total
+alone cannot distinguish a bad plan from a cold pool: a large acquire with a
+small execute is connection checkout, the reverse is the statement/database.
+`classifySlowQuery()` performs that attribution.
 
-### Owner read-only check before changing ANY index
+## Payment window (`orders.payment_expires_at`)
 
-Run in the Neon SQL Editor. `EXPLAIN` only, and never `ANALYZE` on a mutating statement:
+Checkout reserves stock for a fixed 30-minute window and writes
+`payment_expires_at` inside the order-creation transaction; nothing else writes
+it. `idx_orders_payment_expires_at … WHERE status = 'pending_payment'` serves
+the sweep's range scan and its `ORDER BY`.
 
-```sql
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT id, amount, status, reason, created_at, refunded_at
-  FROM refunds WHERE order_id = '<order-uuid>' ORDER BY created_at ASC;
+The sweeper is `backend/jobs/mvp-order-expiry-scheduler.ts` — it starts with
+the service and honours `MVP_ORDER_EXPIRY_SCHEDULER=off`, which hands the job to
+`POST /api/mvp/admin/maintenance/expire-pending-orders`. Each candidate is
+claimed with `FOR UPDATE SKIP LOCKED` and cancelled through the one cancellation
+authority, so overlapping ticks or instances cannot double-release stock.
 
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT id FROM velrepeat_plans
- WHERE status = 'active' AND next_run_at <= NOW()
- ORDER BY next_run_at ASC LIMIT 25;
-
-SELECT indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes
- WHERE relname IN ('refunds', 'velrepeat_plans') ORDER BY relname, indexrelname;
-
-SELECT relname, n_live_tup, n_dead_tup, last_analyze, last_autoanalyze
-  FROM pg_stat_user_tables WHERE relname IN ('refunds', 'velrepeat_plans');
-```
-
-Expected: `refunds` → Index Scan on `idx_refunds_order`; `velrepeat_plans` → Index Scan on
-`idx_velrepeat_plans_due` (the partial index) with **no Sort**. Only a Seq Scan justifies an
-index/statistics change — check `pg_indexes` for an equivalent index first so none is duplicated,
-then update `db/schema.sql` + `db/run-sqleditor.sql` together. This is the evidence bar for a
-composite index such as `refunds (order_id, created_at)`: the 2026-09-28 investigation rejected it
-because the latency was connection acquisition, not the plan (handoff §34).
-
-## Payment reservation (orders.payment_expires_at)
-
-`orders` carries the fixed 30-minute payment reservation: `payment_expires_at TIMESTAMPTZ`
-(NULL = no window — COD orders and every row that predates the feature, which the sweep ignores)
-and `reservation_policy JSONB` (the audited policy: `{version: "v2", reservationMinutes: 30,
-reason, expiresAt}`; a v1 row with `riskLevel` + `signals` is historical data only — the risk-band
-calculation no longer exists). Both are written by `backend/lib/payment-reservation.ts` inside the
-order-creation transaction; nothing else writes them.
-
-`idx_orders_payment_expires_at ON orders (payment_expires_at) WHERE payment_expires_at IS NOT NULL`
-serves the sweep's range scan **and** its `ORDER BY`; the status / `inventory_released` filters are
-applied by `backend/jobs/payment-reservation-scheduler.ts` to the few due rows. The index predicate
-is deliberately loose: one index, no duplicated status list to drift out of sync.
-
-Introduced by `db/migrations/048_payment_reservation.sql` (additive, idempotent, no backfill).
-Apply it to production **before** deploying a backend that writes the column — but the order does
-not have to be perfect: the reservation write runs inside a `SAVEPOINT` and tolerates **only**
-`undefined_column`, so a backend that is newer than its database keeps checkout working (orders
-simply get no window, exactly like legacy rows) and says so in the log. The sweep logs the missing
-column once and stays disabled until a scan succeeds after the migration.
+Read-only owner check:
 
 ```sql
--- what the sweep reads (read-only owner check)
 SELECT id, status, payment_expires_at FROM orders
- WHERE payment_expires_at IS NOT NULL AND payment_expires_at <= NOW()
-   AND status IN ('pending', 'pending_payment') AND inventory_released = FALSE
+ WHERE status = 'pending_payment' AND payment_expires_at <= NOW()
  ORDER BY payment_expires_at ASC LIMIT 25;
-
--- the health of the feature: how many windows are open, and how many lapsed but unswept
-SELECT count(*) FILTER (WHERE payment_expires_at > NOW()) AS open_windows,
-       count(*) FILTER (WHERE payment_expires_at <= NOW()
-                          AND status IN ('pending','pending_payment')
-                          AND inventory_released = FALSE) AS lapsed_unswept
-  FROM orders WHERE payment_expires_at IS NOT NULL;
 ```
 
 ## Safety & Verification
 
-- Never `DROP DATABASE/SCHEMA/TABLE` or `TRUNCATE` without explicit owner auth.
-- Verify: declaration parity between `db/schema.sql` and `db/run-sqleditor.sql`
-  (`canonicalParity()` must be empty), `db-run-sqleditor-reconciler.test.ts` (every new
-  column has its `ADD COLUMN IF NOT EXISTS` pass), `git diff --check`, dependency order,
-  and both questions: *"Can an empty Neon become the current DB by running
-  `db/run-sqleditor.sql` once?"* and *"If I run it a second and third time, does anything
-  change — and are no rows lost on an old database?"*
-- Also check `db/run-update.sql` was not resurrected, and that the reconciler contains no
-  `DROP TABLE` / `DROP COLUMN` / `TRUNCATE` / `DELETE FROM` and no `EXCEPTION` handler.
+- Never `DROP DATABASE`/`SCHEMA`/`TABLE`, `TRUNCATE` or `DELETE` without
+  explicit owner authorisation, and never against production.
+- A schema change updates **both** files and is proved by `bun run db:check`,
+  `bun run db:verify` and `bun run test:mvp`.
+- Also assert `db/run-update.sql` was not resurrected and that `db/` still
+  contains exactly two files (the contract test does).
+- `git diff --check` must be clean; no secrets in any committed file.
 
-Related: `.ai/AI_RULES.md` §6, `INSTALLATION.md` §5–6, `docs/DATABASE.md`.
+Related: `.ai/AI_RULES.md` §6, `INSTALLATION.md`, `docs/DATABASE.md`,
+`docs/PRODUCTION_CUTOVER.md`.

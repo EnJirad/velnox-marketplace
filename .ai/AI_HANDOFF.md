@@ -1,14 +1,16 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-21 · **Branch:** `main` · **Latest pass:** **PHASE 3d — retail sets/packs** (**§89**) — the MVP now sells seller-defined packs (`product_selling_units`, own price, `base_units = qty × base_quantity`) against the one `inventory` table, with cart/order snapshots, seller UI, storefront selector, admin review and a **real Chromium pack-purchase E2E**. Staging is **NOT deployed** (no provider access); Stripe TEST still keyless. Production untouched; cutover **not executed**.
+**Last updated:** 2026-10-22 · **Branch:** `main` · **Latest pass:** **§94 DRIFT-REPAIR PATH (2026-10-22)** — the canonical files already declared `product_reviews` and `users.cover_url`, but `CREATE TABLE IF NOT EXISTS` cannot add a column to a table that already exists, so an installed database could never be brought forward. `db/run-sqleditor.sql` now carries a guarded additive upgrade (3 columns + 3 CHECKs) after the DDL; `db:check` stages the old state, repairs it twice and compares catalog fingerprints with a fresh install. The exact `42703`/`42P01` failures were reproduced pre-repair and disappear post-repair; MVP suite **135/135**, static **47/47**. **§93 LEGACY RESTORATION COMPLETION** — address book, cover photo, R2 product images. **§92 DATABASE-FIRST RESET** — `db/` is down to the two canonical files (proved equivalent on a disposable PostgreSQL, both applied twice), the pre-MVP route/page/migration tree is removed, and the MVP API + three MVP frontends are the whole product: typecheck 4/4, builds 4/4, static suite 46/46, MVP API suite **113/113** against a real database. **Prior passes:** §90 clean MVP schema audit · §89 retail sets/packs. Staging is **NOT deployed** (no provider access); Stripe TEST still keyless. Production untouched; cutover **not executed** (`docs/PRODUCTION_CUTOVER.md`).
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
-> ⚠️ **OPEN PRODUCTION INCIDENT (2026-10-21, unchanged since §82):** Render checkout fails with
-> `42703 column "order_state" of relation "orders" does not exist` (plus `product_selling_units`
-> missing). The database is behind migrations 056/058/059; the repository is correct. Repair is
-> **proven and blocked** — `Production DB Migrate`/`Verify` both hard-stop because the secret
-> `NEON_PRODUCTION_DATABASE_URL` does not exist, so no migration has ever reached production.
-> Diagnosis, proof and the owner runbook: `.ai/tasks/active/production-schema-drift-repair-2026-10-21.md`.
+> ⚠️ **PRODUCTION SCHEMA INCIDENT (2026-10-21, updated 2026-10-22):** the deployed API has
+> reported two distinct states. `42703 column "order_state" …` (plus `product_selling_units`
+> missing) means the target is still pre-MVP. `42P01 relation "product_reviews" does not exist`
+> and `42703 column "cover_url" does not exist` mean the target IS the MVP model but predates the
+> post-baseline additions (three tables, `cover_url`, the address coordinates). Repair path:
+> `docs/PRODUCTION_CUTOVER.md` §3a (run `db/run-sqleditor.sql`; additive, no data rewrite) for the
+> latter, §3 (fresh database) for the former. **Not executed** (no production credential in this
+> workspace). No production database was touched.
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
 > roughly **55 KB** in a file, so a handoff that grows past that can no longer be
@@ -27,16 +29,16 @@ WebSocket) → Neon PostgreSQL (source of truth) + Cloudflare R2 (file storage).
 
 | Piece | Path | Role |
 |---|---|---|
-| velShop | `apps/velshop` | customer storefront, cart, checkout, VelRepeat |
-| velSeller | `apps/velseller` | seller workspace (products, orders, income, goals) |
-| velCenter | `apps/velcenter` | staff / company operations console |
+| velShop | `apps/velshop` | customer storefront: catalog, product, cart, checkout, orders (`src/mvp/`) |
+| velSeller | `apps/velseller` | seller workspace: products, selling units, stock, orders (`src/mvp/`) |
+| velCenter | `apps/velcenter` | admin / company console: sellers, products, categories, metrics (`src/mvp/`) |
 | velNox | `apps/velnox` | corporate site |
-| API | `backend` | Express + `ws`; the only thing that talks to Neon |
-| Shared | `packages/shared` | UI kit, i18n, api client, `api-routes.ts` |
-| DB | `db/schema.sql`, `db/run-sqleditor.sql` | canonical, must stay structurally byte-identical |
+| API | `backend/mvp` | Express; the ONLY route tree, mounted at `/api/mvp/*` |
+| Shared | `packages/shared` | UI kit, i18n, `mvp/` typed client (`api.ts`, `client.ts`, `config.ts`) |
+| DB | `db/schema.sql` + `db/run-sqleditor.sql` | the two canonical files; must stay declaration-identical |
 
-- **Auth:** Google OAuth + JWT in the `velnox_session` httpOnly cookie, plus
-  member-ID/password login for VelCenter staff (scrypt, `backend/lib/password.ts`).
+- **Auth:** email/password + Google (parked) with the JWT session in the
+  `velnox_session` httpOnly cookie; server-side authorisation on every route.
 - **Languages:** `th` (source of truth for the key shape), `en`, `my`. Parity is
   enforced by `bun run i18n:check`.
 - **Source of truth chain:** Neon → backend API → frontend. Frontends never touch
@@ -55,17 +57,12 @@ state machine, the transactional submission rule (`NO SUCCESSFUL EVIDENCE
 PERSISTENCE = NO PENDING VERIFICATION`), structured review reasons, review history,
 evidence-URL security, the self-approval guard, and the verification API surface.
 Pre-move text (verbatim):
-[`history/archive/AI_Handoff-2026-09-25-verification-system.md`](history/archive/AI_Handoff-2026-09-25-verification-system.md).
+[`history/archive/AI_Handoff-2026-09-25-verification-system.md`](history/archive/AI_Handoff-2026-09-25-verification-system.md).## 3. Realtime — REMOVED
 
-## 3. Realtime
-
-One WebSocket per client at `/ws`. **Events are signals, never data** — every
-consumer refetches from the API. No `setTimeout` fake-realtime anywhere.
-
-Socket rules: authenticated by the session cookie at upgrade; revoked tokens are
-swept every 30 s and closed with `4001`; a client may subscribe only to its own
-`user:{id}` channel or to the public allowlist; frames >4 KB close the socket, and
->120 frames / 10 s closes with `1008`.
+There is no WebSocket any more (`backend/realtime/` is deleted, `ws` still sits
+in `backend/package.json` only as an unused dependency candidate). Every MVP
+page reads `/api/mvp/*` and refetches; nothing publishes or subscribes. Do not
+reintroduce a socket without a stated consumer.
 
 | Channel | Published by | Consumed by |
 |---|---|---|
@@ -554,82 +551,16 @@ mark, and velShop / velCenter / velSeller hide the callout, the queue and the to
 
 ---
 
-## §80. Scope correction: MVP = BUY + SELL + CONTROL — wholesale PARKED (2026-10-19)
+## §80–§81. MVP scope lock (wholesale PARKED) + the 2026-10-19 verification pass — **ARCHIVED**
 
-**Owner re-scope (in-session, 2026-10-19):** the MVP is BUY + SELL + CONTROL only. Wholesale / B2B,
-Store Accounts, VelRepeat, Customer Memory, behavioural tracking, recommendations, loyalty,
-subscriptions, AI commerce and CRM are all **out of scope**. `Selling Unit / Set / Pack` is **CORE**
-and stays on.
-
-**What was parked (no deletion, no schema change):**
-
-| Surface | Parked state |
-|---|---|
-| `backend/server.ts` | `setupStoreAccountRoutes(app)` runs only `if (WHOLESALE_ENABLED)` → `/api/customer/store-account` and `/api/admin/store-accounts*` are 404 |
-| `backend/lib/store-accounts.ts` | `getWholesaleAccess()` returns not-approved while parked, so `isApprovedStore()` — and every cart/checkout/reorder gate that delegates to it — is false without touching those call sites |
-| `backend/lib/selling-units.ts` | `loadSellingUnits()` = `WHOLESALE_ENABLED && includeWholesale`; `resolveSellingUnit()` requires the flag too; `countWholesaleUnits()` returns an empty map without querying |
-| `backend/routes/product-selling-units.ts` | `isWholesale: true` is refused while parked (`false` is still accepted, so a mark can be cleared) |
-| `backend/lib/permissions.ts` | `stores.manage` is omitted from the catalog (a code that guards nothing is not offered) |
-| velShop | `/profile/store` not registered; the profile row and the product-page callout / `ขายส่ง` badges are hidden |
-| velCenter | the "ร้านค้าส่ง" tab and queue are never offered (`canSee("stores")` is false) |
-| velSeller | the wholesale checkbox / badge in `SellingUnitsManager` is hidden; set & pack authoring is untouched |
-
-**Preserved (verified unchanged):** migrations 058/059 and every selling-unit column (`pieces`,
-`selling_unit_id`, `selling_unit_pieces`, `selling_unit_name`), the base-unit invariant
-(`quantity * selling_unit_pieces` is the only quantity inventory / variant stock / `sold_count` see),
-the cart → checkout → Stripe → webhook → order path, auth/authz, order snapshots and the VelCenter
-seller / product / order / payment surfaces. **No migration was written; `db/schema.sql` and
-`db/run-sqleditor.sql` were not modified** (the parked objects were already canonical there).
-
-**Verified this pass:** `bun run typecheck` 4/4 + `tsc -p backend` exit 0 · `bun run build:apps` 4/4 ·
-`bun run i18n:check` `th=1535 en=1535 my=1535` · `bun test backend/tests` **1741 pass / 413 skip /
-1 fail**, the failure being the **pre-existing** ungated DB describe in
-`checkout-group-payment-visibility.test.ts` (`ECONNREFUSED 127.0.0.1:5432` — no PostgreSQL here).
-`git diff --check` clean. Six parked-contract tests run in `backend/tests/store-accounts.test.ts`;
-the 14 DB-gated wholesale tests skip (not deleted, not weakened).
-
-**NOT verified — do not read as PASS:** no PostgreSQL in this workspace, so every DB-gated test
-skipped (including the retail set/pack reserve/settle proofs that passed in §77/§78 with a disposable
-DB) · no browser E2E · real Stripe TEST E2E and production Neon remain BLOCKED (owner credentials).
-
-**Remaining decision:** `apps/velnox` corporate marketing copy still says "ปลีกและส่ง" / "ซื้อส่ง —
-ร้านค้าชุมชน" (`pages/corporate/content.ts`). It is marketing, not a storefront flow, and rewriting
-positioning is an owner decision — flagged, not changed.
-
----
-
-## §81. MVP verification pass — BUY + SELL + CONTROL on a real database (2026-10-19)
-
-**Scope:** audit + proof only, no new features. A disposable PostgreSQL 14 was started in this
-workspace, bootstrapped from `db/run-sqleditor.sql`, and the whole suite was run against it.
-
-| Check | Result |
-|---|---|
-| Fresh-DB bootstrap ×3 (idempotency) | 77 tables / 837 columns / 305 indexes, unchanged |
-| `bash db/verify-reconciler.sh` | **ALL SCENARIOS PASSED** |
-| `bun test backend/tests` (real DB) | **2147 pass / 16 skip / 0 fail** — 2163 tests, 75 files |
-| `bun run typecheck` 4/4 + `tsc -p backend` | exit 0 |
-| `bun run build:apps` | 4/4 exit 0 |
-| Browser E2E | **none exists** in the repository |
-| Real Stripe TEST round trip | **BLOCKED** — no keys, no provider access in this workspace |
-
-The 16 skips are by design: 14 parked-wholesale tests (`WHOLESALE_ENABLED=false`) and 2 R2 upload
-tests that need R2 credentials.
-
-**ONE REAL BUG FOUND AND FIXED.** `backend/routes/products.ts#getSellerForUser`
-resolved the seller row **without its status** — the only seller module that did (`chat.ts`,
-`product-options.ts`, `product-selling-units.ts` all filter `status = 'approved'`). Because most of
-its 19 handlers only test that a seller row exists, a **suspended / pending seller could still
-re-price, restock, re-image or edit a product** with a raw request; the velseller UI hid the screens,
-which made it a frontend-only guard — exactly what `.ai/context/seller.md` forbids. Fix: the lookup
-now filters `status = 'approved'` (one query, no handler change). Regression test:
-`seller-access-authorization.test.ts` → "a suspended seller cannot edit a product or its stock"
-(approved seller = 200 control; suspended = 403, and neither `products.price` nor `inventory` was
-written). Proven failing before the fix (200) and passing after.
-
-**Still open:** the seller-status rule is now enforced in five modules by convention, not by one
-shared helper; consolidating them into `requireApprovedSeller` would remove the class of bug, but
-that is a refactor outside this task's "fix only real problems" scope.
+**Moved verbatim on 2026-10-22** (edit-headroom housekeeping; made room for §90) →
+[`history/archive/AI_Handoff-2026-10-19-mvp-scope-and-verification.md`](history/archive/AI_Handoff-2026-10-19-mvp-scope-and-verification.md).
+**Still live from them:** wholesale / B2B / store accounts stay **parked, not deleted** (both
+feature flags fail closed) · `Selling Unit / Set / Pack` is **core** and stays on · the parked-contract
+tests still run and the 14 wholesale DB tests still skip rather than being weakened · the
+`requireApprovedSeller` consolidation remains an open refactor (the per-module convention is the
+current guard). The MVP model proper is §85–§90; the pre-MVP suite result there is superseded by
+§90's 2167/0.
 
 ---
 
@@ -640,62 +571,25 @@ Pre-MVP production history; the MVP schema and cutover supersede the object-leve
 rules stay in [`context/database.md`](context/database.md): a `42703` never proves which database or
 build you are on, and verification never repairs.
 
-## §83. Phase 0 audit for the CLEAN MVP REWRITE (2026-10-21)
+## §83–§84. Phase 0 audit + Phase 1 foundation (2026-10-21) — **ARCHIVED**
 
-**Status: Phase 0 complete — WAITING FOR OWNER DECISIONS. No code changed.**
-Full report: [`.ai/tasks/active/mvp-clean-rewrite-phase0-audit-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase0-audit-2026-10-21.md).
-
-Audited at `d653a37` (local == `origin/main`, tree clean): **77 tables**, **≥165 API paths**, **22
-route modules**, **62 migrations**. The rewrite is deletion-led. Proven parts to preserve: server-
-authoritative checkout pricing/stock, guarded reservation, `checkout_requests` idempotency, Stripe
-raw-body signature + event claim, seller `status='approved'` gate, JWT revocation/origin/rate-limit,
-R2 presign, test-DB fail-closed. **No mock/fake production data, no TODO/FIXME**; 16 dead tables,
-boot-time DDL and an unsigned OAuth `state` were found. Decisions D1–D12 (reset target, approval,
-sets/packs, multi-shop, Stripe-only, Google-only, admin roles, drop reviews/wishlist/chat/goals,
-`apps/velnox`, one schema, 3 languages, seller approval) are recorded in the report; the ones that
-mattered downstream were answered by Phases 2–3.
+**Moved verbatim on 2026-10-22** (edit-headroom housekeeping; made room for §90) →
+[`history/archive/AI_Handoff-2026-10-21-phase0-phase1.md`](history/archive/AI_Handoff-2026-10-21-phase0-phase1.md).
+**Still live from them:** the baseline was proven against GitHub (`ls-remote`), not local state ·
+the rewrite is deletion-led and its removal plan stands · decisions D1–D12 were answered by
+Phases 2–3 · 62 migrations / boot-time DDL / parked routes are deliberately still present until the
+cutover, because the deployed pre-MVP service reads them.
 
 ---
 
-## §84. Phase 1 — CLEAN MVP FOUNDATION (2026-10-21)
-
-**Status: Phase 1 complete — `84b3767` → `54c10ae56b5060049faa87a845786cfe4659d35e`
-(local == `origin/main` == `ls-remote`). No schema, endpoint, payment, auth or app change.**
-Full report: [`.ai/tasks/active/mvp-clean-rewrite-phase1-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase1-2026-10-21.md).
-
-Baseline verified against GitHub (`ls-remote`), not local state: `84b3767` == `origin/main`.
-Phase 1 delivered the three maps the rewrite needs — dependency map (VelRepeat, Customer
-Memory, wholesale, chat, reviews/wishlist, seller intelligence, WebSocket, 3 workers, Convex
-= **absent**, `apps/velnox`, boot DDL), core domain map (9 domains: table authority → API →
-frontend → tests), and the REMOVE/PARK/KEEP/REWRITE plan with the blocking decision named
-per item.
-
-**Removed (zero-reference only):** `zod` (backend), `framer-motion` (velshop + shared), dead
-`chart.tsx`/`form.tsx` (they imported `recharts`/`react-hook-form`, which no package.json
-declares), and the barrel re-exports. **Moved:** `leaflet` + `@types/leaflet` from root/shared
-to `apps/velshop`, the only consumer. `bun.lock` regenerated; −559 lines total.
-
-**Deliberately NOT deleted** — every one is load-bearing or decision-bound: 62 migrations
-(`production-db-migrate.yml` applies them on push; `production-db-verify.yml` asserts the
-ledger; `server.ts` reads **028/034/035/036** at boot; CI pins the numbering), 16 dead tables
-(needs D1+D10), all parked routes (already 404 behind fail-closed flags), `apps/velnox` (D9,
-external Vercel project + OAuth URLs), boot DDL (creating tables a fresh DB still needs).
-
-Verification: `bun install` ok · `bun run typecheck` **4/4** · backend typecheck **0** ·
-`i18n:check` **1535×3 parity** · `build:apps` **4/4** · suite **1741 pass / 414 skip /
-1 fail**. That failure is pre-existing and environmental: `checkout-group-payment-visibility`
-has an ungated `beforeAll` that hits `127.0.0.1:5432` without a database (CI provisions one).
-No test was skipped or weakened to make the run green; no `DATABASE_URL` exists in this
-workspace.
-
-**Next = Phase 2 (database), blocked on D1/D3/D4/D10.** Do not start route deletion before it.
-
----
+> **NOTE (2026-10-22):** §85–§90 were written before the reset in §92. Paths they name —
+> `db/mvp/*`, `db/migrations/*`, `MVP_API_ENABLED`, `backend/routes/*` — no longer exist.
+> Current equivalents: `db/schema.sql`, `scripts/db-*.sh`, `docs/PRODUCTION_CUTOVER.md`.
 
 ## §85. Phase 2 — CLEAN MVP DATABASE (2026-10-21) — condensed
 
 **Phase 2 complete** — baseline `dd8c567`; no destructive production action. Full report:
-[`tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md) · cutover: [`db/mvp/cutover.md`](../db/mvp/cutover.md).
+[`tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase2-2026-10-21.md) · cutover: [`docs/PRODUCTION_CUTOVER.md`](../docs/PRODUCTION_CUTOVER.md).
 
 **`db/mvp/schema.sql` is canonical** — 20 tables, 7 lifecycle triggers, one order axis, one stock
 authority (`inventory`; variants carry no stock), one seller per cart/order (composite FKs),
@@ -789,50 +683,17 @@ Production env, database, Stripe mode and deployments were NOT touched.
 
 ---
 
-## §88. Phase 3c — STAGING READINESS (2026-10-21) — condensed
+## §88. Phase 3c — STAGING READINESS (2026-10-21) — **ARCHIVED**
 
-**Status: staging CONFIGURATION ready; staging NOT deployed; product scope BLOCKED on retail sets/packs.**
-Baseline `9083127070d81c482ecfacb0604d330d0f79f07b` = `origin/main` = GitHub. Report:
-[`tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md`](tasks/active/mvp-clean-rewrite-phase3c-2026-10-21.md)
-· runbook: [`docs/MVP_STAGING.md`](../docs/MVP_STAGING.md).
-
-**BLOCKING GAP — sets/packs are absent from the MVP** — **RESOLVED in §89 (Phase 3d).**
-Kept for history: `db/mvp/schema.sql` had **zero**
-`selling_unit`/`pieces` references; `backend/mvp` mentions the pre-MVP table only in a comment
-forbidding it; no MVP client/UI field exists. The legacy schema, `backend/lib/inventory.ts`
-(`quantity × selling_unit_pieces`) and the archived §76–77 record still have the feature. The MVP
-therefore sells a product/variant at one price and cannot offer “Set 6 at ฿1,200” against base-unit
-stock. **Do not sign off retail scope or cut over until Phase 3d restores it.** Nothing was deleted
-to cause this; it was never carried into the clean schema.
-
-**Shipped this pass:** the shared auth panel now hard-navigates after sign-in and shells reload after
-sign-out (the MVP session is read once per mount — a client-side redirect left every guard and header
-on the pre-login snapshot); `MVP_COOKIE_SECURE=true` in `backend/mvp/session.ts` (one-way: can only
-ADD `Secure`, production always secure) so Chromium accepts `SameSite=None` over the E2E's HTTPS;
-`db/mvp/browser-e2e.sh` + `scripts/mvp-browser-e2e.ts` (Playwright devDependency) build all three
-apps in MVP mode, serve each over local HTTPS against the real API, and drive Chromium through the
-whole flow; `docs/MVP_STAGING.md` carries the Render/Vercel/Neon matrix, verification order,
-scheduling, blockers and rollback. CI needed nothing: `test.yml` already runs `db/mvp/verify.sh`,
-`bun run test:mvp`, the legacy suite and `git diff --check`.
-
-**Verified:** browser E2E **exit 0** (admin sign-in via UI · seller signup+apply · admin approve ·
-draft+variant(10)+submit · admin approve · publish · buyer signup → catalogue → variant → cart →
-checkout → **฿600.00 server total** → reservation 10→8 · cancel → 8→10 · admin expiry sweep →
-Cancelled → 10 · seller order list) · MVP suite **90 pass / 0 fail** (12 files) · legacy **2166 /
-16 skip / 0 fail** · typecheck **4/4** + backend tsc 0 · builds 4/4 (three in MVP mode) · i18n
-`1535×3` · `git diff --check` clean. **NOT verified:** any provider deployment (no Render/Vercel/
-Neon access here) and the Stripe TEST round trip (no `STRIPE_SECRET_KEY`; contract-only proof).
-Image upload is still not MVP-compatible (legacy writes `media.key`, the MVP table is
-`media.object_key`) — sellers paste URLs.
-
-**Owner actions:** Neon DB from `db/mvp/schema.sql` → Render staging service with
-`MVP_API_ENABLED=true`, staging `DATABASE_URL`/`JWT_SECRET`, `MVP_COOKIE_SECURE=true`, staging
-origins → three Vercel projects with `VITE_API_MODE=mvp`, `VITE_DEPLOY_ENV=staging`,
-`VITE_API_URL` → run the runbook's checklist (+ Stripe TEST if keys supplied). Production env,
-database, Stripe mode and deployments were NOT touched.
-
-**Next = Phase 3d** was retail sets/packs — **done, see §89.** After it, next is deploying the
-staging stack (`docs/MVP_STAGING.md`) and running the browser + Stripe TEST passes on it.
+**Moved verbatim on 2026-10-22** (edit-headroom housekeeping; made room for §91) →
+[`history/archive/AI_Handoff-2026-10-21-phase3c-staging-readiness.md`](history/archive/AI_Handoff-2026-10-21-phase3c-staging-readiness.md).
+**Still live from it:** the Render/Vercel/Neon staging matrix and checklist live in
+[`docs/MVP_STAGING.md`](../docs/MVP_STAGING.md) · the shared auth panel hard-navigates after
+sign-in (the MVP session is read once per mount) · `MVP_COOKIE_SECURE=true` in
+`backend/mvp/session.ts` is one-way (can only ADD `Secure`) · `db/mvp/browser-e2e.sh` +
+`scripts/mvp-browser-e2e.ts` are the Chromium proof · image upload is still not MVP-compatible
+(legacy `media.key` vs the MVP `media.object_key`), so sellers paste URLs · its sets/packs blocker
+was closed by §89.
 
 ---
 
@@ -879,3 +740,164 @@ Phase 3d docs (baseline `245a41d`, code tip `87f5a07`; this handoff/record commi
 round trip still keyless (pack settlement proven through webhook fixtures), image upload still
 legacy-shaped. Staging untouched. Production env, Neon, Stripe mode and deployments untouched; the
 pre-MVP pair and `db/migrations/*.sql` were not edited.
+
+
+---
+
+## §90. Clean MVP database audit — canonical model re-proven, cutover NOT executed (2026-10-22)
+
+**Status: audit + proof complete; no code, schema, migration, endpoint, payment or auth change.**
+Baseline `563cf85c1f5543766e0548a83dcb5acd3929418e` = local `HEAD` = `origin/main` = `ls-remote`.
+Full report with the required table/column/enum/API inventories:
+[`.ai/tasks/active/mvp-database-audit-2026-10-22.md`](tasks/active/mvp-database-audit-2026-10-22.md).
+
+**Verdict.** `db/mvp/schema.sql` already IS the requested clean rebuild: **20 tables**, one order
+axis, one stock authority, `NUMERIC(12,2)` money, **no VelRepeat, no `order_state`, no
+`fulfillment_status`, no wholesale, no intelligence tables**. Nothing was added to it. What is left
+is the **cutover**, which the workspace cannot perform (no database/provider credential).
+
+**Pre-MVP → MVP inventory:** 77 pre-MVP tables audited → **24 kept/merged into the 20 MVP tables,
+53 removed** (11 VelRepeat, 4 behaviour/memory, 6 option/attribute, groups/refunds/settlements/
+ledger/commissions, staff/settings/goals/chat/reviews/wishlist, 16 with zero code references).
+
+**Root cause of `42703 orders.order_state` (and the cart errors).** `order_state` +
+`fulfillment_status` are declared by `db/migrations/056_commerce_core_invariants.sql`;
+`cart_items.selling_unit_*`, `order_items.selling_unit_*` and `product_selling_units` by `058`. The
+pre-MVP code reads them; the Render database never received 056/058/059. The MVP model therefore
+**deletes** the concept rather than adding a column: `orders.status` is the single axis
+(`pending_payment → paid → processing → shipped → delivered`, plus `cancelled`, trigger-enforced).
+Repair is either applying the missing migrations to that database or cutting over to a fresh MVP
+database — both owner actions; neither was performed and neither may be guessed.
+
+**Verified this pass (PostgreSQL 14.24, disposable):** fresh bootstrap 20 tables / 206 columns /
+75 indexes / 32 FKs / 78 CHECKs / 7 triggers / 0 enum types · `db/mvp/verify.sh` **93/93** ·
+`mvp-schema-contract.test.ts` **20/20** · `bun run test:mvp` **113 pass / 0 fail** · pre-MVP suite
+**2167 pass / 16 skip / 0 fail** · typecheck **4/4** · builds **4/4** · i18n `1535×3` · integrity:
+0 forbidden tables/columns, 10 money columns all `NUMERIC(12,2)`, 0 float, 0 orphan FKs, 0 invalid
+indexes, 0 unvalidated constraints.
+
+**VelRepeat: 0 references in the MVP tree** (schema, API, clients). The 11 tables, 6 route modules
+and 2 schedulers that remain in the **frozen** pre-MVP tree are deleted in the cutover commit, not
+before: the deployed Render build still serves them and no new database exists to point at.
+
+**NOT verified / BLOCKED:** production database identity (no credential; `freebuff-env` holds no
+keys), staging deployment, real Stripe TEST round trip. **No production DROP/TRUNCATE/DELETE/reset,
+no force-push, no Stripe Live change.** Docs corrected with this pass: `docs/DATABASE.md` now lists
+20 MVP tables (it was stale at 19, missing `product_selling_units`) and 93 schema checks.
+
+**Next:** owner creates an empty Neon database → `psql -f db/schema.sql` → staging deploy →
+browser + Stripe TEST pass → execute `docs/PRODUCTION_CUTOVER.md`. (Superseded by §92; the seed is
+development/test only, so staging categories are created through the admin API.)
+
+---
+
+## §92. Database-first reset — `db/` collapsed to two files, legacy tree removed, MVP is the app (2026-10-22)
+
+**Status: repository complete and verified; production untouched; NOT deployed.**
+Baseline `e81dde6` (= `origin/main` at start), branch `cleanup/mvp-database-first`.
+Inventory + evidence: [`.ai/tasks/active/`](tasks/active/).
+
+**Database (Phases 2–3, executed).** `db/` now holds exactly two files —
+`db/schema.sql` (canonical MVP DDL) and `db/run-sqleditor.sql` (same DDL in
+install order + a read-only check) — with no comments and no destructive SQL.
+Removed: the 62 `db/migrations/`, all of `db/mvp/` (8 files), `db/README.md`,
+`db/verify-reconciler.sh`, and the pre-MVP snapshot/reconciler content itself.
+Proved on disposable PostgreSQL: `bash scripts/db-verify.sh` (`bun run db:check`)
+applies **BOTH files TWICE** and diffs the dumps → identical (**20 tables · 206
+columns · 75 indexes · 147 constraints · 7 triggers**); `bun run db:verify`
+(contract, no DB) **17/17**.
+
+**Repository (Phase 4, executed).** The MVP is now the only implementation:
+`backend/routes/` and the legacy `apps/*/src/pages/` are gone, `apps/*/src/mvp/`
+serves the storefront / seller workspace / admin console, `MVP_API_ENABLED` was
+removed (mounting the API behind a default-OFF flag 404'd every frontend call, and
+the tree it protected no longer exists), `packages/shared` was cut to what the
+apps actually import, and `production-db-migrate.yml` +
+`production-db-verify.yml` were retired together with the migration chain they
+drove. Added: `scripts/db-verify.sh` and `docs/PRODUCTION_CUTOVER.md` (the
+external home of the cutover plan `db/mvp/cutover.md` used to be).
+
+**Verified:** typecheck 4/4 · backend `tsc` 0 · builds 4/4 · `bun test backend/tests
+packages/shared/tests` **46/46** · MVP API suite **113/113 against a real
+PostgreSQL built from `db/schema.sql`** · `scripts/db-verify.sh` **PASS** ·
+`git diff --check` clean (staged + unstaged). **NOT verified:** any deployment,
+the Stripe TEST round trip, the R2 upload round trip, a browser pass, production
+(no credential).
+
+**Remaining gaps:** production still runs the pre-MVP database —
+`docs/PRODUCTION_CUTOVER.md` is **unexecuted** and `production-db-*.yml` stay
+retired until it runs; Render's `DATABASE_URL` still points at the old database,
+so the deployed build does not match this tree until cutover; image upload is not
+MVP-compatible (`media.key` vs `media.object_key`); the VelCenter MVP has no
+Orders/Users tab; `backend/middleware/rate-limit.ts` still carries legacy route
+rules that can never match (only its `/api/mvp` rules and the global limiter run);
+`mvp/config.ts`'s mode no longer selects a tree (the apps mount the MVP UI
+unconditionally) — its origin resolution is live, the mode matrix is vestigial;the subsystem context pages
+(`backend.md`, `checkout.md`, `payment.md`, …) carry
+a SUPERSEDED banner and still need a full MVP rewrite, while `project-map.md` is
+reconciled with the source.
+
+---
+
+## §93. UI/UX + feature-parity restoration after the database-first reset (2026-10-22)
+
+**Status: code complete and verified locally; NOT deployed; external configuration required.**
+Branch `feat/restore-original-ui-and-feature-parity` off `main` (`44d191e`). Baseline for the
+restoration was the pre-reset tree at commit `f001697^` = `44d191e~2`, read from Git history —
+the last known-good source of the original UI inventory (2,040 lines of `db/schema.sql` history
+is irrelevant here; the 244 legacy frontend files were the reference, not a thing to re-copy).
+
+The reset removed the pre-MVP route/page tree but left the three MVP frontends and the whole
+design system intact. This pass restores the **original shopper experience** on top of the
+canonical MVP backend and the two-file database — it does **not** resurrect the legacy API, the
+legacy tables, or the deleted route tree. Every restored feature calls a real `/api/mvp/*`
+endpoint against the real schema.
+
+### What was restored
+
+| Surface | Restored | How
+|---|---|---|
+| Google Login | Yes, code complete | `backend/mvp/oauth.ts` — start/callback routes, signed 10-minute HMAC state cookie, JWKS ID-token verification (`iss`/`aud`/`exp`/`email_verified`), ONE-person identity resolution through `user_identities`, same `velnox_session` httpOnly cookie, allow-listed redirect origin. **Needs `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` to actually run.** |
+| Favourites / wishlist | Yes | `product_favorites` table (`UNIQUE(user_id, product_id)`), `GET/POST/DELETE /api/mvp/favorites`, the product-card heart, `/wishlist` page, optimistic flip with rollback |
+| Comments / reviews | Yes | `product_reviews` table (one row per shopper, author-only edit/delete, derived `verified_purchase`), public list + summary + viewer-review routes, the product-page review block |
+| Profile image | Yes, code complete | `backend/lib/r2.ts` + `/api/mvp/profile/avatar/{presign,confirm}` — server-minted key, presigned PUT straight to R2, confirm re-reads size/type from storage, `media.object_key` (resolves the `media.key` mismatch), replace/remove. **Needs the `R2_*` env vars to actually run.** |
+| Seller store profile | Yes | `PATCH /api/mvp/seller/profile` (pending/approved only) + `/seller/profile` settings page |
+| Catalogue sorting | Yes | `sort` (`newest`/`price_asc`/`price_desc`/`name`) added to `GET /products`, closed-vocabulary order-by, sort control in the UI |
+| Storefront chrome | Yes | Original header, language switcher (th/en/my), floating mobile tab bar, full footer, `ProductCard` with the green V badge |
+| VelCenter admin console | Yes | Icon-tab header, mobile tab bar, account menu, and a **confirmation window** on every seller/product decision and the expiry sweep |
+| VelSeller workspace | Yes | Original store navigation + account menu + mobile tab bar, plus the store-profile page |
+
+The schema grew deliberately from **20 → 23 tables** (`user_identities`, `product_favorites`,
+`product_reviews`) — only the three the restored features actually require. Both canonical files
+stay declaration-identical and comment-free.
+
+### Verified
+
+typecheck 4/4 · backend `tsc` 0 · builds 4/4 · `bun test backend/tests packages/shared/tests`
+**46/46** · `bun run test:mvp` **125/125** (13 files, incl. a new `social.test.ts` proving the
+favourites constraint, review authorship, profile PATCH and Google identity creation/linking
+against a real database) · `bun run db:check` **PASS (23 tables · 226 columns · 86 indexes ·
+164 constraints · 7 triggers, both files applied twice and byte-identical)** · `bun run db:verify`
+**17/17** · `bun i18n:check` **th=en=my 1561 keys at parity** · `git diff --check` clean.
+
+### Remaining gaps
+
+- **Google Login and image upload are CODE-COMPLETE, EXTERNAL-CONFIGURATION-REQUIRED.** No
+  `GOOGLE_CLIENT_ID`/`SECRET`/`REDIRECT_URI` and no `R2_*` in this workspace, so neither real
+  round trip was executed — the automated tests cover verification, identity resolution and the
+  fail-closed paths only. A real Google round trip and a real presign → PUT → confirm against
+  R2 remain unproven.
+- **A real Stripe TEST round trip is still not executed** (unchanged from §92): settlement is
+  proven only through signed-webhook fixtures; the payment UI entry points are wired to the
+  existing MVP session + webhook path, but no live charge was ever completed.
+- **Buyer/seller/admin translation coverage is now partial.** The restored surfaces are fully
+  th/en/my (parity enforced), but the older MVP pages (`CartPage`, `CheckoutPage`,
+  `OrderDetailPage`, `ProductEditor`, `OrdersPanel`, the VelCenter panels) still carry hardcoded
+  English copy. Keys exist; the older pages were not re-authored.
+- **Screens that were deleted in the reset are still absent**: addresses book, notifications,
+  chat, VelRepeat, goals, and the pre-MVP Orders/Users tabs in VelCenter. None is reachable in
+  the canonical API and no table supports them — restoring any needs a schema + API decision, not
+  a UI change.
+- **Not deployed** (no provider access from this workspace) and **production is untouched** —
+  the cutover (`docs/PRODUCTION_CUTOVER.md`) is still unexecuted, so production still runs the
+  pre-MVP database and none of the three new tables exist there.

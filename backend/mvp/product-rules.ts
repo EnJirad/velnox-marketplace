@@ -2,7 +2,7 @@
  * MVP product rules — the vocabulary, the slug, and what counts as a MATERIAL
  * change to a live listing.
  *
- * The lifecycle ITSELF is not restated here. `db/mvp/schema.sql` owns it:
+ * The lifecycle ITSELF is not restated here. `db/schema.sql` owns it:
  * `enforce_product_status_transition()` rejects an illegal transition and
  * `require_approved_seller_for_product()` rejects a write by a seller who is not
  * approved. Duplicating that machine in TypeScript would create a second
@@ -29,7 +29,7 @@
  */
 import { randomBytes } from "node:crypto";
 
-/** Statuses declared by `products.status` in db/mvp/schema.sql. */
+/** Statuses declared by `products.status` in db/schema.sql. */
 export const PRODUCT_STATUSES = [
   "draft",
   "submitted",

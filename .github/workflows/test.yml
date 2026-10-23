@@ -17,8 +17,8 @@
 #     under any circumstance. The canonical production secret is consumed only
 #     by the `production-db-*.yml` pair, which is the point of the split.
 #
-# `backend/db/test-database.ts` is the guard that enforces this, and
-# `backend/tests/test-database-isolation.test.ts` proves it fails closed.
+# `backend/db/test-database.ts` is the guard that enforces this, and the
+# refusal probe in this job proves it fails closed.
 
 name: Tests
 
@@ -95,7 +95,7 @@ jobs:
           # `TEST_DATABASE_URL` is a JOB-LEVEL variable (the disposable
           # container bootstrapped above) and `decideTestDatabase()` deliberately
           # prefers it over DATABASE_URL — that precedence is pinned by
-          # `backend/tests/test-database-isolation.test.ts`. With it still set,
+          # `backend/db/test-database.ts`. With it still set,
           # the production-looking DATABASE_URL below is never consulted, the
           # guard correctly stays silent, and this check failed for the wrong
           # reason. Clear it so the probe really is "a test process whose only
@@ -124,22 +124,24 @@ jobs:
             exit 1
           fi
 
-      - name: Verify the clean MVP schema
+      - name: Verify the two canonical SQL files agree
         run: |
           # Creates and drops its own disposable databases on the same service
-          # container (never a secret, never production). Proves bootstrap,
-          # constraints, lifecycles, inventory, payment persistence and the
-          # fail-closed reset against a real PostgreSQL.
-          bash db/mvp/verify.sh
+          # container (never a secret, never production). Proves that
+          # db/schema.sql and db/run-sqleditor.sql BOTH apply to an empty
+          # database, BOTH apply a second time, and leave byte-identical
+          # schemas behind — against a real PostgreSQL, not a text diff.
+          bash scripts/db-verify.sh
 
       - name: Run the test suite
-        run: bun test backend/tests
+        run: bun test backend/tests packages/shared/tests
 
-      # The MVP API (Phase 3) is written against db/mvp/schema.sql, which is NOT
-      # what db/run-sqleditor.sql bootstraps above. It therefore runs against its
-      # own disposable database, created and dropped by db/mvp/test-run.sh on the
-      # same service container. `bun test backend/tests` never picks these files
-      # up (they live in backend/mvp/tests) and vice versa.
+      # The MVP API reads db/schema.sql, which is NOT what the bootstrap step
+      # above installed into the job-level TEST_DATABASE_URL. It therefore runs
+      # against its own disposable database, created and dropped by
+      # scripts/db-test-run.sh on the same service container. `bun test
+      # backend/tests packages/shared/tests` never picks these files up (they
+      # live in backend/mvp/tests) and vice versa.
       - name: Run the MVP API suite (clean MVP schema)
         run: bun run test:mvp
 

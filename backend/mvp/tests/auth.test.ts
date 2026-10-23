@@ -49,9 +49,14 @@ describe("MVP auth (needs a test database + JWT_SECRET)", () => {
     const rawCookie = res.setCookie.find((v) => v.startsWith("velnox_session="))!;
     expect(rawCookie).toContain("HttpOnly");
 
+    // `/auth/me` reads users.avatar_url AND users.cover_url. A database without
+    // the cover column answers 500 here (42703), so this assertion is the
+    // regression pin for that drift.
     const me = await api(app.base, "/api/mvp/auth/me", { cookie: cookie! });
     expect(me.status).toBe(200);
     expect(me.body.data.user.email).toBe(email);
+    expect(me.body.data.user.avatarUrl).toBeNull();
+    expect(me.body.data.user.coverUrl).toBeNull();
     expect(me.body.data.seller).toBeNull();
     expect(JSON.stringify(me.body)).not.toContain("scrypt");
   });
@@ -147,10 +152,16 @@ describe("MVP auth (needs a test database + JWT_SECRET)", () => {
     expect(res.status).toBe(401);
   });
 
-  itDb("parks OAuth explicitly instead of pretending it works", async () => {
-    const res = await api(app.base, "/api/mvp/auth/oauth");
-    expect(res.status).toBe(501);
-    expect(res.body.error.code).toBe("OAUTH_PARKED");
+  itDb("exposes the Google provider state and routes oauth to the real start endpoint", async () => {
+    const providers = await api(app.base, "/api/mvp/auth/providers");
+    expect(providers.status).toBe(200);
+    expect(providers.body.data.providers.google.startUrl).toBe("/api/mvp/auth/google/start");
+    expect(typeof providers.body.data.providers.google.enabled).toBe("boolean");
+
+    // The legacy entry point is a redirect now, never a 501.
+    const legacy = await fetch(`${app.base}/api/mvp/auth/oauth`, { redirect: "manual" });
+    expect(legacy.status).toBe(307);
+    expect(legacy.headers.get("location")).toContain("/api/mvp/auth/google/start");
   });
 
   itDb("bootstrap-owner: fails closed without a secret, then creates exactly one owner", async () => {

@@ -1,4 +1,4 @@
-import { useLanguage } from "@/lib/i18n";
+import { useLanguage } from "@velnox/shared/lib/i18n";
 import { Button } from "@velnox/shared/components/ui/button";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";

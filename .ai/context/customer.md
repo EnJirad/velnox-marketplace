@@ -1,5 +1,10 @@
 # CUSTOMER
 
+> **SUPERSEDED (2026-10-22).** The pre-MVP customer paths below (`backend/routes/*`,
+> `apps/velshop/src/pages/*` and the wishlist/address endpoints) were removed in
+> `AI_HANDOFF.md` §92. The live customer surface is `backend/mvp/auth.ts` + `cart.ts`
+> + `orders.ts` and `apps/velshop/src/mvp/*`; the MVP has no wishlist or address book.
+
 ## Purpose
 
 Customer profile, addresses, wishlist, cart helpers, and discovery.

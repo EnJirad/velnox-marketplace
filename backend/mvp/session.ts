@@ -4,21 +4,19 @@
  * The MVP deliberately keeps the existing session contract:
  *
  *   • cookie `velnox_session`, httpOnly, SameSite=None, Secure in production,
- *     7-day expiry — a frontend built against the pre-MVP API needs no cookie
- *     change at cutover;
+ *     7-day expiry — the shared client reads it with `credentials: "include"`
+ *     and never sees the token itself;
  *   • `MVP_COOKIE_SECURE=true` can only ADD `Secure` (never remove it in
  *     production). It exists for the HTTPS browser E2E: Chromium rejects a
  *     `SameSite=None` cookie that lacks `Secure`, so the local test harness
  *     serves TLS with a self-signed certificate and sets this flag — the exact
  *     cookie the staging deployment already sends over HTTPS;
- *   • JWT payload `{ userId, email, jti }`, so the existing
- *     `middleware/auth.ts#requireAuth` verifies it unchanged (signature, expiry
- *     and `revoked_tokens` lookup all already read the same column names the MVP
- *     schema declares).
+ *   • JWT payload `{ userId, email, jti }`, verified by
+ *     `middleware/auth.ts#requireAuth` (signature, expiry and `revoked_tokens`
+ *     lookup against the tables `db/schema.sql` declares).
  *
- * What is NOT reused is the Google OAuth flow: the MVP schema has no
- * `auth_identities` / `customer_profiles` tables, so provider sign-in is parked
- * (documented in the Phase 3 report). Email + password is the only credential.
+ * There is no Google OAuth flow: the schema has no `auth_identities` table, so
+ * provider sign-in is parked. Email + password is the only credential.
  */
 import crypto from "node:crypto";
 import type { Response } from "express";

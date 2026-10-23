@@ -90,21 +90,33 @@ describe("MVP tree isolation", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("the MVP routers are mounted behind the MVP_API_ENABLED flag", () => {
-    expect(serverSource).toContain("import { isMvpApiEnabled, setupMvpRoutes } from \"./mvp/index.js\"");
-    expect(serverSource).toContain("if (isMvpApiEnabled()) {");
-    expect(serverSource).toContain("setupMvpRoutes(app);");
+  test("the MVP routers are mounted unconditionally, behind no flag", () => {
+    expect(serverSource).toContain('import { setupMvpRoutes } from "./mvp/index.js";');
+    // Exactly one mount — not one per environment and not one behind a switch.
+    expect(serverSource.split("setupMvpRoutes(app);").length - 1).toBe(1);
+    // The flag that used to gate this tree protected a pre-MVP route set that no
+    // longer exists, and its default hid the API from every frontend call.
+    expect(serverSource).not.toContain("MVP_API_ENABLED");
+    expect(serverSource).not.toContain("isMvpApiEnabled");
+    // No pre-MVP router is imported or mounted from here either.
+    expect(serverSource).not.toContain("./routes/");
+    expect(serverSource).not.toContain("./realtime/");
   });
 
-  test("both webhook bodies are buffered before express.json()", () => {
-    const legacyRaw = serverSource.indexOf("app.use(stripeWebhookRawBody)");
+  test("the webhook raw body is buffered before express.json()", () => {
     const mvpRaw = serverSource.indexOf("app.use(mvpWebhookRawBody)");
-    const json = serverSource.indexOf("express.json({ limit: \"1mb\" })");
-    expect(legacyRaw).toBeGreaterThan(-1);
+    // Matched as a MOUNT, not as prose: the file header documents this very
+    // call, and a comment does not parse anybody's body.
+    const json = serverSource.indexOf('app.use(express.json({ limit: "1mb" })');
     expect(mvpRaw).toBeGreaterThan(-1);
     expect(json).toBeGreaterThan(-1);
-    expect(legacyRaw).toBeLessThan(json);
     expect(mvpRaw).toBeLessThan(json);
+    // ONE JSON parser actually mounted in the whole file, after the buffer: a
+    // parser mounted first would re-serialise the bytes Stripe signed and
+    // reject every real event.
+    expect(serverSource.match(/app\.use\(express\.json\(/g) ?? []).toHaveLength(1);
+    // The legacy webhook buffer went with the legacy webhook route it matched.
+    expect(serverSource).not.toContain("stripeWebhookRawBody");
   });
 
   test("the MVP webhook is registered on the path the raw-body matcher buffers", async () => {

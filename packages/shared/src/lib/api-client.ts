@@ -6,9 +6,12 @@
  *
  * Auth is cookie-based (httpOnly JWT). No tokens in localStorage.
  *
- * In MVP mode (`mvp/config.ts`, staging/dev only) the SAME session state is read
- * from `/api/mvp/auth/me` and cleared through `/api/mvp/auth/logout`; everything
- * else here stays legacy, and legacy remains the default.
+ * The session is read from `/api/mvp/auth/me` and cleared through
+ * `/api/mvp/auth/logout`: `backend/mvp/` is the only route tree this repository
+ * ships, so there is no legacy session endpoint left to fall back to. The
+ * `mvp/config.ts` mode only decides the backend ORIGIN, never which session path
+ * is used — pointing a session read at a route that no longer exists would look
+ * like an expired login.
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -19,22 +22,18 @@ import { getApiMode } from "../mvp/config.js";
 import { MVP_ROUTES } from "../mvp/routes.js";
 
 /**
- * Where the SESSION lives for this build.
+ * Where the SESSION lives: always the MVP namespace, on this build's origin.
  *
  * The MVP API uses the same httpOnly cookie and the same `{success,data}`
- * envelope as the legacy API, so only the two session paths change. Legacy is
- * the default (`mvp/config.ts`), which is why no existing app behaves
- * differently until a staging build opts in.
+ * envelope the session helper here already expects, so only the two paths are
+ * MVP-specific.
  */
 function sessionEndpoints(): { me: string; logout: string } {
-  const mode = getApiMode();
-  if (mode.mode === "mvp") {
-    return {
-      me: `${mode.mvpBaseUrl}${MVP_ROUTES.auth.me}`,
-      logout: `${mode.mvpBaseUrl}${MVP_ROUTES.auth.logout}`,
-    };
-  }
-  return { me: `${API_BASE}/auth/me`, logout: `${API_BASE}/auth/logout` };
+  const { mvpBaseUrl } = getApiMode();
+  return {
+    me: `${mvpBaseUrl}${MVP_ROUTES.auth.me}`,
+    logout: `${mvpBaseUrl}${MVP_ROUTES.auth.logout}`,
+  };
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────

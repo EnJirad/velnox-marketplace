@@ -1,5 +1,14 @@
 # PAYMENT — IMPLEMENTATION REPORT (Phase 25)
 
+> **HISTORICAL (2026-10-22).** This report describes the **pre-MVP** payment
+> system, whose routes (`backend/routes/stripe.ts`, `backend/routes/cart.ts`),
+> tables (`checkout_groups`) and migrations (`db/migrations/055_…`) were removed
+> in the database-first cleanup. Today's payment path is
+> `backend/mvp/payments.ts` + `backend/mvp/checkout.ts` on `db/schema.sql` —
+> raw-body signature verification, `payment_events.event_id` idempotency, one
+> settlement transaction — see [`DATABASE.md`](./DATABASE.md) and
+> [`PRODUCTION_CUTOVER.md`](./PRODUCTION_CUTOVER.md).
+
 Delivered as ONE system: **Payment + Checkout + Order + Inventory + Webhook + State
 Machine**, analysed as a whole before anything was changed. Companion documents:
 `docs/PAYMENT_CURRENT_STATE.md` (audit), `docs/PAYMENT_TARGET_ARCHITECTURE.md` (design),

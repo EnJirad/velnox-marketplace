@@ -1,13 +1,11 @@
 /**
  * MVP API — HTTP plumbing shared by every MVP route module.
  *
- * WHY A SECOND MODULE TREE (`backend/mvp/`)?
- * The deployed backend still queries the 77-table pre-MVP model (`shops`,
- * `product_selling_units`, `checkout_groups`, …) which `db/mvp/schema.sql`
- * deliberately does not have. Phase 3 therefore builds the MVP API in its own,
- * self-contained tree mounted under `/api/mvp` (see `backend/mvp/index.ts` and
- * `.ai/tasks/active/mvp-clean-rewrite-phase3-2026-10-21.md`). Nothing in this
- * tree reads a pre-MVP table, and no pre-MVP route reads a table from here.
+ * WHERE IT SITS
+ * `backend/mvp/` is the ONLY API tree and is mounted at `/api/mvp` (see
+ * `backend/mvp/index.ts`). It reads only the tables declared by `db/schema.sql`;
+ * that boundary is asserted by `backend/mvp/tests/isolation.test.ts`, not by a
+ * flag or a convention.
  *
  * This file owns the things that must behave identically in every MVP domain:
  *
@@ -63,7 +61,7 @@ const PG_ERROR_MAP: Record<string, { status: number; code: string }> = {
   "23505": { status: 409, code: "DUPLICATE" },
   // foreign_key_violation — a referenced row does not exist / is still referenced
   "23503": { status: 409, code: "REFERENCE_VIOLATION" },
-  // check_violation — includes every lifecycle CHECK and trigger RAISE in db/mvp/schema.sql
+  // check_violation — includes every lifecycle CHECK and trigger RAISE in db/schema.sql
   "23514": { status: 409, code: "CONSTRAINT_VIOLATION" },
   // invalid_text_representation — a malformed uuid / numeric literal
   "22P02": { status: 400, code: "INVALID_INPUT" },
@@ -81,7 +79,7 @@ const PG_ERROR_MAP: Record<string, { status: number; code: string }> = {
  * order status, seller approval), so a forbidden transition arrives here as a
  * `23514` raised by a trigger — not as a duplicated state machine in this
  * process. That is why the trigger's own message is safe to return: every RAISE
- * in `db/mvp/schema.sql` is authored for an operator, never derived from data.
+ * in `db/schema.sql` is authored for an operator, never derived from data.
  */
 export function toApiError(err: unknown): ApiError | null {
   if (err instanceof ApiError) return err;
@@ -258,6 +256,7 @@ export interface SellerProfile {
   store_name: string;
   slug: string;
   status: "pending" | "approved" | "rejected" | "suspended";
+  description?: string | null;
   rejection_reason: string | null;
   suspension_reason: string | null;
 }

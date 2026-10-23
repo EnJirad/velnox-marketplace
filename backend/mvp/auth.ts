@@ -1,11 +1,10 @@
 /**
- * MVP auth — email + password only.
+ * MVP auth — email + password, plus Google sign-in (`oauth.ts`).
  *
- * Google OAuth is PARKED, not broken silently: the MVP schema has no
- * `auth_identities` table, so a provider sign-in has nowhere to persist. Until
- * that is designed, `GET /api/mvp/auth/oauth` answers 501 with an explicit code
- * instead of pretending a provider flow exists. The pre-MVP Google flow is
- * untouched in `server.ts` and keeps working against the pre-MVP database.
+ * Both credential paths end in the same `velnox_session` cookie and the same
+ * `users` row; a Google identity is linked through `user_identities`, so a
+ * shopper who signed up with a password keeps their orders when they later use
+ * the Google button.
  *
  * Security decisions:
  *   • passwords are hashed with the existing scrypt helper (`lib/password.ts`);
@@ -33,6 +32,7 @@ import {
   route,
   type SessionUser,
 } from "./http.js";
+import { setupMvpOAuthRoutes } from "./oauth.js";
 import { createSessionToken, setSessionCookie } from "./session.js";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -158,30 +158,43 @@ export function setupMvpAuthRoutes(app: Express): void {
     requireActiveUser,
     route(async (req: Request, res: Response) => {
       const user = req.sessionUser!;
+      const profile = await queryOne<{
+        id: string;
+        email: string;
+        name: string;
+        phone: string | null;
+        avatar_url: string | null;
+        cover_url: string | null;
+        role: string;
+        created_at: string;
+      }>(
+        `SELECT id, email, name, phone, avatar_url, cover_url, role, created_at
+           FROM users WHERE id = $1`,
+        [user.id],
+      );
+      if (!profile) throw new ApiError(401, "UNAUTHORIZED", "Session user no longer exists");
+
       const seller = await queryOne<{ id: string; status: string; store_name: string; slug: string }>(
         `SELECT id, status, store_name, slug FROM seller_profiles WHERE user_id = $1`,
         [user.id],
       );
       ok(res, {
-        user: publicUser(user),
+        user: {
+          id: profile.id,
+          email: profile.email,
+          name: profile.name,
+          phone: profile.phone,
+          avatarUrl: profile.avatar_url,
+          coverUrl: profile.cover_url,
+          role: profile.role,
+          createdAt: profile.created_at,
+        },
         seller: seller
           ? { id: seller.id, status: seller.status, storeName: seller.store_name, slug: seller.slug }
           : null,
       });
     }),
   );
-
-  // ── Parked provider sign-in ───────────────────────────────────────────────
-  app.get("/api/mvp/auth/oauth", (_req: Request, res: Response) => {
-    res.status(501).json({
-      success: false,
-      error: {
-        code: "OAUTH_PARKED",
-        message:
-          "Google sign-in is not available in the MVP; use email and password. The pre-MVP OAuth flow is unchanged.",
-      },
-    });
-  });
 
   // ── Owner bootstrap ───────────────────────────────────────────────────────
   // A brand-new MVP database has no admin. This creates the FIRST owner only,
@@ -232,4 +245,6 @@ export function setupMvpAuthRoutes(app: Express): void {
       ok(res, { user: publicUser(user) }, 201);
     }),
   );
+
+  setupMvpOAuthRoutes(app);
 }

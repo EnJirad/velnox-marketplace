@@ -253,4 +253,57 @@ describe("MVP seller lifecycle (needs a test database + JWT_SECRET)", () => {
     });
     expect(steal.status).toBe(404);
   });
+
+  itDb("product images: fails closed without storage and never uploads into another seller's product", async () => {
+    const seller = await createSeller({ status: "approved" });
+    const product = await createPublishedProduct(seller.id, admin.id);
+    const other = await createSeller({ status: "approved" });
+
+    const saved = {
+      id: process.env.R2_ACCOUNT_ID,
+      key: process.env.R2_ACCESS_KEY_ID,
+      secret: process.env.R2_SECRET_ACCESS_KEY,
+      bucket: process.env.R2_BUCKET,
+    };
+    try {
+      delete process.env.R2_ACCOUNT_ID;
+      delete process.env.R2_ACCESS_KEY_ID;
+      delete process.env.R2_SECRET_ACCESS_KEY;
+      delete process.env.R2_BUCKET;
+
+      const presign = await api(app.base, `/api/mvp/seller/products/${product.id}/images/presign`, {
+        method: "POST",
+        cookie: seller.cookie,
+        body: { contentType: "image/png", size: 1024 },
+      });
+      expect(presign.status).toBe(503);
+      expect(presign.body.error.code).toBe("UPLOAD_NOT_CONFIGURED");
+    } finally {
+      for (const [key, value] of [
+        ["R2_ACCOUNT_ID", saved.id],
+        ["R2_ACCESS_KEY_ID", saved.key],
+        ["R2_SECRET_ACCESS_KEY", saved.secret],
+        ["R2_BUCKET", saved.bucket],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+
+    const foreignProduct = await api(
+      app.base,
+      `/api/mvp/seller/products/${product.id}/images/presign`,
+      { method: "POST", cookie: other.cookie, body: { contentType: "image/png", size: 1024 } },
+    );
+    expect(foreignProduct.status).toBe(404);
+    expect(foreignProduct.body.error.code).toBe("PRODUCT_NOT_FOUND");
+
+    const foreignObject = await api(
+      app.base,
+      `/api/mvp/seller/products/${product.id}/images/confirm`,
+      { method: "POST", cookie: seller.cookie, body: { objectKey: "product/other/other/x.png" } },
+    );
+    expect(foreignObject.status).toBe(403);
+    expect(foreignObject.body.error.code).toBe("OBJECT_NOT_OWNED");
+  });
 });

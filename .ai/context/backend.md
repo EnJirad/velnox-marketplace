@@ -1,5 +1,10 @@
 # BACKEND
 
+> **SUPERSEDED (2026-10-22).** The pre-MVP paths below (`backend/routes/`,
+> `backend/lib/`, `backend/realtime/`) were removed in `AI_HANDOFF.md` §92. The
+> live tree is `backend/mvp/*` mounted at `/api/mvp`; re-check every path and
+> endpoint against source and `project-map.md`.
+
 Express API + WebSocket in one Node process (`backend/`, deployed on Render). It is the sole gateway to Neon and R2 — the frontends never connect to either.
 
 ## Process & Middleware Order

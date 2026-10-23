@@ -1,44 +1,29 @@
-import { Link, useLocation } from "react-router";
-import { cn } from "@velnox/shared/lib/utils";
-import { useLanguage } from "@velnox/shared/lib/i18n";
+/**
+ * App-like floating bottom navigation (mobile).
+ *
+ * Restored from the original storefront: a rounded, elevated pill above the
+ * safe-area inset, hidden from `md` up where the top header takes over. Each
+ * app passes its own destinations; the auth flow is a full-screen sheet, so the
+ * bar hides there.
+ */
 import type { LucideIcon } from "lucide-react";
+import { Link, useLocation } from "react-router";
+import { useLanguage } from "../lib/i18n/index.js";
+import { cn } from "../lib/utils.js";
 
 export interface MobileTabItem {
   to: string;
   label: string;
   icon: LucideIcon;
-  /**
-   * Custom active check. Default: exact path or `pathname.startsWith(to + "/")`
-   * (e.g. /orders matches the /orders tab).
-   */
+  /** Custom active check. Default: exact path or `pathname.startsWith(to + "/")`. */
   activeMatch?: (pathname: string, search: string) => boolean;
   /** Optional badge count (e.g. cart item count). Hidden when 0 / null. */
   badge?: number | null;
 }
 
-/**
- * App-like floating bottom navigation for mobile (native-app feel). Hidden on
- * md+, where the desktop top-header navigation takes over.
- *
- * The bar is `position: fixed` so it stays attached to the viewport while the
- * page scrolls, and it floats above the content as a rounded, elevated pill
- * (12px gutters + 12px bottom offset + safe-area inset) instead of a
- * full-width footer strip. The outer wrapper is pointer-transparent so taps
- * beside the pill fall through to the page.
- *
- * Page content reserves room for it via the `.site-app` mobile bottom padding
- * (4.75rem + env(safe-area-inset-bottom)) in the shared global CSS.
- *
- * Every site entry renders one of these inside its router:
- *   velshop    → / · /products · /cart · /orders · /profile
- *   velseller  → เป้าหมาย / ร้านของฉัน / ออเดอร์ / รายได้ / สั่งซื้อซ้ำ
- *   velcenter  → rendered inside Center.tsx so it respects role permissions
- */
 export function MobileTabBar({ items }: { items: MobileTabItem[] }) {
   const { t } = useLanguage();
   const { pathname, search } = useLocation();
-
-  // The auth flow is a full-screen sheet — hide the tab bar there.
   if (pathname.startsWith("/auth")) return null;
 
   return (
@@ -59,9 +44,7 @@ export function MobileTabBar({ items }: { items: MobileTabItem[] }) {
               aria-current={active ? "page" : undefined}
               className={cn(
                 "relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 transition-colors",
-                active
-                  ? "text-[#10B981]"
-                  : "text-slate-400 hover:text-slate-600 active:text-slate-500",
+                active ? "text-[#10B981]" : "text-slate-400 hover:text-slate-600 active:text-slate-500",
               )}
             >
               <span
@@ -78,10 +61,7 @@ export function MobileTabBar({ items }: { items: MobileTabItem[] }) {
                 )}
               </span>
               <span
-                className={cn(
-                  "text-[10px] leading-none",
-                  active ? "font-semibold" : "font-medium",
-                )}
+                className={cn("text-[10px] leading-none", active ? "font-semibold" : "font-medium")}
               >
                 {item.label}
               </span>

@@ -1,7 +1,7 @@
 /**
  * MVP inventory — the ONE stock authority.
  *
- * `db/mvp/schema.sql` has exactly one stock table, keyed
+ * `db/schema.sql` has exactly one stock table, keyed
  * `(product_id, variant_id)` with `variant_id IS NULL` for a base product. This
  * module is the only code that writes it. There is no second `stock` column
  * anywhere, so "reserved" and "on hand" can never disagree:

@@ -1,10 +1,9 @@
 /**
  * MVP API route constants — the single place the `/api/mvp` paths live.
  *
- * Deliberately SEPARATE from `lib/api-routes.ts` (the legacy table). Nothing here
- * may ever be used by a legacy screen, and no legacy constant is rewritten to
- * point at `/api/mvp`: the Phase 3 backend is opt-in per build
- * (`mvp/config.ts`) and the two trees must stay independently deployable.
+ * This is the only route table in the repository (the pre-MVP `lib/api-routes.ts`
+ * was removed with its tree). Paths are relative to `/api/mvp`; callers append
+ * them to `getApiMode().mvpBaseUrl`.
  */
 export const MVP_ROUTES = {
   auth: {
@@ -13,7 +12,33 @@ export const MVP_ROUTES = {
     logout: "/auth/logout",
     me: "/auth/me",
     oauth: "/auth/oauth",
+    providers: "/auth/providers",
+    googleStart: "/auth/google/start",
     bootstrapOwner: "/auth/bootstrap-owner",
+  },
+  profile: {
+    root: "/profile",
+    avatar: "/profile/avatar",
+    avatarPresign: "/profile/avatar/presign",
+    avatarConfirm: "/profile/avatar/confirm",
+    cover: "/profile/cover",
+    coverPresign: "/profile/cover/presign",
+    coverConfirm: "/profile/cover/confirm",
+  },
+  addresses: {
+    root: "/addresses",
+    address: (id: string) => `/addresses/${encodeURIComponent(id)}`,
+    setDefault: (id: string) => `/addresses/${encodeURIComponent(id)}/default`,
+  },
+  favorites: {
+    root: "/favorites",
+    ids: "/favorites/ids",
+    item: (productId: string) => `/favorites/${encodeURIComponent(productId)}`,
+  },
+  reviews: {
+    forProduct: (slug: string) => `/products/${encodeURIComponent(slug)}/reviews`,
+    mine: (slug: string) => `/products/${encodeURIComponent(slug)}/reviews/me`,
+    review: (reviewId: string) => `/reviews/${encodeURIComponent(reviewId)}`,
   },
   catalog: {
     categories: "/categories",
@@ -40,11 +65,16 @@ export const MVP_ROUTES = {
   seller: {
     apply: "/seller/apply",
     status: "/seller/status",
+    profile: "/seller/profile",
     products: "/seller/products",
     product: (id: string) => `/seller/products/${encodeURIComponent(id)}`,
     submit: (id: string) => `/seller/products/${encodeURIComponent(id)}/submit`,
     publish: (id: string) => `/seller/products/${encodeURIComponent(id)}/publish`,
     variants: (id: string) => `/seller/products/${encodeURIComponent(id)}/variants`,
+    productImagePresign: (id: string) =>
+      `/seller/products/${encodeURIComponent(id)}/images/presign`,
+    productImageConfirm: (id: string) =>
+      `/seller/products/${encodeURIComponent(id)}/images/confirm`,
     variant: (id: string, variantId: string) =>
       `/seller/products/${encodeURIComponent(id)}/variants/${encodeURIComponent(variantId)}`,
     sellingUnits: (id: string) => `/seller/products/${encodeURIComponent(id)}/selling-units`,

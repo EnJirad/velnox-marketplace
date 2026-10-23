@@ -1,8 +1,8 @@
 /**
  * MVP client surface (`@velnox/shared/mvp`).
  *
- * Reached ONLY by pages that are mounted when `isMvpMode()` is true; the legacy
- * API client and routes are untouched.
+ * The client surface every MVP page imports: origin resolution, route constants,
+ * the HTTP client and the typed API.
  */
 export {
   describeApiMode,

@@ -177,11 +177,12 @@ For Vercel deployment, set in the Vercel dashboard for each project.
 
 ### 5. Set Up Neon PostgreSQL Database
 
-> **Phase 2 note.** The database described in this section is the **pre-MVP**
-> database. The clean MVP schema is `db/mvp/schema.sql` and is **not deployed
-> yet** — the cutover is designed in `db/mvp/cutover.md`. Keep using
-> `db/run-sqleditor.sql` for the current deployment; never apply the MVP schema
-> to the production database by hand.
+> **Canonical schema.** `db/` contains exactly two files: `db/schema.sql` and
+> `db/run-sqleditor.sql`, and they describe **one** database — the MVP model.
+> There is no third schema, no `db/mvp/` and no migration directory. Production
+> has not been switched yet; that switch is `docs/PRODUCTION_CUTOVER.md` and is
+> an owner action. Never apply anything here to a database you have not first
+> identified.
 
 1. Create a Neon project at https://neon.tech
 2. Create a database
@@ -191,49 +192,34 @@ For Vercel deployment, set in the Vercel dashboard for each project.
 
 This creates all tables, indexes, and constraints.
 
-**Important:** `db/schema.sql` and `db/run-sqleditor.sql` describe the same
-pre-MVP database and are held to **declaration parity** (not byte identity), by
-`backend/tests/helpers/canonical-schema.ts`. Both are **frozen** until the
-cutover: do not add tables, columns or migrations to them.
+**Important:** `db/schema.sql` and `db/run-sqleditor.sql` are held to
+**declaration parity** — identical tables, columns, constraints, indexes and
+triggers, in install order for the SQL Editor — asserted by
+`backend/tests/mvp-schema-contract.test.ts` and proved against a real
+PostgreSQL by `bun run db:check`. Neither file may contain SQL comments or any
+destructive/data-writing statement.
 
-### 6. Database Migration System
+### 6. Changing the schema
 
-Velnox uses a **two-tier migration system**:
+There is **no migration system** in this repository — no `db/migrations/`, no
+migration runner, no schema-ledger table and no workflow that applies SQL to
+production.
 
-| Tier | Location | When to use |
-|------|----------|-------------|
-| **GitHub Action** | `.github/workflows/migrate-neon.yml` | Production Neon — automatic on push to main |
-| **Manual** | `db/migrations/*.sql` | Development or manual production apply |
+1. Edit **both** `db/schema.sql` (the model) and `db/run-sqleditor.sql` (the
+   same DDL in install order) **in the same commit**.
+2. Keep both free of comments and of `DROP` / `TRUNCATE` / `DELETE` / writes.
+3. Prove it: `bun run db:check` (both files applied twice to a disposable
+   PostgreSQL and diffed), `bun run db:verify`, `bun run test:mvp`.
+4. An existing database is brought forward by re-running the guarded file —
+   every creation is `IF NOT EXISTS`, so an up-to-date database is unchanged.
 
-#### How migrations work
-
-1. **New database changes** go into `db/migrations/` as individual files (e.g., `013_schema_migrations_and_address_fixes.sql`)
-2. **Both SQL files** must also be updated: `schema.sql`, `run-sqleditor.sql`
-3. **Production** receives migrations via the GitHub Action — it detects pending migrations and applies them in order
-4. **Schema drift is tracked** via the `schema_migrations` table in Neon
-
-#### Migration file naming
-
-```
-db/migrations/
-  001_initial.sql
-  002_auth.sql
-  ...
-  012_product_fields.sql
-  013_schema_migrations_and_address_fixes.sql
-```
-
-#### GitHub Action setup
-
-1. Go to GitHub repo → Settings → Secrets and variables → Actions
-2. Add secret: `NEON_DATABASE_URL` = your Neon connection string
-3. The workflow runs automatically on push to main when `db/migrations/*.sql` changes
-4. It can also be triggered manually via workflow_dispatch
+Production only changes through `docs/PRODUCTION_CUTOVER.md`.
 
 #### Never run startup DDL
 
-Backend application startup must NOT run `ALTER TABLE` statements.
-All schema changes go through the migration system.
+Backend application startup must NOT run `ALTER TABLE` statements. Schema lives
+in the two canonical files and is applied deliberately, never as a side effect
+of a deploy.
 
 ### 6. Set Up Google OAuth
 
@@ -489,7 +475,6 @@ Backend must allow all four frontend origins:
 | `STRIPE_MODE` | Must agree with the key (`test`) or the configuration is refused | No |
 | `COD_ENABLED` | Cash-on-delivery rail (default OFF, fails closed) | No |
 | `COD_CUSTOMER_SELECTABLE` | Offer COD in the storefront (default OFF) | No |
-| `MVP_API_ENABLED` | Mounts the Phase 3 MVP API (`backend/mvp/`, `/api/mvp`) — only on a database built from `db/mvp/schema.sql` (default OFF) | No |
 | `BOOTSTRAP_OWNER_SECRET` | Secret for `POST /api/mvp/auth/bootstrap-owner`, which creates the FIRST owner on an empty MVP database; unset disables it | No — required once per new MVP DB |
 
 ### Frontend (ALL PUBLIC — type Config in Vercel)

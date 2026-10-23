@@ -1,5 +1,10 @@
 # PRODUCTS
 
+> **SUPERSEDED (2026-10-22).** The pre-MVP product paths below (`backend/routes/products.ts`,
+> `backend/lib/inventory.ts`, …) were removed in `AI_HANDOFF.md` §92. The live
+> model is `backend/mvp/seller-products.ts` + `product-rules.ts` + `catalog.ts` +
+> `inventory.ts` against `db/schema.sql`; re-check every path against source.
+
 ## Purpose
 
 Product catalog, creation, editing, display, search, filtering, and lifecycle/moderation.

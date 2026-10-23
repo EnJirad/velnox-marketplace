@@ -2,10 +2,13 @@
 
 Source of truth: `VELNOX_DESIGN_THEME.md` (v2.0). This file is the AI navigation layer.
 
+> **UPDATED 2026-10-22.** The old per-app `src/pages/` and `src/components/`
+> trees were removed in `AI_HANDOFF.md` §92.
+
 ## Where Frontend Code Lives
 
-- Apps: `apps/velshop|velseller|velcenter|velnox` — `src/main.tsx` (router), `src/pages/`, `src/components/` (app-local only).
-- Shared: `packages/shared/src` via the `@velnox/shared/*` Vite alias — `components/ui/` (shadcn/ui), `hooks/`, `lib/`, `pages/`.
+- Apps: `apps/velshop|velseller|velcenter` — `src/main.tsx` (providers) + `src/mvp/` (routes and pages); `apps/velnox` — `src/main.tsx` + `src/pages/corporate/`.
+- Shared: `packages/shared/src` via the `@velnox/shared/*` Vite alias — `components/ui/` (shadcn/ui), `components/Logo.tsx`, `lib/` (app shell, sites, api-client, i18n), `mvp/` (config, routes, client, api, ui).
 - Reuse a shared component before writing an app-local one; never stand up a second component or theme system. Full map: `project-map.md`.
 
 ## Principles
