@@ -1,0 +1,3895 @@
+/**
+ * Velnox Product Routes — Complete Seller Product Management & Public Catalog
+ *
+ * Seller endpoints (requireAuth + seller ownership):
+ *   GET    /api/seller/products                      — List seller's products
+ *   POST   /api/seller/products                      — Create product
+ *   PATCH  /api/seller/products/:productId            — Update product
+ *   DELETE /api/seller/products/:productId            — Archive product (soft delete)
+ *   PATCH  /api/seller/products/:productId/status     — Set product status
+ *   PATCH  /api/seller/products/:productId/stock      — Set inventory quantity
+ *   PATCH  /api/seller/products/:productId/reorder-level — Set reorder level
+ *   POST   /api/seller/products/image-upload-intent   — R2 presigned URL
+ *   POST   /api/seller/products/save-image            — Save image metadata
+ *   DELETE /api/seller/products/images/:imageId       — Delete product image
+ *   PATCH  /api/seller/products/:productId/primary-image  — Set primary image
+ *   PATCH  /api/seller/products/:productId/reorder-images — Reorder images
+ *
+ * Public endpoints (no auth):
+ *   GET    /api/products/catalog                      — Public product catalog
+ *   GET    /api/products/:productId                   — Product detail
+ *   GET    /api/shops                                 — List public shops
+ *   GET    /api/shops/:shopId                         — Shop detail
+ *   GET    /api/categories                            — List categories
+ */
+import type { Express, Request, Response } from "express";
+import {
+  ADMIN_MODERATION_TRANSITIONS,
+  SELLER_STATUS_TRANSITIONS,
+  canAdminModerate,
+  canSellerTransition,
+  computeIsVerifiedProduct,
+  moderationRequiresReason,
+  resolveCreationStatus,
+} from "../lib/product-lifecycle.js";
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { optionalAuth, requireAuth } from "../middleware/auth.js";
+import { query, getClient } from "../db/index.js";
+import { validateReviewInput, verifyOrderContainsProduct } from "../lib/reviews.js";
+import {
+  buildOptionValueIndex,
+  normalizeVariantOptions,
+  resolveVariantOptionValueIds,
+} from "../lib/variant-options.js";
+import { CATEGORY_UUID_RE, INVALID_CATEGORY_MESSAGE, validateCategory, type CategoryLookupRow } from "../lib/categories.js";
+import { isCenterMember, userHasPermission } from "../lib/permissions.js";
+import { pageMeta, pageOffset, parseLimit, parsePage } from "../lib/pagination.js";
+import { broadcast, CHANNELS } from "../realtime/index.js";
+
+// ─── R2 Client (reuse from upload.ts pattern) ─────────────────────────────
+
+function getR2Config() {
+  return {
+    accountId: process.env.R2_ACCOUNT_ID || "",
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+    bucket: process.env.R2_BUCKET || "",
+    publicDomain: process.env.R2_PUBLIC_DOMAIN || "",
+  };
+}
+
+let _r2: S3Client | null = null;
+function getR2(): S3Client {
+  if (!_r2) {
+    const cfg = getR2Config();
+    _r2 = new S3Client({
+      region: "auto",
+      endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: cfg.accessKeyId,
+        secretAccessKey: cfg.secretAccessKey,
+      },
+    });
+  }
+  return _r2;
+}
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+/** Safely extract a route param as a string. */
+function param(req: Request, key: string): string {
+  const val = req.params[key] as string | string[] | undefined;
+  if (Array.isArray(val)) return val[0] ?? "";
+  return val ?? "";
+}
+
+/** Check if a string looks like a valid UUID (v4). */
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .substring(0, 120);
+}
+
+async function getSellerForUser(userId: string): Promise<{ id: string; status: string } | null> {
+  const r = await query("SELECT id, status FROM sellers WHERE user_id = $1", [userId]);
+  return r.rows[0] ?? null;
+}
+
+async function getShopForSeller(sellerId: string): Promise<{ id: string; name: string; slug: string } | null> {
+  const r = await query("SELECT id, name, slug FROM shops WHERE seller_id = $1", [sellerId]);
+  return r.rows[0] ?? null;
+}
+
+async function verifyProductOwnership(productId: string, sellerId: string): Promise<boolean> {
+  const r = await query(
+    `SELECT p.id FROM products p
+     JOIN shops sh ON p.shop_id = sh.id
+     WHERE p.id = $1 AND sh.seller_id = $2`,
+    [productId, sellerId]
+  );
+  return r.rows.length > 0;
+}
+
+async function deleteR2Object(key: string): Promise<void> {
+  try {
+    await getR2().send(new DeleteObjectCommand({ Bucket: getR2Config().bucket, Key: key }));
+  } catch {
+    // Non-fatal — log and continue
+    console.warn("[products] R2 delete failed for key:", key);
+  }
+}
+
+function publicUrl(key: string): string {
+  const pd = getR2Config().publicDomain;
+  if (!pd) return key;
+  // Normalize: if domain already has protocol, use as-is; otherwise add https://
+  const base = pd.startsWith("http://") || pd.startsWith("https://") ? pd : `https://${pd}`;
+  return `${base}/${key}`;
+}
+
+/**
+ * Normalize an image URL that may have been stored with a broken format.
+ * Fixes: missing protocol, double protocol, bare domain.
+ */
+function normalizeImageUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  // Fix double protocol: https://https://... → https://...
+  if (trimmed.startsWith("https://https://")) return trimmed.replace("https://https://", "https://");
+  if (trimmed.startsWith("http://http://")) return trimmed.replace("http://http://", "http://");
+  // Fix bare domain: pub-xxx.r2.dev/key → https://pub-xxx.r2.dev/key
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && trimmed.includes("/")) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Convert a stored URL back to an R2 object key for deletion.
+ * If the URL starts with the R2 public domain prefix, strip it.
+ * Otherwise assume the URL is already the key (no publicDomain configured).
+ */
+function urlToKey(url: string): string {
+  const pd = getR2Config().publicDomain;
+  if (!pd) return url;
+  // Normalize to compare properly (strip protocol from both sides)
+  const normalizedPd = pd.startsWith("http://") ? pd.slice(7) : pd.startsWith("https://") ? pd.slice(8) : pd;
+  const normalizedUrl = url.startsWith("http://") ? url.slice(7) : url.startsWith("https://") ? url.slice(8) : url;
+  if (normalizedUrl.startsWith(normalizedPd + "/")) {
+    return normalizedUrl.substring(normalizedPd.length + 1);
+  }
+  return url;
+}
+
+/**
+ * Format a product row from the DB into the StoreProduct shape expected by the frontend.
+ */
+function formatProduct(row: Record<string, any>, images: any[], inventory: any): any {
+  const safeImages = Array.isArray(images) ? images : [];
+  const primaryImage = safeImages.find((img: any) => img.sort_order === 0) ?? safeImages[0] ?? null;
+
+  return {
+    id: row.id,
+    shopId: row.shop_id,
+    sellerId: row.seller_id || "",
+    name: row.name,
+    description: row.description || null,
+    category: row.category_id || "general",
+    // Canonical category slug (resolved from the categories table). Legacy
+    // products keep their raw string; new products resolve to a real slug.
+    categorySlug: row.category_slug ?? null,
+    unit: row.unit || "ชิ้น",
+    price: parseFloat(row.price) || 0,
+    currency: row.currency || "THB",
+    status: row.status || "draft",
+    rejectionReason: row.rejection_reason || null,
+    supplier: row.supplier || null,
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
+    images: safeImages.map((img: any) => ({
+      id: img.id,
+      productId: img.product_id,
+      url: img.url,
+      displayUrl: img.url,
+      thumbUrl: img.url,
+      storageProvider: "r2",
+      storageKey: urlToKey(img.url),
+      alt: img.alt || "",
+      sortOrder: img.sort_order ?? 0,
+      imageType: img.image_type || "gallery",
+      variantId: img.variant_id || null,
+      isPrimary: (img.sort_order ?? 0) === 0 && (img.image_type || "gallery") === "gallery",
+      width: null,
+      height: null,
+      createdAt: img.created_at ? new Date(img.created_at).getTime() : Date.now(),
+    })),
+    primaryImage: primaryImage
+      ? {
+          id: primaryImage.id,
+          productId: primaryImage.product_id,
+          url: primaryImage.url,
+          displayUrl: primaryImage.url,
+          thumbUrl: primaryImage.url,
+          storageProvider: "r2",
+          storageKey: primaryImage.url,
+          alt: primaryImage.alt || "",
+          sortOrder: primaryImage.sort_order ?? 0,
+          isPrimary: true,
+          width: null,
+          height: null,
+          createdAt: primaryImage.created_at ? new Date(primaryImage.created_at).getTime() : Date.now(),
+        }
+      : null,
+    inventory: inventory
+      ? {
+          id: inventory.id,
+          productId: inventory.product_id,
+          shopId: row.shop_id,
+          quantity: inventory.quantity ?? 0,
+          reservedQuantity: inventory.reserved ?? 0,
+          reorderLevel: inventory.low_stock_threshold ?? 5,
+          warehouse: "",
+          available: (inventory.quantity ?? 0) - (inventory.reserved ?? 0),
+        }
+      : null,
+    shopName: row.shop_name ?? null,
+    shopSlug: row.shop_slug ?? null,
+    soldCount: row.sold_count ?? 0,
+    rating: row.rating ? parseFloat(row.rating) : null,
+    reviewCount: row.review_count ?? 0,
+    // VelRepeat configuration (V0025 columns)
+    vrepeatEnabled: row.vrepeat_enabled ?? false,
+    vrepeatWeeklyEnabled: row.vrepeat_weekly_enabled ?? false,
+    vrepeatMonthlyEnabled: row.vrepeat_monthly_enabled ?? false,
+    vrepeatWeeklyPrice: row.vrepeat_weekly_price != null ? parseFloat(row.vrepeat_weekly_price) : null,
+    vrepeatMonthlyPrice: row.vrepeat_monthly_price != null ? parseFloat(row.vrepeat_monthly_price) : null,
+    vrepeatWeeklyQty: row.vrepeat_weekly_qty ?? null,
+    vrepeatMonthlyQty: row.vrepeat_monthly_qty ?? null,
+    vrepeatMinQty: row.vrepeat_min_qty ?? null,
+    vrepeatMaxQty: row.vrepeat_max_qty ?? null,
+    featuredVariantId: row.featured_variant_id ?? null,
+    // Verification fields
+    verificationStatus: row.verification_status || "unverified",
+    sellerVerificationStatus: row.seller_verification_status || "unverified",
+    isVerifiedProduct: computeIsVerifiedProduct(
+      row.verification_status,
+      row.seller_verification_status,
+    ),
+  };
+}
+
+/**
+ * Apply variant-based stock to a formatted product.
+ * For products WITH active variants: inventory.available = sum of active variant stock.
+ * For products WITHOUT variants: keep existing inventory (legacy fallback).
+ * Also computes totalAvailableStock and hasVariants flags.
+ */
+function applyVariantStock(formatted: any, variants: any[]): void {
+  if (!Array.isArray(variants) || variants.length === 0) {
+    // No variants — keep existing inventory (legacy single-product mode)
+    formatted.totalAvailableStock = formatted.inventory?.available ?? formatted.inventory?.quantity ?? 0;
+    formatted.hasVariants = false;
+    return;
+  }
+
+  formatted.hasVariants = true;
+
+  // Sum stock from active variants with stock > 0
+  let totalStock = 0;
+  for (const v of variants) {
+    if (v.status === 'active' && (v.stock ?? 0) > 0) {
+      totalStock += Number(v.stock);
+    }
+  }
+
+  formatted.totalAvailableStock = totalStock;
+
+  // Override inventory.available so frontend fallbacks get correct value
+  if (formatted.inventory) {
+    formatted.inventory.available = totalStock;
+    formatted.inventory.quantity = totalStock;
+  } else {
+    // Product has no inventory row — create synthetic one for frontend
+    formatted.inventory = {
+      id: null,
+      productId: formatted.id,
+      shopId: formatted.shopId,
+      quantity: totalStock,
+      reservedQuantity: 0,
+      reorderLevel: 5,
+      warehouse: '',
+      available: totalStock,
+    };
+  }
+}
+
+/** Look up a category row by canonical UUID or by slug. */
+async function lookupCategoryRow(raw: string): Promise<CategoryLookupRow | null> {
+  const r = CATEGORY_UUID_RE.test(raw)
+    ? await query("SELECT slug, is_active FROM categories WHERE id = $1", [raw])
+    : await query("SELECT slug, is_active FROM categories WHERE slug = $1", [raw]);
+  return (r.rows[0] as CategoryLookupRow | undefined) ?? null;
+}
+
+/**
+ * DB-backed category resolver. Never throws: schema drift or a DB failure is
+ * reported as a clean INVALID_CATEGORY result instead of a raw 500/Postgres error.
+ */
+async function resolveCategory(input: unknown): Promise<{ ok: boolean; categoryId: string | null; error?: string }> {
+  try {
+    const result = await validateCategory(input, lookupCategoryRow);
+    return { ok: result.ok, categoryId: result.categorySlug, error: result.error };
+  } catch (err) {
+    console.error("[products] category resolve error:", err);
+    return { ok: false, categoryId: null, error: INVALID_CATEGORY_MESSAGE };
+  }
+}
+
+/**
+ * Compute per-option-value stock for product detail.
+ * For each option value, sums stock of matching active variants
+ * (optionally filtered by other selected options).
+ */
+function computeOptionValueStock(
+  variants: any[],
+  variantOptions: Record<string, Record<string, string>>,
+  groupId?: string,
+  otherSelections?: Record<string, string>,
+): Record<string, number> {
+  const stockMap: Record<string, number> = {};
+  if (!Array.isArray(variants) || !variantOptions) return stockMap;
+
+  for (const v of variants) {
+    if (v.status !== 'active' || (v.stock ?? 0) <= 0) continue;
+    const vOpts = variantOptions[v.id];
+    if (!vOpts) continue;
+
+    // If other selections provided, variant must match them
+    if (otherSelections && Object.keys(otherSelections).length > 0) {
+      const matches = Object.entries(otherSelections).every(([gId, vId]) => {
+        if (!vId) return true; // skip empty selections
+        return vOpts[gId] === vId;
+      });
+      if (!matches) continue;
+    }
+
+    // Accumulate stock for each option value in this variant
+    for (const [gId, valId] of Object.entries(vOpts)) {
+      if (groupId && gId !== groupId) continue; // only target group
+      stockMap[valId] = (stockMap[valId] ?? 0) + Number(v.stock);
+    }
+  }
+  return stockMap;
+}
+
+/**
+ * Load all images and inventory for a list of product IDs in bulk.
+ */
+async function loadProductExtras(productIds: string[]): Promise<{
+  imagesByProduct: Map<string, any[]>;
+  inventoryByProduct: Map<string, any>;
+  variantsByProduct: Map<string, any[]>;
+  detailImagesByProduct: Map<string, any[]>;
+}> {
+  if (productIds.length === 0) {
+    return { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map(), detailImagesByProduct: new Map() };
+  }
+
+  // Run gallery images, inventory, variants, detail images, and variant images
+  // queries ALL in parallel — none depends on the result of another.
+  // Variant images use product_id (not variant_id) in the primary query,
+  // so they can run in parallel with variants.
+  const [imagesSettled, inventorySettled, variantsSettled, detailImagesSettled, variantImagesSettled] = await Promise.allSettled([
+    // Gallery images
+    query(
+      `SELECT *, COALESCE(image_type, 'gallery') as image_type FROM product_images WHERE product_id = ANY($1) AND image_type = 'gallery' ORDER BY sort_order ASC`,
+      [productIds]
+    ),
+    // Inventory
+    query(
+      `SELECT * FROM inventory WHERE product_id = ANY($1)`,
+      [productIds]
+    ),
+    // Variants — try with pricing columns first, fall back without
+    query(
+      `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+      [productIds]
+    ).catch((variantErr: any) => {
+      if (variantErr?.code === "42703") {
+        console.warn("[products] product_variants missing columns, retrying without pricing columns:", variantErr?.message);
+        return query(
+          `SELECT id, product_id, name, sku, price, stock, status, options, sort_order, created_at, updated_at FROM product_variants WHERE product_id = ANY($1) AND status = 'active' ORDER BY sort_order ASC`,
+          [productIds]
+        );
+      }
+      throw variantErr;
+    }),
+    // Detail images
+    query(
+      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'detail' ORDER BY sort_order ASC`,
+      [productIds]
+    ).catch((dErr: any) => {
+      if (dErr?.code === "42P01") return { rows: [] as any[] };
+      throw dErr;
+    }),
+    // Variant images — uses product_id in primary query (image_type='variant'),
+    // can run in parallel with the variants query above.
+    query(
+      `SELECT * FROM product_images WHERE product_id = ANY($1) AND image_type = 'variant' AND variant_id IS NOT NULL ORDER BY sort_order ASC`,
+      [productIds]
+    ).catch((viErr: any) => {
+      if (viErr?.code === "42P01") return { rows: [] as any[] };
+      throw viErr;
+    }),
+  ]);
+
+  // Extract results from Promise.allSettled, falling back to empty on failure
+  const imagesResult = imagesSettled.status === 'fulfilled' ? imagesSettled.value : { rows: [] as any[] };
+  const inventoryResult = inventorySettled.status === 'fulfilled' ? inventorySettled.value : { rows: [] as any[] };
+  let variantsResult = { rows: [] as any[] };
+  if (variantsSettled.status === 'fulfilled') {
+    variantsResult = variantsSettled.value;
+  } else {
+    const variantErr = variantsSettled.reason;
+    if (variantErr?.code === "42P01") {
+      console.warn("[products] product_variants table does not exist — run V0028 migration");
+    } else {
+      console.warn("[products] loadProductExtras: variant query failed:", variantErr?.message ?? variantErr);
+    }
+  }
+  const detailImagesResult = detailImagesSettled.status === 'fulfilled' ? detailImagesSettled.value : { rows: [] as any[] };
+
+  console.log(`[products] loadProductExtras: productIds=${productIds.length} variantsLoaded=${variantsResult.rows.length} variantIds=${variantsResult.rows.map((v: any) => v.id).join(',')}`);
+  const detailImagesByProduct = new Map<string, any[]>();
+  for (const img of detailImagesResult.rows) {
+    const list = detailImagesByProduct.get(img.product_id) ?? [];
+    list.push(img);
+    detailImagesByProduct.set(img.product_id, list);
+  }
+
+  const imagesByProduct = new Map<string, any[]>();
+  for (const img of imagesResult.rows) {
+    const list = imagesByProduct.get(img.product_id) ?? [];
+    list.push(img);
+    imagesByProduct.set(img.product_id, list);
+  }
+
+  const inventoryByProduct = new Map<string, any>();
+  for (const inv of inventoryResult.rows) {
+    inventoryByProduct.set(inv.product_id, inv);
+  }
+
+  // Extract variant images from the parallel batch result
+  const variantImagesResult = variantImagesSettled.status === 'fulfilled'
+    ? variantImagesSettled.value
+    : { rows: [] as any[] };
+  // Fallback: if primary query returned 0, try product_variant_images table
+  // (used by older variant image save endpoint)
+  if (variantImagesResult.rows.length === 0 && variantsResult.rows.length > 0) {
+    try {
+      const variantIds = variantsResult.rows.map((v: any) => v.id);
+      const fallbackResult = await query(
+        `SELECT pvi.*, pvi.variant_id FROM product_variant_images pvi WHERE pvi.variant_id = ANY($1) ORDER BY pvi.sort_order ASC`,
+        [variantIds]
+      );
+      variantImagesResult.rows = fallbackResult.rows;
+    } catch { /* product_variant_images may not exist */ }
+  }
+  const imagesByVariant = new Map<string, any[]>();
+  for (const img of variantImagesResult.rows) {
+    const list = imagesByVariant.get(img.variant_id) ?? [];
+    list.push({ id: img.id, url: normalizeImageUrl(img.url) ?? img.url, alt: img.alt || '', sortOrder: img.sort_order ?? 0, storageKey: img.storage_key ?? null });
+    imagesByVariant.set(img.variant_id, list);
+  }
+  console.log(`[products] loadProductExtras variantImages: queryReturned=${variantImagesResult.rows.length} mappedToVariants=${imagesByVariant.size} variantImageCounts=${Array.from(imagesByVariant.entries()).map(([vid, imgs]) => `${vid.substring(0,8)}:${imgs.length}`).join(',')}`);
+
+  const variantsByProduct = new Map<string, any[]>();
+  for (const v of variantsResult.rows) {
+    const list = variantsByProduct.get(v.product_id) ?? [];
+    list.push({
+      id: v.id,
+      productId: v.product_id,
+      name: v.name,
+      sku: v.sku,
+      price: parseFloat(v.price) || 0,
+      compareAtPrice: v.compare_at_price != null ? parseFloat(v.compare_at_price) : null,
+      discountPercent: v.discount_percent != null ? parseFloat(v.discount_percent) : null,
+      stock: v.stock ?? 0,
+      status: v.status || "active",
+      options: v.options || {},
+      sortOrder: v.sort_order ?? 0,
+      images: imagesByVariant.get(v.id) ?? [],
+    });
+    variantsByProduct.set(v.product_id, list);
+  }
+
+  return { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct };
+}
+
+/**
+ * Load a single product with all images + inventory, formatted for frontend.
+ * Used after image operations that need to return the full updated product.
+ */
+async function getFormattedProduct(productId: string, sellerId: string): Promise<any | null> {
+  const result = await query(
+    `SELECT p.*, sh.seller_id FROM products p JOIN shops sh ON p.shop_id = sh.id WHERE p.id = $1 AND sh.seller_id = $2`,
+    [productId, sellerId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
+  const formatted = formatProduct(
+    { ...row, seller_id: sellerId },
+    imagesByProduct.get(productId) ?? [],
+    inventoryByProduct.get(productId) ?? null,
+  );
+  formatted.variants = variantsByProduct.get(productId) ?? [];
+  applyVariantStock(formatted, formatted.variants);
+  // Format detail images for frontend
+  const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
+  formatted.detailImages = rawDetailImgs.map((img: any) => ({
+    id: img.id, url: img.url, displayUrl: img.url, thumbUrl: img.url,
+    alt: img.alt || '', sortOrder: img.sort_order ?? 0,
+    storageProvider: 'r2', storageKey: urlToKey(img.url),
+  }));
+  return formatted;
+}
+
+// ─── Route Registration ───────────────────────────────────────────────────
+
+export function setupProductRoutes(app: Express): void {
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // SELLER ROUTES (authenticated, ownership verified)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/seller/products ────────────────────────────────────────────
+  app.get("/api/seller/products", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) {
+        res.json({ success: true, data: [] });
+        return;
+      }
+
+      const shop = await getShopForSeller(seller.id);
+      if (!shop) {
+        res.json({ success: true, data: [] });
+        return;
+      }
+
+      const result = await query(
+        `SELECT p.*, sh.seller_id,
+                COALESCE(s.verification_status, 'unverified') AS seller_verification_status,
+                c.slug AS category_slug
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         LEFT JOIN sellers s ON s.id = sh.seller_id
+         LEFT JOIN categories c ON c.slug = p.category_id
+         WHERE p.shop_id = $1 AND p.status <> 'archived'
+         ORDER BY p.created_at DESC`,
+        [shop.id]
+      );
+
+      const productIds = result.rows.map((r: any) => r.id);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
+
+      const products = result.rows.map((row: any) => {
+        const formatted = formatProduct(
+          { ...row, seller_id: seller.id },
+          imagesByProduct.get(row.id) ?? [],
+          inventoryByProduct.get(row.id) ?? null
+        );
+        const productVariants = variantsByProduct.get(row.id) ?? [];
+        formatted.variants = productVariants;
+        applyVariantStock(formatted, productVariants);
+        // Attach featured variant for product card pricing
+        if (row.featured_variant_id && productVariants.length > 0) {
+          const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
+          if (fv) formatted.featuredVariant = fv;
+        }
+        return formatted;
+      });
+
+      res.json({ success: true, data: products });
+    } catch (err) {
+      console.error("[products] list seller products error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list products" } });
+    }
+  });
+
+  // ── POST /api/seller/products ───────────────────────────────────────────
+  app.post("/api/seller/products", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller || seller.status !== "approved") {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only approved sellers can create products" } });
+        return;
+      }
+
+      const shop = await getShopForSeller(seller.id);
+      if (!shop) {
+        res.status(404).json({ success: false, error: { code: "NO_SHOP", message: "No shop found for this seller" } });
+        return;
+      }
+
+      const { name, category, unit, price, description, supplier, status, initialStock, reorderLevel, compareAtPrice, shortDescription } = req.body;
+
+      // Validate
+      if (!name || typeof name !== "string" || !name.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Product name is required" } });
+        return;
+      }
+      const priceNum = Number(price);
+      if (!Number.isFinite(priceNum) || priceNum < 0) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Valid price is required" } });
+        return;
+      }
+
+      // Validate category via DB-backed categories table
+      const catResult = await resolveCategory(category);
+      if (!catResult.ok) {
+        res.status(400).json({ success: false, error: { code: "INVALID_CATEGORY", message: catResult.error } });
+        return;
+      }
+
+      // Generate unique slug
+      const baseSlug = slugify(name.trim());
+      let slug = baseSlug;
+      let suffix = 1;
+      while (true) {
+        const slugCheck = await query("SELECT id FROM products WHERE slug = $1", [slug]);
+        if (slugCheck.rows.length === 0) break;
+        slug = `${baseSlug}-${suffix}`;
+        suffix++;
+      }
+
+      const productStatus = resolveCreationStatus(status);
+      const stockQty = initialStock != null ? Math.max(0, Number(initialStock)) : 0;
+      const reorder = reorderLevel != null ? Math.max(0, Number(reorderLevel)) : 5;
+
+      // Store canonical UUID from categories table
+      const resolvedCategory = catResult.categoryId;
+
+      // ── Transaction: create product + inventory + update shop count ──
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
+
+        const insertResult = await client.query(
+          `INSERT INTO products (shop_id, name, slug, description, short_description, price, compare_at_price, currency, unit, supplier, status, category_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'THB', $8, $9, $10, $11)
+           RETURNING *`,
+          [
+            shop.id,
+            name.trim(),
+            slug,
+            description || "",
+            shortDescription || null,
+            priceNum,
+            compareAtPrice ? Number(compareAtPrice) : null,
+            unit || "ชิ้น",
+            supplier || null,
+            productStatus,
+            resolvedCategory,
+          ]
+        );
+
+        const product = insertResult.rows[0];
+
+        await client.query(
+          `INSERT INTO inventory (product_id, quantity, reserved, low_stock_threshold)
+           VALUES ($1, $2, 0, $3)`,
+          [product.id, stockQty, reorder]
+        );
+
+        // product_count only reflects published products — no increment here (new product starts as draft/pending_review)
+
+        await client.query("COMMIT");
+
+        // Store product for response formatting
+        var createdProduct = product;
+      } catch (txErr) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
+      }
+
+      console.log(`[products] created: ${createdProduct.id} (shop ${shop.id}) by seller ${seller.id}`);
+
+      const formatResult = formatProduct(
+        { ...createdProduct, seller_id: seller.id },
+        [],
+        { id: createdProduct.id, product_id: createdProduct.id, quantity: stockQty, reserved: 0, low_stock_threshold: reorder }
+      );
+
+      res.json({ success: true, data: formatResult });
+    } catch (err) {
+      console.error("[products] create error:", err);
+      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: "Failed to create product" } });
+    }
+  });
+
+  // ── POST /api/seller/products/create-full ──────────────────────────────
+  // Atomic product creation: product + images + options + variants + inventory in one transaction.
+  app.post("/api/seller/products/create-full", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller || seller.status !== "approved") {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Only approved sellers can create products" } });
+        return;
+      }
+
+      const shop = await getShopForSeller(seller.id);
+      if (!shop) {
+        res.status(404).json({ success: false, error: { code: "NO_SHOP", message: "No shop found for this seller" } });
+        return;
+      }
+
+      const {
+        product: productData,
+        previewImages,
+        detailImages,
+        optionGroups: optionGroupsData,
+        variants: variantsData,
+        attributes: attributesData,
+        velRepeat: velRepeatData,
+      } = req.body;
+
+      if (!productData?.name?.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Product name is required" } });
+        return;
+      }
+
+      const priceNum = Number(productData.price);
+      if (!Number.isFinite(priceNum) || priceNum < 0) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Valid price is required" } });
+        return;
+      }
+
+      // Validate category via DB-backed categories table
+      const _catResultFull = await resolveCategory(productData.category);
+      if (!_catResultFull.ok) {
+        res.status(400).json({ success: false, error: { code: "INVALID_CATEGORY", message: _catResultFull.error } });
+        return;
+      }
+      const cat = _catResultFull.categoryId;
+      productData.category = cat ?? undefined;
+
+      // Validate image counts (max 10 per type)
+      const MAX_IMAGES = 10;
+      if (Array.isArray(previewImages) && previewImages.length > MAX_IMAGES) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Preview images: maximum ${MAX_IMAGES} images allowed` } });
+        return;
+      }
+      if (Array.isArray(detailImages) && detailImages.length > MAX_IMAGES) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Detail images: maximum ${MAX_IMAGES} images allowed` } });
+        return;
+      }
+      if (Array.isArray(variantsData)) {
+        for (const v of variantsData) {
+          if (Array.isArray(v.images) && v.images.length > MAX_IMAGES) {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Variant "${v.name}": maximum ${MAX_IMAGES} images allowed` } });
+            return;
+          }
+        }
+      }
+
+      // ── Option-value consistency (checked before touching the database) ────
+      // Every variant must point at option values declared by THIS product.
+      // A variant whose selection cannot be mapped would be stored without its
+      // `product_variant_values` link, leaving the storefront unable to resolve
+      // it — reject that here instead of writing a silently broken product.
+      const declaredOptionValues = new Map<string, Set<string>>();
+      if (Array.isArray(optionGroupsData)) {
+        for (const group of optionGroupsData) {
+          const groupName = typeof group?.name === "string" ? group.name.trim() : "";
+          if (!groupName) continue;
+          const values = declaredOptionValues.get(groupName) ?? new Set<string>();
+          for (const value of Array.isArray(group.values) ? group.values : []) {
+            const text = typeof value?.value === "string" ? value.value.trim() : "";
+            if (text) values.add(text);
+          }
+          declaredOptionValues.set(groupName, values);
+        }
+      }
+      if (Array.isArray(variantsData)) {
+        for (const v of variantsData) {
+          const variantName = v?.name || v?.optionLabels || "Variant";
+          const selections = normalizeVariantOptions(v?.options);
+          const unknown = Object.entries(selections)
+            .filter(([groupName, value]) => !declaredOptionValues.get(groupName)?.has(value))
+            .map(([groupName, value]) => `${groupName} = ${value}`);
+          if (unknown.length > 0) {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Variant "${variantName}" uses option values that are not part of this product: ${unknown.join(", ")}` } });
+            return;
+          }
+          if (declaredOptionValues.size > 0 && Object.keys(selections).length === 0) {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Variant "${variantName}" is missing its option selection` } });
+            return;
+          }
+        }
+      }
+
+      // Generate unique slug
+      const baseSlug = slugify(productData.name.trim());
+      let slug = baseSlug;
+      let suffix = 1;
+      while (true) {
+        const slugCheck = await query("SELECT id FROM products WHERE slug = $1", [slug]);
+        if (slugCheck.rows.length === 0) break;
+        slug = `${baseSlug}-${suffix}`;
+        suffix++;
+      }
+
+      const productStatus = resolveCreationStatus(productData.status);
+      const stockQty = productData.stock != null ? Math.max(0, Number(productData.stock)) : 0;
+      const reorder = productData.reorderLevel != null ? Math.max(0, Number(productData.reorderLevel)) : 5;
+
+      // Atomic transaction
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
+
+        // 1. Create product
+        const insertResult = await client.query(
+          `INSERT INTO products (shop_id, name, slug, description, short_description, price, compare_at_price, currency, unit, supplier, status, category_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'THB', $8, $9, $10, $11)
+           RETURNING *`,
+          [
+            shop.id,
+            productData.name.trim(),
+            slug,
+            productData.description || "",
+            productData.shortDescription || null,
+            priceNum,
+            productData.compareAtPrice ? Number(productData.compareAtPrice) : null,
+            productData.unit || "ชิ้น",
+            productData.supplier || null,
+            productStatus,
+            cat,
+          ]
+        );
+        const product = insertResult.rows[0];
+
+        // 2. Create inventory
+        await client.query(
+          `INSERT INTO inventory (product_id, quantity, reserved, low_stock_threshold)
+           VALUES ($1, $2, 0, $3)`,
+          [product.id, stockQty, reorder]
+        );
+
+        // 3. Create preview images (gallery type)
+        if (Array.isArray(previewImages)) {
+          for (let i = 0; i < previewImages.length; i++) {
+            const img = previewImages[i];
+            if (!img.url) continue;
+            await client.query(
+              `INSERT INTO product_images (product_id, url, alt, sort_order, image_type)
+               VALUES ($1, $2, $3, $4, 'gallery')`,
+              [product.id, img.url, img.alt || "", i]
+            );
+          }
+        }
+
+        // 4. Create detail images
+        if (Array.isArray(detailImages)) {
+          for (let i = 0; i < detailImages.length; i++) {
+            const img = detailImages[i];
+            if (!img.url) continue;
+            await client.query(
+              `INSERT INTO product_images (product_id, url, alt, sort_order, image_type)
+               VALUES ($1, $2, $3, $4, 'detail')`,
+              [product.id, img.url, img.alt || "", i]
+            );
+          }
+        }
+
+        // 5. Create option groups + values
+        const groupIdMap = new Map<string, string>(); // localIndex -> server UUID
+        // Map: valueKey -> { groupName, valueText } for building variant options JSON
+        const valueInfoMap = new Map<string, { groupName: string; valueText: string }>();
+        // Inserted option values in insertion order — used to build the
+        // group/value → option_value UUID index for variant resolution.
+        const optionValueRows: Array<{ groupName: string; valueText: string; valueId: string }> = [];
+        if (Array.isArray(optionGroupsData)) {
+          for (let gi = 0; gi < optionGroupsData.length; gi++) {
+            const group = optionGroupsData[gi];
+            if (!group.name?.trim()) continue;
+
+            const groupResult = await client.query(
+              `INSERT INTO product_option_groups (product_id, name, display_type, required, sort_order)
+               VALUES ($1, $2, $3, $4, $5)
+               RETURNING id`,
+              [product.id, group.name.trim(), group.displayType || "text", group.required !== false, gi]
+            );
+            const groupId = groupResult.rows[0].id;
+            groupIdMap.set(`group-${gi}`, groupId);
+
+            // Create option values
+            if (Array.isArray(group.values)) {
+              for (let vi = 0; vi < group.values.length; vi++) {
+                const val = group.values[vi];
+                if (!val.value?.trim()) continue;
+
+                const valResult = await client.query(
+                  `INSERT INTO product_option_values (option_group_id, value, label, image_url, is_enabled, sort_order)
+                   VALUES ($1, $2, $3, $4, $5, $6)
+                   RETURNING id`,
+                  [groupId, val.value.trim(), val.label || val.value.trim(), val.imageUrl || null, val.isEnabled !== false, vi]
+                );
+                const valKey = `value-${gi}-${vi}`;
+                groupIdMap.set(valKey, valResult.rows[0].id);
+                valueInfoMap.set(valKey, { groupName: group.name.trim(), valueText: val.value.trim() });
+                optionValueRows.push({ groupName: group.name.trim(), valueText: val.value.trim(), valueId: valResult.rows[0].id });
+              }
+            }
+          }
+        }
+
+        // 6. Create variants + variant-option mappings
+        const optionValuesByName = buildOptionValueIndex(optionValueRows);
+        if (Array.isArray(variantsData)) {
+          for (let vi = 0; vi < variantsData.length; vi++) {
+            const variant = variantsData[vi];
+            const variantName = variant.name || variant.optionLabels || `Variant ${vi + 1}`;
+
+            // Options JSON records the selection (and lets
+            // `backfill-variant-mappings` rebuild missing links).
+            const optionsObj: Record<string, string> = normalizeVariantOptions(variant.options);
+            if (Array.isArray(variant.optionValueIds)) {
+              for (const ovKey of variant.optionValueIds) {
+                const info = valueInfoMap.get(ovKey);
+                if (info && !optionsObj[info.groupName]) optionsObj[info.groupName] = info.valueText;
+              }
+            }
+            // Resolve the exact option_value rows this variant maps to.
+            const resolution = resolveVariantOptionValueIds({
+              variantOptions: optionsObj,
+              valueIdsByName: optionValuesByName,
+              legacyValueKeys: variant.optionValueIds,
+              legacyValueIdMap: Object.fromEntries(groupIdMap),
+            });
+
+            const variantResult = await client.query(
+              `INSERT INTO product_variants (product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               RETURNING id`,
+              [
+                product.id,
+                variantName,
+                variant.sku || null,
+                variant.price != null ? Number(variant.price) : priceNum,
+                variant.compareAtPrice != null ? Number(variant.compareAtPrice) : null,
+                variant.discountPercent != null ? Number(variant.discountPercent) : null,
+                variant.stock != null ? Math.max(0, Number(variant.stock)) : 0,
+                variant.status || "active",
+                JSON.stringify(optionsObj),
+                vi,
+              ]
+            );
+            const variantId = variantResult.rows[0].id;
+
+            // Create variant-option value mappings — only option_value ids
+            // validated above ever reach the database.
+            for (const optionValueId of resolution.optionValueIds) {
+              await client.query(
+                `INSERT INTO product_variant_values (variant_id, option_value_id)
+                 VALUES ($1, $2)
+                 ON CONFLICT DO NOTHING`,
+                [variantId, optionValueId]
+              );
+            }
+            if (resolution.unresolved.length > 0) {
+              // Pre-validated above — logged if it ever slips through.
+              console.warn(`[products] create-full: variant "${variantName}" unresolved options: ${resolution.unresolved.join(", ")}`);
+            }
+
+            // Create variant images (support single imageUrl or multiple images array)
+            const variantImages: Array<{ url: string; alt?: string }> = [];
+            if (Array.isArray(variant.images)) {
+              for (const img of variant.images) {
+                if (img.url) variantImages.push({ url: img.url, alt: img.alt || variant.name || "" });
+              }
+            } else if (variant.imageUrl) {
+              variantImages.push({ url: variant.imageUrl, alt: variant.name || "" });
+            }
+            for (let imgIdx = 0; imgIdx < variantImages.length; imgIdx++) {
+              const img = variantImages[imgIdx]!;
+              const insertResult = await client.query(
+                `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id)
+                 VALUES ($1, $2, $3, $4, 'variant', $5) RETURNING id`,
+                [product.id, img.url, img.alt, imgIdx, variantId]
+              );
+              console.log(`[products] create-full variant image: variantId=${variantId} imageId=${insertResult.rows[0]?.id} imgIdx=${imgIdx} url=${(img.url || '').substring(0, 80)}`);
+            }
+          }
+        }
+
+        // 7. Create attributes
+        if (Array.isArray(attributesData)) {
+          for (let ai = 0; ai < attributesData.length; ai++) {
+            const attr = attributesData[ai];
+            if (!attr.name?.trim() || !attr.value?.trim()) continue;
+            await client.query(
+              `INSERT INTO product_attributes (product_id, name, value, sort_order)
+               VALUES ($1, $2, $3, $4)`,
+              [product.id, attr.name.trim(), attr.value.trim(), ai]
+            );
+          }
+        }
+
+        // 8. VelRepeat configuration
+        if (velRepeatData && typeof velRepeatData === "object") {
+          const vrepeatFields: string[] = [];
+          const vrepeatValues: any[] = [];
+          let vIdx = 1;
+
+          if (velRepeatData.enabled != null) { vrepeatFields.push(`vrepeat_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.enabled)); }
+          if (velRepeatData.weeklyEnabled != null) { vrepeatFields.push(`vrepeat_weekly_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.weeklyEnabled)); }
+          if (velRepeatData.monthlyEnabled != null) { vrepeatFields.push(`vrepeat_monthly_enabled = $${vIdx++}`); vrepeatValues.push(Boolean(velRepeatData.monthlyEnabled)); }
+          if (velRepeatData.weeklyPrice != null) { vrepeatFields.push(`vrepeat_weekly_price = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.weeklyPrice)); }
+          if (velRepeatData.monthlyPrice != null) { vrepeatFields.push(`vrepeat_monthly_price = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.monthlyPrice)); }
+          if (velRepeatData.weeklyQty != null) { vrepeatFields.push(`vrepeat_weekly_qty = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.weeklyQty)); }
+          if (velRepeatData.monthlyQty != null) { vrepeatFields.push(`vrepeat_monthly_qty = $${vIdx++}`); vrepeatValues.push(Number(velRepeatData.monthlyQty)); }
+          if (velRepeatData.minQty != null) { vrepeatFields.push(`vrepeat_min_qty = $${vIdx++}`); vrepeatValues.push(Math.max(1, Math.floor(Number(velRepeatData.minQty) || 1))); }
+          if (velRepeatData.maxQty != null) { vrepeatFields.push(`vrepeat_max_qty = $${vIdx++}`); vrepeatValues.push(Math.max(1, Math.floor(Number(velRepeatData.maxQty) || 999))); }
+
+          if (vrepeatFields.length > 0) {
+            vrepeatValues.push(product.id);
+            await client.query(
+              `UPDATE products SET ${vrepeatFields.join(", ")}, updated_at = NOW() WHERE id = $${vIdx}`,
+              vrepeatValues
+            );
+          }
+        }
+
+        // 9. Set featured variant if requested
+        if (productData.featuredVariantIndex != null && Array.isArray(variantsData)) {
+          const fvIdx = Number(productData.featuredVariantIndex);
+          if (fvIdx >= 0 && fvIdx < variantsData.length) {
+            // Get all created variant IDs in order (sort_order = index)
+            const fvResult = await client.query(
+              `SELECT id FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC`,
+              [product.id]
+            );
+            if (fvResult.rows[fvIdx]) {
+              await client.query(
+                `UPDATE products SET featured_variant_id = $1, updated_at = NOW() WHERE id = $2`,
+                [fvResult.rows[fvIdx].id, product.id]
+              );
+            }
+          }
+        }
+
+        await client.query("COMMIT");
+
+        console.log(`[products] create-full: product ${product.id} (shop ${shop.id}) by seller ${seller.id} — ${variantsData?.length ?? 0} variants, ${previewImages?.length ?? 0} gallery images, variantImages=${variantsData?.reduce((sum: number, v: any) => sum + (Array.isArray(v.images) ? v.images.length : 0), 0) ?? 0}`);
+
+        // Return formatted product
+        const { imagesByProduct, inventoryByProduct, variantsByProduct } = await loadProductExtras([product.id]);
+        const formatted = formatProduct(
+          { ...product, seller_id: seller.id },
+          imagesByProduct.get(product.id) ?? [],
+          inventoryByProduct.get(product.id) ?? null
+        );
+        formatted.variants = variantsByProduct.get(product.id) ?? [];
+        applyVariantStock(formatted, formatted.variants);
+
+        res.json({ success: true, data: formatted });
+      } catch (txErr) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      console.error("[products] create-full error:", err);
+      // Never leak raw PostgreSQL/driver errors to the client.
+      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: "Failed to create product" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId ───────────────────────────────
+  app.patch("/api/seller/products/:productId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } });
+        return;
+      }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+
+      // TASK 2 §9 — terminal products (suspended/archived) are read-only for sellers (admin-only to unsuspend/restore)
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin to restore" } });
+          return;
+        }
+      }
+
+      const { name, category, unit, price, description, supplier, status, compareAtPrice, shortDescription } = req.body;
+
+      // Validate category via DB-backed categories table
+      const catPatchResult = category !== undefined ? await resolveCategory(category) : null;
+      if (catPatchResult && !catPatchResult.ok) {
+        res.status(400).json({ success: false, error: { code: "INVALID_CATEGORY", message: catPatchResult.error } });
+        return;
+      }
+
+      const updates: string[] = [];
+      const values: any[] = [];
+      let idx = 1;
+
+      if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name.trim()); }
+      if (description !== undefined) { updates.push(`description = $${idx++}`); values.push(description); }
+      if (shortDescription !== undefined) { updates.push(`short_description = $${idx++}`); values.push(shortDescription); }
+      if (price !== undefined) { updates.push(`price = $${idx++}`); values.push(Number(price)); }
+      if (compareAtPrice !== undefined) { updates.push(`compare_at_price = $${idx++}`); values.push(compareAtPrice ? Number(compareAtPrice) : null); }
+      if (unit !== undefined) { updates.push(`unit = $${idx++}`); values.push(unit); }
+      if (supplier !== undefined) { updates.push(`supplier = $${idx++}`); values.push(supplier || null); }
+      if (category !== undefined) {
+        const catVal = catPatchResult!.categoryId;
+        updates.push(`category_id = $${idx++}`); values.push(catVal);
+      }
+      if (status !== undefined) {
+        // TASK 2 §6-9: Seller status transitions are strictly seller-facing.
+        // Allowed transitions: draft -> pending_review (submit), rejected -> pending_review (resubmit),
+        // pending_review -> draft (withdraw), published -> draft (unpublish/self-hide).
+        // Suspended/archived are terminal for sellers (admin-only). Same-status is treated as no-op
+        // so that the general edit dialog (which does not manage status) can be submitted
+        // without triggering an INVALID_TRANSITION when status is unchanged.
+        const validStatuses = ["draft", "pending_review"];
+        const currentResult = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        if (currentResult.rows.length === 0) {
+          res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+          return;
+        }
+        const currentStatus: string = currentResult.rows[0].status;
+        if (status === currentStatus) {
+          // No-op: caller sent the same status (e.g. editing a draft without intending a transition).
+          // Do not touch status/rejection_reason; the other field updates will still be applied.
+        } else {
+          if (!validStatuses.includes(status)) {
+            res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Sellers can only set status to: ${validStatuses.join(", ")}. Cannot set to ${status} — approval to published is admin-only.` } });
+            return;
+          }
+          const SELLER_TRANSITIONS: Record<string, string[]> = {
+            draft: ["pending_review"],
+            rejected: ["pending_review"],
+            pending_review: ["draft"],
+            published: ["draft"],
+          };
+          const allowed = SELLER_TRANSITIONS[currentStatus];
+          if (!allowed || !allowed.includes(status)) {
+            res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change product from ${currentStatus} to ${status}. Allowed: ${(allowed ?? []).join(", ") || "none"} (suspended/archived require admin)` } });
+            return;
+          }
+          updates.push(`status = $${idx++}`); values.push(status);
+          // Clear rejection_reason when (re)submitting for review
+          if (status === "pending_review") {
+            updates.push(`rejection_reason = NULL`);
+          }
+        }
+      }
+      updates.push(`updated_at = NOW()`);
+
+      if (updates.length === 1) {
+        res.json({ success: true, data: null });
+        return;
+      }
+
+      values.push(productId);
+      const result = await query(
+        `UPDATE products SET ${updates.join(", ")} WHERE id = $${idx} RETURNING *`,
+        values
+      );
+
+      if (result.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+
+      const row = result.rows[0];
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
+
+      const formatted = formatProduct(
+        { ...row, seller_id: seller.id },
+        imagesByProduct.get(productId) ?? [],
+        inventoryByProduct.get(productId) ?? null
+      );
+      formatted.variants = variantsByProduct.get(productId) ?? [];
+
+      console.log(`[products] updated: ${productId} by seller ${seller.id}`);
+
+      res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error("[products] update error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update product" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId ──────────────────────────────
+  app.delete("/api/seller/products/:productId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } });
+        return;
+      }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin to restore" } });
+          return;
+        }
+      }
+
+      // Soft delete (P1 #6): archive instead of hard-deleting so customer
+      // reviews, order snapshots, and VelRepeat plan items are never silently
+      // destroyed by the ON DELETE CASCADE chain. Archived products vanish
+      // from the catalog (customer queries filter status='published'), can no
+      // longer be added to cart, and are skipped by VelRepeat runs — but the
+      // historical data survives and the seller can restore the product via
+      // PATCH /api/seller/products/:productId/status.
+      const before = await query("SELECT shop_id, status FROM products WHERE id = $1", [productId]);
+      const shopResult = await query(
+        `UPDATE products SET status = 'archived', updated_at = NOW()
+         WHERE id = $1 RETURNING shop_id`,
+        [productId]
+      );
+
+      // Decrement shop product count only when a published product was archived
+      if (before.rows[0]?.status === "published" && shopResult.rows[0]?.shop_id) {
+        await query(
+          "UPDATE shops SET product_count = GREATEST(product_count - 1, 0), updated_at = NOW() WHERE id = $1",
+          [shopResult.rows[0].shop_id]
+        );
+      }
+
+      console.log(`[products] archived: ${productId} by seller ${seller.id}`);
+
+      res.json({ success: true, data: { id: productId } });
+    } catch (err) {
+      console.error("[products] delete error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete product" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/status ────────────────────────
+  app.patch("/api/seller/products/:productId/status", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } });
+        return;
+      }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+
+      const { status } = req.body;
+      const validStatuses = ["draft", "pending_review"];
+      if (!status || !validStatuses.includes(status)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Sellers can only set status to: ${validStatuses.join(", ")}` } });
+        return;
+      }
+
+      // CRITICAL: Enforce state machine — sellers CANNOT set published/rejected/archived
+      const currentStatusResult = await query("SELECT status FROM products WHERE id = $1", [productId]);
+      if (currentStatusResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+      const currentStatus = currentStatusResult.rows[0].status;
+      if (!canSellerTransition(currentStatus, status)) {
+        res.status(403).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot change status from '${currentStatus}' to '${status}'. Sellers can only: ${Object.entries(SELLER_STATUS_TRANSITIONS).map(([from, to]) => `${from} -> ${to.join(", ")}`).join("; ")}` } });
+        return;
+      }
+
+      // Clear rejection_reason when resubmitting
+      const statusUpdates = [`status = $1`, `updated_at = NOW()`];
+      const statusValues: any[] = [status];
+      let statusIdx = 2;
+      if (status === "pending_review") {
+        statusUpdates.push(`rejection_reason = NULL`);
+      }
+
+      // Auto-approval vs manual review (TASK 2 §6: seller cannot self-publish).
+      // When platform_settings.product_approval_mode = 'auto', a seller submission
+      // that passes validation is published immediately by the system. When mode
+      // is 'manual' (default) the product stays pending_review until VelCenter
+      // moderates it. The seller still never sets status='published' directly.
+      let finalStatus = status;
+      let actorLog = `seller ${seller.id}`;
+      if (status === "pending_review") {
+        try {
+          const modeResult = await query(
+            "SELECT value FROM platform_settings WHERE key = 'product_approval_mode'", []
+          );
+          const approvalMode = modeResult.rows[0]?.value ?? "manual";
+          if (approvalMode === "auto") {
+            finalStatus = "published";
+            statusUpdates[0] = `status = $1`;
+            statusValues[0] = "published";
+            console.log(`[products] auto-approval: ${productId} auto-published (mode=auto)`);
+            actorLog = `system:auto_approval`;
+          }
+        } catch {
+          // platform_settings table may not exist yet — default to manual
+        }
+      }
+
+      console.log(`[products] status transition: ${productId} from '${currentStatus}' to '${finalStatus}' by ${actorLog}`);
+
+      const result = await query(
+        `UPDATE products SET ${statusUpdates.join(", ")} WHERE id = $${statusIdx} RETURNING *`,
+        [...statusValues, productId]
+      );
+
+      if (result.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+
+      // Update shop product_count if status became published
+      if (finalStatus === "published") {
+        const shopResult = await query("SELECT shop_id FROM products WHERE id = $1", [productId]);
+        if (shopResult.rows[0]?.shop_id) {
+          const countResult = await query(
+            "SELECT COUNT(*) as cnt FROM products WHERE shop_id = $1 AND status = 'published'",
+            [shopResult.rows[0].shop_id]
+          );
+          await query(
+            "UPDATE shops SET product_count = $1, updated_at = NOW() WHERE id = $2",
+            [parseInt(countResult.rows[0].cnt), shopResult.rows[0].shop_id]
+          );
+        }
+      }
+
+      const row = result.rows[0];
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
+
+      const formatted = formatProduct(
+        { ...row, seller_id: seller.id },
+        imagesByProduct.get(productId) ?? [],
+        inventoryByProduct.get(productId) ?? null
+      );
+      formatted.variants = variantsByProduct.get(productId) ?? [];
+
+      console.log(`[products] status changed: ${productId} -> ${finalStatus} by ${actorLog}`);
+
+      // Write audit log
+      try {
+        await query(
+          `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+           VALUES ($1, 'product_status_change', 'product', $2, $3)`,
+          [userId, productId, JSON.stringify({ from: currentStatus, to: finalStatus, autoApproved: finalStatus !== status })]
+        );
+      } catch { /* audit log is best-effort */ }
+
+      res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error("[products] status error:", err);
+      res.status(500).json({ success: false, error: { code: "STATUS_FAILED", message: "Failed to update product status" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/featured-variant ──────────────
+  app.patch("/api/seller/products/:productId/featured-variant", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
+      const { variantId } = req.body;
+
+      // Validate: variantId must be null (clear) or a valid UUID
+      if (variantId !== null && variantId !== undefined) {
+        // Verify variant belongs to this product
+        const vResult = await query(
+          "SELECT id FROM product_variants WHERE id = $1 AND product_id = $2",
+          [variantId, productId]
+        );
+        if (vResult.rows.length === 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Variant does not belong to this product" } });
+          return;
+        }
+      }
+
+      await query(
+        "UPDATE products SET featured_variant_id = $1, updated_at = NOW() WHERE id = $2",
+        [variantId || null, productId]
+      );
+
+      console.log(`[products] featured variant: productId=${productId} variantId=${variantId || 'null'} by seller=${seller.id}`);
+      res.json({ success: true, data: { featuredVariantId: variantId || null } });
+    } catch (err) {
+      console.error("[products] featured-variant error:", err);
+      res.status(500).json({ success: false, error: { code: "FEATURED_FAILED", message: "Failed to update featured variant" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/stock ─────────────────────────
+  app.patch("/api/seller/products/:productId/stock", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
+      const { quantity } = req.body;
+      const qty = Math.max(0, Number(quantity) || 0);
+
+      await query(
+        `INSERT INTO inventory (product_id, quantity, reserved, low_stock_threshold, updated_at)
+         VALUES ($1, $2, 0, 5, NOW())
+         ON CONFLICT (product_id)
+         DO UPDATE SET quantity = $2, updated_at = NOW()`,
+        [productId, qty]
+      );
+
+      console.log(`[products] stock set: ${productId} -> ${qty} by seller ${seller.id}`);
+
+      res.json({ success: true, data: { productId, quantity: qty } });
+    } catch (err) {
+      console.error("[products] stock error:", err);
+      res.status(500).json({ success: false, error: { code: "STOCK_FAILED", message: "Failed to update stock" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/reorder-level ─────────────────
+  app.patch("/api/seller/products/:productId/reorder-level", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
+      const { reorderLevel } = req.body;
+      const rl = Math.max(0, Number(reorderLevel) || 0);
+
+      await query(
+        `INSERT INTO inventory (product_id, quantity, reserved, low_stock_threshold, updated_at)
+         VALUES ($1, 0, 0, $2, NOW())
+         ON CONFLICT (product_id)
+         DO UPDATE SET low_stock_threshold = $2, updated_at = NOW()`,
+        [productId, rl]
+      );
+
+      console.log(`[products] reorder level set: ${productId} -> ${rl} by seller ${seller.id}`);
+
+      res.json({ success: true, data: { productId, reorderLevel: rl } });
+    } catch (err) {
+      console.error("[products] reorder-level error:", err);
+      res.status(500).json({ success: false, error: { code: "REORDER_FAILED", message: "Failed to update reorder level" } });
+    }
+  });
+
+  // ── POST /api/seller/products/draft-upload-intent ───────────────────────
+  // Generates a presigned R2 URL WITHOUT requiring a productId.
+  // Images are stored under a temporary draft path: draft-uploads/{sellerId}/{draftId}/...
+  app.post("/api/seller/products/draft-upload-intent", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const { draftId, filename, mimeType, subfolder } = req.body;
+      if (!draftId || !filename || !mimeType) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "draftId, filename, mimeType required" } });
+        return;
+      }
+
+      if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed" } });
+        return;
+      }
+
+      const uniqueId = crypto.randomUUID().replace(/-/g, "").substring(0, 12);
+      const safeSubfolder = subfolder || "preview";
+      const objectKey = `draft-uploads/${seller.id}/${draftId}/${safeSubfolder}/${uniqueId}.webp`;
+
+      const command = new PutObjectCommand({
+        Bucket: getR2Config().bucket,
+        Key: objectKey,
+        ContentType: mimeType,
+      });
+
+      const uploadUrl = await getSignedUrl(getR2(), command, { expiresIn: 300 });
+      const cdnUrl = publicUrl(objectKey);
+
+      console.log(`[products] draft upload intent: ${objectKey} for draft ${draftId}`);
+
+      res.json({
+        success: true,
+        data: {
+          uploadUrl,
+          objectKey,
+          cdnUrl,
+          expiresAt: Date.now() + 300_000,
+        },
+      });
+    } catch (err) {
+      console.error("[products] draft upload intent error:", err);
+      res.status(500).json({ success: false, error: { code: "R2_PRESIGN_FAILED", message: "Failed to generate upload URL" } });
+    }
+  });
+
+  // ── POST /api/seller/products/image-upload-intent ───────────────────────
+  app.post("/api/seller/products/image-upload-intent", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const { productId, filename, mimeType } = req.body;
+      if (!productId || !filename || !mimeType) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "productId, filename, mimeType required" } });
+        return;
+      }
+
+      if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed" } });
+        return;
+      }
+
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
+      const shop = await getShopForSeller(seller.id);
+      if (!shop) { res.status(404).json({ success: false, error: { code: "NO_SHOP", message: "No shop found" } }); return; }
+
+      const uniqueId = crypto.randomUUID().replace(/-/g, "").substring(0, 12);
+      const objectKey = `products/${shop.id}/${productId}/${uniqueId}.webp`;
+
+      const command = new PutObjectCommand({
+        Bucket: getR2Config().bucket,
+        Key: objectKey,
+        ContentType: mimeType,
+      });
+
+      const uploadUrl = await getSignedUrl(getR2(), command, { expiresIn: 300 });
+      const cdnUrl = publicUrl(objectKey);
+
+      console.log(`[products] image intent: ${objectKey} for product ${productId}`);
+
+      res.json({
+        success: true,
+        data: {
+          uploadUrl,
+          objectKey,
+          cdnUrl,
+          expiresAt: Date.now() + 300_000,
+        },
+      });
+    } catch (err) {
+      console.error("[products] image intent error:", err);
+      res.status(500).json({ success: false, error: { code: "R2_PRESIGN_FAILED", message: "Failed to generate upload URL" } });
+    }
+  });
+
+  // ── POST /api/seller/products/save-image ────────────────────────────────
+  app.post("/api/seller/products/save-image", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const { productId, objectKey, cdnUrl, alt, imageType, variantId } = req.body;
+      if (!productId || !objectKey) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "productId and objectKey required" } });
+        return;
+      }
+
+      // Validate imageType
+      const validImageTypes = ["gallery", "variant", "detail"];
+      const safeImageType = validImageTypes.includes(imageType) ? imageType : "gallery";
+
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } });
+        return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
+      // Verify R2 object exists
+      try {
+        await getR2().send(new HeadObjectCommand({ Bucket: getR2Config().bucket, Key: objectKey }));
+      } catch {
+        res.status(400).json({ success: false, error: { code: "R2_OBJECT_NOT_FOUND", message: "Upload not found in storage" } });
+        return;
+      }
+
+      const url = cdnUrl || publicUrl(objectKey);
+
+      // Get current max sort_order for this image type
+      const maxSort = await query(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 as next_sort FROM product_images WHERE product_id = $1 AND image_type = $2",
+        [productId, safeImageType]
+      );
+      const sortOrder = maxSort.rows[0]?.next_sort ?? 0;
+
+      // Validate variantId if provided and image type is variant
+      let safeVariantId = null;
+      if (safeImageType === "variant" && variantId) {
+        const variantCheck = await query(
+          "SELECT id FROM product_variants WHERE id = $1 AND product_id = $2",
+          [variantId, productId]
+        );
+        if (variantCheck.rows.length > 0) {
+          safeVariantId = variantId;
+        }
+      }
+
+      const result = await query(
+        `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [productId, url, alt || "", sortOrder, safeImageType, safeVariantId]
+      );
+
+      console.log(`[products] image saved: ${result.rows[0].id} for product ${productId}`);
+
+      // Return the full updated product so the frontend can update its state
+      const updatedProduct = await getFormattedProduct(productId, seller.id);
+      res.json({ success: true, data: updatedProduct });
+    } catch (err) {
+      console.error("[products] save-image error:", err);
+      res.status(500).json({ success: false, error: { code: "IMAGE_SAVE_FAILED", message: "Failed to save image" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/images/:imageId ─────────────────────────
+  app.delete("/api/seller/products/images/:imageId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const imageId = param(req, "imageId");
+
+      // Get the image and verify ownership through product -> shop -> seller
+      const imgResult = await query(
+        `SELECT pi.* FROM product_images pi
+         JOIN products p ON pi.product_id = p.id
+         JOIN shops sh ON p.shop_id = sh.id
+         WHERE pi.id = $1 AND sh.seller_id = $2`,
+        [imageId, seller.id]
+      );
+
+      if (imgResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Image not found" } });
+        return;
+      }
+
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [imgResult.rows[0].product_id]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
+      const img = imgResult.rows[0];
+
+      // Delete from R2
+      // Awaited: the fire-and-forget call answered 200 before storage was
+      // touched, so a failed delete left an orphan nothing could retry.
+      if (img.url) await deleteR2Object(urlToKey(img.url));
+
+      // Delete from DB
+      await query("DELETE FROM product_images WHERE id = $1", [imageId]);
+
+      // Reorder remaining images
+      const remaining = await query(
+        "SELECT id FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC",
+        [img.product_id]
+      );
+      for (let i = 0; i < remaining.rows.length; i++) {
+        await query("UPDATE product_images SET sort_order = $1 WHERE id = $2", [i, remaining.rows[i].id]);
+      }
+
+      console.log(`[products] image deleted: ${imageId} by seller ${seller.id}`);
+
+      // Return the full updated product so the frontend can update its state
+      const updatedProduct = await getFormattedProduct(img.product_id, seller.id);
+      res.json({ success: true, data: updatedProduct });
+    } catch (err) {
+      console.error("[products] delete-image error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete image" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/primary-image ─────────────────
+  app.patch("/api/seller/products/:productId/primary-image", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
+      const { imageId } = req.body;
+      if (!imageId) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "imageId required" } });
+        return;
+      }
+
+      // Verify image belongs to this product
+      const imgCheck = await query(
+        "SELECT id FROM product_images WHERE id = $1 AND product_id = $2",
+        [imageId, productId]
+      );
+      if (imgCheck.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Image not found for this product" } });
+        return;
+      }
+
+      // Reset all sort_orders, then set the primary to 0
+      await query("UPDATE product_images SET sort_order = sort_order + 1000 WHERE product_id = $1", [productId]);
+      await query("UPDATE product_images SET sort_order = 0 WHERE id = $1", [imageId]);
+
+      // Compact sort orders
+      const all = await query(
+        "SELECT id FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC",
+        [productId]
+      );
+      for (let i = 0; i < all.rows.length; i++) {
+        await query("UPDATE product_images SET sort_order = $1 WHERE id = $2", [i, all.rows[i].id]);
+      }
+
+      console.log(`[products] primary image set: ${imageId} for product ${productId}`);
+
+      // Return the full updated product so the frontend can update its state
+      const updatedProduct = await getFormattedProduct(productId, seller.id);
+      res.json({ success: true, data: updatedProduct });
+    } catch (err) {
+      console.error("[products] primary-image error:", err);
+      res.status(500).json({ success: false, error: { code: "PRIMARY_FAILED", message: "Failed to set primary image" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/reorder-images ────────────────
+  app.patch("/api/seller/products/:productId/reorder-images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+
+      // Accept both "imageIds" (backend convention) and "orderedIds" (frontend sends this)
+      const { imageIds: rawImageIds, orderedIds } = req.body;
+      const imageIds: string[] = Array.isArray(rawImageIds) ? rawImageIds : Array.isArray(orderedIds) ? orderedIds : [];
+      if (imageIds.length === 0) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "imageIds/orderedIds array required" } });
+        return;
+      }
+
+      for (let i = 0; i < imageIds.length; i++) {
+        await query(
+          "UPDATE product_images SET sort_order = $1 WHERE id = $2 AND product_id = $3",
+          [i, imageIds[i], productId]
+        );
+      }
+
+      console.log(`[products] images reordered: ${productId} (${imageIds.length} images) by seller ${seller.id}`);
+
+      // Return the full updated product so the frontend can update its state
+      const updatedProduct = await getFormattedProduct(productId, seller.id);
+      res.json({ success: true, data: updatedProduct });
+    } catch (err) {
+      console.error("[products] reorder-images error:", err);
+      res.status(500).json({ success: false, error: { code: "REORDER_FAILED", message: "Failed to reorder images" } });
+    }
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // SELLER VARIANT ROUTES (authenticated, ownership verified)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/seller/products/:productId/variants ────────────────────────
+  app.get("/api/seller/products/:productId/variants", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      const result = await query(
+        `SELECT id, product_id, name, sku, price, compare_at_price, discount_percent, stock, status, options, sort_order, created_at, updated_at
+         FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC`,
+        [productId]
+      );
+      const variants = result.rows.map((v: any) => ({
+        id: v.id, name: v.name, sku: v.sku,
+        price: parseFloat(v.price) || 0,
+        compareAtPrice: v.compare_at_price != null ? parseFloat(v.compare_at_price) : null,
+        discountPercent: v.discount_percent != null ? parseFloat(v.discount_percent) : null,
+        stock: v.stock ?? 0, status: v.status || "active", options: v.options || {},
+        optionLabels: typeof v.options === "object" ? Object.values(v.options).join(" / ") : "",
+      }));
+      res.json({ success: true, data: variants });
+    } catch (err) {
+      console.error("[products] variants list error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list variants" } });
+    }
+  });
+
+  // ── POST /api/seller/products/:productId/variants/generate ───────────────
+  app.post("/api/seller/products/:productId/variants/generate", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+      const groupsResult = await query("SELECT * FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC", [productId]);
+      if (groupsResult.rows.length === 0) { res.json({ success: true, data: { variants: [] } }); return; }
+
+      const valueArrays: { groupId: string; groupName: string; valueId: string; value: string }[][] = [];
+      for (const group of groupsResult.rows) {
+        const vr = await query("SELECT * FROM product_option_values WHERE option_group_id = $1 AND (is_enabled IS TRUE) ORDER BY sort_order ASC", [group.id]);
+        if (vr.rows.length === 0) continue;
+        valueArrays.push(vr.rows.map((v: any) => ({ groupId: group.id, groupName: group.name, valueId: v.id, value: v.value })));
+      }
+      const cartesian = valueArrays.reduce<{ groupId: string; groupName: string; valueId: string; value: string }[][]>(
+        (acc, curr) => acc.flatMap((a) => curr.map((b) => [...a, b])), [[]]
+      );
+      const prodResult = await query("SELECT price FROM products WHERE id = $1", [productId]);
+      const basePrice = prodResult.rows[0] ? parseFloat(prodResult.rows[0].price) : 0;
+
+      // Check existing variants for re-generation support
+      const existingResult = await query("SELECT id, name, options FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC", [productId]);
+      const existingVariants = existingResult.rows;
+
+      // Build set of existing combination keys for dedup
+      const existingComboKeys = new Set<string>();
+      for (const ev of existingVariants) {
+        const opts = ev.options || {};
+        const key = Object.entries(opts).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("|");
+        existingComboKeys.add(key);
+      }
+
+      // Filter cartesian to only NEW combinations
+      const newCombos = cartesian.filter((combo) => {
+        const optionsObj: Record<string, string> = {};
+        combo.forEach((c) => { optionsObj[c.groupName] = c.value; });
+        const key = Object.entries(optionsObj).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("|");
+        return !existingComboKeys.has(key);
+      });
+
+      const client = await getClient();
+      const createdVariants: any[] = [];
+      try {
+        await client.query("BEGIN");
+        for (let i = 0; i < newCombos.length; i++) {
+          const combo = newCombos[i]!;
+          const comboName = combo.map((c) => c.value).join(" / ");
+          const optionsObj: Record<string, string> = {};
+          combo.forEach((c) => { optionsObj[c.groupName] = c.value; });
+          const vr = await client.query(
+            `INSERT INTO product_variants (product_id, name, sku, price, stock, status, options, sort_order)
+             VALUES ($1, $2, $3, $4, 0, 'active', $5, $6) RETURNING id`,
+            [productId, comboName, null, basePrice, JSON.stringify(optionsObj), existingVariants.length + i]
+          );
+          const vid = vr.rows[0].id;
+          for (const c of combo) {
+            await client.query(`INSERT INTO product_variant_values (variant_id, option_value_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [vid, c.valueId]);
+          }
+          createdVariants.push({ id: vid, name: comboName, price: basePrice, options: optionsObj });
+        }
+        await client.query("COMMIT");
+      } catch (txErr) { await client.query("ROLLBACK").catch(() => {}); throw txErr; } finally { client.release(); }
+
+      const totalVariants = existingVariants.length + createdVariants.length;
+      console.log(`[products] variant generation: ${existingVariants.length} existing + ${createdVariants.length} new = ${totalVariants} total for product ${productId}`);
+      res.json({ success: true, data: { variants: [...existingVariants.map((v: any) => ({ id: v.id, name: v.name })), ...createdVariants], message: createdVariants.length === 0 ? "All variants already exist" : `Added ${createdVariants.length} new variant(s)` } });
+    } catch (err) {
+      console.error("[products] generate variants error:", err);
+      res.status(500).json({ success: false, error: { code: "GENERATE_FAILED", message: "Failed to generate variants" } });
+    }
+  });
+
+  // ── PATCH /api/seller/products/:productId/variants/:variantId ────────────
+  app.patch("/api/seller/products/:productId/variants/:variantId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+      const { price, compareAtPrice, discountPercent, stock, sku, status } = req.body;
+      const updates: string[] = []; const values: any[] = []; let idx = 1;
+      if (price != null) { updates.push(`price = $${idx++}`); values.push(Number(price)); }
+      if (compareAtPrice !== undefined) { updates.push(`compare_at_price = $${idx++}`); values.push(compareAtPrice != null ? Number(compareAtPrice) : null); }
+      if (discountPercent !== undefined) { updates.push(`discount_percent = $${idx++}`); values.push(discountPercent != null ? Number(discountPercent) : null); }
+      if (stock != null) { updates.push(`stock = $${idx++}`); values.push(Math.max(0, Number(stock))); }
+      if (sku !== undefined) { updates.push(`sku = $${idx++}`); values.push(sku || null); }
+      if (status != null) { updates.push(`status = $${idx++}`); values.push(status); }
+      updates.push(`updated_at = NOW()`);
+      if (updates.length === 1) { res.json({ success: true, data: null }); return; }
+      values.push(variantId);
+      const q = `UPDATE product_variants SET ${updates.join(", ")} WHERE id = $${idx} AND product_id = $1 RETURNING *`;
+      const result = await query(q, [productId, ...values]);
+      console.log(`[products] variant updated: ${variantId}`);
+      res.json({ success: true, data: result.rows[0] ?? null });
+    } catch (err) {
+      console.error("[products] variant update error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update variant" } });
+    }
+  });
+
+  // ── DELETE /api/seller/products/:productId/variants/:variantId ───────────
+  app.delete("/api/seller/products/:productId/variants/:variantId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+      await query("DELETE FROM product_variant_values WHERE variant_id = $1", [variantId]);
+      try {
+        const ir = await query("SELECT url FROM product_images WHERE variant_id = $1", [variantId]);
+        for (const img of ir.rows) { if (img.url) await deleteR2Object(urlToKey(img.url)); }
+        await query("DELETE FROM product_images WHERE variant_id = $1", [variantId]);
+      } catch { /* product_variant_images may not exist */ }
+      await query("DELETE FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+      console.log(`[products] variant deleted: ${variantId}`);
+      res.json({ success: true, data: { id: variantId } });
+    } catch (err) {
+      console.error("[products] variant delete error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete variant" } });
+    }
+  });
+
+  // ── GET /api/seller/products/:productId/variants/:variantId/images ───────
+  app.get("/api/seller/products/:productId/variants/:variantId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId"); const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      const result = await query("SELECT id, url, alt, sort_order FROM product_images WHERE product_id = $1 AND variant_id = $2 ORDER BY sort_order ASC", [productId, variantId]);
+      res.json({ success: true, data: result.rows });
+    } catch (err) {
+      console.error("[products] variant images error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list variant images" } });
+    }
+  });
+
+  // ── POST /api/seller/products/:productId/variants/:variantId/images ──────
+  app.post("/api/seller/products/:productId/variants/:variantId/images", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId"); const variantId = param(req, "variantId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not your product" } }); return;
+      }
+      {
+        const cur = await query("SELECT status FROM products WHERE id = $1", [productId]);
+        const st = cur.rows[0]?.status as string | undefined;
+        if (st === "suspended" || st === "archived") {
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product is suspended/archived — contact admin" } });
+          return;
+        }
+      }
+      const { url, alt } = req.body;
+      if (!url) { res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "url required" } }); return; }
+      const vc = await query("SELECT id FROM product_variants WHERE id = $1 AND product_id = $2", [variantId, productId]);
+      if (vc.rows.length === 0) { res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Variant not found" } }); return; }
+      const ms = await query("SELECT COALESCE(MAX(sort_order), -1) + 1 as ns FROM product_images WHERE product_id = $1 AND variant_id = $2", [productId, variantId]);
+      const result = await query(
+        `INSERT INTO product_images (product_id, url, alt, sort_order, image_type, variant_id) VALUES ($1, $2, $3, $4, 'variant', $5) RETURNING *`,
+        [productId, url, alt || "", ms.rows[0]?.ns ?? 0, variantId]
+      );
+      console.log(`[products] variant image saved: ${result.rows[0].id} for variant ${variantId}`);
+      res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+      console.error("[products] variant image save error:", err);
+      res.status(500).json({ success: false, error: { code: "SAVE_FAILED", message: "Failed to save variant image" } });
+    }
+  });
+
+  // PUBLIC CATALOG ROUTES (no auth required)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/products/catalog ───────────────────────────────────────────
+  app.get("/api/products/catalog", async (req: Request, res: Response) => {
+    try {
+      const { q, category, shopId, minPrice, maxPrice, inStock, sortBy, limit: limitStr, offset: offsetStr } = req.query;
+      const limit = Math.min(Number(limitStr) || 50, 200);
+      const offset = Number(offsetStr) || 0;
+
+      let where = "WHERE p.status = 'published'";
+      const params: any[] = [];
+      let idx = 1;
+
+      if (q && typeof q === "string") {
+        where += ` AND (p.name ILIKE $${idx} OR p.description ILIKE $${idx})`;
+        params.push(`%${q}%`);
+        idx++;
+      }
+      if (category && typeof category === "string") {
+        const raw = category.trim();
+        if (raw) {
+          // `products.category_id` stores the canonical slug. A UUID input
+          // (category tree) is normalised to its slug; legacy values that are no
+          // longer categories still match directly.
+          const catSlug = CATEGORY_UUID_RE.test(raw)
+            ? (await query("SELECT slug FROM categories WHERE id = $1", [raw])).rows[0]?.slug ?? raw
+            : raw;
+          where += ` AND p.category_id = $${idx}`;
+          params.push(catSlug);
+          idx++;
+        }
+      }
+      if (shopId && typeof shopId === "string") {
+        where += ` AND p.shop_id = $${idx}`;
+        params.push(shopId);
+        idx++;
+      }
+      if (minPrice) {
+        where += ` AND p.price >= $${idx}`;
+        params.push(Number(minPrice));
+        idx++;
+      }
+      if (maxPrice) {
+        where += ` AND p.price <= $${idx}`;
+        params.push(Number(maxPrice));
+        idx++;
+      }
+      if (inStock === "true") {
+        // Check inventory OR active variants with stock > 0
+        where += ` AND (
+          EXISTS (SELECT 1 FROM inventory inv WHERE inv.product_id = p.id AND inv.quantity > inv.reserved)
+          OR EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active' AND pv.stock > 0)
+        )`;
+      }
+      // VelShop Verified filter: BOTH seller AND product must be verified
+      if (req.query.verified === "true") {
+        where += ` AND EXISTS (SELECT 1 FROM sellers s WHERE s.id = sh.seller_id AND s.verification_status = 'verified')`;
+      }
+
+      let orderBy = "ORDER BY p.created_at DESC";
+      if (sortBy === "price_asc") orderBy = "ORDER BY p.price ASC";
+      if (sortBy === "price_desc") orderBy = "ORDER BY p.price DESC";
+      if (sortBy === "popular") orderBy = "ORDER BY p.sold_count DESC";
+
+      const result = await query(
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id,
+                COALESCE(s.verification_status, 'unverified') AS seller_verification_status
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         LEFT JOIN sellers s ON s.id = sh.seller_id
+         LEFT JOIN categories c ON c.slug = p.category_id
+         ${where}
+         ${orderBy}
+         LIMIT $${idx++} OFFSET $${idx}`,
+        [...params, limit, offset]
+      );
+
+      const productIds = result.rows.map((r: any) => r.id);
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
+
+      const products = result.rows.map((row: any) => {
+        const formatted = formatProduct(row, imagesByProduct.get(row.id) ?? [], inventoryByProduct.get(row.id) ?? null);
+        const productVariants = variantsByProduct.get(row.id) ?? [];
+        formatted.variants = productVariants;
+        applyVariantStock(formatted, productVariants);
+        // Attach featured variant for product card pricing + image
+        if (row.featured_variant_id && productVariants.length > 0) {
+          const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
+          if (fv) formatted.featuredVariant = fv;
+        }
+        return formatted;
+      });
+
+      // P1 #4 — enrich catalog rows with reorder-intelligence fields so the
+      // VelCenter Intelligence tab can compute cycles from real order data.
+      const catalogIds = products.map((p: any) => p.id as string);
+      const purchaseByProduct = new Map<string, Record<string, unknown>>();
+      if (catalogIds.length > 0) {
+        const statsRes = await query(
+          `SELECT oi.product_id,
+                  COUNT(DISTINCT o.id)::int AS purchase_count,
+                  SUM(oi.quantity)::int AS units_sold,
+                  MIN(o.created_at) AS first_at,
+                  MAX(o.created_at) AS last_at
+           FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+           WHERE oi.product_id = ANY($1) AND o.status NOT IN ('cancelled', 'failed', 'refunded')
+           GROUP BY oi.product_id`,
+          [catalogIds],
+        );
+        for (const r of statsRes.rows) {
+          const count = r.purchase_count ?? 0;
+          const first = r.first_at ? new Date(r.first_at).getTime() : null;
+          const last = r.last_at ? new Date(r.last_at).getTime() : null;
+          const avgCycleDays =
+            count >= 2 && first !== null && last !== null && last > first
+              ? (last - first) / (count - 1) / (24 * 60 * 60 * 1000)
+              : null;
+          purchaseByProduct.set(r.product_id, {
+            purchaseCount: count,
+            unitsSold: r.units_sold ?? 0,
+            lastOrderedAt: last,
+            avgCycleDays,
+            estimatedCycleDays: avgCycleDays,
+            lastPurchaseQty: null,
+          });
+        }
+      }
+      for (const p of products as any[]) {
+        const stats = purchaseByProduct.get(p.id);
+        p._id = p.id;
+        p.currentStock = p.inventory?.available ?? p.inventory?.quantity ?? 0;
+        p.reorderLevel = p.inventory?.reorderLevel ?? 0;
+        if (stats) {
+          p.lastOrderedAt = stats.lastOrderedAt;
+          p.avgCycleDays = stats.avgCycleDays;
+          p.estimatedCycleDays = stats.estimatedCycleDays;
+          p.purchaseCount = stats.purchaseCount;
+          p.unitsSold = stats.unitsSold;
+          p.lastPurchaseQty = stats.lastPurchaseQty;
+        }
+      }
+
+      res.json({ success: true, data: products });
+    } catch (err) {
+      console.error("[products] catalog error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch catalog" } });
+    }
+  });
+
+  // ── GET /api/products/:productId ────────────────────────────────────────
+  app.get("/api/products/:productId", async (req: Request, res: Response) => {
+    try {
+      const productId = param(req, "productId");
+      console.log(`[products] detail request: id=${productId}`);
+
+      // Public access only shows published products
+      const result = await query(
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id,
+                COALESCE(s.verification_status, 'unverified') AS seller_verification_status,
+                c.slug AS category_slug
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         LEFT JOIN sellers s ON s.id = sh.seller_id
+         LEFT JOIN categories c ON c.slug = p.category_id
+         WHERE p.id = $1 AND p.status = 'published'`,
+        [productId]
+      );
+
+      if (result.rows.length === 0) {
+        // Check if product exists but has different status
+        const anyResult = await query(
+          `SELECT id, status, shop_id FROM products WHERE id = $1`,
+          [productId]
+        );
+        if (anyResult.rows.length > 0) {
+          const p = anyResult.rows[0];
+          console.log(`[products] detail: product found but status='${p.status}' (not published), shop_id=${p.shop_id}`);
+        } else {
+          console.log(`[products] detail: no product found with id=${productId}`);
+        }
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+      console.log(`[products] detail: found product '${result.rows[0].name}' status='${result.rows[0].status}'`);
+
+      const row = result.rows[0];
+      const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras([productId]);
+
+      const formatted = formatProduct(
+        row,
+        imagesByProduct.get(productId) ?? [],
+        inventoryByProduct.get(productId) ?? null
+      );
+      formatted.variants = variantsByProduct.get(productId) ?? [];
+      applyVariantStock(formatted, formatted.variants);
+
+      // Detail images for the product detail page
+      const rawDetailImgs = detailImagesByProduct.get(productId) ?? [];
+      formatted.detailImages = rawDetailImgs.map((img: any) => ({
+        id: img.id, url: img.url, displayUrl: img.url, thumbUrl: img.url,
+        alt: img.alt || '', sortOrder: img.sort_order ?? 0,
+        storageProvider: 'r2', storageKey: img.url,
+      }));
+
+      // Run shop info + option groups + attributes + variant mappings in parallel
+      const [shopSettled, groupsSettled, attrsSettled, variantValuesSettled] = await Promise.allSettled([
+        // Shop info
+        query(
+          "SELECT id, name, slug, description, logo, cover, rating, product_count FROM shops WHERE id = $1",
+          [row.shop_id],
+        ),
+        // Option groups
+        query(
+          "SELECT * FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC",
+          [productId]
+        ),
+        // Attributes
+        query(
+          "SELECT * FROM product_attributes WHERE product_id = $1 ORDER BY sort_order ASC",
+          [productId]
+        ),
+        // Variant-to-option mappings
+        query(
+          `SELECT pvv.variant_id, pvv.option_value_id,
+                  pov.option_group_id,
+                  pov.label AS value
+           FROM product_variant_values pvv
+           JOIN product_option_values pov ON pvv.option_value_id = pov.id
+           JOIN product_variants pv ON pvv.variant_id = pv.id
+           WHERE pv.product_id = $1`,
+          [productId]
+        ),
+      ]);
+
+      // Shop info
+      if (shopSettled.status === 'fulfilled' && shopSettled.value.rows.length > 0) {
+        const s = shopSettled.value.rows[0];
+        formatted.shop = {
+          id: s.id, name: s.name, slug: s.slug, description: s.description,
+          logo: s.logo, cover: s.cover, rating: s.rating, productCount: s.product_count,
+        };
+      }
+
+      // Option groups — BATCH all option values in a single query (eliminates N+1 per-group queries)
+      const optionGroups: any[] = [];
+      if (groupsSettled.status === 'fulfilled' && groupsSettled.value.rows.length > 0) {
+        const groupRows = groupsSettled.value.rows;
+        const groupIds = groupRows.map((g: any) => g.id);
+        // Single batch query for ALL option values across ALL groups
+        let allValues: any[] = [];
+        try {
+          const valuesResult = await query(
+            "SELECT * FROM product_option_values WHERE option_group_id = ANY($1) ORDER BY sort_order ASC",
+            [groupIds]
+          );
+          allValues = valuesResult.rows;
+        } catch (valErr) {
+          console.error(`[products] detail batch option values FAILED for productId=${productId}:`, (valErr as any)?.message ?? valErr);
+        }
+        // Group values by option_group_id in-memory
+        const valuesByGroup = new Map<string, any[]>();
+        for (const v of allValues) {
+          const list = valuesByGroup.get(v.option_group_id) ?? [];
+          list.push(v);
+          valuesByGroup.set(v.option_group_id, list);
+        }
+        for (const group of groupRows) {
+          optionGroups.push({
+            id: group.id, name: group.name, displayType: group.display_type,
+            required: group.required, sortOrder: group.sort_order,
+            values: (valuesByGroup.get(group.id) ?? []).map((v: any) => ({
+              id: v.id, value: v.value, label: v.label || v.value,
+              imageUrl: normalizeImageUrl(v.image_url), sortOrder: v.sort_order,
+              isEnabled: v.is_enabled !== false,
+            })),
+          });
+        }
+        console.log(`[products] detail option groups: productId=${productId} groupsCount=${optionGroups.length} groups=${JSON.stringify(optionGroups.map((g: any) => g.name))}`);
+      }
+      formatted.optionGroups = optionGroups;
+
+      // Attributes
+      formatted.attributes = attrsSettled.status === 'fulfilled'
+        ? attrsSettled.value.rows.map((a: any) => ({
+            id: a.id, name: a.name, value: a.value, sortOrder: a.sort_order,
+          }))
+        : [];
+
+      // Variant-to-option mappings
+      try {
+        const variantValuesResult = variantValuesSettled.status === 'fulfilled'
+          ? variantValuesSettled.value
+          : { rows: [] as any[] };
+        const variantOptions: Record<string, Record<string, string>> = {};
+        for (const row of variantValuesResult.rows) {
+          const vid = row.variant_id as string;
+          const gid = row.option_group_id as string;
+          const valueId = row.option_value_id as string;
+          if (!variantOptions[vid]) variantOptions[vid] = {};
+          // Use option_value_id (UUID) for matching — frontend stores val.id
+          variantOptions[vid][gid] = valueId;
+        }
+
+        // AUTO-BACKFILL: If variants exist but no mappings, create them from variant data
+        const variants = formatted.variants as Array<Record<string, any>> | undefined;
+        const optGroups = formatted.optionGroups as Array<Record<string, any>> | undefined;
+        if (Object.keys(variantOptions).length === 0 && Array.isArray(variants) && variants.length > 0 && Array.isArray(optGroups) && optGroups.length > 0) {
+          console.log(`[products] detail auto-backfill: ${variants.length} variants have no option mappings — attempting repair`);
+
+          // Build two lookups:
+          // 1. groupName -> valueText -> { groupId, valueId } (for JSON key matching)
+          // 2. flat valueText -> [{ groupId, valueId, groupName }] (for name-based fallback)
+          const nameValueLookup: Record<string, Record<string, any>> = {};
+          const flatValueLookup: Record<string, Array<{ groupId: string; valueId: string; groupName: string }>> = {};
+          for (const g of optGroups as Array<Record<string, any>>) {
+            (nameValueLookup as any)[g.name] = {};
+            for (const v of (g.values ?? [])) {
+              const valLower = (v.value as string).toLowerCase();
+              (nameValueLookup as any)[g.name][valLower] = { groupId: g.id, valueId: v.id };
+              if (!flatValueLookup[valLower]) flatValueLookup[valLower] = [];
+              flatValueLookup[valLower].push({ groupId: g.id, valueId: v.id, groupName: g.name });
+            }
+          }
+
+          let backfillCount = 0;
+          for (const v of variants as Array<Record<string, any>>) {
+            // Strategy 1: Parse options JSON (groupName -> valueText)
+            let opts: Record<string, string> = {};
+            try {
+              opts = typeof v.options === "string" ? JSON.parse(v.options) : (v.options || {});
+            } catch { opts = {}; }
+
+            const matchedPairs: Array<{ groupId: string; valueId: string }> = [];
+
+            if (typeof opts === "object" && Object.keys(opts).length > 0) {
+              // JSON has data — match by groupName key
+              for (const [groupName, valueText] of Object.entries(opts)) {
+                if (typeof valueText !== "string") continue;
+                const match = nameValueLookup[groupName]?.[valueText.toLowerCase()];
+                if (match) matchedPairs.push({ groupId: match.groupId, valueId: match.valueId });
+              }
+            }
+
+            // Strategy 2: If JSON was empty or partial, try matching variant name parts
+            if (matchedPairs.length === 0 || matchedPairs.length < optGroups.length) {
+              const variantName = (v.name || "") as string;
+              // Split variant name by " / ", " + ", ", " separators
+              const nameParts = variantName.split(/\s*[\/+,]\s*/).map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+              for (const part of nameParts) {
+                const candidates = flatValueLookup[part];
+                if (candidates) {
+                  // Pick the candidate whose groupId is not already matched
+                  const existingGroupIds = new Set(matchedPairs.map((p) => p.groupId));
+                  const candidate = candidates.find((c) => !existingGroupIds.has(c.groupId));
+                  if (candidate) {
+                    matchedPairs.push({ groupId: candidate.groupId, valueId: candidate.valueId });
+                  }
+                }
+              }
+            }
+
+            // Insert all matched pairs
+            if (matchedPairs.length > 0) {
+              for (const pair of matchedPairs) {
+                try {
+                  await query(
+                    `INSERT INTO product_variant_values (variant_id, option_value_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+                    [v.id, pair.valueId]
+                  );
+                  if (!variantOptions[v.id]) (variantOptions as any)[v.id] = {};
+                  (variantOptions as any)[v.id][pair.groupId] = pair.valueId;
+                  backfillCount++;
+                } catch (bfErr: any) {
+                  console.warn(`[products] detail auto-backfill failed for variant=${v.id} group=${pair.groupId}:`, bfErr?.message);
+                }
+              }
+              console.log(`[products] detail auto-backfill: variant=${v.id} name="${v.name}" matched ${matchedPairs.length}/${optGroups.length} groups`);
+            } else {
+              console.warn(`[products] detail auto-backfill: variant=${v.id} name="${v.name}" — no match found (options=${JSON.stringify(opts)})`);
+            }
+          }
+
+          console.log(`[products] detail auto-backfill result: ${backfillCount} mappings created for ${variants.length} variants`);
+        }
+
+        formatted.variantOptions = variantOptions;
+
+        // ── Per-option-value stock computation ──────────────────────────
+        // For each option group, compute stock per value from matching active variants.
+        // This enables the frontend to show "เหลือ X ชิ้น" per option value.
+        if (Array.isArray(formatted.variants) && formatted.variants.length > 0) {
+          for (const group of formatted.optionGroups ?? []) {
+            const stockMap = computeOptionValueStock(
+              formatted.variants as any[],
+              variantOptions,
+              group.id,
+            );
+            for (const val of group.values ?? []) {
+              val.stock = stockMap[val.id] ?? 0;
+            }
+          }
+        }
+
+        console.log(`[products] detail variantOptions: productId=${productId} variantIds=${Object.keys(variantOptions).length} rows=${variantValuesResult.rows.length}`);
+      } catch (vvErr) {
+        console.error(`[products] detail variantOptions FAILED for productId=${productId}:`, (vvErr as any)?.message ?? vvErr);
+        formatted.variantOptions = {};
+      }
+
+      // Load featured variant
+      try {
+        formatted.featuredVariantId = row.featured_variant_id || null;
+        if (row.featured_variant_id && Array.isArray(formatted.variants)) {
+          const fv = formatted.variants.find((v: any) => v.id === row.featured_variant_id);
+          if (fv) {
+            formatted.featuredVariant = fv;
+            console.log(`[products] featured variant: productId=${productId} variantId=${fv.id}`);
+          }
+        }
+      } catch (fvErr) {
+        console.warn(`[products] featured variant load warning for ${productId}:`, (fvErr as any)?.message);
+      }
+
+      // Final diagnostic summary
+      const variantImageCount = (formatted.variants ?? []).reduce((sum: number, v: any) => sum + ((v.images ?? []).length), 0);
+      const variantDetails = (formatted.variants ?? []).map((v: any) => `${v.name}(${(v.id ?? '').substring(0,8)}):imgs=${(v.images ?? []).length}`).join(' | ');
+      console.log(`[products] detail response: productId=${productId} variants=${(formatted.variants ?? []).length} variantImages=${variantImageCount} optionGroups=${(formatted.optionGroups ?? []).length} variantOptions=${Object.keys(formatted.variantOptions ?? {}).length} featuredVariant=${formatted.featuredVariant?.id ?? 'null'} [${variantDetails}]`);
+
+      res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error("[products] detail error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch product" } });
+    }
+  });
+
+  // ── GET /api/shops ──────────────────────────────────────────────────────
+  app.get("/api/shops", async (_req: Request, res: Response) => {
+    try {
+      const result = await query(
+        `SELECT sh.*, s.status as seller_status
+         FROM shops sh
+         JOIN sellers s ON sh.seller_id = s.id
+         WHERE s.status = 'approved'
+         ORDER BY sh.product_count DESC, sh.created_at DESC`
+      );
+
+      const shops = result.rows.map((row: any) => ({
+        id: row.id,
+        sellerId: row.seller_id,
+        name: row.name,
+        slug: row.slug,
+        description: row.description,
+        imageUrl: row.logo,
+        phone: null,
+        address: null,
+        announcement: null,
+        status: "active",
+        commissionRate: 0.03,
+        currency: "THB",
+        createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+      }));
+
+      res.json({ success: true, data: shops });
+    } catch (err) {
+      console.error("[products] shops list error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch shops" } });
+    }
+  });
+
+  // ── GET /api/shops/:shopId ──────────────────────────────────────────────
+  app.get("/api/shops/:shopId", async (req: Request, res: Response) => {
+    try {
+      const shopId = param(req, "shopId");
+      console.log(`[shop detail] requested shopId=${shopId} isUuid=${isUuid(shopId)}`);
+
+      // PostgreSQL cannot compare UUID = text in an OR branch.
+      // We must route to the correct column based on input format.
+      const shopQuery = isUuid(shopId)
+        ? `SELECT sh.*, s.status as seller_status,
+                  COALESCE(s.verification_status, 'unverified') as seller_verification_status
+           FROM shops sh
+           JOIN sellers s ON sh.seller_id = s.id
+           WHERE sh.id = $1 AND s.status = 'approved'`
+        : `SELECT sh.*, s.status as seller_status,
+                  COALESCE(s.verification_status, 'unverified') as seller_verification_status
+           FROM shops sh
+           JOIN sellers s ON sh.seller_id = s.id
+           WHERE sh.slug = $1 AND s.status = 'approved'`;
+      const result = await query(shopQuery, [shopId]);
+      console.log(`[shop detail] found ${result.rows.length} shop(s)`);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Shop not found" } });
+        return;
+      }
+
+      const row = result.rows[0];
+      console.log(`[shop detail] found shop id=${row.id} slug=${row.slug} seller_status=${row.seller_status}`);
+      const shop = {
+        id: row.id,
+        sellerId: row.seller_id,
+        name: row.name,
+        slug: row.slug,
+        description: row.description,
+        logo: row.logo ?? null,
+        cover: row.cover ?? null,
+        imageUrl: row.logo ?? null,
+        phone: row.phone ?? null,
+        address: row.address ?? null,
+        announcement: row.announcement ?? null,
+        status: row.status ?? "active",
+        currency: row.currency ?? "THB",
+        createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+        productCount: parseInt(row.product_count ?? '0', 10),
+        orderCount: parseInt(row.order_count ?? '0', 10),
+        rating: row.rating != null ? parseFloat(row.rating) : null,
+        reviewCount: parseInt(row.review_count ?? '0', 10),
+        // Seller/shop verification (separate from product verification)
+        verificationStatus: row.seller_verification_status ?? "unverified",
+      };
+
+      // Fetch published products for this shop
+      const productsResult = await query(
+        `SELECT p.*,
+                i.quantity AS stock_qty,
+                i.reserved AS stock_reserved,
+                (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS primary_image_url,
+                c.slug AS category_slug
+         FROM products p
+         LEFT JOIN inventory i ON i.product_id = p.id
+         LEFT JOIN categories c ON c.slug = p.category_id
+         WHERE p.shop_id = $1 AND p.status = 'published'
+         ORDER BY p.created_at DESC
+         LIMIT 50`,
+        [row.id],
+      );
+
+      const productIds = productsResult.rows.map((r: any) => r.id);
+      console.log(`[shop detail] products found=${productIds.length}`);
+      const shopExtras = productIds.length > 0 ? await loadProductExtras(productIds) : { imagesByProduct: new Map(), inventoryByProduct: new Map(), variantsByProduct: new Map() };
+      const products = productsResult.rows.map((r: any) => {
+        const formatted = formatProduct(
+          {
+            ...r,
+            seller_id: row.seller_id,
+            // Seller verification belongs to the shop owner — attach it so V
+            // eligibility can be evaluated for every product in this shop.
+            seller_verification_status: row.seller_verification_status ?? "unverified",
+          },
+          shopExtras.imagesByProduct.get(r.id) ?? [],
+          r.stock_qty != null ? { quantity: r.stock_qty, reserved: r.stock_reserved ?? 0 } : null,
+        );
+        formatted.variants = shopExtras.variantsByProduct.get(r.id) ?? [];
+        applyVariantStock(formatted, formatted.variants);
+        return formatted;
+      });
+
+      res.json({ success: true, data: { shop, products } });
+    } catch (err) {
+      console.error("[products] shop detail error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch shop" } });
+    }
+  });
+
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // CATEGORY ADMIN ROUTES (owner/admin only)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  async function requireAdminRole(userId: string): Promise<string | null> {
+    const r = await query("SELECT role FROM users WHERE id = $1", [userId]);
+    const role = r.rows[0]?.role as string | undefined;
+    if (role === "owner" || role === "admin") return role;
+    return null;
+  }
+
+  /**
+   * Prevent circular parent relationships.
+   * Walks up the parent chain from the proposed parent to ensure
+   * the target category is not an ancestor (which would create a cycle).
+   */
+  async function wouldCreateCycle(categoryId: string, newParentId: string): Promise<boolean> {
+    let current = newParentId;
+    const visited = new Set<string>();
+    while (current) {
+      if (current === categoryId) return true;
+      if (visited.has(current)) return true;
+      visited.add(current);
+      const r = await query("SELECT parent_id FROM categories WHERE id = $1", [current]);
+      current = r.rows[0]?.parent_id ?? null;
+    }
+    return false;
+  }
+
+  function slugifyCategory(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .substring(0, 120);
+  }
+
+  // ── POST /api/admin/categories ──────────────────────────────────────────
+  app.post("/api/admin/categories", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = await requireAdminRole(req.user!.userId);
+      if (!role) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const { name, slug: inputSlug, icon, parent_id, sort_order, description, image_url, names, description_names } = req.body;
+
+      if (!name || typeof name !== "string" || !name.trim()) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Category name is required" } });
+        return;
+      }
+
+      const slug = inputSlug && typeof inputSlug === "string" ? inputSlug.trim() : slugifyCategory(name.trim());
+      if (!slug) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Category slug is required" } });
+        return;
+      }
+
+      // Verify parent exists if provided
+      if (parent_id) {
+        const parentCheck = await query("SELECT id FROM categories WHERE id = $1", [parent_id]);
+        if (parentCheck.rows.length === 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Parent category not found" } });
+          return;
+        }
+      }
+
+      // Check for duplicate slug
+      const slugCheck = await query("SELECT id FROM categories WHERE slug = $1", [slug]);
+      if (slugCheck.rows.length > 0) {
+        res.status(409).json({ success: false, error: { code: "DUPLICATE_SLUG", message: "A category with this slug already exists" } });
+        return;
+      }
+
+      const result = await query(
+        `INSERT INTO categories (name, slug, icon, parent_id, sort_order, description, image_url, names, description_names)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING *`,
+        [
+          name.trim(), slug, icon || null, parent_id || null,
+          sort_order ?? 0, description || null, image_url || null,
+          names || '{}', description_names || '{}',
+        ]
+      );
+
+      res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+      console.error("[admin] create category error:", err);
+      res.status(500).json({ success: false, error: { code: "CREATE_FAILED", message: "Failed to create category" } });
+    }
+  });
+
+  // ── PATCH /api/admin/categories/:categoryId ─────────────────────────────
+  app.patch("/api/admin/categories/:categoryId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = await requireAdminRole(req.user!.userId);
+      if (!role) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const categoryId = param(req, "categoryId");
+      const { name, slug: inputSlug, icon, parent_id, sort_order, description, image_url, is_active, names, description_names } = req.body;
+
+      // Verify category exists
+      const existing = await query("SELECT * FROM categories WHERE id = $1", [categoryId]);
+      if (existing.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Category not found" } });
+        return;
+      }
+
+      // Prevent self-parenting
+      if (parent_id === categoryId) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Cannot set a category as its own parent" } });
+        return;
+      }
+
+      // Prevent circular relationships
+      if (parent_id && parent_id !== existing.rows[0].parent_id) {
+        if (await wouldCreateCycle(categoryId, parent_id)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Moving this category would create a circular relationship" } });
+          return;
+        }
+      }
+
+      // Verify parent exists if provided
+      if (parent_id) {
+        const parentCheck = await query("SELECT id FROM categories WHERE id = $1", [parent_id]);
+        if (parentCheck.rows.length === 0) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Parent category not found" } });
+          return;
+        }
+      }
+
+      // Handle slug change
+      let slug = existing.rows[0].slug;
+      if (inputSlug && typeof inputSlug === "string" && inputSlug.trim() !== existing.rows[0].slug) {
+        const newSlug = inputSlug.trim();
+        const slugCheck = await query("SELECT id FROM categories WHERE slug = $1 AND id != $2", [newSlug, categoryId]);
+        if (slugCheck.rows.length > 0) {
+          res.status(409).json({ success: false, error: { code: "DUPLICATE_SLUG", message: "A category with this slug already exists" } });
+          return;
+        }
+        slug = newSlug;
+      }
+
+      const result = await query(
+        `UPDATE categories SET
+           name = COALESCE($1, name),
+           slug = $2,
+           icon = COALESCE($3, icon),
+           parent_id = $4,
+           sort_order = COALESCE($5, sort_order),
+           description = COALESCE($6, description),
+           image_url = COALESCE($7, image_url),
+           is_active = COALESCE($8, is_active),
+           names = COALESCE($9, names),
+           description_names = COALESCE($10, description_names),
+           updated_at = NOW()
+         WHERE id = $11
+         RETURNING *`,
+        [
+          name?.trim() || null, slug, icon || null,
+          parent_id !== undefined ? parent_id : existing.rows[0].parent_id,
+          sort_order ?? null, description !== undefined ? description : null,
+          image_url !== undefined ? image_url : null,
+          is_active !== undefined ? is_active : null,
+          names || null, description_names || null,
+          categoryId,
+        ]
+      );
+
+      res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+      console.error("[admin] update category error:", err);
+      res.status(500).json({ success: false, error: { code: "UPDATE_FAILED", message: "Failed to update category" } });
+    }
+  });
+
+  // ── DELETE /api/admin/categories/:categoryId ─────────────────────────────
+  // Safe deletion: checks for products using this category before deleting.
+  app.delete("/api/admin/categories/:categoryId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = await requireAdminRole(req.user!.userId);
+      if (!role) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const categoryId = param(req, "categoryId");
+
+      // Verify category exists
+      const existing = await query("SELECT id, slug FROM categories WHERE id = $1", [categoryId]);
+      if (existing.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Category not found" } });
+        return;
+      }
+
+      // Check for products using this category
+      const productCheck = await query(
+        "SELECT COUNT(*)::int AS count FROM products WHERE category_id = $1",
+        [existing.rows[0].slug]
+      );
+      if (productCheck.rows[0].count > 0) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: "HAS_PRODUCTS",
+            message: `Cannot delete category: ${productCheck.rows[0].count} product(s) use this category. Deactivate it instead or migrate products first.`,
+          },
+        });
+        return;
+      }
+
+      // Check for child categories
+      const childCheck = await query(
+        "SELECT COUNT(*)::int AS count FROM categories WHERE parent_id = $1",
+        [categoryId]
+      );
+      if (childCheck.rows[0].count > 0) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: "HAS_CHILDREN",
+            message: `Cannot delete category: ${childCheck.rows[0].count} subcategory(s) exist. Remove or reassign them first.`,
+          },
+        });
+        return;
+      }
+
+      await query("DELETE FROM categories WHERE id = $1", [categoryId]);
+      res.json({ success: true, message: "Category deleted" });
+    } catch (err) {
+      console.error("[admin] delete category error:", err);
+      res.status(500).json({ success: false, error: { code: "DELETE_FAILED", message: "Failed to delete category" } });
+    }
+  });
+
+  // ── GET /api/admin/categories ────────────────────────────────────────────
+  // Admin view: all categories (active + inactive), with product counts.
+  app.get("/api/admin/categories", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = await requireAdminRole(req.user!.userId);
+      if (!role) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Admin access required" } });
+        return;
+      }
+
+      const lang = typeof req.query.lang === "string" ? req.query.lang : "th";
+      const result = await query(
+        `SELECT c.id, c.name, c.slug, c.icon, c.parent_id, c.sort_order, c.is_active,
+                COALESCE(c.names->>$1, c.name) AS display_name,
+                COALESCE(c.description_names->>$1, c.description) AS display_description,
+                c.image_url,
+                c.created_at, c.updated_at,
+                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.slug AND p.status = 'published')::int AS product_count,
+                (SELECT COUNT(*) FROM categories ch WHERE ch.parent_id = c.id)::int AS child_count
+         FROM categories c
+         ORDER BY c.sort_order ASC, c.name ASC`,
+        [lang]
+      );
+
+      res.json({ success: true, data: result.rows });
+    } catch (err) {
+      console.error("[admin] list categories error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch categories" } });
+    }
+  });
+
+  // ── GET /api/categories ─────────────────────────────────────────────────
+  // Returns full category tree with localized names, descriptions, and metadata.
+  app.get("/api/categories", async (req: Request, res: Response) => {
+    try {
+      const lang = typeof req.query.lang === "string" ? req.query.lang : "th";
+      const result = await query(
+        `SELECT id, name, slug, icon, parent_id, sort_order, is_active,
+                COALESCE(names->>$1, name) AS display_name,
+                COALESCE(description_names->>$1, description) AS display_description,
+                image_url
+         FROM categories
+         WHERE is_active = TRUE
+         ORDER BY sort_order ASC, name ASC`,
+        [lang]
+      );
+      res.json({ success: true, data: result.rows });
+    } catch (err) {
+      console.error("[products] categories error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch categories" } });
+    }
+  });
+
+  // ── GET /api/categories/verified ─────────────────────────────────────────
+  // Special endpoint for VelShop Verified: products where BOTH seller AND product are verified.
+  // (used by frontend to distinguish "verified" from normal categories)
+  // This is a metadata endpoint — the actual filtering happens in the catalog route.
+
+  // ── GET /api/categories/tree ─────────────────────────────────────────────
+  // Returns full category tree with children and product counts.
+  app.get("/api/categories/tree", async (req: Request, res: Response) => {
+    try {
+      const lang = typeof req.query.lang === "string" ? req.query.lang : "th";
+      const result = await query(
+        `SELECT c.id, c.name, c.slug, c.icon, c.parent_id, c.sort_order, c.is_active,
+                COALESCE(c.names->>$1, c.name) AS display_name,
+                COALESCE(c.description_names->>$1, c.description) AS display_description,
+                c.image_url,
+                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.slug AND p.status = 'published')::int AS product_count
+         FROM categories c
+         WHERE c.is_active = TRUE
+         ORDER BY c.sort_order ASC, c.name ASC`,
+        [lang]
+      );
+
+      // Build tree structure
+      const rows = result.rows;
+      const byId = new Map<string, any>();
+      const roots: any[] = [];
+      for (const row of rows) {
+        byId.set(row.id, { ...row, children: [] });
+      }
+      for (const row of rows) {
+        const node = byId.get(row.id)!;
+        if (row.parent_id && byId.has(row.parent_id)) {
+          byId.get(row.parent_id)!.children.push(node);
+        } else {
+          roots.push(node);
+        }
+      }
+
+      res.json({ success: true, data: roots });
+    } catch (err) {
+      console.error("[categories] tree error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch category tree" } });
+    }
+  });
+
+  // ── GET /api/categories/stats ─────────────────────────────────────────────
+  app.get("/api/categories/stats", async (req: Request, res: Response) => {
+    try {
+      const lang = typeof req.query.lang === "string" ? req.query.lang : "th";
+      const result = await query(
+        `SELECT c.id, c.name, c.slug, c.icon, c.parent_id, c.sort_order, c.is_active,
+                COALESCE(c.names->>$1, c.name) AS display_name,
+                COALESCE(c.description_names->>$1, c.description) AS display_description,
+                c.image_url,
+                (SELECT COUNT(*) FROM products p WHERE p.category_id = c.slug AND p.status = 'published')::int AS product_count
+         FROM categories c
+         WHERE c.is_active = TRUE
+         ORDER BY c.sort_order ASC, c.name ASC`,
+        [lang]
+      );
+
+      const rows = result.rows;
+      const byId = new Map<string, any>();
+      const roots: any[] = [];
+      for (const row of rows) {
+        byId.set(row.id, { ...row, children: [] });
+      }
+      for (const row of rows) {
+        const node = byId.get(row.id)!;
+        if (row.parent_id && byId.has(row.parent_id)) {
+          byId.get(row.parent_id)!.children.push(node);
+        } else {
+          roots.push(node);
+        }
+      }
+
+      res.json({ success: true, data: roots });
+    } catch (err) {
+      console.error("[categories] stats error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch category stats" } });
+    }
+  });
+
+  // ── PRODUCT REVIEWS / COMMENTS ────────────────────────────────────────
+
+  // Recompute a product's rating + review_count from approved reviews.
+  async function recomputeProductRating(productId: string): Promise<void> {
+    await query(
+      `UPDATE products SET
+         rating = (SELECT AVG(rating)::numeric(3,2) FROM product_reviews WHERE product_id = $1 AND status = 'approved'),
+         review_count = (SELECT COUNT(*) FROM product_reviews WHERE product_id = $1 AND status = 'approved')
+       WHERE id = $1`,
+      [productId],
+    );
+  }
+
+  // ── GET /api/products/:productId/reviews ───────────────────────────────
+  // Paginated reviews + rating summary. `verifiedPurchase` is computed from
+  // real order data server-side — never trusted from the client.
+  app.get("/api/products/:productId/reviews", optionalAuth, async (req: Request, res: Response) => {
+    try {
+      const productId = param(req, "productId");
+      const viewerId = req.user?.userId ?? null;
+      const before = typeof req.query.before === "string" ? req.query.before : undefined;
+
+      // Rating summary across ALL approved reviews
+      const summaryRes = await query(
+        `SELECT COUNT(*)::int AS total,
+                COALESCE(AVG(rating)::numeric(3,2), 0) AS avg_rating,
+                COUNT(*) FILTER (WHERE rating = 5) AS r5,
+                COUNT(*) FILTER (WHERE rating = 4) AS r4,
+                COUNT(*) FILTER (WHERE rating = 3) AS r3,
+                COUNT(*) FILTER (WHERE rating = 2) AS r2,
+                COUNT(*) FILTER (WHERE rating = 1) AS r1
+         FROM product_reviews WHERE product_id = $1 AND status = 'approved'`,
+        [productId],
+      );
+      const s = summaryRes.rows[0] ?? {};
+      const total = Number(s.total ?? 0);
+      const distribution = {
+        5: Number(s.r5 ?? 0),
+        4: Number(s.r4 ?? 0),
+        3: Number(s.r3 ?? 0),
+        2: Number(s.r2 ?? 0),
+        1: Number(s.r1 ?? 0),
+      };
+
+      // One page of reviews (keyset cursor on created_at, newest first)
+      const params: unknown[] = [productId];
+      let where = "pr.product_id = $1 AND pr.status = 'approved'";
+      if (before) {
+        const beforeMs = parseInt(String(before), 10);
+        if (!Number.isNaN(beforeMs)) {
+          params.push(new Date(beforeMs).toISOString());
+          where += ` AND pr.created_at < $${params.length}`;
+        }
+      }
+      params.push(11);
+      const result = await query(
+        `SELECT pr.*, u.name AS customer_name, u.avatar AS customer_avatar,
+                EXISTS (
+                  SELECT 1 FROM order_items oi
+                  JOIN orders o ON o.id = oi.order_id
+                  WHERE oi.product_id = pr.product_id AND o.user_id = pr.user_id
+                    AND o.status NOT IN ('cancelled', 'refunded')
+                ) AS verified_purchase
+         FROM product_reviews pr
+         LEFT JOIN users u ON u.id = pr.user_id
+         WHERE ${where}
+         ORDER BY pr.created_at DESC, pr.id DESC
+         LIMIT $${params.length}`,
+        params,
+      );
+      const hasMore = result.rows.length > 10;
+      const page = (hasMore ? result.rows.slice(0, 10) : result.rows).map((r: any) => ({
+        id: r.id,
+        productId: r.product_id,
+        shopId: r.shop_id ?? '',
+        userId: r.user_id,
+        orderId: r.order_id ?? null,
+        rating: r.rating,
+        comment: r.comment ?? null,
+        images: r.images ?? [],
+        status: r.status,
+        createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+        customerName: r.customer_name ?? null,
+        customerAvatar: r.customer_avatar ?? null,
+        verifiedPurchase: !!r.verified_purchase,
+        mine: viewerId ? r.user_id === viewerId : false,
+      }));
+
+      // The viewer's own review (drives edit/delete affordances)
+      let myReview: Record<string, unknown> | null = null;
+      if (viewerId) {
+        const myRes = await query(
+          `SELECT id, rating, comment, created_at FROM product_reviews
+           WHERE product_id = $1 AND user_id = $2 LIMIT 1`,
+          [productId, viewerId],
+        );
+        const r = myRes.rows[0];
+        if (r) {
+          myReview = {
+            id: r.id,
+            rating: r.rating,
+            comment: r.comment ?? null,
+            createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+          };
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          items: page,
+          total,
+          avgRating: Number(s.avg_rating ?? 0),
+          distribution,
+          hasMore,
+          nextCursor: hasMore && page.length > 0 ? (page[page.length - 1]?.createdAt ?? null) : null,
+          myReview,
+        },
+      });
+    } catch (err) {
+      console.error("[products] reviews error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to load reviews" } });
+    }
+  });
+
+  // ── POST /api/products/:productId/reviews ──────────────────────────────
+  /** True when an ON CONFLICT upsert failed because the unique constraint from
+   *  migration 038 is not applied yet — callers fall back to the legacy
+   *  SELECT→INSERT/UPDATE path until the migration lands. */
+  function isMissingReviewConstraint(err: unknown): boolean {
+    return (err as { code?: string } | null)?.code === "42P10";
+  }
+
+  // Create or update the viewer's own review (one review per user per product).
+  app.post("/api/products/:productId/reviews", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const productId = param(req, "productId");
+      const userId = req.user!.userId;
+      const { error, rating, comment } = validateReviewInput(req.body);
+      if (error) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: error } });
+        return;
+      }
+
+      const prodRes = await query("SELECT id, shop_id FROM products WHERE id = $1", [productId]);
+      if (prodRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+      const shopId = prodRes.rows[0].shop_id;
+
+      // Verified-purchase eligibility: when an order is supplied it must be
+      // the authenticated user's own order containing this product. A client
+      // can never claim a verified purchase by knowing productId + orderId.
+      const orderId =
+        typeof req.body?.orderId === "string" && req.body.orderId.trim() ? req.body.orderId.trim() : null;
+      if (orderId && !(await verifyOrderContainsProduct(userId, productId, orderId))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Order does not contain this product" } });
+        return;
+      }
+
+      // Atomic upsert — UNIQUE(product_id, user_id) (migration 038) makes
+      // concurrent double-submits collapse into a single review instead of
+      // racing the old SELECT→INSERT and creating duplicates.
+      let reviewId: string;
+      try {
+        const ins = await query(
+          `INSERT INTO product_reviews (product_id, user_id, shop_id, order_id, rating, comment, status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'approved')
+           ON CONFLICT (product_id, user_id) DO UPDATE
+             SET rating = EXCLUDED.rating,
+                 comment = EXCLUDED.comment,
+                 status = 'approved',
+                 order_id = COALESCE(EXCLUDED.order_id, product_reviews.order_id),
+                 updated_at = NOW()
+           RETURNING id`,
+          [productId, userId, shopId, orderId, rating, comment],
+        );
+        reviewId = ins.rows[0].id;
+      } catch (err) {
+        // Migration 038 may not be applied yet (deploy vs migrate ordering).
+        // Keep review creation working until the constraint lands.
+        if (!isMissingReviewConstraint(err)) throw err;
+        const existing = await query("SELECT id FROM product_reviews WHERE product_id = $1 AND user_id = $2", [
+          productId,
+          userId,
+        ]);
+        if (existing.rows[0]) {
+          reviewId = existing.rows[0].id;
+          // Backfill order_id when submitted from Order Detail (the product-page
+          // flow has no order context).
+          await query(
+            `UPDATE product_reviews SET rating = $1, comment = $2, status = 'approved',
+                    order_id = COALESCE($3, order_id), updated_at = NOW()
+             WHERE id = $4`,
+            [rating, comment, orderId, reviewId],
+          );
+        } else {
+          const ins = await query(
+            `INSERT INTO product_reviews (product_id, user_id, shop_id, order_id, rating, comment, status)
+             VALUES ($1, $2, $3, $4, $5, $6, 'approved') RETURNING id`,
+            [productId, userId, shopId, orderId, rating, comment],
+          );
+          reviewId = ins.rows[0].id;
+        }
+      }
+      await recomputeProductRating(productId);
+      res.json({ success: true, data: { id: reviewId } });
+    } catch (err) {
+      console.error("[products] review create error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to save review" } });
+    }
+  });
+
+  // ── PATCH /api/reviews/:reviewId — edit own review ─────────────────────
+  app.patch("/api/reviews/:reviewId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const reviewId = param(req, "reviewId");
+      const userId = req.user!.userId;
+      const { error, rating, comment } = validateReviewInput(req.body);
+      if (error) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: error } });
+        return;
+      }
+
+      // Ownership: only the review author can edit (NOT_FOUND avoids leaking existence)
+      const revRes = await query(
+        "SELECT id, product_id FROM product_reviews WHERE id = $1 AND user_id = $2",
+        [reviewId, userId],
+      );
+      if (revRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Review not found" } });
+        return;
+      }
+      const productId = revRes.rows[0].product_id;
+      await query(
+        `UPDATE product_reviews SET rating = $1, comment = $2, updated_at = NOW() WHERE id = $3`,
+        [rating, comment, reviewId],
+      );
+      await recomputeProductRating(productId);
+      res.json({ success: true, data: { id: reviewId } });
+    } catch (err) {
+      console.error("[products] review update error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to update review" } });
+    }
+  });
+
+  // ── DELETE /api/reviews/:reviewId — delete own review ──────────────────
+  app.delete("/api/reviews/:reviewId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const reviewId = param(req, "reviewId");
+      const userId = req.user!.userId;
+      const revRes = await query(
+        "SELECT id, product_id FROM product_reviews WHERE id = $1 AND user_id = $2",
+        [reviewId, userId],
+      );
+      if (revRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Review not found" } });
+        return;
+      }
+      const productId = revRes.rows[0].product_id;
+      await query("DELETE FROM product_reviews WHERE id = $1", [reviewId]);
+      await recomputeProductRating(productId);
+      res.json({ success: true, data: { deleted: true } });
+    } catch (err) {
+      console.error("[products] review delete error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to delete review" } });
+    }
+  });
+  // ADMIN PRODUCT MODERATION (VelCenter)
+
+  // ── POST /api/seller/products/:productId/backfill-variant-mappings ────
+  // Backfill product_variant_values for products created before the mapping system.
+  // Uses the variant's options JSON to recreate missing mappings.
+  app.post("/api/seller/products/:productId/backfill-variant-mappings", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const seller = await getSellerForUser(userId);
+      if (!seller) { res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a seller" } }); return; }
+      const productId = param(req, "productId");
+      if (!(await verifyProductOwnership(productId, seller.id))) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Product does not belong to this seller" } }); return;
+      }
+
+      // Load all option groups and their values for this product
+      const groupsResult = await query(
+        "SELECT id, name FROM product_option_groups WHERE product_id = $1 ORDER BY sort_order ASC", [productId]
+      );
+      const valueMap: Record<string, Record<string, string>> = {}; // groupName -> valueText -> valueId
+      for (const group of groupsResult.rows) {
+        const vals = await query(
+          "SELECT id, value FROM product_option_values WHERE option_group_id = $1 ORDER BY sort_order ASC", [group.id]
+        );
+        const gName = group.name || "unknown";
+        valueMap[gName] = {};
+        for (const v of vals.rows) {
+          valueMap[gName][v.value] = v.id;
+        }
+      }
+
+      // Load all variants
+      const variantsResult = await query(
+        "SELECT id, name, options FROM product_variants WHERE product_id = $1", [productId]
+      );
+
+      let backfilled = 0;
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
+        for (const variant of variantsResult.rows) {
+          const opts = typeof variant.options === "string" ? JSON.parse(variant.options) : (variant.options || {});
+          for (const [groupName, valueText] of Object.entries(opts)) {
+            if (typeof valueText !== "string") continue;
+            const valueId = valueMap[groupName]?.[valueText];
+            if (!valueId) continue;
+            // Insert mapping if it doesn't exist
+            await client.query(
+              `INSERT INTO product_variant_values (variant_id, option_value_id)
+               VALUES ($1, $2) ON CONFLICT (variant_id, option_value_id) DO NOTHING`,
+              [variant.id, valueId]
+            );
+            backfilled++;
+          }
+        }
+        await client.query("COMMIT");
+      } catch (txErr) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
+      }
+
+      console.log(`[products] backfill-variant-mappings: product=${productId} mappings created=${backfilled}`);
+      res.json({ success: true, data: { backfilled } });
+    } catch (err) {
+      console.error("[products] backfill-variant-mappings error:", err);
+      res.status(500).json({ success: false, error: { code: "BACKFILL_FAILED", message: "Failed to backfill variant mappings" } });
+    }
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Product moderation gate — `products.moderate` (backend/lib/permissions.ts).
+   *
+   * Center membership is required AND the catalog code must be held: owner and
+   * admin implicitly, a staff account only when VelCenter granted it. Deny by
+   * default. The role-only check that stood here made the `products.moderate`
+   * grant in the staff editor decorative — ticking it changed nothing, so the
+   * checkbox lied to the owner.
+   */
+  async function requireModerator(req: Request, res: Response): Promise<boolean> {
+    const userId = req.user!.userId;
+    if (!(await isCenterMember(userId))) {
+      res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Center access required" } });
+      return false;
+    }
+    if (!(await userHasPermission(userId, "products.moderate"))) {
+      res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "products.moderate permission required" } });
+      return false;
+    }
+    return true;
+  }
+
+  // ── GET /api/admin/products/moderation ──────────────────────────────────
+  // List products for moderation (all statuses). Used by VelCenter.
+  // Supports: status filter, search (q), sort (newest/oldest), shop filter.
+  app.get("/api/admin/products/moderation", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await requireModerator(req, res))) return;
+
+      // Bounded page (default 25, hard max 100) with the exact filtered count
+      // returned as `pagination.total` — see backend/lib/pagination.ts. Before
+      // this, every matching product came back with all of its images on every
+      // load and every realtime refetch.
+      const page = parsePage(req.query.page);
+      const limit = parseLimit(req.query.limit);
+      const offset = pageOffset(page, limit);
+
+      const { status, q, sort, shopId } = req.query as { status?: string; q?: string; sort?: string; shopId?: string };
+      const params: any[] = [];
+      const where: string[] = [];
+
+      if (status && ["pending_review", "published", "rejected", "draft", "suspended", "archived"].includes(status)) {
+        params.push(status);
+        where.push(`p.status = $${params.length}`);
+      }
+      if (q && q.trim()) {
+        params.push(`%${q.trim()}%`);
+        where.push(`(p.name ILIKE $${params.length} OR p.slug ILIKE $${params.length} OR sh.name ILIKE $${params.length} OR u.name ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
+      }
+      if (shopId) {
+        params.push(shopId);
+        where.push(`p.shop_id = $${params.length}`);
+      }
+
+      // `created_at` alone is not unique; the `id` tie-break is what keeps
+      // LIMIT/OFFSET paging from skipping or repeating a row.
+      const orderBy = sort === "oldest" ? "p.created_at ASC, p.id ASC" : "p.created_at DESC, p.id DESC";
+
+      const result = await query(
+        `SELECT COUNT(*) OVER() AS total_count,
+                p.id, p.name, p.description, p.short_description, p.price, p.compare_at_price,
+                p.currency, p.unit, p.supplier, p.status, p.rejection_reason, p.category_id,
+                p.shop_id, p.created_at, p.updated_at,
+                sh.name as shop_name, sh.slug as shop_slug, s.status as shop_status,
+                u.id as seller_user_id, u.name as seller_name, u.email as seller_email,
+                s.verification_status as seller_verification_status,
+                i.quantity as inventory_quantity, i.reserved as inventory_reserved,
+                i.low_stock_threshold as inventory_reorder_level
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         JOIN sellers s ON sh.seller_id = s.id
+         JOIN users u ON s.user_id = u.id
+         LEFT JOIN inventory i ON i.product_id = p.id
+         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+         ORDER BY ${orderBy}
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset]
+      );
+
+      // `total_count` is the filtered count BEFORE LIMIT/OFFSET and is identical on
+      // every returned row. A page past the end returns no rows at all, so fall
+      // back to a count query instead of reporting a total of 0. (`inventory` is
+      // UNIQUE on product_id, so dropping its join cannot change the count.)
+      let total = result.rows.length ? Number(result.rows[0].total_count) : 0;
+      if (!result.rows.length && page > 1) {
+        const countRes = await query(
+          `SELECT COUNT(*)::int AS total
+           FROM products p
+           JOIN shops sh ON p.shop_id = sh.id
+           JOIN sellers s ON sh.seller_id = s.id
+           JOIN users u ON s.user_id = u.id
+           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`,
+          params
+        );
+        total = Number(countRes.rows[0]?.total ?? 0);
+      }
+
+      const productIds = result.rows.map((r: any) => r.id);
+
+      let imagesByProduct = new Map<string, any[]>();
+      if (productIds.length > 0) {
+        const imagesResult = await query(
+          `SELECT * FROM product_images WHERE product_id = ANY($1) ORDER BY sort_order ASC`,
+          [productIds]
+        );
+        for (const img of imagesResult.rows) {
+          const list = imagesByProduct.get(img.product_id) ?? [];
+          list.push(img);
+          imagesByProduct.set(img.product_id, list);
+        }
+      }
+
+      const products = result.rows.map((row: any) => {
+        const images = imagesByProduct.get(row.id) ?? [];
+        const primaryImage = images.find((i: any) => i.sort_order === 0) ?? images[0] ?? null;
+        return {
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          short_description: row.short_description,
+          price: row.price,
+          compare_at_price: row.compare_at_price,
+          currency: row.currency,
+          unit: row.unit,
+          supplier: row.supplier,
+          status: row.status,
+          rejection_reason: row.rejection_reason,
+          category_id: row.category_id,
+          shop_id: row.shop_id,
+          shop_name: row.shop_name,
+          shop_slug: row.shop_slug,
+          shop_status: row.shop_status,
+          seller_name: row.seller_name,
+          seller_email: row.seller_email,
+          seller_verification_status: row.seller_verification_status,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          inventory_quantity: row.inventory_quantity,
+          inventory_reserved: row.inventory_reserved,
+          inventory_reorder_level: row.inventory_reorder_level,
+          primaryImage: primaryImage ? {
+            id: primaryImage.id,
+            url: primaryImage.url,
+            alt: primaryImage.alt,
+            sort_order: primaryImage.sort_order,
+          } : null,
+          images: images.map((img: any) => ({
+            id: img.id,
+            url: img.url,
+            alt: img.alt,
+            sort_order: img.sort_order,
+          })),
+        };
+      });
+
+      res.json({
+        success: true,
+        data: {
+          products,
+          pagination: pageMeta(page, limit, total, products.length),
+        },
+      });
+    } catch (err) {
+      console.error("[admin] product moderation list error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to list products for moderation" } });
+    }
+  });
+
+  // ── GET /api/admin/products/:productId/moderation-detail ────────────────
+  // Full product detail for moderation review. Returns variants, attributes,
+  // option groups, images, shop info. Center members holding `products.moderate`.
+  //
+  // PostgreSQL 42P10 note: the option-group aggregation must NOT use
+  // `json_agg(DISTINCT ... ORDER BY pov.sort_order)` — with DISTINCT every ORDER BY
+  // expression has to appear in the aggregate argument list, and `pov.sort_order`
+  // only lived in the jsonb payload, so every moderation-detail request failed with
+  // `in an aggregate with DISTINCT, ORDER BY expressions must appear in argument
+  // list` as soon as the product had option groups. The DISTINCT was pointless
+  // anyway: the aggregated jsonb includes `id`, so it could never merge two rows,
+  // and a 1:N join from a single table cannot produce duplicates. Values stay
+  // ordered by pov.sort_order.
+  app.get("/api/admin/products/:productId/moderation-detail", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await requireModerator(req, res))) return;
+
+      const productId = param(req, "productId");
+
+      const productResult = await query(
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, s.status as shop_status,
+                sh.description as shop_description, sh.logo as shop_logo, sh.cover as shop_cover,
+                sh.phone as shop_phone, sh.email as shop_email, sh.category as shop_category,
+                s.verification_status as seller_verification_status, s.verified_at as seller_verified_at,
+                u.id as seller_user_id, u.name as seller_name, u.email as seller_email,
+                i.quantity as inventory_quantity, i.reserved as inventory_reserved,
+                i.low_stock_threshold as inventory_reorder_level
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         JOIN sellers s ON sh.seller_id = s.id
+         JOIN users u ON s.user_id = u.id
+         LEFT JOIN inventory i ON i.product_id = p.id
+         WHERE p.id = $1`,
+        [productId]
+      );
+
+      if (productResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+
+      const row = productResult.rows[0];
+
+      const [imagesRes, variantsRes, optionGroupsRes, attributesRes, categoryRes, moderationHistoryRes] = await Promise.all([
+        query("SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC", [productId]),
+        query("SELECT * FROM product_variants WHERE product_id = $1 ORDER BY sort_order ASC", [productId]),
+        query(
+          `SELECT pog.*, json_agg(jsonb_build_object('id', pov.id, 'value', pov.value, 'label', pov.label, 'sort_order', pov.sort_order, 'is_enabled', pov.is_enabled) ORDER BY pov.sort_order) as values
+           FROM product_option_groups pog
+           LEFT JOIN product_option_values pov ON pov.option_group_id = pog.id
+           WHERE pog.product_id = $1
+           GROUP BY pog.id
+           ORDER BY pog.sort_order ASC`,
+          [productId]
+        ),
+        query("SELECT * FROM product_attributes WHERE product_id = $1 ORDER BY sort_order ASC", [productId]),
+        row.category_id ? query("SELECT slug, name, names FROM categories WHERE slug = $1", [row.category_id]) : Promise.resolve({ rows: [] }),
+        query(
+          `SELECT mr.*, u.name as moderator_name
+           FROM moderation_records mr
+           LEFT JOIN users u ON mr.moderator_id = u.id
+           WHERE mr.entity_type = 'product' AND mr.entity_id = $1
+           ORDER BY mr.created_at DESC LIMIT 20`,
+          [productId]
+        ),
+      ]);
+
+      const images = imagesRes.rows;
+      const primaryImage = images.find((i: any) => i.sort_order === 0) ?? images[0] ?? null;
+
+      const variants = variantsRes.rows;
+      for (const v of variants) {
+        const variantImages = await query(
+          "SELECT * FROM product_variant_images WHERE variant_id = $1 ORDER BY sort_order ASC", [v.id]
+        );
+        v.images = variantImages.rows;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          product: {
+            id: row.id, name: row.name, description: row.description,
+            short_description: row.short_description, price: row.price,
+            compare_at_price: row.compare_at_price, currency: row.currency,
+            unit: row.unit, supplier: row.supplier, status: row.status,
+            rejection_reason: row.rejection_reason, category_id: row.category_id,
+            category_name: categoryRes.rows[0]?.name ?? null,
+            category_names: categoryRes.rows[0]?.names ?? null,
+            created_at: row.created_at, updated_at: row.updated_at,
+          },
+          images: images.map((img: any) => ({
+            id: img.id, url: img.url, alt: img.alt,
+            sort_order: img.sort_order, image_type: img.image_type,
+          })),
+          primaryImage: primaryImage ? { id: primaryImage.id, url: primaryImage.url, alt: primaryImage.alt } : null,
+          variants: variants.map((v: any) => ({
+            id: v.id, name: v.name, sku: v.sku, price: v.price,
+            compare_at_price: v.compare_at_price, stock: v.stock,
+            status: v.status, options: v.options, sort_order: v.sort_order,
+            images: (v.images ?? []).map((img: any) => ({ id: img.id, url: img.url, alt: img.alt })),
+          })),
+          optionGroups: optionGroupsRes.rows.map((g: any) => ({
+            id: g.id, name: g.name, display_type: g.display_type,
+            required: g.required, sort_order: g.sort_order,
+            values: Array.isArray(g.values) ? g.values.filter((v: any) => v.id) : [],
+          })),
+          attributes: attributesRes.rows.map((a: any) => ({
+            id: a.id, name: a.name, value: a.value, sort_order: a.sort_order,
+          })),
+          inventory: {
+            quantity: row.inventory_quantity ?? 0,
+            reserved: row.inventory_reserved ?? 0,
+            reorder_level: row.inventory_reorder_level ?? 0,
+          },
+          shop: {
+            id: row.shop_id, name: row.shop_name, slug: row.shop_slug,
+            status: row.shop_status, description: row.shop_description,
+            logo: row.shop_logo, cover: row.shop_cover,
+            phone: row.shop_phone, email: row.shop_email, category: row.shop_category,
+            seller_name: row.seller_name, seller_email: row.seller_email,
+            seller_verification_status: row.seller_verification_status,
+            seller_verified_at: row.seller_verified_at,
+          },
+          moderationHistory: moderationHistoryRes.rows.map((h: any) => ({
+            id: h.id, action: h.action, reason: h.reason,
+            moderator_name: h.moderator_name, created_at: h.created_at,
+          })),
+        },
+      });
+    } catch (err) {
+      console.error("[admin] product moderation detail error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch product detail" } });
+    }
+  });
+
+  // ── PATCH /api/admin/products/:productId/moderation ─────────────────────
+  // Approve or reject a product — center membership + `products.moderate`.
+  app.patch("/api/admin/products/:productId/moderation", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!(await requireModerator(req, res))) return;
+
+      const productId = param(req, "productId");
+      const { status, rejectionReason } = req.body;
+      const userId = req.user!.userId;
+
+      // Validate status. Admin moderation is a separate state machine from the
+      // seller one — sellers can never reach published/rejected/suspended.
+      const VALID_ADMIN_TRANSITIONS = Object.keys(ADMIN_MODERATION_TRANSITIONS);
+      if (!status || !VALID_ADMIN_TRANSITIONS.includes(status)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Invalid status. Admin can set: ${VALID_ADMIN_TRANSITIONS.join(", ")}` } });
+        return;
+      }
+
+      // Rejection and suspension require a reason
+      if (moderationRequiresReason(status) && (!rejectionReason || typeof rejectionReason !== "string" || !rejectionReason.trim())) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: status === "rejected" ? "Rejection reason is required" : "Suspension reason is required" } });
+        return;
+      }
+
+      // Fetch current product status
+      const currentResult = await query("SELECT id, status FROM products WHERE id = $1", [productId]);
+      if (currentResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } });
+        return;
+      }
+
+      const currentStatus = currentResult.rows[0].status;
+      if (!canAdminModerate(currentStatus, status)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_TRANSITION", message: `Cannot ${status} a product with status: ${currentStatus}` } });
+        return;
+      }
+
+      // Update product status
+      if (status === "rejected") {
+        await query(
+          "UPDATE products SET status = $1, rejection_reason = $2, updated_at = NOW() WHERE id = $3",
+          [status, rejectionReason.trim(), productId]
+        );
+      } else {
+        await query(
+          "UPDATE products SET status = $1, rejection_reason = NULL, updated_at = NOW() WHERE id = $2",
+          [status, productId]
+        );
+      }
+
+      // Update shop product_count to reflect published products only
+      const shopResult = await query("SELECT shop_id FROM products WHERE id = $1", [productId]);
+      if (shopResult.rows[0]?.shop_id) {
+        const countResult = await query(
+          "SELECT COUNT(*) as cnt FROM products WHERE shop_id = $1 AND status = 'published'",
+          [shopResult.rows[0].shop_id]
+        );
+        await query(
+          "UPDATE shops SET product_count = $1, updated_at = NOW() WHERE id = $2",
+          [parseInt(countResult.rows[0].cnt), shopResult.rows[0].shop_id]
+        );
+      }
+
+      console.log(`[admin] product ${status}: ${productId} by admin ${userId} [${currentStatus} -> ${status}]`);
+
+
+      // Write audit log + moderation record
+      try {
+        await query(
+          `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+           VALUES ($1, 'product_moderation', 'product', $2, $3)`,
+          [userId, productId, JSON.stringify({ from: currentStatus, to: status, rejectionReason: status === 'rejected' ? (rejectionReason ?? '').trim() : null })]
+        );
+        await query(
+          `INSERT INTO moderation_records (moderator_id, entity_type, entity_id, action, reason)
+           VALUES ($1, 'product', $2, $3, $4)`,
+          [userId, productId, status, status === 'rejected' ? (rejectionReason ?? '').trim() : null]
+        );
+      } catch { /* audit is best-effort */ }
+
+      // Broadcast realtime update for VelCenter queue
+      try {
+        broadcast(CHANNELS.PRODUCT_UPDATED, "product:moderated", { productId, from: currentStatus, to: status });
+      } catch { /* broadcast is best-effort */ }
+
+      // Return the full updated product with images
+      const updatedResult = await query(
+        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug,
+                u.name as seller_name, u.email as seller_email,
+                i.quantity as inventory_quantity, i.reserved as inventory_reserved,
+                i.low_stock_threshold as inventory_reorder_level
+         FROM products p
+         JOIN shops sh ON p.shop_id = sh.id
+         JOIN sellers s ON sh.seller_id = s.id
+         JOIN users u ON s.user_id = u.id
+         LEFT JOIN inventory i ON i.product_id = p.id
+         WHERE p.id = $1`,
+        [productId]
+      );
+
+      if (updatedResult.rows.length === 0) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Product not found after update" } });
+        return;
+      }
+
+      const row = updatedResult.rows[0];
+      const imagesResult = await query(
+        "SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC",
+        [productId]
+      );
+      const images = imagesResult.rows;
+      const primaryImage = images.find((i: any) => i.sort_order === 0) ?? images[0] ?? null;
+
+      res.json({
+        success: true,
+        data: {
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          short_description: row.short_description,
+          price: row.price,
+          compare_at_price: row.compare_at_price,
+          currency: row.currency,
+          unit: row.unit,
+          supplier: row.supplier,
+          status: row.status,
+          rejection_reason: row.rejection_reason,
+          category_id: row.category_id,
+          shop_id: row.shop_id,
+          shop_name: row.shop_name,
+          shop_slug: row.shop_slug,
+          seller_name: row.seller_name,
+          seller_email: row.seller_email,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          inventory_quantity: row.inventory_quantity,
+          inventory_reserved: row.inventory_reserved,
+          inventory_reorder_level: row.inventory_reorder_level,
+          primaryImage: primaryImage ? {
+            id: primaryImage.id,
+            url: primaryImage.url,
+            alt: primaryImage.alt,
+            sort_order: primaryImage.sort_order,
+          } : null,
+          images: images.map((img: any) => ({
+            id: img.id,
+            url: img.url,
+            alt: img.alt,
+            sort_order: img.sort_order,
+          })),
+        },
+      });
+    } catch (err) {
+      console.error("[admin] product moderation error:", err);
+      res.status(500).json({ success: false, error: { code: "MODERATION_FAILED", message: "Failed to moderate product" } });
+    }
+  });
+}

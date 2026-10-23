@@ -1,0 +1,76 @@
+-- =============================================================
+-- Migration: V0050
+-- Date: 2026-09-29
+-- Description: Constrain `orders.status` to the values the order domain
+--              actually knows (audit MEDIUM #9).
+--
+-- Reason: `orders.status` is declared `TEXT NOT NULL DEFAULT 'pending'` with
+--         NO CHECK constraint, while every sibling status column in this
+--         schema has one (`sellers.status`, `verification_status`,
+--         `velrepeat_plans.status`, `velrepeat_runs.status`). Free text means
+--         a typo, a stale code path or a hand-edited row can store a value no
+--         state machine, no query and no UI knows: `normalizeOrderStatusToFulfillment`
+--         then silently answers "pending", and an order can appear un-actioned
+--         while sitting in a state nothing can move it out of.
+--
+-- The allowed set is NOT invented here. It is the union of the two lifecycles
+-- the repository already documents, derived from the writers themselves:
+--
+--   FULFILMENT — `backend/lib/order-fulfillment.ts` `FULFILLMENT_STATUSES`
+--     pending, confirmed, packing, shipped, delivered, completed, cancelled
+--     Written by cart.ts (INSERT 'pending', customer cancel 'cancelled') and by
+--     the seller/center transition routes (`status = $1`), which accept a value
+--     only after `canTransitionFulfillment()` has approved it — so those two
+--     writers cannot produce anything outside this set.
+--
+--   PAYMENT — `backend/routes/stripe.ts` + the reservation sweep
+--     pending_payment  checkout.session created      (stripe.ts)
+--     paid             payment_intent.succeeded      (stripe.ts)
+--     payment_failed   payment_intent.payment_failed(stripe.ts)
+--     refunded         full refund                   (stripe.ts)
+--     expired          reservation window lapsed     (payment-reservation-scheduler.ts,
+--                                                    PAYMENT_RESERVATION_EXPIRED_STATUS)
+--
+-- `expired` is a real `orders.status` value, not a payments.status one: the
+-- expiry sweep claims the order row and writes this column.
+--
+-- Deliberately NOT in the set:
+--   * `failed` — it appears only in `RELEASABLE_STATUSES` (backend/lib/inventory.ts),
+--     a READ-side guard where no writer can ever produce it (audit LOW #12).
+--     Adding it here would legitimise dead code into the schema.
+--   * anything from `payments.status` — that is a separate table and a separate
+--     axis (`paymentStatus`); payment state is not being moved into orders.
+--   * no new status, no state machine change: this constraint only refuses
+--     values the domain does not have. It does not authorise any transition —
+--     `canTransitionFulfillment()`, the `FOR UPDATE` row lock and the
+--     payment/shipment/cancellation gates remain the only transition authority.
+--
+-- Data safety:
+-- This NARROWS the allowed set, so unlike V0044 it is not guaranteed to be a
+-- no-op on an existing database: if any historical row already carries a value
+-- outside the list, this statement FAILS LOUDLY rather than silently rewriting
+-- an order's business state. That is the intended behaviour — normalising a
+-- live order's status is a business decision, not a migration. Before applying,
+-- inspect first:
+--     SELECT status, count(*) FROM orders
+--      WHERE status NOT IN ('pending', 'confirmed', 'packing', 'shipped',
+--                           'delivered', 'completed', 'cancelled',
+--                           'pending_payment', 'paid', 'payment_failed',
+--                           'refunded', 'expired')
+--      GROUP BY status;
+-- If it returns rows, stop and report them; do not coerce them.
+--
+-- Idempotent: DROP IF EXISTS then ADD, so re-running is harmless. The same
+-- statements are appended to `db/schema.sql` / `db/run-sqleditor.sql` so a fresh
+-- bootstrap also self-heals a database created before the constraint existed
+-- (`CREATE TABLE IF NOT EXISTS` never alters an existing table).
+--
+-- Affected: `orders.status` only. No column, index, trigger or row is changed.
+-- =============================================================
+
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+ALTER TABLE orders
+  ADD CONSTRAINT orders_status_check
+  CHECK (status IN ('pending', 'confirmed', 'packing', 'shipped', 'delivered',
+                    'completed', 'cancelled', 'pending_payment', 'paid',
+                    'payment_failed', 'refunded', 'expired'));

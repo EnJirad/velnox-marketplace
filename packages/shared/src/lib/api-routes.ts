@@ -1,0 +1,544 @@
+/**
+ * Velnox API Route Mapping
+ *
+ * Maps logical route keys to REST API endpoints.
+ * All frontend pages use this to call the Express backend.
+ *
+ * New code should use api-client.ts directly with REST paths.
+ */
+import { useEffect, useRef, useState } from "react";
+import { apiBaseUrl as API_BASE } from "./sites";
+
+// ─── Simple in-memory GET cache (60s TTL) ──────────────────────────────────
+const _getCache = new Map<string, { data: any; expires: number }>();
+const GET_TTL_MS = 60_000;
+
+/** Live readers (useQuery) that must re-run their loader after a mutation. */
+const _invalidationListeners = new Set<() => void>();
+
+/**
+ * Drop cached GET responses. With no prefix the WHOLE cache is cleared, and
+ * every mutation helper below does that before its request, because one write
+ * can change several read surfaces at once (a verification decision moves the
+ * seller queue, the seller list and the badge counts). Without it, a refetch
+ * issued right after a successful mutation replayed a body captured BEFORE the
+ * write — the classic "toast says done, UI still shows the old state until a
+ * reload" bug. The 60s cache is per-tab only; the API stays the source of truth.
+ */
+function invalidateGetCache(prefix?: string) {
+  if (!prefix) {
+    _getCache.clear();
+  } else {
+    for (const key of _getCache.keys()) {
+      if (key.startsWith(prefix)) _getCache.delete(key);
+    }
+  }
+  // Mounted `useQuery` readers re-read from the API, so a component that is on
+  // screen during a mutation renders the post-write server state instead of the
+  // body it fetched before it. A broken listener must never break the mutation.
+  for (const listener of _invalidationListeners) {
+    try {
+      listener();
+    } catch { /* ignore */ }
+  }
+}
+
+/**
+ * An API failure that remembers the HTTP status.
+ *
+ * WHY IT EXISTS — the order pages must tell "this order is not yours" (401/403)
+ * apart from "this order does not exist" (404): the two need different copy, and a
+ * `{ message }`-only Error made them indistinguishable in the browser. It is still
+ * an `Error` subclass carrying the same message, so every existing
+ * `catch (err) { err.message }` behaves exactly as before.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  /**
+   * The server's machine-readable `error.code` when it sent one (`INVALID_TRANSITION`,
+   * `PAYMENT_NOT_CONFIRMED`, `SHIPMENT_REQUIRED`, …), else null.
+   *
+   * The message is for humans and may be English-only; the CODE is what a
+   * localized surface branches on to say WHY in the reader's own language.
+   */
+  readonly code: string | null;
+
+  constructor(status: number, message: string, code: string | null = null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/**
+ * Turn a non-2xx response into an `ApiError`, preserving the server's message and
+ * the status code. Always throws — call it as `if (!res.ok) await throwApiError(…)`.
+ */
+async function throwApiError(res: Response, fallback: string): Promise<never> {
+  const data = await res.json().catch(() => ({ error: fallback }));
+  const errMsg = data.error?.message || data.error || fallback;
+  const errCode = typeof data.error?.code === "string" ? data.error.code : null;
+  throw new ApiError(res.status, typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg), errCode);
+}
+
+async function apiPost(path: string, args?: any): Promise<any> {
+  invalidateGetCache();
+  // Strip /api prefix if present — API_BASE already includes it
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: args ? JSON.stringify(args) : undefined,
+  });
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
+  const json = await res.json();
+  // Unwrap {success, data} envelope — components expect the inner payload
+  return json.data !== undefined ? json.data : json;
+}
+
+async function apiGet(path: string): Promise<any> {
+  const cached = _getCache.get(path);
+  if (cached && cached.expires > Date.now()) return cached.data;
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, { credentials: "include" });
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
+  const json = await res.json();
+  // Unwrap {success, data} envelope — components expect the inner payload
+  const unwrapped = json.data !== undefined ? json.data : json;
+  _getCache.set(path, { data: unwrapped, expires: Date.now() + GET_TTL_MS });
+  return unwrapped;
+}
+
+/** GET without the 60s in-memory cache — for chat/notifications where staleness is visible. */
+async function apiGetFresh(path: string): Promise<any> {
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
+}
+
+async function apiPut(path: string, args?: any): Promise<any> {
+  invalidateGetCache();
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: args ? JSON.stringify(args) : undefined,
+  });
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
+}
+
+async function apiPatch(path: string, args?: any): Promise<any> {
+  invalidateGetCache();
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: args ? JSON.stringify(args) : undefined,
+  });
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
+}
+
+async function apiDelete(path: string): Promise<any> {
+  invalidateGetCache();
+  const p = path.startsWith("/api") ? path.slice(4) : path;
+  const res = await fetch(`${API_BASE}${p}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
+  const json = await res.json();
+  return json.data !== undefined ? json.data : json;
+}
+
+// ─── API Route Mapping ──────────────────────────────────────────────────────
+
+/** Build a `?a=b&c=d` query string, skipping empty/undefined values. */
+function buildQuery(params: Record<string, string | number | undefined | null>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
+  // Customer actions
+  "api.customer.myProfile": () => apiGet("/api/customer/profile"),
+  "api.customer.accountSummary": () => apiGet("/api/customer/account-summary"),
+  "api.customer.updateProfileAction": (a) => apiPut("/api/customer/profile", a),
+  "api.customer.getProfileImageUploadIntent": (a) => apiPost("/api/customer/profile-image/upload-intent", a),
+  "api.customer.saveProfileImage": (a) => apiPost("/api/customer/profile-image/save", a),
+  "api.customer.myAddresses": () => apiGet("/api/customer/addresses"),
+  "api.customer.saveAddress": (a) => apiPost("/api/customer/addresses", a),
+  "api.customer.deleteAddressAction": (a) => apiDelete(`/api/customer/addresses/${a.addressId}`),
+  "api.customer.myCart": () => apiGet("/api/customer/cart"),
+  "api.customer.addToCartAction": (a) => apiPost("/api/customer/cart/add", a),
+  "api.customer.updateCartItemAction": (a) => apiPut(`/api/customer/cart/item/${a.cartItemId}`, a),
+  "api.customer.removeCartItemAction": (a) => apiDelete(`/api/customer/cart/item/${a.cartItemId}`),
+  "api.customer.checkoutAction": (a) => apiPost("/api/customer/checkout", a),
+  "api.customer.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),
+  "api.customer.orderDetail": (a) => apiGet(`/api/customer/orders/${a.orderId}`),
+  "api.customer.myWishlist": () => apiGet("/api/customer/wishlist"),
+  "api.customer.toggleWishlistAction": (a) => apiPost("/api/customer/wishlist/toggle", a),
+  "api.customer.reviewProduct": (a) => apiPost(`/api/products/${a.productId}/reviews`, a),
+  "api.customer.productReviews": (a) => apiGetFresh(`/api/products/${a.productId}/reviews${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
+  "api.customer.createReviewAction": (a) => apiPost(`/api/products/${a.productId}/reviews`, a),
+  "api.customer.updateReviewAction": (a) => apiPatch(`/api/reviews/${a.reviewId}`, a),
+  "api.customer.deleteReviewAction": (a) => apiDelete(`/api/reviews/${a.reviewId}`),
+  "api.customer.shopReviews": (a) => apiGet(`/api/shops/${a.shopId}/reviews`),
+
+  "api.customer.myNotifications": () => apiGetFresh("/api/customer/notifications"),
+  "api.customer.markNotificationReadAction": (a) => apiPatch(`/api/customer/notifications/${a.notificationId}/read`),
+  "api.customer.markAllNotificationsRead": () => apiPut("/api/customer/notifications/read-all"),
+  // Chat — customer
+  "api.customer.myConversations": () => apiGetFresh("/api/customer/conversations"),
+  "api.customer.createConversationAction": (a) => apiPost("/api/customer/conversations", a),
+  "api.customer.supportConversationAction": () => apiPost("/api/customer/support/conversation"),
+  "api.customer.conversationMessages": (a) => apiGetFresh(`/api/customer/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
+  "api.customer.sendMessageAction": (a) => apiPost(`/api/customer/conversations/${a.conversationId}/messages`, a),
+  "api.customer.markConversationReadAction": (a) => apiPost(`/api/customer/conversations/${a.conversationId}/read`, {}),
+  // Chat — seller
+  "api.seller.sellerConversations": () => apiGetFresh("/api/seller/conversations"),
+  "api.seller.sellerConversationMessages": (a) => apiGetFresh(`/api/seller/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
+  "api.seller.sendSellerMessageAction": (a) => apiPost(`/api/seller/conversations/${a.conversationId}/messages`, a),
+  "api.seller.markSellerConversationReadAction": (a) => apiPost(`/api/seller/conversations/${a.conversationId}/read`, {}),
+  "api.customer.reorderAction": (a) => apiPost("/api/customer/reorder", a),
+  "api.customer.publicShops": () => apiGet("/api/shops"),
+  "api.customer.shopDetail": (a) => apiGet(`/api/shops/${a.shopId}`),
+  "api.customer.categories": () => apiGet("/api/categories"),
+  "api.customer.categoryTreeAction": (a?: { lang?: string }) => apiGet(`/api/categories/tree${a?.lang ? `?lang=${encodeURIComponent(a.lang)}` : ""}`),
+  "api.customer.categoryStatsAction": (a?: { lang?: string }) => apiGet(`/api/categories/stats${a?.lang ? `?lang=${encodeURIComponent(a.lang)}` : ""}`),
+
+  // Commerce actions (seller)
+  "api.commerce.mySellerStatus": () => apiGet("/api/seller/status"),
+  "api.commerce.mySellerProfile": () => apiGet("/api/seller/profile"),
+  "api.commerce.openShop": (a) => apiPost("/api/seller/apply", a),
+  "api.commerce.createSellerApplication": (a) => apiPost("/api/seller/apply", a),
+  "api.commerce.listProducts": (a) => {
+    if (a?.mine) return apiGet("/api/seller/products");
+    return apiGet("/api/products/catalog");
+  },
+  "api.commerce.getProductDetail": (a) => apiGet(`/api/products/${a.productId}`),
+  "api.commerce.catalogProductsAction": (a) => {
+    const params = new URLSearchParams();
+    if (a?.q) params.set("q", a.q);
+    if (a?.category) params.set("category", a.category);
+    if (a?.shopId) params.set("shopId", a.shopId);
+    if (a?.minPrice) params.set("minPrice", String(a.minPrice));
+    if (a?.maxPrice) params.set("maxPrice", String(a.maxPrice));
+    if (a?.inStock) params.set("inStock", "true");
+    // Verification filter: the catalog only returns products whose seller/shop
+    // is verified (Velnox has ONE verification system — the seller/shop
+    // identity check). Forwarding this is required — dropping it here made
+    // `/products?verified=true` render the whole catalog instead.
+    if (a?.verified) params.set("verified", "true");
+    if (a?.sortBy) params.set("sortBy", a.sortBy);
+    if (a?.limit) params.set("limit", String(a.limit));
+    if (a?.offset) params.set("offset", String(a.offset));
+    return apiGet(`/api/products/catalog?${params}`);
+  },
+  "api.commerce.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),
+  "api.commerce.sellerOrders": (a) =>
+    apiGet(
+      `/api/seller/orders${buildQuery({
+        limit: a?.limit ?? 50,
+        // Server-side status filter: the seller order tab shows the REAL filtered
+        // set for that status, not a client-side slice of one page of results.
+        status: a?.status,
+        offset: a?.offset,
+      })}`,
+    ),
+  "api.commerce.sellerOrderDetail": (a) => apiGet(`/api/seller/orders/${a.orderId}`),
+  "api.commerce.setOrderStatus": (a) => apiPatch(`/api/seller/orders/${a.orderId}/status`, a),
+  "api.commerce.cancelOrderAction": (a) => apiPatch(`/api/customer/orders/${a.orderId}/cancel`, {}),
+  // VelRepeat packages (new system)
+  "api.commerce.myVelRepeatPackages": () => apiGet("/api/velrepeat/packages"),
+  "api.commerce.velRepeatPackageDetail": (a) => apiGet(`/api/velrepeat/packages/${a.packageId}`),
+  "api.commerce.createVelRepeatPackage": (a) => apiPost("/api/velrepeat/packages", a),
+  "api.commerce.updateVelRepeatPackage": (a) => apiPatch(`/api/velrepeat/packages/${a.packageId}`, a),
+  "api.commerce.velRepeatDeliveries": (a) => apiGet(`/api/velrepeat/packages/${a.packageId}/deliveries`),
+  "api.commerce.sellerVelRepeatDeliveries": () => apiGet("/api/seller/velrepeat/deliveries"),
+  "api.commerce.updateVelRepeatDelivery": (a) => apiPatch(`/api/seller/velrepeat/deliveries/${a.deliveryId}`, a),
+  // VelRepeat V2 recurring plans
+  "api.commerce.myVelRepeatPlans": () => apiGet("/api/velrepeat/plans"),
+  "api.commerce.velRepeatPlanDetail": (a) => apiGet(`/api/velrepeat/plans/${a.planId}`),
+  "api.commerce.createVelRepeatPlan": (a) => apiPost("/api/velrepeat/plans", a),
+  "api.commerce.updateVelRepeatPlan": (a) => apiPatch(`/api/velrepeat/plans/${a.planId}`, a),
+  "api.commerce.pauseVelRepeatPlan": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/pause`, a),
+  "api.commerce.resumeVelRepeatPlan": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/resume`, a),
+  "api.commerce.cancelVelRepeatPlan": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/cancel`, a),
+  "api.commerce.runVelRepeatPlanNow": (a) => apiPost(`/api/velrepeat/plans/${a.planId}/run-now`, a),
+  "api.commerce.velRepeatPlanRuns": (a) => apiGet(`/api/velrepeat/plans/${a.planId}/runs`),
+  // VelRepeat V2 — PREPAID commitments. Three endpoints, and only three:
+  // browse what may be bought, create the draft, and open the payment. The
+  // plan status is a separate READ (below) because a returned-from-Stripe
+  // browser must never be treated as proof of payment — the UI polls the server.
+  "api.velrepeatV2.packages": () => apiGet("/api/velrepeat/v2/packages"),
+  "api.velrepeatV2.packageDetail": (a) => apiGet(`/api/velrepeat/v2/packages/${a.packageId}`),
+  // The request carries ONLY packageId / commitmentCycles / frequencyType /
+  // intervalValue. Price, seller, ownership and totals are server-derived: the
+  // backend refuses a body that tries to set them.
+  "api.velrepeatV2.createPlan": (a) => apiPost("/api/velrepeat/v2/plans", a),
+  "api.velrepeatV2.payment": (a) => apiPost(`/api/velrepeat/v2/plans/${a.planId}/payment`, a),
+  "api.velrepeatV2.plans": () => apiGet("/api/velrepeat/v2/plans"),
+  "api.velrepeatV2.planDetail": (a) => apiGet(`/api/velrepeat/v2/plans/${a.planId}`),
+  "api.commerce.repeatOrderNow": (a) => apiPost("/api/velrepeat/repeat-now", a),
+  "api.commerce.sellerVelRepeatOverview": () => apiGet("/api/seller/velrepeat/overview"),
+  "api.centerAdmin.velRepeatOverview": () => apiGet("/api/admin/velrepeat/overview"),
+  // Legacy subscriptions (kept for backward compat)
+  "api.commerce.mySubscriptions": () => apiGet("/api/customer/subscriptions"),
+  "api.commerce.sellerSubscriptions": () => apiGet("/api/seller/subscriptions"),
+  "api.commerce.pauseSubscription": (a) => apiPatch(`/api/subscriptions/${a.subscriptionId}/pause`, a),
+  "api.commerce.updateSubscriptionAction": (a) => apiPatch(`/api/subscriptions/${a.subscriptionId}`, a),
+  "api.commerce.processDueSubscriptions": () => apiPost("/api/subscriptions/process-due"),
+  "api.commerce.createVelRepeat": (a) => apiPost("/api/subscriptions/create", a),
+  "api.commerce.sellerIncomeReport": () => apiGet("/api/seller/income"),
+  "api.commerce.sellerReorderSuggestionsAction": () => apiGet("/api/seller/reorder-suggestions"),
+  "api.commerce.setProductStatusAction": (a) => apiPatch(`/api/seller/products/${a.productId}/status`, a),
+  "api.commerce.deleteProductAction": (a) => apiDelete(`/api/seller/products/${a.productId}`),
+  "api.commerce.createProductAction": (a) => apiPost("/api/seller/products", a),
+  "api.commerce.createFullProductAction": (a) => apiPost("/api/seller/products/create-full", a),
+  "api.commerce.draftUploadIntent": (a) => apiPost("/api/seller/products/draft-upload-intent", a),
+  "api.commerce.updateProductAction": (a) => apiPatch(`/api/seller/products/${a.productId}`, a),
+  "api.commerce.getProductImageUploadIntent": (a) => apiPost("/api/seller/products/image-upload-intent", a),
+  "api.commerce.saveProductImage": (a) => apiPost("/api/seller/products/save-image", a),
+  "api.commerce.deleteProductImageAction": (a) => apiDelete(`/api/seller/products/images/${a.imageId}`),
+  "api.commerce.setPrimaryProductImageAction": (a) => apiPatch(`/api/seller/products/${a.productId}/primary-image`, a),
+  "api.commerce.reorderProductImagesAction": (a) => apiPatch(`/api/seller/products/${a.productId}/reorder-images`, a),
+  "api.commerce.setStockAction": (a) => apiPatch(`/api/seller/products/${a.productId}/stock`, a),
+  "api.commerce.setReorderLevelAction": (a) => apiPatch(`/api/seller/products/${a.productId}/reorder-level`, a),
+
+  // Center admin actions
+  // Paginated: the response carries `pagination` ({page, limit, total, totalPages,
+  // hasMore}). `limit: 1` is the cheapest way to read an exact count.
+  "api.centerAdmin.sellerList": (a) => apiGet(`/api/admin/sellers?status=${a?.status ?? "all"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}${a?.page ? `&page=${a.page}` : ""}${a?.limit ? `&limit=${a.limit}` : ""}`),
+  "api.centerAdmin.setSellerStatusAction": (a) => apiPatch(`/api/admin/sellers/${a.sellerId}/status`, a),
+  "api.centerAdmin.revokeShop": (a) => apiPost(`/api/admin/sellers/${a.sellerId}/revoke`, a),
+  "api.centerAdmin.productModerationList": (a) =>
+    apiGet(
+      `/api/admin/products/moderation${buildQuery({
+        status: a?.status,
+        q: a?.q,
+        sort: a?.sort,
+        shopId: a?.shopId,
+        page: a?.page,
+        limit: a?.limit,
+      })}`
+    ),
+  "api.centerAdmin.productModerationDetail": (a) => apiGet(`/api/admin/products/${a.productId}/moderation-detail`),
+  "api.centerAdmin.setProductModerationStatus": (a) => apiPatch(`/api/admin/products/${a.productId}/moderation`, a),
+  "api.centerAdmin.getPlatformSettings": () => apiGet("/api/admin/settings"),
+  "api.centerAdmin.updatePlatformSettingAction": (a) => apiPatch("/api/admin/settings", a),
+  "api.centerAdmin.marketOverviewAction": () => apiGet("/api/admin/market-overview"),
+  "api.centerAdmin.dashboardCounts": () => apiGet("/api/admin/dashboard/counts"),
+  "api.centerAdmin.ordersListAction": (a) => apiGet(`/api/admin/orders?limit=${a?.limit ?? 100}`),
+  "api.centerAdmin.updateOrderStatusAction": (a) => apiPatch(`/api/admin/orders/${a.orderId}/status`, a),
+  "api.centerAdmin.auditLogs": (a) =>
+    apiGet(
+      `/api/admin/audit-logs${buildQuery({
+        limit: a?.limit ?? 100,
+        offset: a?.offset ?? 0,
+        action: a?.action,
+        entityType: a?.entityType,
+        actorId: a?.actorId,
+        q: a?.q,
+        from: a?.from,
+        to: a?.to,
+      })}`,
+    ),
+  "api.centerAdmin.permissionCatalog": () => apiGet("/api/admin/permissions"),
+  "api.centerAdmin.setStaffProfileAction": (a) => apiPatch("/api/admin/staff", a),
+
+
+  // Category admin (owner/admin)
+  "api.centerAdmin.categoryList": () => apiGet("/api/admin/categories"),
+  "api.centerAdmin.createCategory": (a) => apiPost("/api/admin/categories", a),
+  "api.centerAdmin.updateCategory": (a) => apiPatch(`/api/admin/categories/${a.categoryId}`, a),
+  "api.centerAdmin.deleteCategory": (a) => apiDelete(`/api/admin/categories/${a.categoryId}`),
+  // Center overview/products
+  "api.center.overview": () => apiGet("/api/admin/overview"),
+  "api.products.listAll": () => apiGet("/api/products/catalog?limit=200"),
+
+  // Users (admin)
+  "api.users.currentUser": () => apiGet("/api/auth/me"),
+  "api.auth.memberLogin": (a) => apiPost("/api/auth/member-login", a),
+  "api.auth.changePassword": (a) => apiPost("/api/auth/change-password", a),
+  "api.users.listUsers": (a) => apiGet(`/api/admin/users${buildQuery({ segment: a?.segment ?? "all" })}`),
+  "api.users.setUserAccess": (a) => apiPatch(`/api/admin/users/${a.targetUserId}/access`, a),
+  "api.users.ownerBootstrapStatus": () => apiGet("/api/admin/bootstrap-status"),
+  "api.users.claimOwner": (a) => apiPost("/api/admin/claim-owner", a),
+
+  // Employee auth
+  "api.employeeAuth.employeeListAction": () => apiGet("/api/admin/employees"),
+  "api.employeeAuth.createEmployeeAction": (a) => apiPost("/api/admin/employees", a),
+  "api.employeeAuth.resetEmployeePasswordAction": (a) => apiPost(`/api/admin/employees/${a.userId ?? a.employeeId}/reset-password`, a),
+  "api.employeeAuth.setEmployeeActiveAction": (a) => apiPatch(`/api/admin/employees/${a.userId ?? a.employeeId}/active`, a),
+  "api.employeeAuth.setOwnPasswordAction": (a) => apiPost("/api/auth/change-password", a),
+
+  // Goals (seller)
+  "api.goals.list": () => apiGet("/api/seller/goals"),
+  "api.goals.create": (a) => apiPost("/api/seller/goals", a),
+  "api.goals.update": (a) => apiPatch(`/api/seller/goals/${a.goalId}`, a),
+  "api.goals.remove": (a) => apiDelete(`/api/seller/goals/${a.goalId}`),
+  "api.goals.addProgress": (a) => apiPost(`/api/seller/goals/${a.goalId}/progress`, a),
+
+  // Memory / Intelligence — the ONE implemented endpoint. The former
+  // recommendations / reminders / my-memory / flush mappings declared paths no
+  // backend route ever served and no screen called, so they are gone.
+  "api.memory.marketInsights": () => apiGet("/api/memory/insights"),
+
+  // Stripe
+  "api.stripe.stripeConfiguredAction": () => apiGet("/api/stripe/configured"),
+  "api.payments.methods": () => apiGet("/api/payments/methods"),
+  "api.stripe.createStripeCheckoutAction": (a) => apiPost("/api/stripe/checkout", a),
+  "api.stripe.stripePaymentStatusAction": (a) => apiGet(`/api/stripe/payment-status/${a.sessionId}`),
+  "api.payments.refund": (a) => apiPost(`/api/admin/orders/${a.orderId}/refund`, a),
+
+  // NOTE: `api.users.patchUserImage` (PATCH /api/customer/profile-image) is
+  // gone on purpose — that route wrote `users.avatar` from a client-supplied
+  // URL, bypassing the presign → R2 PUT → verified save flow. The canonical
+  // `api.customer.saveProfileImage` already writes the same reference.
+
+  // Storefront
+  "api.storefront.settings": (a) => apiGet(`/api/shops/${a.shopId}/settings`),
+
+  // Verification — ONE system: seller / shop identity verification.
+  // Product verification was removed from the user workflow; no product
+  // verification route is exposed to any frontend.
+  "api.seller.verificationStatus": () => apiGetFresh("/api/seller/verification"),
+  "api.seller.submitVerification": (a) => apiPost("/api/seller/verification", a),
+  "api.seller.evidenceUploadIntent": (a) => apiPost("/api/seller/evidence/upload-intent", a),
+  "api.seller.evidenceConfirm": (a) => apiPost("/api/seller/evidence/confirm", a),
+  "api.seller.evidenceList": () => apiGetFresh("/api/seller/evidence"),
+  // Paginated: the response carries `pagination` ({page, limit, total, totalPages,
+  // hasMore}). `limit: 1` is the cheapest way to read an exact count.
+  "api.admin.verifications": (a) => apiGet(`/api/admin/verifications?status=${a?.status ?? "pending"}${a?.q ? `&q=${encodeURIComponent(a.q)}` : ""}${a?.page ? `&page=${a.page}` : ""}${a?.limit ? `&limit=${a.limit}` : ""}`),
+  "api.admin.sellerVerificationAction": (a) => apiPatch(`/api/admin/verifications/seller/${a.verificationId}`, a),
+  "api.admin.sellerVerificationEvidence": (a) => apiGetFresh(`/api/admin/verifications/seller/${a.verificationId}/evidence`),
+  "api.admin.sellerVerificationHistory": (a) => apiGetFresh(`/api/admin/verifications/seller/${a.verificationId}/history`),
+  "api.admin.sellerApplication": (a) => apiGetFresh(`/api/admin/sellers/${a.sellerId}/application`),
+  "api.public.shopVerification": (a) => apiGet(`/api/shops/${a.shopId}/verification`),
+  // Categories (localized)
+  "api.customer.categoriesLocalized": (a) => apiGet(`/api/categories?lang=${a?.lang ?? "th"}`),
+};
+
+/**
+ * useAction replacement — returns a callable function for POST-based actions.
+ * Maps api.xxx.yyy to the corresponding API endpoint.
+ * If a function is passed directly (e.g. useAction(api.commerce.createProductAction)),
+ * it is returned as-is.
+ */
+export function useAction(routeKeyOrFn: string | ((...args: any[]) => any)): (...args: any[]) => Promise<any> {
+  if (typeof routeKeyOrFn === "function") return routeKeyOrFn;
+  const handler = ACTION_MAP[routeKeyOrFn];
+  if (handler) return handler;
+  // Fallback: try POST to a guessed path
+  const parts = routeKeyOrFn.replace(/^api\./, "").split(".");
+  const path = `/api/${parts.join("/")}`;
+  return (args?: any) => apiPost(path, args);
+}
+
+/**
+ * useQuery replacement — a real React hook that GETs a read endpoint and
+ * returns the unwrapped payload.
+ *
+ * Accepts either a route key (`"api.center.overview"`) or the mapped action
+ * function itself (`api.center.overview`, which is the stable ACTION_MAP
+ * reference — NOT a new closure, so it is safe as an effect dependency).
+ *
+ * Returns `undefined` while loading and when the request fails; every existing
+ * caller already treats `undefined` as "not loaded yet".
+ */
+export function useQuery(routeKeyOrFn: (() => Promise<any>) | string): any {
+  const [data, setData] = useState<any>(undefined);
+  // Bumped by the mutation invalidation bus below, which re-runs the loader.
+  const [version, setVersion] = useState(0);
+  const loaderRef = useRef<() => Promise<any>>(() => Promise.resolve(undefined));
+  loaderRef.current =
+    typeof routeKeyOrFn === "function"
+      ? (routeKeyOrFn as () => Promise<any>)
+      : (() => apiGet(routeKeyOrFn));
+
+  useEffect(() => {
+    let alive = true;
+    loaderRef
+      .current()
+      .then((value) => {
+        if (alive) setData(value);
+      })
+      .catch((err) => {
+        console.error("[api-routes] useQuery failed:", err);
+        if (alive) setData(undefined);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [routeKeyOrFn, version]);
+
+  // Any mutation invalidates the GET cache — this component follows so the
+  // state on screen matches the server once the write is confirmed.
+  useEffect(() => {
+    const listener = () => setVersion((v) => v + 1);
+    _invalidationListeners.add(listener);
+    return () => {
+      _invalidationListeners.delete(listener);
+    };
+  }, []);
+
+  return data;
+}
+
+/**
+ * useMutation replacement — returns a callable function for mutations.
+ * If a function is passed directly, it is returned as-is.
+ */
+export function useMutation(routeKeyOrFn: string | ((...args: any[]) => any)): (...args: any[]) => Promise<any> {
+  if (typeof routeKeyOrFn === "function") return routeKeyOrFn;
+  const handler = ACTION_MAP[routeKeyOrFn];
+  if (handler) return handler;
+  const parts = routeKeyOrFn.replace(/^api\./, "").split(".");
+  const path = `/api/${parts.join("/")}`;
+  return (args?: any) => apiPost(path, args);
+}
+
+// ─── api stub for backward compatibility ─────────────────────────────────────
+
+function createApiProxy(path: string): any {
+  return new Proxy({} as any, {
+    get(_target, prop) {
+      const routeKey = `${path}.${String(prop)}`;
+      const handler = ACTION_MAP[routeKey];
+      if (handler) return handler;
+      // Return a function that calls the API
+      return (args?: any) => {
+        const parts = routeKey.replace(/^api\./, "").split("/");
+        const apiPath = `/api/${parts.join("/")}`;
+        return apiPost(apiPath, args);
+      };
+    },
+  });
+}
+
+/** Invalidate the frontend GET cache. Call after mutations that change profile data. */
+export function invalidateProfileCache() {
+  invalidateGetCache("/api/customer/profile");
+  invalidateGetCache("/api/auth/me");
+}
+
+export const api = new Proxy({} as any, {
+  get(_target, prop) {
+    return createApiProxy(`api.${String(prop)}`);
+  },
+});

@@ -1,0 +1,232 @@
+import { Toaster } from "@velnox/shared/components/ui/sonner";
+import { RequireAuth } from "@velnox/shared/components/RequireAuth";
+import { CartProvider } from "@/lib/cart";
+import { CookieConsentProvider } from "@/lib/cookie-consent";
+import { LanguageProvider, useLanguage } from "@/lib/i18n";
+import {
+  RootErrorBoundary,
+  RouteSyncer,
+  SiteSuspense,
+} from "@velnox/shared/lib/app-shell";
+import { siteBasename } from "@velnox/shared/lib/sites";
+import { initMonitoring } from "@velnox/shared/lib/monitoring";
+
+initMonitoring();
+import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+import { CUSTOMER_MEMORY_ENABLED, VELREPEAT_ENABLED } from "@velnox/shared/lib/features";
+import { IdentityMerge } from "@velnox/shared/lib/track";
+import { useCart } from "@/lib/cart";
+import { Home, Package, ReceiptText, ShoppingCart, User } from "lucide-react";
+import { lazy, useEffect } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import "../../../packages/shared/src/index.css";
+
+/**
+ * VelShop mobile bottom navigation — app-like fixed tab bar (5 items).
+ */
+function ShopTabBar() {
+  const { count } = useCart();
+  const { t } = useLanguage();
+  const items: MobileTabItem[] = [
+    { to: "/", label: t("nav.home"), icon: Home, activeMatch: (p) => p === "/" },
+    { to: "/products", label: t("nav.products"), icon: Package },
+    {
+      to: "/cart",
+      label: t("nav.cart"),
+      icon: ShoppingCart,
+      badge: count,
+      activeMatch: (p) => p.startsWith("/cart") || p.startsWith("/checkout"),
+    },
+    { to: "/orders", label: t("nav.orders"), icon: ReceiptText },
+    { to: "/profile", label: t("nav.profile"), icon: User },
+  ];
+  return <MobileTabBar items={items} />;
+}
+
+/**
+ * Global route scroll restoration — every page navigation (incl. back/forward)
+ * starts at the top. Keyed on pathname only so in-page state changes
+ * (sheets, drawers, modals, query updates) never reset scroll.
+ */
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [pathname]);
+  return null;
+}
+
+const ShopHome = lazy(() => import("@/pages/ShopHome"));
+const ShopProducts = lazy(() => import("@/pages/ShopProducts"));
+const ShopCategories = lazy(() => import("@/pages/ShopCategories"));
+const ShopProductDetail = lazy(() => import("@/pages/ShopProductDetail"));
+const ShopDetail = lazy(() => import("@/pages/ShopDetail"));
+const ShopCart = lazy(() => import("@/pages/ShopCart"));
+const ShopCheckout = lazy(() => import("@/pages/ShopCheckout"));
+const ShopCheckoutSuccess = lazy(() => import("@/pages/ShopCheckoutSuccess"));
+const ShopCheckoutCancel = lazy(() => import("@/pages/ShopCheckoutCancel"));
+const MyOrders = lazy(() => import("@/pages/MyOrders"));
+const ShopOrderDetail = lazy(() => import("@/pages/ShopOrderDetail"));
+const ShopTracking = lazy(() => import("@/pages/ShopTracking"));
+const VelRepeatPage = lazy(() => import("@/pages/VelRepeatPage"));
+const VelRepeatV2Page = lazy(() => import("@/pages/VelRepeatV2Page"));
+const ShopWishlist = lazy(() => import("@/pages/ShopWishlist"));
+const ShopAddresses = lazy(() => import("@/pages/ShopAddresses"));
+const ShopProfile = lazy(() => import("@/pages/ShopProfile"));
+const ShopAccount = lazy(() => import("@/pages/ShopAccount"));
+const ShopHelp = lazy(() => import("@/pages/ShopHelp"));
+const ShopNotifications = lazy(() => import("@/pages/ShopNotifications"));
+const ShopChat = lazy(() => import("@/pages/ShopChat"));
+const CookiePolicy = lazy(() => import("@/pages/CookiePolicy"));
+const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
+const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
+
+createRoot(document.getElementById("root")!).render(
+  <RootErrorBoundary>
+    <LanguageProvider>
+      {/* PARKED (2026-10-14): Customer Memory is off, so the guest → account
+          identity merge is not mounted. The component stays in the bundle-ready
+          source and the flag restores it. */}
+      {CUSTOMER_MEMORY_ENABLED && <IdentityMerge />}
+      <BrowserRouter basename={siteBasename("velshop")}>
+      <ScrollToTop />
+      <RouteSyncer />
+      <CartProvider>
+      <CookieConsentProvider>
+      <div className="site-app">
+      <SiteSuspense>
+        <Routes>
+          <Route path="/" element={<ShopHome />} />
+          <Route path="/products" element={<ShopProducts />} />
+          <Route path="/categories" element={<ShopCategories />} />
+          <Route path="/products/:productId" element={<ShopProductDetail />} />
+          <Route path="/shops/:shopId" element={<ShopDetail />} />
+          <Route path="/cart" element={<ShopCart />} />
+          <Route
+            path="/checkout"
+            element={
+              <RequireAuth>
+                <ShopCheckout />
+              </RequireAuth>
+            }
+          />
+          <Route path="/checkout/success" element={<ShopCheckoutSuccess />} />
+          <Route path="/checkout/cancel" element={<ShopCheckoutCancel />} />
+          <Route
+            path="/orders"
+            element={
+              <RequireAuth>
+                <MyOrders />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders/:orderId"
+            element={
+              <RequireAuth>
+                <ShopOrderDetail />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders/:orderId/tracking"
+            element={
+              <RequireAuth>
+                <ShopTracking />
+              </RequireAuth>
+            }
+          />
+          {/* PARKED (2026-10-14): VelRepeat (recurring / prepaid repeat commerce)
+              is off for the MVP. The routes are not registered, so /velrepeat and
+              /velrepeat/v2 fall through to NotFound — no page, and no API call to
+              a route the backend no longer mounts. The pages, the dialogs and the
+              backend modules are all still in the repository behind the flag.
+
+              VelRepeat V2 — the prepaid commitment flow. Stripe returns here
+              with ?velrepeat_v2_payment=success|cancel&plan=<id>; the page then
+              reads the plan status from the SERVER and never assumes the
+              redirect means the payment landed. */}
+          {VELREPEAT_ENABLED && (
+            <>
+              <Route
+                path="/velrepeat"
+                element={
+                  <RequireAuth>
+                    <VelRepeatPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/velrepeat/v2"
+                element={
+                  <RequireAuth>
+                    <VelRepeatV2Page />
+                  </RequireAuth>
+                }
+              />
+            </>
+          )}
+          <Route
+            path="/wishlist"
+            element={
+              <RequireAuth>
+                <ShopWishlist />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/addresses"
+            element={
+              <RequireAuth>
+                <ShopAddresses />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <ShopProfile />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile/account"
+            element={
+              <RequireAuth>
+                <ShopAccount />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <RequireAuth>
+                <ShopChat />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <RequireAuth>
+                <ShopNotifications />
+              </RequireAuth>
+            }
+          />
+          <Route path="/help" element={<ShopHelp />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="/cookies" element={<CookiePolicy />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </SiteSuspense>
+      <ShopTabBar />
+      </div>
+      </CookieConsentProvider>
+    </CartProvider>
+    </BrowserRouter>          <Toaster />
+    </LanguageProvider>
+  </RootErrorBoundary>,
+);
