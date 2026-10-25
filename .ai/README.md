@@ -27,9 +27,14 @@ Every agent session follows:
 8. Make the smallest safe change
 9. Run the task-specific verification (`.ai/context/testing.md`)
 10. Check stop conditions
-11. Update `.ai/AI_HANDOFF.md`
-12. Produce a concise task report
-13. Commit only verified changes (`.ai/context/workflow.md`)
+11. Write the Change Report into `.ai/history/` — **mandatory** for every repo-changing task
+    (`.ai/AI_RULES.md` §18); read it back to confirm it exists
+12. Update `.ai/AI_HANDOFF.md`
+13. Produce a concise task report with the resulting git SHA
+14. Commit only verified changes (`.ai/context/workflow.md`)
+
+Never answer with only "done", and never report a check you did not run. Production Neon is never
+connected to by an agent — hand the owner read-only SQL instead (`.ai/AI_RULES.md` §17).
 
 `AGENTS.md` at the repo root is the short entry point for tools that look for it; it points here.
 
@@ -125,6 +130,7 @@ Never omit a file merely to make the task faster if that file is required to ver
 │   └── completed/     finished reports — never auto-loaded
 └── history/           reference only — never auto-loaded
     ├── AI_Handoff_Archive.md   dated index of superseded work
+    ├── YYYY-MM-DD-*.md         mandatory Change Reports (§18) — one per repo-changing task
     └── archive/                verbatim long-form records
 ```
 

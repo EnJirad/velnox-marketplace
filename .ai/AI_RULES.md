@@ -208,3 +208,82 @@ Conventional-ish: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. No vagu
 ## 16. When Ambiguous
 
 Prefer the smallest reasonable interpretation that preserves security and data. If ambiguity risks data loss, security, or breaking changes, stop and ask before proceeding.
+
+## 17. Production Database — READ-ONLY for Agents
+
+**An agent never connects to the production Neon database in the owner's place**, and never runs DDL,
+DML or the reconciler against it — with or without credentials present. Reading production is the
+owner's action; the agent's job is to hand over exact, reviewable, read-only SQL and to report what
+it could not verify.
+
+Before any production-facing audit:
+
+1. Confirm the git state: `git fetch origin`, branch, local SHA vs `origin/<branch>`, working tree.
+2. Confirm *which* database is being discussed (Neon project/branch == Render's `DATABASE_URL`). If
+   that cannot be proven, say so — do not assume.
+3. Change no code, and never touch `db/schema.sql`, `db/run-sqleditor.sql` or `db/verify-reconciler.sh`
+   during an audit.
+4. Use catalog-only reads (`information_schema`, `pg_catalog`, `to_regclass`) — no `DROP`, `DELETE`,
+   `TRUNCATE`, `ALTER`, `UPDATE`, `INSERT`.
+5. When something is wrong: **stop and report.** Do not fix it inside the audit.
+
+```
+Production Neon  →  OWNER-EXECUTED, READ-ONLY, AUDIT ONLY
+Agent            →  queries + report, never a connection
+```
+
+Report with exactly these statuses: **PASS** · **FAIL** · **WARNING** · **BLOCKED** · **NOT RUN**.
+`NOT RUN` is the honest status for anything not executed; `BLOCKED` names the missing precondition
+(credential, owner approval, environment). A missing capability is never a `PASS`.
+
+Housekeeping facts that keep the checklist honest:
+
+- **There is no `customers` table.** Buyers are rows in `users` with `role = 'customer'`.
+- **`db/run-sqleditor.sql` writes.** It is never part of an audit: an audit reads, it does not reconcile.
+- **`production-db-verify.yml` is partial evidence.** It probes the checkout-group/payment shape and
+  `schema_migrations`, not every Marketplace table. Say which objects a green run actually covered.
+
+## 18. Mandatory Change Report — No Change Without a Record
+
+**Every task that changes this repository must leave a record under `.ai/`.** Finishing with an edit
+and no report is a rule violation, not a shortcut.
+
+**Location:** one file per significant task — `.ai/history/YYYY-MM-DD-<slug>.md`. Grouped work may
+share a file; unrelated tasks may not.
+
+**The report contains at least these 20 fields:**
+
+| # | Field | # | Field |
+|---|---|---|---|
+| 1 | date + time (with timezone) | 11 | what changed |
+| 2 | AI / agent name | 12 | why it changed |
+| 3 | git branch | 13 | systems affected |
+| 4 | commit SHA before | 14 | systems confirmed unaffected, and how |
+| 5 | commit SHA after (or how to find it) | 15 | tests / checks run — the real commands |
+| 6 | purpose of the change | 16 | result of each check (PASS/FAIL/BLOCKED) |
+| 7 | what was inspected before changing | 17 | problems found |
+| 8 | files / folders touched | 18 | limitations, what was not checked |
+| 9 | what was added | 19 | work still open |
+| 10 | what was removed | 20 | what the next agent must know first |
+
+**Never fabricate:** do not claim a check was run when it was not, a test passed when it was not
+executed, a database was inspected when it was not, or production is ready while a blocker stands. If
+you do not know, write `UNKNOWN` / `NOT VERIFIED` / `NOT RUN`.
+
+**Completion sequence — in this order, every time:**
+
+```
+1. git diff  +  git status           (know exactly what changed)
+2. inspect each changed file
+3. run the verification the change actually needs
+4. summarise PASS / FAIL / WARNING / BLOCKED — honestly
+5. write the Change Report into .ai/history/
+6. update .ai/AI_HANDOFF.md if project state moved (§15)
+7. confirm the report file exists (read it back; do not assume)
+8. report the resulting git SHA
+9. state the next concrete step
+```
+
+Never answer with only "done". `.ai/` is the project's memory: **read → verify → implement → test →
+record → hand off.** Archiving a superseded section to `.ai/history/archive/` is not deletion — the
+text stays verbatim and gains an index row; deleting real history to shorten a file is forbidden.

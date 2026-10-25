@@ -294,3 +294,13 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_Handoff-2026-10-06-to-2026-10-08-commerce-rebuild-passes.md`](./archive/AI_Handoff-2026-10-06-to-2026-10-08-commerce-rebuild-passes.md) | handoff §70–§72 + §74 — payment/checkout/order/inventory/webhook rebuilt as ONE system · e-commerce rebuild phases 0-4 · `orders.status` as a derived projection · Phase 3 shipment lifecycle | Moved **verbatim** on 2026-10-23 (edit-headroom housekeeping while appending §76; the file was at 63 KB against the ~55 KB edit-tool limit). Completed passes 2026-10-06 → 2026-10-08; their results still stand and the live gap list stays in handoff §6. Only three link prefixes were adjusted for the new location (`../docs/` → `../../../docs/`, `history/archive/` → sibling, `audit/` → `../../audit/`). |
+
+### 2026-10-25 — §77 archived while adding §78 (Production Neon read-only audit + permanent change-audit-trail rules)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-24-section-77-audit.md`](./archive/AI_Handoff-2026-10-24-section-77-audit.md) | handoff §77 — independent audit of the VelRepeat removal + repository cleanup | Moved **verbatim** on 2026-10-25 (edit-headroom housekeeping while appending §78; the current-state file was 53.5 KB against the ~55 KB edit-tool limit). Records the read-only verdict — 0 VelRepeat hits in `apps/`/`backend/`/`packages/`, 2 `.sql` files only, suite 1280 pass / 6 skip / 0 fail on local PG14, 4/4 builds — plus the first written record of the boot-time behaviour change (`checkout_requests` / `conversations` are reported, not created). Its still-live conclusions are restated in the §77 pointer and in §78. |
+
+| [`archive/AI_Handoff-2026-10-14-section-75-mvp-reposition.md`](./archive/AI_Handoff-2026-10-14-section-75-mvp-reposition.md) | handoff §75 — MVP repositioned: buy & sell, VelRepeat + Customer Memory parked | Moved **verbatim** on 2026-10-25 (same housekeeping; only two link prefixes adjusted). Superseded in part by §76 — VelRepeat is **removed**, not parked — while **Customer Memory parking still stands** and the wholesale buyer track was **never built**. The still-live parts are restated in the handoff's §75 pointer. |
+
+**Also on 2026-10-25:** §78 added — a read-only audit of the **repository** (PASS) and of **Production Neon** (`NOT RUN` / `BLOCKED`; no credential here and agents may not connect on the owner's behalf), the finding that `production-db-verify.yml` does not probe the 19 required Marketplace tables or VelRepeat leftovers, and the new permanent rules `.ai/AI_RULES.md` §17–§18. Full report: [`2026-10-25-production-neon-audit.md`](./2026-10-25-production-neon-audit.md).

@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-24 · **Branch:** `main` · **Latest pass:** **independent audit of the VelRepeat removal + cleanup** (**§77**) — no executable VelRepeat code, exactly 2 `.sql` files, suite **1280 pass / 6 skip / 0 fail** on real PostgreSQL 14, reconciler proof **ALL SCENARIOS PASSED**, 4/4 builds green; **production DB reconcile/verify and real Stripe TEST E2E remain BLOCKED** (owner action)
+**Last updated:** 2026-10-25 · **Branch:** `main` · **Latest pass:** **Production Neon READ-ONLY audit + the change-audit-trail rules made permanent** (**§78**) — repo-side checks **PASS** (0 VelRepeat in executable code, 2 `.sql` files, 19/19 required tables declared, `sql-reference-coverage` 5/5); **Production Neon live inspection NOT RUN / BLOCKED** by rule §17 (owner must run the read-only queries); **production reconcile, real Stripe TEST E2E remain BLOCKED**
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -617,57 +617,15 @@ PASSED · all typechecks and builds green). What is still open lives in §6.
 
 ---
 
-## §75. MVP repositioned: buy & sell — VelRepeat + Customer Memory PARKED (2026-10-14)
+## §75. MVP repositioned: buy & sell — VelRepeat + Customer Memory PARKED (2026-10-14) — ARCHIVED
 
-> **2026-10-23 — superseded in part (see §76):** **VelRepeat is now REMOVED, not parked.** The
-> parking contract described below (the `VELREPEAT_ENABLED` switches, the unmounted routes, and
-> "every table, migration, route, job, page, component, test and i18n key remains in the
-> repository") is obsolete for VelRepeat — restoring it would be a rebuild, not a flag flip.
-> **Customer Memory parking still stands** exactly as written, and the Phase-1 caption /
-> corporate-site work shipped as recorded.
-
-**Full plan / brief:** [`.ai/tasks/active/mvp-marketplace-restructure-2026-10-14.md`](tasks/active/mvp-marketplace-restructure-2026-10-14.md)
-— **§5 is what SHIPPED; §6–§9 are PROPOSED DESIGN and implement nothing.**
-
-**The decision.** The owner re-scoped Velnox: a normal marketplace first (ordinary customers buy and
-pay normally), plus a **second buyer track for community / village shops** — order by line item, buy
-**per piece or per pack**, and pay **less per unit** on a pack, so a weekly restock of only the items
-that ran out is a normal order. Velnox does not build its own branch network; it connects shops to
-real sellers. **VelRepeat and Customer Memory are out of the product for now and return later.**
-
-**Shipped (Phase 1) — parking, not deletion.** Two fail-closed switches per module:
-`packages/shared/src/lib/features.ts` (const) and `backend/lib/features.ts` (env, only the literal
-`"true"` enables) — `VELREPEAT_ENABLED`, `CUSTOMER_MEMORY_ENABLED`. With them off: the **6 VelRepeat
-route modules are not mounted** (404), **both VelRepeat schedulers do not start**,
-`ensureVelRepeatV2Tables()` does not run, `/api/events/{track,merge}` and `/api/memory/insights`
-answer 404 through `parkedModule()`, `useTracking()` is a no-op (no event, no anonymous id), the two
-velShop VelRepeat routes are unregistered, and every VelRepeat / memory rail, button, dialog, footer
-link, help category, seller authoring section and VelCenter card is hidden behind the flag.
-**Every table, migration, route, job, page, component, test and i18n key remains in the repository.**
-
-**Captions rewritten (th/en/my values only, parity intact):** `footer.tagline`,
-`footer.shopDesc`, `cartDrawer.tagline`, `home.seoDesc` → "ซื้อขายของจริง · ปลีกและส่ง ในที่เดียว";
-the whole corporate site (`CorporateHome.tsx` rewritten, `corporate/content.ts`, `CorporateLayout.tsx`)
-now tells the retail + community-shop wholesale story, and its wholesale illustration is labelled
-**ตัวอย่าง (example)** so no marketing block reads as live storefront data.
-
-**Verified this pass (no DB available — see below):** `bun run typecheck` 4/4 exit 0 ·
-`bunx tsc --noEmit -p backend/tsconfig.json` exit 0 · `bun run i18n:check` →
-**th=1496 en=1496 my=1496, all locales at parity** · `bun run build:apps` 4/4 exit 0 ·
-`bun test backend/tests` → **1715 pass / 382 skip / 1 fail**, the one failure being
-`ECONNREFUSED 127.0.0.1:5432` in `checkout-group-payment-visibility.test.ts`'s DB-backed `describe`
-(**pre-existing gap: that describe is not gated on `hasTestDatabase()`**; nothing listens on 5432
-here and the file imports only untouched modules). **No browser E2E ran; `bun run lint` is not
-configured.**
-
-**NOT built (do not describe as working):** the wholesale buyer track itself — pack pricing, shop
-accounts, MOQ, restock lists. Today a shop can only order the same retail lines as anyone else.
-Phase 2's model is specified in the brief (§6): `product_pack_sizes` + `cart_items`/`order_items`
-(`pack_size_id`, `pack_pieces`, `pack_name`), where `quantity` = **selling units**, the pack price is
-authoritative, the per-unit price is **derived for display only**, and inventory sees only
-`quantity * pack_pieces` — one inventory authority, one `sold_count` authority, legacy rows
-bit-identical at `pack_pieces = 1`. **§9 of the brief lists the owner decisions that must be answered
-before that code is written.**
+Superseded in part by §76: **VelRepeat is removed, not parked** (restoring it would be a rebuild).
+**Customer Memory parking still stands** (`CUSTOMER_MEMORY_ENABLED` is the only feature flag left),
+and the Phase-1 caption / corporate-site work shipped as recorded. **The wholesale buyer track was
+never built** — pack pricing, shop accounts, MOQ and restock lists do not exist; a shop orders the
+same retail lines as anyone else. Verbatim text:
+[`.ai/history/archive/AI_Handoff-2026-10-14-section-75-mvp-reposition.md`](./history/archive/AI_Handoff-2026-10-14-section-75-mvp-reposition.md);
+brief and Phase-2 model: [`.ai/tasks/active/mvp-marketplace-restructure-2026-10-14.md`](tasks/active/mvp-marketplace-restructure-2026-10-14.md).
 
 ---
 
@@ -735,45 +693,57 @@ VelRepeat statement, so running it after that plan stays a no-op.
 executed later · ~30 explanatory comments in `backend/**` and the dated records still name old
 migration numbers as historical anchors (they reference no file and are documented exceptions).
 
-## §77. Independent audit of the VelRepeat removal + repository cleanup (2026-10-24)
+## §77. Independent audit of the VelRepeat removal + repository cleanup (2026-10-24) — ARCHIVED
 
-**Audited commit:** `bfa416e92d064b864e9ced83e491f6034c00002d` (`main`, == `origin/main`) —
-working tree clean, 0 ahead / 0 behind. Audit was read-only (no code, schema or database change).
-**Full report:** [`.ai/audit/FINAL_AUDIT_2026-10-24_VELREPEAT_REMOVAL.md`](./audit/FINAL_AUDIT_2026-10-24_VELREPEAT_REMOVAL.md).
+Audited `bfa416e` read-only. Verdict **CLEAN WITH MINOR FINDINGS**: 0 VelRepeat hits in
+`apps/`, `backend/`, `packages/`; 2 `.sql` files only; the boot self-heal removal in
+`backend/server.ts` documented for the first time. Full text moved verbatim to
+[`.ai/history/archive/AI_Handoff-2026-10-24-section-77-audit.md`](./history/archive/AI_Handoff-2026-10-24-section-77-audit.md)
+on 2026-10-25; report: [`.ai/audit/FINAL_AUDIT_2026-10-24_VELREPEAT_REMOVAL.md`](./audit/FINAL_AUDIT_2026-10-24_VELREPEAT_REMOVAL.md).
 
-**Verdict: CLEAN WITH MINOR FINDINGS.** `velrepeat` / `vrepeat` = **0 files / 0 hits** in
-`apps/`, `backend/`, `packages/`; remaining hits are dated records (`.ai/history/`,
-`.ai/tasks/completed/`, `.ai/audit/`), the §75/§76 pointers, the active brief's banner,
-`docs/VELREPEAT_REMOVAL_PLAN.md`, and 5 explanatory comments in `db/`. Executable files (`.ts`,
-`.sh`, `.json`, `.yml`) contain **0** references to `db/migrations/`; the 113 that remain are all
-Markdown. `git ls-files '*.sql'` = exactly `db/schema.sql` + `db/run-sqleditor.sql`.
+## §78. Production Neon READ-ONLY audit + permanent change-audit-trail rules (2026-10-25)
 
-**Re-verified this pass:** `bun run i18n:check` th=en=my=1249 · `sql-reference-coverage` 5/5 ·
-`curl`-free manifest parse (6 workspaces resolve) · full suite 63 files **1280 pass / 6 skip /
-0 fail** on local PG14 · `bun run db:verify` PASS · `db/verify-reconciler.sh` 52 scenarios PASS ·
-`bun run build:apps` 4/4 · `git diff --check` clean. (The 4 extra skips vs §76's 1284/2 are
-environment-gated; 0 failures either way.)
+**Base SHA:** `964156db6241704d61954a52799485d345c6d013` (`main` == `origin/main`, 0/0, clean).
+**Report:** [`.ai/history/2026-10-25-production-neon-audit.md`](./history/2026-10-25-production-neon-audit.md).
+**Nothing was connected to, executed against, or changed in any database. No code, schema or SQL
+file was modified — this pass wrote only `.ai/` Markdown.**
 
-**Behaviour change now documented (was implicit in §76):** `backend/server.ts` no longer
-self-heals at boot — `ensureVariantTables()` logs instead of applying the deleted
-`db/migrations/028_*.sql`, and `ensureCheckoutIdempotencyTable()` / `ensureChatTables()` became
-`reportCheckoutIdempotencyTable()` / `reportChatTables()`, so `checkout_requests` and
-`conversations` are reported, not created. On a database reconciled with `db/run-sqleditor.sql`
-this is a no-op; on a stale database checkout idempotency and chat stay unavailable until that
-file is applied. Intentional single-bootstrap-path consequence, not a VelRepeat-removal side
-effect.
+**Repo-side audit (executed): PASS.** `velrepeat`/`vrepeat` = 0 files in `apps/`, `backend/`,
+`packages/`; `CREATE TABLE … velrepeat` = 0 in both SQL files; `run-update` = 0 in executable
+files; both `db/*.sql` declare **63** tables and every table the audit checklist names
+(`users` stands in for customers — `users.role='customer'`, there is no `customers` table);
+`git ls-files '*.sql'` = 2; `bun test backend/tests/sql-reference-coverage.test.ts` = **5 pass /
+0 fail**. Remaining `velrepeat` strings: 2 comments (`db/run-sqleditor.sql:3757-3758`), 38 files
+under `.ai/` (dated records) and `docs/VELREPEAT_REMOVAL_PLAN.md`.
 
-**Non-VelRepeat logic:** 95 modified files reviewed hunk-by-hunk (money, payment-incidents,
-stripe, cart, seller-orders, inventory, payment-reservation*, rate-limit, db/index) — only
-VelRepeat removals, dead migration-path pointers and comments. Stripe infrastructure and generic
-billing/order/shipment/inventory/refund behaviour untouched.
+**Production Neon: NOT RUN / BLOCKED.** No `NEON_PRODUCTION_DATABASE_URL` exists in this
+workspace (`freebuff-env list` is empty) **and** rule §17 forbids an AI from connecting to the
+production database in the owner's place. Real production state is **UNKNOWN** until the owner
+runs the read-only query set in the report (§11). Do not report it as PASS.
 
-**Still BLOCKED:** production reconcile/verify (no `NEON_PRODUCTION_DATABASE_URL` here) · real
-Stripe TEST E2E (no keys/browser) · `bun run lint` (not configured). Production VelRepeat objects
-were **not** dropped — owner executes `docs/VELREPEAT_REMOVAL_PLAN.md`.
+**WARNING — the sanctioned verifier does not answer the checklist.**
+`.github/workflows/production-db-verify.yml` is genuinely read-only and owner-runnable, but it
+probes only `checkout_groups`, the two `checkout_group_id` columns, provider idempotency columns,
+the FK delete rules, the group indexes, the payments CHECKs and `schema_migrations`. It does **not**
+probe the 19 required Marketplace tables, VelRepeat leftovers, or the `run-update` ledger. Treat a
+green run as partial evidence only; the report's query set covers the gap. (Not fixed on purpose:
+this pass was audit-only.)
+
+**Rules are now permanent (again docs-only):** `.ai/AI_RULES.md` **§17** (production DB is
+read-only for agents; never connect on the owner's behalf; report `NOT RUN`/`BLOCKED`) and
+**§18** (every repo-changing task must leave a Change Report in `.ai/history/` with the 20
+required fields, update this handoff, and never claim an unrun check passed). `.ai/README.md`
+points at both.
+
+**Open / next:** owner runs the read-only queries and confirms the production identity ·
+production reconcile + verify **BLOCKED** · real Stripe TEST E2E **BLOCKED** (no keys/browser) ·
+`bun run lint` not configured · legacy VelRepeat objects in a real database are still removed only
+by the owner via `docs/VELREPEAT_REMOVAL_PLAN.md` (backup + approval first).
 
 ---
 
-**Note on this file's size:** keep it under the ~55 KB edit-tool ceiling (this section lands it at
-~50 KB). Before appending, move the oldest dated completed-pass block to `history/archive/` with a
-pointer and add the index row to `history/AI_Handoff_Archive.md`.
+**Note on this file's size:** the ~55 KB edit-tool ceiling is real (this file was 53.5 KB before §77
+and §75 were archived; it is ~51 KB now). The next candidates are §69 and the Actions-alignment
+block — move one to `history/archive/` **with** an index row in
+`history/AI_Handoff_Archive.md` before appending again. Archiving is not deletion: the text is
+preserved verbatim.
