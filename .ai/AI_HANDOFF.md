@@ -704,6 +704,7 @@ on 2026-10-25; report: [`.ai/audit/FINAL_AUDIT_2026-10-24_VELREPEAT_REMOVAL.md`]
 ## §78. Production Neon READ-ONLY audit + permanent change-audit-trail rules (2026-10-25)
 
 **Base SHA:** `964156db6241704d61954a52799485d345c6d013` (`main` == `origin/main`, 0/0, clean).
+**Resulting commit:** `9d3a6418c27cb385c1b8912328cceb8bebc68613` (pushed; 7 files, `.ai/*.md` only).
 **Report:** [`.ai/history/2026-10-25-production-neon-audit.md`](./history/2026-10-25-production-neon-audit.md).
 **Nothing was connected to, executed against, or changed in any database. No code, schema or SQL
 file was modified — this pass wrote only `.ai/` Markdown.**

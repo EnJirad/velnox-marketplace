@@ -42,7 +42,10 @@ working tree clean ก่อนเริ่มงาน
 
 ## 5. Git commit SHA หลังแก้
 
-บันทึกใน commit ต่อเนื่อง (ไฟล์นี้ไม่สามารถบรรจุ SHA ของตัวเองได้):
+`9d3a6418c27cb385c1b8912328cceb8bebc68613` — `docs(ai): §78 — Production Neon read-only audit + permanent change-report rules`
+(7 ไฟล์, +572 / −94, ไฟล์ `.ai/*.md` เท่านั้น)
+
+SHA ของ commit ที่บันทึกค่านี้ (metadata-only, ไม่แตะเนื้อหา):
 `git log -1 --format=%H -- .ai/history/2026-10-25-production-neon-audit.md`
 
 ## 6. จุดประสงค์ของการแก้
