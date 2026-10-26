@@ -689,7 +689,7 @@ by the owner via `docs/VELREPEAT_REMOVAL_PLAN.md` (backup + approval first).
 ## §79. Phase 1 — UI/UX + Realtime Professional Audit (2026-10-26) — **AUDIT ONLY**
 
 **Base SHA:** `f71dcfd2fe26c7c92d94eb2ef7d7418f1c82d4d1` (`main` == `origin/main`, 0/0, clean).
-**Resulting commit:** recorded in the follow-up docs commit (a file cannot carry its own SHA).
+**Resulting commit:** `903501f4594e4d30d3918e579fe39b65c540ef9a` (the audit commit; its SHA is recorded here in the follow-up `docs(ai)` commit).
 **Report:** [`.ai/history/2026-10-26-ui-realtime-professional-audit.md`](history/2026-10-26-ui-realtime-professional-audit.md).
 **Nothing was modified except `.ai/` Markdown.** SOURCE CODE MODIFIED: **NO** · DATABASE MODIFIED: **NO** ·
 SQL MODIFIED: **NO** · PRODUCTION DB CONNECTED: **NO**.
