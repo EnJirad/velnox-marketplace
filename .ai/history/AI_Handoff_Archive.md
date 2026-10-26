@@ -304,3 +304,11 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 | [`archive/AI_Handoff-2026-10-14-section-75-mvp-reposition.md`](./archive/AI_Handoff-2026-10-14-section-75-mvp-reposition.md) | handoff §75 — MVP repositioned: buy & sell, VelRepeat + Customer Memory parked | Moved **verbatim** on 2026-10-25 (same housekeeping; only two link prefixes adjusted). Superseded in part by §76 — VelRepeat is **removed**, not parked — while **Customer Memory parking still stands** and the wholesale buyer track was **never built**. The still-live parts are restated in the handoff's §75 pointer. |
 
 **Also on 2026-10-25:** §78 added — a read-only audit of the **repository** (PASS) and of **Production Neon** (`NOT RUN` / `BLOCKED`; no credential here and agents may not connect on the owner's behalf), the finding that `production-db-verify.yml` does not probe the 19 required Marketplace tables or VelRepeat leftovers, and the new permanent rules `.ai/AI_RULES.md` §17–§18. Full report: [`2026-10-25-production-neon-audit.md`](./2026-10-25-production-neon-audit.md).
+
+### 2026-10-26 — §69 archived while adding §79 (UI/UX + realtime professional audit)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md`](./archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md) | handoff §69 — production `payments.checkout_group_id` gap, **BLOCKED** | Moved **verbatim** on 2026-10-26 (edit-headroom housekeeping while appending §79; the current-state file was 51.3 KB against the ~55 KB edit-tool limit). Kept because it is the second independent incident (`2aa736e9-0010-43c2-8f0e-19142b25189b`), the proof that the §68 503 guard works before Stripe, the single-shop regression coverage, and the scenario-H reconciler proof. The live owner action is restated in the §69 pointer: set `NEON_PRODUCTION_DATABASE_URL` for the same Neon branch Render uses, run `db/run-sqleditor.sql`, then `Production DB Verify` BLOCKED → PASS. The `db/migrations/054_*.sql` path in the record is historical — no migration directory exists since §76. |
+
+**Also on 2026-10-26:** §79 added — Phase 1 UI/UX + realtime audit (audit only; 0 source/SQL/DB changes). Report: [`2026-10-26-ui-realtime-professional-audit.md`](./2026-10-26-ui-realtime-professional-audit.md).

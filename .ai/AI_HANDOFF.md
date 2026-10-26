@@ -536,71 +536,16 @@ is verified. Owner action restated by **§69**.
 
 ---
 
-## §69. Production `payments.checkout_group_id` — the gap is real, applying it is **BLOCKED** (2026-10-05)
+## §69. Production `payments.checkout_group_id` — the gap is real, applying it is **BLOCKED** (2026-10-05) — ARCHIVED
 
-**Second, independent incident on the same missing column.** Order
-`2aa736e9-0010-43c2-8f0e-19142b25189b` / `017911658804352200`, PromptPay, group
-`c86fb8fe-758d-4907-aedf-3e8f6bde8de2`. Production logged `[checkout-group] payments.checkout_group_id is
-missing — apply db/run-sqleditor.sql (migration 054).` with `code: 42703`, `failure_stage:
-group_column_missing`, `stripe_session_id: null`. **That log line is the §68 guard working** — production ran the
-fixed build, the probe saw the column absent, and it refused with 503 *before* Stripe. The build is current; the
-**database** is not.
+**Record moved verbatim** (2026-10-26, edit-headroom housekeeping) →
+[`history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md`](history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md).
 
-**Root cause confirmed: production Neon never received migration 054 §3.**
-
-**Source of truth for `payments.checkout_group_id`** — from `db/migrations/054_…sql` §3, `db/schema.sql:460` and
-`db/run-sqleditor.sql:461,1378,3416-3421,4035-4036`: `UUID`, **nullable** (no `NOT NULL`), FK
-`payments_checkout_group_id_fkey` → `checkout_groups(id) ON DELETE SET NULL`; indexes `idx_payments_checkout_group`
-(partial) and the unique partial `idx_payments_one_active_stripe_group`; it participates in
-`payments_at_least_one_parent_check` + `payments_single_domain_check`; and `payments.order_id` becomes NULLABLE.
-§3 also drops `payments_exactly_one_parent_check`. **Nothing was changed** — the repository was already consistent,
-and no datatype, constraint or index was invented.
-
-**Repository side: COMPLETE.** `db/schema.sql` ↔ `db/run-sqleditor.sql` declaration parity passes
-(`backend/tests/helpers/canonical-schema.ts`), `db/run-update.sql` does not exist, and `db/verify-reconciler.sh`
-**scenario H reproduces this exact production shape** — a populated `payments` with real Stripe rows and the column
-dropped — then proves the statement 42703s before, runs clean after, leaves the payment row, its provider ids and its
-`paid` settlement state untouched, never re-points it at the group, and is idempotent on a second run. `bun run
-db:verify` → `RECONCILER PROOF: ALL SCENARIOS PASSED` (52 PASS / 0 FAIL).
-
-**New regressions (4, `backend/tests/checkout-group-session-open.test.ts`, 14 → 18).** The single-shop rail was
-**uncovered**, which is the risk 054 §3 itself creates — it makes `order_id` nullable and swaps the parent CHECK:
-**(1)** one order still opens a session and records `order_id` with `checkout_group_id IS NULL`, the session id, and a
-row satisfying `payments_at_least_one_parent_check` (old constraint gone); **(2)** a retry with a FRESH idempotency key
-reuses that session — one `sessions.create`, one active attempt; **(3)** the reported order's exact state (group +
-orders, **no** payment row) reads **not paid** on `GET /api/orders/:orderId`; its retry opens exactly one attempt with
-the session recorded and `paid_at` null, a second retry reuses it, and no order is ever `paid`; **(4)** static — the
-open path between the two `app.post` registrations contains **no** `paid` write at all, so a missing column can never be
-"fixed" by paying an order Stripe never charged. Suite: **1992 pass / 2 skip / 0 fail**, typecheck 4/4 + backend 0,
-build 4/4, `db:verify` 52/0, `git diff --check` clean.
-
-**PRODUCTION: NOT APPLIED — BLOCKED, and it must be reported as such.** `NEON_PRODUCTION_DATABASE_URL` is absent:
-`freebuff-env list` returns no keys, the GitHub App token gets **403** on both `secrets` and `workflow_dispatch`, and
-CI run **37249675032** of `Production DB Verify` fails with `##[error]BLOCKED: NEON_PRODUCTION_DATABASE_URL is not
-configured.` — the identical pre-change baseline. The repository therefore **cannot prove** the migration reaches the
-same Neon Render serves, and no Stripe TEST E2E was executed. **The payment architecture was not changed**: no
-multi-shop removal, no single-shop fallback, no bypassed column, no session-before-payment-row, no disabled schema
-validation, no 42703 catch-and-pass, no frontend "paid", no blind retry, no sleep, no disabled idempotency.
-
-**Owner action — unchanged, and still the whole remaining gap.** Create the `NEON_PRODUCTION_DATABASE_URL` secret
-pointing at the SAME Neon project/branch Render's `DATABASE_URL` uses, confirm the printed identity against the
-backend's boot `[db]` line, then run `db/run-sqleditor.sql` (or `db/migrations/054_*.sql`) via
-`production-db-migrate.yml`; `Production DB Verify` must then go BLOCKED → PASS on all 11 objects. Only then can a
-real PromptPay TEST round trip be attempted. **STATUS: BLOCKED — never PASS.**
-
-**Verified on a real database reconciled by `db/run-sqleditor.sql`** (disposable, dropped after): the incident's exact
-statement — `SELECT id FROM payments WHERE checkout_group_id = $1 AND provider = $2 ORDER BY created_at DESC LIMIT 1`
-(verbatim `backend/routes/stripe.ts:844-851`) — answers `ERROR: column "checkout_group_id" does not exist` when the
-column is absent and returns the attempt id when it is present, so it is a real detector, not a tautology. All of
-054 §3 lands: column `uuid`/nullable, both `ON DELETE SET NULL` FKs, the group indexes, both payment CHECKs,
-`payments.order_id` nullable.
-
-**One hazard found while proving it (NOT a production blocker).** `db/run-sqleditor.sql:4038` adds
-`payments_at_least_one_parent_check` under `ON_ERROR_STOP`, guarded only by a name check: if any `payments` row has
-`order_id`, `plan_id` and `checkout_group_id` **all** NULL the reconciler aborts mid-file and the rest — including the
-PART 8 self-assertion — never runs. Production cannot reach that state (`payments_exactly_one_parent_check`, migration
-051, has always required exactly one of `order_id`/`plan_id`, and a parentless INSERT is rejected on a reconciled
-database). Only a database that stored a group payment and then lost the column can hit it.
+**Still live from it:** production `payments.checkout_group_id` remains **BLOCKED** and owner-executed —
+create `NEON_PRODUCTION_DATABASE_URL` for the SAME Neon branch Render's `DATABASE_URL` uses, confirm the boot
+`[db]` identity, run `db/run-sqleditor.sql`, then `Production DB Verify` must go BLOCKED → PASS. The
+`db/migrations/054_*.sql` path named in the record is historical: there is no `db/migrations/` directory since
+§76. No agent may connect to production (`.ai/AI_RULES.md` §17).
 
 ---
 
@@ -741,10 +686,61 @@ production reconcile + verify **BLOCKED** · real Stripe TEST E2E **BLOCKED** (n
 `bun run lint` not configured · legacy VelRepeat objects in a real database are still removed only
 by the owner via `docs/VELREPEAT_REMOVAL_PLAN.md` (backup + approval first).
 
+## §79. Phase 1 — UI/UX + Realtime Professional Audit (2026-10-26) — **AUDIT ONLY**
+
+**Base SHA:** `f71dcfd2fe26c7c92d94eb2ef7d7418f1c82d4d1` (`main` == `origin/main`, 0/0, clean).
+**Resulting commit:** recorded in the follow-up docs commit (a file cannot carry its own SHA).
+**Report:** [`.ai/history/2026-10-26-ui-realtime-professional-audit.md`](history/2026-10-26-ui-realtime-professional-audit.md).
+**Nothing was modified except `.ai/` Markdown.** SOURCE CODE MODIFIED: **NO** · DATABASE MODIFIED: **NO** ·
+SQL MODIFIED: **NO** · PRODUCTION DB CONNECTED: **NO**.
+
+**Verdict:** the systems exist and the payment/order core is sound, but production-grade interaction
+quality is not reached. 1 P0, 18 P1, 14 P2, 4 P3. VelShop is the most mature surface; VelSeller
+mobile navigation and VelCenter realtime are broken; support is a shop account, not a support desk.
+
+**Highest-impact findings (full evidence in the report):**
+- **P0** VelSeller mobile has **no chat entry**: `SELLER_TABS` has no chat item and the header nav is
+  `lg:` only. A chat notification can route to the thread, but a phone-only seller has no reliable way
+  to open the inbox.
+- **P1** VelCenter's socket connects to `ws(s)://<origin>` with **no `/ws`**; the server accepts only
+  `/ws`, so every “live” queue badge is manual-refresh. Reproduced locally: 400 / close 1006.
+- **P1** `ShopChat` / `SellerChat` call `disconnectChatSocket()` on unmount, killing the shared
+  header-bell socket with no reconnect — notifications stop until a reload.
+- **P1** `order:updated` has **no customer or seller consumer**, `shipment:updated` has **no consumer**,
+  and no order/payment/shipment **notification rows** are ever inserted.
+- **P1** errors render as **empty states** (MyOrders, notifications, seller orders, cart) or an infinite
+  spinner (Income); order history is truncated at 50/50/100 with no pagination.
+- **P1** Buy Now ignores `buyNowQty` (charges the cart quantity) and cart quantity PUTs race.
+- **P1** support staff cannot use VelCenter (`CENTER_ROLES` excludes `support`) and seller→support has
+  no UI. A real staffed desk needs a **SCHEMA CHANGE** (`chat_messages.sender_role`, assignment/priority).
+
+**Realtime:** transport is hardened (cookie auth, 30 s revocation sweep, per-user channel, frame and
+send-rate limits) but its **browser lifecycle** is not; there is no heartbeat and no resync after
+reconnect; `notification:created` is a public channel carrying employee events.
+
+**Responsive:** **static analysis only** — no browser/screenshot capability here. The 320/375/430
+notification panel is clipped off-screen, VelSeller loses all page navigation at 768–1023 px, and the
+chat `min-h` floors push the composer below the keyboard on short screens. The visual matrix is
+**NOT RUN**, not passed.
+
+**Chat:** customer↔seller and customer↔support exist; seller↔support is missing; support↔VelCenter is
+missing. Full relationship/authorization/UX matrix in report §6.
+
+**Checks run:** git in sync + clean · `bun run i18n:check` **PASS** (`th=1249 en=1249 my=1249`) · local
+`ws` path probe **CONFIRMED** · source sweeps · docs-only diff check. No app test/build was run because
+no code changed.
+
+**Open / next:** implementation order in report §8 — stability → broken UX → realtime correctness →
+chat fundamentals → responsive → polish. The support model decision gates Phase D. Do **not** add a
+second socket, chat API, conversation table or notification system.
+
+**Housekeeping:** §69 moved **verbatim** to
+[`history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md`](history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md)
+with an index row.
+
 ---
 
-**Note on this file's size:** the ~55 KB edit-tool ceiling is real (this file was 53.5 KB before §77
-and §75 were archived; it is ~51 KB now). The next candidates are §69 and the Actions-alignment
-block — move one to `history/archive/` **with** an index row in
-`history/AI_Handoff_Archive.md` before appending again. Archiving is not deletion: the text is
-preserved verbatim.
+**Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26
+(verbatim + index row), leaving this file at **~49 KB**. The next candidate is the Actions-alignment
+block — move it to `history/archive/` **with** an index row before appending again. Archiving is not
+deletion: the text is preserved verbatim.
