@@ -421,6 +421,7 @@ export function setupCenterRoutes(app: Express): void {
         return;
       }
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
       const orderRes = await query(
         `SELECT o.id, o.user_id, o.order_number, o.status, o.total_amount, o.created_at,
@@ -433,9 +434,9 @@ export function setupCenterRoutes(app: Express): void {
                   ORDER BY sm.created_at DESC LIMIT 1) AS tracking_number
          FROM orders o
          LEFT JOIN shops sh ON o.shop_id = sh.id
-         ORDER BY o.created_at DESC
-         LIMIT $1`,
-        [limit],
+         ORDER BY o.created_at DESC, o.id DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset],
       );
       const rows = orderRes.rows;
       const orderIds = rows.map((r: any) => r.id as string);
@@ -471,9 +472,7 @@ export function setupCenterRoutes(app: Express): void {
         for (const u of uRes.rows) customers.set(u.id, { name: u.name, phone: u.phone });
       }
 
-      res.json({
-        success: true,
-        data: rows.map((r: any) => {
+      const orders = rows.map((r: any) => {
           const items = itemsByOrder.get(r.id) ?? [];
           const customer = customers.get(r.user_id);
           return {
@@ -494,8 +493,24 @@ export function setupCenterRoutes(app: Express): void {
             shopName: r.shop_name ?? null,
             items,
           };
-        }),
-      });
+        });
+
+      // `paginated=1` opts into `{ orders, pagination }`; the default keeps the
+      // bare array for existing consumers.
+      if (req.query.paginated === "1") {
+        const countRes = await query("SELECT COUNT(*)::int AS count FROM orders");
+        const total = Number(countRes.rows[0]?.count ?? 0);
+        res.json({
+          success: true,
+          data: {
+            orders,
+            pagination: { limit, offset, total, hasMore: offset + orders.length < total },
+          },
+        });
+        return;
+      }
+
+      res.json({ success: true, data: orders });
     } catch (err) {
       console.error("[center] orders list error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch orders" } });

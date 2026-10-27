@@ -237,6 +237,44 @@ export function ProductSelectionSheet({
   const handleAddToCart = useCallback((mode: "cart" | "buy" = "cart") => {
     if (!validateSelection()) return;
 
+    // Buy now: a DIRECT purchase. The cart is never mutated — adding then
+    // checking out would (a) append a line the customer never asked to save and
+    // (b) let an existing cart line's quantity override the quantity chosen
+    // here. The selection travels to the server, which re-reads the product and
+    // charges exactly this quantity.
+    if (mode === "buy") {
+      const variantId = selectedVariant?.id ?? null;
+      onOpenChange(false);
+      setTimeout(() => {
+        navigate("/checkout", {
+          state: {
+            buyNow: true,
+            buyNowProductId: product.id,
+            buyNowVariantId: variantId,
+            buyNowQty: qty,
+            // Display-only summary snapshot (see BuyNowItem in ShopCheckout).
+            buyNowItem: {
+              id: `buynow-${product.id}-${variantId ?? "base"}`,
+              productId: product.id,
+              variantId,
+              // Pre-formatted "Size / Color" label, matching a cart row.
+              variantOptionLabels: variantLabels
+                ? Object.values(variantLabels).join(" / ")
+                : null,
+              name: product.name,
+              unit: product.unit ?? "",
+              price: resolvedPrice,
+              qty,
+              stock: resolvedStock,
+              shopName: (product as { shopName?: string | null }).shopName ?? null,
+              imageUrl: activeImage?.displayUrl ?? activeImage?.url ?? null,
+            },
+          },
+        });
+      }, 300);
+      return;
+    }
+
     track("CART_ADD", {
       entityId: product.id,
       value: product.name,
@@ -256,22 +294,6 @@ export function ProductSelectionSheet({
       },
       qty,
     );
-
-    // Buy now: add to cart then jump straight to checkout
-    if (mode === "buy") {
-      onOpenChange(false);
-      setTimeout(() => {
-        navigate("/checkout", {
-          state: {
-            buyNow: true,
-            buyNowProductId: product.id,
-            buyNowVariantId: selectedVariant?.id ?? null,
-            buyNowQty: qty,
-          },
-        });
-      }, 300);
-      return;
-    }
 
     // Capture source position BEFORE closing sheet (DOM may unmount)
     const addToCartBtn = (document.querySelector('[data-add-to-cart]') as HTMLElement)?.getBoundingClientRect();

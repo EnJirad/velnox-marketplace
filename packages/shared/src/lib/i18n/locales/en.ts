@@ -65,6 +65,9 @@ export const en: Dict = {
     today: "Today",
     yesterday: "Yesterday",
     daysAgo: "{count} days ago",
+    loadMore: "Load more",
+    loadingMore: "Loading more...",
+    allLoaded: "You have reached the end",
   },
 
   nav: {
@@ -1131,6 +1134,9 @@ export const en: Dict = {
       "The bootstrap code isn't configured yet — the operator must set BOOTSTRAP_OWNER_SECRET in the project Keys/API keys first.",
     centerBootstrapSuccess: "You are now the Velnox company owner 🏆",
     centerBootstrapInvalid: "Invalid bootstrap code",
+    centerBootstrapTaken: "This platform already has an owner — ask the owner or an admin to grant you access",
+    centerBootstrapFailed: "Could not claim ownership — please try again",
+    centerOwnerCheckFailed: "Could not check the platform owner status — please try again",
     centerBackToShop: "← Back to the store",
     authRequired: "Please sign in to continue",
   },

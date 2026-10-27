@@ -36,7 +36,12 @@ function FooterLink({ to, external, children }: { to: string; external?: boolean
   const cls = "text-sm text-slate-500 transition-colors hover:text-slate-900";
   if (external) {
     return (
-      <a href={to} className={cn(cls, "inline-flex items-center gap-1")} target="_blank" rel="noreferrer">
+      <a
+        href={to}
+        className={cn(cls, "inline-flex items-center gap-1")}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
         {children}
         <ArrowUpRight className="size-3.5" />
       </a>

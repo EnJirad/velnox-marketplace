@@ -89,6 +89,9 @@ export const th = {
     today: "วันนี้",
     yesterday: "เมื่อวาน",
     daysAgo: "{count} วันที่แล้ว",
+    loadMore: "โหลดเพิ่มเติม",
+    loadingMore: "กำลังโหลดเพิ่มเติม...",
+    allLoaded: "แสดงครบทั้งหมดแล้ว",
   },
 
   nav: {
@@ -1156,6 +1159,9 @@ export const th = {
       "ยังไม่ได้ตั้งค่ารหัสเปิดใช้งาน — ผู้ดูแลระบบต้องตั้ง BOOTSTRAP_OWNER_SECRET ใน Keys/API keys ก่อน",
     centerBootstrapSuccess: "คุณคือเจ้าของบริษัท Velnox แล้ว 🏆",
     centerBootstrapInvalid: "รหัสเปิดใช้งานไม่ถูกต้อง",
+    centerBootstrapTaken: "ระบบมีเจ้าของบริษัทแล้ว — กรุณาให้เจ้าของหรือผู้ดูแลให้สิทธิ์คุณ",
+    centerBootstrapFailed: "รับสิทธิ์ไม่สำเร็จ กรุณาลองอีกครั้ง",
+    centerOwnerCheckFailed: "ไม่สามารถตรวจสอบสถานะเจ้าของระบบได้ กรุณาลองใหม่",
     centerBackToShop: "← กลับไปหน้าร้าน",
     authRequired: "กรุณาเข้าสู่ระบบก่อนเข้าใช้งาน",
   },

@@ -61,6 +61,29 @@ interface CheckoutItemSummary {
   imageUrl: string | null;
 }
 
+/**
+ * The Buy Now display snapshot handed over by the product page.
+ *
+ * It exists so the checkout summary can render the product/variant the customer
+ * actually chose BEFORE any server round-trip. It is display-only: the server
+ * reloads the row from Neon and prices the order from there, so a stale or
+ * tampered snapshot can never decide what is charged.
+ */
+interface BuyNowItem {
+  id: string;
+  productId: string;
+  variantId: string | null;
+  /** Pre-formatted "Size / Color" label string, same shape as a cart line. */
+  variantOptionLabels?: string | null;
+  name: string;
+  unit: string;
+  price: number;
+  qty: number;
+  stock: number;
+  shopName?: string | null;
+  imageUrl?: string | null;
+}
+
 interface CheckoutResult {
   parentOrderId: string;
   parentOrderNumber: string;
@@ -163,6 +186,7 @@ export default function ShopCheckout() {
     buyNowProductId?: string;
     buyNowVariantId?: string | null;
     buyNowQty?: number;
+    buyNowItem?: BuyNowItem | null;
   };
   const myAddresses = useAction(api.customer.myAddresses);
   const checkoutAction = useAction(api.customer.checkoutAction);
@@ -253,12 +277,37 @@ export default function ShopCheckout() {
   const hasGps = selectedAddress?.latitude != null && selectedAddress.longitude != null;
 
   const checkoutLines = useMemo(() => {
+    // Buy Now renders the selection the product page sent, never a cart line:
+    // the quantity here is the one the customer chose, and the cart is not part
+    // of this purchase at all.
     if (navState.buyNow && navState.buyNowProductId) {
-      return lines.filter((l) => {
-        if (l.productId !== navState.buyNowProductId) return false;
-        if (navState.buyNowVariantId != null) return l.variantId === navState.buyNowVariantId;
-        return l.variantId == null;
-      });
+      if (navState.buyNowItem) {
+        const item = navState.buyNowItem;
+        return [
+          {
+            id: item.id,
+            productId: item.productId,
+            variantId: item.variantId,
+            variantOptionLabels: item.variantOptionLabels ?? undefined,
+            name: item.name,
+            unit: item.unit,
+            price: item.price,
+            qty: Math.max(1, Number(navState.buyNowQty) || item.qty || 1),
+            stock: item.stock,
+            shopName: item.shopName ?? undefined,
+            imageUrl: item.imageUrl ?? undefined,
+          },
+        ];
+      }
+      // Legacy hand-off (older link with no snapshot): fall back to the matching
+      // cart line, but the quantity sent to the server is still `buyNowQty`.
+      return lines
+        .filter((l) => {
+          if (l.productId !== navState.buyNowProductId) return false;
+          if (navState.buyNowVariantId != null) return l.variantId === navState.buyNowVariantId;
+          return l.variantId == null;
+        })
+        .map((l) => ({ ...l, qty: Math.max(1, Number(navState.buyNowQty) || l.qty) }));
     }
     if (navState.selectedCartItems && navState.selectedCartItems.length > 0) {
       return lines.filter((l) => navState.selectedCartItems!.includes(l.id));
@@ -361,10 +410,23 @@ export default function ShopCheckout() {
         shippingMethod: "standard",
         requestId: requestIdRef.current ?? crypto.randomUUID(),
       };
-      if (navState.selectedCartItems && navState.selectedCartItems.length > 0) {
+      if (navState.buyNow && navState.buyNowProductId) {
+        // Exactly one product, exactly the chosen quantity. The server re-reads
+        // the product/variant and prices it; no cart item, no price, and no
+        // client-side total is sent, and the cart is left untouched.
+        if (checkoutLines.length === 0) {
+          submitRef.current = false;
+          setSubmitting(false);
+          toast.error(t("checkout.failed"));
+          return;
+        }
+        checkoutPayload.buyNow = {
+          productId: navState.buyNowProductId,
+          variantId: navState.buyNowVariantId ?? null,
+          quantity: Math.max(1, Number(navState.buyNowQty) || checkoutLines[0]!.qty || 1),
+        };
+      } else if (navState.selectedCartItems && navState.selectedCartItems.length > 0) {
         checkoutPayload.cartItemIds = navState.selectedCartItems;
-      } else if (navState.buyNow) {
-        checkoutPayload.cartItemIds = checkoutLines.map((l) => l.id);
       }
 
       order = (await checkoutAction(checkoutPayload)) as unknown as CheckoutResult;
@@ -373,6 +435,8 @@ export default function ShopCheckout() {
       // immediately — the customer must see the true cart whether the payment
       // step succeeds or fails.
       if (isSelectiveCheckout) { reload(); } else { clear(); }
+      // NOTE: a Buy Now order consumed no cart row (the server never touched the
+      // cart), so `reload()` above only re-reads the real cart.
 
       if (stripeFlow) {
         // Order → Checkout Session → THIS tab, with no screen in between. A

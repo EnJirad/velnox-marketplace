@@ -704,6 +704,59 @@ export function setupCartRoutes(app: Express): void {
       const notes = body.notes as string | undefined;
       const cartItemIds = body.cartItemIds as string[] | undefined;
       const requestId = body.requestId as string | undefined;
+      // ── Buy Now ──────────────────────────────────────────────────────────
+      // "Buy Now" is the customer buying EXACTLY what the product page shows:
+      // that product/variant and the quantity they selected. It is deliberately
+      // not a cart mutation — the cart is a saved shopping list, and a direct
+      // purchase must neither append to it nor overwrite a line in it.
+      //
+      // The client supplies productId / variantId / quantity only. NEVER a
+      // price: the row is loaded from Neon below and the price is the CURRENT
+      // server price, exactly like a cart line. Stock, publication state, the
+      // payment reservation, idempotency and the order number are all handled by
+      // the same code path as a cart checkout.
+      const buyNowRaw = body.buyNow as
+        | { productId?: unknown; variantId?: unknown; quantity?: unknown }
+        | null
+        | undefined;
+      let buyNow: { productId: string; variantId: string | null; quantity: number } | null = null;
+      if (buyNowRaw != null) {
+        if (typeof buyNowRaw !== "object" || typeof buyNowRaw.productId !== "string" || !buyNowRaw.productId) {
+          res.status(400).json({
+            success: false,
+            error: { code: "VALIDATION_ERROR", message: "buyNow.productId is required" },
+          });
+          return;
+        }
+        if (buyNowRaw.variantId != null && typeof buyNowRaw.variantId !== "string") {
+          res.status(400).json({
+            success: false,
+            error: { code: "VALIDATION_ERROR", message: "buyNow.variantId must be a string or null" },
+          });
+          return;
+        }
+        const quantity = typeof buyNowRaw.quantity === "number" ? buyNowRaw.quantity : Number(buyNowRaw.quantity);
+        const qtyError = validateCheckoutQuantity(quantity);
+        if (qtyError) {
+          res.status(400).json({
+            success: false,
+            error: { code: "VALIDATION_ERROR", message: `Invalid quantity: ${qtyError}` },
+          });
+          return;
+        }
+        if (Array.isArray(cartItemIds) && cartItemIds.length > 0) {
+          res.status(400).json({
+            success: false,
+            error: { code: "VALIDATION_ERROR", message: "Send either buyNow or cartItemIds, not both" },
+          });
+          return;
+        }
+        buyNow = {
+          productId: buyNowRaw.productId,
+          variantId: (buyNowRaw.variantId as string | null | undefined) ?? null,
+          quantity,
+        };
+      }
       // Payment method is a routing hint; it never affects price. It is
       // canonicalized and then checked against the platform payment
       // configuration, so COD cannot be ordered while its feature flag is off:
@@ -747,18 +800,66 @@ export function setupCartRoutes(app: Express): void {
         serverAddressSnapshot = orderAddressSnapshot(addrResult.rows[0]);
       }
 
-      // Get cart
+      // Get cart. Buy Now does not need one: a customer can buy a product
+      // directly without ever having added anything to the cart.
       const cartResult = await query("SELECT id FROM carts WHERE user_id = $1", [userId]);
-      if (cartResult.rows.length === 0) {
+      const cartId: string | null = cartResult.rows[0]?.id ?? null;
+      if (!cartId && !buyNow) {
         res.status(400).json({ success: false, error: { code: "EMPTY_CART", message: "Cart is empty" } });
         return;
       }
-      const cartId = cartResult.rows[0].id;
 
-      // Get cart items with product details (include image for snapshot)
-      // When cartItemIds is provided (Buy Now / selected items), only fetch those items
+      // Get cart items with product details (include image for snapshot).
+      // Buy Now loads its ONE line from the product tables — never from a cart
+      // row — so the cart is untouched and the quantity is exactly the one the
+      // customer chose (it used to be the cart line's quantity, which made a
+      // "Buy Now 1" charge an existing cart quantity of 3).
       let itemsResult;
-      if (Array.isArray(cartItemIds) && cartItemIds.length > 0) {
+      if (buyNow) {
+        const productRes = await query(
+          `SELECT p.id AS product_id, p.name AS product_name, p.shop_id,
+                  p.status AS product_status, p.price AS product_price, p.unit,
+                  i.quantity AS stock_qty, i.reserved,
+                  sh.name AS shop_name,
+                  (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
+                  pv.id AS variant_id, pv.price AS variant_price, pv.stock AS variant_stock,
+                  pv.status AS variant_status
+           FROM products p
+           LEFT JOIN inventory i ON i.product_id = p.id
+           LEFT JOIN shops sh ON p.shop_id = sh.id
+           LEFT JOIN product_variants pv ON pv.product_id = p.id AND pv.id = $2
+           WHERE p.id = $1`,
+          [buyNow.productId, buyNow.variantId],
+        );
+        const row = productRes.rows[0];
+        if (!row) {
+          res.status(400).json({
+            success: false,
+            error: { code: "PRODUCT_UNAVAILABLE", message: "This product is no longer available" },
+          });
+          return;
+        }
+        if (buyNow.variantId && !row.variant_id) {
+          res.status(400).json({
+            success: false,
+            error: { code: "VARIANT_NOT_FOUND", message: "The selected variant was not found" },
+          });
+          return;
+        }
+        itemsResult = {
+          rows: [
+            {
+              ...row,
+              // A synthetic line: it has no cart row, so nothing is deleted from
+              // the cart at the end of the transaction.
+              id: null,
+              cart_id: null,
+              quantity: buyNow.quantity,
+              price: row.variant_id ? (row.variant_price ?? row.product_price) : row.product_price,
+            },
+          ],
+        };
+      } else if (Array.isArray(cartItemIds) && cartItemIds.length > 0) {
         itemsResult = await query(
           `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
                   p.price AS product_price, p.unit,
@@ -1058,16 +1159,22 @@ export function setupCartRoutes(app: Express): void {
           await applyPaymentReservationPolicy(client, orderId, paymentMethod);
         }
 
-        // Clear only the purchased items from cart (preserves unselected items)
-        const processedItemIds = items.map((i: any) => i.id);
+        // Clear only the purchased CART items (preserves unselected items).
+        // A Buy Now line has no cart row (`id: null`) and is filtered out, so a
+        // direct purchase never removes the customer's saved cart entry.
+        const processedItemIds = items
+          .map((i: any) => i.id)
+          .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
         if (processedItemIds.length > 0) {
           await client.query(
             "DELETE FROM cart_items WHERE id = ANY($1)",
             [processedItemIds],
           );
         }
-        // Recalculate remaining cart totals
-        await recalcCart(cartId);
+        // Recalculate remaining cart totals only when a cart row was purchased.
+        if (cartId && processedItemIds.length > 0) {
+          await recalcCart(cartId);
+        }
 
         // Build the idempotent response once, inside the transaction.
         // `parentOrderId` is retained as the FIRST order for backwards
@@ -1150,7 +1257,11 @@ export function setupCartRoutes(app: Express): void {
   app.get("/api/customer/orders", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
-      const limit = Math.min(Number(req.query.limit) || 50, 100);
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      /** `paginated=1` opts into `{ orders, pagination }`; the default stays the
+       *  bare array so existing consumers keep working unchanged. */
+      const paginated = req.query.paginated === "1";
 
       const result = await query(
         `SELECT o.*, sh.name AS shop_name, sh.slug AS shop_slug,
@@ -1160,9 +1271,9 @@ export function setupCartRoutes(app: Express): void {
          FROM orders o
          LEFT JOIN shops sh ON o.shop_id = sh.id
          WHERE o.user_id = $1
-         ORDER BY o.created_at DESC
-         LIMIT $2`,
-        [userId, limit],
+         ORDER BY o.created_at DESC, o.id DESC
+         LIMIT $2 OFFSET $3`,
+        [userId, limit, offset],
       );
 
       const orderIds = result.rows.map((r: any) => r.id);
@@ -1217,6 +1328,22 @@ export function setupCartRoutes(app: Express): void {
           itemCount: items.reduce((s: number, i: any) => s + i.quantity, 0),
         };
       });
+
+      if (paginated) {
+        const countRes = await query(
+          "SELECT COUNT(*)::int AS count FROM orders WHERE user_id = $1",
+          [userId],
+        );
+        const total = Number(countRes.rows[0]?.count ?? 0);
+        res.json({
+          success: true,
+          data: {
+            orders,
+            pagination: { limit, offset, total, hasMore: offset + orders.length < total },
+          },
+        });
+        return;
+      }
 
       res.json({ success: true, data: orders });
     } catch (err) {

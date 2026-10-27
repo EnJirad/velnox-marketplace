@@ -62,15 +62,30 @@ const FILTERABLE_STATUSES: StoreOrderStatus[] = [
 
 type StatusFilter = "all" | StoreOrderStatus;
 
+/** One page of the seller's order queue (the server caps `limit` at 100). */
+const PAGE_SIZE = 20;
+
+/** `GET /api/seller/orders?paginated=1` */
+interface SellerOrdersPage {
+  orders: StoreOrder[];
+  pagination?: { limit: number; offset: number; total: number; hasMore: boolean };
+}
+
 export default function SellerOrders() {
   const { t } = useLanguage();
-  const sellerOrdersAction = useAction(api.commerce.sellerOrders);
+  const sellerOrdersAction = useAction(api.commerce.sellerOrdersPaged);
 
   const [orders, setOrders] = useState<StoreOrder[]>([]);
   const [loading, setLoading] = useState(true);
   /** A failed request is an error state — not "you have no orders". */
   const [error, setError] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  /** Pagination: the queue grows page by page instead of stopping at the first 50. */
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
+  /** The rows currently rendered — read by `loadMore` without a dependency edge. */
+  const ordersRef = useRef<StoreOrder[]>([]);
 
   /**
    * The filter the newest in-flight request belongs to. A slow answer for "all"
@@ -78,21 +93,71 @@ export default function SellerOrders() {
    * response is dropped unless its own filter is still the selected one.
    */
   const requestFilter = useRef<StatusFilter>("all");
+  /** Sequence number: a stale response of the SAME filter is dropped too. */
+  const loadSeqRef = useRef(0);
 
+  /**
+   * First page (or a refresh / a filter change). Always starts at offset 0, so a
+   * filter change resets pagination instead of appending the new filter's first
+   * page onto the previous filter's rows.
+   */
   const load = useCallback(async () => {
     const filter = statusFilter;
     requestFilter.current = filter;
+    const seq = ++loadSeqRef.current;
     setError(false);
     try {
-      const o = await sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter });
-      if (requestFilter.current !== filter) return;
-      setOrders(o);
+      const page = (await sellerOrdersAction({
+        limit: PAGE_SIZE,
+        offset: 0,
+        status: filter === "all" ? undefined : filter,
+      })) as SellerOrdersPage | null;
+      if (requestFilter.current !== filter || seq !== loadSeqRef.current) return;
+      setOrders(page?.orders ?? []);
+      setHasMore(Boolean(page?.pagination?.hasMore));
     } catch (err) {
-      if (requestFilter.current !== filter) return;
+      if (requestFilter.current !== filter || seq !== loadSeqRef.current) return;
       console.error("Load seller orders error:", err);
       setError(true);
     }
   }, [sellerOrdersAction, statusFilter]);
+
+  /**
+   * Next page for the CURRENT filter. A ref guards double taps, and the filter +
+   * sequence checks make sure a page that arrives after the seller switched
+   * filters (or refreshed) is thrown away rather than mixed into the new list.
+   */
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore) return;
+    const filter = statusFilter;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const seq = loadSeqRef.current;
+    try {
+      const page = (await sellerOrdersAction({
+        limit: PAGE_SIZE,
+        offset: ordersRef.current.length,
+        status: filter === "all" ? undefined : filter,
+      })) as SellerOrdersPage | null;
+      if (requestFilter.current !== filter || seq !== loadSeqRef.current) return;
+      const next = page?.orders ?? [];
+      // Deduplicate by order id: a row that shifted between requests must not
+      // appear twice.
+      setOrders((prev) => {
+        const seen = new Set(prev.map((o) => o.id));
+        return [...prev, ...next.filter((o) => !seen.has(o.id))];
+      });
+      setHasMore(Boolean(page?.pagination?.hasMore));
+      setError(false);
+    } catch (err) {
+      if (requestFilter.current !== filter || seq !== loadSeqRef.current) return;
+      console.error("Load more seller orders error:", err);
+      setError(true);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [sellerOrdersAction, statusFilter, hasMore]);
 
   useEffect(() => {
     let alive = true;
@@ -128,6 +193,8 @@ export default function SellerOrders() {
     },
     [t],
   );
+
+  ordersRef.current = orders;
 
   const statusFilters = useMemo(() => ["all" as const, ...FILTERABLE_STATUSES], []);
   const itemCountOf = (order: StoreOrder) =>
@@ -341,6 +408,28 @@ export default function SellerOrders() {
                   </Link>
                 ))}
               </div>
+
+              {/* Next page of the queue (same filter). */}
+              {hasMore && (
+                <div className="mt-6 flex justify-center">
+                  <Button
+                    variant="outline"
+                    className="min-w-44 gap-1.5 border-slate-200 text-slate-700"
+                    onClick={() => void loadMore()}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-4" />
+                    )}
+                    {loadingMore ? t("common.loadingMore") : t("common.loadMore")}
+                  </Button>
+                </div>
+              )}
+              {!hasMore && orders.length > PAGE_SIZE && (
+                <p className="mt-6 text-center text-xs text-slate-400">{t("common.allLoaded")}</p>
+              )}
             </>
           )}
         </section>

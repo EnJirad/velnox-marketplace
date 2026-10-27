@@ -2,7 +2,7 @@ import { useCookieConsent } from "@/lib/cookie-consent";
 import { useLanguage } from "@/lib/i18n";
 import { Logo } from "@velnox/shared/components/Logo";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
-import { SITE_URLS } from "@velnox/shared/lib/sites";
+import { SITE_URLS, joinUrl } from "@velnox/shared/lib/sites";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 
@@ -35,7 +35,9 @@ export function ShopFooter() {
               <FooterLink to="/help">{t("footer.helpCenter")}</FooterLink>
               <FooterLink to="/help#contact">{t("footer.contactSupport")}</FooterLink>
               <FooterLink to="/orders">{t("footer.trackOrder")}</FooterLink>
-              <FooterLink to="/orders">{t("footer.helpReturns")}</FooterLink>
+              {/* Returns/refunds is explained in the help centre — it used to
+                  point at /orders, which has no policy on it. */}
+              <FooterLink to="/help#orders">{t("footer.helpReturns")}</FooterLink>
             </FooterColumn>
 
             <FooterColumn title={t("footer.colAccount")}>
@@ -65,8 +67,9 @@ export function ShopFooter() {
               >
                 {t("footer.sellerJoin")}
               </a>
+              {/* velseller has no /seller/login route — the sign-in screen is /auth. */}
               <a
-                href={`${SITE_URLS.velseller}/seller/login`}
+                href={joinUrl(SITE_URLS.velseller, "/auth")}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-slate-500 transition-colors hover:text-[#10B981]"
@@ -81,8 +84,11 @@ export function ShopFooter() {
         <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-slate-100 pt-5 sm:flex-row">
           <p className="text-xs text-slate-400">{t("footer.rights", { year })}</p>
           <div className="flex items-center gap-4 text-xs text-slate-400">
+            {/* Legal pages live on the corporate site. These used to open its
+                HOME page for both links, so "Privacy" and "Terms" landed on the
+                same marketing screen instead of the actual policy. */}
             <a
-              href={SITE_URLS.corporate}
+              href={joinUrl(SITE_URLS.corporate, "/privacy")}
               target="_blank"
               rel="noopener noreferrer"
               className="transition-colors hover:text-slate-600"
@@ -90,7 +96,7 @@ export function ShopFooter() {
               {t("footer.privacy")}
             </a>
             <a
-              href={SITE_URLS.corporate}
+              href={joinUrl(SITE_URLS.corporate, "/terms")}
               target="_blank"
               rel="noopener noreferrer"
               className="transition-colors hover:text-slate-600"

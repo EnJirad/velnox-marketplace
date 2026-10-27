@@ -250,6 +250,16 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
     return apiGet(`/api/products/catalog?${params}`);
   },
   "api.commerce.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),
+  /** Paged history: `{ orders, pagination }` — the un-paged route above is kept
+   *  for callers that only need the newest slice. */
+  "api.commerce.myOrdersPaged": (a) =>
+    apiGet(
+      `/api/customer/orders${buildQuery({
+        limit: a?.limit ?? 50,
+        offset: a?.offset,
+        paginated: 1,
+      })}`,
+    ),
   "api.commerce.sellerOrders": (a) =>
     apiGet(
       `/api/seller/orders${buildQuery({
@@ -258,6 +268,15 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
         // set for that status, not a client-side slice of one page of results.
         status: a?.status,
         offset: a?.offset,
+      })}`,
+    ),
+  "api.commerce.sellerOrdersPaged": (a) =>
+    apiGet(
+      `/api/seller/orders${buildQuery({
+        limit: a?.limit ?? 50,
+        offset: a?.offset,
+        status: a?.status,
+        paginated: 1,
       })}`,
     ),
   "api.commerce.sellerOrderDetail": (a) => apiGet(`/api/seller/orders/${a.orderId}`),
@@ -303,6 +322,8 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.centerAdmin.marketOverviewAction": () => apiGet("/api/admin/market-overview"),
   "api.centerAdmin.dashboardCounts": () => apiGet("/api/admin/dashboard/counts"),
   "api.centerAdmin.ordersListAction": (a) => apiGet(`/api/admin/orders?limit=${a?.limit ?? 100}`),
+  "api.centerAdmin.ordersPageAction": (a) =>
+    apiGet(`/api/admin/orders?paginated=1&limit=${a?.limit ?? 100}&offset=${a?.offset ?? 0}`),
   "api.centerAdmin.updateOrderStatusAction": (a) => apiPatch(`/api/admin/orders/${a.orderId}/status`, a),
   "api.centerAdmin.auditLogs": (a) =>
     apiGet(

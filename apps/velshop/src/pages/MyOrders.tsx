@@ -25,6 +25,7 @@ import {
 import {
   AlertTriangle,
   CalendarClock,
+  ChevronDown,
   Clock3,
   ImageOff,
   Loader2,
@@ -39,6 +40,12 @@ import { toast } from "sonner";
 
 interface Loaded {
   orders: StoreOrder[];
+}
+
+/** `GET /api/customer/orders?paginated=1` */
+interface OrdersPage {
+  orders: StoreOrder[];
+  pagination?: { limit: number; offset: number; total: number; hasMore: boolean };
 }
 
 /**
@@ -65,14 +72,34 @@ const RESERVATION_TONE_FILL: Record<PaymentReservationTone, string> = {
   expired: "bg-slate-400",
 };
 
+/** One page of order history. The server caps `limit` at 100. */
+const PAGE_SIZE = 20;
+
 export default function MyOrders() {
   const { t } = useLanguage();
-  const myOrdersAction = useAction(api.commerce.myOrders);
+  const myOrdersAction = useAction(api.commerce.myOrdersPaged);
   const stripePaymentStatus = useAction(api.stripe.stripePaymentStatusAction);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [data, setData] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * Pagination. The list is APPENDED page by page, so a customer with 300
+   * orders can still reach the oldest one instead of the API's newest slice
+   * being the whole history.
+   */
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
+  /**
+   * Every list request takes a sequence number. A response whose number is no
+   * longer the newest is DISCARDED, so a slow first page can never overwrite a
+   * newer refresh (or a newer page) — the classic stale-response bug.
+   */
+  const loadSeqRef = useRef(0);
+  /** The list as it stands RIGHT NOW — read inside `loadMore` without making the
+   *  callback depend on the array (which would re-create it on every page). */
+  const ordersRef = useRef<StoreOrder[]>([]);
   /**
    * A failed load is an ERROR state, never "you have no orders". The last good
    * list stays on screen (with a non-blocking banner) when a refresh fails.
@@ -96,24 +123,71 @@ export default function MyOrders() {
         .then((res) => {
           const paid = Boolean((res as unknown as { paid?: boolean })?.paid);
           toast.success(paid ? t("orders.paymentSuccess") : t("orders.paymentPending"));
-          return myOrdersAction({ limit: 50 });
+          return myOrdersAction({ limit: PAGE_SIZE, offset: 0 });
         })
-        .then((orders) => setData((prev) => (prev ? { ...prev, orders } : prev)))
+        .then((res) => {
+          const page = res as OrdersPage | null;
+          if (!page) return;
+          // Fresh first page: the paid order must now read `paid`.
+          loadSeqRef.current += 1;
+          setData({ orders: page.orders ?? [] });
+          setHasMore(Boolean(page.pagination?.hasMore));
+        })
         .catch((err) => console.error("Stripe payment status check failed:", err));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  /**
+   * First page (or a refresh). Resets the list, so `offset` always restarts at
+   * zero and a refresh can never leave half of an old page behind.
+   */
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     try {
-      const orders = await myOrdersAction({ limit: 50 });
-      setData({ orders });
+      const page = (await myOrdersAction({ limit: PAGE_SIZE, offset: 0 })) as OrdersPage | null;
+      if (seq !== loadSeqRef.current) return; // a newer request owns the state
+      setData({ orders: page?.orders ?? [] });
+      setHasMore(Boolean(page?.pagination?.hasMore));
       setError(false);
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       console.error("Load orders error:", err);
       setError(true);
     }
   }, [myOrdersAction]);
+
+  /**
+   * Next page. Guarded by a synchronous ref so a double tap cannot fire two
+   * requests, and deduplicated by order id so a row can never appear twice even
+   * if the server window shifts between requests.
+   */
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const seq = loadSeqRef.current; // a refresh invalidates this page request
+    try {
+      const offset = ordersRef.current.length;
+      const page = (await myOrdersAction({ limit: PAGE_SIZE, offset })) as OrdersPage | null;
+      if (seq !== loadSeqRef.current) return;
+      const next = page?.orders ?? [];
+      setData((prev) => {
+        const existing = prev?.orders ?? [];
+        const seen = new Set(existing.map((o) => o.id));
+        return { orders: [...existing, ...next.filter((o) => !seen.has(o.id))] };
+      });
+      setHasMore(Boolean(page?.pagination?.hasMore));
+      setError(false);
+    } catch (err) {
+      if (seq !== loadSeqRef.current) return;
+      console.error("Load more orders error:", err);
+      setError(true);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [myOrdersAction, hasMore]);
 
   useEffect(() => {
     let alive = true;
@@ -142,6 +216,7 @@ export default function MyOrders() {
   const [now, setNow] = useState(() => Date.now());
 
   const orders = data?.orders ?? [];
+  ordersRef.current = orders;
 
   /**
    * ONE purchase, N fulfillment orders.
@@ -513,6 +588,31 @@ export default function MyOrders() {
               })}
               </div>
               ))}
+
+              {/*
+                Next page. The list grows instead of being replaced, so the
+                customer keeps their scroll position and the rows above stay put.
+              */}
+              {hasMore && (
+                <div className="mt-6 flex justify-center">
+                  <Button
+                    variant="outline"
+                    className="min-w-44 gap-1.5 border-slate-200 text-slate-700"
+                    onClick={() => void loadMore()}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <ChevronDown className="size-4" />
+                    )}
+                    {loadingMore ? t("common.loadingMore") : t("common.loadMore")}
+                  </Button>
+                </div>
+              )}
+              {!hasMore && orders.length > PAGE_SIZE && (
+                <p className="mt-6 text-center text-xs text-slate-400">{t("common.allLoaded")}</p>
+              )}
             </div>
           )}
         </section>

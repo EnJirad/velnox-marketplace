@@ -913,6 +913,38 @@ export default function ShopProductDetail() {
     openVariantSheet("buy");
   }, [product, isAuthenticated, navigate, outOfStock, openVariantSheet]);
 
+  /**
+   * The Buy Now payload. `buyNowItem` is a DISPLAY snapshot for the checkout
+   * summary only — the server re-reads product, variant, price, stock and
+   * publication state from Neon, so the snapshot can never become the price
+   * authority. The cart is deliberately NOT touched: a direct purchase must not
+   * append to it or overwrite an existing line's quantity.
+   */
+  const buyNowState = useCallback(() => {
+    if (!product) return null;
+    const variantId = selectedVariant?.id ?? null;
+    return {
+      buyNow: true as const,
+      buyNowProductId: product.id,
+      buyNowVariantId: variantId,
+      buyNowQty: sheetQty,
+      buyNowItem: {
+        id: `buynow-${product.id}-${variantId ?? "base"}`,
+        productId: product.id,
+        variantId,
+        // Pre-formatted "Size / Color" label, the same string a cart row shows.
+        variantOptionLabels: selectedSummary,
+        name: product.name,
+        unit: product.unit ?? "",
+        price: displayPrice,
+        qty: sheetQty,
+        stock: displayStock,
+        shopName: product.shopName ?? null,
+        imageUrl: cartImageUrl ?? null,
+      },
+    };
+  }, [product, selectedVariant, sheetQty, displayPrice, displayStock, cartImageUrl, selectedSummary]);
+
   const handleSheetAction = useCallback((action: PendingAction) => {
     setPendingAction(action);
     // Trigger the same validation + execution as direct buttons
@@ -943,26 +975,18 @@ export default function ShopProductDetail() {
       setVariantSheetOpen(false);
       setPendingAction(null);
     } else if (action === "buy") {
-      add({
-        id: product.id, name: product.name, unit: product.unit,
-        price: displayPrice, stock: displayStock,
-        variantId: selectedVariant?.id ?? null,
-        imageUrl: cartImageUrl,
-      }, sheetQty);
-      setTimeout(() => {
-        navigate("/checkout", {
-          state: {
-            buyNow: true,
-            buyNowProductId: product.id,
-            buyNowVariantId: selectedVariant?.id ?? null,
-            buyNowQty: sheetQty,
-          },
-        });
-      }, 300);
+      // Direct purchase: NO cart mutation. The checkout page sends the chosen
+      // quantity to the server, which charges exactly that quantity.
+      const state = buyNowState();
+      if (state) {
+        setTimeout(() => {
+          navigate("/checkout", { state });
+        }, 300);
+      }
       setVariantSheetOpen(false);
       setPendingAction(null);
     }
-  }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, t]);
+  }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, buyNowState, sheetQty, fly, t]);
 
   const handleSheetConfirm = useCallback(() => {
     if (!product || !pendingAction) return;
@@ -984,26 +1008,17 @@ export default function ShopProductDetail() {
       fly(addBtnRef.current);
       toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
     } else if (pendingAction === "buy") {
-      add({
-        id: product.id, name: product.name, unit: product.unit,
-        price: displayPrice, stock: displayStock,
-        variantId: selectedVariant?.id ?? null,
-        imageUrl: cartImageUrl,
-      }, sheetQty);
-      setTimeout(() => {
-        navigate("/checkout", {
-          state: {
-            buyNow: true,
-            buyNowProductId: product.id,
-            buyNowVariantId: selectedVariant?.id ?? null,
-            buyNowQty: sheetQty,
-          },
-        });
-      }, 300);
+      // Direct purchase: NO cart mutation (see handleSheetAction).
+      const state = buyNowState();
+      if (state) {
+        setTimeout(() => {
+          navigate("/checkout", { state });
+        }, 300);
+      }
       setVariantSheetOpen(false);
       setPendingAction(null);
     }
-  }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, displayPrice, displayStock, selectedVariant, sheetQty, fly, navigate, t]);
+  }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, buyNowState, sheetQty, fly, navigate, t]);
 
   const handleOptionSelect = useCallback((groupId: string, valueText: string) => {
     setSelectedOptions((prev) => ({

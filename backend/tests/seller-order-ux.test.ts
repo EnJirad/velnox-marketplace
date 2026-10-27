@@ -166,7 +166,15 @@ describe("seller orders — list, filters and i18n", () => {
     // The filter rides on the query string the API already supports.
     expect(routes).toContain("status: a?.status");
     const list = read(SELLER_LIST);
-    expect(list).toContain('sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter })');
+    // The status filter rides on EVERY request the list makes — the first page
+    // and each subsequent page — so what is on screen is that status's real
+    // server-side set, not a client-side slice of "all".
+    const statusCalls = list.match(
+      /status: filter === "all" \? undefined : filter/g,
+    );
+    expect(statusCalls?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(list).toContain("sellerOrdersAction({");
+    expect(list).toContain("offset: 0");
     // No client-side filtering masquerading as the whole result set.
     expect(list).not.toMatch(/orders\.filter\(/);
     // The filter chips are the six fulfilment statuses plus "all".
@@ -176,6 +184,8 @@ describe("seller orders — list, filters and i18n", () => {
     }
     // A slow answer for a previously selected filter cannot overwrite the new one.
     expect(list).toContain("requestFilter");
+    // …and a slow answer for the SAME filter cannot either (load vs loadMore).
+    expect(list).toContain("loadSeqRef");
   });
 
   test("every order opens the seller detail, from the table and from the card", () => {

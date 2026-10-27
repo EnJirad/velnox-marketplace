@@ -128,6 +128,12 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   const [bootstrapCode, setBootstrapCode] = useState("");
   const [shopName, setShopName] = useState("");
   const [ownerStatus, setOwnerStatus] = useState<{ ownerExists: boolean; configured: boolean } | null>(null);
+  /**
+   * The bootstrap probe FAILED (network / 401 / 500). This is an error state, not
+   * "nobody owns the platform": the bootstrap form must never be shown because a
+   * request did not answer.
+   */
+  const [ownerStatusError, setOwnerStatusError] = useState(false);
   // Seller onboarding form state
   const [onboardingStep, setOnboardingStep] = useState<0 | 1 | 2 | 3>(0);
   // Step 0 — Store info
@@ -260,15 +266,37 @@ export function RequireRole({ role, children }: RequireRoleProps) {
     }
   }, [prefillFromApplication, hydrateIdentityDocuments]);
 
+  /**
+   * Who owns the platform (and whether the bootstrap secret is configured).
+   *
+   * `res.ok` is checked explicitly: an HTTP error must never be read as "no owner
+   * yet", which would offer the one-time bootstrap form to an ordinary user.
+   */
+  const loadOwnerStatus = useCallback(async () => {
+    setOwnerStatusError(false);
+    try {
+      const res = await fetch(`${API_BASE}/admin/bootstrap-status`, { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = await res.json();
+      const status = (payload?.data ?? payload) as { ownerExists?: boolean; configured?: boolean } | null;
+      if (!status) throw new Error("empty bootstrap status");
+      setOwnerStatus({
+        ownerExists: Boolean(status.ownerExists),
+        configured: Boolean(status.configured),
+      });
+    } catch (err) {
+      console.error("[center] bootstrap status failed:", err);
+      setOwnerStatus(null);
+      setOwnerStatusError(true);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated) return;
     setSellerLoading(true);
 
     if (role === "center") {
-      fetch(`${API_BASE}/admin/bootstrap-status`, { credentials: "include" })
-        .then((r) => r.json())
-        .then((s) => setOwnerStatus(s.data ?? s))
-        .catch(() => setOwnerStatus({ ownerExists: false, configured: false }));
+      void loadOwnerStatus();
     }
 
     void loadSellerStatus();
@@ -283,7 +311,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
       window.removeEventListener("focus", onRefresh);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [isAuthenticated, role, loadSellerStatus]);
+  }, [isAuthenticated, role, loadSellerStatus, loadOwnerStatus]);
 
   if (isLoading) return <LoadingGate />;
 
@@ -298,6 +326,24 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   if (role === "center") {
     const canCenter = userRole === "owner" || userRole === "admin" || userRole === "staff";
     if (canCenter) return children;
+
+    // A failed probe is its own state with a retry — never the bootstrap form.
+    if (ownerStatusError) {
+      return (
+        <GateCard icon={XCircle} title={t("common.error")} desc={t("gate.centerOwnerCheckFailed")}>
+          <Button
+            className="mt-4 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+            onClick={() => {
+              setOwnerStatus(null);
+              void loadOwnerStatus();
+            }}
+          >
+            {t("common.retry")}
+          </Button>
+        </GateCard>
+      );
+    }
+
     if (ownerStatus === null) return <LoadingGate />;
 
     if (ownerStatus.ownerExists) {
@@ -312,18 +358,43 @@ export function RequireRole({ role, children }: RequireRoleProps) {
 
     const handleClaimOwner = async (event: FormEvent) => {
       event.preventDefault();
-      if (!bootstrapCode.trim()) return;
+      const code = bootstrapCode.trim();
+      if (!code || busy) return;
       setBusy(true);
       try {
-        await fetch(`${API_BASE}/admin/claim-owner`, {
+        const res = await fetch(`${API_BASE}/admin/claim-owner`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bootstrapCode: bootstrapCode.trim() }),
+          body: JSON.stringify({ bootstrapCode: code }),
         });
+        const payload = await res.json().catch(() => null);
+        if (!res.ok) {
+          // 401/403 → wrong or missing code, 409 → someone else already claimed
+          // it, 5xx → the server failed. NONE of these is a success, so no
+          // success toast and no "claimed" state is written.
+          const serverMessage = (payload?.error?.message ?? payload?.message) as string | undefined;
+          toast.error(
+            serverMessage ??
+              (res.status === 409
+                ? t("gate.centerBootstrapTaken")
+                : t("gate.centerBootstrapInvalid")),
+          );
+          // A taken platform can never be claimed from this form — re-read the
+          // real state instead of leaving a form that cannot succeed.
+          if (res.status === 409) {
+            setBootstrapCode("");
+            await loadOwnerStatus();
+          }
+          return;
+        }
         toast.success(t("gate.centerBootstrapSuccess"));
+        setBootstrapCode("");
+        // Confirm from the server rather than from the request not throwing.
+        await loadOwnerStatus();
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : t("gate.centerBootstrapInvalid"));
+        console.error("[center] claim owner failed:", error);
+        toast.error(t("gate.centerBootstrapFailed"));
       } finally {
         setBusy(false);
       }

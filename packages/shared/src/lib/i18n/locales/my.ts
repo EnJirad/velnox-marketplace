@@ -72,6 +72,9 @@ export const my = {
     today: "ယနေ့",
     yesterday: "မနေ့က",
     daysAgo: "{count} ရက်က",
+    loadMore: "ထပ်မံဖွင့်မည်",
+    loadingMore: "ထပ်မံဖွင့်နေသည်...",
+    allLoaded: "အားလုံး ပြသပြီးပါပြီ",
   },
 
   nav: {
@@ -518,6 +521,9 @@ export const my = {
       "ဖွင့်သည့်ကုဒ် မသတ်မှတ်ရသေးပါ — စီမံခန့်ခွဲသူသည် Keys/API keys တွင် BOOTSTRAP_OWNER_SECRET ကို ဦးစွာ သတ်မှတ်ရပါမည်",
     centerBootstrapSuccess: "သင်သည် Velnox ကုမ္ပဏီပိုင်ရှင် ဖြစ်ပါပြီ 🏆",
     centerBootstrapInvalid: "ဖွင့်သည့်ကုဒ် မမှန်ပါ",
+    centerBootstrapTaken: "ဤပလက်ဖောင်းတွင် ပိုင်ရှင်ရှိပြီးဖြစ်သည် — ပိုင်ရှင် သို့မဟုတ် အက်ဒမင်ထံမှ ခွင့်ပြုချက် တောင်းပါ",
+    centerBootstrapFailed: "ပိုင်ဆိုင်ခွင့် မရယူနိုင်ပါ — ထပ်ကြိုးစားပါ",
+    centerOwnerCheckFailed: "ပလက်ဖောင်းပိုင်ရှင် အခြေအနေကို စစ်ဆေး၍ မရပါ — ထပ်ကြိုးစားပါ",
     centerBackToShop: "← ဆိုင်သို့ ပြန်သွားရန်",
     authRequired: "ဆက်လက်အသုံးပြုရန် ဦးစွာ ဝင်ရောက်ပါ",
   },

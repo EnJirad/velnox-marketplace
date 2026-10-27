@@ -100,7 +100,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
@@ -113,6 +113,9 @@ const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "operations", label: "ปฏิบัติการ" },
   { id: "finance", label: "การเงิน" },
 ];
+
+/** One page of the platform order list (the server caps `limit` at 200). */
+const ORDER_PAGE_SIZE = 50;
 
 const DEPARTMENT_LABEL: Record<string, string> = {
   general: "ทั่วไป",
@@ -663,7 +666,7 @@ export default function Center() {
   // Marketplace KPIs + orders come from the Neon commerce core (velcenter used
   // to read tables that checkout never writes → 0/wrong numbers).
   const marketOverviewAction = useAction(api.centerAdmin.marketOverviewAction);
-  const ordersListAction = useAction(api.centerAdmin.ordersListAction);
+  const ordersListAction = useAction(api.centerAdmin.ordersPageAction);
   const updateOrderStatusAction = useAction(api.centerAdmin.updateOrderStatusAction);
 
   interface MarketOverview {
@@ -696,10 +699,23 @@ export default function Center() {
     items: CenterOrderItem[];
   }
 
+  /** `GET /api/admin/orders?paginated=1` */
+  interface OrdersPage {
+    orders: CenterOrderRow[];
+    pagination?: { limit: number; offset: number; total: number; hasMore: boolean };
+  }
+
   const [marketKpi, setMarketKpi] = useState<MarketOverview | null>(null);
   const [ordersData, setOrdersData] = useState<CenterOrderRow[] | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  /** Pagination: the platform order list is walked page by page. */
+  const [ordersHasMore, setOrdersHasMore] = useState(false);
+  const [ordersLoadingMore, setOrdersLoadingMore] = useState(false);
+  const ordersMoreRef = useRef(false);
+  const ordersRef = useRef<CenterOrderRow[]>([]);
+  /** Sequence guard: a stale page/refresh answer must never overwrite a newer one. */
+  const ordersSeqRef = useRef(0);
 
   const loadMarket = useCallback(async () => {
     try {
@@ -709,20 +725,62 @@ export default function Center() {
     }
   }, [marketOverviewAction]);
 
+  /** First page (or a refresh). Always restarts at offset 0. */
   const loadOrders = useCallback(async () => {
+    const seq = ++ordersSeqRef.current;
     setOrdersLoading(true);
     setOrdersError(null);
     try {
-      setOrdersData(await ordersListAction({ limit: 100 }));
+      const page = (await ordersListAction({
+        limit: ORDER_PAGE_SIZE,
+        offset: 0,
+      })) as OrdersPage | null;
+      if (seq !== ordersSeqRef.current) return;
+      setOrdersData(page?.orders ?? []);
+      setOrdersHasMore(Boolean(page?.pagination?.hasMore));
     } catch (err) {
+      if (seq !== ordersSeqRef.current) return;
       // A failed request must never render as “no orders”.
       console.error("Orders list error:", err);
       setOrdersError(err instanceof Error ? err.message : "ไม่สามารถโหลดออเดอร์ได้");
       setOrdersData(null);
+      setOrdersHasMore(false);
     } finally {
-      setOrdersLoading(false);
+      if (seq === ordersSeqRef.current) setOrdersLoading(false);
     }
   }, [ordersListAction]);
+
+  /** Next page. Ref-guarded against double taps, deduplicated by order id. */
+  const loadMoreOrders = useCallback(async () => {
+    if (ordersMoreRef.current || !ordersHasMore) return;
+    ordersMoreRef.current = true;
+    setOrdersLoadingMore(true);
+    const seq = ordersSeqRef.current;
+    try {
+      const page = (await ordersListAction({
+        limit: ORDER_PAGE_SIZE,
+        offset: ordersRef.current.length,
+      })) as OrdersPage | null;
+      if (seq !== ordersSeqRef.current) return;
+      const next = page?.orders ?? [];
+      setOrdersData((prev) => {
+        const existing = prev ?? [];
+        const seen = new Set(existing.map((o) => o.id));
+        return [...existing, ...next.filter((o) => !seen.has(o.id))];
+      });
+      setOrdersHasMore(Boolean(page?.pagination?.hasMore));
+      setOrdersError(null);
+    } catch (err) {
+      if (seq !== ordersSeqRef.current) return;
+      console.error("Load more orders error:", err);
+      setOrdersError(err instanceof Error ? err.message : "ไม่สามารถโหลดออเดอร์เพิ่มได้");
+    } finally {
+      ordersMoreRef.current = false;
+      setOrdersLoadingMore(false);
+    }
+  }, [ordersListAction, ordersHasMore]);
+
+  ordersRef.current = ordersData ?? [];
 
   useEffect(() => {
     void loadMarket();
@@ -779,8 +837,16 @@ export default function Center() {
     ...(NEXT_STATUS[current] ?? []),
   ];
 
+  /**
+   * Which ORDER row is mid-mutation. Per row, not per table: cancelling order A
+   * must not freeze order B, and a second click on A must not send a second
+   * mutation. `null` means nothing is in flight.
+   */
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+
   const handleOrderStatus = async (orderId: string, status: string) => {
     if (!canManageOrders) return;
+    if (busyOrderId === orderId) return; // double-submit guard for THIS row
     // `shipped` means the parcel really exists: it requires a shipment with a
     // carrier and a tracking number, so those are collected first and sent WITH
     // the transition (see components/OrderShipDialog.tsx). The backend refuses
@@ -789,23 +855,57 @@ export default function Center() {
       openOrderShipDialog(orderId);
       return;
     }
+    // Cancelling an order releases reserved stock and ends the purchase — it is
+    // irreversible, so it is confirmed before anything is sent.
+    if (status === "cancelled") {
+      const ok = window.confirm(
+        "ยกเลิกออเดอร์นี้? สต็อกที่จองไว้จะถูกคืน และลูกค้าจะไม่สามารถชำระเงินได้อีก",
+      );
+      if (!ok) return;
+    }
+    setBusyOrderId(orderId);
     try {
       await updateOrderStatusAction({ orderId, status });
       toast.success("อัปเดตสถานะออเดอร์แล้ว");
-      void loadOrders();
+      // Refetch the authoritative list instead of guessing the new state.
+      await loadOrders();
+      // …and the platform counters (the tab badge reads `marketKpi.pendingOrders`).
+      void loadMarket();
     } catch (error) {
       console.error("Update order status error:", error);
       toast.error(
         error instanceof Error ? error.message : "อัปเดตไม่สำเร็จ กรุณาลองอีกครั้ง",
       );
+      // The row still shows its server status; re-read so the UI cannot appear
+      // to have applied a change the server rejected.
+      void loadOrders();
+    } finally {
+      setBusyOrderId(null);
     }
   };
+
+  /** Which USER row is mid-mutation (role / department change). */
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
   const handleSetUserAccess = async (
     userId: string,
     role: "customer" | "seller" | "admin" | "owner" | "staff",
     department?: string,
   ) => {
+    if (busyUserId === userId) return; // double-submit guard for THIS row
+    // Role changes grant or remove real power (an elevated role reaches the
+    // whole marketplace, `customer` removes access) — confirm before sending.
+    const current = [...(staffUsers ?? []), ...(customerUsers ?? [])].find(
+      (u) => u._id === userId,
+    );
+    if (current && (current.role ?? "customer") !== role) {
+      const label = ROLE_META[role]?.label ?? role;
+      const ok = window.confirm(
+        `เปลี่ยนสิทธิ์ของบัญชีนี้เป็น “${label}”? การเปลี่ยนมีผลทันทีกับทุกหน้าที่ใช้สิทธิ์นี้`,
+      );
+      if (!ok) return;
+    }
+    setBusyUserId(userId);
     try {
       await setUserAccess({
         targetUserId: userId,
@@ -819,11 +919,16 @@ export default function Center() {
           | undefined,
       });
       toast.success("อัปเดตสิทธิ์แล้ว");
-      // Role changes move an account between the staff and customer lists.
-      void loadPeople();
+      // Role changes move an account between the staff and customer lists, so
+      // the authoritative state is re-read rather than patched locally.
+      await loadPeople();
     } catch (error) {
       console.error("Set access error:", error);
       toast.error(error instanceof Error ? error.message : "อัปเดตไม่สำเร็จ");
+      // Keep the row honest: it must show the role the server still holds.
+      void loadPeople();
+    } finally {
+      setBusyUserId(null);
     }
   };
 
@@ -1000,9 +1105,15 @@ export default function Center() {
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-1.5 rounded-[10px]">
               <ShoppingBag className="size-4" /> ออเดอร์
-              {pendingOrders > 0 && (
+              {/*
+                The badge must not depend on how many rows happen to be loaded:
+                with pagination the first page can hold zero pending orders while
+                the real count sits further down. `marketKpi` is the exact
+                platform figure; the page-derived count is only the fallback.
+              */}
+              {(marketKpi?.pendingOrders ?? pendingOrders) > 0 && (
                 <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
-                  {pendingOrders}
+                  {marketKpi?.pendingOrders ?? pendingOrders}
                 </span>
               )}
             </TabsTrigger>
@@ -1236,6 +1347,7 @@ export default function Center() {
                               <Select
                                 value={order.status}
                                 onValueChange={(v) => handleOrderStatus(order.id, v)}
+                                disabled={busyOrderId === order.id}
                               >
                                 <SelectTrigger className="ml-auto h-9 w-36 rounded-[10px] border-slate-200 text-sm">
                                   <SelectValue />
@@ -1290,6 +1402,7 @@ export default function Center() {
                           <Select
                             value={order.status}
                             onValueChange={(v) => handleOrderStatus(order.id, v)}
+                            disabled={busyOrderId === order.id}
                           >
                             <SelectTrigger className="h-8 w-32 shrink-0 rounded-[10px] border-slate-200 text-xs">
                               <SelectValue />
@@ -1332,6 +1445,25 @@ export default function Center() {
                   );
                 })}
               </div>
+
+              {/* Next page of the platform order list. */}
+              {ordersHasMore && (
+                <div className="mt-6 flex justify-center">
+                  <Button
+                    variant="outline"
+                    className="min-w-44 gap-1.5 rounded-[10px] border-slate-200 text-slate-700"
+                    onClick={() => void loadMoreOrders()}
+                    disabled={ordersLoadingMore}
+                  >
+                    {ordersLoadingMore ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-4" />
+                    )}
+                    {ordersLoadingMore ? "กำลังโหลดเพิ่มเติม..." : "โหลดออเดอร์เพิ่มเติม"}
+                  </Button>
+                </div>
+              )}
               </>
             )}
             {!canManageOrders && (
@@ -1801,6 +1933,7 @@ export default function Center() {
                                     u.department,
                                   )
                                 }
+                                disabled={busyUserId === u._id}
                               >
                                 <SelectTrigger className="h-9 w-40 rounded-[10px] border-slate-200 text-sm">
                                   <SelectValue />
@@ -1828,6 +1961,7 @@ export default function Center() {
                                 onValueChange={(v) =>
                                   handleSetUserAccess(u._id, role, v)
                                 }
+                                disabled={busyUserId === u._id}
                               >
                                 <SelectTrigger className="h-9 w-40 rounded-[10px] border-slate-200 text-sm">
                                   <SelectValue />
@@ -1893,6 +2027,7 @@ export default function Center() {
                                 u.department,
                               )
                             }
+                            disabled={busyUserId === u._id}
                           >
                             <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 text-sm">
                               <SelectValue />
@@ -1908,6 +2043,7 @@ export default function Center() {
                           <Select
                             value={u.department ?? "general"}
                             onValueChange={(v) => handleSetUserAccess(u._id, role, v)}
+                            disabled={busyUserId === u._id}
                           >
                             <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 text-sm">
                               <SelectValue />

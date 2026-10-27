@@ -344,7 +344,7 @@ export function setupSellerOrderRoutes(app: Express): void {
          JOIN order_items oi ON oi.order_id = o.id
          JOIN shops sh ON oi.shop_id = sh.id
          ${whereSql}
-         ORDER BY o.created_at DESC
+         ORDER BY o.created_at DESC, o.id DESC
          LIMIT $${whereParams.length + 1} OFFSET $${whereParams.length + 2}`,
         [...whereParams, finalLimit, finalOffset],
       );
@@ -406,6 +406,25 @@ export function setupSellerOrderRoutes(app: Express): void {
           itemCount: items.reduce((s: number, i: any) => s + i.quantity, 0),
         };
       });
+
+      // `paginated=1` opts into `{ orders, pagination }`; the default stays the
+      // bare array so existing consumers keep working unchanged. `total` was
+      // already computed for this page — it is now returned instead of discarded.
+      if (req.query.paginated === "1") {
+        res.json({
+          success: true,
+          data: {
+            orders,
+            pagination: {
+              limit: finalLimit,
+              offset: finalOffset,
+              total: Number(total) || 0,
+              hasMore: finalOffset + orders.length < (Number(total) || 0),
+            },
+          },
+        });
+        return;
+      }
 
       res.json({ success: true, data: orders });
     } catch (err) {
