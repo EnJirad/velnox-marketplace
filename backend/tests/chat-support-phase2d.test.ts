@@ -703,9 +703,15 @@ describeDb("chat support, end to end (requires TEST_DATABASE_URL)", () => {
     expect(staleRead.data.data.marked).toBe(0);
     expect(await customerUnread(pair.customerId)).toBe(1);
 
-    // An unusable bound is a 400, not a silently unbounded mark-all.
-    const badBound = await readThread("customer", pair.customerId, convId, Number.NaN as unknown as number);
-    expect(badBound.status).toBe(400);
+    // An unusable bound is a 400, never a silently unbounded mark-all. The probe
+    // must use values the wire really carries: a NaN serializes to `null` in
+    // JSON, which is the ABSENT "legacy" case (200 mark-all), not an unusable one.
+    for (const unusable of [-1, "not-a-timestamp"] as const) {
+      const badBound = await call("POST", `/api/customer/conversations/${convId}/read`, pair.customerId, {
+        upTo: unusable,
+      });
+      expect(badBound.status).toBe(400);
+    }
     expect(await customerUnread(pair.customerId)).toBe(1);
 
     // Reading with the NEW message's timestamp clears it.
