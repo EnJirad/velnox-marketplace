@@ -640,95 +640,77 @@ on 2026-10-27 (edit-headroom housekeeping; nothing discarded).
 [`history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md`](history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md)
 with an index row.
 
-## §80. Phase 2A — Stability + Realtime Foundation (2026-10-27) — **COMPLETE**
+## §80. Phase 2A — Stability + Realtime Foundation (2026-10-27) — ARCHIVED
 
-**Base SHA:** `4908d7d34eb7052fcedc6d98fa49f4aee0eb0204` (`main` == `origin/main`, 0/0, clean).
-**Resulting commit:** `af302883984d695a52dd697d15875ade2652581e` (`fix(realtime): stabilize ui and
-realtime foundation`; its SHA is recorded here in the follow-up `docs(ai)` commit).
-**Report:** [`.ai/history/2026-10-27-ui-realtime-phase-2a.md`](history/2026-10-27-ui-realtime-phase-2a.md).
+Base `4908d7d3…`, commit `af30288…`. ONE realtime client owned by `RealtimeProvider`;
+VelCenter's broken inline socket removed; chat pages no longer tear the socket down; backend
+presence + 30 s heartbeat; seller chat entry below `lg`; notification panels; error ≠ empty states.
+Suite: 987 pass / 303 skip / 0 fail. Its "still open (Phase 2C)" list is delivered by §82.
+Report: [`.ai/history/2026-10-27-ui-realtime-phase-2a.md`](history/2026-10-27-ui-realtime-phase-2a.md).
+Full section text moved verbatim to
+[`history/archive/AI_Handoff-2026-10-27-sections-80-81.md`](history/archive/AI_Handoff-2026-10-27-sections-80-81.md)
+on 2026-10-27 (edit-headroom housekeeping while appending §82; nothing discarded).
 
-**What changed (no schema / SQL / DB / Stripe changes):**
-- **ONE realtime client + ONE owner.** `chat-socket` rewritten: explicit state
-  (`idle/connecting/open/reconnecting/closed`), ref-counted public channels, re-subscribe on every
-  open, 1 s→30 s exponential backoff **with jitter**, `onChatReconnect`, guarded sends. New
-  `<RealtimeProvider>` at the VelShop/VelSeller/VelCenter roots owns connect/disconnect.
-- **VelCenter socket FIXED.** The inline client (wrong URL, no `/ws`, fixed 5 s retry) is gone; the
-  page uses the shared client, subscribes the six channels, and re-reads every queue on reconnect.
-- **Chat no longer kills notifications.** `disconnectChatSocket()` removed from ShopChat/SellerChat/
-  bell cleanup; both chat pages and both bells refetch after a reconnect.
-- **Backend transport:** presence cleared when a user's last socket closes/terminates; 30 s ping with
-  missed-pong terminate; per-client guarded fan-out.
-- **Seller navigation:** header Chat action below `lg` (P0 mobile entry); tab bar now stays through
-  tablet (768–1023 px) via `until="lg"` + `.site-app--tabbar-lg`.
-- **Notification panels:** fixed viewport-gutter sheet below `sm`, anchored popover at `sm+`; failure
-  renders error + retry, never "all caught up".
-- **Error ≠ empty:** MyOrders, SellerOrders, Income, ShopNotifications, ShopChat and the cart now have
-  real error states with retry; last good data is kept where it exists.
-- Three architecture tests updated to assert the new one-socket invariant.
+## §81. Phase 2B — Broken UX + Commerce Correctness (2026-10-27) — ARCHIVED
 
-**Verified:** 4 app typechecks PASS · backend typecheck PASS · `bun run build:apps` PASS (4/4) ·
-`bun run i18n:check` PASS `1251/1251/1251` · `bun test backend/tests` **987 pass / 303 skip / 0 fail** ·
-`git diff --check` clean. **NOT RUN:** browser/viewport pass, live WebSocket handshake, production DB
-(not connected).
+Base `ded71177…`, commit `eca58eb` (18 files, +1288/−116). Buy Now charges the selected quantity
+without touching the cart; order-history pagination on all three surfaces; bootstrap-claim `res.ok`;
+VelCenter destructive-action guards; footer/marketing links. Suite: 992 pass / 313 skip / 0 fail.
+Report: [`.ai/history/2026-10-27-ui-commerce-phase-2b.md`](history/2026-10-27-ui-commerce-phase-2b.md).
+Full section text in the same archive file as §80.
 
-**Still open (Phase 2C):** `order:created` publisher, `order:updated`/`shipment:updated`
-consumers, transactional notification rows, private admin channels. Seller chat icon has no unread
-badge (no seller unread-count endpoint).
+## §82. Phase 2C — Realtime Commerce Correctness (2026-10-27) — **COMPLETE**
 
-## §81. Phase 2B — Broken UX + Commerce Correctness (2026-10-27) — **COMPLETE**
-
-**Base SHA:** `ded711776e06b5bb41bb125d7e36d003f709a199` (`main` == `origin/main`, 0/0, clean).
-**Resulting commit:** `eca58eb` — `fix(ui): complete phase 2B commerce correctness` (18 files,
-+1288/−116; its SHA is recorded here in this `docs(ai)` commit).
-**Report:** [`.ai/history/2026-10-27-ui-commerce-phase-2b.md`](history/2026-10-27-ui-commerce-phase-2b.md).
+**Base SHA:** `f78322f9aa8006f950315db6984d79206fd5c892` (`main` == `origin/main`, 0/0, clean).
+**Resulting commit (code):** `38662de6c55db5aba9245914aa18bccd784c4119` — `fix(realtime): complete
+phase 2C commerce events` (16 files, +1551/−119). This `docs(ai)` commit carries §82, the report and the
+§80/§81 archive pointers.
+**Report:** [`.ai/history/2026-10-27-realtime-commerce-phase-2c.md`](history/2026-10-27-realtime-commerce-phase-2c.md).
 **SOURCE CODE MODIFIED: YES · DATABASE MODIFIED: NO · SQL MODIFIED: NO · PRODUCTION DB
-CONNECTED: NO · STRIPE MODIFIED: NO.**
+CONNECTED: NO · STRIPE MODIFIED: NO** (no Stripe logic touched; `routes/stripe.ts` changed only in
+its realtime-publish/notification calls — settlement, pricing and webhook handling byte-identical).
 
-**Fixed (5 findings, root causes verified by trace):**
-- **Buy Now quantity + cart integrity.** The checkout posted `cartItemIds`, so the CHARGED quantity
-  came from the cart line (and buying appended to/overwrote the saved cart). Now the product page and
-  the selection sheet navigate without touching the cart, `ShopCheckout` sends
-  `buyNow: { productId, variantId, quantity }`, and `POST /api/customer/checkout` builds a synthetic
-  line from the row it reads in Neon — same validation, price revalidation, stock reservation,
-  idempotency claim, payment-reservation policy and order-number path as a cart checkout; cart cleanup
-  skips it. A client price is never accepted.
-- **Order-history pagination** on all three surfaces: `offset` + `ORDER BY created_at DESC, id DESC`
-  and an opt-in `paginated=1 → { orders, pagination }` shape (bare array default kept, so old
-  consumers are untouched). Frontends append page-by-page with id dedupe, a sync ref guard, a
-  sequence guard against stale responses, filter change → offset 0, refresh → page 1. VelCenter's
-  pending badge now reads the exact `marketKpi.pendingOrders`.
-- **Bootstrap claim `res.ok`:** non-2xx never toasts success nor writes a claimed state; 409 re-reads
-  owner status; success is confirmed by re-reading `/admin/bootstrap-status`; the status probe failure
-  is its own gate with a retry instead of offering the bootstrap form.
-- **VelCenter destructive actions:** confirmation before `cancelled` and before any role change;
-  `busyOrderId`/`busyUserId` per-row guards (only that row's control disables); success awaits the
-  authoritative refetch, failure toasts the real error and re-reads server state.
-- **Footer/marketing links:** corporate `/privacy` + `/terms` (both used to open the corporate home),
-  returns → `/help#orders`, VelSeller login → `/auth` (the old `/seller/login` route does not exist),
-  `rel="noopener noreferrer"` on corporate external links. All four apps audited against the real
-  route tables: no other dead links, no `#`, no VelRepeat references.
+**What changed (5 workstreams):**
+- **`order:created` now exists.** The checkout publishes it AFTER the transaction commits, one event
+  per created shop order, only when orders were really created (a replayed `requestId` replays the
+  stored response, so it creates and announces nothing).
+- **`order:updated` / `shipment:updated` are addressed, not broadcast.** New
+  `backend/lib/order-events.ts` resolves the audience from Neon (`orders.user_id` + `orders.shop_id →
+  shops.seller_id → sellers.user_id`) and delivers to those sessions **plus every connected VelCenter
+  session** via `sendToUsers` / `sendToCenter`. The three order/shipment channels are no longer
+  subscribable at all — no client can watch someone else's orders, and no anonymous socket can.
+- **Shipment events only for a real change.** Both parcel routes gate on `moved || created`; the
+  first creation is announced because `transitionShipment` now reports `created` (its row
+  materialises directly in `created`, so `moved` was false there).
+- **Notification ROWS for order lifecycles** (`backend/lib/order-notifications.ts`): seller on new
+  order and on customer cancellation; customer on payment/status/shipment changes. Row first, socket
+  frame second (the frame is never proof of persistence), non-fatal, no new table/queue, and never a
+  second row for a repeat (the transitions' own `moved`/claim guards are the idempotency boundary).
+- **Private admin channels authorized server-side.** `users.role` is read at connect and re-read by
+  the 30 s sweep; `audit:created`, `config:updated`, `product:updated`, `seller:updated`,
+  `inventory:updated`, `notification:created` are owner/admin/staff only, a lost role drops its live
+  subscriptions, and every subscription requires an authenticated user.
 
-**New test:** `backend/tests/buy-now-checkout.test.ts` — 5 contract assertions (no client price,
-buyNow ⊥ cartItemIds, server-priced row, total = price × quantity, no cart mutation on the buy path)
-plus 10 DB-gated route cases (qty 1/2/5, over-stock, invalid qty, double submit, mixed payload,
-unpublished product).
+**New test:** `backend/tests/realtime-commerce-phase2c.test.ts` — 23 contract assertions plus 8
+DB-gated end-to-end cases (owner vs customer subscriptions, addressed `order:created` recipients,
+replay/no-duplicate, failed checkout emits nothing, `order:updated` on cancel, `shipment:updated`
+once-per-real-move) over a REAL HTTP + WebSocket server.
 
 **Verified:** 4 app typechecks PASS · backend typecheck PASS · `bun run build:apps` PASS (4/4) ·
-`bun run i18n:check` PASS `1257/1257/1257` · `bun test backend/tests` **992 pass / 313 skip / 0 fail** ·
-`git diff --check` clean. **BLOCKED/NOT RUN:** the 10 DB-gated Buy Now cases (no safe
-`TEST_DATABASE_URL` in this workspace — they skip, no production credential used), browser/E2E pass
-(no browser here), real Stripe TEST E2E (no keys). `bun run lint` still not configured.
-**UNVERIFIED, deliberately untouched:** the corporate domain defaults (`velnox.com` in
-`sites.ts` vs `velnx.com` in INSTALLATION.md) — needs the owner's confirmation, not a guess.
+`bun run i18n:check` PASS `1257/1257/1257` · `bun test backend/tests` **1015 pass / 321 skip / 0 fail** ·
+`git diff --check` clean. **BLOCKED/NOT RUN:** the 8 DB-gated cases (no safe `TEST_DATABASE_URL` here —
+they skip; CI's disposable `postgres:16` runs them), live browser/E2E (no browser here).
 
-**Still open (Phase 2C/2D):** realtime commerce events (`order:created` publisher,
-`order:updated`/`shipment:updated` consumers), transactional notification rows, private admin
-channels, chat/support fundamentals, seller-chat unread badge, responsive/visual matrix.
+**Still open (Phase 2D/next):** durable delivery needs an OWNER-APPROVED drain worker for the
+unused `outbox_events` table (a crash between COMMIT and publish still loses a signal — consumers
+refetch on reconnect); staff with a centre role but no `audit.view` still receive the `audit:created`
+signal (payload is `{ action, entityType }` and the API stays permission-gated); seller/customer
+chat unread badge, chat/support fundamentals, responsive/visual matrix.
 
 ---
 
-**Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26,
-§76/§78/§79 on 2026-10-27 (all verbatim + index row), leaving this file at ~50 KB with §81 added.
-Before appending again, archive the Actions-alignment block or the 2026-10-04 payment-integrity
-narrative to `history/archive/` **with** an index row. Archiving is not deletion: the text is
-preserved verbatim.
+**Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
+§76/§78/§79 and §80/§81 on 2026-10-27 (all verbatim + index row), leaving this file at ~47 KB with
+§82 added. Before appending again, archive the Actions-alignment block or the 2026-10-04
+payment-integrity narrative to `history/archive/` **with** an index row. Archiving is not deletion:
+the text is preserved verbatim.
