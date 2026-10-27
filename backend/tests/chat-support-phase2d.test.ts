@@ -334,6 +334,12 @@ async function startChatHarness(): Promise<Harness> {
   app.use(cookieParser());
   const { setupChatRoutes } = await import("../routes/chat.js");
   setupChatRoutes(app);
+  // The customer unread badge reads GET /api/customer/account-summary, which
+  // lives in the main route table (routes/index.ts) — mount the REAL router, so
+  // the endpoint under test is the shipped one (including its requireAuth gate),
+  // never a stand-in defined here.
+  const { setupRoutes } = await import("../routes/index.js");
+  setupRoutes(app);
   const server: Server = createServer(app);
   const wss = new WebSocketServer({ server, path: "/ws" });
   setupWebSocket(wss);
@@ -738,7 +744,11 @@ describeDb("chat support, end to end (requires TEST_DATABASE_URL)", () => {
       expect(sent.status).toBe(200);
 
       const frame = await sellerSock.frames.waitFor((f) => f.type === "chat:message");
-      expect(frame.channel).toBe("chat:message");
+      expect(frame.type).toBe("chat:message");
+      // The frame arrives on the RECIPIENT's private channel — the addressed
+      // delivery path from Phase 2A/2C (`sendToUser` with no explicit channel),
+      // never a shared broadcast channel another socket could subscribe to.
+      expect(frame.channel).toBe(`user:${a.sellerUserId}`);
       expect(frame.data.conversationId).toBe(convId);
       expect(frame.data.message.body).toBe("ping for the seller");
       expect(frame.data.message.senderId).toBe(a.customerId);
