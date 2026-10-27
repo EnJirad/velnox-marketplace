@@ -24,6 +24,13 @@
  *   - Customers can only access conversations where they are the customer.
  *   - Sellers can only access conversations of their own shop.
  *   - Message body validated server-side (1..4000 chars).
+ *   - Sender identity comes from the session, never from the request body.
+ *   - A send may carry `clientId`; a retried submission replays the stored
+ *     message instead of writing a duplicate row/push/notification (see
+ *     `recentSends` — in-process, bounded, documented limitation).
+ *   - A read may carry `upTo` (epoch ms): only messages the reader had already
+ *     loaded are marked read, so a message arriving while the request is in
+ *     flight stays unread.
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
@@ -237,6 +244,69 @@ function validateBody(body: unknown): string | null {
   const trimmed = body.trim();
   if (trimmed.length === 0 || trimmed.length > 4000) return null;
   return trimmed;
+}
+
+/**
+ * Optional read bound (`upTo`, epoch ms): mark only the messages the reader had
+ * actually loaded, never anything created after them. Without it a message that
+ * arrives between the reader's message fetch and this UPDATE is swallowed as
+ * "read" although nobody ever saw it (Phase 2D §7 — the open-thread race).
+ * Absent → the previous unbounded behaviour, so an older client keeps working.
+ * Present but unusable → "invalid" (a 400), never a silently ignored bound.
+ */
+function readUpTo(req: Request): number | null | "invalid" {
+  const raw = req.body?.upTo;
+  if (raw === undefined || raw === null) return null;
+  const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n < 0) return "invalid";
+  return n;
+}
+
+const READ_BOUND_INVALID = {
+  success: false,
+  error: { code: "VALIDATION_ERROR", message: "upTo must be an epoch-ms timestamp" },
+} as const;
+
+/**
+ * In-process idempotency for message sends.
+ *
+ * A send carries a client-generated `clientId`, and a retried submission (a
+ * double press, or a resend of the same draft after a timeout) reuses it — the
+ * second request must not create a second row, a second push or a second
+ * notification row. `chat_messages` has no `client_id` column and the schema is
+ * not this phase's to change, so the claim lives in this process: key =
+ * conversation + sender + clientId, TTL'd and size-capped.
+ *
+ * What it honestly does NOT cover: a restart of this process forgets the map,
+ * two genuinely concurrent requests are not serialised (no constraint to lean
+ * on), and a fresh clientId is by definition a new submission. The durable fix
+ * is a UNIQUE index on (conversation_id, sender_id, client_id) — a schema change
+ * deliberately left for owner approval, not smuggled in here.
+ */
+const SEND_DEDUPE_TTL_MS = 10 * 60 * 1000;
+const SEND_DEDUPE_MAX_ENTRIES = 1000;
+const recentSends = new Map<string, { message: Record<string, unknown>; expires: number }>();
+
+function rememberSend(key: string, message: Record<string, unknown>): void {
+  const now = Date.now();
+  while (recentSends.size >= SEND_DEDUPE_MAX_ENTRIES) {
+    // Map iteration is insertion-ordered: the first key is the oldest entry.
+    const oldest = recentSends.keys().next();
+    if (oldest.done) break;
+    recentSends.delete(oldest.value);
+  }
+  recentSends.set(key, { message, expires: now + SEND_DEDUPE_TTL_MS });
+}
+
+/** The already-stored message for a retried send, or null for a new one. */
+function replaySend(key: string): Record<string, unknown> | null {
+  const hit = recentSends.get(key);
+  if (!hit) return null;
+  if (hit.expires <= Date.now()) {
+    recentSends.delete(key);
+    return null;
+  }
+  return hit.message;
 }
 
 // ─── Route setup ─────────────────────────────────────────────────────────────
@@ -460,8 +530,23 @@ export function setupChatRoutes(app: Express): void {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Message must be 1-4000 characters" } });
         return;
       }
-      const clientId = typeof req.body?.clientId === "string" ? req.body.clientId.slice(0, 64) : null;
+      const clientId =
+        typeof req.body?.clientId === "string" && req.body.clientId.length > 0
+          ? req.body.clientId.slice(0, 64)
+          : null;
       const userId = req.user!.userId;
+
+      // Retried submission → replay what was already stored instead of writing
+      // a second copy. The sender always comes from the session above; nothing
+      // the client sent can choose it.
+      const dedupeKey = clientId ? `${conversationId}:${userId}:${clientId}` : null;
+      if (dedupeKey) {
+        const duplicate = replaySend(dedupeKey);
+        if (duplicate) {
+          res.json({ success: true, data: { message: duplicate, clientId, duplicate: true } });
+          return;
+        }
+      }
 
       const insertRes = await query(
         `INSERT INTO chat_messages (conversation_id, sender_id, sender_role, body)
@@ -474,6 +559,7 @@ export function setupChatRoutes(app: Express): void {
       );
 
       const message = mapMessage(insertRes.rows[0]);
+      if (dedupeKey) rememberSend(dedupeKey, message);
       // Realtime: notify the seller's user channel.
       const conv = convRes.rows[0];
       sendToUser(conv.seller_user_id, "", CHANNELS.CHAT_MESSAGE, {
@@ -512,12 +598,22 @@ export function setupChatRoutes(app: Express): void {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
         return;
       }
-      const updated = await query(
-        `UPDATE chat_messages SET status = 'read', read_at = NOW()
-         WHERE conversation_id = $1 AND sender_id <> $2 AND read_at IS NULL
-         RETURNING id`,
-        [conversationId, req.user!.userId],
-      );
+      // Bound the mark-read to what this reader had actually loaded, so a
+      // message that lands while the request is in flight stays unread.
+      const upTo = readUpTo(req);
+      if (upTo === "invalid") {
+        res.status(400).json(READ_BOUND_INVALID);
+        return;
+      }
+      const markParams: unknown[] = [conversationId, req.user!.userId];
+      let markSql = `UPDATE chat_messages SET status = 'read', read_at = NOW()
+         WHERE conversation_id = $1 AND sender_id <> $2 AND read_at IS NULL`;
+      if (upTo !== null) {
+        markParams.push(upTo);
+        markSql += ` AND created_at <= to_timestamp($3::double precision / 1000)`;
+      }
+      markSql += ` RETURNING id`;
+      const updated = await query(markSql, markParams);
       if (updated.rows.length > 0) {
         sendToUser(convRes.rows[0].seller_user_id, "", CHANNELS.CHAT_READ, {
           conversationId,
@@ -621,8 +717,23 @@ export function setupChatRoutes(app: Express): void {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Message must be 1-4000 characters" } });
         return;
       }
-      const clientId = typeof req.body?.clientId === "string" ? req.body.clientId.slice(0, 64) : null;
+      const clientId =
+        typeof req.body?.clientId === "string" && req.body.clientId.length > 0
+          ? req.body.clientId.slice(0, 64)
+          : null;
       const userId = req.user!.userId;
+
+      // Retried submission → replay what was already stored instead of writing
+      // a second copy. The sender always comes from the session above; nothing
+      // the client sent can choose it.
+      const dedupeKey = clientId ? `${conversationId}:${userId}:${clientId}` : null;
+      if (dedupeKey) {
+        const duplicate = replaySend(dedupeKey);
+        if (duplicate) {
+          res.json({ success: true, data: { message: duplicate, clientId, duplicate: true } });
+          return;
+        }
+      }
 
       const insertRes = await query(
         `INSERT INTO chat_messages (conversation_id, sender_id, sender_role, body)
@@ -635,6 +746,7 @@ export function setupChatRoutes(app: Express): void {
       );
 
       const message = mapMessage(insertRes.rows[0]);
+      if (dedupeKey) rememberSend(dedupeKey, message);
       // Realtime: notify the customer's user channel.
       const conv = convRes.rows[0];
       sendToUser(conv.customer_id, "", CHANNELS.CHAT_MESSAGE, {
@@ -678,12 +790,22 @@ export function setupChatRoutes(app: Express): void {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
         return;
       }
-      const updated = await query(
-        `UPDATE chat_messages SET status = 'read', read_at = NOW()
-         WHERE conversation_id = $1 AND sender_id <> $2 AND read_at IS NULL
-         RETURNING id`,
-        [conversationId, req.user!.userId],
-      );
+      // Bound the mark-read to what this reader had actually loaded, so a
+      // message that lands while the request is in flight stays unread.
+      const upTo = readUpTo(req);
+      if (upTo === "invalid") {
+        res.status(400).json(READ_BOUND_INVALID);
+        return;
+      }
+      const markParams: unknown[] = [conversationId, req.user!.userId];
+      let markSql = `UPDATE chat_messages SET status = 'read', read_at = NOW()
+         WHERE conversation_id = $1 AND sender_id <> $2 AND read_at IS NULL`;
+      if (upTo !== null) {
+        markParams.push(upTo);
+        markSql += ` AND created_at <= to_timestamp($3::double precision / 1000)`;
+      }
+      markSql += ` RETURNING id`;
+      const updated = await query(markSql, markParams);
       if (updated.rows.length > 0) {
         sendToUser(convRes.rows[0].customer_id, "", CHANNELS.CHAT_READ, {
           conversationId,

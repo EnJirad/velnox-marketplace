@@ -6,6 +6,7 @@ import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
 import { connectChatSocket, onChatEvent, onChatReconnect, sendChatCommand } from "@velnox/shared/lib/chat-socket";
+import { notifyChatUnreadChanged } from "@velnox/shared/hooks/use-chat-unread";
 import { useRealtimeState } from "@velnox/shared/hooks/use-realtime-state";
 import {
   ArrowLeft,
@@ -67,6 +68,12 @@ export default function SellerChat() {
   const [error, setError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdRef = useRef<string | null>(null);
+  /**
+   * A failed send keeps its clientId: resending the SAME text reuses it, so the
+   * server replays the stored message instead of writing a duplicate row (or a
+   * duplicate notification on the other side).
+   */
+  const retryRef = useRef<{ clientId: string; body: string } | null>(null);
 
   const loadConversations = useCallback(async () => {
     setError(false);
@@ -109,7 +116,11 @@ export default function SellerChat() {
       });
       if (message.conversationId === activeIdRef.current && message.senderId !== user.id) {
         setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
-        void markConversationRead({ conversationId: message.conversationId });
+        // Bounded by THIS message's server timestamp: anything newer that
+        // arrives next stays unread until the reader actually sees it.
+        void markConversationRead({ conversationId: message.conversationId, upTo: message.createdAt })
+          .then(() => notifyChatUnreadChanged("seller"))
+          .catch((err) => console.error("Mark conversation read failed:", err));
         setConversations((prev) => prev?.map((c) => (c.id === message.conversationId ? { ...c, unreadCount: 0 } : c)) ?? null);
       }
     });
@@ -171,10 +182,19 @@ export default function SellerChat() {
       setMessagesLoading(true);
       try {
         const res = await conversationMessages({ conversationId: conv.id });
-        setMessages((res.items ?? []) as ChatMessage[]);
+        const items = (res.items ?? []) as ChatMessage[];
+        setMessages(items);
         setHasMore(!!res.hasMore);
         setConversations((prev) => prev?.map((c) => (c.id === conv.id ? { ...c, unreadCount: 0 } : c)) ?? null);
-        void markConversationRead({ conversationId: conv.id });
+        // Mark read ONLY what this page actually loaded. `upTo` is the SERVER
+        // timestamp of the newest message shown (no client clock involved), so
+        // a message created after the fetch can never be swallowed as read.
+        const upTo = items.length > 0 ? items[items.length - 1]!.createdAt : null;
+        if (upTo != null) {
+          void markConversationRead({ conversationId: conv.id, upTo })
+            .then(() => notifyChatUnreadChanged("seller"))
+            .catch((err) => console.error("Mark conversation read failed:", err));
+        }
       } catch (err) {
         console.error("Load messages error:", err);
         toast.error(t("chat.loadError"));
@@ -209,7 +229,11 @@ export default function SellerChat() {
     if (!active || !user?.id) return;
     const body = draft.trim();
     if (!body || sending) return;
-    const clientId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const retry = retryRef.current;
+    const clientId =
+      retry && retry.body === body
+        ? retry.clientId
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const temp: ChatMessage = {
       id: `temp-${clientId}`,
       conversationId: active.id,
@@ -225,6 +249,7 @@ export default function SellerChat() {
     setSending(true);
     try {
       const res = await sendMessage({ conversationId: active.id, body, clientId });
+      retryRef.current = null;
       const saved = res?.message as ChatMessage | undefined;
       if (saved) {
         setMessages((prev) => prev.map((m) => (m.id === temp.id ? saved : m)));
@@ -234,6 +259,10 @@ export default function SellerChat() {
       console.error("Send message error:", err);
       toast.error(t("chat.sendError"));
       setMessages((prev) => prev.filter((m) => m.id !== temp.id));
+      // An error must not swallow the user's text: restore the draft and keep
+      // the clientId so a resend of the same text is idempotent server-side.
+      retryRef.current = { clientId, body };
+      setDraft(body);
     } finally {
       setSending(false);
     }

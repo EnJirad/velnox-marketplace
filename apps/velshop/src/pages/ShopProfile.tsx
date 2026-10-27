@@ -16,6 +16,7 @@ import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
+import { useChatUnread } from "@velnox/shared/hooks/use-chat-unread";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { AvatarImage } from "@velnox/shared/components/ui/avatar-image";
 import {
@@ -185,6 +186,10 @@ export default function ShopProfile() {
   // Real unread count only — the badge is omitted entirely when there is
   // nothing unread (no fake numbers on the profile page).
   const notificationsBadge = notifications?.filter((n) => !n.isRead).length ?? 0;
+  // Chat unread is a DIFFERENT number from the bell: it counts unread chat
+  // messages (server-derived, `null` until the server confirms a value), never
+  // notification rows. Nothing renders while it is unknown.
+  const { count: chatUnread } = useChatUnread("customer");
 
   const renderRow = (row: ProfileRow, showBadge = 0) => {
     const Icon = row.icon;
@@ -322,7 +327,14 @@ export default function ShopProfile() {
               <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
                 {COMMUNICATION.map((row, i) => (
                   <div key={row.to} className={i > 0 ? "border-t border-slate-100" : ""}>
-                    {renderRow(row, row.to === "/notifications" ? notificationsBadge : 0)}
+                    {renderRow(
+                      row,
+                      row.to === "/notifications"
+                        ? notificationsBadge
+                        : row.to === "/chat"
+                          ? (chatUnread ?? 0)
+                          : 0,
+                    )}
                   </div>
                 ))}
               </div>

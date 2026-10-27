@@ -176,7 +176,9 @@ function buildQuery(params: Record<string, string | number | undefined | null>):
 const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   // Customer actions
   "api.customer.myProfile": () => apiGet("/api/customer/profile"),
-  "api.customer.accountSummary": () => apiGet("/api/customer/account-summary"),
+  // Fresh (no 60s cache): it carries the chat-unread count behind the badge,
+  // where a stale body is visible as a wrong number.
+  "api.customer.accountSummary": () => apiGetFresh("/api/customer/account-summary"),
   "api.customer.updateProfileAction": (a) => apiPut("/api/customer/profile", a),
   "api.customer.getProfileImageUploadIntent": (a) => apiPost("/api/customer/profile-image/upload-intent", a),
   "api.customer.saveProfileImage": (a) => apiPost("/api/customer/profile-image/save", a),
@@ -208,12 +210,14 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.customer.supportConversationAction": () => apiPost("/api/customer/support/conversation"),
   "api.customer.conversationMessages": (a) => apiGetFresh(`/api/customer/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
   "api.customer.sendMessageAction": (a) => apiPost(`/api/customer/conversations/${a.conversationId}/messages`, a),
-  "api.customer.markConversationReadAction": (a) => apiPost(`/api/customer/conversations/${a.conversationId}/read`, {}),
+  "api.customer.markConversationReadAction": (a) =>
+    apiPost(`/api/customer/conversations/${a.conversationId}/read`, { upTo: a?.upTo }),
   // Chat — seller
   "api.seller.sellerConversations": () => apiGetFresh("/api/seller/conversations"),
   "api.seller.sellerConversationMessages": (a) => apiGetFresh(`/api/seller/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
   "api.seller.sendSellerMessageAction": (a) => apiPost(`/api/seller/conversations/${a.conversationId}/messages`, a),
-  "api.seller.markSellerConversationReadAction": (a) => apiPost(`/api/seller/conversations/${a.conversationId}/read`, {}),
+  "api.seller.markSellerConversationReadAction": (a) =>
+    apiPost(`/api/seller/conversations/${a.conversationId}/read`, { upTo: a?.upTo }),
   "api.customer.reorderAction": (a) => apiPost("/api/customer/reorder", a),
   "api.customer.publicShops": () => apiGet("/api/shops"),
   "api.customer.shopDetail": (a) => apiGet(`/api/shops/${a.shopId}`),

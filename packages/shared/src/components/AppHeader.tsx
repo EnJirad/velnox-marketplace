@@ -1,6 +1,7 @@
 import { Logo } from "@velnox/shared/components/Logo";
 import { SellerNotificationBell } from "@velnox/shared/components/SellerNotificationBell";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
+import { useChatUnread } from "@velnox/shared/hooks/use-chat-unread";
 import { MessageCircle, RefreshCw, ShoppingBag, Store, Target, Wallet } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 
@@ -16,6 +17,17 @@ const NAV_ITEMS = [
 export function AppHeader() {
   const navigate = useNavigate();
   const location = useLocation();
+  // Real unread chat count from the server (scoped to this seller's own
+  // conversations). `null` = not confirmed yet → render NOTHING: a loading or
+  // failed badge must never look like "0 unread".
+  const { count: chatUnread } = useChatUnread("seller");
+  const unread = chatUnread != null && chatUnread > 0 ? chatUnread : null;
+  const chatBadge =
+    unread == null ? null : (
+      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[10px] font-bold leading-none text-white">
+        {unread > 99 ? "99+" : unread}
+      </span>
+    );
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -39,6 +51,7 @@ export function AppHeader() {
                 >
                   <item.icon className="size-4" />
                   {item.label}
+                  {item.to === "/seller/chat" && chatBadge}
                 </Link>
               );
             })}
@@ -54,15 +67,20 @@ export function AppHeader() {
           */}
           <Link
             to="/seller/chat"
-            aria-label="แชท"
+            aria-label={unread != null ? `แชท (${unread})` : "แชท"}
             aria-current={location.pathname.startsWith("/seller/chat") ? "page" : undefined}
-            className={`flex size-10 items-center justify-center rounded-[10px] transition-colors lg:hidden ${
+            className={`relative flex size-10 items-center justify-center rounded-[10px] transition-colors lg:hidden ${
               location.pathname.startsWith("/seller/chat")
                 ? "bg-slate-100 text-slate-900"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
             <MessageCircle className="size-5" />
+            {unread != null && (
+              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[10px] font-bold leading-none text-white">
+                {unread > 99 ? "99+" : unread}
+              </span>
+            )}
           </Link>
           {/* VelCenter correction requests reach the seller here. */}
           <SellerNotificationBell />
