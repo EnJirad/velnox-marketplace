@@ -25,7 +25,14 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
-import { broadcast, CHANNELS } from "../realtime/index.js";
+// Order-scoped realtime events (addressed to the order's entitled sessions:
+// the customer, this order's seller, connected VelCenter sessions) and the
+// customer notification rows the same transitions write.
+import { publishOrderEvent } from "../lib/order-events.js";
+import {
+  notifyOrderCustomerOfShipment,
+  notifyOrderCustomerOfStatus,
+} from "../lib/order-notifications.js";
 import {
   FULFILLMENT_STATUSES,
   FULFILLMENT_TRANSITIONS,
@@ -565,7 +572,7 @@ export function setupSellerOrderRoutes(app: Express): void {
         return;
       }
 
-      // Captured inside the transaction so the broadcast after COMMIT can
+      // Captured inside the transaction so the event published after COMMIT can
       // report the real previous status without a second read.
       let previousStatus = "";
       try {
@@ -681,16 +688,16 @@ export function setupSellerOrderRoutes(app: Express): void {
         throw err;
       }
 
-      // Publish the transition on the ONE order channel so every other open
-      // session follows it (VelCenter orders tab, the buyer's order list) —
-      // this route previously reached them only through its audit event.
-      try {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
-          orderId,
-          from: previousStatus,
-          to: status,
-        });
-      } catch { /* best-effort — a committed transition never fails on a socket error */ }
+      // Publish AFTER the commit — a refused transition (400/403/404/409)
+      // answers and returns above, so only a real, persisted move is announced.
+      // The audience is the order's entitled sessions (the buyer is told; the
+      // acting seller session already knows and refetches from the response).
+      await publishOrderEvent("order:updated", orderId, {
+        orderId,
+        from: previousStatus,
+        to: status,
+      });
+      await notifyOrderCustomerOfStatus(orderId, status);
 
       res.json({ success: true, data: { id: orderId, status } });
     } catch (err) {
@@ -760,17 +767,20 @@ export function setupSellerOrderRoutes(app: Express): void {
         throw err;
       }
 
-      // Publish on the ONE shipment channel so every other open session follows
-      // the parcel (a committed move never fails on a socket error).
-      try {
-        broadcast(CHANNELS.SHIPMENT_UPDATED, "shipment:updated", {
+      // Publish AFTER the commit, and only for a REAL change: a repeat request
+      // resolves to `moved === false` (order-shipment.ts returns the unchanged
+      // row rather than an error) and an unchanged parcel is not an event —
+      // while `created` marks the one call that brought the parcel into being
+      // (its row materialises directly in `created`, so `moved` stays false).
+      if (outcome.moved || outcome.created) {
+        await publishOrderEvent("shipment:updated", orderId, {
           orderId,
           shipmentId: outcome.shipment.id,
           from: outcome.from,
           to: outcome.to,
-          moved: outcome.moved,
         });
-      } catch { /* best-effort */ }
+        await notifyOrderCustomerOfShipment(orderId, outcome.to);
+      }
 
       res.json({
         success: true,

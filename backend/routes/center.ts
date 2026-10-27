@@ -63,6 +63,14 @@ import { invalidateCachedProfile } from "./auth.js";
 import { isShipmentStatus } from "../lib/order-shipment-states.js";
 import { transitionShipment, type ShipmentTransitionResult } from "../lib/order-shipment.js";
 import { broadcast, CHANNELS } from "../realtime/index.js";
+// Order-scoped realtime events (addressed to the order's entitled sessions:
+// the customer, the order's seller, connected VelCenter sessions) and the
+// customer notification rows the same transitions write.
+import { publishOrderEvent } from "../lib/order-events.js";
+import {
+  notifyOrderCustomerOfShipment,
+  notifyOrderCustomerOfStatus,
+} from "../lib/order-notifications.js";
 import { CUSTOMER_MEMORY_ENABLED } from "../lib/features.js";
 
 function param(req: Request, key: string): string {
@@ -648,9 +656,16 @@ export function setupCenterRoutes(app: Express): void {
       }
 
       await writeAuditLog(req.user!.userId, "ORDER_STATUS_UPDATE", "order", orderId, outcome, auditClientIp(req));
-      // The VelCenter orders tab subscribes to `order:updated` — publish it so
-      // every open session follows the status, not only the one that acted.
-      try { broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, from: outcome.from, to: outcome.to }); } catch { /* best-effort */ }
+      // Publish AFTER the commit, to the sessions entitled to the order (every
+      // connected VelCenter session included) — a refused transition answered
+      // and returned above, so only a real move is announced. The customer is
+      // notified because an operator moved their order.
+      await publishOrderEvent("order:updated", orderId, {
+        orderId,
+        from: outcome.from,
+        to: outcome.to,
+      });
+      await notifyOrderCustomerOfStatus(orderId, outcome.to);
       res.json({ success: true, data: { id: orderId, status: outcome.to } });
     } catch (err) {
       console.error("[center] order status error:", err);
@@ -717,18 +732,20 @@ export function setupCenterRoutes(app: Express): void {
         { shipmentId: outcome.shipment.id, from: outcome.from, to: outcome.to, moved: outcome.moved },
         auditClientIp(req),
       );
-      // Publish on the ONE shipment channel so every open session follows the
-      // parcel, not only the session that acted (a committed move never fails on
-      // a socket error).
-      try {
-        broadcast(CHANNELS.SHIPMENT_UPDATED, "shipment:updated", {
+      // Publish AFTER the commit, and only for a REAL change: a repeat request
+      // resolves to `moved === false` (order-shipment.ts returns the unchanged
+      // row rather than an error) and an unchanged parcel is not an event —
+      // while `created` marks the one call that brought the parcel into being
+      // (its row materialises directly in `created`, so `moved` stays false).
+      if (outcome.moved || outcome.created) {
+        await publishOrderEvent("shipment:updated", orderId, {
           orderId,
           shipmentId: outcome.shipment.id,
           from: outcome.from,
           to: outcome.to,
-          moved: outcome.moved,
         });
-      } catch { /* best-effort */ }
+        await notifyOrderCustomerOfShipment(orderId, outcome.to);
+      }
       res.json({
         success: true,
         data: {

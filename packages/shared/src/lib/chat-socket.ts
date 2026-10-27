@@ -3,16 +3,27 @@
  *
  * ONE shared connection per app, owned by the app root (see
  * `components/RealtimeProvider`). The backend authenticates the socket from the
- * httpOnly session cookie during the handshake and only allows a client to
- * subscribe to its own `user:{userId}` private channel plus the explicit
- * allowlist of public channels.
+ * httpOnly session cookie during the handshake and answers every `subscribe`
+ * from its OWN data: a connection may subscribe to its own `user:{userId}`
+ * channel, to an authenticated-only self channel (`cart:updated`,
+ * `profile:updated`), and — only while `users.role` really is owner/admin/staff
+ * — to the private VelCenter channels (`audit:created`, `config:updated`,
+ * `product:updated`, `seller:updated`, `inventory:updated`,
+ * `notification:created`). Anything else is refused with a FORBIDDEN error.
+ *
+ * Order-scoped events are not channels at all: `order:created`,
+ * `order:updated` and `shipment:updated` are ADDRESSED by the server to the
+ * sessions entitled to them (the order's customer, the shop's seller, every
+ * connected VelCenter session), so they arrive without a subscription and no
+ * client can widen their audience.
  *
  * Events the server can push:
  *   - "chat:message"          { conversationId, message, clientId? }
  *   - "chat:read"             { conversationId, readerId }
- *   - "notification:created"  { id, type, title, message }
- *   - "order:updated", "product:updated", "seller:status-changed",
- *     "audit:created", "config:updated", … (public channels)
+ *   - "notification:created"  { id, type, title, message }  (own channel)
+ *   - "order:created" / "order:updated" / "shipment:updated"  { orderId, … }
+ *   - "product:moderated", "seller:status-changed", "audit:created",
+ *     "config:updated", "employee:created|updated", … (private center channels)
  *
  * Consumers must be idempotent: dedupe incoming messages by message id.
  *
@@ -287,10 +298,12 @@ export function onAnyChatEvent(handler: AnyEventHandler): () => void {
 }
 
 /**
- * Subscribe to a public channel (e.g. `order:updated` in VelCenter). The
- * subscription is restored automatically after a reconnect. Returns an
- * unsubscribe function; the channel frame is only sent to the server once the
- * last consumer releases it.
+ * Subscribe to a PRIVATE VelCenter channel (e.g. `product:updated`). The server
+ * decides whether this connection may have it — from `users.role`, never from
+ * anything the client sent — and answers FORBIDDEN otherwise, so an ordinary
+ * customer or seller connection receives nothing. The subscription is restored
+ * automatically after a reconnect. Returns an unsubscribe function; the channel
+ * frame is only sent to the server once the last consumer releases it.
  */
 export function subscribeChatChannel(channel: string): () => void {
   const next = (channelRefs.get(channel) ?? 0) + 1;

@@ -227,9 +227,14 @@ describe("audit log access control", () => {
 });
 
 describe("audit realtime", () => {
-  test("the audit:created channel is defined and subscribable", () => {
+  test("the audit:created channel is defined and center-only", () => {
     expect(realtime).toContain('AUDIT_CREATED: "audit:created"');
-    expect(realtime).toContain('msg.channel === "audit:created"');
+    // Subscribing is decided server-side: the channel is in the center set and
+    // the subscription branch checks `users.role` against it, so a customer or
+    // seller connection can never receive the audit feed.
+    expect(realtime).toMatch(/CENTER_CHANNELS = new Set<string>\(\[[\s\S]*?CHANNELS\.AUDIT_CREATED/);
+    expect(realtime).toContain("CENTER_CHANNELS.has(channel)");
+    expect(realtime).not.toContain('msg.channel === "audit:created"');
   });
 
   test("every audit write broadcasts — from the single choke point", () => {

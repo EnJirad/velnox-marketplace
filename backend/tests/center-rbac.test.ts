@@ -42,6 +42,8 @@ const sellerOrdersSrc = read("backend/routes/seller-orders.ts");
 const stripeSrc = read("backend/routes/stripe.ts");
 const serverSrc = read("backend/server.ts");
 const realtimeSrc = read("backend/realtime/index.ts");
+const orderEventsSrc = read("backend/lib/order-events.ts");
+const schedulerSrc = read("backend/jobs/payment-reservation-scheduler.ts");
 const categoriesMgmtSrc = read("apps/velcenter/src/components/CategoriesManagement.tsx");
 
 /** Every backend file that must not re-implement authorization itself. */
@@ -310,29 +312,48 @@ describe("a failed read is never rendered as an empty state", () => {
 });
 
 describe("realtime wiring has no dead end", () => {
-  test("the orders channel is published to, not only subscribed to", () => {
-    // The client subscribed to `order:updated` and wired the fan-out, but no
-    // route ever published it — the subscription could never fire.
-    expect(centerSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
-    expect(centerPage).toContain('subscribeChatChannel("order:updated")');
+  test("order events are ADDRESSED to the entitled sessions, never broadcast", () => {
+    // Phase 2C. `order:updated` used to be fanned out on a channel any socket
+    // could subscribe to, so an anonymous client received other people's order
+    // ids. It is now an addressed delivery whose audience the server resolves
+    // from Neon, and the console is an entitled recipient because it is a
+    // VelCenter session — not because it asked for a channel.
     expect(centerPage).toContain('type === "order:updated" || type === "order:created"');
+    expect(centerPage).toContain('type === "shipment:updated"');
+    expect(centerPage).not.toContain('subscribeChatChannel("order:updated")');
+    expect(orderEventsSrc).toContain("export async function publishOrderEvent(");
+    expect(orderEventsSrc).toContain("sendToUsers(");
+    expect(orderEventsSrc).toContain("sendToCenter(");
+    // It imports ONLY the addressed senders (and the channel vocabulary), so it
+    // cannot fan out globally.
+    expect(orderEventsSrc).toContain('import { CHANNELS, sendToCenter, sendToUsers } from "../realtime/index.js";');
   });
 
-  test("every writer that moves an order publishes on that channel", () => {
-    // These three wrote `orders.status` silently: a transition reached other
-    // sessions only through its audit event, so the orders tab could sit on a
-    // stale status. center.ts already published; these are the rest.
-    expect(cartSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
-    expect(sellerOrdersSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
-    expect(stripeSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
+  test("every writer that moves an order publishes through the ONE publisher", () => {
+    // These wrote `orders.status` silently: a transition reached other sessions
+    // only through its audit event, so the orders tab could sit on a stale
+    // status. Every writer — including the expiry sweep — now announces a real
+    // move through the same addressed publisher.
+    for (const src of [cartSrc, sellerOrdersSrc, stripeSrc, centerSrc, schedulerSrc]) {
+      expect(src).toContain('publishOrderEvent("order:updated"');
+      expect(src).not.toContain("broadcast(CHANNELS.ORDER_UPDATED");
+    }
+    // A parcel move has its own event, gated on a REAL move (`moved === true`).
+    for (const src of [sellerOrdersSrc, centerSrc]) {
+      expect(src).toContain('publishOrderEvent("shipment:updated"');
+      expect(src).not.toContain("broadcast(CHANNELS.SHIPMENT_UPDATED");
+    }
   });
 
-  test("the config channel is registered, subscribable and published to", () => {
+  test("the config channel is registered, center-only and published to", () => {
     // Categories and platform settings had no channel of their own, so another
     // open VelCenter session kept a stale tree/settings form until a refresh.
     expect(realtimeSrc).toContain('CONFIG_UPDATED: "config:updated"');
-    // A channel the socket refuses to subscribe to can never be received.
-    expect(realtimeSrc).toContain('msg.channel === "config:updated"');
+    // A channel the socket refuses to subscribe to can never be received — and
+    // since Phase 2C the decision is a server-side role check, so an ordinary
+    // customer or seller connection cannot have it.
+    expect(realtimeSrc).toMatch(/CENTER_CHANNELS = new Set<string>\(\[[\s\S]*?CHANNELS\.CONFIG_UPDATED/);
+    expect(realtimeSrc).toContain("CENTER_CHANNELS.has(channel)");
     // Both config surfaces publish through the one choke point in server.ts.
     expect(serverSrc).toContain('broadcast(CHANNELS.CONFIG_UPDATED, "config:updated"');
     expect(serverSrc).toContain('"/api/admin/categories"');

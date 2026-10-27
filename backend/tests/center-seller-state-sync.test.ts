@@ -245,8 +245,14 @@ describe("VelCenter shares the ONE socket and fans events out to refetches", () 
     expect(centerSrc).toContain('subscribeChatChannel("product:updated")');
     expect(centerSrc).toContain('subscribeChatChannel("seller:updated")');
     expect(centerSrc).toContain('subscribeChatChannel("notification:created")');
-    expect(centerSrc).toContain('subscribeChatChannel("order:updated")');
     expect(centerSrc).toContain('subscribeChatChannel("audit:created")');
+    // Order events are ADDRESSED (the server resolves the audience from Neon),
+    // so no client subscribes to an order channel — none is subscribable.
+    expect(centerSrc).not.toContain('subscribeChatChannel("order:updated")');
+    expect(centerSrc).not.toContain('subscribeChatChannel("shipment:updated")');
+    expect(centerSrc).toContain(
+      'if (type === "order:updated" || type === "order:created" || type === "shipment:updated") {',
+    );
     expect(centerSrc).toContain('subscribeChatChannel("config:updated")');
     expect(centerSrc).toContain("connectChatSocket(user.id)");
     expect(centerSrc).toContain("onAnyChatEvent(");

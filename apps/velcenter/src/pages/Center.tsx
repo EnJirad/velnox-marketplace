@@ -447,11 +447,19 @@ export default function Center() {
     if (!isAuthenticated || !user?.id) return;
     connectChatSocket(user.id);
 
+    // Private VelCenter channels. The server authorizes each subscription from
+    // `users.role` server-side; a customer or seller connection is refused.
+    //
+    // `order:created` / `order:updated` / `shipment:updated` are deliberately
+    // NOT subscribed: order-scoped events are ADDRESSED by the server to the
+    // sessions entitled to them (the order's customer, the shop's seller and
+    // every connected VelCenter session), so this console receives them without
+    // subscribing to anything — and no client can subscribe to a feed of other
+    // people's orders.
     const unsubscribes = [
       subscribeChatChannel("product:updated"),
       subscribeChatChannel("seller:updated"),
       subscribeChatChannel("notification:created"),
-      subscribeChatChannel("order:updated"),
       subscribeChatChannel("audit:created"),
       subscribeChatChannel("config:updated"),
     ];
@@ -467,7 +475,7 @@ export default function Center() {
       if (type === "seller:status-changed" || type === "verification:status-changed") {
         emitCenterEvent("sellers");
       }
-      if (type === "order:updated" || type === "order:created") {
+      if (type === "order:updated" || type === "order:created" || type === "shipment:updated") {
         emitCenterEvent("orders");
       }
       // `employee:created` / `employee:updated` are broadcast when a center
@@ -488,7 +496,8 @@ export default function Center() {
         type === "seller:status-changed" ||
         type === "verification:status-changed" ||
         type === "order:updated" ||
-        type === "order:created"
+        type === "order:created" ||
+        type === "shipment:updated"
       ) {
         emitCenterEvent("audit");
       }

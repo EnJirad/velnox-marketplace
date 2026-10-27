@@ -181,7 +181,7 @@ describe("backend contract — the cancel endpoint", () => {
     );
     expect(refusal).toBeGreaterThan(-1);
     expect(refusal).toBeLessThan(cancelBody.indexOf("await expireStripeCheckoutSession(groupOutcome.openSessionId)"));
-    expect(refusal).toBeLessThan(cancelBody.indexOf("broadcast(CHANNELS.ORDER_UPDATED"));
+    expect(refusal).toBeLessThan(cancelBody.indexOf('publishOrderEvent("order:updated"'));
     expect(read("backend/lib/checkout-group-lifecycle.ts")).toContain("blockedBy");
 
     // The SINGLE-ORDER refusals still precede their transaction.

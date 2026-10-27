@@ -70,7 +70,11 @@ import { axesForFulfillmentStatus, projectOrderStatus, projectOrderStatusSql } f
 // The ONE order-number generator; stripe.ts used to carry a second, unused copy.
 import { generateOrderNumber } from "../lib/order-number.js";
 import { selectOrderPaymentRow } from "../lib/payment-reservation.js";
-import { broadcast, CHANNELS } from "../realtime/index.js";
+// Order-scoped realtime events (addressed to the order's entitled sessions:
+// the customer, the order's seller, connected VelCenter sessions) and the
+// customer notification rows the same settlement writes.
+import { publishOrderEvent } from "../lib/order-events.js";
+import { notifyOrderCustomerOfStatus } from "../lib/order-notifications.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { writeAuditLog, auditClientIp } from "../lib/audit-log.js";
 import {
@@ -1315,10 +1319,13 @@ async function settleCheckoutGroup(
       );
     }
 
-    // One realtime message per order — the storefront subscribes per order, and
-    // a customer watching three shops must see all three settle.
+    // One realtime message per order — the customer watching three shops must
+    // see all three settle — and one payment notification per order. Both run
+    // AFTER the settlement transaction committed (`settled` lists the orders the
+    // transaction actually claimed).
     for (const orderId of settled) {
-      broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
+      await publishOrderEvent("order:updated", orderId, { orderId, to: "paid" });
+      await notifyOrderCustomerOfStatus(orderId, "paid");
     }
 
     if (settled.length > 0) {
@@ -1757,7 +1764,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       }
       const result = await markPaymentSucceeded(orderId, attempt, event.id);
       if (result.moved) {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
+        await publishOrderEvent("order:updated", orderId, { orderId, to: "paid" });
+        await notifyOrderCustomerOfStatus(orderId, "paid");
       }
       return;
     }
@@ -1781,7 +1789,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       }
       const result = await markPaymentSucceeded(orderId, attempt, event.id);
       if (result.moved) {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
+        await publishOrderEvent("order:updated", orderId, { orderId, to: "paid" });
+        await notifyOrderCustomerOfStatus(orderId, "paid");
       }
       return;
     }
@@ -1810,7 +1819,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           "payment_failed",
         );
         for (const movedId of outcome.claimed) {
-          broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId: movedId, to: "payment_failed" });
+          await publishOrderEvent("order:updated", movedId, { orderId: movedId, to: "payment_failed" });
+          await notifyOrderCustomerOfStatus(movedId, "payment_failed");
         }
         return;
       }
@@ -1821,7 +1831,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         "The delayed payment did not complete.",
       );
       if (result.moved) {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "payment_failed" });
+        await publishOrderEvent("order:updated", orderId, { orderId, to: "payment_failed" });
+        await notifyOrderCustomerOfStatus(orderId, "payment_failed");
       }
       return;
     }
@@ -1843,7 +1854,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           "cancelled",
         );
         for (const movedId of outcome.claimed) {
-          broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId: movedId, to: "cancelled" });
+          await publishOrderEvent("order:updated", movedId, { orderId: movedId, to: "cancelled" });
+          await notifyOrderCustomerOfStatus(movedId, "cancelled");
         }
         return;
       }
@@ -1853,7 +1865,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         `Checkout session ${session.id} expired.`,
       );
       if (result.moved) {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "cancelled" });
+        await publishOrderEvent("order:updated", orderId, { orderId, to: "cancelled" });
+        await notifyOrderCustomerOfStatus(orderId, "cancelled");
       }
       return;
     }
@@ -1877,7 +1890,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       }
       const result = await markPaymentSucceeded(orderId, attempt, event.id);
       if (result.moved) {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "paid" });
+        await publishOrderEvent("order:updated", orderId, { orderId, to: "paid" });
+        await notifyOrderCustomerOfStatus(orderId, "paid");
       }
       return;
     }
@@ -1891,7 +1905,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         const message = paymentIntent.last_payment_error?.message ?? "The payment was declined.";
         const outcome = await failCheckoutGroup(failedGroupId, code, message, "payment_failed");
         for (const movedId of outcome.claimed) {
-          broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId: movedId, to: "payment_failed" });
+          await publishOrderEvent("order:updated", movedId, { orderId: movedId, to: "payment_failed" });
+          await notifyOrderCustomerOfStatus(movedId, "payment_failed");
         }
         return;
       }
@@ -1906,7 +1921,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         message,
       );
       if (result.moved) {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "payment_failed" });
+        await publishOrderEvent("order:updated", orderId, { orderId, to: "payment_failed" });
+        await notifyOrderCustomerOfStatus(orderId, "payment_failed");
       }
       return;
     }
@@ -1923,7 +1939,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           "cancelled",
         );
         for (const movedId of outcome.claimed) {
-          broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId: movedId, to: "cancelled" });
+          await publishOrderEvent("order:updated", movedId, { orderId: movedId, to: "cancelled" });
+          await notifyOrderCustomerOfStatus(movedId, "cancelled");
         }
         return;
       }
@@ -1935,7 +1952,8 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         "The payment was canceled.",
       );
       if (result.moved) {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", { orderId, to: "cancelled" });
+        await publishOrderEvent("order:updated", orderId, { orderId, to: "cancelled" });
+        await notifyOrderCustomerOfStatus(orderId, "cancelled");
       }
       return;
     }

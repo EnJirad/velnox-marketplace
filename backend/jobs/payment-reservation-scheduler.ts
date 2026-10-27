@@ -59,7 +59,11 @@ import {
   PAYMENT_RESERVATION_EXPIRABLE_STATUSES,
   PAYMENT_RESERVATION_EXPIRED_STATUS,
 } from "../lib/payment-reservation.js";
-import { broadcast, CHANNELS } from "../realtime/index.js";
+// Order-scoped realtime events (addressed to the order's entitled sessions:
+// the customer, the order's seller, connected VelCenter sessions) and the
+// customer notification rows an expired reservation writes.
+import { publishOrderEvent } from "../lib/order-events.js";
+import { notifyOrderCustomerOfStatus } from "../lib/order-notifications.js";
 import { expireStripeCheckoutSession } from "../routes/stripe.js";
 
 /**
@@ -254,10 +258,14 @@ export async function expirePaymentReservation(orderId: string): Promise<Reserva
     sessionExpired = await expireStripeCheckoutSession(order.open_session_id as string);
   }
 
-  broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
+  // Publish AFTER the transaction committed (the claim above is the winner), so
+  // an expired reservation is announced exactly once, to the sessions entitled
+  // to the order, and the customer is told why their order ended.
+  await publishOrderEvent("order:updated", orderId, {
     orderId,
     to: PAYMENT_RESERVATION_EXPIRED_STATUS,
   });
+  await notifyOrderCustomerOfStatus(orderId, PAYMENT_RESERVATION_EXPIRED_STATUS);
 
   logPaymentEvent("inventory.released", {
     order_id: orderId,
@@ -340,10 +348,11 @@ async function expireCheckoutGroupReservation(
   const sessionExpired = sessionId ? await expireStripeCheckoutSession(sessionId) : false;
 
   for (const movedOrderId of outcome.claimed) {
-    broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
+    await publishOrderEvent("order:updated", movedOrderId, {
       orderId: movedOrderId,
       to: PAYMENT_RESERVATION_EXPIRED_STATUS,
     });
+    await notifyOrderCustomerOfStatus(movedOrderId, PAYMENT_RESERVATION_EXPIRED_STATUS);
   }
 
   logPaymentEvent("inventory.released", {

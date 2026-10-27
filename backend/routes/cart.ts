@@ -46,7 +46,6 @@ import {
 import { NEW_ORDER_AXES, projectOrderStatus, axesForFulfillmentStatus } from "../lib/order-state.js";
 // Terminating a purchase is a GROUP operation: N orders, one charge, one unit.
 import { terminateCheckoutGroup } from "../lib/checkout-group-lifecycle.js";
-import { broadcast, CHANNELS } from "../realtime/index.js";
 import { normalizePaymentMethod, assertPaymentMethodUsable, PAYMENT_METHOD, type PaymentMethodId } from "../lib/payment-config.js";
 // The Stripe client lives in stripe.ts (one lazy, test-mode-only client). The
 // cancel route closes the provider side of an abandoned Checkout Session with
@@ -57,6 +56,14 @@ import { expireStripeCheckoutSession } from "./stripe.js";
 import { fetchOrderItemsForOrders, fetchShipmentsForOrder } from "../lib/order-read.js";
 // The ONE order-number generator (crypto-backed) and its collision predicate.
 import { generateOrderNumber, isOrderNumberCollision } from "../lib/order-number.js";
+// Order-scoped realtime events (addressed to the order's entitled sessions —
+// customer, the shop's seller, connected VelCenter sessions) and the
+// notification rows the same transitions write. See both module headers.
+import { publishOrderEvent } from "../lib/order-events.js";
+import {
+  notifyOrderSellerOfCancellation,
+  notifyOrderSellerOfNewOrder,
+} from "../lib/order-notifications.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1235,6 +1242,32 @@ export function setupCartRoutes(app: Express): void {
         throw err;
       }
 
+      // ── Publish AFTER the commit ─────────────────────────────────────────
+      // Every row created above is durable at this point, and a failed request
+      // never reaches here (the failure paths answer and return inside the
+      // `catch` blocks above), so this is the ONE place a real, committed order
+      // creation is announced.
+      //
+      // A REPLAYED request creates nothing: the checkout_requests claim replays
+      // the stored response and `createdOrders` stays empty — so a retry can
+      // never publish a second `order:created` or write a second notification.
+      //
+      // The event is a SIGNAL addressed to the order's entitled sessions (see
+      // lib/order-events.ts): identifiers and status only, no customer PII, no
+      // payment data. One event per order — a multi-shop purchase creates one
+      // order per shop and therefore one event per shop.
+      for (const created of createdOrders) {
+        await publishOrderEvent("order:created", created.orderId, {
+          orderId: created.orderId,
+          orderNumber: created.orderNumber,
+          shopId: created.shopId,
+          checkoutGroupId,
+        });
+        // The seller is the party who must ACT on a new order, so the row goes
+        // to the shop's seller — never to the customer, who just placed it.
+        await notifyOrderSellerOfNewOrder(created.orderId);
+      }
+
       res.json({ success: true, data: responseData });
     } catch (err) {
       // Atomic stock guard fired (race with another purchase) — tell the
@@ -1542,14 +1575,16 @@ export function setupCartRoutes(app: Express): void {
           await expireStripeCheckoutSession(groupOutcome.openSessionId);
         }
 
+        // Publish AFTER the commit, once per moved order, and tell each shop's
+        // seller about the cancellation. The customer performed it, so the
+        // customer gets no notification of their own action.
         for (const movedOrderId of groupOutcome.claimed) {
-          try {
-            broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
-              orderId: movedOrderId,
-              from: order.status,
-              to: "cancelled",
-            });
-          } catch { /* best-effort — a committed cancel never fails on a socket error */ }
+          await publishOrderEvent("order:updated", movedOrderId, {
+            orderId: movedOrderId,
+            from: order.status,
+            to: "cancelled",
+          });
+          await notifyOrderSellerOfCancellation(movedOrderId);
         }
 
         res.json({
@@ -1741,16 +1776,15 @@ export function setupCartRoutes(app: Express): void {
         return;
       }
 
-      // Publish the transition on the ONE order channel so every open session
-      // follows it (the VelCenter orders tab and the buyer's other tabs) — the
-      // acting session already refetches. The event is a signal, never data.
-      try {
-        broadcast(CHANNELS.ORDER_UPDATED, "order:updated", {
-          orderId,
-          from: order.status,
-          to: "cancelled",
-        });
-      } catch { /* best-effort — a committed cancel never fails on a socket error */ }
+      // Publish the transition AFTER the commit, to the sessions entitled to it
+      // (the customer's other tabs, the shop's seller, VelCenter's orders tab).
+      // The customer caused this cancellation, so only the seller is notified.
+      await publishOrderEvent("order:updated", orderId, {
+        orderId,
+        from: order.status,
+        to: "cancelled",
+      });
+      await notifyOrderSellerOfCancellation(orderId);
 
       res.json({
         success: true,

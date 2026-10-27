@@ -99,6 +99,11 @@ export interface ShipmentTransitionResult {
   to: ShipmentStatus;
   /** False when the shipment was ALREADY in `to` (an idempotent repeat). */
   moved: boolean;
+  /** True when THIS call brought the parcel into existence (`created` on an
+   *  order that had no shipment row). The row materialises directly in
+   *  `created`, so `moved` stays false on that call — but a persisted change
+   *  did happen, and publishers must announce it. */
+  created: boolean;
   /** True when the order's own fulfilment axis advanced as part of this move. */
   orderAdvanced: boolean;
 }
@@ -179,12 +184,15 @@ export async function transitionShipment(
   }
 
   let shipment = await readShipment(client, orderId);
+  /** Whether this call is the one that brought the parcel row into existence. */
+  let created = false;
 
   // `created` is the one status that may bring the row into existence, and it
   // goes through the EXISTING single writer — the same call the two order-status
   // routes make, with the same Phase-2 ON CONFLICT arbitration behind it. Every
   // other target needs a parcel that already exists.
   if (!shipment && targetStatus === "created") {
+    created = true;
     await ensureShipmentForShipping(client, orderId, { carrier, trackingNumber });
     shipment = await readShipment(client, orderId);
   }
@@ -202,7 +210,14 @@ export async function transitionShipment(
   // which deliberately has no self-edges so that a repeat is never mistaken for a
   // state change (nothing here re-stamps a timestamp or rewrites tracking).
   if (currentStatus === targetStatus) {
-    return { shipment, from: currentStatus, to: targetStatus, moved: false, orderAdvanced: false };
+    return {
+      shipment,
+      from: currentStatus,
+      to: targetStatus,
+      moved: false,
+      created,
+      orderAdvanced: false,
+    };
   }
 
   if (!canTransitionShipment(currentStatus, targetStatus)) {
@@ -281,5 +296,5 @@ export async function transitionShipment(
     orderAdvanced = advanced.moved;
   }
 
-  return { shipment: updated, from: currentStatus, to: targetStatus, moved: true, orderAdvanced };
+  return { shipment: updated, from: currentStatus, to: targetStatus, moved: true, created: false, orderAdvanced };
 }
