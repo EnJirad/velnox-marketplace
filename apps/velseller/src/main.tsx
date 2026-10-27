@@ -7,6 +7,7 @@ import {
 } from "@velnox/shared/lib/app-shell";
 import { siteBasename } from "@velnox/shared/lib/sites";
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+import { RealtimeProvider } from "@velnox/shared/components/RealtimeProvider";
 import { useSellerApplication } from "@velnox/shared/hooks/use-seller-application";
 import { shouldShowSellerTab } from "@velnox/shared/lib/seller-access";
 import { IdentityMerge } from "@velnox/shared/lib/track";
@@ -42,7 +43,10 @@ function SellerTabBar() {
   // One shared decision: approved only, and never while loading or after an API
   // error (fail closed — see shouldShowSellerTab).
   if (!shouldShowSellerTab({ sellerAccess, loading, error })) return null;
-  return <MobileTabBar items={SELLER_TABS} />;
+  // The seller header nav only appears at lg, so the tab bar must stay through
+  // tablet widths (768–1023 px) — hiding it at md left a band with no
+  // navigation at all. It therefore hides at lg, not md.
+  return <MobileTabBar items={SELLER_TABS} until="lg" />;
 }
 
 initMonitoring();
@@ -63,7 +67,8 @@ createRoot(document.getElementById("root")!).render(
     <IdentityMerge />
     <BrowserRouter basename={siteBasename("velseller")}>
       <RouteSyncer />
-      <div className="site-app">
+      <RealtimeProvider />
+      <div className="site-app site-app--tabbar-lg">
       <SiteSuspense>
         <Routes>
           <Route path="/" element={<Navigate to="/seller/goals" replace />} />

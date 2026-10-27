@@ -1024,5 +1024,11 @@ export const my = {
     supportNote: "ပံ့ပိုးကူညီမှုချတ်သည် ဆိုင်ချတ်စနစ်နှင့် ချိတ်ဆက်ထားသည် — အဖွဲ့က ဤနေရာတွင် ကူညီနိုင်သည်",
   },
 
+  /** Realtime transport status shown by the chat pages. */
+  realtime: {
+    connected: "ချိတ်ဆက်ပြီး",
+    reconnecting: "ပြန်လည်ချိတ်ဆက်နေသည်…",
+  },
+
   // __APPEND__
 };

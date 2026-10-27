@@ -17,8 +17,13 @@ export interface MobileTabItem {
 }
 
 /**
- * App-like floating bottom navigation for mobile (native-app feel). Hidden on
- * md+, where the desktop top-header navigation takes over.
+ * App-like floating bottom navigation for mobile (native-app feel). Hidden at
+ * `until` (default `md`), where the desktop top-header navigation takes over.
+ *
+ * `until="lg"` exists for VelSeller: its header nav only appears at lg, so
+ * hiding the bar at md left tablet widths (768–1023 px) with no navigation at
+ * all. Pair it with `.site-app--tabbar-lg` so the page keeps reserving room for
+ * the bar through that band.
  *
  * The bar is `position: fixed` so it stays attached to the viewport while the
  * page scrolls, and it floats above the content as a rounded, elevated pill
@@ -31,10 +36,17 @@ export interface MobileTabItem {
  *
  * Every site entry renders one of these inside its router:
  *   velshop    → / · /products · /cart · /orders · /profile
- *   velseller  → เป้าหมาย / ร้านของฉัน / ออเดอร์ / รายได้ / สั่งซื้อซ้ำ
+ *   velseller  → เป้าหมาย / ร้านของฉัน / ออเดอร์ / รายได้ / โปรไฟล์ (until="lg")
  *   velcenter  → rendered inside Center.tsx so it respects role permissions
  */
-export function MobileTabBar({ items }: { items: MobileTabItem[] }) {
+export function MobileTabBar({
+  items,
+  until = "md",
+}: {
+  items: MobileTabItem[];
+  /** Breakpoint at which the desktop header navigation takes over. */
+  until?: "md" | "lg";
+}) {
   const { t } = useLanguage();
   const { pathname, search } = useLocation();
 
@@ -44,7 +56,10 @@ export function MobileTabBar({ items }: { items: MobileTabItem[] }) {
   return (
     <nav
       aria-label={t("nav.ariaMobile")}
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:hidden"
+      className={cn(
+        "pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]",
+        until === "lg" ? "lg:hidden" : "md:hidden",
+      )}
     >
       <div className="pointer-events-auto flex h-16 w-full max-w-md items-stretch rounded-2xl border border-slate-200/80 bg-white/95 shadow-[0_10px_34px_rgba(15,23,42,0.14)] backdrop-blur">
         {items.map((item) => {

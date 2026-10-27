@@ -21,6 +21,7 @@ import {
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
+  AlertTriangle,
   CalendarClock,
   ChevronRight,
   Inbox,
@@ -67,6 +68,8 @@ export default function SellerOrders() {
 
   const [orders, setOrders] = useState<StoreOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  /** A failed request is an error state — not "you have no orders". */
+  const [error, setError] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   /**
@@ -79,26 +82,32 @@ export default function SellerOrders() {
   const load = useCallback(async () => {
     const filter = statusFilter;
     requestFilter.current = filter;
-    const o = await sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter });
-    if (requestFilter.current !== filter) return;
-    setOrders(o);
+    setError(false);
+    try {
+      const o = await sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter });
+      if (requestFilter.current !== filter) return;
+      setOrders(o);
+    } catch (err) {
+      if (requestFilter.current !== filter) return;
+      console.error("Load seller orders error:", err);
+      setError(true);
+    }
   }, [sellerOrdersAction, statusFilter]);
 
   useEffect(() => {
     let alive = true;
-    const filter = statusFilter;
-    requestFilter.current = filter;
-    sellerOrdersAction({ limit: 50, status: filter === "all" ? undefined : filter })
-      .then((o) => {
-        if (!alive || requestFilter.current !== filter) return;
-        setOrders(o);
-      })
-      .catch((err) => console.error("Load seller orders error:", err))
-      .finally(() => alive && setLoading(false));
+    void load().finally(() => {
+      if (alive) setLoading(false);
+    });
     return () => {
       alive = false;
     };
-  }, [sellerOrdersAction, statusFilter]);
+  }, [load]);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    void load().finally(() => setLoading(false));
+  }, [load]);
 
   /** Translated label for the order's payment status, falling back to the raw value. */
   const paymentLabel = useCallback(
@@ -170,11 +179,38 @@ export default function SellerOrders() {
             })}
           </div>
 
+          {/* Stale data + failed refresh: keep the rows, flag the failure. */}
+          {!loading && error && orders.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+              <p className="text-sm text-amber-800">{t("common.error")}</p>
+              <button
+                type="button"
+                onClick={retry}
+                className="ml-auto rounded-[10px] border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+              >
+                {t("common.retry")}
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="mt-4 space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="h-16 animate-pulse rounded-xl border border-slate-200 bg-white" />
               ))}
+            </div>
+          ) : error && orders.length === 0 ? (
+            <div className="mt-6 flex flex-col items-center rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-amber-50">
+                <AlertTriangle className="size-7 text-amber-600" />
+              </span>
+              <h2 className="mt-5 text-lg font-semibold text-slate-900">{t("common.error")}</h2>
+              <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("sellerOrders.desc")}</p>
+              <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={retry}>
+                <RefreshCw className="size-4" />
+                {t("common.retry")}
+              </Button>
             </div>
           ) : orders.length === 0 ? (
             <div className="mt-6 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">

@@ -3,7 +3,7 @@ import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { formatRelativeTime } from "@velnox/shared/lib/commerce";
-import { connectChatSocket, disconnectChatSocket, onChatEvent } from "@velnox/shared/lib/chat-socket";
+import { connectChatSocket, onChatEvent, onChatReconnect } from "@velnox/shared/lib/chat-socket";
 import {
   Bell,
   BellRing,
@@ -70,15 +70,19 @@ export function NotificationBell() {
   const [items, setItems] = useState<NotificationRow[] | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await myNotifications();
       setItems((res.items ?? []) as NotificationRow[]);
+      setFailed(false);
     } catch (err) {
+      // A failed load must never render as "no notifications": keep the last
+      // good list (if any) and show a retry instead.
       console.error("[notification-bell] load error:", err);
-      setItems([]);
+      setFailed(true);
     }
   }, [myNotifications]);
 
@@ -90,9 +94,15 @@ export function NotificationBell() {
     const off = onChatEvent("notification:created", () => {
       void load();
     });
+    // Anything published while the socket was down was never delivered.
+    const offReconnect = onChatReconnect(() => {
+      void load();
+    });
     return () => {
       off();
-      disconnectChatSocket();
+      offReconnect();
+      // The socket is owned by <RealtimeProvider> and shared with chat — this
+      // component only ever subscribes, never closes it.
     };
   }, [isAuthenticated, user?.id, load]);
 
@@ -123,6 +133,8 @@ export function NotificationBell() {
   if (!isAuthenticated) return null;
 
   const unread = items?.filter((n) => !n.isRead).length ?? 0;
+  /** A failed fetch with nothing cached is an error, not "all caught up". */
+  const loadFailed = failed && (items?.length ?? 0) === 0;
 
   const handleOpen = () => {
     setOpen((v) => !v);
@@ -180,7 +192,13 @@ export function NotificationBell() {
         <div
           role="dialog"
           aria-label={t("notifications.title")}
-          className="absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.14)]"
+          /*
+            Phone (< sm): a fixed sheet pinned to the viewport gutters, so it can
+            never extend past the left edge of a 320/375/430 px screen (the old
+            `absolute right-0` panel started ~80 px off-screen).
+            Tablet/desktop (sm+): the anchored popover under the bell.
+          */
+          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.14)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-1.5rem))]"
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
@@ -199,7 +217,19 @@ export function NotificationBell() {
           </div>
 
           {/* Body */}
-          {items === null ? (
+          {loadFailed ? (
+            <div className="px-6 py-10 text-center">
+              <BellRing className="mx-auto size-5 text-slate-300" />
+              <p className="mt-3 text-sm font-medium text-slate-600">{t("common.error")}</p>
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="mt-3 inline-flex items-center gap-1 rounded-[10px] border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                {t("common.retry")}
+              </button>
+            </div>
+          ) : items === null ? (
             <div className="space-y-2 p-4">
               <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
               <div className="h-14 animate-pulse rounded-xl bg-slate-100" />

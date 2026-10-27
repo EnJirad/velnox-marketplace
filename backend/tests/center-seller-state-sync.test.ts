@@ -237,19 +237,31 @@ describe("backend publishes the signals the UI listens to", () => {
   });
 });
 
-describe("VelCenter keeps ONE socket and fans events out to refetches", () => {
-  test("the Center page owns the socket and maps events to queue refetches", () => {
-    expect(centerSrc).toContain('ws?.send(JSON.stringify({ type: "subscribe", channel: "seller:updated" }))');
-    expect(centerSrc).toContain('ws?.send(JSON.stringify({ type: "subscribe", channel: "config:updated" }))');
+describe("VelCenter shares the ONE socket and fans events out to refetches", () => {
+  test("the Center page subscribes through the shared client and maps events to refetches", () => {
+    // ONE realtime client: VelCenter subscribes through `chat-socket`, it does
+    // not build its own WebSocket URL. (It used to open `<origin>` with no /ws
+    // path, so every "live" queue badge was silently manual-refresh only.)
+    expect(centerSrc).toContain('subscribeChatChannel("product:updated")');
+    expect(centerSrc).toContain('subscribeChatChannel("seller:updated")');
+    expect(centerSrc).toContain('subscribeChatChannel("notification:created")');
+    expect(centerSrc).toContain('subscribeChatChannel("order:updated")');
+    expect(centerSrc).toContain('subscribeChatChannel("audit:created")');
+    expect(centerSrc).toContain('subscribeChatChannel("config:updated")');
+    expect(centerSrc).toContain("connectChatSocket(user.id)");
+    expect(centerSrc).toContain("onAnyChatEvent(");
     // Both seller/verification message types are handled (the source wraps the
     // condition across lines, so it is matched as a pair).
-    expect(centerSrc).toContain('msg.type === "seller:status-changed" ||');
-    expect(centerSrc).toContain('msg.type === "verification:status-changed"');
+    expect(centerSrc).toContain('type === "seller:status-changed" ||');
+    expect(centerSrc).toContain('type === "verification:status-changed"');
     expect(centerSrc).toContain('emitCenterEvent("sellers")');
     expect(centerSrc).toContain('emitCenterEvent("config")');
     // The event is a signal: the page re-reads, it does not render the payload.
     expect(centerSrc).toContain("void reloadVerifications();");
     expect(centerSrc).toContain("void reloadSellers();");
+    // Anything published while the socket was down was never delivered, so a
+    // reconnect re-reads every queue instead of trusting local state.
+    expect(centerSrc).toContain("onChatReconnect(");
   });
 
   test("the Center page turns the seller signal into authoritative counter reads", () => {
@@ -260,13 +272,10 @@ describe("VelCenter keeps ONE socket and fans events out to refetches", () => {
     expect(centerSrc).not.toContain("setPendingSellers((prev");
   });
 
-  test("VelCenter opens exactly one WebSocket, in the Center page", () => {
-    let sockets = 0;
+  test("VelCenter opens no WebSocket of its own — it uses the shared client", () => {
     for (const file of sourceFiles("apps/velcenter/src")) {
-      sockets += countOccurrences(read(file), "new WebSocket(");
+      expect(countOccurrences(read(file), "new WebSocket(")).toBe(0);
     }
-    expect(sockets).toBe(1);
-    expect(countOccurrences(centerSrc, "new WebSocket(")).toBe(1);
   });
 });
 

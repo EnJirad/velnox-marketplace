@@ -13,6 +13,7 @@ import { initMonitoring } from "@velnox/shared/lib/monitoring";
 
 initMonitoring();
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+import { RealtimeProvider } from "@velnox/shared/components/RealtimeProvider";
 import { CUSTOMER_MEMORY_ENABLED } from "@velnox/shared/lib/features";
 import { IdentityMerge } from "@velnox/shared/lib/track";
 import { useCart } from "@/lib/cart";
@@ -91,6 +92,7 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter basename={siteBasename("velshop")}>
       <ScrollToTop />
       <RouteSyncer />
+      <RealtimeProvider />
       <CartProvider>
       <CookieConsentProvider>
       <div className="site-app">

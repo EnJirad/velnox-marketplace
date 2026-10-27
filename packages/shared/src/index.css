@@ -154,6 +154,15 @@
   }
 }
 
+/* VelSeller keeps its tab bar through tablet widths (768–1023 px) because its
+   header navigation only appears at lg. Without this the fixed bar would cover
+   page content in exactly that band. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .site-app--tabbar-lg {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* Thai & Burmese scripts need a touch more line-height and natural wrapping
    than Latin text — applied app-wide so no layout breaks when switching. */
 :lang(th),

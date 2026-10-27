@@ -11,6 +11,9 @@ interface ConnectedClient {
   /** Fixed-window frame budget — stops connection-level flooding. */
   frameCount: number;
   frameWindowStart: number;
+  /** Heartbeat liveness — a connection that misses a whole ping window is
+   *  terminated so presence and subscriptions cannot outlive the tab. */
+  isAlive: boolean;
 }
 
 /** Max client frames per window before the connection is closed (1008). */
@@ -24,8 +27,24 @@ const clients = new Map<WebSocket, ConnectedClient>();
  * chat:viewingEnd frames). Used so chat notifications are skipped while the
  * recipient is already looking at that thread — the message still arrives
  * over the socket; only the notification row/toast is suppressed.
+ *
+ * Presence is EPHEMERAL: it lives exactly as long as a live socket for that
+ * user. A closed tab never sends `chat:viewingEnd`, so close/terminate must
+ * clear it — otherwise every future message in that thread would suppress the
+ * notification row forever.
  */
 const viewingConversation = new Map<string, string>();
+
+/** Drop a client and any presence it still holds when it was its user's last socket. */
+function forgetClient(ws: WebSocket, client: ConnectedClient): void {
+  clients.delete(ws);
+  const userId = client.userId;
+  if (!userId) return;
+  for (const other of clients.values()) {
+    if (other.userId === userId) return; // another tab is still connected
+  }
+  viewingConversation.delete(userId);
+}
 
 /** Extract the velnox_session cookie from an upgrade request. */
 function readSessionCookie(req: IncomingMessage): string | null {
@@ -61,6 +80,34 @@ function resolveUserFromRequest(req: IncomingMessage): { userId: string; jti?: s
  * This closes the gap where a user logs out (revoking the token) but
  * their existing WebSocket connection was established before the logout.
  */
+/**
+ * Heartbeat — ping every live connection once per window. A client that failed
+ * to answer the previous ping is terminated, which also releases its presence
+ * and subscriptions. Without this an idle proxy-dropped connection can look
+ * "open" to the server for hours and keep consuming broadcasts.
+ */
+let heartbeatStarted = false;
+function startHeartbeat(): void {
+  if (heartbeatStarted) return;
+  heartbeatStarted = true;
+  const HEARTBEAT_INTERVAL_MS = 30_000;
+  setInterval(() => {
+    for (const [ws, client] of clients) {
+      if (!client.isAlive) {
+        try {
+          ws.terminate();
+        } catch { /* already closed */ }
+        forgetClient(ws, client);
+        continue;
+      }
+      client.isAlive = false;
+      try {
+        ws.ping();
+      } catch { /* closing socket */ }
+    }
+  }, HEARTBEAT_INTERVAL_MS).unref();
+}
+
 let revocationSweepStarted = false;
 function startRevocationSweep(): void {
   if (revocationSweepStarted) return;
@@ -82,6 +129,7 @@ function startRevocationSweep(): void {
 
 export function setupWebSocket(wss: WebSocketServer): void {
   startRevocationSweep();
+  startHeartbeat();
   wss.on("connection", (ws, req: IncomingMessage) => {
     const authed = resolveUserFromRequest(req);
     const now = Date.now();
@@ -92,8 +140,12 @@ export function setupWebSocket(wss: WebSocketServer): void {
       subscriptions: new Set(),
       frameCount: 0,
       frameWindowStart: now,
+      isAlive: true,
     };
     clients.set(ws, client);
+    ws.on("pong", () => {
+      client.isAlive = true;
+    });
 
     ws.on("message", (data) => {
       const raw = data.toString();
@@ -163,7 +215,7 @@ export function setupWebSocket(wss: WebSocketServer): void {
     });
 
     ws.on("close", () => {
-      clients.delete(ws);
+      forgetClient(ws, client);
     });
 
     ws.send(JSON.stringify({ type: "connected", message: "Welcome to Velnox WebSocket" }));
@@ -176,7 +228,9 @@ export function broadcast(channel: string, event: string, data: unknown): void {
 
   for (const client of clients.values()) {
     if (client.ws.readyState === 1 && client.subscriptions.has(channel)) {
-      client.ws.send(payload);
+      try {
+        client.ws.send(payload);
+      } catch { /* one dead socket must not abort the fan-out */ }
     }
   }
 }
@@ -208,7 +262,9 @@ export function sendToUser(userId: string, channel: string, event: string, data:
 
   for (const client of clients.values()) {
     if (client.userId === userId && client.ws.readyState === 1) {
-      client.ws.send(payload);
+      try {
+        client.ws.send(payload);
+      } catch { /* one dead socket must not abort the fan-out */ }
     }
   }
 }

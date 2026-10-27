@@ -5,7 +5,8 @@ import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
-import { connectChatSocket, disconnectChatSocket, onChatEvent, sendChatCommand } from "@velnox/shared/lib/chat-socket";
+import { connectChatSocket, onChatEvent, onChatReconnect, sendChatCommand } from "@velnox/shared/lib/chat-socket";
+import { useRealtimeState } from "@velnox/shared/hooks/use-realtime-state";
 import { Button } from "@velnox/shared/components/ui/button";
 import {
   ArrowLeft,
@@ -66,6 +67,7 @@ export default function ShopChat() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useAuth();
+  const realtimeState = useRealtimeState();
   const myConversations = useAction(api.customer.myConversations);
   const createConversation = useAction(api.customer.createConversationAction);
   const supportConversationAction = useAction(api.customer.supportConversationAction);
@@ -89,10 +91,13 @@ export default function ShopChat() {
 
   // ── Load conversation list ──────────────────────────────────────────
   const loadConversations = useCallback(async () => {
+    setError(false);
     try {
       const res = await myConversations();
       setConversations((res ?? []) as Conversation[]);
     } catch (err) {
+      // Never turn a failed load into "you have no messages" — keep the last
+      // good list and surface a retry instead.
       console.error("Load conversations error:", err);
       setError(true);
     }
@@ -142,9 +147,27 @@ export default function ShopChat() {
       if (activeIdRef.current) sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
       offMessage();
       offRead();
-      disconnectChatSocket();
+      // NOTE: the socket itself is owned by <RealtimeProvider>. Leaving this page
+      // must NOT close it — the header notification bell uses the same connection.
     };
   }, [isAuthenticated, user?.id, markConversationRead]);
+
+  // After a reconnect, re-read the authoritative data: anything published while
+  // the socket was down was never delivered to this page.
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    return onChatReconnect(() => {
+      void loadConversations();
+      const activeId = activeIdRef.current;
+      if (!activeId) return;
+      conversationMessages({ conversationId: activeId })
+        .then((res) => {
+          setMessages((res.items ?? []) as ChatMessage[]);
+          setHasMore(!!res.hasMore);
+        })
+        .catch((err) => console.error("Reload messages after reconnect failed:", err));
+    });
+  }, [isAuthenticated, user?.id, loadConversations, conversationMessages]);
 
   // ── Scroll to bottom on new messages ────────────────────────────────
   useEffect(() => {
@@ -371,6 +394,18 @@ export default function ShopChat() {
             <MessageCircle className="size-4 text-[#10B981]" />
             {t("chat.eyebrow")}
           </p>
+          {/* Realtime transport state: only "open" is reported as connected. */}
+          {realtimeState === "open" ? (
+            <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              {t("realtime.connected")}
+            </span>
+          ) : (
+            <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-amber-700">
+              <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+              {t("realtime.reconnecting")}
+            </span>
+          )}
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:grid md:grid-cols-[320px_1fr]">
@@ -379,7 +414,20 @@ export default function ShopChat() {
             <div className="border-b border-slate-100 px-4 py-3">
               <h1 className="text-lg font-bold tracking-tight text-slate-900">{t("chat.title")}</h1>
             </div>
-            {conversations === null ? (
+            {conversations === null && error ? (
+              <div className="px-6 py-14 text-center">
+                <MessageCircle className="mx-auto size-7 text-slate-300" />
+                <p className="mt-3 text-sm font-medium text-slate-600">{t("chat.loadError")}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 border-slate-200 text-slate-700"
+                  onClick={() => void loadConversations()}
+                >
+                  {t("chat.retry")}
+                </Button>
+              </div>
+            ) : conversations === null ? (
               <div className="space-y-2 p-4">
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />

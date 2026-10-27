@@ -29,7 +29,7 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const pct = (value: number) =>
   `${(value * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
@@ -57,16 +57,36 @@ interface IncomeReport {
 export default function Income() {
   const sellerIncome = useAction(api.commerce.sellerIncomeReport);
   const [report, setReport] = useState<IncomeReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  // A failed report is an ERROR — it used to leave `report = null`, which
+  // rendered a spinner forever with no way to recover.
+  const [error, setError] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await sellerIncome();
+      setReport(r as IncomeReport);
+      setError(false);
+    } catch (err) {
+      console.error("Load income error:", err);
+      setError(true);
+    }
+  }, [sellerIncome]);
 
   useEffect(() => {
     let alive = true;
-    sellerIncome()
-      .then((r) => alive && setReport(r as IncomeReport))
-      .catch((err) => console.error("Load income error:", err));
+    void load().finally(() => {
+      if (alive) setLoading(false);
+    });
     return () => {
       alive = false;
     };
-  }, [sellerIncome]);
+  }, [load]);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    void load().finally(() => setLoading(false));
+  }, [load]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -86,11 +106,28 @@ export default function Income() {
           </p>
         </div>
 
-        {report === null ? (
+        {loading && report === null ? (
           <div className="mt-10 flex items-center justify-center">
             <Loader2 className="size-6 animate-spin text-slate-300" />
           </div>
-        ) : (
+        ) : error && report === null ? (
+          <div className="mt-8 flex flex-col items-center rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-amber-50">
+              <AlertTriangle className="size-7 text-amber-600" />
+            </span>
+            <h2 className="mt-5 text-lg font-semibold text-slate-900">โหลดรายงานรายได้ไม่สำเร็จ</h2>
+            <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
+              ระบบดึงข้อมูลจากเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองอีกครั้ง
+            </p>
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-6 inline-flex items-center gap-1.5 rounded-[10px] bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+            >
+              ลองอีกครั้ง
+            </button>
+          </div>
+        ) : report ? (
           <>
             {/* KPI row */}
             <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
@@ -309,7 +346,7 @@ export default function Income() {
               </p>
             </div>
           </>
-        )}
+        ) : null}
       </main>
     </div>
   );

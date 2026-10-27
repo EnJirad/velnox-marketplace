@@ -48,6 +48,13 @@ import { useLanguage } from "@velnox/shared/lib/i18n";
 // Id type replaced with string
 import { roleHoldsPermission } from "@velnox/shared/lib/api-client";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
+import { useRealtimeState } from "@velnox/shared/hooks/use-realtime-state";
+import {
+  connectChatSocket,
+  onAnyChatEvent,
+  onChatReconnect,
+  subscribeChatChannel,
+} from "@velnox/shared/lib/chat-socket";
 import {
   resolveCategoryMeta,
   STATUS_META,
@@ -226,7 +233,8 @@ interface MarketInsights {
 
 export default function Center() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const realtimeState = useRealtimeState();
   const { t } = useLanguage();
   const userRole = user?.role;
   const userDepartment = user?.department;
@@ -424,81 +432,85 @@ export default function Center() {
     [reloadSellers, reloadVerifications],
   );
 
-  // WebSocket realtime subscriptions for VelCenter queues
+  // Realtime for VelCenter queues — the ONE shared socket (same client the
+  // storefront and seller apps use), not a second inline WebSocket. The shared
+  // client connects to `<origin>/ws`, which is the only path the server accepts,
+  // and handles backoff, jitter and resubscription itself.
+  //
+  // Every event is a SIGNAL: each consumer re-reads its data from the API. After
+  // a reconnect all queues are refreshed once, because anything published while
+  // the socket was down was never delivered.
   useEffect(() => {
-    const wsUrl = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/^http/, "ws");
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout>;
+    if (!isAuthenticated || !user?.id) return;
+    connectChatSocket(user.id);
 
-    function connect() {
-      try {
-        ws = new WebSocket(wsUrl);
-        ws.onopen = () => {
-          ws?.send(JSON.stringify({ type: "subscribe", channel: "product:updated" }));
-          ws?.send(JSON.stringify({ type: "subscribe", channel: "seller:updated" }));
-          ws?.send(JSON.stringify({ type: "subscribe", channel: "notification:created" }));
-          ws?.send(JSON.stringify({ type: "subscribe", channel: "order:updated" }));
-          ws?.send(JSON.stringify({ type: "subscribe", channel: "audit:created" }));
-          ws?.send(JSON.stringify({ type: "subscribe", channel: "config:updated" }));
-        };
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === "product:moderated" || msg.type === "product:updated") {
-              void reloadProducts();
-            }
-            // Fan out to the tabs that own their own data (the product and
-            // seller queues, orders, audit logs). They refetch from the API —
-            // the event is only a signal that something changed.
-            if (msg.type === "product:moderated" || msg.type === "product:updated") {
-              emitCenterEvent("products");
-            }
-            if (
-              msg.type === "seller:status-changed" ||
-              msg.type === "verification:status-changed"
-            ) {
-              emitCenterEvent("sellers");
-            }
-            if (msg.type === "order:updated" || msg.type === "order:created") {
-              emitCenterEvent("orders");
-            }
-            // `employee:created` / `employee:updated` are broadcast when a center
-            // session creates or changes an account — the roster and the
-            // directory both re-read from the API.
-            if (msg.type === "employee:created" || msg.type === "employee:updated") {
-              emitCenterEvent("staff");
-            }
-            // Platform configuration changed in another session — the category
-            // tree and the settings form both re-read from the API.
-            if (msg.type === "config:updated") {
-              emitCenterEvent("config");
-            }
-            if (
-              msg.type === "audit:created" ||
-              msg.type === "product:moderated" ||
-              msg.type === "product:updated" ||
-              msg.type === "seller:status-changed" ||
-              msg.type === "verification:status-changed" ||
-              msg.type === "order:updated" ||
-              msg.type === "order:created"
-            ) {
-              emitCenterEvent("audit");
-            }
-          } catch { /* ignore */ }
-        };
-        ws.onclose = () => {
-          reconnectTimer = setTimeout(connect, 5000);
-        };
-        ws.onerror = () => { ws?.close(); };
-      } catch { reconnectTimer = setTimeout(connect, 5000); }
-    }
+    const unsubscribes = [
+      subscribeChatChannel("product:updated"),
+      subscribeChatChannel("seller:updated"),
+      subscribeChatChannel("notification:created"),
+      subscribeChatChannel("order:updated"),
+      subscribeChatChannel("audit:created"),
+      subscribeChatChannel("config:updated"),
+    ];
 
-    connect();
+    const offAny = onAnyChatEvent((type) => {
+      // Fan out to the tabs that own their own data (the product and seller
+      // queues, orders, audit logs). The event is only a signal that something
+      // changed; the tab refetches from the API.
+      if (type === "product:moderated" || type === "product:updated") {
+        void reloadProducts();
+        emitCenterEvent("products");
+      }
+      if (type === "seller:status-changed" || type === "verification:status-changed") {
+        emitCenterEvent("sellers");
+      }
+      if (type === "order:updated" || type === "order:created") {
+        emitCenterEvent("orders");
+      }
+      // `employee:created` / `employee:updated` are broadcast when a center
+      // session creates or changes an account — the roster and the directory
+      // both re-read from the API.
+      if (type === "employee:created" || type === "employee:updated") {
+        emitCenterEvent("staff");
+      }
+      // Platform configuration changed in another session — the category tree
+      // and the settings form both re-read from the API.
+      if (type === "config:updated") {
+        emitCenterEvent("config");
+      }
+      if (
+        type === "audit:created" ||
+        type === "product:moderated" ||
+        type === "product:updated" ||
+        type === "seller:status-changed" ||
+        type === "verification:status-changed" ||
+        type === "order:updated" ||
+        type === "order:created"
+      ) {
+        emitCenterEvent("audit");
+      }
+    });
+
+    // Re-read everything once the transport is back: events published while it
+    // was down were never delivered, so the console must not trust its state.
+    const offReconnect = onChatReconnect(() => {
+      void reloadSellers();
+      void reloadProducts();
+      void reloadVerifications();
+      emitCenterEvent("orders");
+      emitCenterEvent("sellers");
+      emitCenterEvent("products");
+      emitCenterEvent("staff");
+      emitCenterEvent("config");
+      emitCenterEvent("audit");
+    });
+
     return () => {
-      clearTimeout(reconnectTimer);
-      ws?.close();
+      offAny();
+      offReconnect();
+      for (const unsubscribe of unsubscribes) unsubscribe();
     };
-  }, [reloadProducts, reloadVerifications, reloadSellers]);
+  }, [isAuthenticated, user?.id, reloadProducts, reloadVerifications, reloadSellers]);
 
   // Both badges are exact counts held in state (reloadSellers / reloadProducts),
   // not the length of a fetched queue.
@@ -959,6 +971,14 @@ export default function Center() {
           <p className="mt-1.5 text-sm text-slate-500">
             ภาพรวมทั้งบริษัท ออเดอร์ ระบบอัจฉริยะ และสิทธิ์การเข้าถึงตามยศ
           </p>
+          {/* Subtle transport state — no badge while live, no blocking error
+              while reconnecting (REST still works). */}
+          {realtimeState !== "open" && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/15">
+              <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+              กำลังเชื่อมต่อเรียลไทม์ใหม่…
+            </p>
+          )}
         </div>
 
         {queueError && (

@@ -1270,5 +1270,11 @@ export const en: Dict = {
     evidenceNoEvidence: "No evidence attached",
   },
 
+  /** Realtime transport status shown by the chat pages. */
+  realtime: {
+    connected: "Connected",
+    reconnecting: "Reconnecting…",
+  },
+
 // __APPEND__
 };

@@ -25,11 +25,13 @@ import {
   type SelectionState,
 } from "@velnox/shared/lib/cart-selection";
 import {
+  AlertTriangle,
   ChevronUp,
   ImageOff,
   Loader2,
   Minus,
   Plus,
+  RefreshCw,
   ShieldCheck,
   ShoppingBag,
   ShoppingCart,
@@ -62,7 +64,7 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function ShopCart() {
-  const { lines, count, setQty, remove, syncing } = useCart();
+  const { lines, count, setQty, remove, syncing, error: cartError, reload } = useCart();
   const { isAuthenticated, isLoading } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -165,10 +167,37 @@ export default function ShopCart() {
           </p>
         </div>
 
+        {/* A failed refresh with items already on screen: keep them, flag it. */}
+        {!syncing && cartError && lines.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+            <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+            <p className="text-sm text-amber-800">{t("common.error")}</p>
+            <button
+              type="button"
+              onClick={reload}
+              className="ml-auto rounded-[10px] border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+            >
+              {t("common.retry")}
+            </button>
+          </div>
+        )}
+
         {syncing ? (
           <div className="mt-10 flex items-center justify-center gap-2 text-sm text-slate-400">
             <Loader2 className="size-4 animate-spin" />
             {t("cartPage.loading")}
+          </div>
+        ) : cartError && lines.length === 0 ? (
+          <div className="mt-10 flex flex-col items-center rounded-2xl border border-slate-200 bg-white px-6 py-20 text-center">
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-amber-50">
+              <AlertTriangle className="size-7 text-amber-600" />
+            </span>
+            <h2 className="mt-5 text-lg font-semibold text-slate-900">{t("common.error")}</h2>
+            <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("cartPage.allHere")}</p>
+            <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={reload}>
+              <RefreshCw className="size-4" />
+              {t("common.retry")}
+            </Button>
           </div>
         ) : lines.length === 0 ? (
           <div className="mt-10 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-20 text-center">

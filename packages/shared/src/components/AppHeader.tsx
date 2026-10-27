@@ -46,6 +46,24 @@ export function AppHeader() {
         </div>
 
         <div className="flex items-center gap-1">
+          {/*
+            Chat entry for phones and tablets. The header nav above is lg-only and
+            the mobile tab bar has five slots (Goals · Shop · Orders · Income ·
+            Profile) — customer conversations are a core seller workflow, so chat
+            gets its own always-visible action instead of being unreachable.
+          */}
+          <Link
+            to="/seller/chat"
+            aria-label="แชท"
+            aria-current={location.pathname.startsWith("/seller/chat") ? "page" : undefined}
+            className={`flex size-10 items-center justify-center rounded-[10px] transition-colors lg:hidden ${
+              location.pathname.startsWith("/seller/chat")
+                ? "bg-slate-100 text-slate-900"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <MessageCircle className="size-5" />
+          </Link>
           {/* VelCenter correction requests reach the seller here. */}
           <SellerNotificationBell />
           <UserMenu />

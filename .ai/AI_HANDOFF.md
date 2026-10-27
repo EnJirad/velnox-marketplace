@@ -738,9 +738,45 @@ second socket, chat API, conversation table or notification system.
 [`history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md`](history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md)
 with an index row.
 
+## §80. Phase 2A — Stability + Realtime Foundation (2026-10-27) — **COMPLETE**
+
+**Base SHA:** `4908d7d34eb7052fcedc6d98fa49f4aee0eb0204` (`main` == `origin/main`, 0/0, clean).
+**Resulting commit:** recorded in the follow-up `docs(ai)` commit (see `git log` for
+`fix(realtime): stabilize ui and realtime foundation`).
+**Report:** [`.ai/history/2026-10-27-ui-realtime-phase-2a.md`](history/2026-10-27-ui-realtime-phase-2a.md).
+
+**What changed (no schema / SQL / DB / Stripe changes):**
+- **ONE realtime client + ONE owner.** `chat-socket` rewritten: explicit state
+  (`idle/connecting/open/reconnecting/closed`), ref-counted public channels, re-subscribe on every
+  open, 1 s→30 s exponential backoff **with jitter**, `onChatReconnect`, guarded sends. New
+  `<RealtimeProvider>` at the VelShop/VelSeller/VelCenter roots owns connect/disconnect.
+- **VelCenter socket FIXED.** The inline client (wrong URL, no `/ws`, fixed 5 s retry) is gone; the
+  page uses the shared client, subscribes the six channels, and re-reads every queue on reconnect.
+- **Chat no longer kills notifications.** `disconnectChatSocket()` removed from ShopChat/SellerChat/
+  bell cleanup; both chat pages and both bells refetch after a reconnect.
+- **Backend transport:** presence cleared when a user's last socket closes/terminates; 30 s ping with
+  missed-pong terminate; per-client guarded fan-out.
+- **Seller navigation:** header Chat action below `lg` (P0 mobile entry); tab bar now stays through
+  tablet (768–1023 px) via `until="lg"` + `.site-app--tabbar-lg`.
+- **Notification panels:** fixed viewport-gutter sheet below `sm`, anchored popover at `sm+`; failure
+  renders error + retry, never "all caught up".
+- **Error ≠ empty:** MyOrders, SellerOrders, Income, ShopNotifications, ShopChat and the cart now have
+  real error states with retry; last good data is kept where it exists.
+- Three architecture tests updated to assert the new one-socket invariant.
+
+**Verified:** 4 app typechecks PASS · backend typecheck PASS · `bun run build:apps` PASS (4/4) ·
+`bun run i18n:check` PASS `1251/1251/1251` · `bun test backend/tests` **987 pass / 303 skip / 0 fail** ·
+`git diff --check` clean. **NOT RUN:** browser/viewport pass, live WebSocket handshake, production DB
+(not connected).
+
+**Still open (Phase 2B/2C):** Buy Now quantity, order-history pagination, bootstrap-claim `res.ok`,
+VelCenter destructive-action guards, footer/marketing links; `order:created` publisher,
+`order:updated`/`shipment:updated` consumers, transactional notification rows, private admin channels.
+Seller chat icon has no unread badge (no seller unread-count endpoint).
+
 ---
 
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26
-(verbatim + index row), leaving this file at **~49 KB**. The next candidate is the Actions-alignment
-block — move it to `history/archive/` **with** an index row before appending again. Archiving is not
-deletion: the text is preserved verbatim.
+(verbatim + index row), leaving this file at ~49 KB; §80 brings it to ~53 KB. Before appending again,
+archive the Actions-alignment block (or the 2026-10-04 payment-integrity narrative) to
+`history/archive/` **with** an index row. Archiving is not deletion: the text is preserved verbatim.

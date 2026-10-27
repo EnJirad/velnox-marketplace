@@ -5,7 +5,8 @@ import { useAction } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
-import { connectChatSocket, disconnectChatSocket, onChatEvent, sendChatCommand } from "@velnox/shared/lib/chat-socket";
+import { connectChatSocket, onChatEvent, onChatReconnect, sendChatCommand } from "@velnox/shared/lib/chat-socket";
+import { useRealtimeState } from "@velnox/shared/hooks/use-realtime-state";
 import {
   ArrowLeft,
   CheckCheck,
@@ -49,6 +50,7 @@ interface ChatMessage {
 export default function SellerChat() {
   const { t, lang } = useLanguage();
   const { user, isAuthenticated } = useAuth();
+  const realtimeState = useRealtimeState();
   const myConversations = useAction(api.seller.sellerConversations);
   const conversationMessages = useAction(api.seller.sellerConversationMessages);
   const sendMessage = useAction(api.seller.sendSellerMessageAction);
@@ -72,6 +74,7 @@ export default function SellerChat() {
       const res = await myConversations();
       setConversations((res ?? []) as Conversation[]);
     } catch (err) {
+      // A failed load is an ERROR, never an empty inbox.
       console.error("Load conversations error:", err);
       setError(true);
     }
@@ -119,9 +122,27 @@ export default function SellerChat() {
       if (activeIdRef.current) sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
       offMessage();
       offRead();
-      disconnectChatSocket();
+      // The socket is owned by <RealtimeProvider> and shared with the header
+      // bell — leaving this page must never close it.
     };
   }, [isAuthenticated, user?.id, markConversationRead]);
+
+  // Re-read the authoritative data after a reconnect (events published while
+  // the transport was down were never delivered).
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    return onChatReconnect(() => {
+      void loadConversations();
+      const activeId = activeIdRef.current;
+      if (!activeId) return;
+      conversationMessages({ conversationId: activeId })
+        .then((res) => {
+          setMessages((res.items ?? []) as ChatMessage[]);
+          setHasMore(!!res.hasMore);
+        })
+        .catch((err) => console.error("Reload messages after reconnect failed:", err));
+    });
+  }, [isAuthenticated, user?.id, loadConversations, conversationMessages]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -227,6 +248,17 @@ export default function SellerChat() {
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
             <MessageCircle className="size-4 text-[#10B981]" />
             {t("sellerChat.eyebrow")}
+            {realtimeState === "open" ? (
+              <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                <span className="size-1.5 rounded-full bg-emerald-500" />
+                {t("realtime.connected")}
+              </span>
+            ) : (
+              <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                {t("realtime.reconnecting")}
+              </span>
+            )}
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{t("sellerChat.title")}</h1>
           <p className="mt-1.5 text-sm text-slate-500">{t("sellerChat.desc")}</p>

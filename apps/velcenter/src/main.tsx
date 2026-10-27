@@ -1,6 +1,7 @@
 import { Toaster } from "@velnox/shared/components/ui/sonner";
 import { OrderShipDialogHost } from "@/components/OrderShipDialog";
 import { RequireRole } from "@velnox/shared/components/RequireRole";
+import { RealtimeProvider } from "@velnox/shared/components/RealtimeProvider";
 import {
   RootErrorBoundary,
   RouteSyncer,
@@ -25,6 +26,7 @@ createRoot(document.getElementById("root")!).render(
     <IdentityMerge />
     <BrowserRouter basename={siteBasename("velcenter")}>
       <RouteSyncer />
+      <RealtimeProvider />
       <div className="site-app">
       <SiteSuspense>
         <Routes>

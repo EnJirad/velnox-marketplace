@@ -160,6 +160,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
     let alive = true;
     setSyncing(true);
+    // Clear a previous failure so a retry starts from a clean state (a stale
+    // error must not survive the request that fixes it).
+    setCartError(null);
     apiCartGet()
       .then((cart) => {
         if (!alive) return;

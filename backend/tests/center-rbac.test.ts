@@ -266,7 +266,7 @@ describe("the staff read grant is reachable end to end", () => {
     // ignored them, so another session's change needed a browser refresh.
     expect(centerSrc).toContain('"employee:created"');
     expect(centerSrc).toContain('"employee:updated"');
-    expect(centerPage).toContain('msg.type === "employee:created" || msg.type === "employee:updated"');
+    expect(centerPage).toContain('type === "employee:created" || type === "employee:updated"');
     expect(centerPage).toContain('emitCenterEvent("staff")');
     expect(centerEventsSrc).toContain('"staff"');
     // both owners of the data re-read from the API
@@ -314,8 +314,8 @@ describe("realtime wiring has no dead end", () => {
     // The client subscribed to `order:updated` and wired the fan-out, but no
     // route ever published it — the subscription could never fire.
     expect(centerSrc).toContain('broadcast(CHANNELS.ORDER_UPDATED, "order:updated"');
-    expect(centerPage).toContain('channel: "order:updated"');
-    expect(centerPage).toContain('msg.type === "order:updated" || msg.type === "order:created"');
+    expect(centerPage).toContain('subscribeChatChannel("order:updated")');
+    expect(centerPage).toContain('type === "order:updated" || type === "order:created"');
   });
 
   test("every writer that moves an order publishes on that channel", () => {
@@ -342,8 +342,8 @@ describe("realtime wiring has no dead end", () => {
   });
 
   test("VelCenter consumes the config event instead of ignoring it", () => {
-    expect(centerPage).toContain('channel: "config:updated"');
-    expect(centerPage).toContain('msg.type === "config:updated"');
+    expect(centerPage).toContain('subscribeChatChannel("config:updated")');
+    expect(centerPage).toContain('type === "config:updated"');
     expect(centerEventsSrc).toContain('"config"');
     expect(categoriesMgmtSrc).toContain('onCenterEvent("config"');
   });

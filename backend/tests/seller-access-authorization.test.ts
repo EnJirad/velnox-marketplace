@@ -111,14 +111,17 @@ describe("seller tab bar and revision flow — fail-closed wiring", () => {
 
     // Exactly one tab-bar render, and it sits AFTER the guard: an unapproved
     // (or still-loading, or failed) status can only return null.
-    const renders = src.split("<MobileTabBar items={SELLER_TABS} />").length - 1;
+    // `until="lg"` is the tablet fix: the seller header nav only appears at lg,
+    // so the bar must stay visible through 768–1023 px.
+    const tabBar = '<MobileTabBar items={SELLER_TABS} until="lg" />';
+    const renders = src.split(tabBar).length - 1;
     expect(renders).toBe(1);
     const guardAt = src.indexOf("if (!shouldShowSellerTab({ sellerAccess, loading, error })) return null;");
-    const renderAt = src.indexOf("<MobileTabBar items={SELLER_TABS} />");
+    const renderAt = src.indexOf(tabBar);
     expect(guardAt).toBeGreaterThan(-1);
     expect(renderAt).toBeGreaterThan(guardAt);
     // The old static mount is gone: no unconditional bar outside the gate.
-    expect(src).not.toMatch(/<MobileTabBar items=\{SELLER_TABS\} \/>\s*<\/div>/);
+    expect(src).not.toMatch(/<MobileTabBar items=\{SELLER_TABS\} until="lg" \/>\s*<\/div>/);
   });
 
   test("the status hook denies on error/loading and never trusts a client flag", () => {

@@ -1295,5 +1295,11 @@ export const th = {
     evidenceNoEvidence: "ไม่มีหลักฐานที่แนบ",
   },
 
+  /** Realtime transport status shown by the chat pages. */
+  realtime: {
+    connected: "เชื่อมต่อแล้ว",
+    reconnecting: "กำลังเชื่อมต่อใหม่…",
+  },
+
 // __APPEND__
 };

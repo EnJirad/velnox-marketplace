@@ -13,6 +13,7 @@ import {
   CheckCheck,
   CreditCard,
   Package,
+  RefreshCw,
   RotateCcw,
   Sparkles,
   Truck,
@@ -49,14 +50,17 @@ export default function ShopNotifications() {
 
   const [items, setItems] = useState<NotificationRow[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** A failed load must never render as "all caught up". */
+  const [error, setError] = useState(false);
 
   const load = useCallback(async () => {
+    setError(false);
     try {
       const res = await myNotifications();
       setItems((res.items ?? []) as NotificationRow[]);
     } catch (err) {
       console.error("Load notifications error:", err);
-      setItems([]);
+      setError(true);
     }
   }, [myNotifications]);
 
@@ -114,7 +118,19 @@ export default function ShopNotifications() {
           )}
         </div>
 
-        {items === null ? (
+        {error && (items?.length ?? 0) === 0 ? (
+          <div className="mt-10 flex flex-col items-center rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-amber-50">
+              <Bell className="size-7 text-amber-600" />
+            </span>
+            <h2 className="mt-5 text-lg font-semibold text-slate-900">{t("common.error")}</h2>
+            <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("notifications.emptyDesc")}</p>
+            <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
+              <RefreshCw className="size-4" />
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : items === null ? (
           <div className="mt-8 space-y-3">
             <Skeleton className="h-20 rounded-xl" />
             <Skeleton className="h-20 rounded-xl" />

@@ -23,6 +23,7 @@ import {
   type StoreOrder,
 } from "@velnox/shared/lib/commerce";
 import {
+  AlertTriangle,
   CalendarClock,
   Clock3,
   ImageOff,
@@ -72,6 +73,11 @@ export default function MyOrders() {
 
   const [data, setData] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * A failed load is an ERROR state, never "you have no orders". The last good
+   * list stays on screen (with a non-blocking banner) when a refresh fails.
+   */
+  const [error, setError] = useState(false);
 
   // Stripe hosted-checkout return (Phase 14): `?payment=success|cancelled`
   // is appended by the session's success/cancel URLs. Verify against the
@@ -99,20 +105,30 @@ export default function MyOrders() {
   }, [searchParams]);
 
   const load = useCallback(async () => {
-    const orders = await myOrdersAction({ limit: 50 });
-    setData({ orders });
+    try {
+      const orders = await myOrdersAction({ limit: 50 });
+      setData({ orders });
+      setError(false);
+    } catch (err) {
+      console.error("Load orders error:", err);
+      setError(true);
+    }
   }, [myOrdersAction]);
 
   useEffect(() => {
     let alive = true;
-    myOrdersAction({ limit: 50 })
-      .then((orders) => alive && setData({ orders }))
-      .catch((err) => console.error("Load orders error:", err))
-      .finally(() => alive && setLoading(false));
+    void load().finally(() => {
+      if (alive) setLoading(false);
+    });
     return () => {
       alive = false;
     };
-  }, [myOrdersAction]);
+  }, [load]);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    void load().finally(() => setLoading(false));
+  }, [load]);
 
   /**
    * Presentation-only clock for the payment-reservation countdowns.
@@ -219,11 +235,38 @@ export default function MyOrders() {
         <section className="mt-8">
           <h2 className="text-base font-semibold text-slate-900">{t("orders.historyTitle")}</h2>
 
+          {/* Stale data + a failed refresh: keep the orders, flag the failure. */}
+          {!loading && error && orders.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+              <p className="text-sm text-amber-800">{t("common.error")}</p>
+              <button
+                type="button"
+                onClick={retry}
+                className="ml-auto rounded-[10px] border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+              >
+                {t("common.retry")}
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="mt-8 space-y-4">
               {Array.from({ length: 2 }).map((_, i) => (
                 <div key={i} className="h-36 animate-pulse rounded-xl border border-slate-200 bg-white" />
               ))}
+            </div>
+          ) : error && orders.length === 0 ? (
+            <div className="mt-8 flex flex-col items-center rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-amber-50">
+                <AlertTriangle className="size-7 text-amber-600" />
+              </span>
+              <h2 className="mt-5 text-lg font-semibold text-slate-900">{t("common.error")}</h2>
+              <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("orders.desc")}</p>
+              <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={retry}>
+                <RefreshCw className="size-4" />
+                {t("common.retry")}
+              </Button>
             </div>
           ) : orders.length === 0 ? (
             <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
