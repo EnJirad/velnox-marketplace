@@ -741,8 +741,8 @@ with an index row.
 ## §80. Phase 2A — Stability + Realtime Foundation (2026-10-27) — **COMPLETE**
 
 **Base SHA:** `4908d7d34eb7052fcedc6d98fa49f4aee0eb0204` (`main` == `origin/main`, 0/0, clean).
-**Resulting commit:** recorded in the follow-up `docs(ai)` commit (see `git log` for
-`fix(realtime): stabilize ui and realtime foundation`).
+**Resulting commit:** `af302883984d695a52dd697d15875ade2652581e` (`fix(realtime): stabilize ui and
+realtime foundation`; its SHA is recorded here in the follow-up `docs(ai)` commit).
 **Report:** [`.ai/history/2026-10-27-ui-realtime-phase-2a.md`](history/2026-10-27-ui-realtime-phase-2a.md).
 
 **What changed (no schema / SQL / DB / Stripe changes):**

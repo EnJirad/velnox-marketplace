@@ -4,7 +4,7 @@
 **Agent:** Buffy (Codebuff)
 **Branch:** `main`
 **Base SHA:** `4908d7d34eb7052fcedc6d98fa49f4aee0eb0204` (`main` == `origin/main`, 0/0, clean tree)
-**Commit SHA after:** recorded in [`.ai/AI_HANDOFF.md`](../AI_HANDOFF.md) §80 (this report ships in the same commit)
+**Commit SHA after:** `af302883984d695a52dd697d15875ade2652581e` (pushed; local `main` == `origin/main`; its SHA is recorded in the follow-up `docs(ai)` commit)
 **Purpose:** implement the stability / realtime-transport / critical navigation items from the Phase 1
 UI/UX + Realtime Professional Audit ([`2026-10-26-ui-realtime-professional-audit.md`](./2026-10-26-ui-realtime-professional-audit.md)) —
 still no schema change, no production DB, no Stripe, no support redesign.
