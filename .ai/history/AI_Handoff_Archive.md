@@ -312,3 +312,11 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 | [`archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md`](./archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md) | handoff §69 — production `payments.checkout_group_id` gap, **BLOCKED** | Moved **verbatim** on 2026-10-26 (edit-headroom housekeeping while appending §79; the current-state file was 51.3 KB against the ~55 KB edit-tool limit). Kept because it is the second independent incident (`2aa736e9-0010-43c2-8f0e-19142b25189b`), the proof that the §68 503 guard works before Stripe, the single-shop regression coverage, and the scenario-H reconciler proof. The live owner action is restated in the §69 pointer: set `NEON_PRODUCTION_DATABASE_URL` for the same Neon branch Render uses, run `db/run-sqleditor.sql`, then `Production DB Verify` BLOCKED → PASS. The `db/migrations/054_*.sql` path in the record is historical — no migration directory exists since §76. |
 
 **Also on 2026-10-26:** §79 added — Phase 1 UI/UX + realtime audit (audit only; 0 source/SQL/DB changes). Report: [`2026-10-26-ui-realtime-professional-audit.md`](./2026-10-26-ui-realtime-professional-audit.md).
+
+### 2026-10-27 — §76, §78, §79 archived while adding §81 (Phase 2B broken UX + commerce correctness)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-27-sections-76-79.md`](./archive/AI_Handoff-2026-10-27-sections-76-79.md) | handoff §76, §78, §79 — VelRepeat removal + SQL consolidation · Production Neon read-only audit + permanent change-audit rules · Phase 1 UI/UX + realtime audit | Moved **verbatim** on 2026-10-27 (edit-headroom housekeeping while appending §81; the current-state file was 52.8 KB against the ~55 KB edit-tool limit). All three are completed passes whose live conclusions are restated in their new pointers: §76 → two canonical SQL files + `sql-reference-coverage` guard + `docs/VELREPEAT_REMOVAL_PLAN.md`; §78 → `.ai/AI_RULES.md` §17/§18 + `NOT RUN`/`BLOCKED` production state; §79 → the findings that drove §80 and §81. |
+
+**Also on 2026-10-27:** §81 added — Phase 2B (Buy Now quantity, order-history pagination, bootstrap-claim `res.ok`, VelCenter destructive-action guards, footer links). Code commit `eca58eb`; report: [`2026-10-27-ui-commerce-phase-2b.md`](./2026-10-27-ui-commerce-phase-2b.md).

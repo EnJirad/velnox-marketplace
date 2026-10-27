@@ -574,69 +574,24 @@ brief and Phase-2 model: [`.ai/tasks/active/mvp-marketplace-restructure-2026-10-
 
 ---
 
----
+---## §76. VelRepeat REMOVED + repository cleanup + SQL consolidation (2026-10-23) — ARCHIVED
 
-## §76. VelRepeat REMOVED + repository cleanup + SQL consolidation to two canonical files (2026-10-23)
+VelRepeat is gone at every layer: 6 backend route modules + both schedulers +
+`lib/velrepeat-{cycles,pricing}.ts`; the velShop pages/dialogs and every nav/menu/help/checkout entry;
+`VELREPEAT_ENABLED` switches; i18n keys, `api-routes.ts` entries, tests, contracts and briefs; and
+from the schema **12 tables · 12 columns · 62 indexes · 78 constraints**. Shared payment, order,
+shipment, inventory, refund and billing logic and ALL Stripe infrastructure were preserved.
 
-**Base SHA:** `af9841b0daa0b2b29feba890a7c36dfdd229e8d2` (= `origin/main` at task start; local HEAD
-== remote at fetch time, working tree changes only, no branch divergence).
-**Resulting commit SHA:** `cc3e9eacff063585d35b22428cf81723c795ad86` (the cleanup commit — this
-file cannot carry its own commit hash, so the SHA is recorded here in the follow-up `docs(ai)`
-commit that touches only this line).
+Exactly **two `.sql` files** remain — `db/schema.sql` (fresh snapshot) + `db/run-sqleditor.sql`
+(rerunnable reconciler) + `db/verify-reconciler.sh`; `db/migrations/` and `db:migrate` are gone, and
+`backend/tests/sql-reference-coverage.test.ts` pins backend SQL ↔ schema coverage. Legacy objects in
+an existing database are removed only by the owner via `docs/VELREPEAT_REMOVAL_PLAN.md` (the
+reconciler carries no VelRepeat statement). Audit §77 verdict: CLEAN WITH MINOR FINDINGS; production
+state still NOT RUN / BLOCKED (§78).
 
-**What went — VelRepeat at every layer:** the 6 backend route modules + both schedulers +
-`lib/velrepeat-{cycles,pricing}.ts`; velShop `VelRepeatPage` / `VelRepeatV2Page` /
-`VelRepeatPlanDialog` / `SubscriptionDialog` and every nav/menu/help/checkout entry point; the
-`VELREPEAT_ENABLED` switches (only `CUSTOMER_MEMORY_ENABLED` remains in the two `features.ts`);
-VelRepeat i18n keys, `api-routes.ts` entries and tests; `.ai/context/velrepeat-contract.md` + the
-VelRepeat audit/task briefs; and from the schema: **12 tables** (`velrepeat_*`, `vrepeat_*`,
-`subscriptions`), **12 columns** (nine `vrepeat_*` on `products`, `velrepeat_run_id`/`velrepeat_cycle_id`
-on `orders`, `plan_id` on `payments` and `payment_incidents`), **62 indexes**, **78 constraints**.
-Shared payment, order, shipment, inventory, refund and billing logic and ALL Stripe infrastructure
-were preserved — only VelRepeat-specific behavior was removed.
-
-**SQL consolidation.** Exactly **two `.sql` files** remain: `db/schema.sql` (canonical snapshot for
-a fresh DB) and `db/run-sqleditor.sql` (rerunnable additive reconciler for an existing DB), plus
-`db/verify-reconciler.sh`. `db/migrations/` deleted; `db:migrate`, both production workflows,
-`INSTALLATION.md`, `README.md`, `docs/*`, `.ai/context/*` and `.ai/AI_RULES.md §6` re-pointed at the
-two files (the old `migrate-neon.yml` / `NEON_DATABASE_URL` instructions are gone).
-`db/verify-reconciler.sh` `CANON` re-measured on a real fresh PG14: **`63|234|261|653`**.
-Schema-integrity restorations this pass: `payments_single_domain_check` kept as a plan-free
-invariant (order XOR group) with a guarded reconciler pass; `payment_incidents_order_parent_check`
-(data-guarded) replaces the legacy order-XOR-plan check; the stale `idx_payments_plan` /
-`idx_payments_one_active_stripe_plan` / `idx_payment_incidents_plan` CREATE INDEX statements were
-removed from the reconciler (they referenced a column no table declares — a fresh bootstrap would
-have failed).
-
-**New guard:** `backend/tests/sql-reference-coverage.test.ts` — every table, index and function the
-backend's SQL names must be declared by `db/schema.sql`, and every declared function must be used.
-
-**Verification (executed this pass, real output):**
-
-| Check | Result |
-|---|---|
-| `bun run typecheck` (velshop · velseller · velcenter · velnox) | exit 0 |
-| `bun --filter @velnox/backend typecheck` | exit 0 |
-| `bun run i18n:check` | th=1249 en=1249 my=1249 — parity (was 1496; the delta is the removed VelRepeat keys) |
-| `bun test backend/tests` (no DB) | 987 pass / 303 skip / 0 fail |
-| `bun test backend/tests` + local PostgreSQL 14 (`TEST_DATABASE_URL`) | **1284 pass / 2 skip / 0 fail**, exit 0 |
-| fresh `psql -v ON_ERROR_STOP=1 -f db/run-sqleditor.sql` on empty PG14, then again | exit 0 · exit 0 (idempotent) |
-| `bash db/verify-reconciler.sh` | **52 PASS — ALL SCENARIOS PASSED**, exit 0 |
-| `bun run build:apps` | 4/4 exit 0 |
-| `git diff --check` | clean |
-| `.sql` files in repo | exactly 2 |
-| final tracked-file velrepeat sweep | only dated records (`.ai/history/`, `.ai/audit/`, `.ai/rebuild/`, `.ai/tasks/completed/`), the §75/§76 pointers in this file, the active brief's supersession note, `docs/VELREPEAT_REMOVAL_PLAN.md`, and two explanatory comments (one in `db/run-sqleditor.sql`, one in `db/verify-reconciler.sh`) — **zero executable VelRepeat code, routes, jobs, tests or SQL objects** |
-
-**Legacy database objects were NOT touched** — the cleanup never connected to any database.
-Reviewable plan for an existing database (inventory → archive → constraint swap → drop columns →
-drop tables → verify): **`docs/VELREPEAT_REMOVAL_PLAN.md`**. The reconciler itself carries no
-VelRepeat statement, so running it after that plan stays a no-op.
-
-**Remaining gaps / blockers (unchanged unless noted):** production reconcile + verify **BLOCKED**
-(no `NEON_PRODUCTION_DATABASE_URL` reachable from this workspace) · real Stripe TEST E2E
-**BLOCKED** (no keys, no browser) · `bun run lint` not configured · the legacy plan above is owner-
-executed later · ~30 explanatory comments in `backend/**` and the dated records still name old
-migration numbers as historical anchors (they reference no file and are documented exceptions).
+Base `af9841b` → cleanup commit `cc3e9ea`. Full text moved verbatim to
+[`history/archive/AI_Handoff-2026-10-27-sections-76-79.md`](history/archive/AI_Handoff-2026-10-27-sections-76-79.md)
+on 2026-10-27 (edit-headroom housekeeping; nothing discarded).
 
 ## §77. Independent audit of the VelRepeat removal + repository cleanup (2026-10-24) — ARCHIVED
 
@@ -648,91 +603,38 @@ on 2026-10-25; report: [`.ai/audit/FINAL_AUDIT_2026-10-24_VELREPEAT_REMOVAL.md`]
 
 ## §78. Production Neon READ-ONLY audit + permanent change-audit-trail rules (2026-10-25)
 
-**Base SHA:** `964156db6241704d61954a52799485d345c6d013` (`main` == `origin/main`, 0/0, clean).
-**Resulting commit:** `9d3a6418c27cb385c1b8912328cceb8bebc68613` (pushed; 7 files, `.ai/*.md` only).
-**Report:** [`.ai/history/2026-10-25-production-neon-audit.md`](./history/2026-10-25-production-neon-audit.md).
-**Nothing was connected to, executed against, or changed in any database. No code, schema or SQL
-file was modified — this pass wrote only `.ai/` Markdown.**
+**Repo-side audit: PASS** — 0 `velrepeat`/`vrepeat` files in `apps/`, `backend/`, `packages/`; both
+`db/*.sql` declare 63 tables and every table the checklist names (`users` stands in for customers —
+there is no `customers` table); `git ls-files '*.sql'` = 2; `sql-reference-coverage.test.ts` = 5 pass.
+Remaining `velrepeat` strings are comments (2), dated `.ai/` records and `docs/VELREPEAT_REMOVAL_PLAN.md`.
 
-**Repo-side audit (executed): PASS.** `velrepeat`/`vrepeat` = 0 files in `apps/`, `backend/`,
-`packages/`; `CREATE TABLE … velrepeat` = 0 in both SQL files; `run-update` = 0 in executable
-files; both `db/*.sql` declare **63** tables and every table the audit checklist names
-(`users` stands in for customers — `users.role='customer'`, there is no `customers` table);
-`git ls-files '*.sql'` = 2; `bun test backend/tests/sql-reference-coverage.test.ts` = **5 pass /
-0 fail**. Remaining `velrepeat` strings: 2 comments (`db/run-sqleditor.sql:3757-3758`), 38 files
-under `.ai/` (dated records) and `docs/VELREPEAT_REMOVAL_PLAN.md`.
+**Production Neon: NOT RUN / BLOCKED** — no production URL in this workspace **and** rule §17
+forbids an agent from connecting on the owner's behalf. Real production state is UNKNOWN until the
+owner runs the read-only query set in the report; do not report it as PASS. WARNING: the sanctioned
+workflow `.github/workflows/production-db-verify.yml` probes only the checkout-group invariants, not
+the 19 required Marketplace tables — a green run is partial evidence only.
 
-**Production Neon: NOT RUN / BLOCKED.** No `NEON_PRODUCTION_DATABASE_URL` exists in this
-workspace (`freebuff-env list` is empty) **and** rule §17 forbids an AI from connecting to the
-production database in the owner's place. Real production state is **UNKNOWN** until the owner
-runs the read-only query set in the report (§11). Do not report it as PASS.
+Rules are permanent: `.ai/AI_RULES.md` **§17** (production DB read-only for agents) and **§18**
+(every repo-changing task leaves a Change Report in `.ai/history/` and never claims an unrun check).
+Report: [`.ai/history/2026-10-25-production-neon-audit.md`](history/2026-10-25-production-neon-audit.md).
 
-**WARNING — the sanctioned verifier does not answer the checklist.**
-`.github/workflows/production-db-verify.yml` is genuinely read-only and owner-runnable, but it
-probes only `checkout_groups`, the two `checkout_group_id` columns, provider idempotency columns,
-the FK delete rules, the group indexes, the payments CHECKs and `schema_migrations`. It does **not**
-probe the 19 required Marketplace tables, VelRepeat leftovers, or the `run-update` ledger. Treat a
-green run as partial evidence only; the report's query set covers the gap. (Not fixed on purpose:
-this pass was audit-only.)
+## §79. Phase 1 — UI/UX + Realtime Professional Audit (2026-10-26) — ARCHIVED (audit only)
 
-**Rules are now permanent (again docs-only):** `.ai/AI_RULES.md` **§17** (production DB is
-read-only for agents; never connect on the owner's behalf; report `NOT RUN`/`BLOCKED`) and
-**§18** (every repo-changing task must leave a Change Report in `.ai/history/` with the 20
-required fields, update this handoff, and never claim an unrun check passed). `.ai/README.md`
-points at both.
+Verdict: the systems exist and the payment/order core is sound, but production-grade interaction
+quality is not reached — 1 P0 (VelSeller mobile had no chat entry), 18 P1, 14 P2, 4 P3. The P1s that
+moved into work: VelCenter's socket missed `/ws`; chat unmounts killed the shared socket; errors
+rendered as empty states (or an infinite spinner) instead of failing loudly; order history was capped
+at 50/50/100 with no pagination; **Buy Now ignored `buyNowQty` and charged the cart quantity**;
+support is a shop account, not a staffed desk. Responsive was **static analysis only** — the visual
+matrix is NOT RUN, not passed.
 
-**Open / next:** owner runs the read-only queries and confirms the production identity ·
-production reconcile + verify **BLOCKED** · real Stripe TEST E2E **BLOCKED** (no keys/browser) ·
-`bun run lint` not configured · legacy VelRepeat objects in a real database are still removed only
-by the owner via `docs/VELREPEAT_REMOVAL_PLAN.md` (backup + approval first).
-
-## §79. Phase 1 — UI/UX + Realtime Professional Audit (2026-10-26) — **AUDIT ONLY**
-
-**Base SHA:** `f71dcfd2fe26c7c92d94eb2ef7d7418f1c82d4d1` (`main` == `origin/main`, 0/0, clean).
-**Resulting commit:** `903501f4594e4d30d3918e579fe39b65c540ef9a` (the audit commit; its SHA is recorded here in the follow-up `docs(ai)` commit).
-**Report:** [`.ai/history/2026-10-26-ui-realtime-professional-audit.md`](history/2026-10-26-ui-realtime-professional-audit.md).
-**Nothing was modified except `.ai/` Markdown.** SOURCE CODE MODIFIED: **NO** · DATABASE MODIFIED: **NO** ·
-SQL MODIFIED: **NO** · PRODUCTION DB CONNECTED: **NO**.
-
-**Verdict:** the systems exist and the payment/order core is sound, but production-grade interaction
-quality is not reached. 1 P0, 18 P1, 14 P2, 4 P3. VelShop is the most mature surface; VelSeller
-mobile navigation and VelCenter realtime are broken; support is a shop account, not a support desk.
-
-**Highest-impact findings (full evidence in the report):**
-- **P0** VelSeller mobile has **no chat entry**: `SELLER_TABS` has no chat item and the header nav is
-  `lg:` only. A chat notification can route to the thread, but a phone-only seller has no reliable way
-  to open the inbox.
-- **P1** VelCenter's socket connects to `ws(s)://<origin>` with **no `/ws`**; the server accepts only
-  `/ws`, so every “live” queue badge is manual-refresh. Reproduced locally: 400 / close 1006.
-- **P1** `ShopChat` / `SellerChat` call `disconnectChatSocket()` on unmount, killing the shared
-  header-bell socket with no reconnect — notifications stop until a reload.
-- **P1** `order:updated` has **no customer or seller consumer**, `shipment:updated` has **no consumer**,
-  and no order/payment/shipment **notification rows** are ever inserted.
-- **P1** errors render as **empty states** (MyOrders, notifications, seller orders, cart) or an infinite
-  spinner (Income); order history is truncated at 50/50/100 with no pagination.
-- **P1** Buy Now ignores `buyNowQty` (charges the cart quantity) and cart quantity PUTs race.
-- **P1** support staff cannot use VelCenter (`CENTER_ROLES` excludes `support`) and seller→support has
-  no UI. A real staffed desk needs a **SCHEMA CHANGE** (`chat_messages.sender_role`, assignment/priority).
-
-**Realtime:** transport is hardened (cookie auth, 30 s revocation sweep, per-user channel, frame and
-send-rate limits) but its **browser lifecycle** is not; there is no heartbeat and no resync after
-reconnect; `notification:created` is a public channel carrying employee events.
-
-**Responsive:** **static analysis only** — no browser/screenshot capability here. The 320/375/430
-notification panel is clipped off-screen, VelSeller loses all page navigation at 768–1023 px, and the
-chat `min-h` floors push the composer below the keyboard on short screens. The visual matrix is
-**NOT RUN**, not passed.
-
-**Chat:** customer↔seller and customer↔support exist; seller↔support is missing; support↔VelCenter is
-missing. Full relationship/authorization/UX matrix in report §6.
-
-**Checks run:** git in sync + clean · `bun run i18n:check` **PASS** (`th=1249 en=1249 my=1249`) · local
-`ws` path probe **CONFIRMED** · source sweeps · docs-only diff check. No app test/build was run because
-no code changed.
-
-**Open / next:** implementation order in report §8 — stability → broken UX → realtime correctness →
-chat fundamentals → responsive → polish. The support model decision gates Phase D. Do **not** add a
-second socket, chat API, conversation table or notification system.
+Findings drove Phase 2A (§80, stability + realtime) and Phase 2B (§81, broken UX + commerce
+accuracy). Still Phase 2C–2D: realtime commerce events, transactional notification rows, private
+admin channels, chat/support fundamentals. Full report:
+[`.ai/history/2026-10-26-ui-realtime-professional-audit.md`](history/2026-10-26-ui-realtime-professional-audit.md).
+Full section text moved verbatim to
+[`history/archive/AI_Handoff-2026-10-27-sections-76-79.md`](history/archive/AI_Handoff-2026-10-27-sections-76-79.md)
+on 2026-10-27 (edit-headroom housekeeping; nothing discarded).
 
 **Housekeeping:** §69 moved **verbatim** to
 [`history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md`](history/archive/AI_Handoff-2026-10-05-section-69-production-payments-checkout-group.md)
@@ -769,14 +671,64 @@ realtime foundation`; its SHA is recorded here in the follow-up `docs(ai)` commi
 `git diff --check` clean. **NOT RUN:** browser/viewport pass, live WebSocket handshake, production DB
 (not connected).
 
-**Still open (Phase 2B/2C):** Buy Now quantity, order-history pagination, bootstrap-claim `res.ok`,
-VelCenter destructive-action guards, footer/marketing links; `order:created` publisher,
-`order:updated`/`shipment:updated` consumers, transactional notification rows, private admin channels.
-Seller chat icon has no unread badge (no seller unread-count endpoint).
+**Still open (Phase 2C):** `order:created` publisher, `order:updated`/`shipment:updated`
+consumers, transactional notification rows, private admin channels. Seller chat icon has no unread
+badge (no seller unread-count endpoint).
+
+## §81. Phase 2B — Broken UX + Commerce Correctness (2026-10-27) — **COMPLETE**
+
+**Base SHA:** `ded711776e06b5bb41bb125d7e36d003f709a199` (`main` == `origin/main`, 0/0, clean).
+**Resulting commit:** `eca58eb` — `fix(ui): complete phase 2B commerce correctness` (18 files,
++1288/−116; its SHA plus the docs commit SHA are recorded here in this `docs(ai)` commit).
+**Report:** [`.ai/history/2026-10-27-ui-commerce-phase-2b.md`](history/2026-10-27-ui-commerce-phase-2b.md).
+**SOURCE CODE MODIFIED: YES · DATABASE MODIFIED: NO · SQL MODIFIED: NO · PRODUCTION DB
+CONNECTED: NO · STRIPE MODIFIED: NO.**
+
+**Fixed (5 findings, root causes verified by trace):**
+- **Buy Now quantity + cart integrity.** The checkout posted `cartItemIds`, so the CHARGED quantity
+  came from the cart line (and buying appended to/overwrote the saved cart). Now the product page and
+  the selection sheet navigate without touching the cart, `ShopCheckout` sends
+  `buyNow: { productId, variantId, quantity }`, and `POST /api/customer/checkout` builds a synthetic
+  line from the row it reads in Neon — same validation, price revalidation, stock reservation,
+  idempotency claim, payment-reservation policy and order-number path as a cart checkout; cart cleanup
+  skips it. A client price is never accepted.
+- **Order-history pagination** on all three surfaces: `offset` + `ORDER BY created_at DESC, id DESC`
+  and an opt-in `paginated=1 → { orders, pagination }` shape (bare array default kept, so old
+  consumers are untouched). Frontends append page-by-page with id dedupe, a sync ref guard, a
+  sequence guard against stale responses, filter change → offset 0, refresh → page 1. VelCenter's
+  pending badge now reads the exact `marketKpi.pendingOrders`.
+- **Bootstrap claim `res.ok`:** non-2xx never toasts success nor writes a claimed state; 409 re-reads
+  owner status; success is confirmed by re-reading `/admin/bootstrap-status`; the status probe failure
+  is its own gate with a retry instead of offering the bootstrap form.
+- **VelCenter destructive actions:** confirmation before `cancelled` and before any role change;
+  `busyOrderId`/`busyUserId` per-row guards (only that row's control disables); success awaits the
+  authoritative refetch, failure toasts the real error and re-reads server state.
+- **Footer/marketing links:** corporate `/privacy` + `/terms` (both used to open the corporate home),
+  returns → `/help#orders`, VelSeller login → `/auth` (the old `/seller/login` route does not exist),
+  `rel="noopener noreferrer"` on corporate external links. All four apps audited against the real
+  route tables: no other dead links, no `#`, no VelRepeat references.
+
+**New test:** `backend/tests/buy-now-checkout.test.ts` — 5 contract assertions (no client price,
+buyNow ⊥ cartItemIds, server-priced row, total = price × quantity, no cart mutation on the buy path)
+plus 10 DB-gated route cases (qty 1/2/5, over-stock, invalid qty, double submit, mixed payload,
+unpublished product).
+
+**Verified:** 4 app typechecks PASS · backend typecheck PASS · `bun run build:apps` PASS (4/4) ·
+`bun run i18n:check` PASS `1257/1257/1257` · `bun test backend/tests` **992 pass / 313 skip / 0 fail** ·
+`git diff --check` clean. **BLOCKED/NOT RUN:** the 10 DB-gated Buy Now cases (no safe
+`TEST_DATABASE_URL` in this workspace — they skip, no production credential used), browser/E2E pass
+(no browser here), real Stripe TEST E2E (no keys). `bun run lint` still not configured.
+**UNVERIFIED, deliberately untouched:** the corporate domain defaults (`velnox.com` in
+`sites.ts` vs `velnx.com` in INSTALLATION.md) — needs the owner's confirmation, not a guess.
+
+**Still open (Phase 2C/2D):** realtime commerce events (`order:created` publisher,
+`order:updated`/`shipment:updated` consumers), transactional notification rows, private admin
+channels, chat/support fundamentals, seller-chat unread badge, responsive/visual matrix.
 
 ---
 
-**Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26
-(verbatim + index row), leaving this file at ~49 KB; §80 brings it to ~53 KB. Before appending again,
-archive the Actions-alignment block (or the 2026-10-04 payment-integrity narrative) to
-`history/archive/` **with** an index row. Archiving is not deletion: the text is preserved verbatim.
+**Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26,
+§76/§78/§79 on 2026-10-27 (all verbatim + index row), leaving this file at ~50 KB with §81 added.
+Before appending again, archive the Actions-alignment block or the 2026-10-04 payment-integrity
+narrative to `history/archive/` **with** an index row. Archiving is not deletion: the text is
+preserved verbatim.
