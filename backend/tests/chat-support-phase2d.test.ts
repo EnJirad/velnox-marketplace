@@ -161,9 +161,19 @@ describe("read is bounded to what the reader actually loaded", () => {
 
   test("both read routes cap the UPDATE at the caller's upTo", () => {
     expect(allIndices(chat, "const upTo = readUpTo(req);").length).toBe(2);
-    expect(
-      allIndices(chat, "AND created_at <= to_timestamp($3::double precision / 1000)").length,
-    ).toBe(2);
+    // The bound is applied at the precision it actually carries. `createdAt`
+    // reaches clients as epoch MILLISECONDS (`mapMessage` → `new Date(...)`)
+    // while `created_at` is a microsecond TIMESTAMPTZ: a strict
+    // `created_at <= upTo` EXCLUDED the very message the bound was derived from
+    // (…:123456 is not <= …:123000), so a bounded read marked nothing and the
+    // thread never cleared. The whole named millisecond is covered instead.
+    expect(chat).toContain("createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now()");
+    expect(chat).toContain(
+      "const READ_BOUND_SQL = ` AND created_at < to_timestamp($3::double precision / 1000) + interval '1 millisecond'`;",
+    );
+    // ONE fragment, used by BOTH read routes — the two cannot drift apart.
+    expect(allIndices(chat, "markSql += READ_BOUND_SQL;").length).toBe(2);
+    expect(chat).not.toContain("created_at <= to_timestamp(");
     // Only the OTHER side's messages are ever marked — the reader's own stay.
     expect(allIndices(chat, "sender_id <> $2 AND read_at IS NULL").length).toBe(2);
     // Absent upTo keeps the previous unbounded behaviour (old client compat);
@@ -721,11 +731,17 @@ describeDb("chat support, end to end (requires TEST_DATABASE_URL)", () => {
     const convA = await openConversation(a);
     await openConversation(b);
 
+    // One message each way in pair A: the seller's message is unread for
+    // customer A alone, the customer's reply for seller A alone (a sender's own
+    // message is never unread for them — pinned above). Pair B, whose thread
+    // stays empty, must read zero on BOTH sides: A's non-zero counts may never
+    // surface for another customer or another shop.
     await send("seller", a.sellerUserId, convA, "only for customer A");
+    await send("customer", a.customerId, convA, "only for shop A");
 
     expect(await customerUnread(a.customerId)).toBe(1);
-    expect(await customerUnread(b.customerId)).toBe(0);
     expect(await sellerUnread(a.sellerUserId)).toBe(1);
+    expect(await customerUnread(b.customerId)).toBe(0);
     expect(await sellerUnread(b.sellerUserId)).toBe(0);
   });
 

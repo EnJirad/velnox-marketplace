@@ -268,6 +268,21 @@ const READ_BOUND_INVALID = {
 } as const;
 
 /**
+ * The `upTo` bound, applied at the precision the value actually carries.
+ *
+ * Clients derive `upTo` from `createdAt`, which `mapMessage` builds with
+ * `new Date(...).getTime()` — epoch MILLISECONDS — while `chat_messages.created_at`
+ * is a microsecond-precision TIMESTAMPTZ filled by `NOW()`. A strict
+ * `created_at <= upTo` therefore EXCLUDED the very message the reader derived the
+ * bound from (`…:123456` is not `<= …:123000`), so a bounded read marked nothing
+ * and a thread could never be cleared. Cover the whole millisecond the bound
+ * names instead: every message the reader could have loaded is included, while a
+ * message that lands afterwards stays unread — the residual race is bounded by
+ * 1 ms rather than the previous unbounded mark-all.
+ */
+const READ_BOUND_SQL = ` AND created_at < to_timestamp($3::double precision / 1000) + interval '1 millisecond'`;
+
+/**
  * In-process idempotency for message sends.
  *
  * A send carries a client-generated `clientId`, and a retried submission (a
@@ -610,7 +625,7 @@ export function setupChatRoutes(app: Express): void {
          WHERE conversation_id = $1 AND sender_id <> $2 AND read_at IS NULL`;
       if (upTo !== null) {
         markParams.push(upTo);
-        markSql += ` AND created_at <= to_timestamp($3::double precision / 1000)`;
+        markSql += READ_BOUND_SQL;
       }
       markSql += ` RETURNING id`;
       const updated = await query(markSql, markParams);
@@ -802,7 +817,7 @@ export function setupChatRoutes(app: Express): void {
          WHERE conversation_id = $1 AND sender_id <> $2 AND read_at IS NULL`;
       if (upTo !== null) {
         markParams.push(upTo);
-        markSql += ` AND created_at <= to_timestamp($3::double precision / 1000)`;
+        markSql += READ_BOUND_SQL;
       }
       markSql += ` RETURNING id`;
       const updated = await query(markSql, markParams);
