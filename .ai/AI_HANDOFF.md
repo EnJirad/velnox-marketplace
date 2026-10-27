@@ -679,7 +679,7 @@ badge (no seller unread-count endpoint).
 
 **Base SHA:** `ded711776e06b5bb41bb125d7e36d003f709a199` (`main` == `origin/main`, 0/0, clean).
 **Resulting commit:** `eca58eb` — `fix(ui): complete phase 2B commerce correctness` (18 files,
-+1288/−116; its SHA plus the docs commit SHA are recorded here in this `docs(ai)` commit).
++1288/−116; its SHA is recorded here in this `docs(ai)` commit).
 **Report:** [`.ai/history/2026-10-27-ui-commerce-phase-2b.md`](history/2026-10-27-ui-commerce-phase-2b.md).
 **SOURCE CODE MODIFIED: YES · DATABASE MODIFIED: NO · SQL MODIFIED: NO · PRODUCTION DB
 CONNECTED: NO · STRIPE MODIFIED: NO.**

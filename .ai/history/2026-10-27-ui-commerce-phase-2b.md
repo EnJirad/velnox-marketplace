@@ -7,7 +7,7 @@
 | Branch | `main` |
 | SHA before | `ded711776e06b5bb41bb125d7e36d003f709a199` (= `origin/main` at `git fetch` before editing; 0/0, clean tree) |
 | SHA after (code) | `eca58eb` — `fix(ui): complete phase 2B commerce correctness` (18 files, +1288/−116) |
-| SHA after (docs) | the follow-up `docs(ai)` commit that records this file and the handoff |
+| SHA after (docs) | `262aa2d134a5552e9403f564773a025c9359b9b1` — the `docs(ai)` commit carrying this file, the handoff §81 and the archive of §76/§78/§79 |
 | Purpose | Fix only the Phase 1 / Phase 2A findings listed as Phase 2B scope: Buy Now quantity correctness, order-history pagination, VelCenter bootstrap-claim `res.ok`, VelCenter destructive-action guards, footer/marketing links. Preserve every working marketplace system. |
 
 **SOURCE CODE MODIFIED: YES · DATABASE MODIFIED: NO · SQL MODIFIED: NO ·
