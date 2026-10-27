@@ -459,67 +459,18 @@ DB-backed assertion inside a *static* `describe` must be gated on `hasTestDataba
 
 ---
 
-## Payment integrity — a captured Stripe charge could never settle in production (2026-10-04)
+## Payment integrity — a captured Stripe charge could never settle in production (2026-10-04) — **ARCHIVED**
 
-**Reported symptom.** Checkout → first attempt seen as failed → customer retried → the NEW Stripe
-attempt was genuinely charged → Velnox still showed "รอดำเนินการชำระ" and offered payment again.
-Retrying made it worse: every retry captured another real charge that also could not settle.
-
-**Root cause: failure class H (production schema ≠ backend code), surfacing as class D
-(`handleStripeEvent()` throws).** `checkoutGroupIdForAttempt()` (`backend/routes/stripe.ts`) decided
-which parent a charge belongs to by reading `payments.checkout_group_id` — added by migration
-**054**, which production never received. Naming an absent column raises `undefined_column` (42703),
-which is a THROWN ERROR, and it was thrown on the one query **every** order's settlement runs,
-before the order or payment row is touched:
-
-```
-payment_intent.succeeded → checkoutGroupIdForAttempt() throws 42703 → handleStripeEvent() throws
-  → payment_events.status = 'failed' → HTTP 500 → Stripe redelivers → the identical error
-  → payments.status and orders.status NEVER move → the storefront keeps offering payment
-```
-
-**Why partial application, not total absence.** `POST /api/customer/checkout` writes
-`checkout_groups` + `orders.checkout_group_id` unconditionally, so checkout demonstrably worked in
-production ⇒ 054's sections 1–2 landed ⇒ only section 3 (`payments.checkout_group_id`) did not.
-That is exactly the state `db/verify-reconciler.sh` scenario H reproduces, and it is the
-direct consequence of §66 (migrations reaching a different Neon than Render's `DATABASE_URL`).
-
-**Ruled out with live evidence, not reasoning.** `GET /api/stripe/configured?selfTest=1` on
-`velnox-api.onrender.com` → `configured: true, mode: "test", webhookConfigured: true`,
-`webhookSecretHealth.shapeUsable: true`, `webhookSignatureSelfTest.verified: true` ⇒ **A** (not
-sent) and **B** (signature) are out; an unsigned `POST /api/payments/stripe/webhook` → 400 ⇒ the
-endpoint is live and refusing. **G** is out too: `ShopCheckoutSuccess.tsx` polls
-`GET /api/orders/:orderId` until the payment settles, so the UI reported the truth.
-
-**The fix (code).** The column is read as a JSON KEY — `to_jsonb(p) ->> 'checkout_group_id'` —
-so ONE statement is correct against both schemas and cannot raise 42703; the companion `?`
-operator distinguishes "no group" from "no column" so the process can say so ONCE, naming
-`db/run-sqleditor.sql`. This is the same pattern `selectOrderPaymentRow()` already uses for
-`orders.payment_expires_at` in `lib/payment-reservation.ts`. It is **not** a bypass: the
-signature check, the `payment_events` claim, the 500-on-failure redelivery policy and the
-`status IN ('pending','pending_payment')` settlement guards are unchanged, and NULL is the safe
-answer — the column is what links a payment to a purchase, so on a database without it there is
-no group payment to route.
-
-**Tests.** `backend/tests/payment-webhook-schema-lag.test.ts` (new, 12 cases): the production
-routing SQL executed against a `payments`-shaped table **without** the column returns NULL and
-detects the absence where the pre-fix statement raises 42703 (the regression, demonstrated); a real
-group payment is still routed; attempt A failed then attempt B succeeds settles B and the order;
-a duplicate delivery settles nothing twice; an UNPAID `checkout.session.completed` never marks paid;
-an event identifying no attempt writes nothing; a processing failure answers **500** and records the
-event `failed`; and Stripe's retry of that same event id re-processes it. Suite: **1974 pass /
-2 skip / 0 fail** (67 files). `checkout-group-sql-scope.test.ts` was updated to pin the new
-statement (in scope for `payments`, no bare column reference left).
-
-**STILL BLOCKED — owner action, unchanged.** Production `payments` has no `checkout_group_id`, so a
-MULTI-SHOP checkout still cannot be paid for until `db/run-sqleditor.sql` is run against the
-database Render's `DATABASE_URL` actually points at. Confirm with `Production DB Verify`
-(`backend/routes/stripe.ts` is in its trigger paths), which needs the
-`NEON_PRODUCTION_DATABASE_URL` secret. Live `payment_events` / `payments` / `orders` reads are
-likewise BLOCKED in this workspace (no production DB access). **Real Stripe TEST E2E is BLOCKED,
-not PASS**: Stripe TEST mode is configured and verifiable in production, but payment is a Stripe
-**hosted** Checkout Session, so only a human in a browser can complete it and only then can Stripe
-deliver the webhook; this workspace has no browser and no test account.
+**Moved verbatim on 2026-10-27** (edit-headroom housekeeping; appended §83, nothing discarded) →
+[`history/archive/AI_Handoff-2026-10-04-payment-integrity.md`](history/archive/AI_Handoff-2026-10-04-payment-integrity.md)
+(index row: [`history/AI_Handoff_Archive.md`](history/AI_Handoff_Archive.md)).
+**Still live from it:** the failure class (production schema ≠ backend code, `handleStripeEvent()`
+throwing 42703 on the settlement query); the fix reads the column as a JSON KEY
+(`to_jsonb(p) ->> 'checkout_group_id'`) so ONE statement is correct on both schemas, pinned by
+`payment-webhook-schema-lag.test.ts`; **production `payments.checkout_group_id` is still BLOCKED and
+owner-executed** (run `db/run-sqleditor.sql` against Render's database, then `Production DB
+Verify` with `NEON_PRODUCTION_DATABASE_URL`); and **Real Stripe TEST E2E is still BLOCKED** —
+payment is a hosted Checkout Session, so it needs a human in a browser.
 
 ---
 
@@ -709,8 +660,64 @@ chat unread badge, chat/support fundamentals, responsive/visual matrix.
 
 ---
 
+## §83. Phase 2D — Chat/Support Fundamentals + Unread Badge (2026-10-27) — **COMPLETE**
+
+**Base SHA:** `1a4cce0543795acf51e37a663a9306554938b03d` (`main` == `origin/main`, 0/0, clean).
+**Resulting commit (code):** `4aed0847a8b58b3bd8c6c500b08cee49c3a917ae` — `fix(chat): complete
+phase 2D chat support and unread state` (8 files, +1179/−28). This `docs(ai)` commit carries §83
+and the report.
+**Report:** [`.ai/history/2026-10-27-chat-support-phase-2d.md`](history/2026-10-27-chat-support-phase-2d.md).
+**SOURCE CODE MODIFIED: YES · DATABASE MODIFIED: NO · SQL MODIFIED: NO · PRODUCTION DB
+CONNECTED: NO · STRIPE MODIFIED: NO**
+
+**What changed (delivers §82's "chat unread badge + chat/support fundamentals"):**
+- **Read is bounded (`upTo`).** `POST …/conversations/:id/read` marks only messages created at or
+  before an epoch-ms bound the client derives from SERVER timestamps (the newest loaded message, or
+  the live message's own `createdAt`), so a message arriving while a read is in flight is never
+  swallowed as read. Absent → the old unbounded behaviour; unusable → 400. Needed no schema change
+  (`chat_messages.created_at` already exists), so nothing was BLOCKED.
+- **Sends are idempotent per `clientId`.** An in-process claim (conversation + session user +
+  clientId, 10-min TTL, 1000-entry cap) makes a retried submission REPLAY the stored message — no
+  second row, push or notification row — and both chat pages restore the typed draft after a failed
+  send and REUSE its clientId. Honest gap, documented in code: the claim dies with the process; the
+  durable fix is `UNIQUE (conversation_id, sender_id, client_id)` → owner-approved schema change,
+  deliberately not done in this phase.
+- **ONE chat-unread badge** (`packages/shared/src/hooks/use-chat-unread.ts`, new): customer =
+  `account-summary.chatUnread` (route switched to `apiGetFresh`), seller = the sum of the canonical
+  `sellerConversations.unreadCount` — both ownership-scoped in SQL, no new endpoint. `null` = not
+  confirmed → renders NOTHING; an error keeps the last known-good count (never a silent 0), and a
+  new account can't inherit the previous session's number. Refreshes on the existing `chat:message`
+  and `onChatReconnect` signals (coalesced) plus `notifyChatUnreadChanged()` after a confirmed read:
+  no polling, no new event, no second socket. Surfaces: both seller `AppHeader` chat entries
+  (desktop nav + the <lg icon, count in the aria-label, `99+` cap) and the customer `ShopProfile`
+  `/chat` row. Chat unread ≠ notification rows — the bell is untouched.
+- **Chat pages:** read failures are caught (no unhandled rejections); reconnect still REPLACES
+  list/thread state (no duplicate messages or unread); `disconnectChatSocket` is still never called;
+  sender identity stays session-only (a body carrying `senderId`/`senderRole` is ignored).
+
+**Tests:** new `backend/tests/chat-support-phase2d.test.ts` — 18 structural cases + 9 DB-gated
+cases (401 on every chat/unread endpoint; customer B/seller B isolation; empty/whitespace rejected
+with nothing persisted; forged sender stored as the session user; duplicate send → one row + one
+notification + `duplicate: true`, fresh clientId does store; get-or-create idempotency; the unread
+lifecycle including the stale-read race and `upTo: NaN` → 400; unread isolation across two
+customers/shops; addressed `chat:message`/`chat:read` with a stranger's socket getting nothing).
+**Verified:** 4 app typechecks PASS · backend typecheck PASS · `bun run build:apps` PASS (4/4) ·
+`bun run i18n:check` PASS `1257/1257/1257` · `bun test tests` **1033 pass / 332 skip / 0 fail**
+(1365 tests, 66 files; baseline 1015/321) · `git diff --check` clean.
+**BLOCKED/NOT RUN:** the 9 DB-gated cases (no safe `TEST_DATABASE_URL` here — CI's disposable
+`postgres:16` runs them; all chat FKs are `ON DELETE CASCADE`, so `purgeUsers` covers the
+fixtures); live browser/E2E (no browser in this workspace).
+
+**Still open:** the responsive/visual matrix; the Phase 2C `outbox_events` drain worker (owner
+decision); durable send-idempotency needs the unique index above (owner approval); the seller badge
+reuses the conversation list per mount (a tiny aggregate endpoint is the refinement if lists grow).
+**Housekeeping this pass:** the 2026-10-04 payment-integrity narrative moved verbatim →
+[`history/archive/AI_Handoff-2026-10-04-payment-integrity.md`](history/archive/AI_Handoff-2026-10-04-payment-integrity.md)
+(+ index row).
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
-§76/§78/§79 and §80/§81 on 2026-10-27 (all verbatim + index row), leaving this file at ~47 KB with
-§82 added. Before appending again, archive the Actions-alignment block or the 2026-10-04
-payment-integrity narrative to `history/archive/` **with** an index row. Archiving is not deletion:
-the text is preserved verbatim.
+§76/§78/§79 and §80/§81 on 2026-10-27; and the 2026-10-04 payment-integrity narrative on
+2026-10-27 with §83 (all verbatim + index row). Before appending again, archive the next-longest
+closed block the same way. Archiving is not deletion: the text is preserved verbatim.
