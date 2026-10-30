@@ -371,6 +371,13 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 |---|---|---|
 | [`archive/AI_Handoff-2026-10-31-section-86-phase-2g.md`](./archive/AI_Handoff-2026-10-31-section-86-phase-2g.md) | handoff §86 — Phase 2G production readiness audit (2026-10-30) | Moved **verbatim** on 2026-10-31 (edit-headroom housekeeping while appending §89; the live handoff was 54.1 KB against the ~55 KB edit-tool limit). Keeps the audit that found the OAuth `state` login-CSRF defect (fixed in §87), the BLOCKED production DB Verify, and the 1359/6/0 disposable-PG result. Zero source changes. Report: [`2026-10-30-phase-2g-production-readiness-audit.md`](./2026-10-30-phase-2g-production-readiness-audit.md). |
 | [`archive/AI_Handoff-2026-10-31-section-87-phase-2h.md`](./archive/AI_Handoff-2026-10-31-section-87-phase-2h.md) | handoff §87 — Phase 2H OAuth state hardening (2026-10-30) | Moved **verbatim** on 2026-10-31 (the live handoff would have crossed the ~55 KB edit-tool limit with §89). Keeps the nonce + signed single-use cookie mechanism, the 36 new tests and the 1399/2/0 disposable-PG run. Its two route test files are the source of the pre-existing 11 red CI cases recorded in §89. Report: [`2026-10-30-phase-2h-oauth-state-hardening.md`](./2026-10-30-phase-2h-oauth-state-hardening.md). |
+| [`archive/AI_Handoff-2026-10-31-section-88-unified-chat.md`](./archive/AI_Handoff-2026-10-31-section-88-unified-chat.md) | handoff §88 — Unified Marketplace Chat (2026-10-30) | Moved **verbatim** on 2026-10-31 (edit-headroom housekeeping while appending §91). Keeps the full evidence for the one `conversations`/`chat_messages` core across the four conversation types, the VelShop/VelSeller/VelCenter surfaces, server-side role scoping, addressed realtime and the legacy-support conversion. Report: [`2026-10-30-unified-marketplace-chat.md`](./2026-10-30-unified-marketplace-chat.md). |
+
+**Also on 2026-10-31:** §91 added — production schema reconciled (the five §89 chat objects applied by
+`production-db-migrate.yml` run `41114242571`; canonical fingerprints now match exactly, all rows
+preserved) plus the PostgreSQL 18 `text || "char"` probe fix in `production-db-verify.yml` (`055c0ee`,
+verify re-run `41118089821` = 10/10 PASS). Live proof: a real customer message at 19:43:41.960Z was
+followed 0.4 s later by exactly one `support_daily_ack` system row.
 
 **Also on 2026-10-31:** §89 added — Messenger UX (✓/✓✓ ticks from `readAt`, `chat:read` carrying the
 `upTo` bound it actually marked, one daily Velnox Support acknowledgment per `(conversation, Asia/Bangkok

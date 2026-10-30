@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -686,55 +686,13 @@ module scope and then dynamically import `routes/auth.ts`, but an earlier module
 `bun test` process can snapshot them empty — `main` CI is red (11/1414) because of it. Test isolation
 only; production behaviour is unaffected.
 
-## §88. Unified Marketplace Chat (2026-10-30) — COMPLETE
+## §88. Unified Marketplace Chat (2026-10-30) — **ARCHIVED** (moved 2026-10-31)
 
-**Starting SHA:** `2633cdf8bf2f11acfb0c0f4cb3100cfff361a228` (`HEAD == origin/main`, 0/0, clean tree).
-**Code commit:** `feat(chat): add unified marketplace company and internal chat` (find with
-`git log -1 --format=%H -- backend/routes/center-chat.ts`). **Docs commit:** `docs(ai): record unified
-marketplace chat implementation` (find with `git log -1 --format=%H -- .ai/history/2026-10-30-unified-marketplace-chat.md`).
-**Report:** [`.ai/history/2026-10-30-unified-marketplace-chat.md`](./history/2026-10-30-unified-marketplace-chat.md).
-
-**Final chat architecture.** ONE core: `conversations` + `chat_messages`, with
-`conversations.type` = `CUSTOMER_SELLER` | `CUSTOMER_COMPANY` | `SELLER_COMPANY` | `COMPANY_INTERNAL`.
-`routes/chat.ts` owns the customer/seller routes and the shared helpers (`validateBody`, `loadMessages`,
-`readUpTo`/`READ_BOUND_SQL`, `replaySend`/`rememberSend`, `notifyUser`, `notifyCompanyStaff`);
-`routes/center-chat.ts` imports them for company endpoints. There is NO second table, engine, socket,
-channel or polling loop. `sender_role` gained `company`; `conversations` gained `title`,
-`support_status` (OPEN/ASSIGNED/WAITING/CLOSED) and `assigned_to`, and its participant columns are now
-nullable **by type** (`conversations_participant_shape_check`). Partial unique indexes guarantee one
-customer-company thread, one seller-company thread and one internal room per title.
-
-**Surfaces.** VelShop Chat → **Shops** / **Velnox Support**; VelSeller Chat → **Customers** / **Velnox**;
-VelCenter → **Chat** tab → **Customers** / **Sellers** / **Internal** (new `ChatManagement.tsx`).
-Shop-chat CTAs exist on product, store and order pages. Support is a real `CUSTOMER_COMPANY` thread, not
-a reserved shop: a legacy `velnox-support` thread is converted in place (messages preserved) on first
-open, and remains readable by company chat before conversion.
-
-**Authorization.** Customer = own `customer_id`; seller = own approved `seller_id`; company =
-`users.role IN (owner, admin, staff)` AND only company types — a private `CUSTOMER_SELLER` row is refused
-(404) unless it is the legacy support row. Sender identity is always the session; `assignedTo` must be an
-active company member. Realtime is addressed (`sendToUser` / `sendToCenter`) on the existing shared
-socket: `chat:message`, `chat:read`, plus `chat:conversation` for a new internal room.
-
-**Also fixed (in scope):** `GET .../messages` returned raw `sender_id` / `created_at` while clients read
-`senderId` / `createdAt`; `loadMessages` now maps through `mapMessage`, so reloaded threads keep own-side
-alignment, timestamps and read ticks.
-
-**Verified:** backend `tsc --noEmit` PASS · root typecheck 4/4 · `build:apps` 4/4 · i18n 1262/1262/1262 ·
-new `chat-unified.test.ts` **13 pass / 0 fail** · existing chat suite **27 pass / 0 fail** · full backend
-suite on disposable PG14 **1412 pass / 2 skip / 0 fail** (1414 tests, 71 files) · reconciler applied twice
-with no error and no duplicate · `bash db/verify-reconciler.sh` **52/52 PASS** after re-measuring the
-canonical object counts to `63|239|265|657` · `git diff --check` clean. The 2 skips are pre-existing R2-credential cases.
-
-**Limitations (deliberate, documented):** read state is one `read_at` per message, not per staff member;
-send idempotency is still the in-process `recentSends` map (durable UNIQUE column deferred); internal rooms
-are visible to every company member (no membership table); company unread counts are messages; product
-context is preserved but order context is not stored on a conversation. No browser/E2E run. Out of scope:
-attachments, emoji/reactions, editing/deletion, typing indicators, tickets/SLA/CRM, Redis/broker, separate
-chat service.
-
-**Next:** durable chat idempotency (schema + unique index), per-staff read state if needed, internal room
-membership, order-linked context, then the deferred browser E2E for the five golden flows.
+Verbatim record:
+[`.ai/history/archive/AI_Handoff-2026-10-31-section-88-unified-chat.md`](./history/archive/AI_Handoff-2026-10-31-section-88-unified-chat.md).
+One `conversations` / `chat_messages` core serving `CUSTOMER_SELLER`, `CUSTOMER_COMPANY`,
+`SELLER_COMPANY` and `COMPANY_INTERNAL`, with VelShop Shops/Velnox Support, VelSeller
+Customers/Velnox and VelCenter Customers/Sellers/Internal.
 
 ---
 
@@ -816,9 +774,59 @@ cases green); backend typecheck PASS; CI on the fix commit is the confirmation.
 
 ---
 
+## §91. Production schema reconciled + the PG18 probe bug (2026-10-31) — COMPLETE
+
+**Starting SHA:** `e03f949` (`HEAD == origin/main`). The five §89 chat objects had been missing from
+the production Neon database since that change shipped, and the daily support acknowledgment was
+failing there with `42703 column "system_kind" ... does not exist`.
+
+**Migration (authorized by the owner).** The GitHub Actions secret `NEON_PRODUCTION_DATABASE_URL` was
+created, then `production-db-migrate.yml` was dispatched: run **`41114242571`, success**. Identity read
+BEFORE any write: `database=neondb | schema=public | server=18.6 | user=neondb_owner`; applied with
+`--single-transaction` + `ON_ERROR_STOP=1`. Additive only — no DROP TABLE / COLUMN, no TRUNCATE, no DELETE.
+
+| Object | Before | After |
+|---|---|---|
+| `information_schema.columns` | 657 | **659** |
+| `pg_indexes` | 239 | **240** |
+| `chat_messages.system_kind` | absent | `text` |
+| `chat_messages.ack_day` | absent | `date` |
+| `uq_chat_messages_support_daily_ack` | absent | partial UNIQUE, present |
+| `chat_messages_sender_role_check` | 3 roles | 4 roles (**+ `system`**) |
+| `chat_messages.sender_id` | `NOT NULL` | **nullable** |
+
+**Fingerprints.** `fp_all` `abd4d7bb…` → **`4fafa88b002bbb90375e0c984d4c5914`** = the canonical
+`db/schema.sql` value; `fp_indexes` → **`0beed7d02db99d34c3c1b5b63d35a891`** = canonical; the
+non-chat columns fingerprint is unchanged. **Zero differences remain.** Data untouched:
+`data_fp = 4f3f2aeaaabd7e46a254ceaa318590bd` before and after, all rows preserved.
+
+**Second defect found and fixed (repo change, `055c0ee`).** With the secret finally present,
+`production-db-verify.yml` ran against production for the first time and failed with
+`ERROR: operator is not unique: text || "char"` — its read-only probe concatenates
+`con.confdeltype`. PostgreSQL 18 (production) refuses that operator while PostgreSQL 16 (the disposable
+gate) accepts it, so the bug was invisible until now. One display-only cast fixed it; every assertion
+stays typed and the job stays read-only. Re-run **`41118089821`: 10/10 PASS**.
+
+**Live production evidence (real user traffic, no synthetic data).** At `19:43:41.960Z` a customer
+message was stored, and at `19:43:42.394Z` the daily acknowledgment followed — exactly one row with
+`sender_role='system'`, `system_kind='support_daily_ack'` (so the `ON CONFLICT … DO NOTHING` claim and
+the Asia/Bangkok day both work against the real schema); a company reply at `19:44:18Z`; no `42703` in
+the Render logs after the migration.
+
+**Still unverified in production:** the read receipt (`✓✓`). This database's only conversation was sent
+by ONE account on both sides (the same user id is `customer_id` and the sender of all 11 messages), so
+`sender_id <> $reader` legitimately matches nothing and `read_at` stays NULL — the logic is correct,
+the data simply cannot exercise it. Two distinct accounts are required.
+
+**Tests after the migration:** reconciler contract `21/21` · chat suites `35 pass / 0 fail` ·
+full suite `1087 pass / 360 skip / 8 fail` (the 8 are the Termux-only `process.execPath` probes) ·
+CI `Tests` on `055c0ee` = **success (1437 pass / 2 skip / 0 fail)**.
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.
