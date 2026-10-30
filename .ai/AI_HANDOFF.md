@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-30 · **Branch:** `main` · **Latest pass:** **Phase 2F — CI Checkout/Payment Test Reliability** (**§85**, COMPLETE) — the 11 red CI checkout tests were a half-configured TEST rail in the test files (dummy `sk_test_` key with `STRIPE_WEBHOOK_SECRET` deleted), not a product defect; both suites now install a complete dummy test-mode rail, and GitHub Actions run `40986922370` is **1363 pass / 2 skip / 0 fail**. **Production Neon live inspection remains NOT RUN / BLOCKED** by rule §17 (owner must run the read-only queries); **production reconcile, real Stripe TEST E2E remain BLOCKED**
+**Last updated:** 2026-10-30 · **Branch:** `main` · **Latest pass:** **Phase 2G — Production Readiness Audit** (**§86**, COMPLETE, AUDIT ONLY) — 0 Critical / 1 High / 12 Medium / 8 Low / 7 Info. The only High is OAuth `state` being user-controlled data rather than a CSRF nonce (login CSRF). **Production DB Verify remains BLOCKED** (missing canonical `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN** (no tooling/preview; deployed frontends DNS-unreachable). All existing automated checks green (**1359 pass / 6 skip / 0 fail**). No source, SQL, env, dependency or CI change.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -737,6 +737,44 @@ typecheck · `build:apps` 4/4 · `i18n:check` 1257/1257/1257 · `git diff --chec
 **Boundaries:** production DB **not connected** (only an explicit local `TEST_DATABASE_URL`),
 production payment **not touched**, schema/SQL **unchanged**, Stripe logic **unchanged**, COD default
 **unchanged**, VelRepeat **unchanged**. No owner approval or secret is needed.
+
+---
+
+## §86. Phase 2G — Production Readiness Audit (2026-10-30) — COMPLETE (AUDIT ONLY)
+
+**Audited SHA:** `9c38ae35019d1a4b4ace7127327e85db22bb30cf` (`HEAD == origin/main`, clean tree at start
+and end). **Report:**
+[`.ai/history/2026-10-30-phase-2g-production-readiness-audit.md`](./history/2026-10-30-phase-2g-production-readiness-audit.md).
+**Source changed:** **NONE** — documentation only (this section + the report). No SQL, env, dependency,
+CI or hosting configuration touched.
+
+**Readiness:** staging-capable; **not ready for a public production launch**. 164 backend routes, 20
+VelShop pages, 8 VelSeller pages, 1 VelCenter page and 4 corporate pages inspected.
+
+**High:** OAuth `state` is only `base64url({returnTo})` — never stored/compared/expired, so any valid
+Google `code` is accepted (login CSRF / session swapping). `backend/routes/auth.ts:432-433, 451-465, 483-485`.
+
+**Medium highlights:** production DB Verify permanently `BLOCKED` (missing canonical secret; latest
+run `40986922337`); no browser/E2E suite; boot-time DDL `ensureVariantTables()`
+(`server.ts:127-196`); in-memory chat send dedupe (`chat.ts:288-313`); no outbox dispatcher
+(`lib/order-events.ts:32-33`); WS revocation in-memory + 30 s role sweep (`realtime/index.ts:117,164-179`);
+revocation fail-open on DB error (`middleware/auth.ts:45-68`); seller unread badge fetches the full
+conversation list (`use-chat-unread.ts:84-95`); same-ms pagination loss (`chat.ts:142-150`); in-memory
+rate limiter (`rate-limit.ts:5-13`); `SITE_URLS.velcenter` typo `center.velnx.com` (`sites.ts:21`).
+All six known Phase 2E/2F risks remain unresolved (details in report §11).
+
+**Verified:** root typecheck 4/4 · backend `tsc --noEmit` · `build:apps` 4/4 · i18n 1257/1257/1257 ·
+backend suite on disposable PG14 **1359 pass / 6 skip / 0 fail** (1365 tests, 67 files) · `git diff --check`
+clean · CI test workflow green (`40986922370`, `40987344815`). Read-only live API: `/api/health` ok;
+Stripe `mode:test`, webhook configured, self-test verified; COD disabled. No production DB access, no
+real payment. No committed live secrets (pattern scan matched only test fixtures).
+
+**Not tested / blocked:** all rendered browser journeys (no browser tool, preview `running:false`,
+deployed frontends DNS-unresolvable from the sandbox); production DB verification; real Stripe E2E.
+These are **not** passes.
+
+**Next:** Phase 2H — OAuth state hardening + restore production DB Verify + staging Playwright E2E,
+then schema-authority cleanup and durable chat/outbox/rate-limit work (report §13).
 
 ---
 
