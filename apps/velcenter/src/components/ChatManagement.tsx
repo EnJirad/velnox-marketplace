@@ -32,6 +32,13 @@ import {
   sendChatCommand,
 } from "@velnox/shared/lib/chat-socket";
 import { useChatTyping } from "@velnox/shared/lib/chat-typing";
+import {
+  applyReadReceipt,
+  belongsToConversation,
+  isOwnMessage,
+  isSystemMessage,
+  mergeIncomingMessage,
+} from "@velnox/shared/lib/chat-message";
 import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
@@ -253,10 +260,10 @@ export default function ChatManagement() {
     const offMessage = onChatEvent("chat:message", (data: any) => {
       const message = data?.message as CenterMessage | undefined;
       if (!message) return;
-      if (message.conversationId === activeIdRef.current) {
-        setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+      if (belongsToConversation(message, activeIdRef.current)) {
+        setMessages((prev) => mergeIncomingMessage(prev, message));
         // A SYSTEM message is never unread — no badge, no read round-trip.
-        if (message.senderId !== userId && !message.isSystem) void markRead(message.conversationId, message.createdAt);
+        if (!isOwnMessage(message, userId) && !isSystemMessage(message)) void markRead(message.conversationId, message.createdAt);
       }
       // The event is only a signal: re-read both the list (last message /
       // unread) and the tab counts from the server. A conversation the list did
@@ -269,16 +276,7 @@ export default function ChatManagement() {
       // A staff member's own read receipt must never tick their own messages.
       if (userId && data?.readerId === userId) return;
       const upTo = typeof data?.upTo === "number" ? data.upTo : null;
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.senderId === userId &&
-          !m.isSystem &&
-          m.readAt == null &&
-          (upTo === null || m.createdAt <= upTo)
-            ? { ...m, readAt: m.readAt ?? Date.now() }
-            : m,
-        ),
-      );
+      setMessages((prev) => applyReadReceipt(prev, userId, upTo));
     });
     const offCreated = onChatEvent("chat:conversation", () => {
       void loadList(tabRef.current);
@@ -752,12 +750,16 @@ export default function ChatManagement() {
                       </div>
                     ) : (
                       messages.map((m) => {
-                        // System message (daily support acknowledgment): centred,
-                        // muted and never carries a read tick.
-                        if (m.isSystem) {
+                        // System message (daily support acknowledgment): ALWAYS
+                        // incoming, so left, muted, and never carries a tick.
+                        if (isSystemMessage(m)) {
                           return (
-                            <div key={m.id} className="flex justify-center">
-                              <div className="max-w-[86%] rounded-2xl border border-dashed border-slate-200 bg-white px-3.5 py-2.5 text-center text-xs leading-5 text-slate-500">
+                            <div key={m.id} className="flex justify-start">
+                              <div
+                                role="note"
+                                aria-label={t("chat.systemMessage")}
+                                className="max-w-[86%] rounded-2xl rounded-bl-md border border-dashed border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs leading-5 text-slate-500"
+                              >
                                 <p className="whitespace-pre-line break-words">{m.body}</p>
                                 <p className="mt-1 text-[10px] text-slate-400">
                                   {formatLocaleTime(m.createdAt, lang)}
@@ -766,7 +768,7 @@ export default function ChatManagement() {
                             </div>
                           );
                         }
-                        const mine = m.senderId === userId;
+                        const mine = isOwnMessage(m, userId);
                         return (
                           <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                             <div

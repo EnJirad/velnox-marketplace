@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -696,63 +696,12 @@ Customers/Velnox and VelCenter Customers/Sellers/Internal.
 
 ---
 
-## §89. Messenger UX — ticks, daily support ack, typing (2026-10-31) — COMPLETE
+## §89. Messenger UX — ticks, daily support ack, typing (2026-10-31) — **ARCHIVED** (moved 2026-10-31)
 
-**Starting state:** `HEAD == origin/main` at `903fbeb`, clean tree. Committed on the owner's explicit
-instruction after the local checks ran (see "Verified here").
-
-Extends §88's core — no second engine, table, socket, polling loop or notification system.
-
-**Schema (both canonical files, `db/schema.sql` + `db/run-sqleditor.sql`).** `chat_messages.sender_id`
-became nullable (a system row has no human sender), the `sender_role` CHECK was widened to
-`('customer','seller','company','system')`, and two columns were added: `system_kind TEXT`,
-`ack_day DATE`. A partial UNIQUE index
-`uq_chat_messages_support_daily_ack (conversation_id, ack_day) WHERE system_kind='support_daily_ack'`
-makes "one per day" a DATABASE guarantee.
-
-**Daily acknowledgment.** `createDailySupportAck()` runs only from the customer send handler for
-`CUSTOMER_COMPANY` (and the legacy reserved-shop support shape). One statement:
-`INSERT … ON CONFLICT (conversation_id, ack_day) WHERE system_kind='support_daily_ack' DO NOTHING
-RETURNING *` — a concurrent request, a retry or another instance loses the race and returns no row. The
-day is `(NOW() AT TIME ZONE 'Asia/Bangkok')::date`: calendar-day boundary, one authoritative clock,
-restart-proof. The ack is a real `chat_messages` row (`sender_role='system'`, `sender_id NULL`), so both
-sides read the same sentence; `sender_id <> $reader` being NULL keeps it out of unread counts and out of
-mark-read.
-
-**Ticks + realtime read state.** All three surfaces render `<Check/>` when `readAt == null` and
-`<CheckCheck/>` once read. `chat:read` now carries `upTo` (the newest `created_at` the UPDATE actually
-marked), so a client ticks exactly those messages and ignores its own receipt.
-
-**Typing.** `chat:typing` ({conversationId, typing}) over the ONE existing socket. `lib/chat-access.ts`
-resolves the audience from `conversations` (never from the frame); staff are refused on a private
-`CUSTOMER_SELLER` thread; the sender never receives its own frame; nothing is stored. Client side:
-shared `useChatTyping` (throttle 2.5 s, idle stop 3 s, receive expiry 6 s) + shared `TypingDots`
-(CSS-only, `prefers-reduced-motion` aware). `chat:viewing` gained the same membership check.
-
-**Canonical counts:** expected `63|240|265|659` (+1 index, +2 columns) — **derived, not measured**;
-`db/verify-reconciler.sh` says so in its own note. Re-measure on a disposable PostgreSQL before trusting it.
-
-**Tests added:** `backend/tests/chat-messenger-ux.test.ts` (structure group always runs; 8 behaviour cases
-are DB-gated). `chat-unified.test.ts` had one assertion updated for the widened CHECK.
-
-**Verified here (bun 1.4.4 + 329 deps installed on-device):** `bun run typecheck` **4/4 PASS** ·
-backend `tsc --noEmit` **PASS** · `bun run build:apps` **4/4 PASS** · `bun run i18n:check`
-**1264/1264/1264** · `git diff --check` clean · full suite `bun test backend/tests`
-**1076 pass / 360 skip / 19 fail** of 1455 tests — the 19 are (a) the 11 pre-existing OAuth cases and
-(b) 8 `test-database-isolation` subprocess probes that cannot run here because Termux reports
-`process.execPath` as Android's `linker64`; both classes pre-date this pass and pass on CI.
-The 360 skips are the DB-gated cases (no PostgreSQL: `initdb` hangs at its `max_connections` probe on
-this device), so **the new behaviour suite SKIPPED locally** and is only exercised by CI.
-`db/verify-reconciler.sh` could not run for the same reason.
-
-**Known pre-existing red:** `main` run `41043341845` fails 11/1414, all in `oauth-route.test.ts`:
-`/auth/google` redirects to the frontend error URL because `GOOGLE_CLIENT_ID`/`GOOGLE_REDIRECT_URI` are
-empty when `routes/auth.ts` snapshots them at import (module-level env writes land after the first
-module load). Production is unaffected (env is set there); it is a test-isolation defect from §87.
-
-**Limitations:** read state is still one `read_at` per message, so a COMPANY_INTERNAL room shows ✓✓ on
-the first staff read; the ack body is stored in English by design (both participants must see the same
-words); no browser/E2E run.
+Verbatim record:
+[`.ai/history/archive/AI_Handoff-2026-10-31-section-89-messenger-ux.md`](./history/archive/AI_Handoff-2026-10-31-section-89-messenger-ux.md).
+✓/✓✓ from `readAt`, `chat:read` carrying its `upTo` bound, the once-per-Asia/Bangkok-day support
+acknowledgment and the ephemeral `chat:typing` frame over the existing socket.
 
 ---
 
@@ -824,9 +773,44 @@ CI `Tests` on `055c0ee` = **success (1437 pass / 2 skip / 0 fail)**.
 
 ---
 
+## §92. Chat ownership + real-time proof, shared by all three apps (2026-10-31) — COMPLETE
+
+**Starting SHA:** `1421d25`. **Root cause of the wrong-side rendering:** VelCenter computed ownership
+as `m.senderId === (user?.id ?? null)`. The daily acknowledgment is stored with `sender_id = NULL`, so
+while the viewer's id was unresolved the comparison became `null === null` and the platform's own
+message rendered on the RIGHT. VelShop/VelSeller used `user?.id` (undefined), so the same row was
+CENTRED instead — three apps, three answers. System rows were also centred, never placed LEFT.
+
+**Fix.** One shared module, `packages/shared/src/lib/chat-message.ts`:
+`isSystemMessage` (any of `isSystem` / `senderRole === 'system'` / NULL sender), `isOwnMessage`
+(a null viewer owns nothing), `messageSide`, `belongsToConversation`, `mergeIncomingMessage` (id
+dedupe, same array on duplicate) and `applyReadReceipt` (own messages only, bounded by `upTo`).
+All three surfaces now import it: system rows render `justify-start` with a dashed muted bubble and
+`role="note"`, and `mine` comes from `isOwnMessage(m, viewerId)`.
+
+**Real-time path — verified, not assumed.** The chain was traced end to end and found intact: the
+production VelShop chunk (`ShopChat-CFsDLajF.js`) contains `chat:message`/`chat:read`/`chat:typing`,
+all three deployed bundles point at `velnox-api.onrender.com` and `/ws`, and the gateway answers
+`101 Switching Protocols` with its `connected` frame. What was wrong was rendering + duplicated per-app
+dedupe/ownership logic, which is what produced "messages don't appear / appear on the wrong side".
+
+**Tests added.** `chat-message-alignment.test.ts` (14 behavioural cases: LEFT/RIGHT for customer,
+seller and staff, system always LEFT, the `null === null` regression, dedupe by id, receipt bounds) and
+`chat-realtime-delivery.test.ts` (10 DB+WebSocket cases: customer→seller, seller→customer,
+customer→support incl. the system ack on BOTH sockets, staff reply→customer, seller→company,
+internal room, non-participant refusal, offline-then-reconnect). Three older source-text assertions
+were updated to the new shared helpers (no assertion weakened).
+
+**Verified here.** `typecheck` 4/4 · backend `tsc` PASS · alignment suite **14 pass / 0 fail** ·
+full suite **1100 pass / 370 skip / 8 fail** (the 8 are the Termux-only `process.execPath` probes) ·
+`build:apps` 4/4 · `i18n:check` 1265/1265/1265 · `git diff --check` clean. The delivery suite needs
+`TEST_DATABASE_URL`, so it SKIPS on this device and is exercised by CI.
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.

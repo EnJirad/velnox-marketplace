@@ -472,6 +472,7 @@ const myChatPatch = {
     startError: "ချတ်စတင်၍မရပါ ထပ်ကြိုးစားပါ",
     typing: "ရိုက်နေသည်...",
     typingNamed: "{name} ရိုက်နေသည်...",
+    systemMessage: "စနစ်မှ ပေးပို့သည့် စာတို",
   } satisfies Partial<Dict["chat"]>,
   sellerChat: {
     title: "ချတ်",

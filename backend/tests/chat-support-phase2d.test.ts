@@ -327,8 +327,9 @@ describe("chat keeps the Phase 2A transport and reconnect contract", () => {
       // REPLACE, never append: a reconnect can't duplicate the list or a message.
       expect(src).toContain("setConversations((res ?? []) as Conversation[]);");
       expect(src).toContain("setMessages((res.items ?? []) as ChatMessage[]);");
-      // Live messages are deduped by id before they land in the open thread.
-      expect(src).toContain("prev.some((m) => m.id === message.id) ? prev : [...prev, message]");
+      // Live messages are deduped by id before they land in the open thread —
+      // now through the ONE shared helper every app renders from.
+      expect(src).toContain("mergeIncomingMessage(prev, message)");
     }
   });
 

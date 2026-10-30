@@ -7,6 +7,12 @@ import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
 import { connectChatSocket, onChatEvent, onChatReconnect, sendChatCommand } from "@velnox/shared/lib/chat-socket";
 import { useChatTyping } from "@velnox/shared/lib/chat-typing";
+import {
+  applyReadReceipt,
+  isOwnMessage,
+  isSystemMessage,
+  mergeIncomingMessage,
+} from "@velnox/shared/lib/chat-message";
 import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { notifyChatUnreadChanged } from "@velnox/shared/hooks/use-chat-unread";
 import { useRealtimeState } from "@velnox/shared/hooks/use-realtime-state";
@@ -156,12 +162,14 @@ export default function ShopChat() {
           )
           .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
       });
-      // Append to the open thread if it matches, and the sender isn't us
-      if (message.conversationId === activeIdRef.current && message.senderId !== user.id) {
-        setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+      // Append to the open thread if it matches, and the sender isn't us.
+      // `mergeIncomingMessage` is the ONE dedupe rule: the API response and the
+      // socket broadcast carry the same id, and a retry must not render twice.
+      if (message.conversationId === activeIdRef.current && !isOwnMessage(message, user.id)) {
+        setMessages((prev) => mergeIncomingMessage(prev, message));
         // A SYSTEM message is never "unread": nobody has to read it, and it
         // must not create a badge or a read round-trip.
-        if (!message.isSystem) {
+        if (!isSystemMessage(message)) {
           // Bounded by THIS message's server timestamp: anything newer that
           // arrives next stays unread until the reader actually sees it.
           void markConversationRead({ conversationId: message.conversationId, upTo: message.createdAt })
@@ -176,18 +184,10 @@ export default function ShopChat() {
       // The reader's own read receipt must not tick their own messages.
       if (user?.id && data?.readerId === user.id) return;
       // `upTo` = the newest message the reader actually had loaded. Without it
-      // (older backend) fall back to the previous mark-all behaviour.
+      // (older backend) fall back to the previous mark-all behaviour. Ownership
+      // comes from the ONE shared rule, so a system row is never ticked.
       const upTo = typeof data?.upTo === "number" ? data.upTo : null;
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.senderId === user?.id &&
-          !m.isSystem &&
-          m.readAt == null &&
-          (upTo === null || m.createdAt <= upTo)
-            ? { ...m, readAt: m.readAt ?? Date.now() }
-            : m,
-        ),
-      );
+      setMessages((prev) => applyReadReceipt(prev, user?.id, upTo));
     });
     return () => {
       if (activeIdRef.current) sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
@@ -660,12 +660,17 @@ export default function ShopChat() {
                         </div>
                       ) : (
                         messages.map((m) => {
-                          // System message: the platform spoke, not a participant,
-                          // so it is centred, muted and carries no read tick.
-                          if (m.isSystem) {
+                          // A system message is ALWAYS incoming: the platform spoke,
+                          // not this viewer, so it sits on the LEFT with a distinct
+                          // muted bubble and never carries a read tick.
+                          if (isSystemMessage(m)) {
                             return (
-                              <div key={m.id} className="flex justify-center">
-                                <div className="max-w-[86%] rounded-2xl border border-dashed border-slate-200 bg-white px-3.5 py-2.5 text-center text-xs leading-5 text-slate-500">
+                              <div key={m.id} className="flex justify-start">
+                                <div
+                                  role="note"
+                                  aria-label={t("chat.systemMessage")}
+                                  className="max-w-[86%] rounded-2xl rounded-bl-md border border-dashed border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs leading-5 text-slate-500"
+                                >
                                   <p className="whitespace-pre-line break-words">{m.body}</p>
                                   <p className="mt-1 text-[10px] text-slate-400">
                                     {formatLocaleTime(m.createdAt, lang)}
@@ -674,7 +679,7 @@ export default function ShopChat() {
                               </div>
                             );
                           }
-                          const mine = m.senderId === user?.id;
+                          const mine = isOwnMessage(m, user?.id);
                           return (
                             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                               <div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${mine ? "rounded-br-md bg-[#10B981] text-white" : "rounded-bl-md border border-slate-200 bg-slate-50 text-slate-800"}`}>

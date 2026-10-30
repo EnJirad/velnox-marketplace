@@ -1223,6 +1223,7 @@ export const th = {
     startError: "เริ่มแชทไม่สำเร็จ กรุณาลองอีกครั้ง",
     typing: "กำลังพิมพ์...",
     typingNamed: "{name} กำลังพิมพ์...",
+    systemMessage: "ข้อความจากระบบ",
   },
 
   sellerChat: {

@@ -94,8 +94,12 @@ describe("unified chat is one core, not parallel systems", () => {
       expect(src).not.toContain("new WebSocket(");
       expect(src).not.toContain("setInterval(");
       expect(src).toContain('onChatEvent("chat:message"');
-      // Incoming messages are deduped by id, never appended blindly.
-      expect(src).toContain("prev.some((m) => m.id === message.id)");
+      // Incoming messages are deduped by id through the ONE shared helper — the
+      // API reply and the socket broadcast must render a single bubble.
+      expect(src).toContain("mergeIncomingMessage(prev, message)");
+      // Ownership and system classification come from that same shared module.
+      expect(src).toContain("isOwnMessage(m,");
+      expect(src).toContain("isSystemMessage(m)");
     }
     expect(read(CENTER_PAGE)).toContain('subscribeChatChannel("product:updated")');
     expect(read(API_ROUTES)).toContain('apiGetFresh("/api/center/chat/unread")');

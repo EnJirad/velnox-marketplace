@@ -163,36 +163,41 @@ describe("typing is ephemeral, authorized and addressed", () => {
 });
 
 describe("messenger rendering: side, ticks and system bubble", () => {
-  test("own messages align right, others left, by sender id only", () => {
+  const MESSAGE_LIB = "packages/shared/src/lib/chat-message.ts";
+
+  test("one shared ownership rule drives every surface", () => {
+    // The rule lives in ONE module and all three apps import it, so they can no
+    // longer disagree about which side a bubble belongs on.
+    const lib = read(MESSAGE_LIB);
+    expect(lib).toContain("export function isOwnMessage");
+    expect(lib).toContain("export function isSystemMessage");
+    expect(lib).toContain("export function messageSide");
+    expect(lib).toContain("export function mergeIncomingMessage");
     for (const src of [read(SHOP_CHAT), read(SELLER_CHAT), read(CENTER_CHAT_UI)]) {
-      expect(src).toContain('const mine = m.senderId === user');
+      expect(src).toContain("isOwnMessage(m,");
       expect(src).toContain('mine ? "justify-end" : "justify-start"');
-      // Ownership never comes from a display name or the body.
-      expect(src).not.toContain('m.senderName === user');
+      // The old per-app comparison is gone: it is what let a message with a NULL
+      // sender be attributed to the viewer.
+      expect(src).not.toContain("m.senderId === ");
     }
   });
 
-  test("✓ means stored, ✓✓ means read", () => {
+  test("✓ means stored, ✓✓ means read, and only on my own messages", () => {
     for (const src of [read(SHOP_CHAT), read(SELLER_CHAT), read(CENTER_CHAT_UI)]) {
       expect(src).toContain("m.readAt != null ? (");
       expect(src).toContain("<CheckCheck");
       expect(src).toContain("<Check\n");
+      // A read receipt is applied by the shared helper, never inline.
+      expect(src).toContain("applyReadReceipt(prev,");
     }
   });
 
-  test("system messages have their own presentation and no tick", () => {
+  test("system messages are LEFT, distinct and tick-free", () => {
     for (const src of [read(SHOP_CHAT), read(SELLER_CHAT), read(CENTER_CHAT_UI)]) {
-      expect(src).toContain("if (m.isSystem)");
+      expect(src).toContain("if (isSystemMessage(m))");
       expect(src).toContain("border-dashed");
-    }
-  });
-
-  test("a read receipt is applied only to the sender's own messages", () => {
-    for (const src of [read(SHOP_CHAT), read(SELLER_CHAT), read(CENTER_CHAT_UI)]) {
-      expect(src).toContain("data?.readerId ===");
-      expect(src).toContain("m.senderId === user");
-      // Bounded by what the reader actually loaded.
-      expect(src).toContain("m.createdAt <= upTo");
+      // The platform's own message is INCOMING: never centred, never right.
+      expect(src).not.toContain('<div key={m.id} className="flex justify-center">');
     }
   });
 });
