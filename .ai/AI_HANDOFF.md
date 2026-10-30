@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-25 · **Branch:** `main` · **Latest pass:** **Production Neon READ-ONLY audit + the change-audit-trail rules made permanent** (**§78**) — repo-side checks **PASS** (0 VelRepeat in executable code, 2 `.sql` files, 19/19 required tables declared, `sql-reference-coverage` 5/5); **Production Neon live inspection NOT RUN / BLOCKED** by rule §17 (owner must run the read-only queries); **production reconcile, real Stripe TEST E2E remain BLOCKED**
+**Last updated:** 2026-10-30 · **Branch:** `main` · **Latest pass:** **Phase 2F — CI Checkout/Payment Test Reliability** (**§85**, COMPLETE) — the 11 red CI checkout tests were a half-configured TEST rail in the test files (dummy `sk_test_` key with `STRIPE_WEBHOOK_SECRET` deleted), not a product defect; both suites now install a complete dummy test-mode rail, and GitHub Actions run `40986922370` is **1363 pass / 2 skip / 0 fail**. **Production Neon live inspection remains NOT RUN / BLOCKED** by rule §17 (owner must run the read-only queries); **production reconcile, real Stripe TEST E2E remain BLOCKED**
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -552,22 +552,19 @@ Audited `bfa416e` read-only. Verdict **CLEAN WITH MINOR FINDINGS**: 0 VelRepeat 
 [`.ai/history/archive/AI_Handoff-2026-10-24-section-77-audit.md`](./history/archive/AI_Handoff-2026-10-24-section-77-audit.md)
 on 2026-10-25; report: [`.ai/audit/FINAL_AUDIT_2026-10-24_VELREPEAT_REMOVAL.md`](./audit/FINAL_AUDIT_2026-10-24_VELREPEAT_REMOVAL.md).
 
-## §78. Production Neon READ-ONLY audit + permanent change-audit-trail rules (2026-10-25)
+## §78. Production Neon READ-ONLY audit + permanent change-audit-trail rules (2026-10-25) — ARCHIVED
 
-**Repo-side audit: PASS** — 0 `velrepeat`/`vrepeat` files in `apps/`, `backend/`, `packages/`; both
-`db/*.sql` declare 63 tables and every table the checklist names (`users` stands in for customers —
-there is no `customers` table); `git ls-files '*.sql'` = 2; `sql-reference-coverage.test.ts` = 5 pass.
-Remaining `velrepeat` strings are comments (2), dated `.ai/` records and `docs/VELREPEAT_REMOVAL_PLAN.md`.
-
-**Production Neon: NOT RUN / BLOCKED** — no production URL in this workspace **and** rule §17
-forbids an agent from connecting on the owner's behalf. Real production state is UNKNOWN until the
-owner runs the read-only query set in the report; do not report it as PASS. WARNING: the sanctioned
-workflow `.github/workflows/production-db-verify.yml` probes only the checkout-group invariants, not
-the 19 required Marketplace tables — a green run is partial evidence only.
-
-Rules are permanent: `.ai/AI_RULES.md` **§17** (production DB read-only for agents) and **§18**
-(every repo-changing task leaves a Change Report in `.ai/history/` and never claims an unrun check).
-Report: [`.ai/history/2026-10-25-production-neon-audit.md`](history/2026-10-25-production-neon-audit.md).
+**Repo-side: PASS** — 0 VelRepeat in executable code, 2 `.sql` files, both declaring 63 tables,
+checklist 19/19 (`users` stands in for customers; there is no `customers` table),
+`sql-reference-coverage` 5/5. **Production Neon: NOT RUN / BLOCKED** by rule §17 — an agent must not
+connect on the owner's behalf; the real state stays UNKNOWN until the owner runs the report's
+read-only queries (never report PASS). WARNING: `production-db-verify.yml` probes only the
+checkout-group invariants, not the 19 Marketplace tables. Permanent rules: `.ai/AI_RULES.md` §17
+(read-only production) and §18 (Change Report + never claim an unrun check).
+Report: [`2026-10-25-production-neon-audit.md`](./history/2026-10-25-production-neon-audit.md).
+Full section text moved verbatim to
+[`history/archive/AI_Handoff-2026-10-25-section-78-production-neon-audit.md`](./history/archive/AI_Handoff-2026-10-25-section-78-production-neon-audit.md)
+on 2026-10-30 (edit-headroom housekeeping while appending §85; nothing discarded).
 
 ## §79. Phase 1 — UI/UX + Realtime Professional Audit (2026-10-26) — ARCHIVED (audit only)
 
@@ -625,60 +622,20 @@ on 2026-10-28 (edit-headroom housekeeping while appending §84; nothing discarde
 
 ---
 
-## §83. Phase 2D — Chat/Support Fundamentals + Unread Badge (2026-10-27) — **COMPLETE**
+## §83. Phase 2D — Chat/Support Fundamentals + Unread Badge (2026-10-27) — ARCHIVED
 
-**Base SHA:** `1a4cce0543795acf51e37a663a9306554938b03d` (`main` == `origin/main`, 0/0, clean).
-**Resulting commit (code):** `4aed0847a8b58b3bd8c6c500b08cee49c3a917ae` — `fix(chat): complete
-phase 2D chat support and unread state` (8 files, +1179/−28). This `docs(ai)` commit carries §83
-and the report.
-**Report:** [`.ai/history/2026-10-27-chat-support-phase-2d.md`](history/2026-10-27-chat-support-phase-2d.md).
-**SOURCE CODE MODIFIED: YES · DATABASE MODIFIED: NO · SQL MODIFIED: NO · PRODUCTION DB
-CONNECTED: NO · STRIPE MODIFIED: NO**
-
-**What changed (delivers §82's "chat unread badge + chat/support fundamentals"):**
-- **Read is bounded (`upTo`).** `POST …/conversations/:id/read` marks only messages created at or
-  before an epoch-ms bound the client derives from SERVER timestamps (the newest loaded message, or
-  the live message's own `createdAt`), so a message arriving while a read is in flight is never
-  swallowed as read. Absent → the old unbounded behaviour; unusable → 400. Needed no schema change
-  (`chat_messages.created_at` already exists), so nothing was BLOCKED.
-- **Sends are idempotent per `clientId`.** An in-process claim (conversation + session user +
-  clientId, 10-min TTL, 1000-entry cap) makes a retried submission REPLAY the stored message — no
-  second row, push or notification row — and both chat pages restore the typed draft after a failed
-  send and REUSE its clientId. Honest gap, documented in code: the claim dies with the process; the
-  durable fix is `UNIQUE (conversation_id, sender_id, client_id)` → owner-approved schema change,
-  deliberately not done in this phase.
-- **ONE chat-unread badge** (`packages/shared/src/hooks/use-chat-unread.ts`, new): customer =
-  `account-summary.chatUnread` (route switched to `apiGetFresh`), seller = the sum of the canonical
-  `sellerConversations.unreadCount` — both ownership-scoped in SQL, no new endpoint. `null` = not
-  confirmed → renders NOTHING; an error keeps the last known-good count (never a silent 0), and a
-  new account can't inherit the previous session's number. Refreshes on the existing `chat:message`
-  and `onChatReconnect` signals (coalesced) plus `notifyChatUnreadChanged()` after a confirmed read:
-  no polling, no new event, no second socket. Surfaces: both seller `AppHeader` chat entries
-  (desktop nav + the <lg icon, count in the aria-label, `99+` cap) and the customer `ShopProfile`
-  `/chat` row. Chat unread ≠ notification rows — the bell is untouched.
-- **Chat pages:** read failures are caught (no unhandled rejections); reconnect still REPLACES
-  list/thread state (no duplicate messages or unread); `disconnectChatSocket` is still never called;
-  sender identity stays session-only (a body carrying `senderId`/`senderRole` is ignored).
-
-**Tests:** new `backend/tests/chat-support-phase2d.test.ts` — 18 structural cases + 9 DB-gated
-cases (401 on every chat/unread endpoint; customer B/seller B isolation; empty/whitespace rejected
-with nothing persisted; forged sender stored as the session user; duplicate send → one row + one
-notification + `duplicate: true`, fresh clientId does store; get-or-create idempotency; the unread
-lifecycle including the stale-read race and `upTo: NaN` → 400; unread isolation across two
-customers/shops; addressed `chat:message`/`chat:read` with a stranger's socket getting nothing).
-**Verified:** 4 app typechecks PASS · backend typecheck PASS · `bun run build:apps` PASS (4/4) ·
-`bun run i18n:check` PASS `1257/1257/1257` · `bun test tests` **1033 pass / 332 skip / 0 fail**
-(1365 tests, 66 files; baseline 1015/321) · `git diff --check` clean.
-**BLOCKED/NOT RUN:** the 9 DB-gated cases (no safe `TEST_DATABASE_URL` here — CI's disposable
-`postgres:16` runs them; all chat FKs are `ON DELETE CASCADE`, so `purgeUsers` covers the
-fixtures); live browser/E2E (no browser in this workspace).
-
-**Still open:** the responsive/visual matrix; the Phase 2C `outbox_events` drain worker (owner
-decision); durable send-idempotency needs the unique index above (owner approval); the seller badge
-reuses the conversation list per mount (a tiny aggregate endpoint is the refinement if lists grow).
-**Housekeeping this pass:** the 2026-10-04 payment-integrity narrative moved verbatim →
-[`history/archive/AI_Handoff-2026-10-04-payment-integrity.md`](history/archive/AI_Handoff-2026-10-04-payment-integrity.md)
-(+ index row).
+Base `1a4cce0543795acf51e37a663a9306554938b03d`, code commit
+`4aed0847a8b58b3bd8c6c500b08cee49c3a917ae` (8 files, +1179/−28). Bounded `upTo` read (only messages
+at/before the server-derived epoch-ms bound are marked read; unusable → 400); in-process `clientId`
+send idempotency with draft restore (the durable unique-index fix still needs owner approval); ONE
+server-derived chat-unread badge (`use-chat-unread.ts`) on both seller header entries and the
+customer profile `/chat` row (`null` renders nothing, an error keeps last-known-good, reconnect
+refreshes); addressed `chat:message`/`chat:read`. Suite then: `1033 pass / 332 skip / 0 fail`
+(1365 tests, 66 files). Report:
+[`2026-10-27-chat-support-phase-2d.md`](./history/2026-10-27-chat-support-phase-2d.md).
+Full section text moved verbatim to
+[`history/archive/AI_Handoff-2026-10-27-section-83-phase-2d.md`](./history/archive/AI_Handoff-2026-10-27-section-83-phase-2d.md)
+on 2026-10-30 (edit-headroom housekeeping while appending §85; nothing discarded).
 
 ---
 
@@ -749,7 +706,42 @@ with an index row.
 
 ---
 
+## §85. Phase 2F — CI Checkout/Payment Test Reliability (2026-10-30) — COMPLETE
+
+**Base SHA:** `31456976c017f9dd85f5cb04ab383b852b6d1cf9` (local was 8 behind; fast-forwarded first,
+clean tree). **Code commit:** `fe7927b6fee4a7028244b1eead79f2502e01ba2b` (3 test files, +232/−4).
+**Report:** [`.ai/history/2026-10-28-phase-2f-ci-payment-test-reliability.md`](./history/2026-10-28-phase-2f-ci-payment-test-reliability.md).
+
+**The 11 red CI tests were NOT a product defect and NOT a missing CI secret.** The six
+`buy-now-checkout` and five `realtime-commerce-phase2c` DB cases send `paymentMethod: "CARD"`; their
+`beforeAll` set a dummy `sk_test_…` key but **deleted `STRIPE_WEBHOOK_SECRET`**, while
+`stripeStatus()` requires a configured webhook secret for a usable rail. The payment gate therefore
+answered **503 `STRIPE_WEBHOOK_NOT_CONFIGURED` before any stock/idempotency/realtime code ran** — in
+every environment, CI included. The tests configure the rail themselves; they configured half of it.
+
+**Fix (tests only).** Both suites now install the complete DUMMY test-mode rail already used by
+`checkout-payment-flow` (`STRIPE_MODE=test`, `sk_test_0000…`, `whsec_0000…`), saved/restored around
+the block. No assertion weakened, no case skipped, and no product, Stripe, pricing, reservation or
+auth code touched. New `backend/tests/checkout-test-payment-rail.test.ts` (10 cases) pins: the
+fixture is usable/test-mode; a live key, a missing webhook secret, or no configuration is still
+refused; the checkout handler makes no Stripe API call; the CI workflow references no secret and no
+`STRIPE_*`/`COD_ENABLED`, keeps `TEST_DATABASE_URL`, and still pins the production-database refusal.
+
+**Verified.** Pre-fix local disposable PG14: `31 pass / 11 fail` (both suites). Post-fix: **42/0**.
+Full `bun test tests` (disposable PG14): **1359 pass / 6 skip / 0 fail** (1365 tests, 67 files).
+GitHub Actions on `fe7927b`: **run `40986922370` — success, 1363 pass / 2 skip / 0 fail**; all 11
+previously failing cases are `(pass)`, zero `(fail)` lines. `bun run typecheck` 4/4 · backend
+typecheck · `build:apps` 4/4 · `i18n:check` 1257/1257/1257 · `git diff --check` clean.
+**BROWSER/E2E: NOT RUN** (no tooling; test-configuration-only change).
+
+**Boundaries:** production DB **not connected** (only an explicit local `TEST_DATABASE_URL`),
+production payment **not touched**, schema/SQL **unchanged**, Stripe logic **unchanged**, COD default
+**unchanged**, VelRepeat **unchanged**. No owner approval or secret is needed.
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
-§76/§78/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
-§83; and §82 on 2026-10-28 with §84 (all verbatim + index row). Before appending again, archive the
-next-longest closed block the same way. Archiving is not deletion: the text is preserved verbatim.
+§76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
+§83; §82 on 2026-10-28 with §84; and §78 + §83 on 2026-10-30 with §85 (all verbatim + index row).
+Before appending again, archive the next-longest closed block the same way. Archiving is not
+deletion: the text is preserved verbatim.
