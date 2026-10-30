@@ -333,6 +333,22 @@ SELECT count(*) FILTER (WHERE payment_expires_at > NOW()) AS open_windows,
   FROM orders WHERE payment_expires_at IS NOT NULL;
 ```
 
+## Chat core (unified marketplace chat)
+
+One `conversations` table serves all four chat types; one `chat_messages` table serves every message. This is deliberate — a second chat table/engine is prohibited.
+
+| Object | Meaning |
+|---|---|
+| `conversations.type` | `CUSTOMER_SELLER` (default) · `CUSTOMER_COMPANY` · `SELLER_COMPANY` · `COMPANY_INTERNAL` |
+| `conversations.customer_id` / `seller_id` / `shop_id` | nullable by TYPE; `conversations_participant_shape_check` enforces which participants each type requires |
+| `conversations.title` | internal room name (`COMPANY_INTERNAL` only) |
+| `conversations.support_status` | `OPEN` · `ASSIGNED` · `WAITING` · `CLOSED` (lightweight, not a ticket system) |
+| `conversations.assigned_to` | company user handling a customer/seller company thread |
+| `chat_messages.sender_role` | `customer` · `seller` · `company` |
+| unique partial indexes | one `CUSTOMER_COMPANY` per customer, one `SELLER_COMPANY` per seller, one internal room per title |
+
+The legacy reserved-shop support thread (`shops.slug = 'velnox-support'`, type `CUSTOMER_SELLER`) is still readable by company chat and is converted in place to `CUSTOMER_COMPANY` the first time the customer opens support. Do not create new support shops.
+
 ## Safety & Verification
 
 - Never `DROP DATABASE/SCHEMA/TABLE` or `TRUNCATE` without explicit owner auth.

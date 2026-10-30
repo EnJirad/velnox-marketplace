@@ -16,6 +16,7 @@ WebSocket delivery for cart, orders, products, inventory, and notifications. Neo
 - `user:{id}` — own connections only. `cart:updated`, `profile:updated` — authenticated, self.
 - `product:updated`, `inventory:updated`, `seller:updated`, `audit:created`, `config:updated`, `notification:created` — **owner/admin/staff only** (role read from `users.role`, refreshed every 30 s; downgrade drops the live subscriptions).
 - `order:created`, `order:updated`, `shipment:updated` — **not subscribable**: addressed delivery to the order's customer, its shop's seller, and connected VelCenter sessions.
+- `chat:message`, `chat:read`, `chat:conversation` — **not subscribable**: addressed to the chat participants. Customer↔seller uses `sendToUser`; customer→company and seller→company use `sendToCenter` + `sendToUser`; company-internal uses `sendToCenter`. One conversation table serves all four types (`CUSTOMER_SELLER`, `CUSTOMER_COMPANY`, `SELLER_COMPANY`, `COMPANY_INTERNAL`); see `.ai/history/2026-10-30-unified-marketplace-chat.md`.
 
 ## Data Flow
 
@@ -31,6 +32,7 @@ Neon mutation commits → publisher resolves the audience (Neon) → addressed p
 - Publish only AFTER the mutation commits, and only for a real change (`moved === true`, a freshly created order, a non-replayed request). No outbox drain worker exists, so a crash between COMMIT and publish loses a signal — consumers refetch on reconnect.
 - Order-event payloads carry identifiers/status only: no PII, no payment data.
 - Notification rows are written first (row = record), the socket frame is only a nudge.
+- Chat has ONE core: `routes/chat.ts` (customer/seller + shared helpers) and `routes/center-chat.ts` (company) read the same tables. Never add a company/seller/customer socket, channel or polling loop; consumers dedupe by message id and refetch after reconnect.
 
 ## Verification
 
