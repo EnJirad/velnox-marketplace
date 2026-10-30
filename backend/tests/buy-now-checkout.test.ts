@@ -159,20 +159,32 @@ describeDb("buy now — quantity, stock, cart and idempotency (requires TEST_DAT
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeAll(() => {
-    // A plausible TEST key: the reservation policy is configured like production,
-    // but no Stripe call is made from this route.
+    // The checkout route's payment gate requires a COMPLETE, usable rail before
+    // it writes an order, so this file installs exactly what
+    // `lib/payment-config.ts` accepts in test mode: a TEST secret key, an
+    // explicit `STRIPE_MODE=test`, AND a configured webhook secret (the gate
+    // refuses a half-configured deployment, and a missing webhook secret is not
+    // usable). Every value below is a shape-valid DUMMY — none is a credential
+    // — and the checkout route makes no Stripe API call, so nothing can be
+    // charged (pinned by `checkout-test-payment-rail.test.ts`).
+    //
+    // Previously this block deleted the webhook secret while setting only the
+    // secret key, so `stripeStatus()` answered STRIPE_WEBHOOK_NOT_CONFIGURED
+    // and every DB case below received 503 in CI (and anywhere else).
     for (const key of [
       "STRIPE_SECRET_KEY",
       "STRIPE_PUBLISHABLE_KEY",
       "STRIPE_WEBHOOK_SECRET",
+      "STRIPE_MODE",
       "VITE_VELSHOP_URL",
     ] as const) {
       savedEnv[key] = process.env[key];
     }
     delete process.env.STRIPE_PUBLISHABLE_KEY;
-    delete process.env.STRIPE_WEBHOOK_SECRET;
     delete process.env.VITE_VELSHOP_URL;
+    process.env.STRIPE_MODE = "test";
     process.env.STRIPE_SECRET_KEY = "sk_test_000000000000000000000000";
+    process.env.STRIPE_WEBHOOK_SECRET = "whsec_000000000000000000000000";
   });
 
   afterAll(async () => {

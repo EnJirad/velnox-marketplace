@@ -497,18 +497,28 @@ describeDb("order and shipment events, end to end (requires TEST_DATABASE_URL)",
   let harness: Harness;
 
   beforeAll(async () => {
+    // The checkout used as SETUP for the event/notification cases must itself be
+    // accepted: the payment gate requires a COMPLETE usable rail, which means a
+    // TEST secret key, an explicit `STRIPE_MODE=test`, and a configured webhook
+    // secret. These are shape-valid DUMMIES, not credentials; the checkout route
+    // makes no Stripe API call (pinned by `checkout-test-payment-rail.test.ts`).
+    //
+    // Previously the webhook secret was deleted here, so `stripeStatus()`
+    // answered STRIPE_WEBHOOK_NOT_CONFIGURED and every checkout below 503'd.
     for (const key of [
       "STRIPE_SECRET_KEY",
       "STRIPE_PUBLISHABLE_KEY",
       "STRIPE_WEBHOOK_SECRET",
+      "STRIPE_MODE",
       "VITE_VELSHOP_URL",
     ] as const) {
       savedEnv[key] = process.env[key];
     }
     delete process.env.STRIPE_PUBLISHABLE_KEY;
-    delete process.env.STRIPE_WEBHOOK_SECRET;
     delete process.env.VITE_VELSHOP_URL;
+    process.env.STRIPE_MODE = "test";
     process.env.STRIPE_SECRET_KEY = "sk_test_000000000000000000000000";
+    process.env.STRIPE_WEBHOOK_SECRET = "whsec_000000000000000000000000";
     harness = await startHarness(true);
   });
 
