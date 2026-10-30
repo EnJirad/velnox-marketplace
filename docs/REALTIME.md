@@ -20,7 +20,7 @@ refuses anything else with `{ "type": "error", "code": "FORBIDDEN" }`.
 
 | Channel | Events | Audience |
 |---------|--------|----------|
-| `user:{userId}` | `chat:message`, `chat:read`, `notification:created` | that user's own connections only |
+| `user:{userId}` | `chat:message`, `chat:read`, `chat:typing`, `notification:created` | that user's own connections only |
 | `cart:updated` | Cart item changed | authenticated (own data) |
 | `profile:updated` | User profile changed | authenticated (own data) |
 | `order:created` | New order placed | **addressed, not subscribable** |
@@ -61,6 +61,18 @@ losing a center role drops the private subscriptions instead of leaving them liv
 // Refused subscription
 { "type": "error", "code": "FORBIDDEN", "message": "Channel not allowed" }
 ```
+
+### Chat presence frames (ephemeral)
+
+`chat:viewing` / `chat:viewingEnd` (`{ conversationId }`) and `chat:typing`
+(`{ conversationId, typing }`) are COMMANDS a client sends upward, not
+subscriptions. The server resolves the conversation's audience from
+`conversations` (`backend/lib/chat-access.ts`) and refuses a frame from anyone
+who is not a participant — a staff session is refused on a private
+`CUSTOMER_SELLER` thread. `chat:typing` is addressed to the OTHER participants
+only (never echoed to the sender), is throttled client-side (2.5 s) and expires
+after 6 s, and is **never written to the database**: a dropped stop frame must
+not leave a permanent "…is typing" state.
 
 All browsers use the ONE shared client (`packages/shared/src/lib/chat-socket.ts`),
 owned by `RealtimeProvider` at the app root with backoff + jitter and

@@ -6,10 +6,13 @@ import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
 import { connectChatSocket, onChatEvent, onChatReconnect, sendChatCommand } from "@velnox/shared/lib/chat-socket";
+import { useChatTyping } from "@velnox/shared/lib/chat-typing";
+import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { notifyChatUnreadChanged } from "@velnox/shared/hooks/use-chat-unread";
 import { useRealtimeState } from "@velnox/shared/hooks/use-realtime-state";
 import {
   ArrowLeft,
+  Check,
   CheckCheck,
   ChevronRight,
   Headphones,
@@ -42,12 +45,16 @@ interface Conversation {
 interface ChatMessage {
   id: string;
   conversationId: string;
-  senderId: string;
-  senderRole: "customer" | "seller";
+  /** NULL for a SYSTEM message (`isSystem`); the viewer's own id otherwise. */
+  senderId: string | null;
+  senderRole: "customer" | "seller" | "company" | "system";
   body: string;
   status: string;
   readAt: number | null;
   createdAt: number;
+  /** Automated message written by the platform (daily Velnox Support ack). */
+  isSystem?: boolean;
+  systemKind?: string | null;
 }
 
 export default function SellerChat() {
@@ -70,6 +77,11 @@ export default function SellerChat() {
   const [sending, setSending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
+  // Ephemeral typing state: throttled on the way out, auto-expired on the way in.
+  const { typingUserIds, notifyTyping, notifyStop } = useChatTyping(
+    active?.id ?? null,
+    user?.id ?? null,
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[] | null>(null);
@@ -109,17 +121,21 @@ export default function SellerChat() {
       if (conversationsRef.current && !conversationsRef.current.some((c) => c.id === message.conversationId)) {
         void loadConversations();
       }
-      setConversations((prev) => {
-        if (!prev) return prev;
-        return prev
-          .map((c) =>
-            c.id === message.conversationId
+      // A SYSTEM message is an acknowledgment, not a preview line: it must never
+      // become the conversation's `lastMessage`.
+      if (!message.isSystem)
+        setConversations((prev) => {
+          if (!prev) return prev;
+          return prev
+            .map((c) =>
+              c.id === message.conversationId
               ? {
                   ...c,
                   lastMessage: message.body,
                   lastMessageAt: message.createdAt,
                   updatedAt: message.createdAt,
-                  unreadCount: message.senderId === user.id ? c.unreadCount : c.unreadCount + 1,
+                  unreadCount:
+                    message.isSystem || message.senderId === user.id ? c.unreadCount : c.unreadCount + 1,
                 }
               : c,
           )
@@ -127,18 +143,34 @@ export default function SellerChat() {
       });
       if (message.conversationId === activeIdRef.current && message.senderId !== user.id) {
         setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
-        // Bounded by THIS message's server timestamp: anything newer that
-        // arrives next stays unread until the reader actually sees it.
-        void markConversationRead({ conversationId: message.conversationId, upTo: message.createdAt })
-          .then(() => notifyChatUnreadChanged("seller"))
-          .catch((err) => console.error("Mark conversation read failed:", err));
-        setConversations((prev) => prev?.map((c) => (c.id === message.conversationId ? { ...c, unreadCount: 0 } : c)) ?? null);
+        // A SYSTEM message never counts as unread and must not trigger a read.
+        if (!message.isSystem) {
+          // Bounded by THIS message's server timestamp: anything newer that
+          // arrives next stays unread until the reader actually sees it.
+          void markConversationRead({ conversationId: message.conversationId, upTo: message.createdAt })
+            .then(() => notifyChatUnreadChanged("seller"))
+            .catch((err) => console.error("Mark conversation read failed:", err));
+          setConversations((prev) => prev?.map((c) => (c.id === message.conversationId ? { ...c, unreadCount: 0 } : c)) ?? null);
+        }
       }
     });
     const offRead = onChatEvent("chat:read", (data: any) => {
-      if (data?.conversationId === activeIdRef.current) {
-        setMessages((prev) => prev.map((m) => (m.senderId === user.id && m.readAt == null ? { ...m, status: "read", readAt: Date.now() } : m)));
-      }
+      if (data?.conversationId !== activeIdRef.current) return;
+      // Our own read receipt must never tick our own messages.
+      if (user?.id && data?.readerId === user.id) return;
+      // Only what the reader actually had loaded; older backends omit `upTo`
+      // and keep the previous mark-all behaviour.
+      const upTo = typeof data?.upTo === "number" ? data.upTo : null;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.senderId === user?.id &&
+          !m.isSystem &&
+          m.readAt == null &&
+          (upTo === null || m.createdAt <= upTo)
+            ? { ...m, readAt: m.readAt ?? Date.now() }
+            : m,
+        ),
+      );
     });
     return () => {
       if (activeIdRef.current) sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
@@ -273,6 +305,9 @@ export default function SellerChat() {
       createdAt: Date.now(),
     };
     setDraft("");
+    // The message already arrived — stop the indicator now rather than waiting
+    // for the idle timer.
+    notifyStop();
     setMessages((prev) => [...prev, temp]);
     setSending(true);
     try {
@@ -294,7 +329,7 @@ export default function SellerChat() {
     } finally {
       setSending(false);
     }
-  }, [active, draft, sending, user?.id, sendMessage, t]);
+  }, [active, draft, sending, user?.id, sendMessage, t, notifyStop]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -520,14 +555,41 @@ export default function SellerChat() {
                         </div>
                       ) : (
                         messages.map((m) => {
+                          // System message: centred, muted, no read tick.
+                          if (m.isSystem) {
+                            return (
+                              <div key={m.id} className="flex justify-center">
+                                <div className="max-w-[86%] rounded-2xl border border-dashed border-slate-200 bg-white px-3.5 py-2.5 text-center text-xs leading-5 text-slate-500">
+                                  <p className="whitespace-pre-line break-words">{m.body}</p>
+                                  <p className="mt-1 text-[10px] text-slate-400">
+                                    {formatLocaleTime(m.createdAt, lang)}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          }
                           const mine = m.senderId === user?.id;
                           return (
                             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                               <div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${mine ? "rounded-br-md bg-slate-900 text-white" : "rounded-bl-md border border-slate-200 bg-slate-50 text-slate-800"}`}>
                                 <p className="whitespace-pre-line break-words">{m.body}</p>
-                                <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-slate-400" : "text-slate-400"}`}>
-                                  {formatLocaleTime(m.createdAt, lang)}
-                                  {mine && <CheckCheck className={`size-3 ${m.status === "read" ? "text-sky-400" : ""}`} />}
+                                <p className={`mt-1 flex items-center gap-1 text-[10px] text-slate-400`}>
+                                  <span>{formatLocaleTime(m.createdAt, lang)}</span>
+                                  {/* ✓ = stored by the server; ✓✓ = the customer read it. */}
+                                  {mine &&
+                                    (m.readAt != null ? (
+                                      <CheckCheck
+                                        role="img"
+                                        aria-label={t("chat.read")}
+                                        className="size-3 text-sky-400"
+                                      />
+                                    ) : (
+                                      <Check
+                                        role="img"
+                                        aria-label={t("chat.sent")}
+                                        className="size-3 text-slate-500"
+                                      />
+                                    ))}
                                 </p>
                               </div>
                             </div>
@@ -536,13 +598,29 @@ export default function SellerChat() {
                       )}
                     </>
                   )}
+                  {typingUserIds.length > 0 && (
+                    <div className="pt-1">
+                      <TypingDots
+                        label={
+                          typingUserIds.length === 1 && active?.participantName
+                            ? t("chat.typingNamed", { name: active?.participantName ?? "" })
+                            : t("chat.typing")
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Composer */}
                 <div className="flex items-center gap-2 border-t border-slate-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                   <input
                     value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      if (e.target.value.trim().length > 0) notifyTyping();
+                      else notifyStop();
+                    }}
+                    onBlur={notifyStop}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();

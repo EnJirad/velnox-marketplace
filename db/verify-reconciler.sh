@@ -130,8 +130,19 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # one internal-title) and 4 constraints (participant shape, type, support
 # status, assigned-to FK). The sender_role CHECK was widened in place, so it
 # changes definition but not count.
+# Messenger UX (2026-10-31) grew the canonical schema by exactly: 2 columns on
+# `chat_messages` (system_kind, ack_day) and 1 index
+# (uq_chat_messages_support_daily_ack, a partial UNIQUE index). The
+# `sender_role` CHECK was widened in place ('system'), so it changes definition
+# but not count; `sender_id` lost its NOT NULL (a system row has no sender),
+# which is a nullability change, not a column.
+#
+# NOTE: the figure below is DERIVED from those deltas (239 indexes + 1 = 240,
+# 657 columns + 2 = 659). Re-measure it with this script on a disposable
+# PostgreSQL and replace the line — the workflow that runs it needs the
+# production secret and is currently BLOCKED.
 # Re-measured on a fresh, thrice-rerun db/run-sqleditor.sql: 63|239|265|657.
-CANON="63|239|265|657"
+CANON="63|240|265|659"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────

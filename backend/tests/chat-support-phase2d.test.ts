@@ -85,7 +85,13 @@ describe("message sending: session identity + server-side validation", () => {
 
   test("empty and whitespace-only bodies are refused BEFORE any insert", () => {
     const validates = allIndices(chat, "validateBody(req.body?.body)");
-    const inserts = allIndices(chat, "INSERT INTO chat_messages");
+    // The TWO human send inserts. The daily acknowledgment is a third
+    // `INSERT INTO chat_messages`, written by the SYSTEM after the customer's
+    // message is already stored, so it is deliberately not counted here.
+    const inserts = [
+      ...allIndices(chat, "VALUES ($1, $2, 'customer', $3) RETURNING *"),
+      ...allIndices(chat, "VALUES ($1, $2, 'seller', $3) RETURNING *"),
+    ].sort((a, b) => a - b);
     expect(validates.length).toBe(2);
     expect(inserts.length).toBe(2);
     // Route order is customer-send then seller-send; each validation precedes
@@ -114,7 +120,12 @@ describe("a retried send replays instead of duplicating", () => {
   test("the duplicate check runs before the insert, in both send routes", () => {
     const checks = allIndices(chat, "replaySend(dedupeKey)");
     const replies = allIndices(chat, "data: { message: duplicate, clientId, duplicate: true }");
-    const inserts = allIndices(chat, "INSERT INTO chat_messages");
+    // The two HUMAN sends only: the daily acknowledgment has its own INSERT but
+    // is never reached by a retried request (it is claimed after the message).
+    const inserts = [
+      ...allIndices(chat, "VALUES ($1, $2, 'customer', $3) RETURNING *"),
+      ...allIndices(chat, "VALUES ($1, $2, 'seller', $3) RETURNING *"),
+    ].sort((a, b) => a - b);
     const stores = allIndices(chat, "if (dedupeKey) rememberSend(dedupeKey, message);");
     expect(checks.length).toBe(2);
     expect(replies.length).toBe(2);

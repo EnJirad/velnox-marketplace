@@ -31,6 +31,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import { CENTER_ROLES, roleOf } from "../lib/permissions.js";
 import { CHANNELS, getViewingConversation, sendToCenter, sendToUser } from "../realtime/index.js";
+import { SUPPORT_SHOP_SLUG } from "../lib/chat-access.js";
 import {
   notifyCompanyStaff,
   notifyUser,
@@ -43,8 +44,6 @@ import {
   loadMessages,
   mapMessage,
 } from "./chat.js";
-
-const SUPPORT_SHOP_SLUG = "velnox-support";
 
 type CompanyTab = "customer" | "seller" | "internal";
 type SupportStatus = "OPEN" | "ASSIGNED" | "WAITING" | "CLOSED";
@@ -264,27 +263,37 @@ async function markRead(req: Request, res: Response, row: any, conversationId: s
     params.push(upTo);
     sql += READ_BOUND_SQL;
   }
-  sql += " RETURNING id";
+  sql += " RETURNING created_at";
   const updated = await query(sql, params);
   if (updated.rows.length === 0) {
     res.json({ success: true, data: { marked: 0 } });
     return;
   }
 
+  // What was ACTUALLY marked read in this statement: the sender ticks exactly
+  // these messages (✓✓) and a message that landed afterwards stays unread.
+  const readUpToMs = updated.rows.reduce(
+    (max: number, r: any) => Math.max(max, new Date(r.created_at).getTime()),
+    0,
+  );
+
   if (row.type === "CUSTOMER_COMPANY" || (row.type === "CUSTOMER_SELLER" && row.shop_slug === SUPPORT_SHOP_SLUG)) {
     sendToUser(row.customer_id, "", CHANNELS.CHAT_READ, {
       conversationId,
       readerId: req.user!.userId,
+      upTo: readUpToMs,
     });
   } else if (row.type === "SELLER_COMPANY" && row.seller_user_id) {
     sendToUser(row.seller_user_id, "", CHANNELS.CHAT_READ, {
       conversationId,
       readerId: req.user!.userId,
+      upTo: readUpToMs,
     });
   } else {
     sendToCenter(CHANNELS.CHAT_READ, CHANNELS.CHAT_READ, {
       conversationId,
       readerId: req.user!.userId,
+      upTo: readUpToMs,
     });
   }
   res.json({ success: true, data: { marked: updated.rows.length } });

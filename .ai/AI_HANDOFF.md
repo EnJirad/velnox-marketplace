@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-30 · **Branch:** `main` · **Latest pass:** **Phase 2G — Production Readiness Audit** (**§86**, COMPLETE, AUDIT ONLY) — 0 Critical / 1 High / 12 Medium / 8 Low / 7 Info. The only High is OAuth `state` being user-controlled data rather than a CSRF nonce (login CSRF). **Production DB Verify remains BLOCKED** (missing canonical `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN** (no tooling/preview; deployed frontends DNS-unreachable). All existing automated checks green (**1359 pass / 6 skip / 0 fail**). No source, SQL, env, dependency or CI change.
+**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **`main` CI was RED before this pass:** run `41043341845` = 1401 pass / **11 fail** / 2 skip of 1414, every failure in `oauth-route.test.ts` (test isolation, not production behaviour) — §89 leaves it untouched and reproduces it locally. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -666,87 +666,25 @@ on 2026-10-30 (edit-headroom housekeeping while appending §87; nothing discarde
 
 ---
 
-## §86. Phase 2G — Production Readiness Audit (2026-10-30) — COMPLETE (AUDIT ONLY)
+## §86. Phase 2G — Production Readiness Audit (2026-10-30) — **ARCHIVED** (moved 2026-10-31)
 
-**Audited SHA:** `9c38ae35019d1a4b4ace7127327e85db22bb30cf` (`HEAD == origin/main`, clean tree at start
-and end). **Report:**
-[`.ai/history/2026-10-30-phase-2g-production-readiness-audit.md`](./history/2026-10-30-phase-2g-production-readiness-audit.md).
-**Source changed:** **NONE** — documentation only (this section + the report). No SQL, env, dependency,
-CI or hosting configuration touched.
-
-**Readiness:** staging-capable; **not ready for a public production launch**. 164 backend routes, 20
-VelShop pages, 8 VelSeller pages, 1 VelCenter page and 4 corporate pages inspected.
-
-**High:** OAuth `state` is only `base64url({returnTo})` — never stored/compared/expired, so any valid
-Google `code` is accepted (login CSRF / session swapping). `backend/routes/auth.ts:432-433, 451-465, 483-485`.
-
-**Medium highlights:** production DB Verify permanently `BLOCKED` (missing canonical secret; latest
-run `40986922337`); no browser/E2E suite; boot-time DDL `ensureVariantTables()`
-(`server.ts:127-196`); in-memory chat send dedupe (`chat.ts:288-313`); no outbox dispatcher
-(`lib/order-events.ts:32-33`); WS revocation in-memory + 30 s role sweep (`realtime/index.ts:117,164-179`);
-revocation fail-open on DB error (`middleware/auth.ts:45-68`); seller unread badge fetches the full
-conversation list (`use-chat-unread.ts:84-95`); same-ms pagination loss (`chat.ts:142-150`); in-memory
-rate limiter (`rate-limit.ts:5-13`); `SITE_URLS.velcenter` typo `center.velnx.com` (`sites.ts:21`).
-All six known Phase 2E/2F risks remain unresolved (details in report §11).
-
-**Verified:** root typecheck 4/4 · backend `tsc --noEmit` · `build:apps` 4/4 · i18n 1257/1257/1257 ·
-backend suite on disposable PG14 **1359 pass / 6 skip / 0 fail** (1365 tests, 67 files) · `git diff --check`
-clean · CI test workflow green (`40986922370`, `40987344815`). Read-only live API: `/api/health` ok;
-Stripe `mode:test`, webhook configured, self-test verified; COD disabled. No production DB access, no
-real payment. No committed live secrets (pattern scan matched only test fixtures).
-
-**Not tested / blocked:** all rendered browser journeys (no browser tool, preview `running:false`,
-deployed frontends DNS-unresolvable from the sandbox); production DB verification; real Stripe E2E.
-These are **not** passes.
-
-**Next:** Phase 2H — OAuth state hardening + restore production DB Verify + staging Playwright E2E,
-then schema-authority cleanup and durable chat/outbox/rate-limit work (report §13).
+Verbatim record:
+[`.ai/history/archive/AI_Handoff-2026-10-31-section-86-phase-2g.md`](./history/archive/AI_Handoff-2026-10-31-section-86-phase-2g.md).
+Zero source changes (audit only). Its High finding — OAuth `state` treated as user data — was fixed
+in §87.
 
 ---
 
-## §87. Phase 2H — OAuth State Hardening (2026-10-30) — COMPLETE
+## §87. Phase 2H — OAuth State Hardening (2026-10-30) — **ARCHIVED** (moved 2026-10-31)
 
-**Starting SHA:** `5039f94b730c10effb4f53aaf39bbc9ae09d1e04` (`HEAD == origin/main`, 0/0, clean tree).
-**Code commit:** `fix(auth): harden oauth state validation` (find with
-`git log -1 --format=%H -- backend/lib/oauth-state.ts`). **Docs commit:** `docs(ai): record phase 2h
-oauth hardening` (find with `git log -1 --format=%H -- .ai/history/2026-10-30-phase-2h-oauth-state-hardening.md`).
-**Report:** [`.ai/history/2026-10-30-phase-2h-oauth-state-hardening.md`](./history/2026-10-30-phase-2h-oauth-state-hardening.md).
-**Fixes Phase 2G H-1 only.** No other 2G finding touched.
-
-**Mechanism.** `/auth/google` mints `state = crypto.randomBytes(32).toString("base64url")` (opaque
-256-bit nonce; no returnTo/timestamp/user data) and binds it to a short-lived `httpOnly`,
-`SameSite=Lax`, `Path=/auth`, `Secure`-in-production cookie `velnox_oauth_state` (10 min). The cookie
-carries `{nonce, sanitized returnTo, exp}`, HMAC-SHA256 signed with `OAUTH_STATE_SECRET` (falling back
-to `JWT_SECRET`). The callback consumes (clears) the cookie, then compares the returned state to the
-cookie nonce with `crypto.timingSafeEqual` over SHA-256 digests; missing / mismatched / forged /
-expired / replayed state is rejected BEFORE `exchangeCode`, so no session is created. `returnTo` is
-separate: internal paths only (no external/protocol-relative/scheme values), sanitized into the cookie
-and again out of it.
-
-**Tests.** 3 new files, 36 cases: `oauth-state.test.ts` (24, always run), `oauth-route.test.ts` (11,
-real Express routes + stubbed Google — missing / mismatch / other-browser / expired / forged / replay,
-valid state reaches the exchange exactly once), `oauth-callback-session.test.ts` (1, DB-gated
-positive: real `velnox_session` + `/seller/goals` redirect + persisted Google identity).
-
-**Verified.** New OAuth files **36 pass / 0 fail**; full backend suite on disposable PG14
-**1399 pass / 2 skip / 0 fail** (1401 tests, 70 files); backend `tsc --noEmit` PASS; root typecheck 4/4
-PASS; `build:apps` 4/4 PASS; `i18n:check` 1257/1257/1257; `git diff --check` clean; the old
-`base64url(JSON.stringify({returnTo}))` pattern is absent from every active path (comments/tests only).
-
-**Production DB Verify:** unchanged and still **BLOCKED** — run `40986922337`: repository job success,
-disposable-PG gates success, production job `BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured.`,
-verdict failure. Owner must add the canonical secret; no fallback exists and none was added.
-
-**Browser E2E: NOT RUN** — no Playwright/Cypress/Puppeteer/webdriver anywhere, no e2e directory, no CI
-browser step, preview `previewCommand:null`. The minimal future plan is in report §10. Nothing was
-installed.
-
-**Not fixed (deliberate):** every other Phase 2G finding (chat dedupe, outbox dispatcher, WS revocation
-cache, 30 s role refresh, `/api/auth/me` cache, seller unread fetch, same-ms pagination, in-memory rate
-limiter, boot DDL, VelCenter domain typo, CORS localhost, timing-safe cleanup, upload MIME fallback,
-`email_verified`, search indexing, structured logging).
-
----
+Verbatim record:
+[`.ai/history/archive/AI_Handoff-2026-10-31-section-87-phase-2h.md`](./history/archive/AI_Handoff-2026-10-31-section-87-phase-2h.md).
+OAuth `state` is a 256-bit CSPRNG nonce bound to a signed, expiring, single-use httpOnly cookie; the
+callback rejects missing/mismatched/forged/expired/replayed state before the code exchange.
+**Known regression from this pass:** its route tests set `GOOGLE_CLIENT_ID`/`GOOGLE_REDIRECT_URI` at
+module scope and then dynamically import `routes/auth.ts`, but an earlier module evaluation in the same
+`bun test` process can snapshot them empty — `main` CI is red (11/1414) because of it. Test isolation
+only; production behaviour is unaffected.
 
 ## §88. Unified Marketplace Chat (2026-10-30) — COMPLETE
 
@@ -800,8 +738,69 @@ membership, order-linked context, then the deferred browser E2E for the five gol
 
 ---
 
+## §89. Messenger UX — ticks, daily support ack, typing (2026-10-31) — COMPLETE
+
+**Starting state:** `HEAD == origin/main` at `903fbeb`, clean tree. Committed on the owner's explicit
+instruction after the local checks ran (see "Verified here").
+
+Extends §88's core — no second engine, table, socket, polling loop or notification system.
+
+**Schema (both canonical files, `db/schema.sql` + `db/run-sqleditor.sql`).** `chat_messages.sender_id`
+became nullable (a system row has no human sender), the `sender_role` CHECK was widened to
+`('customer','seller','company','system')`, and two columns were added: `system_kind TEXT`,
+`ack_day DATE`. A partial UNIQUE index
+`uq_chat_messages_support_daily_ack (conversation_id, ack_day) WHERE system_kind='support_daily_ack'`
+makes "one per day" a DATABASE guarantee.
+
+**Daily acknowledgment.** `createDailySupportAck()` runs only from the customer send handler for
+`CUSTOMER_COMPANY` (and the legacy reserved-shop support shape). One statement:
+`INSERT … ON CONFLICT (conversation_id, ack_day) WHERE system_kind='support_daily_ack' DO NOTHING
+RETURNING *` — a concurrent request, a retry or another instance loses the race and returns no row. The
+day is `(NOW() AT TIME ZONE 'Asia/Bangkok')::date`: calendar-day boundary, one authoritative clock,
+restart-proof. The ack is a real `chat_messages` row (`sender_role='system'`, `sender_id NULL`), so both
+sides read the same sentence; `sender_id <> $reader` being NULL keeps it out of unread counts and out of
+mark-read.
+
+**Ticks + realtime read state.** All three surfaces render `<Check/>` when `readAt == null` and
+`<CheckCheck/>` once read. `chat:read` now carries `upTo` (the newest `created_at` the UPDATE actually
+marked), so a client ticks exactly those messages and ignores its own receipt.
+
+**Typing.** `chat:typing` ({conversationId, typing}) over the ONE existing socket. `lib/chat-access.ts`
+resolves the audience from `conversations` (never from the frame); staff are refused on a private
+`CUSTOMER_SELLER` thread; the sender never receives its own frame; nothing is stored. Client side:
+shared `useChatTyping` (throttle 2.5 s, idle stop 3 s, receive expiry 6 s) + shared `TypingDots`
+(CSS-only, `prefers-reduced-motion` aware). `chat:viewing` gained the same membership check.
+
+**Canonical counts:** expected `63|240|265|659` (+1 index, +2 columns) — **derived, not measured**;
+`db/verify-reconciler.sh` says so in its own note. Re-measure on a disposable PostgreSQL before trusting it.
+
+**Tests added:** `backend/tests/chat-messenger-ux.test.ts` (structure group always runs; 8 behaviour cases
+are DB-gated). `chat-unified.test.ts` had one assertion updated for the widened CHECK.
+
+**Verified here (bun 1.4.4 + 329 deps installed on-device):** `bun run typecheck` **4/4 PASS** ·
+backend `tsc --noEmit` **PASS** · `bun run build:apps` **4/4 PASS** · `bun run i18n:check`
+**1264/1264/1264** · `git diff --check` clean · full suite `bun test backend/tests`
+**1076 pass / 360 skip / 19 fail** of 1455 tests — the 19 are (a) the 11 pre-existing OAuth cases and
+(b) 8 `test-database-isolation` subprocess probes that cannot run here because Termux reports
+`process.execPath` as Android's `linker64`; both classes pre-date this pass and pass on CI.
+The 360 skips are the DB-gated cases (no PostgreSQL: `initdb` hangs at its `max_connections` probe on
+this device), so **the new behaviour suite SKIPPED locally** and is only exercised by CI.
+`db/verify-reconciler.sh` could not run for the same reason.
+
+**Known pre-existing red:** `main` run `41043341845` fails 11/1414, all in `oauth-route.test.ts`:
+`/auth/google` redirects to the frontend error URL because `GOOGLE_CLIENT_ID`/`GOOGLE_REDIRECT_URI` are
+empty when `routes/auth.ts` snapshots them at import (module-level env writes land after the first
+module load). Production is unaffected (env is set there); it is a test-isolation defect from §87.
+
+**Limitations:** read state is still one `read_at` per message, so a COMPANY_INTERNAL room shows ✓✓ on
+the first staff read; the ack body is stored in English by design (both participants must see the same
+words); no browser/E2E run.
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
-§83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; and §84 + §85 on 2026-10-30 with §87
+§83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
+§86 + §87 on 2026-10-31 with §89
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.

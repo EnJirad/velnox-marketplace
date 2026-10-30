@@ -805,15 +805,34 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_internal_title ON conversatio
 CREATE TABLE IF NOT EXISTS chat_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company')),
+  -- NULL only for a SYSTEM message (`sender_role = 'system'`): the row was
+  -- written by the platform itself (the daily Velnox Support acknowledgment),
+  -- so there is no human sender to attribute it to. Every human message keeps
+  -- a real sender_id taken from the authenticated session.
+  sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company', 'system')),
   body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
   status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,
+  -- Automated-message marker, NULL for every human message. Today the only
+  -- value is 'support_daily_ack' (one acknowledgment per conversation per
+  -- Asia/Bangkok calendar day).
+  system_kind TEXT,
+  -- The Asia/Bangkok calendar day a system message belongs to. It is what the
+  -- partial unique index below keys on, so "one per day" is a DATABASE
+  -- guarantee rather than an application promise.
+  ack_day DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON chat_messages (conversation_id, sender_id, read_at) WHERE read_at IS NULL;
+-- Daily acknowledgment idempotency. Concurrent sends, WebSocket/REST retries
+-- and multiple backend instances all race on THIS index; the loser of the race
+-- turns into a no-op through ON CONFLICT DO NOTHING. In-memory state is never
+-- consulted, so a restart cannot re-send and an instance cannot disagree.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_support_daily_ack
+  ON chat_messages (conversation_id, ack_day)
+  WHERE system_kind = 'support_daily_ack';
 INSERT INTO platform_settings (key, value, description) VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto') ON CONFLICT (key) DO NOTHING;
 INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, description, description_names, image_url, is_active) VALUES
 ('c0000001-0000-0000-0000-000000000001', 'Electronics', 'electronics', 'cpu', NULL, 1, '{"th":"อิเล็กทรอนิกส์","en":"Electronics","my":"အီလက်ထရွန်နစ်ပစ္စည်းများ"}', 'Audio, cameras, wearable tech and electronic accessories', '{"th":"อุปกรณ์เสียง กล้อง อุปกรณ์สวมใส่ และอุปกรณ์เสริมอิเล็กทรอนิกส์","en":"Audio, cameras, wearable tech and electronic accessories","my":"အသံပစ္စည်း၊ ကင်မရာ၊ ဝတ်ဆင်နည်းပညာနှင့်အီလက်ထရွန်နစ် ဖြည့်စွက်ပစ္စည်းများ"}', NULL, true),

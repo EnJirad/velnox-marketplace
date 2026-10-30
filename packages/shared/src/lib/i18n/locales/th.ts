@@ -1221,6 +1221,8 @@ export const th = {
     supportBadge: "ซัพพอร์ต",
     supportError: "เปิดแชทซัพพอร์ตไม่สำเร็จ กรุณาลองอีกครั้ง",
     startError: "เริ่มแชทไม่สำเร็จ กรุณาลองอีกครั้ง",
+    typing: "กำลังพิมพ์...",
+    typingNamed: "{name} กำลังพิมพ์...",
   },
 
   sellerChat: {

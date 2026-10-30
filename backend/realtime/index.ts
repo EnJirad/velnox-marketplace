@@ -2,6 +2,13 @@ import type { IncomingMessage } from "http";
 import jwt from "jsonwebtoken";
 import { isTokenRevokedSync } from "../middleware/auth.js";
 import { CENTER_ROLES, roleOf } from "../lib/permissions.js";
+import {
+  chatFrameRecipients,
+  isChatParticipant,
+  isConversationId,
+  loadChatAudience,
+} from "../lib/chat-access.js";
+import type { ChatAudience } from "../lib/chat-access.js";
 import type { WebSocketServer, WebSocket } from "ws";
 
 interface ConnectedClient {
@@ -24,6 +31,11 @@ interface ConnectedClient {
   /** The pending `users.role` lookup. Subscribe frames await it so
    *  authorization can never race the handshake's database read. */
   roleReady: Promise<void>;
+  /** Memoized conversation audience, used ONLY by ephemeral chat frames
+   *  (`chat:typing` / `chat:viewing`). Authorization is re-evaluated on every
+   *  frame from the cached ROW, so a stale entry cannot grant access — it only
+   *  saves a query. Bounded and 60 s TTL'd. */
+  conversationCache: Map<string, { audience: ChatAudience; expires: number }>;
 }
 
 /** Max client frames per window before the connection is closed (1008). */
@@ -59,6 +71,41 @@ function forgetClient(ws: WebSocket, client: ConnectedClient): void {
 /** VelCenter roles (owner / admin / staff) — the same list `lib/permissions.ts` enforces. */
 function isCenterRole(role: string | null | undefined): boolean {
   return typeof role === "string" && CENTER_ROLES.includes(role);
+}
+
+/** How long a resolved conversation audience may be reused by one socket. */
+const AUDIENCE_TTL_MS = 60_000;
+/** Hard cap on that memo so a frame flood cannot grow it without bound. */
+const AUDIENCE_CACHE_MAX = 32;
+
+/**
+ * The conversation's audience, memoized per connection for a short window.
+ *
+ * ONLY an optimization: every frame still re-runs `isChatParticipant` against
+ * the returned row, so a cached entry cannot grant access to anyone who was not
+ * already entitled. The row itself comes from `lib/chat-access.ts` (the same
+ * tables the chat routes read) — never from the frame the client sent.
+ */
+async function conversationAudience(
+  client: ConnectedClient,
+  conversationId: string,
+): Promise<ChatAudience | null> {
+  const now = Date.now();
+  const cached = client.conversationCache.get(conversationId);
+  if (cached && cached.expires > now) return cached.audience;
+
+  let audience: ChatAudience | null = null;
+  try {
+    audience = await loadChatAudience(conversationId);
+  } catch (err) {
+    console.error("[realtime] conversation lookup failed:", err);
+    return null;
+  }
+  if (!audience) return null;
+
+  if (client.conversationCache.size >= AUDIENCE_CACHE_MAX) client.conversationCache.clear();
+  client.conversationCache.set(conversationId, { audience, expires: now + AUDIENCE_TTL_MS });
+  return audience;
 }
 
 /**
@@ -194,6 +241,7 @@ export function setupWebSocket(wss: WebSocketServer): void {
       frameWindowStart: now,
       isAlive: true,
       roleReady: Promise.resolve(),
+      conversationCache: new Map(),
     };
     clients.set(ws, client);
     // Authorize from OUR data, never from the socket: the role is read from
@@ -262,9 +310,42 @@ export function setupWebSocket(wss: WebSocketServer): void {
             typeof data?.conversationId === "string" ? data.conversationId : null;
           if (client.userId) {
             if (msg.type === "chat:viewing" && conversationId) {
-              viewingConversation.set(client.userId, conversationId);
+              // Presence suppresses notifications for THAT thread, so it is
+              // authorized like every other chat frame: only a participant may
+              // claim to be viewing it.
+              const audience = await conversationAudience(client, conversationId);
+              if (audience && isChatParticipant(audience, client.userId, client.role)) {
+                viewingConversation.set(client.userId, conversationId);
+              }
             } else {
               viewingConversation.delete(client.userId);
+            }
+          }
+        }
+
+        // Typing indicator — EPHEMERAL, never stored. The client sends a frame
+        // while composing (throttled) and one on stop; the server resolves the
+        // conversation's audience from the DATABASE and addresses the frame to
+        // the OTHER participants only. It is never broadcast to a non-member,
+        // never echoed back to the sender, and never persisted (a restart simply
+        // drops it, which is the correct behaviour for presence).
+        if (msg.type === "chat:typing") {
+          const data = (msg as { data?: { conversationId?: unknown; typing?: unknown } }).data;
+          const rawId = data?.conversationId;
+          const conversationId = isConversationId(rawId) ? rawId : null;
+          if (client.userId && conversationId) {
+            const audience = await conversationAudience(client, conversationId);
+            if (audience && isChatParticipant(audience, client.userId, client.role)) {
+              const { userIds, includeCompany } = chatFrameRecipients(audience, client.userId);
+              const typing = data?.typing !== false;
+              const payload = { conversationId, userId: client.userId, typing };
+              for (const userId of userIds) {
+                sendToUser(userId, "", CHANNELS.CHAT_TYPING, payload);
+              }
+              if (includeCompany) {
+                // Staff never see a colleague's typing echo in a support thread.
+                sendToCenter(CHANNELS.CHAT_TYPING, CHANNELS.CHAT_TYPING, payload, client.userId);
+              }
             }
           }
         }
@@ -340,11 +421,12 @@ export function sendToUsers(
  * client supplied — so an ordinary customer or seller connection can never be a
  * recipient of an admin event.
  */
-export function sendToCenter(channel: string, event: string, data: unknown): void {
+export function sendToCenter(channel: string, event: string, data: unknown, excludeUserId?: string): void {
   const payload = JSON.stringify({ type: event, channel, data, timestamp: new Date().toISOString() });
 
   for (const client of clients.values()) {
     if (!isCenterRole(client.role)) continue;
+    if (excludeUserId && client.userId === excludeUserId) continue;
     if (client.ws.readyState !== 1) continue;
     try {
       client.ws.send(payload);
@@ -386,6 +468,9 @@ export const CHANNELS = {
   PROFILE_UPDATED: "profile:updated",
   CHAT_MESSAGE: "chat:message",
   CHAT_READ: "chat:read",
+  /** Ephemeral typing signal ({ conversationId, userId, typing }). Addressed to
+   *  the conversation's other participants; never stored, never subscribable. */
+  CHAT_TYPING: "chat:typing",
   /** A company conversation/room was created; VelCenter sessions refetch their
    *  list. It carries no message body and is addressed to company sessions. */
   CHAT_CONVERSATION: "chat:conversation",

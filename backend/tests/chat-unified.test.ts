@@ -50,7 +50,7 @@ describe("unified chat is one core, not parallel systems", () => {
     const schema = read(SCHEMA);
     expect(schema).toContain("type TEXT NOT NULL DEFAULT 'CUSTOMER_SELLER' CHECK (type IN ('CUSTOMER_SELLER', 'CUSTOMER_COMPANY', 'SELLER_COMPANY', 'COMPANY_INTERNAL'))");
     // One messages table; company replies reuse it with a distinct sender role.
-    expect(schema).toContain("sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company'))");
+    expect(schema).toContain("sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company', 'system'))");
     expect(schema).toContain("conversations_participant_shape_check");
     expect(schema).toContain("uq_conversations_customer_company");
     expect(schema).toContain("uq_conversations_seller_company");

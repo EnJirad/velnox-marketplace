@@ -6,11 +6,14 @@ import { useAction } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
 import { connectChatSocket, onChatEvent, onChatReconnect, sendChatCommand } from "@velnox/shared/lib/chat-socket";
+import { useChatTyping } from "@velnox/shared/lib/chat-typing";
+import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { notifyChatUnreadChanged } from "@velnox/shared/hooks/use-chat-unread";
 import { useRealtimeState } from "@velnox/shared/hooks/use-realtime-state";
 import { Button } from "@velnox/shared/components/ui/button";
 import {
   ArrowLeft,
+  Check,
   CheckCheck,
   ChevronRight,
   Headphones,
@@ -45,12 +48,16 @@ interface Conversation {
 interface ChatMessage {
   id: string;
   conversationId: string;
-  senderId: string;
-  senderRole: "customer" | "seller";
+  /** NULL for a SYSTEM message (see `isSystem`); the viewer's own id otherwise. */
+  senderId: string | null;
+  senderRole: "customer" | "seller" | "company" | "system";
   body: string;
   status: string;
   readAt: number | null;
   createdAt: number;
+  /** Automated message written by the platform (daily Velnox Support ack). */
+  isSystem?: boolean;
+  systemKind?: string | null;
 }
 
 const MESSAGES_PAGE = 30;
@@ -78,6 +85,12 @@ export default function ShopChat() {
   const [sending, setSending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
+  // Typing is EPHEMERAL: the hook throttles what this tab sends and expires
+  // what it receives, so a lost stop frame can never leave "…is typing" up.
+  const { typingUserIds, notifyTyping, notifyStop } = useChatTyping(
+    active?.id ?? null,
+    user?.id ?? null,
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -122,8 +135,11 @@ export default function ShopChat() {
       if (conversationsRef.current && !conversationsRef.current.some((c) => c.id === message.conversationId)) {
         void loadConversations();
       }
-      // Update the conversation list (last message / unread)
-      setConversations((prev) => {
+      // Update the conversation list (last message / unread). A SYSTEM message is
+      // an acknowledgment, not a preview line: it must not replace the last
+      // human message shown in the list.
+      if (!message.isSystem)
+        setConversations((prev) => {
         if (!prev) return prev;
         return prev
           .map((c) =>
@@ -133,7 +149,8 @@ export default function ShopChat() {
                   lastMessage: message.body,
                   lastMessageAt: message.createdAt,
                   updatedAt: message.createdAt,
-                  unreadCount: message.senderId === user.id ? c.unreadCount : c.unreadCount + 1,
+                  unreadCount:
+                    message.isSystem || message.senderId === user.id ? c.unreadCount : c.unreadCount + 1,
                 }
               : c,
           )
@@ -142,18 +159,35 @@ export default function ShopChat() {
       // Append to the open thread if it matches, and the sender isn't us
       if (message.conversationId === activeIdRef.current && message.senderId !== user.id) {
         setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
-        // Bounded by THIS message's server timestamp: anything newer that
-        // arrives next stays unread until the reader actually sees it.
-        void markConversationRead({ conversationId: message.conversationId, upTo: message.createdAt })
-          .then(() => notifyChatUnreadChanged("customer"))
-          .catch((err) => console.error("Mark conversation read failed:", err));
-        setConversations((prev) => prev?.map((c) => (c.id === message.conversationId ? { ...c, unreadCount: 0 } : c)) ?? null);
+        // A SYSTEM message is never "unread": nobody has to read it, and it
+        // must not create a badge or a read round-trip.
+        if (!message.isSystem) {
+          // Bounded by THIS message's server timestamp: anything newer that
+          // arrives next stays unread until the reader actually sees it.
+          void markConversationRead({ conversationId: message.conversationId, upTo: message.createdAt })
+            .then(() => notifyChatUnreadChanged("customer"))
+            .catch((err) => console.error("Mark conversation read failed:", err));
+          setConversations((prev) => prev?.map((c) => (c.id === message.conversationId ? { ...c, unreadCount: 0 } : c)) ?? null);
+        }
       }
     });
     const offRead = onChatEvent("chat:read", (data: any) => {
-      if (data?.conversationId === activeIdRef.current) {
-        setMessages((prev) => prev.map((m) => (m.senderId === user.id && m.readAt == null ? { ...m, status: "read", readAt: Date.now() } : m)));
-      }
+      if (data?.conversationId !== activeIdRef.current) return;
+      // The reader's own read receipt must not tick their own messages.
+      if (user?.id && data?.readerId === user.id) return;
+      // `upTo` = the newest message the reader actually had loaded. Without it
+      // (older backend) fall back to the previous mark-all behaviour.
+      const upTo = typeof data?.upTo === "number" ? data.upTo : null;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.senderId === user?.id &&
+          !m.isSystem &&
+          m.readAt == null &&
+          (upTo === null || m.createdAt <= upTo)
+            ? { ...m, readAt: m.readAt ?? Date.now() }
+            : m,
+        ),
+      );
     });
     return () => {
       if (activeIdRef.current) sendChatCommand("chat:viewingEnd", { conversationId: activeIdRef.current });
@@ -371,6 +405,9 @@ export default function ShopChat() {
       createdAt: Date.now(),
     };
     setDraft("");
+    // Sending ends the typing state immediately — the other side should not wait
+    // for the idle timer after the message already arrived.
+    notifyStop();
     setMessages((prev) => [...prev, temp]);
     setSending(true);
     try {
@@ -392,7 +429,7 @@ export default function ShopChat() {
     } finally {
       setSending(false);
     }
-  }, [active, draft, sending, user?.id, sendMessage, t]);
+  }, [active, draft, sending, user?.id, sendMessage, t, notifyStop]);
 
   // ── Login CTA ───────────────────────────────────────────────────────
   if (!isAuthenticated) {
@@ -623,14 +660,42 @@ export default function ShopChat() {
                         </div>
                       ) : (
                         messages.map((m) => {
+                          // System message: the platform spoke, not a participant,
+                          // so it is centred, muted and carries no read tick.
+                          if (m.isSystem) {
+                            return (
+                              <div key={m.id} className="flex justify-center">
+                                <div className="max-w-[86%] rounded-2xl border border-dashed border-slate-200 bg-white px-3.5 py-2.5 text-center text-xs leading-5 text-slate-500">
+                                  <p className="whitespace-pre-line break-words">{m.body}</p>
+                                  <p className="mt-1 text-[10px] text-slate-400">
+                                    {formatLocaleTime(m.createdAt, lang)}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          }
                           const mine = m.senderId === user?.id;
                           return (
                             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                               <div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${mine ? "rounded-br-md bg-[#10B981] text-white" : "rounded-bl-md border border-slate-200 bg-slate-50 text-slate-800"}`}>
                                 <p className="whitespace-pre-line break-words">{m.body}</p>
                                 <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-emerald-50/80" : "text-slate-400"}`}>
-                                  {formatLocaleTime(m.createdAt, lang)}
-                                  {mine && <CheckCheck className={`size-3 ${m.status === "read" ? "text-sky-200" : ""}`} />}
+                                  <span>{formatLocaleTime(m.createdAt, lang)}</span>
+                                  {/* ✓ = stored by the server; ✓✓ = the other side read it. */}
+                                  {mine &&
+                                    (m.readAt != null ? (
+                                      <CheckCheck
+                                        role="img"
+                                        aria-label={t("chat.read")}
+                                        className="size-3 text-sky-200"
+                                      />
+                                    ) : (
+                                      <Check
+                                        role="img"
+                                        aria-label={t("chat.sent")}
+                                        className="size-3 text-emerald-50/70"
+                                      />
+                                    ))}
                                 </p>
                               </div>
                             </div>
@@ -639,13 +704,29 @@ export default function ShopChat() {
                       )}
                     </>
                   )}
+                  {typingUserIds.length > 0 && (
+                    <div className="pt-1">
+                      <TypingDots
+                        label={
+                          typingUserIds.length === 1 && active?.participantName
+                            ? t("chat.typingNamed", { name: active?.participantName ?? "" })
+                            : t("chat.typing")
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Composer */}
                 <div className="flex items-center gap-2 border-t border-slate-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                   <input
                     value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      if (e.target.value.trim().length > 0) notifyTyping();
+                      else notifyStop();
+                    }}
+                    onBlur={notifyStop}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();

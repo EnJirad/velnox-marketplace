@@ -364,3 +364,16 @@ is unqualified or that a build is stale. Ask the catalog (`information_schema` /
 **Also on 2026-10-30:** §87 added — Phase 2H (OAuth state hardened to a 256-bit CSPRNG nonce bound to a signed, expiring, httpOnly, single-use cookie; forged/missing/mismatched/expired/replayed state rejected before the code exchange; independent internal-only `returnTo` validation; 36 new tests). Report: [`2026-10-30-phase-2h-oauth-state-hardening.md`](./2026-10-30-phase-2h-oauth-state-hardening.md).
 
 **Also on 2026-10-30:** §88 added — Unified Marketplace Chat (one `conversations` / `chat_messages` core with `CUSTOMER_SELLER`, `CUSTOMER_COMPANY`, `SELLER_COMPANY`, `COMPANY_INTERNAL`; VelShop Shops/Velnox Support, VelSeller Customers/Velnox, VelCenter Customers/Sellers/Internal; server-side role scoping; addressed realtime; legacy support threads converted in place; 13 new tests, full suite 1412 pass / 2 skip / 0 fail, reconciler proof 52/52). Code commit `2e10293`; report: [`2026-10-30-unified-marketplace-chat.md`](./2026-10-30-unified-marketplace-chat.md).
+
+### 2026-10-31 — §86 archived while adding §89 (Messenger UX)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_Handoff-2026-10-31-section-86-phase-2g.md`](./archive/AI_Handoff-2026-10-31-section-86-phase-2g.md) | handoff §86 — Phase 2G production readiness audit (2026-10-30) | Moved **verbatim** on 2026-10-31 (edit-headroom housekeeping while appending §89; the live handoff was 54.1 KB against the ~55 KB edit-tool limit). Keeps the audit that found the OAuth `state` login-CSRF defect (fixed in §87), the BLOCKED production DB Verify, and the 1359/6/0 disposable-PG result. Zero source changes. Report: [`2026-10-30-phase-2g-production-readiness-audit.md`](./2026-10-30-phase-2g-production-readiness-audit.md). |
+| [`archive/AI_Handoff-2026-10-31-section-87-phase-2h.md`](./archive/AI_Handoff-2026-10-31-section-87-phase-2h.md) | handoff §87 — Phase 2H OAuth state hardening (2026-10-30) | Moved **verbatim** on 2026-10-31 (the live handoff would have crossed the ~55 KB edit-tool limit with §89). Keeps the nonce + signed single-use cookie mechanism, the 36 new tests and the 1399/2/0 disposable-PG run. Its two route test files are the source of the pre-existing 11 red CI cases recorded in §89. Report: [`2026-10-30-phase-2h-oauth-state-hardening.md`](./2026-10-30-phase-2h-oauth-state-hardening.md). |
+
+**Also on 2026-10-31:** §89 added — Messenger UX (✓/✓✓ ticks from `readAt`, `chat:read` carrying the
+`upTo` bound it actually marked, one daily Velnox Support acknowledgment per `(conversation, Asia/Bangkok
+calendar day)` claimed by a partial UNIQUE index + `ON CONFLICT DO NOTHING`, and an ephemeral
+`chat:typing` frame authorized by `lib/chat-access.ts` over the existing socket). **Uncommitted** —
+owner withheld commit/push permission.

@@ -470,6 +470,8 @@ const myChatPatch = {
     supportBadge: "အကူအညီ",
     supportError: "အကူအညီချတ် ဖွင့်၍မရပါ ထပ်ကြိုးစားပါ",
     startError: "ချတ်စတင်၍မရပါ ထပ်ကြိုးစားပါ",
+    typing: "ရိုက်နေသည်...",
+    typingNamed: "{name} ရိုက်နေသည်...",
   } satisfies Partial<Dict["chat"]>,
   sellerChat: {
     title: "ချတ်",

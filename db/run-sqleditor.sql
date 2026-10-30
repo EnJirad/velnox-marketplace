@@ -730,11 +730,14 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE TABLE IF NOT EXISTS chat_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company')),
+  -- NULL only for a SYSTEM message (`sender_role = 'system'`); see db/schema.sql.
+  sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company', 'system')),
   body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
   status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,
+  system_kind TEXT,
+  ack_day DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 INSERT INTO platform_settings (key, value, description) VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto') ON CONFLICT (key) DO NOTHING;
@@ -1662,6 +1665,18 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS body TEXT;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'sent' CHECK (status IN ('sent', 'read')) NOT NULL;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+
+-- Automated (system) messages — messenger UX pass. A system row has no human
+-- sender, so sender_id must accept NULL; `system_kind`/`ack_day` carry the
+-- automated marker and the Asia/Bangkok calendar day the row belongs to.
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS system_kind TEXT;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS ack_day DATE;
+-- No-op when the column is already nullable; existing rows are unaffected
+-- (every stored message today has a sender).
+ALTER TABLE public.chat_messages ALTER COLUMN sender_id DROP NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_support_daily_ack
+  ON public.chat_messages (conversation_id, ack_day)
+  WHERE system_kind = 'support_daily_ack';
 
 
 
@@ -3891,13 +3906,14 @@ DO $$
 BEGIN
   -- PostgreSQL cannot ALTER a CHECK. The widened vocabulary only ADDS a value,
   -- so it cannot invalidate an existing row; the guard keeps a rerun a no-op.
+  -- 'system' joined in the messenger-UX pass (automated support acknowledgment).
   IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_messages_sender_role_check'
-              AND pg_get_constraintdef(oid) NOT LIKE '%company%') THEN
+              AND pg_get_constraintdef(oid) NOT LIKE '%system%') THEN
     ALTER TABLE public.chat_messages DROP CONSTRAINT chat_messages_sender_role_check;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_messages_sender_role_check') THEN
     ALTER TABLE public.chat_messages ADD CONSTRAINT chat_messages_sender_role_check
-      CHECK (sender_role IN ('customer', 'seller', 'company'));
+      CHECK (sender_role IN ('customer', 'seller', 'company', 'system'));
   END IF;
 END $$;
 

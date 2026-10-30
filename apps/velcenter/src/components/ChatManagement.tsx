@@ -31,9 +31,12 @@ import {
   onChatReconnect,
   sendChatCommand,
 } from "@velnox/shared/lib/chat-socket";
+import { useChatTyping } from "@velnox/shared/lib/chat-typing";
+import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
   ArrowLeft,
+  Check,
   CheckCheck,
   ChevronRight,
   Headphones,
@@ -76,12 +79,16 @@ interface CenterConversation {
 interface CenterMessage {
   id: string;
   conversationId: string;
-  senderId: string;
-  senderRole: "customer" | "seller" | "company";
+  /** NULL for a SYSTEM message (`isSystem`); the viewer's own id otherwise. */
+  senderId: string | null;
+  senderRole: "customer" | "seller" | "company" | "system";
   body: string;
   status: string;
   readAt: number | null;
   createdAt: number;
+  /** Automated message written by the platform (daily Velnox Support ack). */
+  isSystem?: boolean;
+  systemKind?: string | null;
 }
 
 interface Counts {
@@ -146,6 +153,11 @@ export default function ChatManagement() {
   const [newRoom, setNewRoom] = useState("");
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [updating, setUpdating] = useState(false);
+  // Ephemeral typing state: throttled on the way out, auto-expired on the way in.
+  const { typingUserIds, notifyTyping, notifyStop } = useChatTyping(
+    active?.id ?? null,
+    userId,
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdRef = useRef<string | null>(null);
@@ -243,7 +255,8 @@ export default function ChatManagement() {
       if (!message) return;
       if (message.conversationId === activeIdRef.current) {
         setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
-        if (message.senderId !== userId) void markRead(message.conversationId, message.createdAt);
+        // A SYSTEM message is never unread — no badge, no read round-trip.
+        if (message.senderId !== userId && !message.isSystem) void markRead(message.conversationId, message.createdAt);
       }
       // The event is only a signal: re-read both the list (last message /
       // unread) and the tab counts from the server. A conversation the list did
@@ -253,9 +266,17 @@ export default function ChatManagement() {
     });
     const offRead = onChatEvent("chat:read", (data: any) => {
       if (data?.conversationId !== activeIdRef.current) return;
+      // A staff member's own read receipt must never tick their own messages.
+      if (userId && data?.readerId === userId) return;
+      const upTo = typeof data?.upTo === "number" ? data.upTo : null;
       setMessages((prev) =>
         prev.map((m) =>
-          m.senderId === userId && m.readAt == null ? { ...m, status: "read", readAt: Date.now() } : m,
+          m.senderId === userId &&
+          !m.isSystem &&
+          m.readAt == null &&
+          (upTo === null || m.createdAt <= upTo)
+            ? { ...m, readAt: m.readAt ?? Date.now() }
+            : m,
         ),
       );
     });
@@ -348,6 +369,8 @@ export default function ChatManagement() {
       createdAt: Date.now(),
     };
     setDraft("");
+    // Sending ends the typing state now; the idle timer is only a fallback.
+    notifyStop();
     setMessages((prev) => [...prev, temp]);
     setSending(true);
     try {
@@ -382,7 +405,7 @@ export default function ChatManagement() {
     } finally {
       setSending(false);
     }
-  }, [active, draft, sending, userId, sendAction, loadCounts]);
+  }, [active, draft, sending, userId, sendAction, loadCounts, notifyStop]);
 
   const updateConversation = useCallback(
     async (patch: { status?: string; assignedTo?: string | null }) => {
@@ -729,6 +752,20 @@ export default function ChatManagement() {
                       </div>
                     ) : (
                       messages.map((m) => {
+                        // System message (daily support acknowledgment): centred,
+                        // muted and never carries a read tick.
+                        if (m.isSystem) {
+                          return (
+                            <div key={m.id} className="flex justify-center">
+                              <div className="max-w-[86%] rounded-2xl border border-dashed border-slate-200 bg-white px-3.5 py-2.5 text-center text-xs leading-5 text-slate-500">
+                                <p className="whitespace-pre-line break-words">{m.body}</p>
+                                <p className="mt-1 text-[10px] text-slate-400">
+                                  {formatLocaleTime(m.createdAt, lang)}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
                         const mine = m.senderId === userId;
                         return (
                           <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -741,8 +778,22 @@ export default function ChatManagement() {
                             >
                               <p className="whitespace-pre-line break-words">{m.body}</p>
                               <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-emerald-50/80" : "text-slate-400"}`}>
-                                {formatLocaleTime(m.createdAt, lang)}
-                                {mine && <CheckCheck className={`size-3 ${m.status === "read" ? "text-sky-200" : ""}`} />}
+                                <span>{formatLocaleTime(m.createdAt, lang)}</span>
+                                {/* ✓ = stored by the server; ✓✓ = the other side read it. */}
+                                {mine &&
+                                  (m.readAt != null ? (
+                                    <CheckCheck
+                                      role="img"
+                                      aria-label={t("chat.read")}
+                                      className="size-3 text-sky-200"
+                                    />
+                                  ) : (
+                                    <Check
+                                      role="img"
+                                      aria-label={t("chat.sent")}
+                                      className="size-3 text-emerald-50/70"
+                                    />
+                                  ))}
                               </p>
                             </div>
                           </div>
@@ -751,19 +802,29 @@ export default function ChatManagement() {
                     )}
                   </>
                 )}
+                {typingUserIds.length > 0 && (
+                  <div className="pt-1">
+                    <TypingDots label={t("chat.typing")} />
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2 border-t border-slate-100 p-3">
                 <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void handleSend();
-                    }
-                  }}
-                  placeholder="พิมพ์ข้อความ..."
+                    value={draft}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      if (e.target.value.trim().length > 0) notifyTyping();
+                      else notifyStop();
+                    }}
+                    onBlur={notifyStop}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSend();
+                      }
+                    }}
+                    placeholder="พิมพ์ข้อความ..."
                   aria-label="พิมพ์ข้อความ"
                   maxLength={4000}
                   className="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20"

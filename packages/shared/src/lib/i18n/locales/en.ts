@@ -1196,6 +1196,8 @@ export const en: Dict = {
     supportBadge: "Support",
     supportError: "Couldn't open support chat — please try again",
     startError: "Couldn't start the chat — please try again",
+    typing: "Typing...",
+    typingNamed: "{name} is typing...",
   },
 
   sellerChat: {
