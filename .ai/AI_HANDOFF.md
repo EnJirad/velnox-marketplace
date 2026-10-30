@@ -639,104 +639,30 @@ on 2026-10-30 (edit-headroom housekeeping while appending §85; nothing discarde
 
 ---
 
-## §84. Phase 2E — CI/E2E Verification + Responsive/Visual Audit (2026-10-28) — **COMPLETE**
+## §84. Phase 2E — CI/E2E Verification + Responsive/Visual Audit (2026-10-28) — ARCHIVED
 
-**Base SHA:** `d7c7eefaee7d389e153ee956d51c116352cb72aa` (`main` == `origin/main`, 0/0, clean tree).
-**Resulting commits (code):** `ca66c4cb1094a74602a77a7934e4e26d84c9e793` (`test(chat): verify phase 2d
-realtime and unread behavior`), `b2c6ef790390a0835370226e5e93848ce4dfd424` (`fix(chat): apply the read
-bound at its real millisecond precision`), `06806685c8f95381d1cbd06f1b22de4cc59b6235` (`test(chat):
-probe the unusable read bound with wire-valid values`) — only `backend/routes/chat.ts` and
-`backend/tests/chat-support-phase2d.test.ts`.
-**Report:** [`.ai/history/2026-10-28-phase-2e-verification.md`](history/2026-10-28-phase-2e-verification.md).
-**SOURCE CODE MODIFIED: YES · DATABASE MODIFIED: NO · SQL MODIFIED: NO · PRODUCTION DB CONNECTED: NO ·
-STRIPE MODIFIED: NO · VELREPEAT MODIFIED: NO**
-
-**CI VERIFICATION: RUN** (the Phase 2D suite had never executed — it skips without `TEST_DATABASE_URL`).
-Real runs on the workflow's disposable `postgres:16`: `40546404703` (`d7c7eef`) 1338 pass / **15 fail** /
-2 skip → `40600703186` (`ca66c4c`) 1339/14/2 → `40601550666` (`b2c6ef7`) 1341/12/2 → **`40601957381`
-(`0680668`) 1342 pass / 11 fail / 2 skip**. The whole delta is the Phase 2D file: all 4 of its failures
-now pass, and it has **zero failures**. The 11 remaining failures are IDENTICAL to the pre-2D baseline
-`40533019916` (`1a4cce0`: 1315/11/2) — pre-existing, see the follow-up below.
-
-**What 2E fixed (all in the Phase 2D file, plus one SHIPPED defect):**
-- **Shipped defect — the `upTo` read bound used the wrong precision.** `createdAt` reaches clients as
-  epoch MILLISECONDS (`mapMessage` → `new Date(...).getTime()`) while `created_at` is a microsecond
-  `TIMESTAMPTZ DEFAULT NOW()`: the strict `created_at <= to_timestamp(upTo/1000)` EXCLUDED the very
-  message the reader derived the bound from (`…:123456` is not `<= …:123000`), so a bounded read
-  marked 0 and a thread could never be cleared (both chat pages send exactly that value). Fixed with
-  ONE documented, sargable `READ_BOUND_SQL` in both read routes
-  (`created_at < to_timestamp(…) + interval '1 millisecond'`): the whole named millisecond is covered,
-  a later message stays unread, residual race ≤1 ms instead of the previous unbounded mark-all.
-- The harness mounted only `setupChatRoutes`, so the badge endpoint `GET /api/customer/account-summary`
-  (routes/index.ts) answered 404 — it now mounts the REAL `setupRoutes` too.
-- The addressed-frame assertion expected `channel: "chat:message"`; the real contract is the
-  recipient's private channel `user:<id>` (consumers dispatch on event TYPE).
-- Two test expectations: a seller's OWN message is never unread for the seller (the isolation test now
-  sends one message each way); the "unusable bound → 400" probe sent `NaN`, which `JSON.stringify`
-  turns into `null` — the ABSENT legacy case answered 200 (now a negative number + a non-numeric string).
-
-**Verified in CI (final run, Phase 2D file):** authentication (all 7 chat/unread endpoints), customer +
- seller ownership isolation, session sender identity (forged `senderId`/`senderRole` ignored),
-empty/whitespace rejection, duplicate send → one row + one push + one notification, unread lifecycle
-incl. the stale-read race, unread isolation, addressed realtime delivery — **all PASS**; the 18
-structural cases PASS in every run. Locally: 4 app typechecks PASS · backend typecheck PASS ·
-`build:apps` PASS (4/4) · i18n `1257/1257/1257` · `bun test tests` 1033 pass / 332 skip / 0 fail ·
-`git diff --check` clean.
-**BROWSER/E2E: NOT RUN** — no browser/DOM capability here and NO frontend test tooling in the repo
-(no vitest/jsdom/testing-library/playwright; preview has no configured command). The responsive audit
-(seller header chat entries at both breakpoints incl. `99+`, hidden-at-0, loading renders nothing,
-error keeps last-known-good, a11y labels; customer profile `/chat` row with `shrink-0` badge beside
-`truncate`d text; UX cases 1–9) is **source-based only** — rendered-pixels verification is the owner's.
-
-**Still open / FOLLOW-UP (owner decisions):**
-- **The 11 CI failures are pre-existing, not 2D/2E.** They drive `POST /api/customer/checkout` with
-  `paymentMethod: "CARD"` (6 `buy-now-checkout` + 5 `realtime-commerce-phase2c`) and every one is a
-  **503 `STRIPE_NOT_CONFIGURED`** from `assertPaymentMethodUsable`
-  (`backend/lib/payment-config.ts:159–181, 405–412`, refused at `routes/cart.ts:782–788` before any
-  stock/idempotency logic). `test.yml` references no secret BY DESIGN and `COD_ENABLED` is unset, so no
-  rail is usable in CI. Needs a CI-only payment rail, a COD-enabled job, or an explicit
-  environment-gated skip. Payment/checkout/Stripe were NOT touched (out of Phase 2E scope).
-- Flake observed once in five runs: `order-number.test.ts:122` (`> 1800` distinct draws → 1797).
-- Phase 2B `loadMessages` passes the same ms-truncated value with a strict `<` to `before` (rare skip
-  when two messages share a millisecond); Phase 2D residual ≤1 ms read window; the §83 open items
-  (in-process send dedupe, outbox drain worker, seller badge per-mount fetch).
-**Housekeeping this pass:** §82 moved verbatim →
-[`history/archive/AI_Handoff-2026-10-27-section-82-phase-2c.md`](history/archive/AI_Handoff-2026-10-27-section-82-phase-2c.md)
-with an index row.
+Base `d7c7eefa…` → commits `ca66c4cb…`, `b2c6ef79…`, `06806685…`. The Phase 2D suite had never run
+(it skips without `TEST_DATABASE_URL`); CI proved 4 real failures and one SHIPPED defect — the `upTo`
+read bound compared a millisecond value against a microsecond `created_at`, excluding the message the
+bound was derived from. Fixed with a documented `READ_BOUND_SQL` (`… + interval '1 millisecond'`) in
+both read routes. Final Phase 2D run `40601957381`: 1342 pass / 11 fail / 2 skip; the 11 are the
+pre-existing payment-rail failures, not 2D. **BROWSER/E2E: NOT RUN** (source-based responsive audit
+only). Full section text moved verbatim to
+[`history/archive/AI_Handoff-2026-10-28-section-84-phase-2e.md`](./history/archive/AI_Handoff-2026-10-28-section-84-phase-2e.md)
+on 2026-10-30 (edit-headroom housekeeping while appending §87; nothing discarded).
 
 ---
 
-## §85. Phase 2F — CI Checkout/Payment Test Reliability (2026-10-30) — COMPLETE
+## §85. Phase 2F — CI Checkout/Payment Test Reliability (2026-10-30) — ARCHIVED
 
-**Base SHA:** `31456976c017f9dd85f5cb04ab383b852b6d1cf9` (local was 8 behind; fast-forwarded first,
-clean tree). **Code commit:** `fe7927b6fee4a7028244b1eead79f2502e01ba2b` (3 test files, +232/−4).
-**Report:** [`.ai/history/2026-10-28-phase-2f-ci-payment-test-reliability.md`](./history/2026-10-28-phase-2f-ci-payment-test-reliability.md).
-
-**The 11 red CI tests were NOT a product defect and NOT a missing CI secret.** The six
-`buy-now-checkout` and five `realtime-commerce-phase2c` DB cases send `paymentMethod: "CARD"`; their
-`beforeAll` set a dummy `sk_test_…` key but **deleted `STRIPE_WEBHOOK_SECRET`**, while
-`stripeStatus()` requires a configured webhook secret for a usable rail. The payment gate therefore
-answered **503 `STRIPE_WEBHOOK_NOT_CONFIGURED` before any stock/idempotency/realtime code ran** — in
-every environment, CI included. The tests configure the rail themselves; they configured half of it.
-
-**Fix (tests only).** Both suites now install the complete DUMMY test-mode rail already used by
-`checkout-payment-flow` (`STRIPE_MODE=test`, `sk_test_0000…`, `whsec_0000…`), saved/restored around
-the block. No assertion weakened, no case skipped, and no product, Stripe, pricing, reservation or
-auth code touched. New `backend/tests/checkout-test-payment-rail.test.ts` (10 cases) pins: the
-fixture is usable/test-mode; a live key, a missing webhook secret, or no configuration is still
-refused; the checkout handler makes no Stripe API call; the CI workflow references no secret and no
-`STRIPE_*`/`COD_ENABLED`, keeps `TEST_DATABASE_URL`, and still pins the production-database refusal.
-
-**Verified.** Pre-fix local disposable PG14: `31 pass / 11 fail` (both suites). Post-fix: **42/0**.
-Full `bun test tests` (disposable PG14): **1359 pass / 6 skip / 0 fail** (1365 tests, 67 files).
-GitHub Actions on `fe7927b`: **run `40986922370` — success, 1363 pass / 2 skip / 0 fail**; all 11
-previously failing cases are `(pass)`, zero `(fail)` lines. `bun run typecheck` 4/4 · backend
-typecheck · `build:apps` 4/4 · `i18n:check` 1257/1257/1257 · `git diff --check` clean.
-**BROWSER/E2E: NOT RUN** (no tooling; test-configuration-only change).
-
-**Boundaries:** production DB **not connected** (only an explicit local `TEST_DATABASE_URL`),
-production payment **not touched**, schema/SQL **unchanged**, Stripe logic **unchanged**, COD default
-**unchanged**, VelRepeat **unchanged**. No owner approval or secret is needed.
+Base `31456976…` → code commit `fe7927b6…` (3 test files). The 11 red CI checkout tests were
+root-caused to a half-configured TEST payment rail in `buy-now-checkout` /
+`realtime-commerce-phase2c` (a `sk_test_…` key with `STRIPE_WEBHOOK_SECRET` deleted → 503
+`STRIPE_WEBHOOK_NOT_CONFIGURED` before any stock/idempotency code), fixed test-side with no
+assertion weakened. New `checkout-test-payment-rail` guard (10 cases). CI run `40986922370`:
+1363 pass / 2 skip / 0 fail. Full section text moved verbatim to
+[`history/archive/AI_Handoff-2026-10-30-section-85-phase-2f.md`](./history/archive/AI_Handoff-2026-10-30-section-85-phase-2f.md)
+on 2026-10-30 (edit-headroom housekeeping while appending §87; nothing discarded).
 
 ---
 
@@ -778,8 +704,52 @@ then schema-authority cleanup and durable chat/outbox/rate-limit work (report §
 
 ---
 
+## §87. Phase 2H — OAuth State Hardening (2026-10-30) — COMPLETE
+
+**Starting SHA:** `5039f94b730c10effb4f53aaf39bbc9ae09d1e04` (`HEAD == origin/main`, 0/0, clean tree).
+**Code commit:** `fix(auth): harden oauth state validation` (find with
+`git log -1 --format=%H -- backend/lib/oauth-state.ts`). **Docs commit:** `docs(ai): record phase 2h
+oauth hardening` (find with `git log -1 --format=%H -- .ai/history/2026-10-30-phase-2h-oauth-state-hardening.md`).
+**Report:** [`.ai/history/2026-10-30-phase-2h-oauth-state-hardening.md`](./history/2026-10-30-phase-2h-oauth-state-hardening.md).
+**Fixes Phase 2G H-1 only.** No other 2G finding touched.
+
+**Mechanism.** `/auth/google` mints `state = crypto.randomBytes(32).toString("base64url")` (opaque
+256-bit nonce; no returnTo/timestamp/user data) and binds it to a short-lived `httpOnly`,
+`SameSite=Lax`, `Path=/auth`, `Secure`-in-production cookie `velnox_oauth_state` (10 min). The cookie
+carries `{nonce, sanitized returnTo, exp}`, HMAC-SHA256 signed with `OAUTH_STATE_SECRET` (falling back
+to `JWT_SECRET`). The callback consumes (clears) the cookie, then compares the returned state to the
+cookie nonce with `crypto.timingSafeEqual` over SHA-256 digests; missing / mismatched / forged /
+expired / replayed state is rejected BEFORE `exchangeCode`, so no session is created. `returnTo` is
+separate: internal paths only (no external/protocol-relative/scheme values), sanitized into the cookie
+and again out of it.
+
+**Tests.** 3 new files, 36 cases: `oauth-state.test.ts` (24, always run), `oauth-route.test.ts` (11,
+real Express routes + stubbed Google — missing / mismatch / other-browser / expired / forged / replay,
+valid state reaches the exchange exactly once), `oauth-callback-session.test.ts` (1, DB-gated
+positive: real `velnox_session` + `/seller/goals` redirect + persisted Google identity).
+
+**Verified.** New OAuth files **36 pass / 0 fail**; full backend suite on disposable PG14
+**1399 pass / 2 skip / 0 fail** (1401 tests, 70 files); backend `tsc --noEmit` PASS; root typecheck 4/4
+PASS; `build:apps` 4/4 PASS; `i18n:check` 1257/1257/1257; `git diff --check` clean; the old
+`base64url(JSON.stringify({returnTo}))` pattern is absent from every active path (comments/tests only).
+
+**Production DB Verify:** unchanged and still **BLOCKED** — run `40986922337`: repository job success,
+disposable-PG gates success, production job `BLOCKED: NEON_PRODUCTION_DATABASE_URL is not configured.`,
+verdict failure. Owner must add the canonical secret; no fallback exists and none was added.
+
+**Browser E2E: NOT RUN** — no Playwright/Cypress/Puppeteer/webdriver anywhere, no e2e directory, no CI
+browser step, preview `previewCommand:null`. The minimal future plan is in report §10. Nothing was
+installed.
+
+**Not fixed (deliberate):** every other Phase 2G finding (chat dedupe, outbox dispatcher, WS revocation
+cache, 30 s role refresh, `/api/auth/me` cache, seller unread fetch, same-ms pagination, in-memory rate
+limiter, boot DDL, VelCenter domain typo, CORS localhost, timing-safe cleanup, upload MIME fallback,
+`email_verified`, search indexing, structured logging).
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
-§83; §82 on 2026-10-28 with §84; and §78 + §83 on 2026-10-30 with §85 (all verbatim + index row).
-Before appending again, archive the next-longest closed block the same way. Archiving is not
-deletion: the text is preserved verbatim.
+§83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; and §84 + §85 on 2026-10-30 with §87
+(all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
+Archiving is not deletion: the text is preserved verbatim.
