@@ -360,7 +360,14 @@ describeDb("unified chat, end to end (requires TEST_DATABASE_URL)", () => {
 
     const staffView = await messages("company", staff, convId);
     expect(staffView.status).toBe(200);
-    expect(staffView.data.data.items.at(-1).body).toBe("my order never arrived");
+    // The customer's message is stored, and the ONE automated acknowledgment for
+    // the day follows it (a real system message both sides read).
+    const staffItems = staffView.data.data.items as any[];
+    expect(staffItems.map((m) => m.body)).toContain("my order never arrived");
+    const acknowledged = staffItems.at(-1)!;
+    expect(acknowledged.isSystem).toBe(true);
+    expect(acknowledged.senderRole).toBe("system");
+    expect(acknowledged.senderId).toBeNull();
 
     const clientId = crypto.randomUUID();
     const reply = await send("company", staff, convId, "we are checking it now", clientId);
