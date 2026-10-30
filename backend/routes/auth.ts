@@ -30,10 +30,23 @@ import {
  * 7. Backend creates session cookie and redirects to a validated internal path
  */
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? "";
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI ?? "";
-const JWT_SECRET = process.env.JWT_SECRET ?? "";
+/**
+ * Environment is read AT USE TIME, never snapshotted at import.
+ *
+ * This module is imported for one unrelated helper (`invalidateCachedProfile`)
+ * by `routes/center.ts`, `routes/seller.ts` and `routes/upload.ts`. A
+ * module-level `const` therefore froze an EMPTY Google client id the moment any
+ * of those loaded first — in the test process `/auth/google` then answered
+ * `google_not_configured` even though the values were set before the route was
+ * mounted (11 red cases in `oauth-route.test.ts`, invisible when that file ran
+ * alone). Reading at use time is also what a deployed process wants: the
+ * environment is fixed before the first request, and a cached copy only adds a
+ * way to be wrong.
+ */
+const googleClientId = (): string => process.env.GOOGLE_CLIENT_ID ?? "";
+const googleClientSecret = (): string => process.env.GOOGLE_CLIENT_SECRET ?? "";
+const googleRedirectUri = (): string => process.env.GOOGLE_REDIRECT_URI ?? "";
+const jwtSecret = (): string => process.env.JWT_SECRET ?? "";
 const SESSION_COOKIE = "velnox_session";
 import crypto from "crypto";
 
@@ -73,9 +86,9 @@ async function exchangeCode(code: string): Promise<{
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
-      redirect_uri: GOOGLE_REDIRECT_URI,
+      client_id: googleClientId(),
+      client_secret: googleClientSecret(),
+      redirect_uri: googleRedirectUri(),
       grant_type: "authorization_code",
     }),
   });
@@ -110,7 +123,7 @@ async function verifyGoogleIdentity(idToken: string): Promise<{
   };
 
   // Verify audience matches our client ID
-  if (claims.aud !== GOOGLE_CLIENT_ID) {
+  if (claims.aud !== googleClientId()) {
     throw new Error("Token audience mismatch");
   }
 
@@ -243,7 +256,7 @@ async function resolveUser(google: {
 /** Create a JWT session token with a unique jti for revocation. */
 function createSessionToken(userId: string, email: string): string {
   const jti = crypto.randomUUID();
-  return jwt.sign({ userId, email, jti }, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ userId, email, jti }, jwtSecret(), { expiresIn: "7d" });
 }
 
 /** Set the session cookie on the response. */
@@ -431,7 +444,7 @@ export function setupGoogleAuth(app: Express): void {
   // Step 1: Frontend calls this to start Google OAuth flow
   app.get("/auth/google", (req: Request, res: Response) => {
     // Validate required env vars
-    if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
+    if (!googleClientId() || !googleRedirectUri()) {
       console.error("[auth] GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI not configured");
       const frontendUrl = getFrontendUrl(req, sanitizeReturnTo(req.query.returnTo));
       res.redirect(`${frontendUrl}/auth?error=google_not_configured`);
@@ -459,8 +472,8 @@ export function setupGoogleAuth(app: Express): void {
     );
 
     const params = new URLSearchParams({
-      client_id: GOOGLE_CLIENT_ID,
-      redirect_uri: GOOGLE_REDIRECT_URI,
+      client_id: googleClientId(),
+      redirect_uri: googleRedirectUri(),
       response_type: "code",
       scope: "openid email profile",
       access_type: "offline",
@@ -544,7 +557,7 @@ export function setupGoogleAuth(app: Express): void {
     }
 
     try {
-      const payload = jwt.verify(token, JWT_SECRET) as { userId: string; jti?: string };
+      const payload = jwt.verify(token, jwtSecret()) as { userId: string; jti?: string };
 
       // Check cache FIRST — this skips the ~200ms revoked_tokens + users DB round trips
       // when the profile was already loaded within the last 30s. Token revocation
@@ -643,7 +656,7 @@ export function setupGoogleAuth(app: Express): void {
       const token = req.cookies?.[SESSION_COOKIE];
       if (token) {
         try {
-          const payload = jwt.verify(token, JWT_SECRET) as { userId: string; jti?: string; exp?: number };
+          const payload = jwt.verify(token, jwtSecret()) as { userId: string; jti?: string; exp?: number };
           invalidateCachedProfile(payload.userId);
 
           // Revoke the JWT by storing its jti in the database
