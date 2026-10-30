@@ -1195,6 +1195,7 @@ export const en: Dict = {
     chatWithSupport: "Chat with Velnox Support",
     supportBadge: "Support",
     supportError: "Couldn't open support chat — please try again",
+    startError: "Couldn't start the chat — please try again",
   },
 
   sellerChat: {
@@ -1206,6 +1207,10 @@ export const en: Dict = {
     customerFallback: "Customer",
     aboutProduct: "Asking about a product",
     emptyDesc: "When a customer taps \"Chat with shop\" the conversation appears here",
+    customers: "Customers",
+    velnox: "Velnox",
+    companyEmpty: "No conversation with Velnox yet",
+    contactVelnox: "Contact Velnox",
   },
 
   verification: {

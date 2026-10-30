@@ -18,17 +18,9 @@ import {
   MessageCircle,
   Send,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
-
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-      {children}
-    </p>
-  );
-}
 
 interface Conversation {
   id: string;
@@ -77,6 +69,7 @@ export default function ShopChat() {
   const markConversationRead = useAction(api.customer.markConversationReadAction);
 
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [inboxTab, setInboxTab] = useState<"shops" | "support">("shops");
   const [active, setActive] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -89,6 +82,8 @@ export default function ShopChat() {
   const activeIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
+  const conversationsRef = useRef<Conversation[] | null>(null);
+  conversationsRef.current = conversations;
   /**
    * A failed send keeps its clientId: resending the SAME text reuses it, so the
    * server replays the stored message instead of writing a duplicate row (or a
@@ -121,6 +116,12 @@ export default function ShopChat() {
     const offMessage = onChatEvent("chat:message", (data: any) => {
       const message = data?.message as ChatMessage | undefined;
       if (!message) return;
+      // A brand-new company thread can arrive before this customer ever opened
+      // it. The event is a signal: re-read the authoritative list instead of
+      // inventing a row from the payload.
+      if (conversationsRef.current && !conversationsRef.current.some((c) => c.id === message.conversationId)) {
+        void loadConversations();
+      }
       // Update the conversation list (last message / unread)
       setConversations((prev) => {
         if (!prev) return prev;
@@ -443,6 +444,37 @@ export default function ShopChat() {
             <div className="border-b border-slate-100 px-4 py-3">
               <h1 className="text-lg font-bold tracking-tight text-slate-900">{t("chat.title")}</h1>
             </div>
+            {/* Two inboxes, one conversation core. `Shops` is customer↔seller;
+                `Velnox Support` is customer↔company and never a fake seller. */}
+            <div className="flex gap-1 border-b border-slate-100 px-3 py-2">
+              {(["shops", "support"] as const).map((key) => {
+                const list = key === "shops" ? sellerConvs : supportConvs;
+                const unread = list.reduce((sum, c) => sum + Math.max(0, c.unreadCount), 0);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setInboxTab(key)}
+                    aria-pressed={inboxTab === key}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ${
+                      inboxTab === key
+                        ? "bg-[#F0FDF9] text-emerald-700"
+                        : "text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    {key === "support" && <Headphones className="size-3.5" />}
+                    <span className="truncate">
+                      {key === "shops" ? t("chat.sellers") : t("chat.supportTitle")}
+                    </span>
+                    {unread > 0 && (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[10px] font-bold text-white">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
             {conversations === null && error ? (
               <div className="px-6 py-14 text-center">
                 <MessageCircle className="mx-auto size-7 text-slate-300" />
@@ -462,18 +494,14 @@ export default function ShopChat() {
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
               </div>
-            ) : (
+            ) : inboxTab === "support" ? (
               <div className="pb-2">
-                {/* Velnox Support — dedicated section, never mixed with sellers */}
                 {supportConvs.length > 0 ? (
-                  <>
-                    <SectionLabel>{t("chat.supportTitle")}</SectionLabel>
-                    <div className="border-b border-slate-100">
-                      {supportConvs.map((c) => convRow(c, true))}
-                    </div>
-                  </>
+                  <div className="divide-y divide-slate-100">
+                    {supportConvs.map((c) => convRow(c, true))}
+                  </div>
                 ) : (
-                  <div className="border-b border-slate-100 px-4 py-3.5">
+                  <div className="px-4 py-4">
                     <button
                       type="button"
                       onClick={() => void startSupport()}
@@ -488,22 +516,19 @@ export default function ShopChat() {
                       </span>
                       <ChevronRight className="size-4 shrink-0 text-slate-300" />
                     </button>
+                    <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("chat.supportDesc")}</p>
                   </div>
                 )}
-
-                {/* Sellers — customer's shop conversations */}
-                <SectionLabel>{t("chat.sellers")}</SectionLabel>
-                {sellerConvs.length === 0 ? (
-                  <div className="px-6 py-10 text-center">
-                    <MessageCircle className="mx-auto size-7 text-slate-300" />
-                    <p className="mt-3 text-sm font-medium text-slate-600">{t("chat.emptyTitle")}</p>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">{t("chat.emptyDesc")}</p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {sellerConvs.map((c) => convRow(c, false))}
-                  </div>
-                )}
+              </div>
+            ) : sellerConvs.length === 0 ? (
+              <div className="px-6 py-10 text-center">
+                <MessageCircle className="mx-auto size-7 text-slate-300" />
+                <p className="mt-3 text-sm font-medium text-slate-600">{t("chat.emptyTitle")}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">{t("chat.emptyDesc")}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 pb-2">
+                {sellerConvs.map((c) => convRow(c, false))}
               </div>
             )}
           </aside>

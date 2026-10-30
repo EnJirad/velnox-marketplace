@@ -130,8 +130,10 @@ describe("a retried send replays instead of duplicating", () => {
 
   test("a replay answers before any push or notification can fire again", () => {
     const reply = chat.indexOf("data: { message: duplicate, clientId, duplicate: true }");
-    const push = chat.indexOf("CHANNELS.CHAT_MESSAGE");
-    const notify = chat.indexOf("await notifyUser(");
+    // Search FORWARD from the reply: the shared `notifyCompanyStaff` helper also
+    // contains a `notifyUser` call, and that helper lives above the routes.
+    const push = chat.indexOf("CHANNELS.CHAT_MESSAGE", reply);
+    const notify = chat.indexOf("await notifyUser(", reply);
     expect(reply).toBeGreaterThan(-1);
     expect(reply).toBeLessThan(push);
     expect(reply).toBeLessThan(notify);
@@ -184,7 +186,8 @@ describe("read is bounded to what the reader actually loaded", () => {
   });
 
   test("the frontend forwards the bound it derived from the loaded page", () => {
-    expect(apiRoutes.split("{ upTo: a?.upTo })").length - 1).toBe(2);
+    // Customer, seller and company reads all forward the SAME `upTo` bound.
+    expect(apiRoutes.split("{ upTo: a?.upTo })").length - 1).toBe(3);
     for (const page of [SHOP_CHAT, SELLER_CHAT]) {
       const src = read(page);
       // Bound by the SERVER timestamp of the newest loaded message…
@@ -203,15 +206,19 @@ describe("the badge is server-derived, event-driven and never a fake zero", () =
   const hook = read(UNREAD_HOOK);
   const apiRoutes = read(API_ROUTES);
 
-  test("it reuses existing endpoints — no new unread route exists", () => {
+  test("it reuses existing counts; only the company tabs add an aggregate", () => {
     expect(hook).toContain("api.customer.accountSummary()");
     expect(hook).toContain("api.seller.sellerConversations()");
     // The hook only ever goes through the route table: no ad-hoc URL, no
     // hand-rolled fetch, nothing that could bypass the shared API surface.
     expect(hook).not.toContain("fetch(");
     expect(hook).not.toContain("apiPost");
-    // No new endpoint was invented for a count the existing surfaces already have.
-    expect(apiRoutes).not.toContain("/unread");
+    // The customer and seller surfaces still have NO invented unread endpoint —
+    // their counts come from account-summary / the conversation rows. The company
+    // tabs genuinely need one aggregate across three conversation types, and it
+    // is served by the same chat core (`routes/center-chat.ts`).
+    expect(apiRoutes).not.toMatch(/"api\.(customer|seller)\.[^"]*unread/i);
+    expect(apiRoutes).toContain('apiGetFresh("/api/center/chat/unread")');
     // account-summary answers fresh: a cached count is a wrong badge.
     expect(apiRoutes).toContain('apiGetFresh("/api/customer/account-summary")');
   });

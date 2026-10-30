@@ -12,7 +12,8 @@
  * (the notification bell counts `notifications` rows; this never does):
  *   - customer → `GET /api/customer/account-summary` → `chatUnread`
  *   - seller   → the sum of `unreadCount` over `GET /api/seller/conversations`
- * Both are scoped to the authenticated viewer SERVER-side; the browser never
+ *   - company  → the three server-counted tabs from `GET /api/center/chat/unread`
+ * All are scoped to the authenticated viewer SERVER-side; the browser never
  * decides who owns a conversation, and notification rows are never counted here.
  *
  * `count === null` means "not confirmed by the server yet" and renders NOTHING:
@@ -28,7 +29,7 @@ import { api } from "../lib/api-routes";
 import { onChatEvent, onChatReconnect } from "../lib/chat-socket";
 import { useAuth } from "./use-auth";
 
-export type ChatUnreadViewer = "customer" | "seller";
+export type ChatUnreadViewer = "customer" | "seller" | "center";
 
 export interface ChatUnreadState {
   /** null = the server has not confirmed a number yet (loading / failed first load). */
@@ -81,14 +82,25 @@ async function readCount(viewer: ChatUnreadViewer): Promise<number> {
     }
     return Math.max(0, Math.trunc(raw));
   }
-  const rows = await api.seller.sellerConversations();
-  if (!Array.isArray(rows)) throw new Error("conversations unavailable");
-  let total = 0;
-  for (const row of rows as Array<{ unreadCount?: unknown }>) {
-    const n = Number(row?.unreadCount);
-    if (Number.isFinite(n) && n > 0) total += Math.trunc(n);
+  if (viewer === "seller") {
+    const rows = await api.seller.sellerConversations();
+    if (!Array.isArray(rows)) throw new Error("conversations unavailable");
+    let total = 0;
+    for (const row of rows as Array<{ unreadCount?: unknown }>) {
+      const n = Number(row?.unreadCount);
+      if (Number.isFinite(n) && n > 0) total += Math.trunc(n);
+    }
+    return total;
   }
-  return total;
+  // Company: customers + sellers + internal, each computed by the server from
+  // the SAME conversation/message rows. An unusable payload is an error, never
+  // a silent zero badge.
+  const counts = await api.center.chatUnread();
+  const parts = [counts?.customers, counts?.sellers, counts?.internal];
+  if (parts.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+    throw new Error("company chat unread unavailable");
+  }
+  return parts.reduce((sum, value) => sum + Math.max(0, Math.trunc(value as number)), 0);
 }
 
 /** Re-read the count from the API. Concurrent calls coalesce into one fetch

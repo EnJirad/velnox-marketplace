@@ -25,6 +25,7 @@ import { registerVerificationRoutes } from "./routes/verification.js";
 import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
 import { setupChatRoutes } from "./routes/chat.js";
+import { setupCenterChatRoutes } from "./routes/center-chat.js";
 import { broadcast, CHANNELS, setupWebSocket } from "./realtime/index.js";
 
 const app = express();
@@ -429,6 +430,8 @@ setupProductOptionRoutes(app);
 
 // ─── Chat, Messaging & Notifications ────────────────────
 setupChatRoutes(app);
+// ─── Company chat (customers / sellers / internal) ──────
+setupCenterChatRoutes(app);
 
 // ─── Admin (bootstrap / owner setup) ────────────────────
 setupAdminRoutes(app);

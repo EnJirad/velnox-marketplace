@@ -1220,6 +1220,7 @@ export const th = {
     chatWithSupport: "แชทกับทีมงาน Velnox",
     supportBadge: "ซัพพอร์ต",
     supportError: "เปิดแชทซัพพอร์ตไม่สำเร็จ กรุณาลองอีกครั้ง",
+    startError: "เริ่มแชทไม่สำเร็จ กรุณาลองอีกครั้ง",
   },
 
   sellerChat: {
@@ -1231,6 +1232,10 @@ export const th = {
     customerFallback: "ลูกค้า",
     aboutProduct: "สอบถามเกี่ยวกับสินค้า",
     emptyDesc: "เมื่อลูกค้ากด \"แชทกับร้านค้า\" การสนทนาจะมาแสดงที่นี่",
+    customers: "ลูกค้า",
+    velnox: "Velnox",
+    companyEmpty: "ยังไม่มีบทสนทนากับ Velnox",
+    contactVelnox: "ติดต่อ Velnox",
   },
 
   verification: {

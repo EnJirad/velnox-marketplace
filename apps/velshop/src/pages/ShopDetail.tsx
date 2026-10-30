@@ -13,7 +13,7 @@ import { useTracking } from "@velnox/shared/lib/track";
 import { setSeo } from "@/lib/seo";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { VBadge } from "@velnox/shared/components/VBadge";
-import { ArrowLeft, ChevronDown, ChevronUp, Package, ShieldCheck, Star, Store } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, MessageCircle, Package, ShieldCheck, Star, Store } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -48,6 +48,7 @@ export default function ShopDetail() {
   const { isAuthenticated } = useAuth();
   const toggleWishlist = useAction(api.customer.toggleWishlistAction);
   const myWishlist = useAction(api.customer.myWishlist);
+  const createConversation = useAction(api.customer.createConversationAction);
   const [shop, setShop] = useState<ShopRow | null>(null);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +59,7 @@ export default function ShopDetail() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<string>("newest");
   const [selectedProduct, setSelectedProduct] = useState<StoreProduct | null>(null);
+  const [chatStarting, setChatStarting] = useState(false);
 
   // Load wishlist if authenticated
   useEffect(() => {
@@ -68,6 +70,25 @@ export default function ShopDetail() {
       .catch(() => {});
     return () => { alive = false; };
   }, [isAuthenticated, myWishlist]);
+
+  /** Storefront → shop thread. The product context is optional; the shop is not. */
+  const startShopChat = useCallback(async () => {
+    if (!shop) return;
+    if (!isAuthenticated) {
+      navigate("/auth?returnTo=" + encodeURIComponent(`/shops/${shopId}`));
+      return;
+    }
+    setChatStarting(true);
+    try {
+      const conv = await createConversation({ shopId: shop.id });
+      navigate(`/chat?conv=${encodeURIComponent(conv.id)}`);
+    } catch (err) {
+      console.error("Start shop chat error:", err);
+      toast.error(t("chat.startError"));
+    } finally {
+      setChatStarting(false);
+    }
+  }, [shop, isAuthenticated, navigate, shopId, createConversation, t]);
 
   const handleWishlist = async (product: StoreProduct) => {
     if (!isAuthenticated) {
@@ -259,6 +280,18 @@ export default function ShopDetail() {
                   <span>{t("shopDetail.soldOrders", { count: shop.orderCount })}</span>
                 )}
               </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void startShopChat()}
+                disabled={chatStarting}
+                className="mt-2 h-8 gap-1.5 rounded-lg border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <MessageCircle className="size-3.5 text-[#10B981]" />
+                {chatStarting ? t("common.loading") : t("chat.chatWithShop")}
+              </Button>
 
               {/* Description — max 2 lines */}
               {shop.description && (

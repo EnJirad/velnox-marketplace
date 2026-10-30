@@ -7,6 +7,7 @@ import { openOrderShipDialog } from "../components/OrderShipDialog";
 import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 // VerificationReviewDialog is now used inside SellerVerificationQueue component
 import CategoriesManagement from "../components/CategoriesManagement";
+import ChatManagement from "../components/ChatManagement";
 import ProductModerationQueue from "../components/ProductModerationQueue";
 import SellerVerificationQueue from "../components/SellerVerificationQueue";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
@@ -84,6 +85,7 @@ import {
   Globe,
   History,
   Image as ImageIcon,
+  MessageCircle,
   KeyRound,
   Loader2,
   Package,
@@ -104,7 +106,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings";
+type Tab = "overview" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings" | "chat";
 
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
@@ -186,6 +188,12 @@ function canSeeTab(
     case "overview":
     case "intel":
       return true;
+
+    // Company chat is an operational surface for every VelCenter member
+    // (owner / admin / staff). The endpoint independently re-checks that role
+    // and never exposes a private customer↔seller thread.
+    case "chat":
+      return role === "owner" || role === "admin" || role === "staff";
 
     // Business surfaces map onto the permission catalog: a tab is OFFERED only
     // when the account holds its code. The endpoint re-checks regardless, so a
@@ -1112,6 +1120,9 @@ export default function Center() {
             <TabsTrigger value="overview" className="gap-1.5 rounded-[10px]">
               <TrendingUp className="size-4" /> ภาพรวม
             </TabsTrigger>
+            <TabsTrigger value="chat" className="gap-1.5 rounded-[10px]">
+              <MessageCircle className="size-4" /> แชท
+            </TabsTrigger>
             <TabsTrigger value="orders" className="gap-1.5 rounded-[10px]">
               <ShoppingBag className="size-4" /> ออเดอร์
               {/*
@@ -1177,6 +1188,11 @@ export default function Center() {
               </TabsTrigger>
             )}
           </TabsList>
+
+          {/* ============ Chat (customers / sellers / internal) ============ */}
+          <TabsContent value="chat" className="mt-6">
+            <ChatManagement />
+          </TabsContent>
 
           {/* ============ Overview ============ */}
           <TabsContent value="overview" className="mt-6">

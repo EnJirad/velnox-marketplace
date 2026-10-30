@@ -1,15 +1,23 @@
 /**
- * Velnox Chat & Notifications Endpoints
+ * Velnox Chat & Notifications Endpoints — the ONE conversation core.
+ *
+ * Every chat type is a row in `conversations`, distinguished by `type`:
+ *   CUSTOMER_SELLER, CUSTOMER_COMPANY, SELLER_COMPANY, COMPANY_INTERNAL
+ * and every message is a row in `chat_messages`. There is no second chat
+ * engine, table or socket; the VelCenter company surface (routes/center-chat.ts)
+ * imports these same helpers.
  *
  * Customer:
  *   GET    /api/customer/conversations                — List my conversations
  *   POST   /api/customer/conversations                — Get-or-create (shopId, productId?)
+ *   POST   /api/customer/support/conversation         — Get-or-create company thread
  *   GET    /api/customer/conversations/:id/messages   — Messages (keyset pagination via ?before=)
  *   POST   /api/customer/conversations/:id/messages   — Send message
  *   POST   /api/customer/conversations/:id/read       — Mark incoming messages read
  *
  * Seller:
- *   GET    /api/seller/conversations                 — Conversations of my shop(s)
+ *   GET    /api/seller/conversations                 — Customer + company threads
+ *   POST   /api/seller/company/conversation          — Get-or-create company thread
  *   GET    /api/seller/conversations/:id/messages    — Messages
  *   POST   /api/seller/conversations/:id/messages    — Reply
  *   POST   /api/seller/conversations/:id/read        — Mark incoming messages read
@@ -35,7 +43,13 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
-import { CHANNELS, getViewingConversation, sendToUser } from "../realtime/index.js";
+import { CENTER_ROLES } from "../lib/permissions.js";
+import {
+  CHANNELS,
+  getViewingConversation,
+  sendToCenter,
+  sendToUser,
+} from "../realtime/index.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -44,7 +58,7 @@ function param(req: Request, key: string): string {
 }
 
 /** Resolve the approved seller row for a user (or null). */
-async function getSellerForUser(userId: string): Promise<{ id: string; user_id: string } | null> {
+export async function getSellerForUser(userId: string): Promise<{ id: string; user_id: string } | null> {
   const res = await query(
     "SELECT id, user_id FROM sellers WHERE user_id = $1 AND status = 'approved' LIMIT 1",
     [userId],
@@ -52,81 +66,88 @@ async function getSellerForUser(userId: string): Promise<{ id: string; user_id: 
   return res.rows[0] ?? null;
 }
 
-// ─── Velnox Support chat ────────────────────────────────────────────────────
-// Velnox Support is a reserved shop (slug 'velnox-support') owned by a seeded
-// approved support seller. This keeps the existing customer↔shop conversation
-// architecture untouched — support conversations are ordinary conversation
-// rows flagged by shop slug, so no schema change is required and seller chat
-// keeps working unchanged. The support agent replies through the existing
-// seller chat of that shop (velseller), including realtime + notifications.
+// ─── Company chat ───────────────────────────────────────────────────────────
+// Velnox company conversations are rows with type CUSTOMER_COMPANY /
+// SELLER_COMPANY / COMPANY_INTERNAL. They are NOT marketplace sellers and are
+// never served by the seller routes of a reserved shop.
+//
+// LEGACY COMPATIBILITY: an older database may still hold a support thread as
+// CUSTOMER_SELLER against the reserved shop slug below. It stays readable and
+// replyable (center chat includes it), and `ensureCustomerCompanyConversation`
+// converts it in place the first time that customer opens support — the
+// messages are preserved, and the thread stops depending on a fake shop.
 const SUPPORT_SHOP_SLUG = "velnox-support";
 
-/** Ensure the Velnox Support shop exists (idempotent) and return its ids. */
-async function getSupportShop(): Promise<{ shopId: string; sellerId: string } | null> {
+const CONVERSATION_TYPES = [
+  "CUSTOMER_SELLER",
+  "CUSTOMER_COMPANY",
+  "SELLER_COMPANY",
+  "COMPANY_INTERNAL",
+] as const;
+
+export type ConversationType = (typeof CONVERSATION_TYPES)[number];
+
+/** Get-or-create the one CUSTOMER_COMPANY thread for this customer. */
+export async function ensureCustomerCompanyConversation(userId: string): Promise<any | null> {
   const existing = await query(
-    `SELECT sh.id AS shop_id, sh.seller_id FROM shops sh
-     JOIN sellers sl ON sl.id = sh.seller_id
-     WHERE sh.slug = $1 AND sl.status = 'approved' LIMIT 1`,
-    [SUPPORT_SHOP_SLUG],
+    "SELECT id FROM conversations WHERE customer_id = $1 AND type = 'CUSTOMER_COMPANY' LIMIT 1",
+    [userId],
   );
-  if (existing.rows[0]) return existing.rows[0];
+  if (existing.rows[0]) return getConversationById(existing.rows[0].id);
 
-  // Idempotent seed: support agent user → approved seller → support shop.
-  try {
-    const supportEmail = (process.env.SUPPORT_EMAIL ?? "support@velnox.com").toLowerCase();
-    const userRes = await query(
-      `INSERT INTO users (email, name, role, status) VALUES ($1, 'Velnox Support', 'support', 'active')
-       ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id`,
-      [supportEmail],
-    );
-    const userId = userRes.rows[0]?.id;
-    if (!userId) return null;
+  // Migrate a legacy reserved-shop support thread in place. Messages, timestamps
+  // and read state are untouched; only the participant shape changes.
+  const legacy = await query(
+    `UPDATE conversations c
+        SET type = 'CUSTOMER_COMPANY', seller_id = NULL, shop_id = NULL, updated_at = NOW()
+       FROM shops sh
+      WHERE c.shop_id = sh.id AND sh.slug = $2
+        AND c.customer_id = $1 AND c.type = 'CUSTOMER_SELLER'
+      RETURNING c.id`,
+    [userId, SUPPORT_SHOP_SLUG],
+  );
+  if (legacy.rows[0]) return getConversationById(legacy.rows[0].id);
 
-    let sellerId: string | null = null;
-    const sellerRes = await query(
-      "SELECT id FROM sellers WHERE user_id = $1 AND status = 'approved' LIMIT 1",
-      [userId],
-    );
-    if (sellerRes.rows[0]) {
-      sellerId = sellerRes.rows[0].id;
-    } else {
-      try {
-        const inserted = await query(
-          "INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id",
-          [userId],
-        );
-        sellerId = inserted.rows[0]?.id ?? null;
-      } catch {
-        const retry = await query(
-          "SELECT id FROM sellers WHERE user_id = $1 AND status = 'approved' LIMIT 1",
-          [userId],
-        );
-        sellerId = retry.rows[0]?.id ?? null;
-      }
-    }
-    if (!sellerId) return null;
+  const inserted = await query(
+    `INSERT INTO conversations (type, customer_id) VALUES ('CUSTOMER_COMPANY', $1)
+     ON CONFLICT DO NOTHING RETURNING id`,
+    [userId],
+  );
+  if (inserted.rows[0]) return getConversationById(inserted.rows[0].id);
 
-    let shopId: string | null = null;
-    const shopRes = await query(
-      `INSERT INTO shops (seller_id, name, slug, description)
-       VALUES ($1, 'Velnox Support', $2, 'Velnox official customer support')
-       ON CONFLICT (slug) DO NOTHING RETURNING id`,
-      [sellerId, SUPPORT_SHOP_SLUG],
-    );
-    shopId = shopRes.rows[0]?.id ?? null;
-    if (!shopId) {
-      const retry = await query("SELECT id FROM shops WHERE slug = $1 LIMIT 1", [SUPPORT_SHOP_SLUG]);
-      shopId = retry.rows[0]?.id ?? null;
-    }
-    return shopId && sellerId ? { shopId, sellerId } : null;
-  } catch (err) {
-    console.error("[chat] getSupportShop failed:", err);
-    return null;
-  }
+  // Lost a concurrent get-or-create race: the unique partial index guarantees
+  // exactly one row, so read the winner instead of creating a second thread.
+  const retry = await query(
+    "SELECT id FROM conversations WHERE customer_id = $1 AND type = 'CUSTOMER_COMPANY' LIMIT 1",
+    [userId],
+  );
+  return retry.rows[0] ? getConversationById(retry.rows[0].id) : null;
+}
+
+/** Get-or-create the one SELLER_COMPANY thread for this approved seller. */
+export async function ensureSellerCompanyConversation(sellerId: string): Promise<any | null> {
+  const existing = await query(
+    "SELECT id FROM conversations WHERE seller_id = $1 AND type = 'SELLER_COMPANY' LIMIT 1",
+    [sellerId],
+  );
+  if (existing.rows[0]) return getConversationById(existing.rows[0].id);
+
+  const inserted = await query(
+    `INSERT INTO conversations (type, seller_id) VALUES ('SELLER_COMPANY', $1)
+     ON CONFLICT DO NOTHING RETURNING id`,
+    [sellerId],
+  );
+  if (inserted.rows[0]) return getConversationById(inserted.rows[0].id);
+
+  const retry = await query(
+    "SELECT id FROM conversations WHERE seller_id = $1 AND type = 'SELLER_COMPANY' LIMIT 1",
+    [sellerId],
+  );
+  return retry.rows[0] ? getConversationById(retry.rows[0].id) : null;
 }
 
 /** Map a chat_messages row to the API shape. */
-function mapMessage(r: any): Record<string, unknown> {
+export function mapMessage(r: any): Record<string, unknown> {
   return {
     id: r.id,
     conversationId: r.conversation_id,
@@ -139,7 +160,7 @@ function mapMessage(r: any): Record<string, unknown> {
   };
 }
 
-async function loadMessages(conversationId: string, before?: string): Promise<{ items: any[]; hasMore: boolean }> {
+export async function loadMessages(conversationId: string, before?: string): Promise<{ items: any[]; hasMore: boolean }> {
   const LIMIT = 30;
   const params: unknown[] = [conversationId];
   let where = "WHERE m.conversation_id = $1";
@@ -156,7 +177,11 @@ async function loadMessages(conversationId: string, before?: string): Promise<{ 
     params,
   );
   const hasMore = res.rows.length > LIMIT;
-  const items = (hasMore ? res.rows.slice(0, LIMIT) : res.rows).reverse();
+  // Same API shape as a send response. Before this mapping the endpoint leaked
+  // raw `sender_id` / `created_at` columns while every client reads
+  // `senderId` / `createdAt` — so a reloaded thread lost its own-message side,
+  // timestamps and read ticks. One mapper, both paths.
+  const items = (hasMore ? res.rows.slice(0, LIMIT) : res.rows).reverse().map(mapMessage);
   return { items, hasMore };
 }
 
@@ -168,15 +193,17 @@ async function getConversationById(conversationId: string): Promise<any | null> 
             sl.user_id AS seller_user_id,
             su.name AS seller_name, su.avatar AS seller_avatar,
             cu.name AS customer_name, cu.avatar AS customer_avatar,
+            au.name AS assigned_to_name,
             p.name AS product_name, p.price AS product_price,
             (SELECT pi.url FROM product_images pi
               WHERE pi.product_id = c.product_id AND (pi.image_type = 'gallery' OR pi.image_type IS NULL)
               ORDER BY pi.sort_order ASC, pi.created_at ASC LIMIT 1) AS product_image
      FROM conversations c
-     JOIN shops sh ON sh.id = c.shop_id
-     JOIN sellers sl ON sl.id = c.seller_id
+     LEFT JOIN shops sh ON sh.id = c.shop_id
+     LEFT JOIN sellers sl ON sl.id = c.seller_id
      LEFT JOIN users su ON su.id = sl.user_id
      LEFT JOIN users cu ON cu.id = c.customer_id
+     LEFT JOIN users au ON au.id = c.assigned_to
      LEFT JOIN products p ON p.id = c.product_id
      WHERE c.id = $1`,
     [conversationId],
@@ -185,18 +212,25 @@ async function getConversationById(conversationId: string): Promise<any | null> 
 }
 
 /** Build the API conversation object from a row for a given viewer. */
-function mapConversation(r: any, viewerUserId: string): Record<string, unknown> {
+export function mapConversation(r: any, viewerUserId: string): Record<string, unknown> {
+  const type = (r.type ?? "CUSTOMER_SELLER") as ConversationType;
+  const isCompany = type === "CUSTOMER_COMPANY" || type === "SELLER_COMPANY";
   const isCustomerView = r.customer_id === viewerUserId;
   const otherUserId = isCustomerView ? r.seller_user_id : r.customer_id;
   const otherName = isCustomerView ? r.seller_name : r.customer_name;
   const otherAvatar = isCustomerView ? r.seller_avatar : r.customer_avatar;
   return {
     id: r.id,
+    type,
     customerId: r.customer_id,
     sellerId: r.seller_id,
     shopId: r.shop_id,
     productId: r.product_id ?? null,
-    isSupport: r.shop_slug === SUPPORT_SHOP_SLUG,
+    isSupport: type === "CUSTOMER_COMPANY" || r.shop_slug === SUPPORT_SHOP_SLUG,
+    isCompany,
+    supportStatus: r.support_status ?? "OPEN",
+    assignedTo: r.assigned_to ?? null,
+    assignedToName: r.assigned_to_name ?? null,
     shopName: r.shop_name,
     shopLogo: r.shop_logo,
     // The person on the other side of the thread, from the viewer's perspective
@@ -219,7 +253,7 @@ function mapConversation(r: any, viewerUserId: string): Record<string, unknown> 
 }
 
 /** Insert a notification row and push it over the user's realtime channel. */
-async function notifyUser(userId: string, type: string, title: string, message: string, data?: unknown): Promise<void> {
+export async function notifyUser(userId: string, type: string, title: string, message: string, data?: unknown): Promise<void> {
   try {
     const res = await query(
       `INSERT INTO notifications (user_id, type, title, message, data)
@@ -238,8 +272,37 @@ async function notifyUser(userId: string, type: string, title: string, message: 
   }
 }
 
+/**
+ * Notify the company side of a customer/seller message. One row per active
+ * VelCenter account (owner/admin/staff) — the chat itself never depends on it,
+ * and a staff member already looking at the thread is skipped (the message
+ * still arrives over the socket). Bounded so a large staff never turns one send
+ * into an unbounded fan-out.
+ */
+export async function notifyCompanyStaff(
+  conversationId: string,
+  title: string,
+  message: string,
+  exceptUserId?: string,
+): Promise<void> {
+  try {
+    const res = await query(
+      `SELECT id FROM users WHERE role = ANY($1::text[]) AND status = 'active' ORDER BY created_at ASC LIMIT 100`,
+      [CENTER_ROLES],
+    );
+    for (const row of res.rows) {
+      const userId = row.id as string;
+      if (userId === exceptUserId) continue;
+      if (getViewingConversation(userId, conversationId)) continue;
+      await notifyUser(userId, "chat", title, message.slice(0, 120), { conversationId });
+    }
+  } catch (err) {
+    console.error("[chat] notifyCompanyStaff failed:", err);
+  }
+}
+
 /** Shared validation: body must be a non-empty string of ≤ 4000 chars. */
-function validateBody(body: unknown): string | null {
+export function validateBody(body: unknown): string | null {
   if (typeof body !== "string") return null;
   const trimmed = body.trim();
   if (trimmed.length === 0 || trimmed.length > 4000) return null;
@@ -254,7 +317,7 @@ function validateBody(body: unknown): string | null {
  * Absent → the previous unbounded behaviour, so an older client keeps working.
  * Present but unusable → "invalid" (a 400), never a silently ignored bound.
  */
-function readUpTo(req: Request): number | null | "invalid" {
+export function readUpTo(req: Request): number | null | "invalid" {
   const raw = req.body?.upTo;
   if (raw === undefined || raw === null) return null;
   const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
@@ -262,7 +325,7 @@ function readUpTo(req: Request): number | null | "invalid" {
   return n;
 }
 
-const READ_BOUND_INVALID = {
+export const READ_BOUND_INVALID = {
   success: false,
   error: { code: "VALIDATION_ERROR", message: "upTo must be an epoch-ms timestamp" },
 } as const;
@@ -280,7 +343,7 @@ const READ_BOUND_INVALID = {
  * message that lands afterwards stays unread — the residual race is bounded by
  * 1 ms rather than the previous unbounded mark-all.
  */
-const READ_BOUND_SQL = ` AND created_at < to_timestamp($3::double precision / 1000) + interval '1 millisecond'`;
+export const READ_BOUND_SQL = ` AND created_at < to_timestamp($3::double precision / 1000) + interval '1 millisecond'`;
 
 /**
  * In-process idempotency for message sends.
@@ -302,7 +365,7 @@ const SEND_DEDUPE_TTL_MS = 10 * 60 * 1000;
 const SEND_DEDUPE_MAX_ENTRIES = 1000;
 const recentSends = new Map<string, { message: Record<string, unknown>; expires: number }>();
 
-function rememberSend(key: string, message: Record<string, unknown>): void {
+export function rememberSend(key: string, message: Record<string, unknown>): void {
   const now = Date.now();
   while (recentSends.size >= SEND_DEDUPE_MAX_ENTRIES) {
     // Map iteration is insertion-ordered: the first key is the oldest entry.
@@ -314,7 +377,7 @@ function rememberSend(key: string, message: Record<string, unknown>): void {
 }
 
 /** The already-stored message for a retried send, or null for a new one. */
-function replaySend(key: string): Record<string, unknown> | null {
+export function replaySend(key: string): Record<string, unknown> | null {
   const hit = recentSends.get(key);
   if (!hit) return null;
   if (hit.expires <= Date.now()) {
@@ -398,8 +461,8 @@ export function setupChatRoutes(app: Express): void {
                 (SELECT COUNT(*) FROM chat_messages m
                   WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread_count
          FROM conversations c
-         JOIN shops sh ON sh.id = c.shop_id
-         JOIN sellers sl ON sl.id = c.seller_id
+         LEFT JOIN shops sh ON sh.id = c.shop_id
+         LEFT JOIN sellers sl ON sl.id = c.seller_id
          LEFT JOIN users su ON su.id = sl.user_id
          LEFT JOIN users cu ON cu.id = c.customer_id
          LEFT JOIN products p ON p.id = c.product_id
@@ -472,34 +535,17 @@ export function setupChatRoutes(app: Express): void {
     }
   });
 
-  // ── POST /api/customer/support/conversation — get-or-create Velnox Support ──
-  // Support is a reserved shop (slug 'velnox-support'), so this reuses the
-  // existing conversation architecture: the customer gets one distinct
-  // conversation that is clearly labelled as Velnox Support (isSupport) and
-  // is never mixed with seller conversations.
+  // ── POST /api/customer/support/conversation — get-or-create company thread ──
+  // A CUSTOMER_COMPANY row, not a marketplace shop. A legacy reserved-shop
+  // support thread is converted in place on first open (messages preserved).
   app.post("/api/customer/support/conversation", requireAuth, async (req: Request, res: Response) => {
     try {
-      const support = await getSupportShop();
-      if (!support) {
-        res.status(500).json({ success: false, error: { code: "SUPPORT_UNAVAILABLE", message: "Support chat is not available" } });
-        return;
-      }
       const userId = req.user!.userId;
-      await query(
-        `INSERT INTO conversations (customer_id, seller_id, shop_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (customer_id, shop_id) DO NOTHING`,
-        [userId, support.sellerId, support.shopId],
-      );
-      const convRes = await query(
-        "SELECT id FROM conversations WHERE customer_id = $1 AND shop_id = $2",
-        [userId, support.shopId],
-      );
-      if (!convRes.rows[0]) {
+      const conversation = await ensureCustomerCompanyConversation(userId);
+      if (!conversation) {
         res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to create support conversation" } });
         return;
       }
-      const conversation = await getConversationById(convRes.rows[0].id);
       res.json({ success: true, data: mapConversation(conversation, userId) });
     } catch (err) {
       console.error("[chat] support conversation error:", err);
@@ -533,7 +579,11 @@ export function setupChatRoutes(app: Express): void {
     try {
       const conversationId = param(req, "id");
       const convRes = await query(
-        "SELECT c.*, sl.user_id AS seller_user_id FROM conversations c JOIN sellers sl ON sl.id = c.seller_id WHERE c.id = $1 AND c.customer_id = $2",
+        `SELECT c.*, sl.user_id AS seller_user_id, sh.slug AS shop_slug
+           FROM conversations c
+           LEFT JOIN sellers sl ON sl.id = c.seller_id
+           LEFT JOIN shops sh ON sh.id = c.shop_id
+          WHERE c.id = $1 AND c.customer_id = $2`,
         [conversationId, req.user!.userId],
       );
       if (convRes.rows.length === 0) {
@@ -569,29 +619,46 @@ export function setupChatRoutes(app: Express): void {
         [conversationId, userId, body],
       );
       await query(
-        `UPDATE conversations SET last_message = $1, last_message_at = NOW(), updated_at = NOW() WHERE id = $2`,
+        `UPDATE conversations
+            SET last_message = $1, last_message_at = NOW(), updated_at = NOW(),
+                support_status = CASE WHEN support_status = 'CLOSED' THEN 'OPEN' ELSE support_status END
+          WHERE id = $2`,
         [body.slice(0, 200), conversationId],
       );
 
       const message = mapMessage(insertRes.rows[0]);
       if (dedupeKey) rememberSend(dedupeKey, message);
-      // Realtime: notify the seller's user channel.
       const conv = convRes.rows[0];
-      sendToUser(conv.seller_user_id, "", CHANNELS.CHAT_MESSAGE, {
-        conversationId,
-        message,
-        clientId,
-      });
-      // Notification row for the seller (skipped while they are viewing this
-      // thread — the message still arrives over the realtime socket).
-      if (!getViewingConversation(conv.seller_user_id, conversationId)) {
-        await notifyUser(
-          conv.seller_user_id,
-          "chat",
-          "ข้อความใหม่จากลูกค้า",
-          body.slice(0, 120),
-          { conversationId },
+      // Company thread (including a legacy reserved-shop support row): addressed
+      // to every live VelCenter session; a seller thread goes to its seller.
+      if (conv.type === "CUSTOMER_COMPANY" || conv.shop_slug === SUPPORT_SHOP_SLUG) {
+        sendToCenter(CHANNELS.CHAT_MESSAGE, CHANNELS.CHAT_MESSAGE, {
+          conversationId,
+          message,
+          clientId,
+        });
+        await notifyCompanyStaff(
+          conversationId,
+          "ลูกค้าติดต่อ Velnox Support",
+          body,
         );
+      } else {
+        sendToUser(conv.seller_user_id, "", CHANNELS.CHAT_MESSAGE, {
+          conversationId,
+          message,
+          clientId,
+        });
+        // Notification row for the seller (skipped while they are viewing this
+        // thread — the message still arrives over the realtime socket).
+        if (!getViewingConversation(conv.seller_user_id, conversationId)) {
+          await notifyUser(
+            conv.seller_user_id,
+            "chat",
+            "ข้อความใหม่จากลูกค้า",
+            body.slice(0, 120),
+            { conversationId },
+          );
+        }
       }
 
       res.json({ success: true, data: { message, clientId } });
@@ -606,7 +673,11 @@ export function setupChatRoutes(app: Express): void {
     try {
       const conversationId = param(req, "id");
       const convRes = await query(
-        "SELECT c.*, sl.user_id AS seller_user_id FROM conversations c JOIN sellers sl ON sl.id = c.seller_id WHERE c.id = $1 AND c.customer_id = $2",
+        `SELECT c.*, sl.user_id AS seller_user_id, sh.slug AS shop_slug
+           FROM conversations c
+           LEFT JOIN sellers sl ON sl.id = c.seller_id
+           LEFT JOIN shops sh ON sh.id = c.shop_id
+          WHERE c.id = $1 AND c.customer_id = $2`,
         [conversationId, req.user!.userId],
       );
       if (convRes.rows.length === 0) {
@@ -630,10 +701,18 @@ export function setupChatRoutes(app: Express): void {
       markSql += ` RETURNING id`;
       const updated = await query(markSql, markParams);
       if (updated.rows.length > 0) {
-        sendToUser(convRes.rows[0].seller_user_id, "", CHANNELS.CHAT_READ, {
-          conversationId,
-          readerId: req.user!.userId,
-        });
+        const conv = convRes.rows[0];
+        if (conv.type === "CUSTOMER_COMPANY" || conv.shop_slug === SUPPORT_SHOP_SLUG) {
+          sendToCenter(CHANNELS.CHAT_READ, CHANNELS.CHAT_READ, {
+            conversationId,
+            readerId: req.user!.userId,
+          });
+        } else {
+          sendToUser(conv.seller_user_id, "", CHANNELS.CHAT_READ, {
+            conversationId,
+            readerId: req.user!.userId,
+          });
+        }
       }
       res.json({ success: true, data: { marked: updated.rows.length } });
     } catch (err) {
@@ -665,12 +744,13 @@ export function setupChatRoutes(app: Express): void {
                 (SELECT COUNT(*) FROM chat_messages m
                   WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread_count
          FROM conversations c
-         JOIN shops sh ON sh.id = c.shop_id
+         LEFT JOIN shops sh ON sh.id = c.shop_id
          JOIN sellers sl ON sl.id = c.seller_id
          LEFT JOIN users su ON su.id = sl.user_id
          LEFT JOIN users cu ON cu.id = c.customer_id
          LEFT JOIN products p ON p.id = c.product_id
          WHERE c.seller_id = $2
+           AND c.type IN ('CUSTOMER_SELLER', 'SELLER_COMPANY')
          ORDER BY c.updated_at DESC`,
         [req.user!.userId, seller.id],
       );
@@ -681,6 +761,26 @@ export function setupChatRoutes(app: Express): void {
     } catch (err) {
       console.error("[chat] seller conversations error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to load conversations" } });
+    }
+  });
+
+  // ── POST /api/seller/company/conversation — get-or-create Velnox thread ──
+  app.post("/api/seller/company/conversation", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const seller = await getSellerForUser(req.user!.userId);
+      if (!seller) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not an approved seller" } });
+        return;
+      }
+      const conversation = await ensureSellerCompanyConversation(seller.id);
+      if (!conversation) {
+        res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to create company conversation" } });
+        return;
+      }
+      res.json({ success: true, data: mapConversation(conversation, req.user!.userId) });
+    } catch (err) {
+      console.error("[chat] seller company conversation error:", err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to create company conversation" } });
     }
   });
 
@@ -719,10 +819,13 @@ export function setupChatRoutes(app: Express): void {
         res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not an approved seller" } });
         return;
       }
-      const convRes = await query("SELECT * FROM conversations WHERE id = $1 AND seller_id = $2", [
-        conversationId,
-        seller.id,
-      ]);
+      const convRes = await query(
+        `SELECT c.*, sh.name AS shop_name
+           FROM conversations c
+           LEFT JOIN shops sh ON sh.id = c.shop_id
+          WHERE c.id = $1 AND c.seller_id = $2`,
+        [conversationId, seller.id],
+      );
       if (convRes.rows.length === 0) {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
         return;
@@ -756,29 +859,47 @@ export function setupChatRoutes(app: Express): void {
         [conversationId, userId, body],
       );
       await query(
-        `UPDATE conversations SET last_message = $1, last_message_at = NOW(), updated_at = NOW() WHERE id = $2`,
+        `UPDATE conversations
+            SET last_message = $1, last_message_at = NOW(), updated_at = NOW(),
+                support_status = CASE WHEN support_status IN ('CLOSED', 'WAITING') THEN 'OPEN' ELSE support_status END
+          WHERE id = $2`,
         [body.slice(0, 200), conversationId],
       );
 
       const message = mapMessage(insertRes.rows[0]);
       if (dedupeKey) rememberSend(dedupeKey, message);
-      // Realtime: notify the customer's user channel.
       const conv = convRes.rows[0];
-      sendToUser(conv.customer_id, "", CHANNELS.CHAT_MESSAGE, {
-        conversationId,
-        message,
-        clientId,
-      });
-      // Notification row for the customer (skipped while they are viewing
-      // this thread — the message still arrives over the realtime socket).
-      if (!getViewingConversation(conv.customer_id, conversationId)) {
-        await notifyUser(
-          conv.customer_id,
-          "chat",
-          `ข้อความใหม่จากร้าน ${conv.shop_name ?? ""}`.trim(),
-          body.slice(0, 120),
-          { conversationId },
+      // A seller→company thread is addressed to VelCenter; a customer thread to
+      // that customer's own channel.
+      if (conv.type === "SELLER_COMPANY") {
+        sendToCenter(CHANNELS.CHAT_MESSAGE, CHANNELS.CHAT_MESSAGE, {
+          conversationId,
+          message,
+          clientId,
+        });
+        await notifyCompanyStaff(
+          conversationId,
+          "ผู้ขายติดต่อ Velnox",
+          body,
+          userId,
         );
+      } else {
+        sendToUser(conv.customer_id, "", CHANNELS.CHAT_MESSAGE, {
+          conversationId,
+          message,
+          clientId,
+        });
+        // Notification row for the customer (skipped while they are viewing
+        // this thread — the message still arrives over the realtime socket).
+        if (!getViewingConversation(conv.customer_id, conversationId)) {
+          await notifyUser(
+            conv.customer_id,
+            "chat",
+            `ข้อความใหม่จากร้าน ${conv.shop_name ?? ""}`.trim(),
+            body.slice(0, 120),
+            { conversationId },
+          );
+        }
       }
 
       res.json({ success: true, data: { message, clientId } });
@@ -822,10 +943,18 @@ export function setupChatRoutes(app: Express): void {
       markSql += ` RETURNING id`;
       const updated = await query(markSql, markParams);
       if (updated.rows.length > 0) {
-        sendToUser(convRes.rows[0].customer_id, "", CHANNELS.CHAT_READ, {
-          conversationId,
-          readerId: req.user!.userId,
-        });
+        const conv = convRes.rows[0];
+        if (conv.type === "SELLER_COMPANY") {
+          sendToCenter(CHANNELS.CHAT_READ, CHANNELS.CHAT_READ, {
+            conversationId,
+            readerId: req.user!.userId,
+          });
+        } else {
+          sendToUser(conv.customer_id, "", CHANNELS.CHAT_READ, {
+            conversationId,
+            readerId: req.user!.userId,
+          });
+        }
       }
       res.json({ success: true, data: { marked: updated.rows.length } });
     } catch (err) {

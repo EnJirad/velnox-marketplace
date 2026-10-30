@@ -773,25 +773,40 @@ CREATE TABLE IF NOT EXISTS product_attributes (
 CREATE INDEX IF NOT EXISTS idx_product_attributes_product ON product_attributes (product_id);
 CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  customer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'CUSTOMER_SELLER' CHECK (type IN ('CUSTOMER_SELLER', 'CUSTOMER_COMPANY', 'SELLER_COMPANY', 'COMPANY_INTERNAL')),
+  customer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  seller_id UUID REFERENCES sellers(id) ON DELETE CASCADE,
+  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  title TEXT,
+  support_status TEXT NOT NULL DEFAULT 'OPEN' CHECK (support_status IN ('OPEN', 'ASSIGNED', 'WAITING', 'CLOSED')),
+  assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
   last_message TEXT,
   last_message_at TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (customer_id, shop_id)
+  UNIQUE (customer_id, shop_id),
+  CONSTRAINT conversations_participant_shape_check CHECK (
+    (type = 'CUSTOMER_SELLER' AND customer_id IS NOT NULL AND seller_id IS NOT NULL AND shop_id IS NOT NULL)
+    OR (type = 'CUSTOMER_COMPANY' AND customer_id IS NOT NULL AND seller_id IS NULL AND shop_id IS NULL)
+    OR (type = 'SELLER_COMPANY' AND customer_id IS NULL AND seller_id IS NOT NULL AND shop_id IS NULL)
+    OR (type = 'COMPANY_INTERNAL' AND customer_id IS NULL AND seller_id IS NULL AND shop_id IS NULL AND title IS NOT NULL)
+  )
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_customer ON conversations (customer_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_seller ON conversations (seller_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_shop ON conversations (shop_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_type_updated ON conversations (type, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_assigned ON conversations (assigned_to, updated_at DESC) WHERE assigned_to IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_customer_company ON conversations (customer_id) WHERE type = 'CUSTOMER_COMPANY';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_seller_company ON conversations (seller_id) WHERE type = 'SELLER_COMPANY';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_internal_title ON conversations (title) WHERE type = 'COMPANY_INTERNAL';
 CREATE TABLE IF NOT EXISTS chat_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller')),
+  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company')),
   body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
   status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,

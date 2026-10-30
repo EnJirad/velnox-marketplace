@@ -706,22 +706,32 @@ CREATE TABLE IF NOT EXISTS product_attributes (
 );
 CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  customer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'CUSTOMER_SELLER' CHECK (type IN ('CUSTOMER_SELLER', 'CUSTOMER_COMPANY', 'SELLER_COMPANY', 'COMPANY_INTERNAL')),
+  customer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  seller_id UUID REFERENCES sellers(id) ON DELETE CASCADE,
+  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  title TEXT,
+  support_status TEXT NOT NULL DEFAULT 'OPEN' CHECK (support_status IN ('OPEN', 'ASSIGNED', 'WAITING', 'CLOSED')),
+  assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
   last_message TEXT,
   last_message_at TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (customer_id, shop_id)
+  UNIQUE (customer_id, shop_id),
+  CONSTRAINT conversations_participant_shape_check CHECK (
+    (type = 'CUSTOMER_SELLER' AND customer_id IS NOT NULL AND seller_id IS NOT NULL AND shop_id IS NOT NULL)
+    OR (type = 'CUSTOMER_COMPANY' AND customer_id IS NOT NULL AND seller_id IS NULL AND shop_id IS NULL)
+    OR (type = 'SELLER_COMPANY' AND customer_id IS NULL AND seller_id IS NOT NULL AND shop_id IS NULL)
+    OR (type = 'COMPANY_INTERNAL' AND customer_id IS NULL AND seller_id IS NULL AND shop_id IS NULL AND title IS NOT NULL)
+  )
 );
 CREATE TABLE IF NOT EXISTS chat_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller')),
+  sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company')),
   body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
   status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,
@@ -1630,10 +1640,14 @@ ALTER TABLE public.product_attributes ADD COLUMN IF NOT EXISTS sort_order INTEGE
 ALTER TABLE public.product_attributes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
 ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
+ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'CUSTOMER_SELLER' CHECK (type IN ('CUSTOMER_SELLER', 'CUSTOMER_COMPANY', 'SELLER_COMPANY', 'COMPANY_INTERNAL')) NOT NULL;
 ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS customer_id UUID;
 ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS seller_id UUID;
 ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS shop_id UUID;
 ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS product_id UUID;
+ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS support_status TEXT DEFAULT 'OPEN' CHECK (support_status IN ('OPEN', 'ASSIGNED', 'WAITING', 'CLOSED')) NOT NULL;
+ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS assigned_to UUID;
 ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS last_message TEXT;
 ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ;
 ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' CHECK (status IN ('active', 'archived')) NOT NULL;
@@ -1643,7 +1657,7 @@ ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS conversation_id UUID;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS sender_id UUID;
-ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS sender_role TEXT DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller')) NOT NULL;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS sender_role TEXT DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company')) NOT NULL;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS body TEXT;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'sent' CHECK (status IN ('sent', 'read')) NOT NULL;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
@@ -2810,6 +2824,7 @@ BEGIN
              ('product_reviews','shop_id'), ('product_reviews','order_id'), ('product_reviews','title'), ('product_reviews','comment'),
              ('product_reviews','images'), ('product_option_groups','id'), ('product_option_values','id'), ('product_option_values','image_url'),
              ('option_value_images','id'), ('product_variant_values','id'), ('product_attributes','id'), ('conversations','id'),
+             ('conversations','customer_id'), ('conversations','seller_id'), ('conversations','shop_id'),
              ('conversations','product_id'), ('conversations','last_message'), ('conversations','last_message_at'), ('chat_messages','id'),
              ('chat_messages','read_at')
        )
@@ -2966,6 +2981,11 @@ CREATE INDEX IF NOT EXISTS idx_product_attributes_product ON public.product_attr
 CREATE INDEX IF NOT EXISTS idx_conversations_customer ON public.conversations (customer_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_seller ON public.conversations (seller_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_shop ON public.conversations (shop_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_type_updated ON public.conversations (type, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_assigned ON public.conversations (assigned_to, updated_at DESC) WHERE assigned_to IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_customer_company ON public.conversations (customer_id) WHERE type = 'CUSTOMER_COMPANY';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_seller_company ON public.conversations (seller_id) WHERE type = 'SELLER_COMPANY';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_internal_title ON public.conversations (title) WHERE type = 'COMPANY_INTERNAL';
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON public.chat_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON public.chat_messages (conversation_id, sender_id, read_at) WHERE read_at IS NULL;
 
@@ -3820,6 +3840,66 @@ END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_customer_id_shop_id_key') THEN
   ALTER TABLE public.conversations ADD CONSTRAINT conversations_customer_id_shop_id_key UNIQUE (customer_id, shop_id);
 END IF; END $$;
+
+-- ─── unified chat core (CUSTOMER_SELLER / CUSTOMER_COMPANY / SELLER_COMPANY / ─
+--     COMPANY_INTERNAL) ────────────────────────────────────────────────────────
+-- ONE conversation row shape for every chat type. `customer_id`, `seller_id`
+-- and `shop_id` are optional by TYPE (the participant-shape check says which
+-- are required), and `chat_messages.sender_role` gains 'company' so a staff
+-- reply is not mislabelled as a marketplace seller. Existing CUSTOMER_SELLER
+-- rows already satisfy the shape, so this widens the model without touching
+-- their data; the additive DROP NOT NULL pass above relaxed the three columns.
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_assigned_to_fkey') THEN
+  ALTER TABLE public.conversations ADD CONSTRAINT conversations_assigned_to_fkey
+    FOREIGN KEY (assigned_to) REFERENCES public.users(id) ON DELETE SET NULL;
+END IF; END $$;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_participant_shape_check') THEN
+    IF EXISTS (
+      SELECT 1 FROM public.conversations
+       WHERE NOT (
+         (type = 'CUSTOMER_SELLER' AND customer_id IS NOT NULL AND seller_id IS NOT NULL AND shop_id IS NOT NULL)
+         OR (type = 'CUSTOMER_COMPANY' AND customer_id IS NOT NULL AND seller_id IS NULL AND shop_id IS NULL)
+         OR (type = 'SELLER_COMPANY' AND customer_id IS NULL AND seller_id IS NOT NULL AND shop_id IS NULL)
+         OR (type = 'COMPANY_INTERNAL' AND customer_id IS NULL AND seller_id IS NULL AND shop_id IS NULL AND title IS NOT NULL)
+       )
+    ) THEN
+      RAISE NOTICE 'velnox: conversations_participant_shape_check NOT added - existing rows do not match a conversation type';
+    ELSE
+      ALTER TABLE public.conversations ADD CONSTRAINT conversations_participant_shape_check CHECK (
+        (type = 'CUSTOMER_SELLER' AND customer_id IS NOT NULL AND seller_id IS NOT NULL AND shop_id IS NOT NULL)
+        OR (type = 'CUSTOMER_COMPANY' AND customer_id IS NOT NULL AND seller_id IS NULL AND shop_id IS NULL)
+        OR (type = 'SELLER_COMPANY' AND customer_id IS NULL AND seller_id IS NOT NULL AND shop_id IS NULL)
+        OR (type = 'COMPANY_INTERNAL' AND customer_id IS NULL AND seller_id IS NULL AND shop_id IS NULL AND title IS NOT NULL)
+      );
+    END IF;
+  END IF;
+END $$;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_type_check') THEN
+    ALTER TABLE public.conversations ADD CONSTRAINT conversations_type_check
+      CHECK (type IN ('CUSTOMER_SELLER', 'CUSTOMER_COMPANY', 'SELLER_COMPANY', 'COMPANY_INTERNAL'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_support_status_check') THEN
+    ALTER TABLE public.conversations ADD CONSTRAINT conversations_support_status_check
+      CHECK (support_status IN ('OPEN', 'ASSIGNED', 'WAITING', 'CLOSED'));
+  END IF;
+END $$;
+DO $$
+BEGIN
+  -- PostgreSQL cannot ALTER a CHECK. The widened vocabulary only ADDS a value,
+  -- so it cannot invalidate an existing row; the guard keeps a rerun a no-op.
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_messages_sender_role_check'
+              AND pg_get_constraintdef(oid) NOT LIKE '%company%') THEN
+    ALTER TABLE public.chat_messages DROP CONSTRAINT chat_messages_sender_role_check;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_messages_sender_role_check') THEN
+    ALTER TABLE public.chat_messages ADD CONSTRAINT chat_messages_sender_role_check
+      CHECK (sender_role IN ('customer', 'seller', 'company'));
+  END IF;
+END $$;
 
 -- ─── commerce core (migration 056) ──────────────────────────────────────
 

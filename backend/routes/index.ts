@@ -304,6 +304,18 @@ export function setupRoutes(app: Express): void {
         out.chatUnread = r.rows[0]?.c ?? 0;
       } catch { /* table may not exist */ }
 
+      // Company replies are chat too: the same badge must include Velnox Support
+      // (company) messages, without merging the notification bell's count.
+      try {
+        const r = await query(
+          `SELECT COUNT(*)::int AS c FROM chat_messages m
+           JOIN conversations c ON m.conversation_id = c.id
+           WHERE c.customer_id = $1 AND m.sender_role = 'company' AND m.read_at IS NULL`,
+          [userId],
+        );
+        out.chatUnread = (out.chatUnread ?? 0) + (r.rows[0]?.c ?? 0);
+      } catch { /* table may not exist */ }
+
       res.json({ success: true, data: out });
     } catch (err) {
       console.error("[account-summary] error:", err);

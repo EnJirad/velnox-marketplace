@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   CheckCheck,
   ChevronRight,
+  Headphones,
   Loader2,
   MessageCircle,
   Send,
@@ -21,9 +22,10 @@ import { toast } from "sonner";
 
 interface Conversation {
   id: string;
-  customerId: string;
-  sellerId: string;
-  shopId: string;
+  type: "CUSTOMER_SELLER" | "SELLER_COMPANY";
+  customerId: string | null;
+  sellerId: string | null;
+  shopId: string | null;
   productId: string | null;
   shopName: string;
   shopLogo: string | null;
@@ -53,11 +55,13 @@ export default function SellerChat() {
   const { user, isAuthenticated } = useAuth();
   const realtimeState = useRealtimeState();
   const myConversations = useAction(api.seller.sellerConversations);
+  const companyConversationAction = useAction(api.seller.companyConversation);
   const conversationMessages = useAction(api.seller.sellerConversationMessages);
   const sendMessage = useAction(api.seller.sendSellerMessageAction);
   const markConversationRead = useAction(api.seller.markSellerConversationReadAction);
 
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [inboxTab, setInboxTab] = useState<"customers" | "company">("customers");
   const [active, setActive] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -68,6 +72,8 @@ export default function SellerChat() {
   const [error, setError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdRef = useRef<string | null>(null);
+  const conversationsRef = useRef<Conversation[] | null>(null);
+  conversationsRef.current = conversations;
   /**
    * A failed send keeps its clientId: resending the SAME text reuses it, so the
    * server replays the stored message instead of writing a duplicate row (or a
@@ -98,6 +104,11 @@ export default function SellerChat() {
     const offMessage = onChatEvent("chat:message", (data: any) => {
       const message = data?.message as ChatMessage | undefined;
       if (!message) return;
+      // A company thread can arrive before this seller opened it — re-read the
+      // authoritative list rather than fabricating a row from the event.
+      if (conversationsRef.current && !conversationsRef.current.some((c) => c.id === message.conversationId)) {
+        void loadConversations();
+      }
       setConversations((prev) => {
         if (!prev) return prev;
         return prev
@@ -205,6 +216,23 @@ export default function SellerChat() {
     [conversationMessages, markConversationRead, t],
   );
 
+  const customerConvs = conversations?.filter((c) => c.type !== "SELLER_COMPANY") ?? [];
+  const companyConvs = conversations?.filter((c) => c.type === "SELLER_COMPANY") ?? [];
+
+  const startCompany = useCallback(async () => {
+    try {
+      const conv = (await companyConversationAction()) as Conversation;
+      setConversations((prev) =>
+        prev ? (prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev]) : [conv],
+      );
+      setInboxTab("company");
+      void openConversation(conv);
+    } catch (err) {
+      console.error("Start company chat error:", err);
+      toast.error(t("chat.supportError"));
+    }
+  }, [companyConversationAction, openConversation, t]);
+
   const loadOlder = useCallback(async () => {
     if (!active || loadingMore || messages.length === 0) return;
     const oldest = messages[0];
@@ -299,6 +327,34 @@ export default function SellerChat() {
             <div className="border-b border-slate-100 px-4 py-3">
               <h2 className="text-base font-bold text-slate-900">{t("sellerChat.conversations")}</h2>
             </div>
+            {/* Exactly two primary inboxes, one core: customers and Velnox. */}
+            <div className="flex gap-1 border-b border-slate-100 px-3 py-2">
+              {(["customers", "company"] as const).map((key) => {
+                const list = key === "customers" ? customerConvs : companyConvs;
+                const unread = list.reduce((sum, c) => sum + Math.max(0, c.unreadCount), 0);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setInboxTab(key)}
+                    aria-pressed={inboxTab === key}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ${
+                      inboxTab === key ? "bg-[#F0FDF9] text-emerald-700" : "text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    {key === "company" && <Headphones className="size-3.5" />}
+                    <span className="truncate">
+                      {key === "customers" ? t("sellerChat.customers") : t("sellerChat.velnox")}
+                    </span>
+                    {unread > 0 && (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[10px] font-bold text-white">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
             {conversations === null ? (
               <div className="space-y-2 p-4">
                 <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
@@ -313,47 +369,70 @@ export default function SellerChat() {
                   {t("chat.retry")}
                 </button>
               </div>
-            ) : conversations.length === 0 ? (
+            ) : (inboxTab === "company" ? companyConvs : customerConvs).length === 0 ? (
               <div className="px-6 py-14 text-center">
                 <MessageCircle className="mx-auto size-7 text-slate-300" />
-                <p className="mt-3 text-sm font-medium text-slate-600">{t("chat.emptyTitle")}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">{t("sellerChat.emptyDesc")}</p>
+                <p className="mt-3 text-sm font-medium text-slate-600">
+                  {inboxTab === "company" ? t("sellerChat.companyEmpty") : t("chat.emptyTitle")}
+                </p>
+                {inboxTab === "company" ? (
+                  <button
+                    type="button"
+                    onClick={() => void startCompany()}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-[10px] bg-[#10B981] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#059669]"
+                  >
+                    <Headphones className="size-4" />
+                    {t("sellerChat.contactVelnox")}
+                  </button>
+                ) : (
+                  <p className="mt-1 text-xs leading-5 text-slate-400">{t("sellerChat.emptyDesc")}</p>
+                )}
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {conversations.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => void openConversation(c)}
-                    className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 ${active?.id === c.id ? "bg-[#F0FDF9]" : ""}`}
-                  >
-                    <span className="relative shrink-0">
-                      {c.participantAvatar ? (
-                        <img src={c.participantAvatar} alt="" className="size-11 rounded-full object-cover" />
-                      ) : (
-                        <span className="flex size-11 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-400">
-                          {(c.participantName ?? "?").charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                      {c.unreadCount > 0 && (
-                        <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[10px] font-bold text-white">
-                          {c.unreadCount > 9 ? "9+" : c.unreadCount}
-                        </span>
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-semibold text-slate-900">{c.participantName ?? t("sellerChat.customerFallback")}</span>
-                        <span className="shrink-0 text-[10px] text-slate-400">{formatRelativeTime(c.lastMessageAt, lang, t)}</span>
+                {(inboxTab === "company" ? companyConvs : customerConvs).map((c) => {
+                  const isCompany = c.type === "SELLER_COMPANY";
+                  const title = isCompany
+                    ? t("chat.supportTitle")
+                    : c.participantName ?? t("sellerChat.customerFallback");
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => void openConversation(c)}
+                      className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 ${active?.id === c.id ? "bg-[#F0FDF9]" : ""}`}
+                    >
+                      <span className="relative shrink-0">
+                        {isCompany ? (
+                          <span className="flex size-11 items-center justify-center rounded-full bg-[#10B981] text-white">
+                            <Headphones className="size-5" />
+                          </span>
+                        ) : c.participantAvatar ? (
+                          <img src={c.participantAvatar} alt="" className="size-11 rounded-full object-cover" />
+                        ) : (
+                          <span className="flex size-11 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-400">
+                            {(c.participantName ?? "?").charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        {c.unreadCount > 0 && (
+                          <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[10px] font-bold text-white">
+                            {c.unreadCount > 9 ? "9+" : c.unreadCount}
+                          </span>
+                        )}
                       </span>
-                      <span className={`mt-0.5 block truncate text-xs ${c.unreadCount > 0 ? "font-medium text-slate-700" : "text-slate-400"}`}>
-                        {c.lastMessage ?? "—"}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-semibold text-slate-900">{title}</span>
+                          <span className="shrink-0 text-[10px] text-slate-400">{formatRelativeTime(c.lastMessageAt, lang, t)}</span>
+                        </span>
+                        <span className={`mt-0.5 block truncate text-xs ${c.unreadCount > 0 ? "font-medium text-slate-700" : "text-slate-400"}`}>
+                          {c.lastMessage ?? "—"}
+                        </span>
                       </span>
-                    </span>
-                    <ChevronRight className="size-4 shrink-0 text-slate-300" />
-                  </button>
-                ))}
+                      <ChevronRight className="size-4 shrink-0 text-slate-300" />
+                    </button>
+                  );
+                })}
               </div>
             )}
           </aside>
@@ -375,8 +454,23 @@ export default function SellerChat() {
                     <ArrowLeft className="size-4" />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-900">{active.participantName ?? t("sellerChat.customerFallback")}</p>
-                    {active.product && <p className="truncate text-[11px] text-slate-400">{t("sellerChat.aboutProduct")}</p>}
+                    {active.type === "SELLER_COMPANY" ? (
+                      <>
+                        <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-slate-900">
+                          <Headphones className="size-4 text-[#10B981]" />
+                          {t("chat.supportTitle")}
+                          <span className="rounded-full bg-[#ECFDF5] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
+                            {t("chat.supportBadge")}
+                          </span>
+                        </p>
+                        <p className="truncate text-[11px] text-slate-400">{t("chat.supportDesc")}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="truncate text-sm font-semibold text-slate-900">{active.participantName ?? t("sellerChat.customerFallback")}</p>
+                        {active.product && <p className="truncate text-[11px] text-slate-400">{t("sellerChat.aboutProduct")}</p>}
+                      </>
+                    )}
                   </div>
                 </div>
 

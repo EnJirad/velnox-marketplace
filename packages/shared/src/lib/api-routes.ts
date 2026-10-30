@@ -214,10 +214,23 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
     apiPost(`/api/customer/conversations/${a.conversationId}/read`, { upTo: a?.upTo }),
   // Chat — seller
   "api.seller.sellerConversations": () => apiGetFresh("/api/seller/conversations"),
+  "api.seller.companyConversation": () => apiPost("/api/seller/company/conversation"),
   "api.seller.sellerConversationMessages": (a) => apiGetFresh(`/api/seller/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
   "api.seller.sendSellerMessageAction": (a) => apiPost(`/api/seller/conversations/${a.conversationId}/messages`, a),
   "api.seller.markSellerConversationReadAction": (a) =>
     apiPost(`/api/seller/conversations/${a.conversationId}/read`, { upTo: a?.upTo }),
+  // Chat — VelCenter company side (customer / seller / internal)
+  "api.center.chatConversations": (a) =>
+    apiGetFresh(`/api/center/chat/conversations?type=${encodeURIComponent(String(a?.type ?? "customer"))}`),
+  "api.center.chatUnread": () => apiGetFresh("/api/center/chat/unread"),
+  "api.center.chatStaff": () => apiGetFresh("/api/center/chat/staff"),
+  "api.center.chatMessages": (a) =>
+    apiGetFresh(`/api/center/chat/conversations/${a.conversationId}/messages${a.before ? `?before=${encodeURIComponent(String(a.before))}` : ""}`),
+  "api.center.sendChatMessage": (a) => apiPost(`/api/center/chat/conversations/${a.conversationId}/messages`, a),
+  "api.center.markChatRead": (a) =>
+    apiPost(`/api/center/chat/conversations/${a.conversationId}/read`, { upTo: a?.upTo }),
+  "api.center.updateChatConversation": (a) => apiPatch(`/api/center/chat/conversations/${a.conversationId}`, a),
+  "api.center.createInternalConversation": (a) => apiPost("/api/center/chat/internal/conversations", a),
   "api.customer.reorderAction": (a) => apiPost("/api/customer/reorder", a),
   "api.customer.publicShops": () => apiGet("/api/shops"),
   "api.customer.shopDetail": (a) => apiGet(`/api/shops/${a.shopId}`),

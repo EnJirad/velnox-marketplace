@@ -469,6 +469,7 @@ const myChatPatch = {
     chatWithSupport: "Velnox အဖွဲ့နှင့် ချတ်လုပ်ရန်",
     supportBadge: "အကူအညီ",
     supportError: "အကူအညီချတ် ဖွင့်၍မရပါ ထပ်ကြိုးစားပါ",
+    startError: "ချတ်စတင်၍မရပါ ထပ်ကြိုးစားပါ",
   } satisfies Partial<Dict["chat"]>,
   sellerChat: {
     title: "ချတ်",
@@ -479,6 +480,10 @@ const myChatPatch = {
     customerFallback: "ဖောက်သည်",
     aboutProduct: "ကုန်ပစ္စည်းအကြောင်း မေးမြန်းနေသည်",
     emptyDesc: "ဖောက်သည်က \"ဆိုင်နှင့် စကားပြောရန်\" နှိပ်သောအခါ ဤနေရာတွင် ပေါ်လာပါမည်",
+    customers: "ဖောက်သည်များ",
+    velnox: "Velnox",
+    companyEmpty: "Velnox နှင့် စကားပြောဆိုမှု မရှိသေးပါ",
+    contactVelnox: "Velnox ကို ဆက်သွယ်ရန်",
   } satisfies Partial<Dict["sellerChat"]>,
 };
 

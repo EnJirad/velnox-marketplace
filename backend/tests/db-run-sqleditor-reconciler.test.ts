@@ -219,6 +219,10 @@ describe("the file stays additive and honest", () => {
         "payments.payments_status_check",
         "sellers.sellers_status_check",
         "orders.orders_status_check",
+        // Unified chat: chat_messages.sender_role gains 'company', and
+        // PostgreSQL cannot ALTER a CHECK. The vocabulary only ADDS a value, so
+        // the guarded drop/re-add cannot invalidate an existing row.
+        "chat_messages.chat_messages_sender_role_check",
       ]).toContain(name);
     }
     expect(code).toContain("ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_exactly_one_parent_check");

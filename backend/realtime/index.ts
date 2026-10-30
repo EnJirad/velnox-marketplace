@@ -386,6 +386,9 @@ export const CHANNELS = {
   PROFILE_UPDATED: "profile:updated",
   CHAT_MESSAGE: "chat:message",
   CHAT_READ: "chat:read",
+  /** A company conversation/room was created; VelCenter sessions refetch their
+   *  list. It carries no message body and is addressed to company sessions. */
+  CHAT_CONVERSATION: "chat:conversation",
   AUDIT_CREATED: "audit:created",
   /**
    * Platform configuration changed (categories / platform_settings). Published

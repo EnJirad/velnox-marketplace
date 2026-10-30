@@ -50,6 +50,7 @@ import { useAction } from "@velnox/shared/lib/api-routes";
 import {
   ArrowLeft,
   CheckCircle2,
+  MessageCircle,
   Circle,
   Clock3,
   CreditCard,
@@ -63,7 +64,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 /**
@@ -224,8 +225,10 @@ const RESERVATION_TONE_STYLES: Record<
 export default function ShopOrderDetail() {
   const { t } = useLanguage();
   const { orderId } = useParams<{ orderId: string }>();
+  const navigate = useNavigate();
   const orderDetail = useAction(api.customer.orderDetail);
   const reorder = useAction(api.customer.reorderAction);
+  const createConversation = useAction(api.customer.createConversationAction);
   const cancelOrder = useAction(api.commerce.cancelOrderAction);
   const reviewProduct = useAction(api.customer.reviewProduct);
   const [order, setOrder] = useState<OrderDetail | null>(null);
@@ -238,6 +241,7 @@ export default function ShopOrderDetail() {
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [chatStarting, setChatStarting] = useState(false);
 
   /** Presentation-only clock for the reservation countdown (see the header note). */
   const [now, setNow] = useState(() => Date.now());
@@ -1105,6 +1109,30 @@ export default function ShopOrderDetail() {
                 returnPath={`/orders/${order.id}`}
                 size="default"
               />
+            )}
+            {order.shopId && (
+              <Button
+                variant="outline"
+                className="gap-1.5 border-slate-200 text-slate-700"
+                disabled={chatStarting}
+                onClick={() => {
+                  if (chatStarting) return;
+                  setChatStarting(true);
+                  createConversation({
+                    shopId: order.shopId,
+                    ...(order.items?.[0]?.productId ? { productId: order.items[0].productId } : {}),
+                  })
+                    .then((conv) => navigate(`/chat?conv=${encodeURIComponent(conv.id)}`))
+                    .catch((err) => {
+                      console.error("Start order chat error:", err);
+                      toast.error(t("chat.startError"));
+                    })
+                    .finally(() => setChatStarting(false));
+                }}
+              >
+                <MessageCircle className="size-4" />
+                {t("chat.chatWithShop")}
+              </Button>
             )}
             <Button variant="outline" className="border-slate-200 text-slate-700" asChild>
               <Link to="/orders">

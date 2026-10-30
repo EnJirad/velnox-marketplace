@@ -124,8 +124,14 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # payment_incidents_order_parent_check replaced their legacy plan_id-carrying
 # forms) and 154 columns (plan_id on payments/payment_incidents, the two
 # velrepeat_* columns on orders and the nine vrepeat_* columns on products).
-# Re-measured on a fresh, thrice-rerun db/run-sqleditor.sql: 63|234|261|653.
-CANON="63|234|261|653"
+# Unified marketplace chat (2026-10-30) grew the canonical schema by exactly:
+# 4 columns on `conversations` (type, title, support_status, assigned_to),
+# 5 indexes (type_updated, assigned, one customer-company, one seller-company,
+# one internal-title) and 4 constraints (participant shape, type, support
+# status, assigned-to FK). The sender_role CHECK was widened in place, so it
+# changes definition but not count.
+# Re-measured on a fresh, thrice-rerun db/run-sqleditor.sql: 63|239|265|657.
+CANON="63|239|265|657"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────
