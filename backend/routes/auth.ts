@@ -6,17 +6,28 @@ import { closeUserConnections } from "../realtime/index.js";
 import { verifyPassword, isPasswordHashFormat } from "../lib/password.js";
 import { resolvePermissions } from "../lib/permissions.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
+import {
+  OAUTH_STATE_COOKIE,
+  clearOAuthStateCookieOptions,
+  createOAuthState,
+  oauthStateCookieOptions,
+  sanitizeReturnTo,
+  validateOAuthState,
+} from "../lib/oauth-state.js";
 
 /**
  * Google OAuth authentication routes.
  *
  * Flow:
  * 1. Frontend redirects to /auth/google?returnTo=...
- * 2. Backend redirects to Google OAuth consent screen
- * 3. Google redirects back to /auth/google/callback with code
- * 4. Backend exchanges code for tokens, verifies identity
- * 5. Backend resolves/creates Neon user (identity resolution)
- * 6. Backend creates session cookie and redirects to frontend
+ * 2. Backend mints an opaque random `state` (CSRF nonce), binds it to a
+ *    short-lived httpOnly cookie, and redirects to Google OAuth consent
+ * 3. Google redirects back to /auth/google/callback with `code` + `state`
+ * 4. Backend consumes the state cookie and validates `state` BEFORE the code
+ *    is exchanged; a missing/mismatched/expired state never reaches Google
+ * 5. Backend exchanges code for tokens, verifies identity
+ * 6. Backend resolves/creates Neon user (identity resolution)
+ * 7. Backend creates session cookie and redirects to a validated internal path
  */
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
@@ -422,15 +433,30 @@ export function setupGoogleAuth(app: Express): void {
     // Validate required env vars
     if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
       console.error("[auth] GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI not configured");
-      const frontendUrl = getFrontendUrl(req, req.query.returnTo as string);
+      const frontendUrl = getFrontendUrl(req, sanitizeReturnTo(req.query.returnTo));
       res.redirect(`${frontendUrl}/auth?error=google_not_configured`);
       return;
     }
 
-    const returnTo = (req.query.returnTo as string) || "/";
+    // `state` is an opaque 256-bit CSPRNG nonce. It carries no user data, and
+    // the post-login path lives in the signed, httpOnly state cookie instead.
+    let start: ReturnType<typeof createOAuthState>;
+    try {
+      start = createOAuthState(req.query.returnTo);
+    } catch {
+      // Missing signing secret — fail closed, never issue a predictable state.
+      console.error("[auth] OAuth state signing is not configured");
+      const frontendUrl = getFrontendUrl(req, "/");
+      res.redirect(`${frontendUrl}/auth?error=google_not_configured`);
+      return;
+    }
+    const { state } = start;
 
-    // Generate state parameter with returnTo
-    const state = Buffer.from(JSON.stringify({ returnTo })).toString("base64url");
+    res.cookie(
+      OAUTH_STATE_COOKIE,
+      start.cookieValue,
+      oauthStateCookieOptions(start.maxAgeMs, process.env.NODE_ENV === "production"),
+    );
 
     const params = new URLSearchParams({
       client_id: GOOGLE_CLIENT_ID,
@@ -448,23 +474,37 @@ export function setupGoogleAuth(app: Express): void {
   // Step 2: Google redirects here with authorization code
   app.get("/auth/google/callback", async (req: Request, res: Response) => {
     try {
-      const { code, state } = req.query as { code?: string; state?: string };
+      // Repeated query params (`?code=a&code=b`) arrive as arrays — never a
+      // string, so they are treated as absent.
+      const code = typeof req.query.code === "string" ? req.query.code : "";
+      const returnedState = typeof req.query.state === "string" ? req.query.state : "";
+
+      // Consume the state cookie up front: the flow is single-use even when
+      // Google returned an error, the code is missing, or validation fails.
+      const stateCookie = req.cookies?.[OAUTH_STATE_COOKIE];
+      res.clearCookie(
+        OAUTH_STATE_COOKIE,
+        clearOAuthStateCookieOptions(process.env.NODE_ENV === "production"),
+      );
 
       if (!code) {
         res.status(400).send("Authorization code missing");
         return;
       }
 
-      // Decode state to get returnTo
-      let returnTo = "/";
-      if (state) {
-        try {
-          const decoded = JSON.parse(Buffer.from(state, "base64url").toString());
-          returnTo = decoded.returnTo || "/";
-        } catch {
-          // Ignore invalid state, default to /
-        }
+      // CSRF gate: the code is not exchanged (and no session is created)
+      // until the browser-bound state has been verified.
+      const validation = validateOAuthState({ returnedState, cookieValue: stateCookie });
+      if (!validation.ok) {
+        // Reason only — never the state value, the cookie value or the code.
+        console.warn(`[auth] OAuth callback rejected: ${validation.reason}`);
+        const frontendUrl = getFrontendUrl(req, "/");
+        res.redirect(`${frontendUrl}/auth?error=google_state_invalid`);
+        return;
       }
+
+      // Sanitized internal path carried by the signed state cookie.
+      const returnTo = validation.returnTo;
 
       // Exchange code for tokens
       const tokens = await exchangeCode(code);
