@@ -11,3 +11,6 @@ npm-debug.log*
 coverage/
 .turbo/
 .vercel/
+# Agent / tooling caches that must never be committed
+.codegraph/
+.harness/
