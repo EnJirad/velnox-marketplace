@@ -1674,9 +1674,6 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS ack_day DATE;
 -- No-op when the column is already nullable; existing rows are unaffected
 -- (every stored message today has a sender).
 ALTER TABLE public.chat_messages ALTER COLUMN sender_id DROP NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_support_daily_ack
-  ON public.chat_messages (conversation_id, ack_day)
-  WHERE system_kind = 'support_daily_ack';
 
 
 
@@ -2494,13 +2491,9 @@ BEGIN
   ELSE
     RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
   END IF;
-  SELECT 'chat_messages','sender_id' INTO t,c;
-  EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
-  IF n = 0 THEN
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN %I SET NOT NULL', t, c);
-  ELSE
-    RAISE NOTICE 'velnox: %.% kept nullable - % row(s) have no value for it', t, c, n;
-  END IF;
+  -- chat_messages.sender_id is deliberately NOT promoted: a SYSTEM message
+  -- (sender_role = 'system', the daily support acknowledgment) has no human
+  -- sender, so a NULL there is the correct state, not a missing value.
   SELECT 'chat_messages','body' INTO t,c;
   EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NULL', t, c) INTO n;
   IF n = 0 THEN
@@ -3003,6 +2996,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_seller_company ON public.conv
 CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_internal_title ON public.conversations (title) WHERE type = 'COMPANY_INTERNAL';
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON public.chat_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON public.chat_messages (conversation_id, sender_id, read_at) WHERE read_at IS NULL;
+-- Daily acknowledgment idempotency: one row per conversation per Asia/Bangkok
+-- calendar day. Declared in the INDEX section (never in the table section) so
+-- every column it keys on already exists by the time it is created.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_support_daily_ack
+  ON public.chat_messages (conversation_id, ack_day)
+  WHERE system_kind = 'support_daily_ack';
 
 -- ─── commerce core (migration 056) ──────────────────────────────────────
 
