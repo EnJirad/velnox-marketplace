@@ -86,7 +86,9 @@ describe("needs_correction notification reaches the seller", () => {
     // Same primitive and event the customer bell already listens to — no new
     // socket subsystem, no new channel.
     expect(verificationSrc).toContain("sendToUser(targetUserId, \"\", CHANNELS.NOTIFICATION_CREATED");
-    expect(chatSrc).toContain("sendToUser(userId, \"\", CHANNELS.NOTIFICATION_CREATED");
+    // Chat is deliberately NOT a bell producer (2026-11 owner rule): it pushes
+    // `chat:message` only, and its unread state lives per conversation.
+    expect(chatSrc).not.toContain("CHANNELS.NOTIFICATION_CREATED");
   });
 
   test("the seller bell reuses the one existing notification API", () => {

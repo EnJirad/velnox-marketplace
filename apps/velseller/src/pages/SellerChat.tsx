@@ -487,8 +487,10 @@ export default function SellerChat() {
     const needle = search.trim().toLowerCase();
     return (conversations ?? [])
       .filter((c) => {
-        if (filter === "unread") return c.unreadCount > 0;
+        // The Velnox Support thread is its own inbox, not a customer thread.
         if (filter === "support") return c.type === "SELLER_COMPANY";
+        if (c.type === "SELLER_COMPANY") return false;
+        if (filter === "unread") return c.unreadCount > 0;
         return true;
       })
       .filter((c) => {

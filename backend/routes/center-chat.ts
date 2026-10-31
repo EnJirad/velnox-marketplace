@@ -30,11 +30,9 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import { CENTER_ROLES, roleOf } from "../lib/permissions.js";
-import { CHANNELS, getViewingConversation, getUserLastSeenAt, isUserOnline, sendToCenter, sendToUser } from "../realtime/index.js";
+import { CHANNELS, getUserLastSeenAt, isUserOnline, sendToCenter, sendToUser } from "../realtime/index.js";
 import { SUPPORT_SHOP_SLUG } from "../lib/chat-access.js";
 import {
-  notifyCompanyStaff,
-  notifyUser,
   replaySend,
   rememberSend,
   validateBody,
@@ -151,7 +149,8 @@ function mapCompanyConversation(r: any): Record<string, unknown> {
           imageUrl: r.product_image ?? null,
         }
       : null,
-    lastMessage: r.last_message ?? null,
+    // Latest UNREAD message wins as the preview; the stored value is the fallback.
+    lastMessage: r.last_unread_body ?? r.last_message ?? null,
     lastMessageAt: r.last_message_at ? new Date(r.last_message_at).getTime() : null,
     unreadCount: parseInt(r.unread_count ?? "0", 10),
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
@@ -160,7 +159,11 @@ function mapCompanyConversation(r: any): Record<string, unknown> {
 
 /** The unread subquery every company list uses — one indexed COUNT, no history. */
 const UNREAD_SUBQUERY = `(SELECT COUNT(*) FROM chat_messages m
-  WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread_count`;
+  WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread_count,
+  (SELECT CASE WHEN m.body <> '' THEN m.body ELSE '📷' END
+     FROM chat_messages m
+    WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL
+    ORDER BY m.created_at DESC LIMIT 1) AS last_unread_body`;
 
 /** Conversation list per tab, scoped by the tab's type (never client ids). */
 async function listCompanyConversations(tab: CompanyTab, viewerId: string): Promise<any[]> {
@@ -476,12 +479,6 @@ export function setupCenterChatRoutes(app: Express): void {
           message,
           clientId,
         });
-        await notifyCompanyStaff(
-          conversationId,
-          "ข้อความใหม่ในแชทภายใน",
-          body,
-          userId,
-        );
       } else if (row.type === "SELLER_COMPANY") {
         if (row.seller_user_id) {
           sendToUser(row.seller_user_id, "", CHANNELS.CHAT_MESSAGE, {
@@ -489,11 +486,6 @@ export function setupCenterChatRoutes(app: Express): void {
             message,
             clientId,
           });
-          if (!getViewingConversation(row.seller_user_id, conversationId)) {
-            await notifyUser(row.seller_user_id, "chat", "ข้อความใหม่จาก Velnox", body.slice(0, 120), {
-              conversationId,
-            });
-          }
         }
       } else {
         sendToUser(row.customer_id, "", CHANNELS.CHAT_MESSAGE, {
@@ -501,11 +493,8 @@ export function setupCenterChatRoutes(app: Express): void {
           message,
           clientId,
         });
-        if (!getViewingConversation(row.customer_id, conversationId)) {
-          await notifyUser(row.customer_id, "chat", "ข้อความใหม่จาก Velnox Support", body.slice(0, 120), {
-            conversationId,
-          });
-        }
+        // NO bell row for chat: the customer's Messages list owns the unread
+        // state for this conversation (see chat.ts for the full rationale).
       }
 
       res.json({ success: true, data: { message, clientId } });

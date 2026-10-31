@@ -496,8 +496,12 @@ export default function ShopChat() {
     const needle = search.trim().toLowerCase();
     return (conversations ?? [])
       .filter((c) => {
-        if (filter === "unread") return c.unreadCount > 0;
+        // Velnox Support is its OWN entry, never mixed into the commerce inbox:
+        // All/Unread show buyer↔seller threads only, the Support tab shows the
+        // support thread only.
         if (filter === "support") return c.isSupport;
+        if (c.isSupport) return false;
+        if (filter === "unread") return c.unreadCount > 0;
         return true;
       })
       .filter((c) => {

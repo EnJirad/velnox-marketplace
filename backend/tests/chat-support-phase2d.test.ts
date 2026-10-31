@@ -139,10 +139,11 @@ describe("a retried send replays instead of duplicating", () => {
     // Search FORWARD from the reply: the shared `notifyCompanyStaff` helper also
     // contains a `notifyUser` call, and that helper lives above the routes.
     const push = chat.indexOf("CHANNELS.CHAT_MESSAGE", reply);
-    const notify = chat.indexOf("await notifyUser(", reply);
     expect(reply).toBeGreaterThan(-1);
     expect(reply).toBeLessThan(push);
-    expect(reply).toBeLessThan(notify);
+    // Chat writes NO notification row at all (2026-11 owner rule: the bell is
+    // for business events), so a replay cannot fire a bell nudge either.
+    expect(chat).not.toContain("await notifyUser(");
     // The claim key ties the retry to conversation + SESSION user + clientId.
     expect(chat).toContain("const dedupeKey = clientId ? `${conversationId}:${userId}:${clientId}` : null;");
     // Bounded in time and size, and honest about the restart caveat in-line.

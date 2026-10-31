@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-01 · **Branch:** `main` · **Latest pass:** **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -747,20 +747,9 @@ Full text: [`archive/AI_Handoff-2026-11-01-section-94-commerce-messenger.md`](./
 
 ---
 
-## §95. Development memory is a permanent rule (2026-10-31) — COMPLETE
+## §95. Development memory is a permanent rule (2026-10-31) — **ARCHIVED** (moved 2026-11-02)
 
-**Report:** [`.ai/history/2026-10-31-ai-development-memory-rule.md`](./history/2026-10-31-ai-development-memory-rule.md).
-
-`.ai/AI_RULES.md` **§19 MANDATORY DEVELOPMENT MEMORY / AI HANDOFF** now requires a dated entry in
-`.ai/history/YYYY-MM-DD-<topic>.md` for EVERY session — not only code changes: investigations, production
-checks, failed fixes and BLOCKED sessions count. The section carries the required template (initial state,
-investigation, VERIFIED vs ASSUMED, changes, per-test PASS/FAIL/SKIPPED/BLOCKED, failed attempts, database,
-deployment, current state, next steps, notes), the honesty statuses, the "never delete or rewrite history"
-rule and the "never store secrets" rule. `AGENTS.md` rule 6, `.ai/README.md` startup steps 3 and 11 and
-`.ai/history/README.md` all point at it.
-
-**Next agent:** read the handoff, then the newest relevant history entries, and continue from the documented
-state; do not repeat a documented failed approach without a written reason.
+Full text: [`archive/AI_Handoff-2026-11-02-section-95-dev-memory-rule.md`](./history/archive/AI_Handoff-2026-11-02-section-95-dev-memory-rule.md).
 
 ---
 
@@ -815,7 +804,7 @@ Verified: typecheck 4/4, build 4/4, i18n 1268, backend suite 1113 pass / 8 Termu
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95; §93 on 2026-11-01 with §98; §94 on 2026-11-01 with §99
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95; §93 on 2026-11-01 with §98; §94 on 2026-11-01 with §99; §95 on 2026-11-02 with §100
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.
 
@@ -842,5 +831,27 @@ schema-ready; no migration was run or needed.
 `git diff --check` clean. **NOT RUN:** browser E2E and every DB-gated chat test — this device has no session
 (Google OAuth only) and no disposable database (PG18 `initdb` hangs at its bootstrap probe here); R2 upload is
 untested (no credentials). Presence is in-memory per process and resets on restart — documented, not hidden.
+
+---
+
+## §100. Chat parity: VelCenter images, bell-free chat, real unread (2026-11-02) — PARTIAL
+
+**SHA:** `e58cd8b` → this commit. **Report:**
+[`.ai/history/2026-11-02-chat-parity-image-visibility-notifications.md`](./history/2026-11-02-chat-parity-image-visibility-notifications.md).
+
+**Root cause of "VelCenter can't see images":** its human bubble never rendered `attachmentUrl` — the image
+renderer existed only in the SYSTEM branch. Proven first: production `/api/health/r2` green, the stored
+object URL returned **HTTP 200 image/jpeg**, and all surfaces share one `mapMessage`/`loadMessages`. Fixed by
+rendering the shared `ChatImageMessage` in the human bubble and skipping the empty `<p>` of image-only rows.
+
+**Bell is business-only.** Every chat `notifyUser`/`notifyCompanyStaff` call and both helpers were removed;
+`GET /api/customer/notifications` filters `type <> 'chat'`, so the 8 historical chat rows in production stop
+showing without deleting data. Unread stays per conversation from `read_at`, and the preview now prefers
+`last_unread_body` (image-only → `📷`) through the existing partial index. Support is excluded from
+All/Unread in VelShop + VelSeller; VelCenter keeps its customer/seller/internal tabs.
+
+**Verified:** `chat-parity` 8/8, full suite **1121 pass / 375 skip / 8 fail** (known Termux DB-guard probes;
+two old source-contract tests updated to the no-bell contract), typecheck 4/4 + backend, build 4/4,
+i18n 1280. **NOT RUN:** browser/E2E (no session; PG18 `initdb` hangs here) and DB-gated suites.
 
 ---

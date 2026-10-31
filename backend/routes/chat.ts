@@ -43,7 +43,6 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
-import { CENTER_ROLES } from "../lib/permissions.js";
 import {
   CHANNELS,
   getViewingConversation,
@@ -384,7 +383,10 @@ export function mapConversation(r: any, viewerUserId: string): Record<string, un
           imageUrl: r.product_image ?? null,
         }
       : null,
-    lastMessage: r.last_message ?? null,
+    // Prefer the LATEST UNREAD message as the preview (owner rule): when the
+    // thread has unread work the row must show that message, not whatever was
+    // read last. Falls back to the stored preview when everything is read.
+    lastMessage: r.last_unread_body ?? r.last_message ?? null,
     lastMessageAt: r.last_message_at ? new Date(r.last_message_at).getTime() : null,
     unreadCount: parseInt(r.unread_count ?? "0", 10),
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
@@ -397,54 +399,16 @@ export function mapConversation(r: any, viewerUserId: string): Record<string, un
   };
 }
 
-/** Insert a notification row and push it over the user's realtime channel. */
-export async function notifyUser(userId: string, type: string, title: string, message: string, data?: unknown): Promise<void> {
-  try {
-    const res = await query(
-      `INSERT INTO notifications (user_id, type, title, message, data)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [userId, type, title, message, data ? JSON.stringify(data) : null],
-    );
-    sendToUser(userId, "", CHANNELS.NOTIFICATION_CREATED, {
-      id: res.rows[0]?.id ?? null,
-      type,
-      title,
-      message,
-    });
-  } catch (err) {
-    // Notifications must never break the chat flow.
-    console.error("[chat] notifyUser failed:", err);
-  }
-}
-
 /**
- * Notify the company side of a customer/seller message. One row per active
- * VelCenter account (owner/admin/staff) — the chat itself never depends on it,
- * and a staff member already looking at the thread is skipped (the message
- * still arrives over the socket). Bounded so a large staff never turns one send
- * into an unbounded fan-out.
+ * Chat NEVER writes notification rows (2026-11 owner rule).
+ *
+ * The global bell is reserved for business events (orders, payments, shipping,
+ * security, verification). Chat unread lives per conversation in the Messages
+ * list and is derived from `chat_messages.read_at`; writing one row per message
+ * produced "🔔 Alex: hello / 🔔 Alex: are you there?" spam and made the bell
+ * count meaningless. Historical `type = 'chat'` rows are left untouched in the
+ * database but filtered out of the bell feed.
  */
-export async function notifyCompanyStaff(
-  conversationId: string,
-  title: string,
-  message: string,
-  exceptUserId?: string,
-): Promise<void> {
-  try {
-    const res = await query(
-      `SELECT id FROM users WHERE role = ANY($1::text[]) AND status = 'active' ORDER BY created_at ASC LIMIT 100`,
-      [CENTER_ROLES],
-    );
-    for (const row of res.rows) {
-      const userId = row.id as string;
-      if (userId === exceptUserId) continue;
-      if (getViewingConversation(userId, conversationId)) continue;
-      await notifyUser(userId, "chat", title, message.slice(0, 120), { conversationId });
-    }
-  } catch (err) {
-    console.error("[chat] notifyCompanyStaff failed:", err);
-  }
-}
 
 /** Shared validation: body must be a non-empty string of ≤ 4000 chars. */
 export function validateBody(body: unknown): string | null {
@@ -541,7 +505,7 @@ export function setupChatRoutes(app: Express): void {
     try {
       const result = await query(
         `SELECT id, type, title, message, read, data, created_at
-         FROM notifications WHERE user_id = $1
+         FROM notifications WHERE user_id = $1 AND type <> 'chat'
          ORDER BY created_at DESC LIMIT 50`,
         [req.user!.userId],
       );
@@ -603,6 +567,10 @@ export function setupChatRoutes(app: Express): void {
                 (SELECT pi.url FROM product_images pi
                   WHERE pi.product_id = c.product_id AND (pi.image_type = 'gallery' OR pi.image_type IS NULL)
                   ORDER BY pi.sort_order ASC, pi.created_at ASC LIMIT 1) AS product_image,
+                (SELECT CASE WHEN m.body <> '' THEN m.body ELSE '📷' END
+                   FROM chat_messages m
+                  WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL
+                  ORDER BY m.created_at DESC LIMIT 1) AS last_unread_body,
                 (SELECT COUNT(*) FROM chat_messages m
                   WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread_count
          FROM conversations c
@@ -824,28 +792,14 @@ export function setupChatRoutes(app: Express): void {
           message,
           clientId,
         });
-        await notifyCompanyStaff(
-          conversationId,
-          "ลูกค้าติดต่อ Velnox Support",
-          body,
-        );
       } else {
         sendToUser(conv.seller_user_id, "", CHANNELS.CHAT_MESSAGE, {
           conversationId,
           message,
           clientId,
         });
-        // Notification row for the seller (skipped while they are viewing this
-        // thread — the message still arrives over the realtime socket).
-        if (!getViewingConversation(conv.seller_user_id, conversationId)) {
-          await notifyUser(
-            conv.seller_user_id,
-            "chat",
-            "ข้อความใหม่จากลูกค้า",
-            body.slice(0, 120),
-            { conversationId },
-          );
-        }
+        // NO bell row for chat: unread chat is a per-conversation state in the
+        // Messages list, never a notification-feed entry (owner rule 2026-11).
       }
 
       // The acknowledgment is pushed AFTER the customer's own message, so every
@@ -947,6 +901,10 @@ export function setupChatRoutes(app: Express): void {
                 (SELECT pi.url FROM product_images pi
                   WHERE pi.product_id = c.product_id AND (pi.image_type = 'gallery' OR pi.image_type IS NULL)
                   ORDER BY pi.sort_order ASC, pi.created_at ASC LIMIT 1) AS product_image,
+                (SELECT CASE WHEN m.body <> '' THEN m.body ELSE '📷' END
+                   FROM chat_messages m
+                  WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL
+                  ORDER BY m.created_at DESC LIMIT 1) AS last_unread_body,
                 (SELECT COUNT(*) FROM chat_messages m
                   WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread_count
          FROM conversations c
@@ -1110,29 +1068,13 @@ export function setupChatRoutes(app: Express): void {
           message,
           clientId,
         });
-        await notifyCompanyStaff(
-          conversationId,
-          "ผู้ขายติดต่อ Velnox",
-          body,
-          userId,
-        );
       } else {
         sendToUser(conv.customer_id, "", CHANNELS.CHAT_MESSAGE, {
           conversationId,
           message,
           clientId,
         });
-        // Notification row for the customer (skipped while they are viewing
-        // this thread — the message still arrives over the realtime socket).
-        if (!getViewingConversation(conv.customer_id, conversationId)) {
-          await notifyUser(
-            conv.customer_id,
-            "chat",
-            `ข้อความใหม่จากร้าน ${conv.shop_name ?? ""}`.trim(),
-            body.slice(0, 120),
-            { conversationId },
-          );
-        }
+        // NO bell row for chat — see the customer send path above.
       }
 
       res.json({ success: true, data: { message, clientId } });

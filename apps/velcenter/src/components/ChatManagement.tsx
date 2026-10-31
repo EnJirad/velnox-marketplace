@@ -986,7 +986,23 @@ export default function ChatManagement() {
                                   : "rounded-bl-md bg-slate-100 text-slate-800"
                               }`}
                             >
-                              <p className="whitespace-pre-line break-words">{m.body}</p>
+                              {/* THE ROOT-CAUSE FIX: a normal (non-system) bubble
+                                  must render its attachment too. Before this the
+                                  image was drawn only inside the system-message
+                                  branch, so customer/seller photos arrived as a
+                                  message with no visible media in VelCenter. */}
+                              {m.attachmentUrl ? (
+                                <div className="mb-1.5">
+                                  <ChatImageMessage
+                                    url={m.attachmentUrl}
+                                    alt={t("chat.imageAlt")}
+                                    label={t("chat.viewImage")}
+                                  />
+                                </div>
+                              ) : null}
+                              {m.body ? (
+                                <p className="whitespace-pre-line break-words">{m.body}</p>
+                              ) : null}
                               <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-emerald-800/60" : "text-slate-400"}`}>
                                 <span>{formatLocaleTime(m.createdAt, lang)}</span>
                                 {/* ✓ = stored by the server; ✓✓ = the other side read it. */}
