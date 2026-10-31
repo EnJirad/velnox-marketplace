@@ -47,6 +47,8 @@ import { CENTER_ROLES } from "../lib/permissions.js";
 import {
   CHANNELS,
   getViewingConversation,
+  getUserLastSeenAt,
+  isUserOnline,
   sendToCenter,
   sendToUser,
 } from "../realtime/index.js";
@@ -386,6 +388,12 @@ export function mapConversation(r: any, viewerUserId: string): Record<string, un
     lastMessageAt: r.last_message_at ? new Date(r.last_message_at).getTime() : null,
     unreadCount: parseInt(r.unread_count ?? "0", 10),
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
+    // Presence is answered ONLY where exactly one human counterpart exists
+    // (customer↔seller). Support threads are a team and company rooms have no
+    // single other person, so they report `null` and the UI shows no dot —
+    // never a fabricated "online".
+    participantOnline: type === "CUSTOMER_SELLER" ? isUserOnline(otherUserId) : null,
+    participantLastSeenAt: type === "CUSTOMER_SELLER" ? getUserLastSeenAt(otherUserId) : null,
   };
 }
 
@@ -789,7 +797,9 @@ export function setupChatRoutes(app: Express): void {
             SET last_message = $1, last_message_at = NOW(), updated_at = NOW(),
                 support_status = CASE WHEN support_status = 'CLOSED' THEN 'OPEN' ELSE support_status END
           WHERE id = $2`,
-        [body.slice(0, 200), conversationId],
+        // An image-only message has an empty body, so the inbox preview must not
+        // go blank: a camera glyph is the language-neutral marker the list shows.
+        [body.trim() ? body.slice(0, 200) : attachment.key ? "📷" : "", conversationId],
       );
 
       const message = mapMessage(insertRes.rows[0]);
@@ -1084,7 +1094,9 @@ export function setupChatRoutes(app: Express): void {
             SET last_message = $1, last_message_at = NOW(), updated_at = NOW(),
                 support_status = CASE WHEN support_status IN ('CLOSED', 'WAITING') THEN 'OPEN' ELSE support_status END
           WHERE id = $2`,
-        [body.slice(0, 200), conversationId],
+        // An image-only message has an empty body, so the inbox preview must not
+        // go blank: a camera glyph is the language-neutral marker the list shows.
+        [body.trim() ? body.slice(0, 200) : attachment.key ? "📷" : "", conversationId],
       );
 
       const message = mapMessage(insertRes.rows[0]);

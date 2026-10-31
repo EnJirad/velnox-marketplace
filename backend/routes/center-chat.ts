@@ -30,7 +30,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import { CENTER_ROLES, roleOf } from "../lib/permissions.js";
-import { CHANNELS, getViewingConversation, sendToCenter, sendToUser } from "../realtime/index.js";
+import { CHANNELS, getViewingConversation, getUserLastSeenAt, isUserOnline, sendToCenter, sendToUser } from "../realtime/index.js";
 import { SUPPORT_SHOP_SLUG } from "../lib/chat-access.js";
 import {
   notifyCompanyStaff,
@@ -314,7 +314,24 @@ export function setupCenterChatRoutes(app: Express): void {
     }
     try {
       const rows = await listCompanyConversations(tab, member.id);
-      res.json({ success: true, data: { items: rows.map(mapCompanyConversation) } });
+      // Presence is attached only when the tab has ONE human counterpart: the
+      // customer, or the seller behind the shop. Internal rooms have none.
+      const items = rows.map((row: any) => ({
+        ...mapCompanyConversation(row),
+        participantOnline:
+          tab === "customer"
+            ? isUserOnline(row.customer_id)
+            : tab === "seller"
+              ? isUserOnline(row.seller_user_id)
+              : null,
+        participantLastSeenAt:
+          tab === "customer"
+            ? getUserLastSeenAt(row.customer_id)
+            : tab === "seller"
+              ? getUserLastSeenAt(row.seller_user_id)
+              : null,
+      }));
+      res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[center-chat] list error:", err);
       fail(res, 500, "DB_ERROR", "Failed to load conversations");
@@ -447,7 +464,7 @@ export function setupCenterChatRoutes(app: Express): void {
                   ELSE 'WAITING'
                 END
           WHERE id = $3`,
-        [body.slice(0, 200), userId, conversationId],
+        [body.trim() ? body.slice(0, 200) : attachment.key ? "📷" : "", userId, conversationId],
       );
 
       const message = mapMessage(insertRes.rows[0]);

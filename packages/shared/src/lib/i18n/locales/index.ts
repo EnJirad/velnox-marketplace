@@ -1135,9 +1135,61 @@ const myReview: ReviewCopy = {
  * All locale dictionaries keyed by language code. Adding a language means
  * adding a dictionary here (plus an entry in ../config).
  */
+/**
+ * Chat inbox / thread copy (2026-11) — Mesages-style inbox, presence and read
+ * receipts. Kept as a merge patch because `th.ts` / `my.ts` are past this
+ * workspace's edit window; `Dict` is derived from `th`, and `t()` takes a plain
+ * key string, so patch-only keys are safe and still parity-checked.
+ */
+const thChatUi = {
+  messagesTitle: "ข้อความ",
+  searchPlaceholder: "ค้นหาการสนทนา",
+  filterAll: "ทั้งหมด",
+  filterUnread: "ยังไม่อ่าน",
+  filterSupport: "ซัพพอร์ต",
+  online: "ออนไลน์",
+  lastActive: "ใช้งานล่าสุด {time}",
+  seen: "อ่านแล้ว",
+  newMessages: "ข้อความใหม่",
+  noResultsTitle: "ไม่พบการสนทนา",
+  noResultsDesc: "ลองเปลี่ยนคำค้นหรือตัวกรอง",
+  emoji: "อีโมจิ",
+};
+
+const enChatUi = {
+  messagesTitle: "Messages",
+  searchPlaceholder: "Search conversations",
+  filterAll: "All",
+  filterUnread: "Unread",
+  filterSupport: "Support",
+  online: "Online",
+  lastActive: "Last active {time}",
+  seen: "Seen",
+  newMessages: "New messages",
+  noResultsTitle: "No conversations found",
+  noResultsDesc: "Try a different search or filter",
+  emoji: "Emoji",
+};
+
+const myChatUi = {
+  messagesTitle: "စာတိုများ",
+  searchPlaceholder: "စကားပြောဆိုမှုများ ရှာရန်",
+  filterAll: "အားလုံး",
+  filterUnread: "မဖတ်ရသေး",
+  filterSupport: "အကူအညီ",
+  online: "အွန်လိုင်း",
+  lastActive: "နောက်ဆုံးအသုံးပြုချိန် {time}",
+  seen: "ဖတ်ပြီး",
+  newMessages: "စာတိုအသစ်",
+  noResultsTitle: "စကားပြောဆိုမှု မတွေ့ပါ",
+  noResultsDesc: "ရှာဖွေမှု သို့မဟုတ် စစ်ထုတ်မှုကို ပြောင်းကြည့်ပါ",
+  emoji: "အီမိုဂျီ",
+};
+
 export const translations: Record<Language, Dict> = {
   th: {
     ...th,
+    chat: { ...th.chat, ...thChatUi },
     verification: { ...th.verification, ...thVerificationCopy },
     categories: { ...th.categories, ...thCategoriesCopy },
     categoryPicker: thCategoryPicker,
@@ -1148,6 +1200,7 @@ export const translations: Record<Language, Dict> = {
   } as Dict,
   en: {
     ...en,
+    chat: { ...en.chat, ...enChatUi },
     verification: { ...en.verification, ...enVerificationCopy },
     categories: { ...en.categories, ...enCategoriesCopy },
     categoryPicker: enCategoryPicker,
@@ -1170,7 +1223,7 @@ export const translations: Record<Language, Dict> = {
     mapPicker: { ...myBase.mapPicker, ...myShopPatch.mapPicker },
     shopDetail: { ...myBase.shopDetail, ...myShopPatch.shopDetail },
     productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
-    chat: { ...myChatPatch.chat },
+    chat: { ...myChatPatch.chat, ...myChatUi },
     sellerChat: myChatPatch.sellerChat,
     notifications: { ...myBase.notifications, ...myNotifyPatch },
     orderDetail: { ...myBase.orderDetail, ...myOrderPatch.orderDetail },

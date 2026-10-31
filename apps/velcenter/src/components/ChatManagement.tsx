@@ -41,6 +41,9 @@ import {
 } from "@velnox/shared/lib/chat-message";
 import { buildTimeline, groupCorners } from "@velnox/shared/lib/chat-timeline";
 import { ChatImageMessage } from "@velnox/shared/components/chat/chat-image";
+import { ChatComposer } from "@velnox/shared/components/chat/chat-composer";
+import { ChatSearchField } from "@velnox/shared/components/chat/chat-inbox";
+import { validateChatImage, uploadChatImage } from "@velnox/shared/lib/chat-attachment";
 import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
@@ -56,7 +59,7 @@ import {
   Store,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type ChatTab = "customer" | "seller" | "internal";
@@ -83,6 +86,9 @@ interface CenterConversation {
   lastMessageAt: number | null;
   unreadCount: number;
   updatedAt: number;
+  /** Presence of the single counterpart — `null` for internal rooms. */
+  participantOnline?: boolean | null;
+  participantLastSeenAt?: number | null;
 }
 
 interface CenterMessage {
@@ -160,6 +166,12 @@ export default function ChatManagement() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{ file: File; url: string } | null>(null);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [newRoom, setNewRoom] = useState("");
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -286,6 +298,40 @@ export default function ChatManagement() {
       void loadList(tabRef.current);
       void loadCounts();
     });
+    // Presence is derived by the server from live sockets; `null` means unknown
+    // and the UI then shows no dot at all.
+    const offPresence = onChatEvent("chat:presence", (data: any) => {
+      const changedUserId = typeof data?.userId === "string" ? data.userId : null;
+      if (!changedUserId) return;
+      const online = data?.online === true;
+      const at = typeof data?.at === "number" ? data.at : Date.now();
+      const matches = (c: CenterConversation) =>
+        c.type === "CUSTOMER_COMPANY"
+          ? c.customer?.id === changedUserId
+          : c.type === "SELLER_COMPANY"
+            ? c.seller?.userId === changedUserId
+            : false;
+      setItems((prev) =>
+        prev?.map((c) =>
+          matches(c)
+            ? {
+                ...c,
+                participantOnline: online,
+                participantLastSeenAt: online ? c.participantLastSeenAt ?? null : at,
+              }
+            : c,
+        ) ?? null,
+      );
+      setActive((prev) =>
+        prev && matches(prev)
+          ? {
+              ...prev,
+              participantOnline: online,
+              participantLastSeenAt: online ? prev.participantLastSeenAt ?? null : at,
+            }
+          : prev,
+      );
+    });
     const offReconnect = onChatReconnect(() => {
       void loadList(tabRef.current);
       void loadCounts();
@@ -303,6 +349,7 @@ export default function ChatManagement() {
       offMessage();
       offRead();
       offCreated();
+      offPresence();
       offReconnect();
     };
   }, [userId, markRead, loadList, loadCounts, messagesAction]);
@@ -354,7 +401,25 @@ export default function ChatManagement() {
   const handleSend = useCallback(async () => {
     if (!active || !userId) return;
     const body = draft.trim();
-    if (!body || sending) return;
+    if ((!body && !pendingImage) || sending) return;
+    setSendError(null);
+    // Upload first: an attachment key is only used after the R2 PUT succeeded,
+    // so a failed transfer never leaves a message pointing at nothing.
+    let attachmentKey: string | null = null;
+    let attachmentUrl: string | null = null;
+    if (pendingImage) {
+      setUploadPct(0);
+      setAttachError(null);
+      try {
+        attachmentKey = await uploadChatImage(active.id, pendingImage.file, { onProgress: setUploadPct });
+        attachmentUrl = pendingImage.url;
+      } catch (err) {
+        setAttachError(err instanceof Error ? err.message : "Upload failed");
+        setUploadPct(null);
+        return;
+      }
+      setUploadPct(null);
+    }
     const retry = retryRef.current;
     const clientId =
       retry && retry.body === body
@@ -369,14 +434,19 @@ export default function ChatManagement() {
       status: "sent",
       readAt: null,
       createdAt: Date.now(),
+      attachmentUrl,
     };
     setDraft("");
+    if (pendingImage) {
+      URL.revokeObjectURL(pendingImage.url);
+      setPendingImage(null);
+    }
     // Sending ends the typing state now; the idle timer is only a fallback.
     notifyStop();
     setMessages((prev) => [...prev, temp]);
     setSending(true);
     try {
-      const res = await sendAction({ conversationId: active.id, body, clientId });
+      const res = await sendAction({ conversationId: active.id, body, clientId, attachmentKey });
       retryRef.current = null;
       const saved = res?.message as CenterMessage | undefined;
       if (saved) {
@@ -386,7 +456,7 @@ export default function ChatManagement() {
             c.id === active.id
               ? {
                   ...c,
-                  lastMessage: saved.body,
+                  lastMessage: saved.body || (saved.attachmentUrl ? "📷" : ""),
                   lastMessageAt: saved.createdAt,
                   updatedAt: saved.createdAt,
                   status:
@@ -401,13 +471,77 @@ export default function ChatManagement() {
     } catch (err) {
       console.error("Send company message error:", err);
       toast.error("ส่งข้อความไม่สำเร็จ");
+      setSendError("ส่งข้อความไม่สำเร็จ กรุณาลองอีกครั้ง");
       setMessages((prev) => prev.filter((m) => m.id !== temp.id));
       retryRef.current = { clientId, body };
       setDraft(body);
     } finally {
       setSending(false);
     }
-  }, [active, draft, sending, userId, sendAction, loadCounts, notifyStop]);
+  }, [active, draft, sending, pendingImage, userId, sendAction, loadCounts, notifyStop]);
+
+  const handlePickImage = useCallback(
+    (file: File) => {
+      const invalid = validateChatImage(file);
+      if (invalid) {
+        toast.error(invalid);
+        return;
+      }
+      if (pendingImage) URL.revokeObjectURL(pendingImage.url);
+      setPendingImage({ file, url: URL.createObjectURL(file) });
+      setAttachError(null);
+      setUploadPct(null);
+      setSendError(null);
+    },
+    [pendingImage],
+  );
+
+  const removeImage = useCallback(() => {
+    if (pendingImage) URL.revokeObjectURL(pendingImage.url);
+    setPendingImage(null);
+    setAttachError(null);
+    setUploadPct(null);
+  }, [pendingImage]);
+
+  /** Client-side inbox filter: search + unread only, over the loaded tab. */
+  const visibleItems = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return (items ?? [])
+      .filter((c) => (unreadOnly ? c.unreadCount > 0 : true))
+      .filter((c) => {
+        if (!needle) return true;
+        const haystack = [
+          conversationTitle(c),
+          conversationSubtitle(c),
+          c.customer?.name,
+          c.seller?.name,
+          c.seller?.shopName,
+          c.lastMessage,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      });
+  }, [items, search, unreadOnly]);
+
+  const activeCounterpartUserId = active
+    ? active.type === "CUSTOMER_COMPANY"
+      ? active.customer?.id ?? null
+      : active.type === "SELLER_COMPANY"
+        ? active.seller?.userId ?? null
+        : null
+    : null;
+  const activeOnline = active ? active.participantOnline ?? null : null;
+  const activePresenceLabel = active
+    ? active.type === "COMPANY_INTERNAL"
+      ? "แชทภายในบริษัท"
+      : activeOnline === true
+        ? "ออนไลน์"
+        : active.participantLastSeenAt
+          ? `ใช้งานล่าสุด ${formatRelativeTime(active.participantLastSeenAt, lang, t)}`
+          : conversationSubtitle(active)
+    : null;
 
   const updateConversation = useCallback(
     async (patch: { status?: string; assignedTo?: string | null }) => {
@@ -507,6 +641,42 @@ export default function ChatManagement() {
             </p>
           </div>
 
+          <div className="space-y-2 border-b border-slate-100 px-3 py-2.5">
+            <ChatSearchField
+              value={search}
+              onChange={setSearch}
+              placeholder="ค้นหาการสนทนา"
+              label="ค้นหาการสนทนา"
+            />
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setUnreadOnly(false)}
+                aria-pressed={!unreadOnly}
+                className={`min-h-8 rounded-full px-3 text-xs font-medium transition-colors ${
+                  unreadOnly ? "text-slate-500 hover:bg-slate-100" : "bg-sky-100 text-sky-900"
+                }`}
+              >
+                ทั้งหมด
+              </button>
+              <button
+                type="button"
+                onClick={() => setUnreadOnly(true)}
+                aria-pressed={unreadOnly}
+                className={`flex min-h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
+                  unreadOnly ? "bg-sky-100 text-sky-900" : "text-slate-500 hover:bg-slate-100"
+                }`}
+              >
+                ยังไม่อ่าน
+                {counts[tabMeta.countKey] > 0 && (
+                  <span className="rounded-full bg-white/70 px-1.5 text-[10px] font-semibold">
+                    {counts[tabMeta.countKey]}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
           {tab === "internal" && (
             <div className="flex gap-2 border-b border-slate-100 px-3 py-2.5">
               <input
@@ -553,15 +723,17 @@ export default function ChatManagement() {
                 ลองอีกครั้ง
               </Button>
             </div>
-          ) : list.length === 0 ? (
+          ) : visibleItems.length === 0 ? (
             <div className="px-6 py-14 text-center">
               <MessageCircle className="mx-auto size-7 text-slate-300" />
               <p className="mt-3 text-sm font-medium text-slate-600">
-                {tab === "customer"
-                  ? "ยังไม่มีลูกค้าติดต่อบริษัท"
-                  : tab === "seller"
-                    ? "ยังไม่มีผู้ขายติดต่อบริษัท"
-                    : "ยังไม่มีห้องแชทภายใน"}
+                {search.trim() || unreadOnly
+                  ? "ไม่พบการสนทนาที่ตรงกับเงื่อนไข"
+                  : tab === "customer"
+                    ? "ยังไม่มีลูกค้าติดต่อบริษัท"
+                    : tab === "seller"
+                      ? "ยังไม่มีผู้ขายติดต่อบริษัท"
+                      : "ยังไม่มีห้องแชทภายใน"}
               </p>
               <p className="mt-1 text-xs leading-5 text-slate-400">
                 {tab === "internal"
@@ -571,7 +743,7 @@ export default function ChatManagement() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {list.map((c) => {
+              {visibleItems.map((c) => {
                 const title = conversationTitle(c);
                 const status = STATUS_META[c.status] ?? STATUS_META.OPEN;
                 return (
@@ -607,6 +779,13 @@ export default function ChatManagement() {
                         <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[10px] font-bold text-white">
                           {c.unreadCount > 9 ? "9+" : c.unreadCount}
                         </span>
+                      )}
+                      {/* Presence dot only when the server proved the state. */}
+                      {c.participantOnline === true && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-white bg-[#10B981]"
+                        />
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
@@ -659,7 +838,13 @@ export default function ChatManagement() {
                   </button>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-900">{conversationTitle(active)}</p>
-                    <p className="truncate text-[11px] text-slate-400">{conversationSubtitle(active)}</p>
+                    <p
+                      className={`truncate text-[11px] ${
+                        activeOnline === true ? "font-medium text-emerald-600" : "text-slate-400"
+                      }`}
+                    >
+                      {activePresenceLabel}
+                    </p>
                   </div>
                   {active.type !== "COMPANY_INTERNAL" && (
                     <Badge className={`shrink-0 rounded-full ring-1 ring-inset ${STATUS_META[active.status].className}`}>
@@ -797,12 +982,12 @@ export default function ChatManagement() {
                                 groupCorners(entry.firstOfGroup, entry.lastOfGroup, mine)
                               } ${
                                 mine
-                                  ? "bg-[#10B981] text-white"
-                                  : "border border-slate-200 bg-slate-50 text-slate-800"
+                                  ? "rounded-br-md bg-[#ECFDF5] text-slate-900"
+                                  : "rounded-bl-md bg-slate-100 text-slate-800"
                               }`}
                             >
                               <p className="whitespace-pre-line break-words">{m.body}</p>
-                              <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-emerald-50/80" : "text-slate-400"}`}>
+                              <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-emerald-800/60" : "text-slate-400"}`}>
                                 <span>{formatLocaleTime(m.createdAt, lang)}</span>
                                 {/* ✓ = stored by the server; ✓✓ = the other side read it. */}
                                 {mine &&
@@ -834,36 +1019,37 @@ export default function ChatManagement() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 border-t border-slate-100 p-3">
-                <input
-                    value={draft}
-                    onChange={(e) => {
-                      setDraft(e.target.value);
-                      if (e.target.value.trim().length > 0) notifyTyping();
-                      else notifyStop();
-                    }}
-                    onBlur={notifyStop}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void handleSend();
-                      }
-                    }}
-                    placeholder="พิมพ์ข้อความ..."
-                  aria-label="พิมพ์ข้อความ"
-                  maxLength={4000}
-                  className="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-                />
-                <Button
-                  type="button"
-                  onClick={() => void handleSend()}
-                  disabled={!draft.trim() || sending}
-                  className="size-11 shrink-0 rounded-full bg-[#10B981] p-0 text-white hover:bg-[#059669]"
-                  aria-label="ส่งข้อความ"
-                >
-                  {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                </Button>
-              </div>
+              <ChatComposer
+                value={draft}
+                onChange={setDraft}
+                onSend={() => void handleSend()}
+                sending={sending}
+                placeholder="พิมพ์ข้อความ..."
+                sendLabel="ส่งข้อความ"
+                attachLabel="แนบรูปภาพ"
+                emojiLabel="อีโมจิ"
+                inputLabel="พิมพ์ข้อความ"
+                retryLabel="ลองอีกครั้ง"
+                error={sendError}
+                onRetry={() => void handleSend()}
+                pendingImage={
+                  pendingImage
+                    ? { previewUrl: pendingImage.url, progress: uploadPct, error: attachError }
+                    : null
+                }
+                onPickImage={handlePickImage}
+                onRemoveImage={removeImage}
+                onRetryImage={() => void handleSend()}
+                onTyping={notifyTyping}
+                onStopTyping={notifyStop}
+                footer={
+                  typingUserIds.length > 0 ? (
+                    <div className="px-4 pt-2">
+                      <TypingDots label={t("chat.typing")} />
+                    </div>
+                  ) : null
+                }
+              />
             </>
           )}
         </section>

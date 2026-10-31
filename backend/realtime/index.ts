@@ -2,6 +2,7 @@ import type { IncomingMessage } from "http";
 import jwt from "jsonwebtoken";
 import { isTokenRevokedSync } from "../middleware/auth.js";
 import { CENTER_ROLES, roleOf } from "../lib/permissions.js";
+import { query } from "../db/index.js";
 import {
   chatFrameRecipients,
   isChatParticipant,
@@ -57,6 +58,74 @@ const clients = new Map<WebSocket, ConnectedClient>();
  */
 const viewingConversation = new Map<string, string>();
 
+/**
+ * Presence (online / last active) — the ONLY source of truth for the "Online"
+ * pill and the conversation-row dot.
+ *
+ * Online means "this user has at least one live authenticated socket right
+ * now": the same `clients` registry that already carries chat frames, never a
+ * timer, never a page that merely opened, never a stored flag. A user with two
+ * tabs is online until the LAST socket closes; closing it records `lastSeenAt`
+ * and pushes the change.
+ *
+ * Limits, deliberately documented instead of faked: this state is in memory and
+ * therefore per backend process and lost on restart (multi-instance deployments
+ * would each answer from their own registry). Chat delivery has the same shape,
+ * so presence is exactly as accurate as delivery — it is advisory, not
+ * authoritative commerce state, and nothing is written to Neon.
+ */
+const lastSeenAt = new Map<string, number>();
+
+/** True while at least one authenticated socket of this user is connected. */
+export function isUserOnline(userId: string | null | undefined): boolean {
+  if (!userId) return false;
+  for (const client of clients.values()) {
+    if (client.userId === userId) return true;
+  }
+  return false;
+}
+
+/** Epoch ms of the moment this process saw the user's last socket close. */
+export function getUserLastSeenAt(userId: string | null | undefined): number | null {
+  if (!userId) return null;
+  const at = lastSeenAt.get(userId);
+  return typeof at === "number" ? at : null;
+}
+
+/**
+ * Tell the other half of a 1:1 customer↔seller thread that a participant came
+ * online or left.
+ *
+ * Only `CUSTOMER_SELLER` conversations are announced: those are the only chat
+ * threads with exactly ONE human counterpart, so the audience is provable from
+ * the row. Support threads are answered by a team, and company rooms have no
+ * single counterpart — their clients read presence with the conversation payload
+ * and never show an online dot they cannot justify.
+ */
+async function announceChatPresence(userId: string, online: boolean): Promise<void> {
+  try {
+    const res = await query(
+      `SELECT DISTINCT CASE WHEN c.customer_id = $1 THEN su.id ELSE c.customer_id END AS other_id
+         FROM conversations c
+         LEFT JOIN sellers sl ON sl.id = c.seller_id
+         LEFT JOIN users su ON su.id = sl.user_id
+        WHERE c.type = 'CUSTOMER_SELLER'
+          AND (c.customer_id = $1 OR sl.user_id = $1)
+        LIMIT 200`,
+      [userId],
+    );
+    const at = Date.now();
+    for (const row of res.rows) {
+      const otherId = (row.other_id as string | null) ?? null;
+      if (!otherId || otherId === userId) continue;
+      sendToUser(otherId, "", CHANNELS.CHAT_PRESENCE, { userId, online, at });
+    }
+  } catch (err) {
+    // Presence is advisory: a failed fan-out must never take the socket down.
+    console.error("[realtime] presence announce failed:", err);
+  }
+}
+
 /** Drop a client and any presence it still holds when it was its user's last socket. */
 function forgetClient(ws: WebSocket, client: ConnectedClient): void {
   clients.delete(ws);
@@ -66,6 +135,8 @@ function forgetClient(ws: WebSocket, client: ConnectedClient): void {
     if (other.userId === userId) return; // another tab is still connected
   }
   viewingConversation.delete(userId);
+  lastSeenAt.set(userId, Date.now());
+  void announceChatPresence(userId, false);
 }
 
 /** VelCenter roles (owner / admin / staff) — the same list `lib/permissions.ts` enforces. */
@@ -232,6 +303,9 @@ export function setupWebSocket(wss: WebSocketServer): void {
   wss.on("connection", (ws, req: IncomingMessage) => {
     const authed = resolveUserFromRequest(req);
     const now = Date.now();
+    // Read BEFORE registering this socket: "first socket for this user" is what
+    // turns an Offline → Online transition into exactly one announcement.
+    const wasOffline = !isUserOnline(authed?.userId);
     const client: ConnectedClient = {
       ws,
       userId: authed?.userId,
@@ -244,6 +318,7 @@ export function setupWebSocket(wss: WebSocketServer): void {
       conversationCache: new Map(),
     };
     clients.set(ws, client);
+    if (authed?.userId && wasOffline) void announceChatPresence(authed.userId, true);
     // Authorize from OUR data, never from the socket: the role is read from
     // `users.role` and a subscribe frame awaits this before deciding.
     client.roleReady = refreshClientRole(client).catch(() => { /* unresolved = no private channels */ });
@@ -471,6 +546,10 @@ export const CHANNELS = {
   /** Ephemeral typing signal ({ conversationId, userId, typing }). Addressed to
    *  the conversation's other participants; never stored, never subscribable. */
   CHAT_TYPING: "chat:typing",
+  /** Presence of a single counterpart ({ userId, online, at }). Addressed to the
+   *  other participant of a customer↔seller thread; derived from live sockets,
+   *  never stored, never subscribable. */
+  CHAT_PRESENCE: "chat:presence",
   /** A company conversation/room was created; VelCenter sessions refetch their
    *  list. It carries no message body and is addressed to company sessions. */
   CHAT_CONVERSATION: "chat:conversation",

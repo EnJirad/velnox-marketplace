@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-01 · **Branch:** `main` · **Latest pass:** **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -741,26 +741,9 @@ PARTIAL (real Stripe E2E blocked on missing test keys).
 
 ---
 
-## §94. Commerce Messenger: durable idempotency + shared timeline (2026-10-31) — COMPLETE
+## §94. Commerce Messenger: durable idempotency + shared timeline (2026-10-31) — **ARCHIVED** (moved 2026-11-01)
 
-**SHA:** `905835e` → this commit. **Report:**
-[`.ai/history/2026-10-31-phase-2i-messenger-upgrade.md`](./history/2026-10-31-phase-2i-messenger-upgrade.md).
-
-**Idempotency moved into the database.** `chat_messages.client_id` + partial UNIQUE
-`uq_chat_messages_client_id (conversation_id, sender_id, client_id) WHERE client_id IS NOT NULL`, declared
-in both canonical files (additive, rerunnable). All three human send paths go through
-`insertHumanMessage()` (`ON CONFLICT … DO NOTHING`); the loser replays via `findMessageByClientId()` and
-returns `duplicate:true` without re-running the conversation update, the daily ack or notifications. The
-in-memory map is now only a fast path.
-
-**Shared timeline.** `packages/shared/src/lib/chat-timeline.ts` gives all three surfaces the same day
-separators (localised with `Intl.RelativeTimeFormat`), sender grouping inside a 5-minute window, and
-bubble hugging — wired into VelShop, VelSeller and VelCenter.
-
-**Verified.** `chat-durable-idempotency` (3 structural pass, 5 DB cases skip locally / run in CI),
-`chat-timeline` 10/10, chat suites green, full suite **1116 pass / 375 skip / 8 fail** (the 8 are the
-Termux-only probes), typecheck 4/4, backend tsc, build 4/4, i18n 1265, diff clean. Deferred and NOT faked:
-reactions, edit, media/R2 attachments, product/order messages, search, image viewer.
+Full text: [`archive/AI_Handoff-2026-11-01-section-94-commerce-messenger.md`](./history/archive/AI_Handoff-2026-11-01-section-94-commerce-messenger.md).
 
 ---
 
@@ -832,6 +815,32 @@ Verified: typecheck 4/4, build 4/4, i18n 1268, backend suite 1113 pass / 8 Termu
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95; §93 on 2026-11-01 with §98
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95; §93 on 2026-11-01 with §98; §94 on 2026-11-01 with §99
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.
+
+## §99. Chat inbox + thread redesign, real presence (2026-11-01) — PARTIAL
+
+**SHA:** `930de65` → this commit. **Report:**
+[`.ai/history/2026-11-01-chat-inbox-redesign.md`](./history/2026-11-01-chat-inbox-redesign.md).
+
+Messages-style inbox in all three apps — search + All/Unread/Support over server data, avatar/preview/time/
+unread rows, one shared composer (`+` attach, emoji, Enter/Shift+Enter, disabled in flight, inline retry),
+mint outgoing + gray incoming bubbles, date separators, load-older with scroll anchoring, "new messages"
+chip. Presence is now REAL: `isUserOnline()` / `getUserLastSeenAt()` read the live socket registry and
+`chat:presence` is addressed to the other side of a customer↔seller thread only — no dot for support threads
+or internal rooms, nothing hardcoded. Image-only sends preview as `📷`. Reused the one chat core, the shared
+socket, `chat-message`/`chat-timeline` and the R2 `purpose=chat` upload: no new table, endpoint, socket or
+polling loop.
+
+**Production DB verified read-only (Neon `run_sql`, no writes):** `chat_messages.attachment_key`,
+`chat_messages_body_or_attachment_check` and `uq_chat_messages_client_id` exist — image messaging is
+schema-ready; no migration was run or needed.
+
+**Verified:** typecheck 4/4, backend `tsc`, build 4/4, i18n 1280/1280/1280, chat suites **34 pass / 38 skip /
+0 fail**, full suite **1113 pass / 375 skip / 8 fail** (the 8 are the known Termux DB-guard probes),
+`git diff --check` clean. **NOT RUN:** browser E2E and every DB-gated chat test — this device has no session
+(Google OAuth only) and no disposable database (PG18 `initdb` hangs at its bootstrap probe here); R2 upload is
+untested (no credentials). Presence is in-memory per process and resets on restart — documented, not hidden.
+
+---
