@@ -9,6 +9,8 @@ import { connectChatSocket, onChatEvent, onChatReconnect, sendChatCommand } from
 import { useChatTyping } from "@velnox/shared/lib/chat-typing";
 import { applyReadReceipt, isOwnMessage, isSystemMessage, mergeIncomingMessage } from "@velnox/shared/lib/chat-message";
 import { buildTimeline, groupCorners } from "@velnox/shared/lib/chat-timeline";
+import { validateChatImage, uploadChatImage } from "@velnox/shared/lib/chat-attachment";
+import { ChatImageMessage, ComposerImagePreview } from "@velnox/shared/components/chat/chat-image";
 import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { notifyChatUnreadChanged } from "@velnox/shared/hooks/use-chat-unread";
 import { useRealtimeState } from "@velnox/shared/hooks/use-realtime-state";
@@ -16,6 +18,7 @@ import {
   ArrowLeft,
   Check,
   CheckCheck,
+  ImagePlus,
   ChevronRight,
   Headphones,
   Loader2,
@@ -57,6 +60,8 @@ interface ChatMessage {
   /** Automated message written by the platform (daily Velnox Support ack). */
   isSystem?: boolean;
   systemKind?: string | null;
+  /** Image attached to this message (URL derived server-side from the R2 key). */
+  attachmentUrl?: string | null;
 }
 
 export default function SellerChat() {
@@ -279,10 +284,43 @@ export default function SellerChat() {
     }
   }, [active, loadingMore, messages, conversationMessages]);
 
+  const [pendingImage, setPendingImage] = useState<{ file: File; url: string } | null>(null);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const handlePickImage = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const invalid = validateChatImage(file);
+    if (invalid) {
+      toast.error(invalid);
+      return;
+    }
+    if (pendingImage) URL.revokeObjectURL(pendingImage.url);
+    setPendingImage({ file, url: URL.createObjectURL(file) });
+    setAttachError(null);
+    setUploadPct(null);
+  }, [pendingImage]);
   const handleSend = useCallback(async () => {
     if (!active || !user?.id) return;
     const body = draft.trim();
-    if (!body || sending) return;
+    if ((!body && !pendingImage) || sending) return;
+    let attachmentKey: string | null = null;
+    let attachmentUrl: string | null = null;
+    if (pendingImage) {
+      setUploadPct(0);
+      setAttachError(null);
+      try {
+        attachmentKey = await uploadChatImage(active.id, pendingImage.file, { onProgress: setUploadPct });
+        attachmentUrl = pendingImage.url;
+      } catch (err) {
+        setAttachError(err instanceof Error ? err.message : "Upload failed");
+        setUploadPct(null);
+        return;
+      }
+      setUploadPct(null);
+    }
     const retry = retryRef.current;
     const clientId =
       retry && retry.body === body
@@ -297,15 +335,20 @@ export default function SellerChat() {
       status: "sent",
       readAt: null,
       createdAt: Date.now(),
+      attachmentUrl,
     };
     setDraft("");
+    if (pendingImage) {
+      URL.revokeObjectURL(pendingImage.url);
+      setPendingImage(null);
+    }
     // The message already arrived — stop the indicator now rather than waiting
     // for the idle timer.
     notifyStop();
     setMessages((prev) => [...prev, temp]);
     setSending(true);
     try {
-      const res = await sendMessage({ conversationId: active.id, body, clientId });
+      const res = await sendMessage({ conversationId: active.id, body, clientId, attachmentKey });
       retryRef.current = null;
       const saved = res?.message as ChatMessage | undefined;
       if (saved) {
@@ -583,7 +626,12 @@ export default function SellerChat() {
                           return (
                             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                               <div className={`max-w-[78%] px-3.5 py-2.5 text-sm leading-6 ${groupCorners(entry.firstOfGroup, entry.lastOfGroup, mine)} ${mine ? "bg-slate-900 text-white" : "border border-slate-200 bg-slate-50 text-slate-800"}`}>
-                                <p className="whitespace-pre-line break-words">{m.body}</p>
+                                {m.attachmentUrl && (
+                                  <div className="mb-1.5">
+                                    <ChatImageMessage url={m.attachmentUrl} alt={t("chat.imageAlt")} label={t("chat.viewImage")} />
+                                  </div>
+                                )}
+                                {m.body ? <p className="whitespace-pre-line break-words">{m.body}</p> : null}
                                 <p className={`mt-1 flex items-center gap-1 text-[10px] text-slate-400`}>
                                   <span>{formatLocaleTime(m.createdAt, lang)}</span>
                                   {/* ✓ = stored by the server; ✓✓ = the customer read it. */}
@@ -623,7 +671,38 @@ export default function SellerChat() {
                 </div>
 
                 {/* Composer */}
-                <div className="flex items-center gap-2 border-t border-slate-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <div className="border-t border-slate-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                  {pendingImage && (
+                    <ComposerImagePreview
+                      previewUrl={pendingImage.url}
+                      progress={uploadPct}
+                      error={attachError}
+                      onRemove={() => {
+                        URL.revokeObjectURL(pendingImage.url);
+                        setPendingImage(null);
+                        setAttachError(null);
+                        setUploadPct(null);
+                      }}
+                      onRetry={() => void handleSend()}
+                      sendLabel={t("chat.send")}
+                    />
+                  )}
+                  <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/avif"
+                    className="hidden"
+                    onChange={handlePickImage}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                    aria-label={t("chat.attachImage")}
+                  >
+                    <ImagePlus className="size-5" />
+                  </button>
                   <input
                     value={draft}
                     onChange={(e) => {
@@ -646,12 +725,13 @@ export default function SellerChat() {
                   <Button
                     type="button"
                     onClick={() => void handleSend()}
-                    disabled={!draft.trim() || sending}
+                    disabled={(!draft.trim() && !pendingImage) || sending}
                     className="size-11 shrink-0 gap-1.5 rounded-full bg-[#10B981] p-0 text-white hover:bg-[#059669]"
                     aria-label={t("chat.sendAria")}
                   >
                     {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                   </Button>
+                  </div>
                 </div>
               </>
             )}

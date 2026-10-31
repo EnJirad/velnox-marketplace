@@ -40,6 +40,7 @@ import {
   mergeIncomingMessage,
 } from "@velnox/shared/lib/chat-message";
 import { buildTimeline, groupCorners } from "@velnox/shared/lib/chat-timeline";
+import { ChatImageMessage } from "@velnox/shared/components/chat/chat-image";
 import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
@@ -97,6 +98,8 @@ interface CenterMessage {
   /** Automated message written by the platform (daily Velnox Support ack). */
   isSystem?: boolean;
   systemKind?: string | null;
+  /** Image attached to this message (URL derived server-side from the R2 key). */
+  attachmentUrl?: string | null;
 }
 
 interface Counts {
@@ -773,7 +776,12 @@ export default function ChatManagement() {
                                 aria-label={t("chat.systemMessage")}
                                 className="max-w-[86%] rounded-2xl rounded-bl-md border border-dashed border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs leading-5 text-slate-500"
                               >
-                                <p className="whitespace-pre-line break-words">{m.body}</p>
+                                {m.attachmentUrl && (
+                                  <div className="mb-1.5">
+                                    <ChatImageMessage url={m.attachmentUrl} alt={t("chat.imageAlt")} label={t("chat.viewImage")} />
+                                  </div>
+                                )}
+                                {m.body ? <p className="whitespace-pre-line break-words">{m.body}</p> : null}
                                 <p className="mt-1 text-[10px] text-slate-400">
                                   {formatLocaleTime(m.createdAt, lang)}
                                 </p>
