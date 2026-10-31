@@ -736,6 +736,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
   status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,
+  client_id TEXT,
   system_kind TEXT,
   ack_day DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -1664,6 +1665,9 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS sender_role TEXT DEFAU
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS body TEXT;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'sent' CHECK (status IN ('sent', 'read')) NOT NULL;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+-- Durable send idempotency key (human messages only; NULL for system rows and
+-- legacy rows). The unique index in the INDEX section is what enforces it.
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS client_id TEXT;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
 -- Automated (system) messages — messenger UX pass. A system row has no human
@@ -3002,6 +3006,12 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON public.chat_messages (con
 CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_support_daily_ack
   ON public.chat_messages (conversation_id, ack_day)
   WHERE system_kind = 'support_daily_ack';
+-- Durable send idempotency. A retry, a double tap, a second tab, a second
+-- backend instance or a restart loses this race and replays the stored row
+-- instead of writing a duplicate.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_client_id
+  ON public.chat_messages (conversation_id, sender_id, client_id)
+  WHERE client_id IS NOT NULL;
 
 -- ─── commerce core (migration 056) ──────────────────────────────────────
 

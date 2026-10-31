@@ -168,6 +168,50 @@ export function mapMessage(r: any): Record<string, unknown> {
   };
 }
 
+// ─── Durable send idempotency ───────────────────────────────────────────────
+
+/**
+ * Insert ONE human message and claim the durable idempotency index.
+ *
+ * `uq_chat_messages_client_id` (conversation_id, sender_id, client_id) makes
+ * "one row per send attempt" a DATABASE rule. The loser of any race —
+ * a double tap, a retry, a second tab, a second backend instance, a restart —
+ * gets `rows: []` and MUST replay the stored row instead of writing another.
+ *
+ * A NULL `client_id` cannot conflict (the index is partial), so every caller
+ * that omits it keeps the old "always insert" behaviour.
+ */
+export async function insertHumanMessage(params: {
+  conversationId: string;
+  senderId: string;
+  senderRole: "customer" | "seller" | "company";
+  body: string;
+  clientId: string | null;
+}): Promise<{ rows: any[] }> {
+  return query(
+    `INSERT INTO chat_messages (conversation_id, sender_id, sender_role, body, client_id)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (conversation_id, sender_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
+     RETURNING *`,
+    [params.conversationId, params.senderId, params.senderRole, params.body, params.clientId],
+  );
+}
+
+/** The row a losing racer replays (same conversation + sender + client id). */
+export async function findMessageByClientId(
+  conversationId: string,
+  senderId: string,
+  clientId: string,
+): Promise<any | null> {
+  const res = await query(
+    `SELECT * FROM chat_messages
+      WHERE conversation_id = $1 AND sender_id = $2 AND client_id = $3
+      LIMIT 1`,
+    [conversationId, senderId, clientId],
+  );
+  return res.rows[0] ?? null;
+}
+
 // ─── Daily support acknowledgment (CUSTOMER_COMPANY only) ───────────────────
 
 /** The only automated message this core writes today. */
@@ -665,11 +709,34 @@ export function setupChatRoutes(app: Express): void {
         }
       }
 
-      const insertRes = await query(
-        `INSERT INTO chat_messages (conversation_id, sender_id, sender_role, body)
-         VALUES ($1, $2, 'customer', $3) RETURNING *`,
-        [conversationId, userId, body],
-      );
+      // ── Durable idempotency ────────────────────────────────────────────────
+      // The partial unique index `uq_chat_messages_client_id` decides the race:
+      // a retry, another tab, a second backend instance or a restart loses it
+      // and this INSERT returns no row. The loser then replays the stored row.
+      // The in-memory map above is only a fast path for the common retry.
+      const insertRes = await insertHumanMessage({
+        conversationId,
+        senderId: userId,
+        senderRole: "customer",
+        body,
+        clientId,
+      });
+      if (insertRes.rows.length === 0) {
+        // Lost the race: replay the stored row and stop — no second conversation
+        // update, no second acknowledgment, no second notification.
+        const stored = clientId ? await findMessageByClientId(conversationId, userId, clientId) : null;
+        const replay = stored ? mapMessage(stored) : null;
+        if (replay) {
+          if (dedupeKey) rememberSend(dedupeKey, replay);
+          res.json({ success: true, data: { message: replay, clientId, duplicate: true } });
+          return;
+        }
+        res.status(409).json({
+          success: false,
+          error: { code: "DUPLICATE_SEND", message: "Message already stored" },
+        });
+        return;
+      }
       await query(
         `UPDATE conversations
             SET last_message = $1, last_message_at = NOW(), updated_at = NOW(),
@@ -935,11 +1002,30 @@ export function setupChatRoutes(app: Express): void {
         }
       }
 
-      const insertRes = await query(
-        `INSERT INTO chat_messages (conversation_id, sender_id, sender_role, body)
-         VALUES ($1, $2, 'seller', $3) RETURNING *`,
-        [conversationId, userId, body],
-      );
+      // Same durable claim as the customer route: the partial UNIQUE index on
+      // (conversation_id, sender_id, client_id) decides, so a retry from another
+      // tab, instance or after a restart cannot write a second row.
+      const insertRes = await insertHumanMessage({
+        conversationId,
+        senderId: userId,
+        senderRole: "seller",
+        body,
+        clientId,
+      });
+      if (insertRes.rows.length === 0) {
+        const stored = clientId ? await findMessageByClientId(conversationId, userId, clientId) : null;
+        const replay = stored ? mapMessage(stored) : null;
+        if (replay) {
+          if (dedupeKey) rememberSend(dedupeKey, replay);
+          res.json({ success: true, data: { message: replay, clientId, duplicate: true } });
+          return;
+        }
+        res.status(409).json({
+          success: false,
+          error: { code: "DUPLICATE_SEND", message: "Message already stored" },
+        });
+        return;
+      }
       await query(
         `UPDATE conversations
             SET last_message = $1, last_message_at = NOW(), updated_at = NOW(),

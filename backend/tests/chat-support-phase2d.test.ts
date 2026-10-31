@@ -75,10 +75,11 @@ describe("message sending: session identity + server-side validation", () => {
   test("the sender is the authenticated session, never a client field", () => {
     // Both send routes resolve the sender from requireAuth's payload…
     expect(chat.split("const userId = req.user!.userId;").length - 1).toBeGreaterThanOrEqual(2);
-    // …and the role is a route literal — nothing the body carries can promote
-    // a customer to a seller or impersonate the other side of the thread.
-    expect(chat).toContain(`VALUES ($1, $2, 'customer', $3) RETURNING *`);
-    expect(chat).toContain(`VALUES ($1, $2, 'seller', $3) RETURNING *`);
+    // …and the role is a route literal handed to the ONE durable insert helper —
+    // nothing the body carries can promote a customer to a seller or impersonate
+    // the other side of the thread.
+    expect(chat).toContain('senderRole: "customer"');
+    expect(chat).toContain('senderRole: "seller"');
     expect(chat).not.toMatch(/req\.body[^)]*senderId/);
     expect(chat).not.toMatch(/req\.body[^)]*sender_role/);
   });
@@ -88,10 +89,7 @@ describe("message sending: session identity + server-side validation", () => {
     // The TWO human send inserts. The daily acknowledgment is a third
     // `INSERT INTO chat_messages`, written by the SYSTEM after the customer's
     // message is already stored, so it is deliberately not counted here.
-    const inserts = [
-      ...allIndices(chat, "VALUES ($1, $2, 'customer', $3) RETURNING *"),
-      ...allIndices(chat, "VALUES ($1, $2, 'seller', $3) RETURNING *"),
-    ].sort((a, b) => a - b);
+    const inserts = allIndices(chat, "await insertHumanMessage({");
     expect(validates.length).toBe(2);
     expect(inserts.length).toBe(2);
     // Route order is customer-send then seller-send; each validation precedes
@@ -122,10 +120,7 @@ describe("a retried send replays instead of duplicating", () => {
     const replies = allIndices(chat, "data: { message: duplicate, clientId, duplicate: true }");
     // The two HUMAN sends only: the daily acknowledgment has its own INSERT but
     // is never reached by a retried request (it is claimed after the message).
-    const inserts = [
-      ...allIndices(chat, "VALUES ($1, $2, 'customer', $3) RETURNING *"),
-      ...allIndices(chat, "VALUES ($1, $2, 'seller', $3) RETURNING *"),
-    ].sort((a, b) => a - b);
+    const inserts = allIndices(chat, "await insertHumanMessage({");
     const stores = allIndices(chat, "if (dedupeKey) rememberSend(dedupeKey, message);");
     expect(checks.length).toBe(2);
     expect(replies.length).toBe(2);

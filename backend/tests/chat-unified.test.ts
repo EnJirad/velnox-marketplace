@@ -66,8 +66,10 @@ describe("unified chat is one core, not parallel systems", () => {
     expect(center).toContain("loadMessages");
     expect(center).toContain("validateBody");
     expect(center).toContain("readUpTo");
-    expect(center).toContain("sender_role, body)");
-    expect(center).toContain("'company'");
+    expect(center).toContain("insertHumanMessage");
+    expect(center).toContain('senderRole: "company"');
+    // The durable claim lives in ONE helper, not in the console route.
+    expect(center).toContain("ON CONFLICT");
     expect(center).not.toContain("CREATE TABLE");
     expect(center).not.toContain("new WebSocket");
     expect(center).not.toContain("broadcast(");

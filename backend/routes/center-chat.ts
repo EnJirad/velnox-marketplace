@@ -43,6 +43,8 @@ import {
   READ_BOUND_SQL,
   loadMessages,
   mapMessage,
+  insertHumanMessage,
+  findMessageByClientId,
 } from "./chat.js";
 
 type CompanyTab = "customer" | "seller" | "internal";
@@ -400,11 +402,30 @@ export function setupCenterChatRoutes(app: Express): void {
         }
       }
 
-      const insertRes = await query(
-        `INSERT INTO chat_messages (conversation_id, sender_id, sender_role, body)
-         VALUES ($1, $2, 'company', $3) RETURNING *`,
-        [conversationId, userId, body],
-      );
+      // Same durable claim as the customer/seller routes: the partial UNIQUE
+      // index on (conversation_id, sender_id, client_id) decides the race, so a
+      // retry from another tab, instance or after a restart cannot duplicate.
+      const insertRes = await insertHumanMessage({
+        conversationId,
+        senderId: userId,
+        senderRole: "company",
+        body,
+        clientId,
+      });
+      if (insertRes.rows.length === 0) {
+        const stored = clientId ? await findMessageByClientId(conversationId, userId, clientId) : null;
+        const replay = stored ? mapMessage(stored) : null;
+        if (replay) {
+          if (dedupeKey) rememberSend(dedupeKey, replay);
+          res.json({ success: true, data: { message: replay, clientId, duplicate: true } });
+          return;
+        }
+        res.status(409).json({
+          success: false,
+          error: { code: "DUPLICATE_SEND", message: "Message already stored" },
+        });
+        return;
+      }
 
       // A staff reply claims an unassigned thread and moves the support status
       // forward. This is deliberately lightweight — no ticket workflow.

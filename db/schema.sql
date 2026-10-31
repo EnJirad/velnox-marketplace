@@ -814,6 +814,12 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
   status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,
+  -- Client-generated idempotency key for a HUMAN message. NULL for legacy rows
+  -- and for system messages. The partial unique index below turns "one message
+  -- per (conversation, sender, client id)" into a DATABASE guarantee, so a
+  -- retry, a double tap, a second tab, another backend instance or a process
+  -- restart can no longer duplicate a message.
+  client_id TEXT,
   -- Automated-message marker, NULL for every human message. Today the only
   -- value is 'support_daily_ack' (one acknowledgment per conversation per
   -- Asia/Bangkok calendar day).
@@ -833,6 +839,12 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_unread ON chat_messages (conversati
 CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_support_daily_ack
   ON chat_messages (conversation_id, ack_day)
   WHERE system_kind = 'support_daily_ack';
+-- Durable send idempotency (human messages only). Every send route claims this
+-- index with ON CONFLICT DO NOTHING; the loser of the race then reads the row
+-- the winner wrote and replays it. In-memory state is only a fast path.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_client_id
+  ON chat_messages (conversation_id, sender_id, client_id)
+  WHERE client_id IS NOT NULL;
 INSERT INTO platform_settings (key, value, description) VALUES ('product_approval_mode', 'manual', 'Product approval mode: manual or auto') ON CONFLICT (key) DO NOTHING;
 INSERT INTO categories (id, name, slug, icon, parent_id, sort_order, names, description, description_names, image_url, is_active) VALUES
 ('c0000001-0000-0000-0000-000000000001', 'Electronics', 'electronics', 'cpu', NULL, 1, '{"th":"อิเล็กทรอนิกส์","en":"Electronics","my":"အီလက်ထရွန်နစ်ပစ္စည်းများ"}', 'Audio, cameras, wearable tech and electronic accessories', '{"th":"อุปกรณ์เสียง กล้อง อุปกรณ์สวมใส่ และอุปกรณ์เสริมอิเล็กทรอนิกส์","en":"Audio, cameras, wearable tech and electronic accessories","my":"အသံပစ္စည်း၊ ကင်မရာ၊ ဝတ်ဆင်နည်းပညာနှင့်အီလက်ထရွန်နစ် ဖြည့်စွက်ပစ္စည်းများ"}', NULL, true),
