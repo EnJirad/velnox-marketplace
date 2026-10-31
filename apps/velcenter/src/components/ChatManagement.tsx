@@ -39,6 +39,7 @@ import {
   isSystemMessage,
   mergeIncomingMessage,
 } from "@velnox/shared/lib/chat-message";
+import { buildTimeline, groupCorners } from "@velnox/shared/lib/chat-timeline";
 import { TypingDots } from "@velnox/shared/components/chat/typing-dots";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
@@ -749,7 +750,19 @@ export default function ChatManagement() {
                         <p className="mt-1 text-xs text-slate-400">เริ่มบทสนทนาได้จากช่องด้านล่าง</p>
                       </div>
                     ) : (
-                      messages.map((m) => {
+                      buildTimeline(messages, {
+                        locale: lang === "th" ? "th-TH" : lang === "my" ? "my-MM" : "en-GB",
+                      }).map((entry) => {
+                        if (entry.kind === "date") {
+                          return (
+                            <div key={`day-${entry.key}`} className="flex justify-center py-2">
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
+                                {entry.label}
+                              </span>
+                            </div>
+                          );
+                        }
+                        const m = entry.message;
                         // System message (daily support acknowledgment): ALWAYS
                         // incoming, so left, muted, and never carries a tick.
                         if (isSystemMessage(m)) {
@@ -772,10 +785,12 @@ export default function ChatManagement() {
                         return (
                           <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                             <div
-                              className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${
+                              className={`max-w-[78%] px-3.5 py-2.5 text-sm leading-6 ${
+                                groupCorners(entry.firstOfGroup, entry.lastOfGroup, mine)
+                              } ${
                                 mine
-                                  ? "rounded-br-md bg-[#10B981] text-white"
-                                  : "rounded-bl-md border border-slate-200 bg-slate-50 text-slate-800"
+                                  ? "bg-[#10B981] text-white"
+                                  : "border border-slate-200 bg-slate-50 text-slate-800"
                               }`}
                             >
                               <p className="whitespace-pre-line break-words">{m.body}</p>

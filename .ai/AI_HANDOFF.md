@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -714,53 +714,12 @@ Verbatim record:
 
 ---
 
-## §91. Production schema reconciled + the PG18 probe bug (2026-10-31) — COMPLETE
+## §91. Production schema reconciled + the PG18 probe bug (2026-10-31) — **ARCHIVED** (moved 2026-10-31)
 
-**Starting SHA:** `e03f949` (`HEAD == origin/main`). The five §89 chat objects had been missing from
-the production Neon database since that change shipped, and the daily support acknowledgment was
-failing there with `42703 column "system_kind" ... does not exist`.
-
-**Migration (authorized by the owner).** The GitHub Actions secret `NEON_PRODUCTION_DATABASE_URL` was
-created, then `production-db-migrate.yml` was dispatched: run **`41114242571`, success**. Identity read
-BEFORE any write: `database=neondb | schema=public | server=18.6 | user=neondb_owner`; applied with
-`--single-transaction` + `ON_ERROR_STOP=1`. Additive only — no DROP TABLE / COLUMN, no TRUNCATE, no DELETE.
-
-| Object | Before | After |
-|---|---|---|
-| `information_schema.columns` | 657 | **659** |
-| `pg_indexes` | 239 | **240** |
-| `chat_messages.system_kind` | absent | `text` |
-| `chat_messages.ack_day` | absent | `date` |
-| `uq_chat_messages_support_daily_ack` | absent | partial UNIQUE, present |
-| `chat_messages_sender_role_check` | 3 roles | 4 roles (**+ `system`**) |
-| `chat_messages.sender_id` | `NOT NULL` | **nullable** |
-
-**Fingerprints.** `fp_all` `abd4d7bb…` → **`4fafa88b002bbb90375e0c984d4c5914`** = the canonical
-`db/schema.sql` value; `fp_indexes` → **`0beed7d02db99d34c3c1b5b63d35a891`** = canonical; the
-non-chat columns fingerprint is unchanged. **Zero differences remain.** Data untouched:
-`data_fp = 4f3f2aeaaabd7e46a254ceaa318590bd` before and after, all rows preserved.
-
-**Second defect found and fixed (repo change, `055c0ee`).** With the secret finally present,
-`production-db-verify.yml` ran against production for the first time and failed with
-`ERROR: operator is not unique: text || "char"` — its read-only probe concatenates
-`con.confdeltype`. PostgreSQL 18 (production) refuses that operator while PostgreSQL 16 (the disposable
-gate) accepts it, so the bug was invisible until now. One display-only cast fixed it; every assertion
-stays typed and the job stays read-only. Re-run **`41118089821`: 10/10 PASS**.
-
-**Live production evidence (real user traffic, no synthetic data).** At `19:43:41.960Z` a customer
-message was stored, and at `19:43:42.394Z` the daily acknowledgment followed — exactly one row with
-`sender_role='system'`, `system_kind='support_daily_ack'` (so the `ON CONFLICT … DO NOTHING` claim and
-the Asia/Bangkok day both work against the real schema); a company reply at `19:44:18Z`; no `42703` in
-the Render logs after the migration.
-
-**Still unverified in production:** the read receipt (`✓✓`). This database's only conversation was sent
-by ONE account on both sides (the same user id is `customer_id` and the sender of all 11 messages), so
-`sender_id <> $reader` legitimately matches nothing and `read_at` stays NULL — the logic is correct,
-the data simply cannot exercise it. Two distinct accounts are required.
-
-**Tests after the migration:** reconciler contract `21/21` · chat suites `35 pass / 0 fail` ·
-full suite `1087 pass / 360 skip / 8 fail` (the 8 are the Termux-only `process.execPath` probes) ·
-CI `Tests` on `055c0ee` = **success (1437 pass / 2 skip / 0 fail)**.
+Verbatim record:
+[`.ai/history/archive/AI_Handoff-2026-10-31-section-91-pg18-probe.md`](./history/archive/AI_Handoff-2026-10-31-section-91-pg18-probe.md).
+The five §89 chat objects were applied to production by `production-db-migrate` run `41114242571`; the
+read-only probe's `text || "char"` failure on PostgreSQL 18 was fixed in `055c0ee`.
 
 ---
 
@@ -818,9 +777,32 @@ keys and a disposable database → **PARTIAL**, not PASS.
 
 ---
 
+## §94. Commerce Messenger: durable idempotency + shared timeline (2026-10-31) — COMPLETE
+
+**SHA:** `905835e` → this commit. **Report:**
+[`.ai/history/2026-10-31-phase-2i-messenger-upgrade.md`](./history/2026-10-31-phase-2i-messenger-upgrade.md).
+
+**Idempotency moved into the database.** `chat_messages.client_id` + partial UNIQUE
+`uq_chat_messages_client_id (conversation_id, sender_id, client_id) WHERE client_id IS NOT NULL`, declared
+in both canonical files (additive, rerunnable). All three human send paths go through
+`insertHumanMessage()` (`ON CONFLICT … DO NOTHING`); the loser replays via `findMessageByClientId()` and
+returns `duplicate:true` without re-running the conversation update, the daily ack or notifications. The
+in-memory map is now only a fast path.
+
+**Shared timeline.** `packages/shared/src/lib/chat-timeline.ts` gives all three surfaces the same day
+separators (localised with `Intl.RelativeTimeFormat`), sender grouping inside a 5-minute window, and
+bubble hugging — wired into VelShop, VelSeller and VelCenter.
+
+**Verified.** `chat-durable-idempotency` (3 structural pass, 5 DB cases skip locally / run in CI),
+`chat-timeline` 10/10, chat suites green, full suite **1116 pass / 375 skip / 8 fail** (the 8 are the
+Termux-only probes), typecheck 4/4, backend tsc, build 4/4, i18n 1265, diff clean. Deferred and NOT faked:
+reactions, edit, media/R2 attachments, product/order messages, search, image viewer.
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.

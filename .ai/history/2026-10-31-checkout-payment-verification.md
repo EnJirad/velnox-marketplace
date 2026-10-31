@@ -120,3 +120,67 @@ and a disposable PostgreSQL (`TEST_DATABASE_URL`). COD must stay off.
 | 2 | P3 | production runs Stripe **test mode** | real customers cannot pay until live keys are configured | product decision, documented as TEST-MODE-ONLY |
 | 3 | P3 | `schema_migrations` has 0 rows | no ledger proving which migration was applied | start recording, or retire the table |
 | 4 | Info | multi-shop charges hang off the group (`order_id IS NULL`) | a naive `WHERE order_id = $1` refund query would 404 | keep the existing `coveringPaymentsForOrder` path |
+
+---
+
+# Phase 2I addendum — real E2E attempt (2026-10-31)
+
+**SHA re-checked:** `905835e78409f47138201dcda7617c63096e6dee` (`HEAD == origin/main`, branch `main`,
+working tree clean before this addendum). The previous SHA was still current.
+
+## Environment readiness (names/shapes only — no values read or printed)
+
+| Variable | Result |
+|---|---|
+| `STRIPE_SECRET_KEY` | **ABSENT** |
+| `STRIPE_PUBLISHABLE_KEY` | **ABSENT** |
+| `STRIPE_WEBHOOK_SECRET` | **ABSENT** |
+| `STRIPE_MODE` | **ABSENT** |
+| `TEST_DATABASE_URL` | **ABSENT** |
+| `COD_ENABLED` / `COD_CUSTOMER_SELECTABLE` | ABSENT (default off) |
+
+Per the phase rules, the real payment tests **stopped here**. No credential was guessed and none was pasted.
+
+## What was still executed safely
+
+| Check | Result |
+|---|---|
+| 21 payment/checkout test files, run individually | **335 pass / 168 skip / 0 fail** (skips = `hasTestDatabase()`) |
+| Full backend suite | **1100 pass / 370 skip / 8 fail** — the 8 are the Termux-only `test database guard` subprocess probes (`process.execPath` is Android's `linker64`); they pass on CI |
+| Root typecheck | **4/4** |
+| Backend `tsc --noEmit` | **PASS** |
+| `build:apps` | **4/4** |
+| `i18n:check` | **1265/1265/1265** |
+| `git diff --check` | clean |
+| Production `GET /api/stripe/configured?selfTest=1` (read-only) | `configured:true`, `mode:"test"`, `webhookConfigured:true`, `webhookSecretHealth` all true, **`webhookSignatureSelfTest.verified:true`**, publishable key shape `pk_test_*` |
+| Production `GET /api/payments/methods` | `["CARD","PROMPTPAY"]`, `cod:{enabled:false, customerSelectable:false}` |
+| Production webhook, unsigned/forged signature | `POST /api/payments/stripe/webhook` with a bogus `stripe-signature` → **HTTP 400** (signature rejected before any state change) |
+
+## Scenarios not executed (and why)
+
+| Scenario | Status | Blocker |
+|---|---|---|
+| Card payment via real Stripe test session | **BLOCKED** | no `sk_test_…` / `pk_test_…` |
+| PromptPay QR + async confirmation | **BLOCKED** | same |
+| Real webhook delivery from Stripe (incl. duplicate delivery) | **BLOCKED** | no configured Stripe endpoint secret for an account here |
+| Payment failure + retry with same/new request key | **BLOCKED** | requires a real session to fail |
+| Reservation expiry against a live clock + session close | **BLOCKED** | DB-gated (`TEST_DATABASE_URL` absent) |
+| Customer cancellation closing the Stripe session | **BLOCKED** | requires Stripe to expire a real session |
+| Refund executed against Stripe | **BLOCKED** | requires a captured test payment |
+| Browser E2E (customer → seller → center) | **NOT RUN** | no authorized test accounts / no logged-in session |
+
+## Exact prerequisites to unblock Phase 2I
+
+1. `STRIPE_SECRET_KEY` = `sk_test_…` (test mode only) and `STRIPE_PUBLISHABLE_KEY` = `pk_test_…`.
+2. `STRIPE_WEBHOOK_SECRET` = the `whsec_…` of a Stripe **test-mode** endpoint that points at the backend
+   (`/api/payments/stripe/webhook`), plus network access for Stripe to deliver.
+3. `TEST_DATABASE_URL` = a disposable PostgreSQL that is **not** production (the guard refuses Neon
+   production hosts); this also unblocks the 168 skipped DB-gated cases.
+4. Two authorized test accounts (customer + seller/staff) for the browser pass.
+5. COD stays disabled.
+
+## Verdict for this phase
+
+**BLOCKED** — safe execution of the real payment E2E cannot start without the prerequisites above.
+Everything that could be proven without them was proven, and no code, test, schema, Chat file or
+production data was modified. This addendum is intentionally **uncommitted**.

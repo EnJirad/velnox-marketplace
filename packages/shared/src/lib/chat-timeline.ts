@@ -39,9 +39,10 @@ export function dayKey(ms: number): string {
 export function dateSeparatorLabel(timestamp: number, now: number = Date.now(), locale = "th-TH"): string {
   const key = dayKey(timestamp);
   const today = dayKey(now);
-  if (key === today) return "Today";
+  const rel = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (key === today) return rel.format(0, "day");
   const yesterday = dayKey(now - 24 * 60 * 60 * 1000);
-  if (key === yesterday) return "Yesterday";
+  if (key === yesterday) return rel.format(-1, "day");
   const sameYear = new Date(timestamp).getFullYear() === new Date(now).getFullYear();
   return new Date(timestamp).toLocaleDateString(locale, {
     day: "numeric",
