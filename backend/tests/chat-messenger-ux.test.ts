@@ -693,9 +693,13 @@ describeDb("typing indicator over the existing socket (requires TEST_DATABASE_UR
     const customerId = await makeUser("customer", "staff-read");
     const staffA = await makeUser("staff", "staff-read-a");
     const staffB = await makeUser("staff", "staff-read-b");
-    const convId = await openSupport(customerId);
+    // This block has its own harness, so the share helpers of the support block
+    // are not in scope: use the same public endpoints directly.
+    const opened = await call("POST", "/api/customer/support/conversation", customerId, {});
+    expect(opened.status).toBe(200);
+    const convId = opened.data.data.id as string;
     for (const text of ["one", "two", "three"]) {
-      const res = await sendCustomer(customerId, convId, text);
+      const res = await call("POST", `/api/customer/conversations/${convId}/messages`, customerId, { body: text });
       expect(res.status).toBe(200);
       await new Promise((r) => setTimeout(r, 5));
     }
