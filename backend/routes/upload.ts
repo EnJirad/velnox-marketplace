@@ -6,6 +6,8 @@ import { query } from "../db/index.js";
 import { ALLOWED_UPLOAD_TYPES, isUploadTooLarge } from "../lib/media-config.js";
 import { headR2Object } from "../lib/r2-objects.js";
 import { invalidateCachedProfile } from "./auth.js";
+import { randomUUID } from "node:crypto";
+import { isChatParticipant, isConversationId, loadChatAudience } from "../lib/chat-access.js";
 
 // ─── R2 Client ──────────────────────────────────────────────────────────────
 
@@ -47,7 +49,7 @@ const ALLOWED_TYPES: string[] = [...ALLOWED_UPLOAD_TYPES];
 // refused before any URL is signed (same contract as the evidence flow in
 // routes/verification.ts).
 
-const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover"] as const;
+const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat"] as const;
 type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
 
 const PROFILE_IMAGE_KINDS = ["avatar", "cover"] as const;
@@ -155,6 +157,12 @@ function validateObjectKeyOwnership(objectKey: string, userId: string): boolean 
     // Fixed scheme: parts[2] is "userId.webp" — strip extension for comparison
     const candidateBase = candidate?.split(".")[0];
     if (candidateBase === userId) return true;
+  }
+  // Chat keys: chat/{conversationId}/{userId}/{uuid}.webp — the SENDER segment
+  // proves ownership here; the conversation segment is re-checked by the send
+  // route, which only accepts keys under that conversation for that sender.
+  if (parts.length === 4 && parts[0] === "chat") {
+    return parts[2] === userId;
   }
   // Shop keys: shop/{shopId}/logo.webp or shop/{shopId}/cover.webp
   if (parts.length >= 3 && parts[0] === "shop") {
@@ -308,8 +316,26 @@ export function setupUploadRoutes(app: Express): void {
         }
         const kind = purpose === "shop-logo" ? "logo" : "cover";
         objectKey = `shop/${shopId}/${kind}.webp`;
+      } else if (purpose === "chat") {
+        // Chat images live under `chat/{conversation}/{sender}/…`. The key is
+        // minted HERE, after proving the caller really belongs to the thread, so
+        // a client can never point a message at somebody else's object and the
+        // send route can re-derive the same prefix when it validates.
+        const { conversationId } = req.body;
+        if (!isConversationId(conversationId)) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "conversationId required for chat uploads" } });
+          return;
+        }
+        const audience = await loadChatAudience(conversationId);
+        const roleRow = await query(`SELECT role FROM users WHERE id = $1`, [userId]);
+        const role = (roleRow.rows[0]?.role as string | undefined) ?? null;
+        if (!audience || !isChatParticipant(audience, userId, role)) {
+          r2Log("presign", { step: "chat_membership", status: "denied" });
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a participant in this conversation" } });
+          return;
+        }
+        objectKey = `chat/${conversationId}/${userId}/${randomUUID()}.webp`;
       } else {
-        // avatar / cover live in the `profile/{kind}/{userId}.webp` namespace
         // that validateObjectKeyOwnership verifies. The old
         // `<purpose>/<userId>.webp` shape let a client invent a bucket
         // namespace the backend never validates, and no non-shop namespace it

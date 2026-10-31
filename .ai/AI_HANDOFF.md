@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§96 — Chat images (backend only, PARTIAL)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -788,6 +788,22 @@ rule and the "never store secrets" rule. `AGENTS.md` rule 6, `.ai/README.md` sta
 
 **Next agent:** read the handoff, then the newest relevant history entries, and continue from the documented
 state; do not repeat a documented failed approach without a written reason.
+
+---
+
+## §96. Chat images — backend only (2026-10-31) — PARTIAL
+
+**Report:** [`.ai/history/2026-10-31-chat-image-messaging-backend.md`](./history/2026-10-31-chat-image-messaging-backend.md).
+
+Image messages now exist server-side: `chat_messages.attachment_key` (+ relaxed body CHECK so a caption is
+optional), a `chat` presign purpose that proves conversation membership before minting
+`chat/{conversation}/{sender}/{uuid}.webp`, `resolveChatAttachment()` in the three send routes (prefix + R2
+`head` + `image/*` + ≤10 MB), and `mapMessage` exposing `attachmentKey`/`attachmentUrl`.
+
+**NOT DONE: the UI** (picker, preview, bubbles, viewer) in all three apps. Do **not** treat this as shipped:
+production also needs a reconcile (the column does not exist there yet) before any client can send one.
+
+Verified: backend tsc PASS; suite 1113 pass / 375 skip / 8 fail (Termux-only probes).
 
 ---
 

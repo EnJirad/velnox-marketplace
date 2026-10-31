@@ -811,7 +811,12 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   -- a real sender_id taken from the authenticated session.
   sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
   sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company', 'system')),
-  body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
+  -- A caption is optional when an image is attached; a message must carry
+  -- at least one of them (constraint below).
+  body TEXT NOT NULL CHECK (char_length(body) <= 4000),
+  attachment_key TEXT,
+  CONSTRAINT chat_messages_body_or_attachment_check
+    CHECK (char_length(body) > 0 OR attachment_key IS NOT NULL),
   status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,
   -- Client-generated idempotency key for a HUMAN message. NULL for legacy rows

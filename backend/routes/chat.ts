@@ -51,6 +51,8 @@ import {
   sendToUser,
 } from "../realtime/index.js";
 import { SUPPORT_SHOP_SLUG } from "../lib/chat-access.js";
+import { headR2Object } from "../lib/r2-objects.js";
+import { MAX_UPLOAD_BYTES } from "../lib/media-config.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -165,6 +167,12 @@ export function mapMessage(r: any): Record<string, unknown> {
     // on, so a system row can never be mistaken for a participant's message.
     isSystem: r.sender_role === "system",
     systemKind: r.system_kind ?? null,
+    // Optional image. The key is server-minted under chat/{conversation}/{sender}/
+    // and re-verified at send time; the URL is derivable, never client-supplied.
+    attachmentKey: r.attachment_key ?? null,
+    attachmentUrl: r.attachment_key
+      ? `${(process.env.R2_PUBLIC_DOMAIN || "").replace(/\/+$/, "")}/${r.attachment_key}`
+      : null,
   };
 }
 
@@ -187,14 +195,47 @@ export async function insertHumanMessage(params: {
   senderRole: "customer" | "seller" | "company";
   body: string;
   clientId: string | null;
+  attachmentKey?: string | null;
 }): Promise<{ rows: any[] }> {
   return query(
-    `INSERT INTO chat_messages (conversation_id, sender_id, sender_role, body, client_id)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO chat_messages (conversation_id, sender_id, sender_role, body, client_id, attachment_key)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (conversation_id, sender_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
      RETURNING *`,
-    [params.conversationId, params.senderId, params.senderRole, params.body, params.clientId],
+    [params.conversationId, params.senderId, params.senderRole, params.body, params.clientId, params.attachmentKey ?? null],
   );
+}
+
+/**
+ * Validate an attachment key the client is trying to attach.
+ *
+ * The key must live EXACTLY under this conversation and this sender — anything
+ * else is somebody else's object — and the object must exist in R2, be an image,
+ * and respect the upload ceiling. Returning an error is the safe direction: no
+ * row is written.
+ */
+export async function resolveChatAttachment(
+  conversationId: string,
+  senderId: string,
+  raw: unknown,
+): Promise<{ ok: true; key: string | null } | { ok: false; code: string; message: string }> {
+  if (raw === undefined || raw === null || raw === "") return { ok: true, key: null };
+  if (typeof raw !== "string") return { ok: false, code: "INVALID_ATTACHMENT", message: "attachmentKey must be a string" };
+  const key = raw.trim();
+  if (!key) return { ok: true, key: null };
+  const prefix = `chat/${conversationId}/${senderId}/`;
+  if (!key.startsWith(prefix)) {
+    return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment does not belong to this conversation" };
+  }
+  const meta = await headR2Object(key);
+  if (!meta.found) return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment was not uploaded" };
+  if (!meta.contentType || !meta.contentType.startsWith("image/")) {
+    return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment must be an image" };
+  }
+  if (meta.size !== null && meta.size > MAX_UPLOAD_BYTES) {
+    return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment is too large" };
+  }
+  return { ok: true, key };
 }
 
 /** The row a losing racer replays (same conversation + sender + client id). */
@@ -686,8 +727,13 @@ export function setupChatRoutes(app: Express): void {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
         return;
       }
-      const body = validateBody(req.body?.body);
-      if (!body) {
+      const attachment = await resolveChatAttachment(conversationId, req.user!.userId, req.body?.attachmentKey);
+      if (!attachment.ok) {
+        res.status(400).json({ success: false, error: { code: attachment.code, message: attachment.message } });
+        return;
+      }
+      const body = validateBody(req.body?.body) ?? (attachment.key ? "" : null);
+      if (body === null) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Message must be 1-4000 characters" } });
         return;
       }
@@ -720,6 +766,7 @@ export function setupChatRoutes(app: Express): void {
         senderRole: "customer",
         body,
         clientId,
+        attachmentKey: attachment.key,
       });
       if (insertRes.rows.length === 0) {
         // Lost the race: replay the stored row and stop — no second conversation
@@ -979,8 +1026,13 @@ export function setupChatRoutes(app: Express): void {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
         return;
       }
-      const body = validateBody(req.body?.body);
-      if (!body) {
+      const attachment = await resolveChatAttachment(conversationId, req.user!.userId, req.body?.attachmentKey);
+      if (!attachment.ok) {
+        res.status(400).json({ success: false, error: { code: attachment.code, message: attachment.message } });
+        return;
+      }
+      const body = validateBody(req.body?.body) ?? (attachment.key ? "" : null);
+      if (body === null) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Message must be 1-4000 characters" } });
         return;
       }
@@ -1011,6 +1063,7 @@ export function setupChatRoutes(app: Express): void {
         senderRole: "seller",
         body,
         clientId,
+        attachmentKey: attachment.key,
       });
       if (insertRes.rows.length === 0) {
         const stored = clientId ? await findMessageByClientId(conversationId, userId, clientId) : null;

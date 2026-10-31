@@ -733,7 +733,12 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   -- NULL only for a SYSTEM message (`sender_role = 'system'`); see db/schema.sql.
   sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
   sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'seller', 'company', 'system')),
-  body TEXT NOT NULL CHECK (char_length(body) > 0 AND char_length(body) <= 4000),
+  -- A caption is optional when an image is attached; a message must carry
+  -- at least one of them (constraint below).
+  body TEXT NOT NULL CHECK (char_length(body) <= 4000),
+  attachment_key TEXT,
+  CONSTRAINT chat_messages_body_or_attachment_check
+    CHECK (char_length(body) > 0 OR attachment_key IS NOT NULL),
   status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'read')),
   read_at TIMESTAMPTZ,
   client_id TEXT,
@@ -1668,6 +1673,8 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 -- Durable send idempotency key (human messages only; NULL for system rows and
 -- legacy rows). The unique index in the INDEX section is what enforces it.
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS client_id TEXT;
+-- R2 object key of an attached image (server-minted under chat/…).
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS attachment_key TEXT;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
 -- Automated (system) messages — messenger UX pass. A system row has no human
@@ -3009,6 +3016,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_support_daily_ack
 -- Durable send idempotency. A retry, a double tap, a second tab, a second
 -- backend instance or a restart loses this race and replays the stored row
 -- instead of writing a duplicate.
+-- A message may be caption-only, image-only, or both. The old body CHECK
+-- required text; the guarded repair below widens it without touching rows.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_messages_body_check'
+              AND pg_get_constraintdef(oid) NOT LIKE '%attachment_key%') THEN
+    ALTER TABLE public.chat_messages DROP CONSTRAINT chat_messages_body_check;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_messages_body_or_attachment_check') THEN
+    ALTER TABLE public.chat_messages ADD CONSTRAINT chat_messages_body_or_attachment_check
+      CHECK (char_length(body) > 0 OR attachment_key IS NOT NULL);
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_messages_client_id
   ON public.chat_messages (conversation_id, sender_id, client_id)
   WHERE client_id IS NOT NULL;

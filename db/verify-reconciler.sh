@@ -141,7 +141,7 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # (the workflow now runs it): a fresh, thrice-rerun db/run-sqleditor.sql.
 # Measured 2026-10-31 by CI run 41181150692 after the durable-client-id change:
 # 63 tables | 241 indexes | 265 constraints | 660 columns.
-CANON="63|241|265|660"
+CANON="63|241|266|661"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────

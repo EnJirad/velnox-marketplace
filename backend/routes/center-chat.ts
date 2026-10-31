@@ -45,6 +45,7 @@ import {
   mapMessage,
   insertHumanMessage,
   findMessageByClientId,
+  resolveChatAttachment,
 } from "./chat.js";
 
 type CompanyTab = "customer" | "seller" | "internal";
@@ -382,8 +383,13 @@ export function setupCenterChatRoutes(app: Express): void {
         fail(res, 404, "NOT_FOUND", "Conversation not found");
         return;
       }
-      const body = validateBody(req.body?.body);
-      if (!body) {
+      const attachment = await resolveChatAttachment(conversationId, member.id, req.body?.attachmentKey);
+      if (!attachment.ok) {
+        res.status(400).json({ success: false, error: { code: attachment.code, message: attachment.message } });
+        return;
+      }
+      const body = validateBody(req.body?.body) ?? (attachment.key ? "" : null);
+      if (body === null) {
         fail(res, 400, "VALIDATION_ERROR", "Message must be 1-4000 characters");
         return;
       }
@@ -411,6 +417,7 @@ export function setupCenterChatRoutes(app: Express): void {
         senderRole: "company",
         body,
         clientId,
+        attachmentKey: attachment.key,
       });
       if (insertRes.rows.length === 0) {
         const stored = clientId ? await findMessageByClientId(conversationId, userId, clientId) : null;

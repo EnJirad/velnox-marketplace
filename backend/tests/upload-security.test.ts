@@ -113,8 +113,11 @@ describe("upload routes enforce the limits server-side", () => {
   });
 
   test("the presign purpose allowlist can only mint namespaces confirm validates", () => {
-    expect(uploadSrc).toContain('const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover"] as const;');
+    expect(uploadSrc).toContain('const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat"] as const;');
     expect(uploadSrc).toContain("if (!isUploadPurpose(purpose))");
+    // Chat images are minted by the server under chat/{conversation}/{sender}/…
+    // and validateObjectKeyOwnership accepts exactly that shape for the sender.
+    expect(uploadSrc).toContain('if (parts.length === 4 && parts[0] === "chat")');
     // avatar/cover land in the `profile/{kind}/{userId}.webp` namespace that
     // validateObjectKeyOwnership accepts; the old free-text shape is gone.
     expect(uploadSrc).toContain('objectKey = `profile/${purpose}/${userId}.webp`;');
