@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -753,35 +753,15 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-95-dev-memory-rule.md`](./his
 
 ---
 
-## §96. Chat images — backend only (2026-10-31) — PARTIAL
+## §96. Chat images — backend only — **ARCHIVED** (moved 2026-11-02)
 
-**Report:** [`.ai/history/2026-10-31-chat-image-messaging-backend.md`](./history/2026-10-31-chat-image-messaging-backend.md).
-
-Image messages now exist server-side: `chat_messages.attachment_key` (+ relaxed body CHECK so a caption is
-optional), a `chat` presign purpose that proves conversation membership before minting
-`chat/{conversation}/{sender}/{uuid}.webp`, `resolveChatAttachment()` in the three send routes (prefix + R2
-`head` + `image/*` + ≤10 MB), and `mapMessage` exposing `attachmentKey`/`attachmentUrl`.
-
-**NOT DONE: the UI** (picker, preview, bubbles, viewer) in all three apps. Do **not** treat this as shipped:
-production also needs a reconcile (the column does not exist there yet) before any client can send one.
-
-Verified: backend tsc PASS; suite 1113 pass / 375 skip / 8 fail (Termux-only probes).
+Full text: [`archive/AI_Handoff-2026-11-02-section-96-chat-images-backend.md`](./history/archive/AI_Handoff-2026-11-02-section-96-chat-images-backend.md).
 
 ---
 
-## §97. Chat image UI — VelShop only (2026-10-31) — PARTIAL
+## §97. Chat image UI — VelShop only — **ARCHIVED** (moved 2026-11-02)
 
-**Report:** [`.ai/history/2026-10-31-chat-image-ui-velshop.md`](./history/2026-10-31-chat-image-ui-velshop.md).
-
-Shared client plumbing landed: `chat-attachment.ts` (validate + presign + XHR PUT with progress) and
-`chat-image.tsx` (bubble, full-screen viewer, composer preview/retry/remove). VelShop's `ShopChat` now picks,
-previews, removes and sends an image (caption optional) through the existing send action, and renders images
-with a viewer.
-
-**NOT DONE:** VelSeller and VelCenter are not wired (they still render `body` only), so an image sent by a
-customer is invisible there. DB-gated attachment tests and browser E2E are also pending.
-
-Verified: velShop typecheck/build PASS, i18n 1268/1268/1268, diff clean.
+Full text: [`archive/AI_Handoff-2026-11-02-section-97-chat-image-ui-velshop.md`](./history/archive/AI_Handoff-2026-11-02-section-97-chat-image-ui-velshop.md).
 
 ---
 
@@ -804,7 +784,7 @@ Verified: typecheck 4/4, build 4/4, i18n 1268, backend suite 1113 pass / 8 Termu
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95; §93 on 2026-11-01 with §98; §94 on 2026-11-01 with §99; §95 on 2026-11-02 with §100
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95; §93 on 2026-11-01 with §98; §94 on 2026-11-01 with §99; §95 on 2026-11-02 with §100; §96 + §97 on 2026-11-02 with §101
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.
 
@@ -853,5 +833,24 @@ All/Unread in VelShop + VelSeller; VelCenter keeps its customer/seller/internal 
 **Verified:** `chat-parity` 8/8, full suite **1121 pass / 375 skip / 8 fail** (known Termux DB-guard probes;
 two old source-contract tests updated to the no-bell contract), typecheck 4/4 + backend, build 4/4,
 i18n 1280. **NOT RUN:** browser/E2E (no session; PG18 `initdb` hangs here) and DB-gated suites.
+
+---
+
+## §101. CI green + authoritative unread and company read model (2026-11-02) — PARTIAL
+
+**SHA:** `9150048` → `73cd999`. **Report:**
+[`.ai/history/2026-11-02-ci-green-chat-unread-company-read.md`](./history/2026-11-02-ci-green-chat-unread-company-read.md).
+
+**CI was red for one real reason, not infrastructure:** `chat-support-phase2d` still expected **1**
+`type='chat'` notification row while `9150048` deliberately stopped chat bell writes. The test now pins the
+new contract (one message, one push, **zero** bell rows, re-checked after a fresh send). Production DB Verify
+failed only because its verdict job waited on that same suite — its production-schema job passed all along.
+
+**Result:** Tests #230 ✅, Production DB Verify #58 ✅ (all 4 jobs, incl. production schema + identity), with
+the disposable-PostgreSQL suite at **1486 pass / 0 fail / 1488 tests**, covering the new cases: four unread messages = one conversation state
+(preview = newest unread), Support classified separately, and **company read = Model A** (one `read_at` per
+message ⇒ any staff read marks the thread read; asserted with two staff).
+
+**NOT RUN:** browser/E2E (no session; PG18 `initdb` hangs here) and UI upload (no R2 credentials).
 
 ---
