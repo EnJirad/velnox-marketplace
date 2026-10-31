@@ -732,22 +732,12 @@ LEFT; delivery covered by DB+WebSocket tests.
 
 ---
 
-## §93. Checkout → Order → Payment verification (2026-10-31) — VERIFIED, PARTIAL
+## §93. Checkout → Order → Payment verification (2026-10-31) — **ARCHIVED** (moved 2026-11-01)
 
-**SHA:** `fc61741` (`HEAD == origin/main`, clean). **Report:**
-[`.ai/history/2026-10-31-checkout-payment-verification.md`](./history/2026-10-31-checkout-payment-verification.md).
-
-Production probed read-only: `/api/stripe/configured?selfTest=1` → `mode:"test"`, `webhookConfigured:true`,
-`webhookSignatureSelfTest.verified:true`; `/api/payments/methods` → CARD+PROMPTPAY enabled, **COD disabled**.
-21 payment/checkout files run individually: **335 pass / 168 skip / 0 fail** (skips = `hasTestDatabase()`, no
-`TEST_DATABASE_URL` here). `typecheck` 4/4, backend `tsc`, `build:apps` 4/4, `i18n` 1265/1265/1265, diff
-clean. CI on this SHA (run `41145382171`) = **1458 pass / 2 skip / 0 fail** over 74 files.
-
-Paths traced, not assumed: `cart.ts:703` checkout · `:116` order+group · `:1052` groups · `:1138` stock;
-`stripe.ts:2053` session · `:736` idempotency · `:2225` expired reservation · `:2546` webhook (`:217`
-signature) · `:1773` PromptPay async · `:1053` settlement · `:2713` refund covering-set. **No defect
-proven.** Real card/PromptPay/refund/webhook E2E and the 168 DB-gated cases are **BLOCKED** on missing test
-keys and a disposable database → **PARTIAL**, not PASS.
+Verbatim record:
+[`.ai/history/archive/AI_Handoff-2026-11-01-section-93-checkout-verification.md`](./history/archive/AI_Handoff-2026-11-01-section-93-checkout-verification.md).
+335 pass / 168 skip / 0 fail across 21 payment+checkout files; production Stripe probed read-only; verdict
+PARTIAL (real Stripe E2E blocked on missing test keys).
 
 ---
 
@@ -842,6 +832,6 @@ Verified: typecheck 4/4, build 4/4, i18n 1268, backend suite 1113 pass / 8 Termu
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95; §93 on 2026-11-01 with §98
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.

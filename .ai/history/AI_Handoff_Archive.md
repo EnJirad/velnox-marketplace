@@ -393,3 +393,4 @@ calendar day)` claimed by a partial UNIQUE index + `ON CONFLICT DO NOTHING`, and
 `chat:typing` frame authorized by `lib/chat-access.ts` over the existing socket). **Uncommitted** —
 owner withheld commit/push permission.
 | [`archive/AI_Handoff-2026-10-31-section-92-chat-ownership.md`](./archive/AI_Handoff-2026-10-31-section-92-chat-ownership.md) | handoff §92 — Chat ownership + real-time proof (2026-10-31) | Moved **verbatim** on 2026-10-31 (headroom while adding §95). Keeps the shared `chat-message` ownership rule, the system-LEFT decision and the DB+WebSocket delivery evidence. |
+| [`archive/AI_Handoff-2026-11-01-section-93-checkout-verification.md`](./archive/AI_Handoff-2026-11-01-section-93-checkout-verification.md) | handoff §93 — Checkout → Order → Payment verification (2026-10-31) | Moved **verbatim** on 2026-11-01 (headroom while adding §98). Keeps the per-file payment/checkout results and the PARTIAL verdict. |
