@@ -1198,6 +1198,11 @@ export const en: Dict = {
     startError: "Couldn't start the chat — please try again",
     typing: "Typing...",
     typingNamed: "{name} is typing...",
+    attachImage: "Attach image",
+
+    imageAlt: "Chat image",
+
+    viewImage: "View image",
     systemMessage: "System message",
   },
 

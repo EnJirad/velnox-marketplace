@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§96 — Chat images (backend only, PARTIAL)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§97 — Chat image UI (VelShop only, PARTIAL)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -804,6 +804,22 @@ optional), a `chat` presign purpose that proves conversation membership before m
 production also needs a reconcile (the column does not exist there yet) before any client can send one.
 
 Verified: backend tsc PASS; suite 1113 pass / 375 skip / 8 fail (Termux-only probes).
+
+---
+
+## §97. Chat image UI — VelShop only (2026-10-31) — PARTIAL
+
+**Report:** [`.ai/history/2026-10-31-chat-image-ui-velshop.md`](./history/2026-10-31-chat-image-ui-velshop.md).
+
+Shared client plumbing landed: `chat-attachment.ts` (validate + presign + XHR PUT with progress) and
+`chat-image.tsx` (bubble, full-screen viewer, composer preview/retry/remove). VelShop's `ShopChat` now picks,
+previews, removes and sends an image (caption optional) through the existing send action, and renders images
+with a viewer.
+
+**NOT DONE:** VelSeller and VelCenter are not wired (they still render `body` only), so an image sent by a
+customer is invisible there. DB-gated attachment tests and browser E2E are also pending.
+
+Verified: velShop typecheck/build PASS, i18n 1268/1268/1268, diff clean.
 
 ---
 

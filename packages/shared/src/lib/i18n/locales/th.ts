@@ -1223,6 +1223,11 @@ export const th = {
     startError: "เริ่มแชทไม่สำเร็จ กรุณาลองอีกครั้ง",
     typing: "กำลังพิมพ์...",
     typingNamed: "{name} กำลังพิมพ์...",
+    attachImage: "แนบรูปภาพ",
+
+    imageAlt: "รูปภาพในแชท",
+
+    viewImage: "เปิดดูรูปภาพ",
     systemMessage: "ข้อความจากระบบ",
   },
 
