@@ -202,6 +202,8 @@ Conventional-ish: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. No vagu
 - After significant work, update `.ai/AI_HANDOFF.md` (current state + remaining gaps only — see `.ai/history/README.md`) and, when needed, `.ai/context/<subsystem>.md`, `INSTALLATION.md`, or this file.
 - `.ai/AI_HANDOFF.md` **must stay small**: this environment's file-edit tools stop matching past roughly 55 KB, after which the file can no longer be edited in place. Do not grow it past ~40 KB — move superseded sections to `.ai/history/AI_Handoff_Archive.md` (dated index) and, when long, to `.ai/history/archive/`.
 - `.ai/AI_HANDOFF.md` is never more authoritative than source.
+- Every task — including an investigation, a production check or a BLOCKED session — leaves a dated
+  entry in `.ai/history/` (see **§19 MANDATORY DEVELOPMENT MEMORY**). No work exists only in chat.
 - Every completed task must be committed, pushed, and verified (see §14).
 - If the handoff update changes files after the code commit, commit the handoff change and push it too — do not leave the working tree dirty.
 
@@ -287,3 +289,73 @@ you do not know, write `UNKNOWN` / `NOT VERIFIED` / `NOT RUN`.
 Never answer with only "done". `.ai/` is the project's memory: **read → verify → implement → test →
 record → hand off.** Archiving a superseded section to `.ai/history/archive/` is not deletion — the
 text stays verbatim and gains an index row; deleting real history to shorten a file is forbidden.
+
+## 19. MANDATORY DEVELOPMENT MEMORY / AI HANDOFF
+
+**This is a permanent project rule, not a recommendation.** Multiple AI agents work on Velnox across
+sessions and across time. The repository — not a chat transcript — is the memory. An agent that cannot
+explain what happened last time by reading `.ai/` has failed this rule.
+
+### 19.1 When a history entry is REQUIRED
+
+Write an entry in `.ai/history/YYYY-MM-DD-<topic>.md` whenever you:
+
+- edit, create or delete any file; change configuration, schema, migration, API, auth, UI or infrastructure;
+- run tests, builds, typechecks or a deployment;
+- investigate production (Render, Vercel, Neon, Cloudflare R2, WebSocket/realtime) or reproduce a bug;
+- discover, fix, or *fail to fix* a bug; make an architectural decision; find a limitation;
+- get blocked by missing credentials, tools, access or approvals.
+
+**No code change is not an excuse.** An important investigation, a failed fix, or a BLOCKED session must be
+recorded just as carefully — the next agent needs to know what was already tried and why it failed.
+
+### 19.2 Required format
+
+```markdown
+# <Topic> — <YYYY-MM-DD>
+
+Date: YYYY-MM-DD
+Agent / Session: <name if known>
+Starting commit / Ending commit / Branch / Committed? / Commit message
+
+Task:            what was asked, in one paragraph
+Initial State:   commit SHA, known bugs/limitations, deployment state, database state, test state
+Investigation:   files, APIs, Render/Vercel/Neon/WebSocket, logs, database, tests — what was actually checked
+Findings:        split VERIFIED FACTS from ASSUMPTIONS (never promote a guess to a fact)
+Changes Made:    every file/path, what changed, why, expected effect (or "no changes")
+Tests Performed: command/endpoint/browser/db/build/typecheck/integration/smoke — per test
+Test Results:    PASS | FAIL | SKIPPED | BLOCKED per test, with the evidence and limitations
+Bugs Found:      including bugs that were NOT fixed
+Bugs Fixed:      exactly which, with the evidence
+Failed Attempts: REQUIRED when an attempt did not work — what, why, what happened, reverted?, retry idea
+Database Changes: "NO DATABASE CHANGE" or migration name, tables, structural change, verification, rollback
+Deployment:      performed or not, commit, environment, result, verification result
+Current State:   WORKING | PARTIALLY WORKING | BROKEN | BLOCKED, stated plainly
+Remaining Problems / Next Recommended Steps / Notes for the next agent (mistakes to avoid)
+```
+
+### 19.3 Honesty rules
+
+- Use the explicit statuses **VERIFIED / UNVERIFIED / FAILED / BLOCKED / SKIPPED / NOT TESTED**.
+- A skipped test is never a passing test. "Tests pass" without the command and the numbers is not a record.
+- Never claim a deployment, a migration, a production check or an E2E flow succeeded unless it was observed.
+- Never fabricate history, and never rewrite or delete an old entry to tidy the folder. Supersede it in
+  `.ai/AI_HANDOFF.md` and keep the original verbatim (archives are moved, never deleted).
+
+### 19.4 Secrets
+
+`.ai/` is committed and public. **Never** write API keys, tokens, passwords, connection strings, cookies,
+session values or customer data into `.ai/`. Record *presence and shape* ("test-mode key present",
+"webhook secret configured"), never values.
+
+### 19.5 Handoff
+
+`.ai/AI_HANDOFF.md` is the CURRENT snapshot, not a log: what is happening now, what changed recently, what
+works, what does not, which tests passed/failed, what is blocked, decisions, what the next agent should do
+and should NOT do. Detail belongs in the history entry; the handoff links to it.
+
+### 19.6 Startup for the next agent
+
+Read, in order: `AGENTS.md` → this file → `.ai/AI_HANDOFF.md` → the newest relevant
+`.ai/history/` entries → the subsystem doc → the source. Continue from the documented state; do not
+repeat a documented failed approach without a written reason.

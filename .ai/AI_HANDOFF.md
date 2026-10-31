@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -723,38 +723,12 @@ read-only probe's `text || "char"` failure on PostgreSQL 18 was fixed in `055c0e
 
 ---
 
-## §92. Chat ownership + real-time proof, shared by all three apps (2026-10-31) — COMPLETE
+## §92. Chat ownership + real-time proof (2026-10-31) — **ARCHIVED** (moved 2026-10-31)
 
-**Starting SHA:** `1421d25`. **Root cause of the wrong-side rendering:** VelCenter computed ownership
-as `m.senderId === (user?.id ?? null)`. The daily acknowledgment is stored with `sender_id = NULL`, so
-while the viewer's id was unresolved the comparison became `null === null` and the platform's own
-message rendered on the RIGHT. VelShop/VelSeller used `user?.id` (undefined), so the same row was
-CENTRED instead — three apps, three answers. System rows were also centred, never placed LEFT.
-
-**Fix.** One shared module, `packages/shared/src/lib/chat-message.ts`:
-`isSystemMessage` (any of `isSystem` / `senderRole === 'system'` / NULL sender), `isOwnMessage`
-(a null viewer owns nothing), `messageSide`, `belongsToConversation`, `mergeIncomingMessage` (id
-dedupe, same array on duplicate) and `applyReadReceipt` (own messages only, bounded by `upTo`).
-All three surfaces now import it: system rows render `justify-start` with a dashed muted bubble and
-`role="note"`, and `mine` comes from `isOwnMessage(m, viewerId)`.
-
-**Real-time path — verified, not assumed.** The chain was traced end to end and found intact: the
-production VelShop chunk (`ShopChat-CFsDLajF.js`) contains `chat:message`/`chat:read`/`chat:typing`,
-all three deployed bundles point at `velnox-api.onrender.com` and `/ws`, and the gateway answers
-`101 Switching Protocols` with its `connected` frame. What was wrong was rendering + duplicated per-app
-dedupe/ownership logic, which is what produced "messages don't appear / appear on the wrong side".
-
-**Tests added.** `chat-message-alignment.test.ts` (14 behavioural cases: LEFT/RIGHT for customer,
-seller and staff, system always LEFT, the `null === null` regression, dedupe by id, receipt bounds) and
-`chat-realtime-delivery.test.ts` (10 DB+WebSocket cases: customer→seller, seller→customer,
-customer→support incl. the system ack on BOTH sockets, staff reply→customer, seller→company,
-internal room, non-participant refusal, offline-then-reconnect). Three older source-text assertions
-were updated to the new shared helpers (no assertion weakened).
-
-**Verified here.** `typecheck` 4/4 · backend `tsc` PASS · alignment suite **14 pass / 0 fail** ·
-full suite **1100 pass / 370 skip / 8 fail** (the 8 are the Termux-only `process.execPath` probes) ·
-`build:apps` 4/4 · `i18n:check` 1265/1265/1265 · `git diff --check` clean. The delivery suite needs
-`TEST_DATABASE_URL`, so it SKIPS on this device and is exercised by CI.
+Verbatim record:
+[`.ai/history/archive/AI_Handoff-2026-10-31-section-92-chat-ownership.md`](./history/archive/AI_Handoff-2026-10-31-section-92-chat-ownership.md).
+One shared ownership rule (`packages/shared/src/lib/chat-message.ts`) for all three apps; system rows always
+LEFT; delivery covered by DB+WebSocket tests.
 
 ---
 
@@ -800,9 +774,26 @@ reactions, edit, media/R2 attachments, product/order messages, search, image vie
 
 ---
 
+## §95. Development memory is a permanent rule (2026-10-31) — COMPLETE
+
+**Report:** [`.ai/history/2026-10-31-ai-development-memory-rule.md`](./history/2026-10-31-ai-development-memory-rule.md).
+
+`.ai/AI_RULES.md` **§19 MANDATORY DEVELOPMENT MEMORY / AI HANDOFF** now requires a dated entry in
+`.ai/history/YYYY-MM-DD-<topic>.md` for EVERY session — not only code changes: investigations, production
+checks, failed fixes and BLOCKED sessions count. The section carries the required template (initial state,
+investigation, VERIFIED vs ASSUMED, changes, per-test PASS/FAIL/SKIPPED/BLOCKED, failed attempts, database,
+deployment, current state, next steps, notes), the honesty statuses, the "never delete or rewrite history"
+rule and the "never store secrets" rule. `AGENTS.md` rule 6, `.ai/README.md` startup steps 3 and 11 and
+`.ai/history/README.md` all point at it.
+
+**Next agent:** read the handoff, then the newest relevant history entries, and continue from the documented
+state; do not repeat a documented failed approach without a written reason.
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.

@@ -1,5 +1,9 @@
 # History — Reference Only
 
+Every work session writes one dated entry here (`YYYY-MM-DD-<topic>.md`), including sessions that
+changed nothing, failed, or were blocked — see `.ai/AI_RULES.md` §19. Entries are never deleted or
+rewritten to tidy the folder; superseded state is summarised in `.ai/AI_HANDOFF.md`.
+
 Historical files are **reference material**. Only load them when the current task requires historical context.
 
 Three layers, in order of preference:

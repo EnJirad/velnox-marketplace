@@ -56,7 +56,7 @@ recreate them; write rules and handoff state only under `.ai/`.
 3. **Source of truth** — `Neon → Backend API → Frontend`. Frontend never touches Neon or server secrets. No fake data or mock APIs unless explicitly requested.
 4. **Database sync** — any schema change must update **both** `db/schema.sql` and `db/run-sqleditor.sql` (see `.ai/context/database.md`). Never recreate `db/run-update.sql`.
 5. **Verify** — `git diff --check`, typecheck/build relevant apps, and test the affected flow.
-6. **Handoff** — update `.ai/AI_HANDOFF.md` with current state + remaining gaps only (not history). Keep it small.
+6. **Memory** — every session leaves a dated record in `.ai/history/` (investigations, failed fixes and BLOCKED sessions included), then updates `.ai/AI_HANDOFF.md` with current state + remaining gaps only (not history), keeping it small. See `.ai/AI_RULES.md` §19.
 7. **Auto-commit and push** — when a repository-changing task completes successfully, commit the changes and push to GitHub via Git CLI. Do not stop after editing or committing. See *Default Completion State* below and `.ai/context/workflow.md`.
 
 ### Default Completion State

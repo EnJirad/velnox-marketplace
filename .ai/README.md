@@ -20,6 +20,7 @@ Every agent session follows:
    may be stale; it is never the source of truth.
 2. Read `.ai/AI_RULES.md`
 3. Read `.ai/AI_HANDOFF.md`
+4. Read the newest relevant entries in `.ai/history/` before touching the area they cover (`.ai/AI_HANDOFF.md` + `.ai/AI_RULES.md` §19)
 4. Identify the assigned task
 5. Read that task's brief from `.ai/tasks/active/`
 6. Read ONLY the context files listed by the task
@@ -27,8 +28,7 @@ Every agent session follows:
 8. Make the smallest safe change
 9. Run the task-specific verification (`.ai/context/testing.md`)
 10. Check stop conditions
-11. Write the Change Report into `.ai/history/` — **mandatory** for every repo-changing task
-    (`.ai/AI_RULES.md` §18); read it back to confirm it exists
+11. Write the session record into `.ai/history/YYYY-MM-DD-<topic>.md` — **mandatory for every session**, including investigations, failed fixes and BLOCKED work (`.ai/AI_RULES.md` §19); read it back to confirm it exists
 12. Update `.ai/AI_HANDOFF.md`
 13. Produce a concise task report with the resulting git SHA
 14. Commit only verified changes (`.ai/context/workflow.md`)
