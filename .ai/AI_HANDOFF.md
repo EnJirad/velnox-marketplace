@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-10-31 · **Branch:** `main` · **Latest pass:** **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -705,21 +705,12 @@ acknowledgment and the ephemeral `chat:typing` frame over the existing socket.
 
 ---
 
-## §90. OAuth config read at use time — the 11 red CI cases (2026-10-31) — COMPLETE
+## §90. OAuth config read at use time — the 11 red CI cases (2026-10-31) — **ARCHIVED** (moved 2026-10-31)
 
-**Symptom.** `main` failed 11/1439 on every push since §87: each `oauth-route.test.ts` case got `302` to
-`…/auth?error=google_not_configured`, and the same file passed when run alone.
-
-**Root cause (reproduced with bun 1.4.4).** `routes/auth.ts` snapshotted its four secrets into module-level
-`const`s, while `routes/center.ts`, `routes/seller.ts` and `routes/upload.ts` import it only for
-`invalidateCachedProfile`. Any test that imported one of those first evaluated `auth.ts` with no Google
-env and froze `""` for the run; the OAuth tests' later env write + dynamic import could not undo it.
-
-**Fix.** `googleClientId()`, `googleClientSecret()`, `googleRedirectUri()`, `jwtSecret()` read
-`process.env` at use time. No assertion weakened, no CI env added, production contract unchanged.
-
-**Verified.** Device: `1087 pass / 360 skip / 8 fail` (the 8 are Termux-only isolation probes; the 11 OAuth
-cases green); backend typecheck PASS; CI on the fix commit is the confirmation.
+Verbatim record:
+[`.ai/history/archive/AI_Handoff-2026-10-31-section-90-oauth-config.md`](./history/archive/AI_Handoff-2026-10-31-section-90-oauth-config.md).
+`routes/auth.ts` read its four Google/JWT values at import time; any module that imported
+`invalidateCachedProfile` first froze empty values. They are now accessors read at use time.
 
 ---
 
@@ -808,9 +799,28 @@ full suite **1100 pass / 370 skip / 8 fail** (the 8 are the Termux-only `process
 
 ---
 
+## §93. Checkout → Order → Payment verification (2026-10-31) — VERIFIED, PARTIAL
+
+**SHA:** `fc61741` (`HEAD == origin/main`, clean). **Report:**
+[`.ai/history/2026-10-31-checkout-payment-verification.md`](./history/2026-10-31-checkout-payment-verification.md).
+
+Production probed read-only: `/api/stripe/configured?selfTest=1` → `mode:"test"`, `webhookConfigured:true`,
+`webhookSignatureSelfTest.verified:true`; `/api/payments/methods` → CARD+PROMPTPAY enabled, **COD disabled**.
+21 payment/checkout files run individually: **335 pass / 168 skip / 0 fail** (skips = `hasTestDatabase()`, no
+`TEST_DATABASE_URL` here). `typecheck` 4/4, backend `tsc`, `build:apps` 4/4, `i18n` 1265/1265/1265, diff
+clean. CI on this SHA (run `41145382171`) = **1458 pass / 2 skip / 0 fail** over 74 files.
+
+Paths traced, not assumed: `cart.ts:703` checkout · `:116` order+group · `:1052` groups · `:1138` stock;
+`stripe.ts:2053` session · `:736` idempotency · `:2225` expired reservation · `:2546` webhook (`:217`
+signature) · `:1773` PromptPay async · `:1053` settlement · `:2713` refund covering-set. **No defect
+proven.** Real card/PromptPay/refund/webhook E2E and the 168 DB-gated cases are **BLOCKED** on missing test
+keys and a disposable database → **PARTIAL**, not PASS.
+
+---
+
 **Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
 §76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
 §83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92
+§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93
 (all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
 Archiving is not deletion: the text is preserved verbatim.
