@@ -137,12 +137,11 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # but not count; `sender_id` lost its NOT NULL (a system row has no sender),
 # which is a nullability change, not a column.
 #
-# NOTE: the figure below is DERIVED from those deltas (239 indexes + 1 = 240,
-# 657 columns + 2 = 659). Re-measure it with this script on a disposable
-# PostgreSQL and replace the line — the workflow that runs it needs the
-# production secret and is currently BLOCKED.
-# Re-measured on a fresh, thrice-rerun db/run-sqleditor.sql: 63|239|265|657.
-CANON="63|240|265|659"
+# NOTE: the figure below is MEASURED by this script on a disposable PostgreSQL
+# (the workflow now runs it): a fresh, thrice-rerun db/run-sqleditor.sql.
+# Measured 2026-10-31 by CI run 41181150692 after the durable-client-id change:
+# 63 tables | 241 indexes | 265 constraints | 660 columns.
+CANON="63|241|265|660"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────
