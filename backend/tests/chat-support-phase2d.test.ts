@@ -638,7 +638,7 @@ describeDb("chat support, end to end (requires TEST_DATABASE_URL)", () => {
     expect(rows.rows[0].status).toBe("sent");
   });
 
-  testFn("a retried send creates one message, one push and one notification", async () => {
+  testFn("a retried send creates one message, one push and NO bell notification", async () => {
     const pair = await seedPair("dup");
     const convId = await openConversation(pair);
     const clientId = crypto.randomUUID();
@@ -655,12 +655,14 @@ describeDb("chat support, end to end (requires TEST_DATABASE_URL)", () => {
     const { query } = await import("../db/index.js");
     const messages = await query(`SELECT COUNT(*)::int AS c FROM chat_messages WHERE conversation_id = $1`, [convId]);
     expect(messages.rows[0].c).toBe(1);
-    // Exactly one notification row for the seller — the retry wrote nothing.
+    // NO notification row, for this send or the retry: chat unread is a
+    // per-conversation state in Messages, and the global bell is business-only
+    // (owner rule 2026-11). The realtime push above is the only signal.
     const notes = await query(
       `SELECT COUNT(*)::int AS c FROM notifications WHERE user_id = $1 AND type = 'chat'`,
       [pair.sellerUserId],
     );
-    expect(notes.rows[0].c).toBe(1);
+    expect(notes.rows[0].c).toBe(0);
 
     // A fresh clientId is a genuinely new submission: it does store.
     const third = await send("customer", pair.customerId, convId, "one more", crypto.randomUUID());
@@ -668,6 +670,12 @@ describeDb("chat support, end to end (requires TEST_DATABASE_URL)", () => {
     expect(third.data.data.duplicate).toBeUndefined();
     const after = await query(`SELECT COUNT(*)::int AS c FROM chat_messages WHERE conversation_id = $1`, [convId]);
     expect(after.rows[0].c).toBe(2);
+    // A brand-new message is still a Messages-only event.
+    const notesAfter = await query(
+      `SELECT COUNT(*)::int AS c FROM notifications WHERE user_id = $1 AND type = 'chat'`,
+      [pair.sellerUserId],
+    );
+    expect(notesAfter.rows[0].c).toBe(0);
   });
 
   testFn("repeated get-or-create returns the same conversation", async () => {
@@ -806,5 +814,70 @@ describeDb("chat support, end to end (requires TEST_DATABASE_URL)", () => {
       strangerSock.ws.close();
       customerSock.ws.close();
     }
+  });
+
+  testFn("one conversation carries ONE unread state and previews its newest unread message", async () => {
+    const pair = await seedPair("preview");
+    const convId = await openConversation(pair);
+    const sent: any[] = [];
+    for (const text of ["Message 1", "Message 2", "Message 3", "Message 4"]) {
+      const res = await send("seller", pair.sellerUserId, convId, text);
+      expect(res.status).toBe(200);
+      sent.push(res.data.data.message);
+      // Distinct server timestamps so the unread ordering is real, not a tie.
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    const list = await call("GET", "/api/customer/conversations", pair.customerId);
+    const row = (list.data.data as any[]).find((c) => c.id === convId);
+    // Four messages, ONE conversation state: nothing is counted twice and the
+    // preview is the newest UNREAD message (not the last read one).
+    expect(row.unreadCount).toBe(4);
+    expect(row.lastMessage).toBe("Message 4");
+    expect(row.isSupport).toBe(false);
+
+    // Four messages produced ZERO bell rows: chat unread is not a notification.
+    const { query } = await import("../db/index.js");
+    const notes = await query(
+      `SELECT COUNT(*)::int AS c FROM notifications WHERE user_id = $1 AND type = 'chat'`,
+      [pair.customerId],
+    );
+    expect(notes.rows[0].c).toBe(0);
+
+    // Reading what was loaded clears the badge and keeps the preview.
+    const newest = sent[sent.length - 1]!.createdAt as number;
+    const read = await readThread("customer", pair.customerId, convId, newest);
+    expect(read.status).toBe(200);
+    expect(read.data.data.marked).toBe(4);
+
+    const afterRead = await call("GET", "/api/customer/conversations", pair.customerId);
+    const afterRow = (afterRead.data.data as any[]).find((c) => c.id === convId);
+    expect(afterRow.unreadCount).toBe(0);
+    expect(afterRow.lastMessage).toBe("Message 4");
+
+    // Only the NEW messages become unread again.
+    await send("seller", pair.sellerUserId, convId, "Message 5");
+    await new Promise((r) => setTimeout(r, 5));
+    await send("seller", pair.sellerUserId, convId, "Message 6");
+
+    const finalList = await call("GET", "/api/customer/conversations", pair.customerId);
+    const finalRow = (finalList.data.data as any[]).find((c) => c.id === convId);
+    expect(finalRow.unreadCount).toBe(2);
+    expect(finalRow.lastMessage).toBe("Message 6");
+  });
+
+  testFn("Support is classified separately from commerce in the same list API", async () => {
+    const pair = await seedPair("support-sep");
+    const commerceId = await openConversation(pair);
+    const support = await call("POST", "/api/customer/support/conversation", pair.customerId, {});
+    expect(support.status).toBe(200);
+    const supportId = support.data.data.id as string;
+
+    const list = await call("GET", "/api/customer/conversations", pair.customerId);
+    const rows = list.data.data as any[];
+    // The customer app splits its inbox on THIS flag — support must never be
+    // mistaken for a shop thread (and vice versa).
+    expect(rows.find((c) => c.id === supportId)?.isSupport).toBe(true);
+    expect(rows.find((c) => c.id === commerceId)?.isSupport).toBe(false);
   });
 });

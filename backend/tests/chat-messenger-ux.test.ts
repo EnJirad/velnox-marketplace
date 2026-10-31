@@ -688,4 +688,34 @@ describeDb("typing indicator over the existing socket (requires TEST_DATABASE_UR
     ]);
     expect(after.rows[0].n).toBe(before.rows[0].n);
   });
+
+  testFn("company read state is ONE authoritative state per conversation (Model A)", async () => {
+    const customerId = await makeUser("customer", "staff-read");
+    const staffA = await makeUser("staff", "staff-read-a");
+    const staffB = await makeUser("staff", "staff-read-b");
+    const convId = await openSupport(customerId);
+    for (const text of ["one", "two", "three"]) {
+      const res = await sendCustomer(customerId, convId, text);
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    const listA = await call("GET", "/api/center/chat/conversations?type=customer", staffA);
+    const rowA = (listA.data.data.items as any[]).find((c) => c.id === convId);
+    expect(rowA.unreadCount).toBe(3);
+    // The preview is the newest unread message, not the last one read.
+    expect(rowA.lastMessage).toBe("three");
+
+    const read = await call("POST", `/api/center/chat/conversations/${convId}/read`, staffA, {});
+    expect(read.status).toBe(200);
+    expect(read.data.data.marked).toBe(3);
+
+    // The schema stores ONE `read_at` per message and has no per-staff read
+    // table, so a read by any authorized staff member marks the thread read for
+    // the COMPANY (Model A). Staff B sees zero unread — documented, not assumed.
+    const listB = await call("GET", "/api/center/chat/conversations?type=customer", staffB);
+    const rowB = (listB.data.data.items as any[]).find((c) => c.id === convId);
+    expect(rowB.unreadCount).toBe(0);
+    expect(rowB.lastMessage).toBe("three");
+  });
 });
