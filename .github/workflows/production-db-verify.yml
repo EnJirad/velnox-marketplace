@@ -392,6 +392,27 @@ jobs:
                  'schema_migrations ledger is usable (table + migration_name + unique index)',
                  CASE WHEN to_regclass('public.schema_migrations') IS NULL THEN 'table not found'
                       ELSE 'ledger present' END;
+
+          -- ── chat send path: durable idempotency column + index ────────
+          -- A release that writes `chat_messages.client_id` before the column
+          -- exists turns EVERY send into a 500 (42703). This probe is the
+          -- deploy-time guard: it fails here instead of in a customer's chat.
+          SELECT CASE WHEN (SELECT count(*) FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'chat_messages'
+                               AND column_name = 'client_id') = 1
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'chat_messages.client_id exists (send path)',
+                 CASE WHEN (SELECT count(*) FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'chat_messages'
+                               AND column_name = 'client_id') = 1
+                      THEN 'present'
+                      ELSE 'column absent — run production-db-migrate.yml first' END;
+
+          SELECT CASE WHEN to_regclass('public.uq_chat_messages_client_id') IS NOT NULL
+                      THEN 'PASS' ELSE 'FAIL' END,
+                 'uq_chat_messages_client_id exists (durable idempotency)',
+                 COALESCE(to_regclass('public.uq_chat_messages_client_id')::text,
+                          'index not found — run production-db-migrate.yml first');
           SQL
 
           echo ""
