@@ -113,6 +113,7 @@ export const th = {
     ariaHome: "{name} — หน้าแรก",
     ariaSearch: "ค้นหาสินค้า",
     ariaCart: "เปิดตะกร้าสินค้า",
+    ariaChat: "แชทของฉัน",
     ariaNotifications: "การแจ้งเตือน",
     ariaProfile: "โปรไฟล์",
     ariaWishlist: "รายการโปรด",

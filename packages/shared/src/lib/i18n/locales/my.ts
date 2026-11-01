@@ -95,6 +95,7 @@ export const my = {
     login: "ဝင်ရောက်မည်",    ariaHome: "{name} — မူလစာမျက်နှာ",
     ariaSearch: "ကုန်ပစ္စည်း ရှာဖွေရန်",
     ariaCart: "ခြင်းတောင်းဖွင့်ရန်",
+    ariaChat: "ကျွန်ုပ်၏ ချတ်",
     ariaNotifications: "အသိပေးချက်များ",
     ariaProfile: "ပရိုဖိုင်",
     ariaLanguage: "ဘာသာစကားရွေးရန်",

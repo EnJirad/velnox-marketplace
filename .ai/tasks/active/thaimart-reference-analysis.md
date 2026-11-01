@@ -7,7 +7,7 @@ Brand palette is **not** copied: VelShop keeps Velnox mint/green as its accent.
 
 | Region | Reference spec (measured visually) | VelShop today | Action |
 |---|---|---|---|
-| Brand bar | Solid brand colour, ~56 px, logo mark 32 px + **search pill** (white, fully rounded, 40 px, search icon right) + cart with badge + chat icon; sticks to the top of the content area | `ShopHeader` has logo + search but not the pill/badge/chat cluster | rebuild header as brand bar with pill search, cart badge, chat |
+| Brand bar | Solid brand colour, ~56 px, logo mark 32 px + **search pill** (white, fully rounded, 40 px, search icon right) + cart with badge + chat icon; sticks to the top of the content area | `ShopHeader` was one white bar; mobile had no pill, no cart badge cluster, no chat | **done (§142)** — mobile bar at `#10B981`, 56 px; pill 40 px; cart real count; chat → `/chat` |
 | Category rail | Horizontal scroll, 6+ items, 56 px circular icon chip + 11 px two-line label, active item tinted | category chips (text) | convert to icon circles + labels |
 | Content | White cards on `#F8FAFC`-ish page, 12–16 px radius, 1 px border, 16 px side margins | similar tokens exist | unify radius/margins |
 | Promo strip | Thin bordered card with dashed divider + big number | absent | optional, only with real campaign |
@@ -27,7 +27,9 @@ type: 18/600 section, 14/600 row, 12/400 muted, 11/500 label · spacing 4/8/12/1
 
 1. **Bottom tab bar** — **done (§141)**: reused the existing shared `MobileTabBar`, item set reduced from 5
 to the reference 4 (home · orders · notifications · profile). No new component was needed.
-2. **Header brand bar**: pill search + cart badge + chat icon.
+2. **Header brand bar** — **done (§142)**: mobile `ShopHeader` is a 56 px solid `#10B981` bar (mark 32 ·
+white pill 40 with magnifier right · language · cart real count · chat). Search reuses `/products?q=`;
+desktop bar unchanged. Measured 360–492 px; ≥768 px evidenced at rule level only (NOT MEASURED).
 3. Category rail as icon circles.
 4. Product grid tightening (2-col, 1:1, 12 px gap).
 5. Profile page alignment with the same tokens (already partly done).
@@ -40,6 +42,7 @@ routes/APIs. i18n keys go straight into the base `th/en/my` locale objects. No f
 
 ## 5. Status
 
-Analysis: **done** (from real screenshots). Implementation: **step 1 landed** (§141 — bottom nav is the
-4-tab reference set); steps 2–6 remain (header brand bar, category rail, grid, profile, other screens).
-Visual verification of step 1 is **NOT VERIFIED** — the harness screenshot surface is still blocked (§137).
+Analysis: **done** (from real screenshots). Implementation: **steps 1–2 landed** (§141 bottom nav 4 tabs,
+§142 mobile header brand bar); steps 3–6 remain (category rail, grid, profile, other screens).
+Visual verification of both steps is **NOT VERIFIED** — the harness screenshot surface is still blocked
+(§137); desktop widths ≥768 px not measured for the same reason.

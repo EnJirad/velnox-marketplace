@@ -89,6 +89,7 @@ export const en: Dict = {
     ariaHome: "{name} — Home",
     ariaSearch: "Search products",
     ariaCart: "Open cart",
+    ariaChat: "My chat",
     ariaNotifications: "Notifications",
     ariaProfile: "Profile",
     ariaWishlist: "Wishlist",

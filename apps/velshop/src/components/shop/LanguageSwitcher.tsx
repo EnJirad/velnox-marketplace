@@ -5,11 +5,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@velnox/shared/components/ui/dropdown-menu";
+import { cn } from "@velnox/shared/lib/utils";
 import { useLanguage, SUPPORTED_LANGUAGES, languageLabel, type Language } from "@/lib/i18n";
 
 interface LanguageSwitcherProps {
   /** Compact icon-only trigger for mobile; full trigger for desktop. */
   variant?: "desktop" | "mobile";
+  /** Trigger colours. `brand` = white on the solid brand header bar. */
+  tone?: "default" | "brand";
 }
 
 /**
@@ -17,14 +20,19 @@ interface LanguageSwitcherProps {
  * trigger presentation differs). Uses native language names, accessible label
  * and keyboard support via the shared DropdownMenu (Radix).
  */
-export function LanguageSwitcher({ variant = "desktop" }: LanguageSwitcherProps) {
+export function LanguageSwitcher({ variant = "desktop", tone = "default" }: LanguageSwitcherProps) {
   const { lang, setLang, t } = useLanguage();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={t("header.ariaLanguage")}
-        className="inline-flex h-10 cursor-pointer items-center gap-1 rounded-[10px] px-2.5 text-sm font-medium text-slate-600 outline-none transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#10B981] data-[state=open]:bg-slate-100"
+        className={cn(
+          "inline-flex h-10 cursor-pointer items-center gap-1 rounded-[10px] px-2.5 text-sm font-medium outline-none transition-colors",
+          tone === "brand"
+            ? "text-white hover:bg-white/15 hover:text-white focus-visible:ring-2 focus-visible:ring-white data-[state=open]:bg-white/15"
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#10B981] data-[state=open]:bg-slate-100",
+        )}
       >
         {variant === "mobile" ? (
           <Languages className="size-5" />

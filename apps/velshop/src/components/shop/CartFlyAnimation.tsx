@@ -5,7 +5,8 @@ import { useCallback, useRef } from "react";
  * Uses CSS transform + opacity for 60fps performance.
  *
  * Call `fly()` with the source element (e.g. the Add to Cart button).
- * The animation finds the cart icon via `document.querySelector('[data-cart-icon]')`.
+ * The animation finds the visible cart icon via `[data-cart-icon]` — the mobile
+ * brand bar and the desktop bar each render one, so it picks the one on screen.
  */
 export function useCartFlyAnimation() {
   const frameRef = useRef<number | null>(null);
@@ -13,7 +14,10 @@ export function useCartFlyAnimation() {
   const fly = useCallback((sourceElement: HTMLElement | null | undefined) => {
     if (!sourceElement) return;
 
-    const target = document.querySelector<HTMLElement>("[data-cart-icon]");
+    // Two responsive headers render the cart trigger; use whichever is visible.
+    const target = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-cart-icon]"),
+    ).find((el) => el.getClientRects().length > 0);
     if (!target) return;
 
     const sourceRect = sourceElement.getBoundingClientRect();
