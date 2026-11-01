@@ -1119,8 +1119,8 @@ export default function Center() {
           </div>
         )}
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-7">
-          <TabsList className="w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-6 md:grid md:grid-cols-[15rem_minmax(0,1fr)] md:items-start md:gap-6 md:[&>[role=tabpanel]]:col-start-2 md:[&>[role=tabpanel]]:min-w-0">
+          <TabsList className="w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto md:sticky md:top-20 md:flex md:h-auto md:w-full md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:bg-transparent md:p-0 md:[&_[role=tab]]:w-full md:[&_[role=tab]]:justify-start md:[&_[role=tab]]:px-3 md:[&_[role=tab]]:py-2">
             <TabsTrigger value="overview" className="gap-1.5 rounded-[10px]">
               <TrendingUp className="size-4" /> ภาพรวม
             </TabsTrigger>
