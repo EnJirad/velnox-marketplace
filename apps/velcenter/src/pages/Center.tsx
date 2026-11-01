@@ -102,6 +102,8 @@ import {
   Target,
   TrendingUp,
   Users,
+  Menu,
+  PanelLeft,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -277,6 +279,24 @@ export default function Center() {
   // Tabs are URL-driven (?tab=orders) so the mobile bottom nav and the desktop
   // tab strip stay in sync, and every view is shareable/deep-linkable.
   const [searchParams, setSearchParams] = useSearchParams();
+  // Mobile navigation drawer + desktop rail collapse (presentation only).
+  const [navOpen, setNavOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+
+  // Drawer behaviour: Escape closes it and the page behind must not scroll.
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNavOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [navOpen]);
   const urlTab = (searchParams.get("tab") as Tab | null) ?? "overview";
   const tab: Tab = canSee(urlTab) ? urlTab : "overview";
   const setTab = (next: Tab) => {
@@ -1066,11 +1086,39 @@ export default function Center() {
             </button>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setNavCollapsed((value) => !value)}
+              aria-label={navCollapsed ? "ขยายเมนู" : "ย่อเมนู"}
+              aria-pressed={navCollapsed}
+              className="hidden size-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 md:flex"
+            >
+              <PanelLeft className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setNavOpen(true)}
+              aria-label="เมนู"
+              aria-expanded={navOpen}
+              aria-controls="center-nav"
+              className="flex size-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 md:hidden"
+            >
+              <Menu className="size-5" />
+            </button>
             <LanguageSwitcher />
             <UserMenu />
           </div>
         </div>
       </header>
+
+      {navOpen && (
+        <button
+          type="button"
+          aria-label="ปิดเมนู"
+          onClick={() => setNavOpen(false)}
+          className="fixed inset-0 z-40 cursor-default bg-slate-900/40 md:hidden"
+        />
+      )}
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <div>
@@ -1119,8 +1167,25 @@ export default function Center() {
           </div>
         )}
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-6 md:grid md:grid-cols-[15rem_minmax(0,1fr)] md:items-start md:gap-6 md:[&>[role=tabpanel]]:col-start-2 md:[&>[role=tabpanel]]:min-w-0">
-          <TabsList className="w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto md:sticky md:top-20 md:flex md:h-auto md:w-full md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:bg-transparent md:p-0 md:[&_[role=tab]]:w-full md:[&_[role=tab]]:justify-start md:[&_[role=tab]]:px-3 md:[&_[role=tab]]:py-2">
+        <Tabs
+          value={tab}
+          onValueChange={(v) => {
+            setTab(v as Tab);
+            setNavOpen(false);
+          }}
+          className={`mt-6 md:grid md:items-start md:gap-6 md:[&>[role=tabpanel]]:col-start-2 md:[&>[role=tabpanel]]:min-w-0 ${
+            navCollapsed ? "md:grid-cols-[4.5rem_minmax(0,1fr)]" : "md:grid-cols-[15rem_minmax(0,1fr)]"
+          }`}
+        >
+          <TabsList
+            id="center-nav"
+            aria-label="Sections"
+            className={`w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto md:sticky md:top-20 md:flex md:h-auto md:w-full md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:bg-transparent md:p-0 md:[&_[role=tab]]:w-full md:[&_[role=tab]]:justify-start md:[&_[role=tab]]:px-3 md:[&_[role=tab]]:py-2 ${
+              navCollapsed ? "md:[&_[role=tab]]:justify-center md:[&_[role=tab]]:px-1" : ""
+            } max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:w-72 max-md:flex-col max-md:items-stretch max-md:overflow-y-auto max-md:rounded-none max-md:border-y-0 max-md:border-l-0 max-md:bg-white max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:transition-transform ${
+              navOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"
+            }`}
+          >
             <TabsTrigger value="overview" className="gap-1.5 rounded-[10px]">
               <TrendingUp className="size-4" /> ภาพรวม
             </TabsTrigger>
