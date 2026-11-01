@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -783,22 +783,9 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-100-chat-parity.md`](./histor
 
 ---
 
-## §101. CI green + authoritative unread and company read model (2026-11-02) — PARTIAL
+## §101. CI green + authoritative unread and company read model (2026-11-02) — **ARCHIVED** (moved 2026-11-02)
 
-**SHA:** `9150048` → `73cd999`. **Report:**
-[`.ai/history/2026-11-02-ci-green-chat-unread-company-read.md`](./history/2026-11-02-ci-green-chat-unread-company-read.md).
-
-**CI was red for one real reason, not infrastructure:** `chat-support-phase2d` still expected **1**
-`type='chat'` notification row while `9150048` deliberately stopped chat bell writes. The test now pins the
-new contract (one message, one push, **zero** bell rows, re-checked after a fresh send). Production DB Verify
-failed only because its verdict job waited on that same suite — its production-schema job passed all along.
-
-**Result:** Tests #230 ✅, Production DB Verify #58 ✅ (all 4 jobs, incl. production schema + identity), with
-the disposable-PostgreSQL suite at **1486 pass / 0 fail / 1488 tests**, covering the new cases: four unread messages = one conversation state
-(preview = newest unread), Support classified separately, and **company read = Model A** (one `read_at` per
-message ⇒ any staff read marks the thread read; asserted with two staff).
-
-**NOT RUN:** browser/E2E (no session; PG18 `initdb` hangs here) and UI upload (no R2 credentials).
+Full text: [`archive/AI_Handoff-2026-11-02-section-101-ci-green.md`](./history/archive/AI_Handoff-2026-11-02-section-101-ci-green.md).
 
 ---
 
@@ -845,5 +832,19 @@ confirmed, and nothing was fabricated (`payments/orders/payment_events` rows for
 `payment_events_event_id_key` is UNIQUE ⇒ webhook replay is idempotent. Connect: one account,
 `charges_enabled:false`, not onboarded ⇒ **NOT CONFIGURED**. Refund not attempted (no new payment; would need
 explicit owner approval).
+
+---
+
+## §104. Payment rail switching no longer dead-ends (2026-11-01) — PARTIAL
+
+**SHA:** `a373832` → this commit. **Report:**
+[`.ai/history/2026-11-01-payment-rail-switch-recovery.md`](./history/2026-11-01-payment-rail-switch-recovery.md).
+
+A purchase with an open PromptPay session answered CARD with `409 DUPLICATE_PAYMENT_IN_PROGRESS` and no way
+forward. Now the abandoned open session is expired (no money moved), its payment row moves to `cancelled`
+(freeing `idx_payments_one_active_stripe`), and a session for the chosen rail is minted; if Stripe refuses
+the expiry the honest 409 remains. Same-rail reuse, the durable request claim and webhook authority for
+`paid` are unchanged. Verified: checkout suites 45 pass/17 skip/0 fail, typecheck 4/4, build 4/4. The
+live rail switch is **NOT VERIFIED end-to-end** (card entry cannot be automated in the WebView).
 
 ---

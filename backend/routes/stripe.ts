@@ -886,6 +886,32 @@ async function openCheckoutGroupSession(args: {
           res.json({ success: true, data });
           return;
         }
+        // The customer chose a DIFFERENT rail than the session that is still
+        // open. Before this, that was a dead end: 409 "being prepared" with no
+        // link forward, even though nothing was ever charged.
+        //
+        // Expiring the abandoned session is safe (an open Checkout Session has
+        // collected no money), and retiring its payment row frees the
+        // `idx_payments_one_active_stripe` slot for the rail the customer just
+        // chose. If Stripe refuses to expire it (it completed in the meantime),
+        // fall through to the honest conflict instead of minting a second
+        // payable session.
+        if (existing.status === "open" && existing.metadata?.method !== method) {
+          const expired = await stripe.checkout.sessions.expire(activeSessionId).then(
+            () => true,
+            () => false,
+          );
+          if (expired) {
+            await query(
+              `UPDATE payments SET status = 'cancelled', updated_at = NOW()
+                WHERE id = $1 AND status IN ('pending', 'requires_action')`,
+              [activePayment.rows[0].id],
+            );
+          } else {
+            fail(res, 409, "DUPLICATE_PAYMENT_IN_PROGRESS", "Your payment is being prepared. Please try again.");
+            return;
+          }
+        }
       } catch {
         /* fall through to the conflict below */
       }

@@ -475,8 +475,13 @@ describe("backend contract — the session endpoint and the webhook", () => {
     // Layer 2: at most one active Stripe payment per order, enforced by the DB.
     expect(read("db/schema.sql")).toContain("idx_payments_one_active_stripe");
     expect(stripeSrc).toContain("AND status IN ('pending', 'requires_action')");
-    // A reused session is only handed back for the SAME method.
+    // A reused session is only handed back for the SAME method…
     expect(stripeSrc).toContain("existing.metadata?.method === method");
+    // …and choosing a DIFFERENT rail is no longer a dead end: the abandoned
+    // open session is expired (no money moved) and its payment row retired so
+    // the customer can pay with the rail they just picked.
+    expect(stripeSrc).toContain("stripe.checkout.sessions.expire(activeSessionId)");
+    expect(stripeSrc).toContain("SET status = 'cancelled'");
   });
 
   test("the storefront can read the order's rail from the list endpoint", () => {
