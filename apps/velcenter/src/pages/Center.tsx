@@ -1,5 +1,6 @@
 import { Logo } from "@velnox/shared/components/Logo";
 // Mobile navigation removed — VelCenter uses top tab strip on all breakpoints
+import { LanguageSwitcher } from "@velnox/shared/components/LanguageSwitcher";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
 import PaymentIncidentTab from "../components/PaymentIncidentTab";
@@ -1064,7 +1065,10 @@ export default function Center() {
               <Logo />
             </button>
           </div>
-          <UserMenu />
+          <div className="flex items-center gap-1">
+            <LanguageSwitcher />
+            <UserMenu />
+          </div>
         </div>
       </header>
 
