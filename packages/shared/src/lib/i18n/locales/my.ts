@@ -838,6 +838,8 @@ export const my = {
 
 
   profile: {
+    cookies: "Cookie မူဝါဒ",
+    cookiesDesc: "Cookie များ အသုံးပြုပုံကို ကြည့်ပါ",
     eyebrow: "velshop · ကျွန်ုပ်၏ ပရိုဖိုင်",
     title: "ပရိုဖိုင်",
     member: "Velnox အဖွဲ့ဝင်",

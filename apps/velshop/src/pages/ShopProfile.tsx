@@ -83,6 +83,7 @@ const COMMUNICATION: ProfileRow[] = [
 
 const ACCOUNT: ProfileRow[] = [
   { to: "/profile/account", labelKey: "profile.account", descKey: "profile.accountDesc", icon: CircleUserRound },
+  { to: "/cookies", labelKey: "profile.cookies", descKey: "profile.cookiesDesc", icon: ShieldCheck },
 ];
 
 interface NotificationRow {

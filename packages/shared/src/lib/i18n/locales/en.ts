@@ -901,6 +901,8 @@ export const en: Dict = {
 
 
   profile: {
+    cookies: "Cookie policy",
+    cookiesDesc: "See how we use cookies",
     eyebrow: "velshop · My profile",
     title: "Profile",
     member: "Velnox member",

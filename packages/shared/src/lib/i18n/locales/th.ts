@@ -927,6 +927,8 @@ export const th = {
 
 
   profile: {
+    cookies: "นโยบายคุกกี้",
+    cookiesDesc: "ดูว่าเราใช้คุกกี้อย่างไร",
     eyebrow: "velshop · โปรไฟล์ของฉัน",
     title: "โปรไฟล์",
     member: "สมาชิก Velnox",
