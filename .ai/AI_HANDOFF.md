@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§113 — Payment E2E with safe skips** · previous: **§112 — Refund/replay tests green** · previous: **§111 — Refund/replay harness BLOCKED** · previous: **§110 — Production marketplace audit** · previous: **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§114 — VelCenter/VelSeller UI audit** · previous: **§113 — Payment E2E with safe skips** · previous: **§112 — Refund/replay tests green** · previous: **§111 — Refund/replay harness BLOCKED** · previous: **§110 — Production marketplace audit** · previous: **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -837,17 +837,9 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-109-vercel-diagnosis.md`](./h
 
 ---
 
-## §110. Production marketplace audit (2026-11-02) — PARTIAL, no critical defect
+## §110. Production marketplace audit (2026-11-02) — **ARCHIVED** (moved 2026-11-02)
 
-**SHA:** `5965598`. **Report:**
-[`.ai/history/2026-11-02-production-marketplace-e2e-audit.md`](./history/2026-11-02-production-marketplace-e2e-audit.md).
-
-Four domains 200 except `velnox.com` (unresolved; project is on `velnox-theta.vercel.app`). Payment invariants
-verified on live evidence: signed webhook only, `event_id` UNIQUE + `ON CONFLICT` (0 unprocessed), one-active
-unique per order **and** group, request idempotency, retire guard that cannot touch `complete+paid`, no
-deletes. Data: `paid 2 / cancelled 3`, 0 paid orders without a paid payment, 0 stale attempts. Typecheck 4/4 ·
-builds 4/4 · 8 Termux-only fails · CI disposable PG 1489/0. **NOT TESTED:** card browser flow, refund,
-webhook resend, delayed webhook, role UI walk. Next: refund + replay harness in CI.
+Full text: [`archive/AI_Handoff-2026-11-02-section-110-marketplace-audit.md`](./history/archive/AI_Handoff-2026-11-02-section-110-marketplace-audit.md).
 
 ---
 
@@ -882,5 +874,19 @@ Local payment suites 148 tests / 0 fail (17 DB-gated skips); full suite 8 Termux
 **SKIPPED (reported, never called PASS):** card-in-browser (React inputs + CSP, human required), real
 dashboard refund (approval + fresh sandbox payment), partial refunds, out-of-order refund, Stripe CLI resend,
 Connect payouts. CI: Tests #252 success, Production DB Verify #66 success.
+
+---
+
+## §114. VelCenter/VelSeller UI audit (Phase 1) — no code changed (2026-11-02)
+
+**Report:** [`.ai/history/2026-11-02-velcenter-velseller-ui-audit.md`](./history/2026-11-02-velcenter-velseller-ui-audit.md).
+
+Audit only (task requires audit before implementation). Headline defect: **neither `apps/velcenter` nor
+`apps/velseller` mounts `LanguageProvider`** (only `RealtimeProvider`), while pages call `useLanguage()` — so
+the language switcher cannot work or persist there. 10 center + 6 seller `.tsx` files carry hardcoded Thai;
+VelCenter has no app shell (sections live inside `Center.tsx`), VelSeller already uses shared
+`AppHeader` + `MobileTabBar`. Plan: shared `AppShell` + `LanguageSwitcher`, provider wiring in both apps,
+`center.*`/`seller.*` i18n sweep, keep every route/permission/API untouched. Viewport sign-off needs an owner
+browser session.
 
 ---
