@@ -927,6 +927,10 @@ export const th = {
 
 
   profile: {
+    terms: "ข้อกำหนดการใช้บริการ",
+    termsDesc: "อ่านข้อกำหนดและเงื่อนไข",
+    privacy: "นโยบายความเป็นส่วนตัว",
+    privacyDesc: "วิธีที่เราเก็บและใช้ข้อมูลของคุณ",
     orderTiles: { pendingPayment: "ที่ต้องชำระ", toBeShipped: "ที่ต้องจัดส่ง", toReceive: "ที่ต้องได้รับ", completed: "สำเร็จ" },
     cookies: "นโยบายคุกกี้",
     cookiesDesc: "ดูว่าเราใช้คุกกี้อย่างไร",

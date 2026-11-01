@@ -901,6 +901,10 @@ export const en: Dict = {
 
 
   profile: {
+    terms: "Terms of service",
+    termsDesc: "Read the terms and conditions",
+    privacy: "Privacy policy",
+    privacyDesc: "How we store and use your data",
     orderTiles: { pendingPayment: "To pay", toBeShipped: "To ship", toReceive: "To receive", completed: "Completed" },
     cookies: "Cookie policy",
     cookiesDesc: "See how we use cookies",

@@ -25,6 +25,7 @@ import {
   ChevronRight,
   CircleCheck,
   CircleUserRound,
+  FileText,
   Heart,
   LifeBuoy,
   LogOut,
@@ -67,6 +68,8 @@ function bust(url: string | null | undefined): string | null {
  */
 interface ProfileRow {
   to: string;
+  /** Absolute URL — rendered as <a target=_blank> instead of a router Link. */
+  external?: boolean;
   labelKey: string;
   descKey: string;
   icon: LucideIcon;
@@ -87,6 +90,8 @@ const COMMUNICATION: ProfileRow[] = [
 const ACCOUNT: ProfileRow[] = [
   { to: "/profile/account", labelKey: "profile.account", descKey: "profile.accountDesc", icon: CircleUserRound },
   { to: "/cookies", labelKey: "profile.cookies", descKey: "profile.cookiesDesc", icon: ShieldCheck },
+  { to: "https://velnox-theta.vercel.app/terms", external: true, labelKey: "profile.terms", descKey: "profile.termsDesc", icon: FileText },
+  { to: "https://velnox-theta.vercel.app/privacy", external: true, labelKey: "profile.privacy", descKey: "profile.privacyDesc", icon: ShieldCheck },
 ];
 
 interface NotificationRow {
@@ -197,12 +202,8 @@ export default function ShopProfile() {
 
   const renderRow = (row: ProfileRow, showBadge = 0) => {
     const Icon = row.icon;
-    return (
-      <Link
-        key={row.to + row.labelKey}
-        to={row.to}
-        className="flex items-center gap-3.5 px-5 py-4 transition-colors hover:bg-[#F8FAFC]"
-      >
+    const body = (
+      <>
         <span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-slate-100 text-slate-500">
           <Icon className="size-[18px]" />
         </span>
@@ -216,6 +217,19 @@ export default function ShopProfile() {
           </span>
         )}
         <ChevronRight className="size-4 shrink-0 text-slate-300" />
+      </>
+    );
+    const className = "flex items-center gap-3.5 px-5 py-4 transition-colors hover:bg-[#F8FAFC]";
+    if (row.external) {
+      return (
+        <a key={row.to + row.labelKey} href={row.to} target="_blank" rel="noreferrer" className={className}>
+          {body}
+        </a>
+      );
+    }
+    return (
+      <Link key={row.to + row.labelKey} to={row.to} className={className}>
+        {body}
       </Link>
     );
   };

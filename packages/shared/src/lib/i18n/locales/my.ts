@@ -838,6 +838,10 @@ export const my = {
 
 
   profile: {
+    terms: "ဝန်ဆောင်မှု စည်းကမ်းချက်များ",
+    termsDesc: "စည်းကမ်းချက်များ ဖတ်ရန်",
+    privacy: "ကိုယ်ရေးကိုယ်တာ မူဝါဒ",
+    privacyDesc: "သင့်အချက်အလက် သိမ်းဆည်းပုံ",
     orderTiles: { pendingPayment: "ပေးချေရန်", toBeShipped: "ပို့ရန်", toReceive: "လက်ခံရန်", completed: "ပြီးစီး" },
     cookies: "Cookie မူဝါဒ",
     cookiesDesc: "Cookie များ အသုံးပြုပုံကို ကြည့်ပါ",
