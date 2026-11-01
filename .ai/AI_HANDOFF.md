@@ -860,17 +860,9 @@ webhook resend, delayed webhook, role UI walk. Next: refund + replay harness in 
 
 ---
 
-## §111. Refund + webhook-replay harness — BLOCKED, not implemented (2026-11-02)
+## §111. Refund/replay harness was BLOCKED (2026-11-02) — superseded by §112
 
-**Report:** [`.ai/history/2026-11-02-refund-webhook-replay-blocked.md`](./history/2026-11-02-refund-webhook-replay-blocked.md).
-**No code written, tree clean, nothing pushed for this task.**
-
-Duplicate-delivery and refund tests need a new DB harness (express + `stripeWebhookRawBody` + HMAC signature +
-`orders`/`payments` fixtures); this device cannot run it (no disposable PostgreSQL) and the session ran out
-before the file could be written, pushed and confirmed green in CI. **NOT TESTED:** duplicate webhook,
-refund lifecycle, invalid-signature rejection at DB level. The runbook (fixtures, helper, assertions,
-verification order) is in the report; structural guarantees already hold (`event_id` UNIQUE + `ON CONFLICT`,
-`paid_at = COALESCE`, refund route auth-guarded, 0 unprocessed events in production).
+Report: [`.ai/history/2026-11-02-refund-webhook-replay-blocked.md`](./history/2026-11-02-refund-webhook-replay-blocked.md).
 
 ---
 
