@@ -108,6 +108,6 @@ verification.
 | `browser_eval` | `{title:"VelNox UI Probe", vw:492, scrollWidth:492, buttons:1}` |
 | `browser_screenshot` | **NOT CAPTURED** — preview hidden |
 | Console | not inspected in this run (fixture emits no error) |
-| Cleanup | `bg_kill(14)` + post-kill curl → non-200 |
+| Cleanup | `bg_kill(14)` executed **after** this run; post-kill curl → `000` (verified) |
 
 The fixture is scratch-only (outside the repo) and is not part of the suite.
