@@ -55,3 +55,33 @@ scratch processes and were never committed.
 
 Reuse this harness to measure the remaining menus: open each at 492 px, read
 `getBoundingClientRect()` of `[role="menu"]`/`[role="listbox"]` next to the trigger, and only then fix.
+
+---
+
+## 12. Continuation attempt — remaining menus (2026-11-02, after `ad26d7f`)
+
+**Result: NOT COMPLETED (harness degraded mid-run).**
+
+- `bg_list` confirms the two harness jobs are still alive: `[8] proxy on :8899` and `[9] vite preview on
+  :5173` (both ~14 min old, started by this chat).
+- Re-navigating to `http://localhost:5173/` returned a document with **no `<body>`** (`document.body` was
+  `null`, `document.querySelectorAll("button").length` unreachable) — the preview answered before the SPA
+  rendered, and the next read hit the same half-loaded document. Repeating the navigation would have been a
+  retry of an unchanged failing step, so it was stopped rather than looped.
+- Consequence: **UserMenu, employee dropdowns, order-ship dialog, chat actions, shared `Select`/`Popover`,
+  menus inside dialogs and the mobile drawer, edge-of-viewport cases, console logs, and all viewports except
+  492 px remain NOT TESTED.**
+
+No new measurement, no root cause, and **no code change** resulted from this continuation. The only measured
+menu remains the LanguageSwitcher (trigger `380,14` → panel `256,54 160×123`, `absolute`, `z-50`, no overflow),
+which is **correct**.
+
+### What the next session should do first
+
+1. Confirm `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5173/` returns 200 before navigating; if
+   not, restart job `[9]` (`cd apps/velcenter && bunx vite preview --port 5173 --host 127.0.0.1`).
+2. Open each menu with `browser_click` (real pointer events, not `.click()`): header user menu, employee role
+   menu, order-ship select, chat actions.
+3. For each: `[menu.getBoundingClientRect(), getComputedStyle(menu).position, getComputedStyle(menu).zIndex]`
+   plus the trigger rect; flag any `x==0 && y==0`.
+4. Only then decide between migrating `LanguageSwitcher` (still unproven) or fixing a Radix menu.

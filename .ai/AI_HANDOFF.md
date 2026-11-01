@@ -944,6 +944,7 @@ proxy (outside the repo) to the real API, `vite preview` on 5173, then set the o
 `localhost` (same site) → authenticated Center. At 492 px (mobile layout, `#center-nav` = `position: fixed`):
 LanguageSwitcher trigger `380,14` → panel `256,54 160x123`, `absolute`/`z-50`, no overflow — **it is anchored
 correctly**, so the "top-left" symptom is not this component. Other menus and 360/390/430/768+ **NOT TESTED**
-(WebView fixed at 492 px; DevTools MCP unavailable). No code changed. Background jobs 8/9 are the local harness.
+(WebView fixed at 492 px; DevTools MCP unavailable). No code changed. Background jobs 8/9 are the local harness; a continuation run could not finish — the preview answered with a
+body-less document and the remaining menus stayed untested, so still no root cause and no code change.
 
 ---
