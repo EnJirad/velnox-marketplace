@@ -46,7 +46,7 @@ import {
   resolveChatAttachment,
 } from "./chat.js";
 
-type CompanyTab = "customer" | "seller" | "internal";
+type CompanyTab = "customer" | "seller" | "internal" | "support";
 type SupportStatus = "OPEN" | "ASSIGNED" | "WAITING" | "CLOSED";
 
 const SUPPORT_STATUSES: SupportStatus[] = ["OPEN", "ASSIGNED", "WAITING", "CLOSED"];
@@ -120,6 +120,12 @@ function mapCompanyConversation(r: any): Record<string, unknown> {
     // A legacy reserved-shop row is conceptually a customer→company thread.
     type: r.type === "CUSTOMER_SELLER" ? "CUSTOMER_COMPANY" : r.type,
     legacySupport: r.type === "CUSTOMER_SELLER",
+    // Which half of the Support Inbox this thread belongs to. The combined
+    // `type=support` list merges both audiences, so the row must say which one
+    // it came from — a legacy reserved-shop row is always customer support.
+    supportAudience:
+      (r.support_audience as "customer" | "seller" | undefined) ??
+      (r.type === "SELLER_COMPANY" ? "seller" : "customer"),
     title: r.title ?? null,
     status: r.support_status ?? "OPEN",
     assignedTo: r.assigned_to ?? null,
@@ -167,6 +173,23 @@ const UNREAD_SUBQUERY = `(SELECT COUNT(*) FROM chat_messages m
 
 /** Conversation list per tab, scoped by the tab's type (never client ids). */
 async function listCompanyConversations(tab: CompanyTab, viewerId: string): Promise<any[]> {
+  if (tab === "support") {
+    // The Support Inbox is a VIEW over the same rows, never a new model: customer
+    // support and seller support are fetched by the existing queries and merged
+    // newest-first, each tagged with its audience so the UI can label it.
+    const [customerRows, sellerRows] = await Promise.all([
+      listCompanyConversations("customer", viewerId),
+      listCompanyConversations("seller", viewerId),
+    ]);
+    const tagged = [
+      ...customerRows.map((r: any) => ({ ...r, support_audience: "customer" })),
+      ...sellerRows.map((r: any) => ({ ...r, support_audience: "seller" })),
+    ];
+    return tagged
+      .sort((a: any, b: any) => new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime())
+      .slice(0, 200);
+  }
+
   if (tab === "customer") {
     // Customer→company, plus the legacy reserved-shop support rows. The slug
     // predicate is what keeps private customer↔seller threads out.
@@ -230,7 +253,9 @@ async function listCompanyConversations(tab: CompanyTab, viewerId: string): Prom
 }
 
 /** Unread MESSAGE counts for the three VelCenter chat tabs. */
-async function companyUnreadCounts(viewerId: string): Promise<{ customers: number; sellers: number; internal: number }> {
+async function companyUnreadCounts(
+  viewerId: string,
+): Promise<{ customers: number; sellers: number; internal: number; support: number }> {
   const res = await query(
     `SELECT
        (SELECT COUNT(*)::int FROM chat_messages m
@@ -249,10 +274,15 @@ async function companyUnreadCounts(viewerId: string): Promise<{ customers: numbe
     [viewerId, SUPPORT_SHOP_SLUG],
   );
   const row = res.rows[0] ?? {};
+  const customers = Number(row.customers ?? 0);
+  const sellers = Number(row.sellers ?? 0);
   return {
-    customers: Number(row.customers ?? 0),
-    sellers: Number(row.sellers ?? 0),
+    customers,
+    sellers,
     internal: Number(row.internal ?? 0),
+    // The Support Inbox is the two support audiences combined, so its badge is
+    // their sum — never a separate counter that could drift.
+    support: customers + sellers,
   };
 }
 
@@ -311,8 +341,8 @@ export function setupCenterChatRoutes(app: Express): void {
     const member = await requireCenterMember(req, res);
     if (!member) return;
     const tab = req.query.type;
-    if (tab !== "customer" && tab !== "seller" && tab !== "internal") {
-      fail(res, 400, "VALIDATION_ERROR", "type must be customer, seller or internal");
+    if (tab !== "customer" && tab !== "seller" && tab !== "internal" && tab !== "support") {
+      fail(res, 400, "VALIDATION_ERROR", "type must be customer, seller, support or internal");
       return;
     }
     try {
@@ -322,9 +352,9 @@ export function setupCenterChatRoutes(app: Express): void {
       const items = rows.map((row: any) => ({
         ...mapCompanyConversation(row),
         participantOnline:
-          tab === "customer"
+          tab === "customer" || (tab === "support" && row.support_audience === "customer")
             ? isUserOnline(row.customer_id)
-            : tab === "seller"
+            : tab === "seller" || (tab === "support" && row.support_audience === "seller")
               ? isUserOnline(row.seller_user_id)
               : null,
         participantLastSeenAt:

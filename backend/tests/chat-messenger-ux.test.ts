@@ -504,6 +504,45 @@ describeDb("daily support acknowledgment (requires TEST_DATABASE_URL)", () => {
       customerSocket.ws.close();
     }
   });
+  testFn("Support Inbox merges customer + seller support and excludes commerce", async () => {
+    const staffId = await makeUser("staff", "inbox-staff");
+    const customerId = await makeUser("customer", "inbox-customer");
+    const sellerUserId = await makeUser("seller", "inbox-seller");
+    const { query } = await import("../db/index.js");
+    const seller = await query(`INSERT INTO sellers (user_id, status) VALUES ($1, 'approved') RETURNING id`, [
+      sellerUserId,
+    ]);
+    const shop = await query(`INSERT INTO shops (seller_id, name, slug) VALUES ($1, $2, $3) RETURNING id`, [
+      seller.rows[0].id,
+      "Inbox shop",
+      `inbox-${crypto.randomUUID().slice(0, 6)}`,
+    ]);
+
+    const customerConv = await openSupport(customerId);
+    const sellerConvRes = await call("POST", "/api/seller/company/conversation", sellerUserId, {});
+    expect(sellerConvRes.status).toBe(200);
+    const sellerConv = sellerConvRes.data.data.id as string;
+
+    // A private customer↔seller thread must NEVER appear in the Support Inbox.
+    const commerceRes = await call("POST", "/api/customer/conversations", customerId, {
+      shopId: shop.rows[0].id,
+    });
+    expect(commerceRes.status).toBe(200);
+    const commerceConv = commerceRes.data.data.id as string;
+
+    const list = await call("GET", "/api/center/chat/conversations?type=support", staffId);
+    expect(list.status).toBe(200);
+    const items = list.data.data.items as any[];
+    expect(items.find((c) => c.id === customerConv)?.supportAudience).toBe("customer");
+    expect(items.find((c) => c.id === sellerConv)?.supportAudience).toBe("seller");
+    expect(items.some((c) => c.id === commerceConv)).toBe(false);
+
+    // One badge for the inbox = customer support + seller support, by definition.
+    await sendCustomer(customerId, customerConv, "hello support");
+    const counts = await call("GET", "/api/center/chat/unread", staffId);
+    expect(counts.data.data.support).toBe(counts.data.data.customers + counts.data.data.sellers);
+    expect(counts.data.data.support).toBeGreaterThan(0);
+  });
 });
 
 describeDb("typing indicator over the existing socket (requires TEST_DATABASE_URL)", () => {

@@ -62,12 +62,14 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-type ChatTab = "customer" | "seller" | "internal";
+type ChatTab = "support" | "customer" | "seller" | "internal";
 
 interface CenterConversation {
   id: string;
   type: "CUSTOMER_COMPANY" | "SELLER_COMPANY" | "COMPANY_INTERNAL";
   legacySupport: boolean;
+  /** Which half of the Support Inbox this thread belongs to. */
+  supportAudience?: "customer" | "seller";
   title: string | null;
   status: "OPEN" | "ASSIGNED" | "WAITING" | "CLOSED";
   assignedTo: string | null;
@@ -109,12 +111,13 @@ interface CenterMessage {
 }
 
 interface Counts {
+  support: number;
   customers: number;
   sellers: number;
   internal: number;
 }
 
-const EMPTY_COUNTS: Counts = { customers: 0, sellers: 0, internal: 0 };
+const EMPTY_COUNTS: Counts = { support: 0, customers: 0, sellers: 0, internal: 0 };
 
 const STATUS_META: Record<CenterConversation["status"], { label: string; className: string }> = {
   OPEN: { label: "เปิดใหม่", className: "bg-amber-50 text-amber-700 ring-amber-600/15" },
@@ -123,10 +126,17 @@ const STATUS_META: Record<CenterConversation["status"], { label: string; classNa
   CLOSED: { label: "ปิดแล้ว", className: "bg-emerald-50 text-emerald-700 ring-emerald-600/15" },
 };
 
-const TAB_META: Record<ChatTab, { label: string; icon: typeof Users; countKey: keyof Counts }> = {
-  customer: { label: "ลูกค้า", icon: Users, countKey: "customers" },
-  seller: { label: "ผู้ขาย", icon: Store, countKey: "sellers" },
-  internal: { label: "ภายใน", icon: MessageCircle, countKey: "internal" },
+const TAB_META: Record<
+  ChatTab,
+  { label: string; short: string; icon: typeof Users; countKey: keyof Counts }
+> = {
+  // The Support Inbox is the company's primary inbox: customer support and
+  // seller support in ONE list, each row labelled with its audience. The two
+  // per-audience tabs stay available for a narrower view.
+  support: { label: "Support Inbox", short: "ซัพพอร์ต", icon: Headphones, countKey: "support" },
+  customer: { label: "ลูกค้า", short: "ลูกค้า", icon: Users, countKey: "customers" },
+  seller: { label: "ผู้ขาย", short: "ผู้ขาย", icon: Store, countKey: "sellers" },
+  internal: { label: "ภายใน", icon: MessageCircle, short: "ภายใน", countKey: "internal" },
 };
 
 function conversationTitle(c: CenterConversation): string {
@@ -155,7 +165,7 @@ export default function ChatManagement() {
   const updateAction = useAction(api.center.updateChatConversation);
   const createRoomAction = useAction(api.center.createInternalConversation);
 
-  const [tab, setTab] = useState<ChatTab>("customer");
+  const [tab, setTab] = useState<ChatTab>("support");
   const [items, setItems] = useState<CenterConversation[] | null>(null);
   const [counts, setCounts] = useState<Counts>(EMPTY_COUNTS);
   const [staff, setStaff] = useState<Array<{ id: string; name: string | null; role: string }>>([]);
@@ -205,9 +215,14 @@ export default function ChatManagement() {
   const loadCounts = useCallback(async () => {
     try {
       const res = await unreadAction();
+      const customers = Number(res?.customers ?? 0);
+      const sellers = Number(res?.sellers ?? 0);
       setCounts({
-        customers: Number(res?.customers ?? 0),
-        sellers: Number(res?.sellers ?? 0),
+        // Older payloads have no `support`; the sum is the same number by
+        // definition, so this never invents a count.
+        support: Number(res?.support ?? customers + sellers),
+        customers,
+        sellers,
         internal: Number(res?.internal ?? 0),
       });
     } catch (err) {
@@ -612,8 +627,9 @@ export default function ChatManagement() {
                 tab === key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
               }`}
             >
-              <meta.icon className="size-4" />
-              {meta.label}
+              <meta.icon className="size-4 shrink-0" />
+              <span className="hidden sm:inline">{meta.label}</span>
+              <span className="sm:hidden">{meta.short}</span>
               {unread > 0 && (
                 <span
                   className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
@@ -633,11 +649,13 @@ export default function ChatManagement() {
           <div className="border-b border-slate-100 px-4 py-3">
             <h3 className="text-base font-bold text-slate-900">{tabMeta.label}</h3>
             <p className="mt-0.5 text-xs text-slate-400">
-              {tab === "customer"
-                ? "บทสนทนาของลูกค้ากับ Velnox — ไม่ใช่แชทส่วนตัวกับผู้ขาย"
-                : tab === "seller"
-                  ? "ผู้ขายติดต่อบริษัทโดยตรง"
-                  : "ห้องแชทที่เห็นเฉพาะทีมงานบริษัท"}
+              {tab === "support"
+                ? "Support Inbox — งานซัพพอร์ตของลูกค้าและผู้ขาย รวมในที่เดียว (ไม่ปนกับแชททั่วไป)"
+                : tab === "customer"
+                  ? "บทสนทนาของลูกค้ากับ Velnox — ไม่ใช่แชทส่วนตัวกับผู้ขาย"
+                  : tab === "seller"
+                    ? "ผู้ขายติดต่อบริษัทโดยตรง"
+                    : "ห้องแชทที่เห็นเฉพาะทีมงานบริษัท"}
             </p>
           </div>
 
@@ -729,7 +747,9 @@ export default function ChatManagement() {
               <p className="mt-3 text-sm font-medium text-slate-600">
                 {search.trim() || unreadOnly
                   ? "ไม่พบการสนทนาที่ตรงกับเงื่อนไข"
-                  : tab === "customer"
+                  : tab === "support"
+                    ? "ยังไม่มีบทสนทนาซัพพอร์ต"
+                    : tab === "customer"
                     ? "ยังไม่มีลูกค้าติดต่อบริษัท"
                     : tab === "seller"
                       ? "ยังไม่มีผู้ขายติดต่อบริษัท"
@@ -799,6 +819,17 @@ export default function ChatManagement() {
                         {c.lastMessage ?? "—"}
                       </span>
                       <span className="mt-1 flex items-center gap-1.5">
+                        {tab === "support" && (
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                              c.supportAudience === "seller"
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-sky-50 text-sky-700"
+                            }`}
+                          >
+                            {c.supportAudience === "seller" ? "ผู้ขาย" : "ลูกค้า"}
+                          </span>
+                        )}
                         <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ring-1 ring-inset ${status.className}`}>
                           {status.label}
                         </span>

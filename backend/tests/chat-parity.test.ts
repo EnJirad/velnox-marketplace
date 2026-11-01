@@ -94,3 +94,22 @@ describe("Support stays a separate inbox", () => {
     expect(src).toContain('if (c.type === "SELLER_COMPANY") return false;');
   });
 });
+
+describe("VelCenter has a real Support Inbox", () => {
+  test("the center exposes a combined support tab with its own label", () => {
+    const ui = read(CENTER_UI);
+    expect(ui).toContain('support: { label: "Support Inbox"');
+    expect(ui).toContain('const [tab, setTab] = useState<ChatTab>("support");');
+    // Support rows are labelled by audience, so the two halves stay visible.
+    expect(ui).toContain('tab === "support" && (');
+  });
+
+  test("the API accepts the support tab and merges the two audiences", () => {
+    const api = read(CENTER_CHAT_ROUTE);
+    expect(api).toContain('tab !== "support"');
+    expect(api).toContain('listCompanyConversations("customer", viewerId)');
+    expect(api).toContain('listCompanyConversations("seller", viewerId)');
+    // One badge, derived from the two counts — never a separate counter.
+    expect(api).toContain("support: customers + sellers");
+  });
+});
