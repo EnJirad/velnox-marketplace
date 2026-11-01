@@ -14,7 +14,7 @@ Brand palette is **not** copied: VelShop keeps Velnox mint/green as its accent.
 | Section heading | 18 px bold with a small brand dot, plus 12 px muted subtitle | mixed sizes | adopt 18/12 pattern |
 | LIVE row | 1.1-card-wide 4:5 tiles, red LIVE pill, eye-count pill | absent | needs real live data — skip unless source exists |
 | Product grid | 2 columns, gap 12 px, image 1:1, price bold, seller/caption 11 px | exists | tighten to 2-col with 12 px gap and 1:1 images |
-| Bottom nav | Fixed, 4 items (หน้าแรก · คำสั่งซื้อ · การแจ้งเตือน · โปรไฟล์), 24 px icon + 11 px label, active = brand colour | none (footer was removed) | **add** fixed bottom tab bar, app-like |
+| Bottom nav | Fixed, 4 items (หน้าแรก · คำสั่งซื้อ · การแจ้งเตือน · โปรไฟล์), 24 px icon + 11 px label, active = brand colour | shared `MobileTabBar` already mounted, but **5** items (home · products · cart · orders · profile) | **done (§141)** — reduced to the 4 reference tabs |
 | Footer | none | removed | keep removed |
 
 ## 2. Design tokens to reuse (no new system)
@@ -25,8 +25,8 @@ type: 18/600 section, 14/600 row, 12/400 muted, 11/500 label · spacing 4/8/12/1
 
 ## 3. Order of work (phased, each independently verifiable)
 
-1. **Bottom tab bar** (new shared component, mounted once in the velShop layout) — the single biggest
-   "app not website" signal in the reference.
+1. **Bottom tab bar** — **done (§141)**: reused the existing shared `MobileTabBar`, item set reduced from 5
+to the reference 4 (home · orders · notifications · profile). No new component was needed.
 2. **Header brand bar**: pill search + cart badge + chat icon.
 3. Category rail as icon circles.
 4. Product grid tightening (2-col, 1:1, 12 px gap).
@@ -40,5 +40,6 @@ routes/APIs. i18n keys go straight into the base `th/en/my` locale objects. No f
 
 ## 5. Status
 
-Analysis: **done** (from real screenshots). Implementation: **not started** — the bottom tab bar is step 1 and is
-the only change that should land in the next commit, followed by the header, each with a local browser check.
+Analysis: **done** (from real screenshots). Implementation: **step 1 landed** (§141 — bottom nav is the
+4-tab reference set); steps 2–6 remain (header brand bar, category rail, grid, profile, other screens).
+Visual verification of step 1 is **NOT VERIFIED** — the harness screenshot surface is still blocked (§137).
