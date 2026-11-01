@@ -7,6 +7,7 @@ import {
 } from "@velnox/shared/lib/app-shell";
 import { siteBasename } from "@velnox/shared/lib/sites";
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
+import { LanguageProvider } from "@velnox/shared/lib/i18n";
 import { RealtimeProvider } from "@velnox/shared/components/RealtimeProvider";
 import { useSellerApplication } from "@velnox/shared/hooks/use-seller-application";
 import { shouldShowSellerTab } from "@velnox/shared/lib/seller-access";
@@ -64,6 +65,7 @@ const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
 
 createRoot(document.getElementById("root")!).render(
   <RootErrorBoundary>
+    <LanguageProvider>
     <IdentityMerge />
     <BrowserRouter basename={siteBasename("velseller")}>
       <RouteSyncer />
@@ -149,5 +151,7 @@ createRoot(document.getElementById("root")!).render(
       </div>
     </BrowserRouter>
     <Toaster />
+
+    </LanguageProvider>
   </RootErrorBoundary>,
 );

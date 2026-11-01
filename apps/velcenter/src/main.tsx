@@ -1,6 +1,7 @@
 import { Toaster } from "@velnox/shared/components/ui/sonner";
 import { OrderShipDialogHost } from "@/components/OrderShipDialog";
 import { RequireRole } from "@velnox/shared/components/RequireRole";
+import { LanguageProvider } from "@velnox/shared/lib/i18n";
 import { RealtimeProvider } from "@velnox/shared/components/RealtimeProvider";
 import {
   RootErrorBoundary,
@@ -23,6 +24,7 @@ const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
 
 createRoot(document.getElementById("root")!).render(
   <RootErrorBoundary>
+    <LanguageProvider>
     <IdentityMerge />
     <BrowserRouter basename={siteBasename("velcenter")}>
       <RouteSyncer />
@@ -48,5 +50,7 @@ createRoot(document.getElementById("root")!).render(
         number, and the orders table cannot own the dialog (see the component). */}
     <OrderShipDialogHost />
     <Toaster />
+
+    </LanguageProvider>
   </RootErrorBoundary>,
 );
