@@ -846,3 +846,12 @@ Two defects were fixed on the way: rail switch dead-ended on 409 (`f4e8bb1`) and
 payment row active forever (`3e2afff`). Next: P1 payment UX (inline PromptPay QR + countdown).
 
 ---
+
+## §106. Payment backlog handed to review (2026-11-02)
+
+**Living document:** [`.ai/tasks/active/payment-roadmap-handoff.md`](./tasks/active/payment-roadmap-handoff.md) —
+environment snapshot, every verified test number, the two payment defects and their commits, the full
+sandbox E2E evidence (order `88e51b37…`, PI `pi_3UWrqaKp…`, 4 processed events), the P1–P5 backlog with file
+targets/acceptance/tests, and the rules the next agent must keep. No secrets are included.
+
+---
