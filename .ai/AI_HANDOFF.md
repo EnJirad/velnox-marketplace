@@ -813,12 +813,9 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-105-promptpay-e2e.md`](./hist
 
 ---
 
-## §106. Payment backlog handed to review (2026-11-02)
+## §106. Payment backlog (2026-11-02) — pointer only
 
-**Living document:** [`.ai/tasks/active/payment-roadmap-handoff.md`](./tasks/active/payment-roadmap-handoff.md) —
-environment snapshot, every verified test number, the two payment defects and their commits, the full
-sandbox E2E evidence (order `88e51b37…`, PI `pi_3UWrqaKp…`, 4 processed events), the P1–P5 backlog with file
-targets/acceptance/tests, and the rules the next agent must keep. No secrets are included.
+[`.ai/tasks/active/payment-roadmap-handoff.md`](./tasks/active/payment-roadmap-handoff.md): env snapshot, verified test numbers, P1–P5 backlog and the rules for the next agent. No secrets.
 
 ---
 
