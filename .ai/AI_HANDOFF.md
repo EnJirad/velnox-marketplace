@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -765,52 +765,15 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-97-chat-image-ui-velshop.md`]
 
 ---
 
-## §98. Chat images in VelSeller + VelCenter (2026-10-31) — PARTIAL
+## §98. Chat images in VelSeller + VelCenter — **ARCHIVED** (moved 2026-11-02)
 
-**Report:** [`.ai/history/2026-10-31-chat-image-ui-seller-center.md`](./history/2026-10-31-chat-image-ui-seller-center.md).
-
-VelSeller gained the same composer flow as VelShop (upload before send, progress, remove, retry,
-image-only); VelCenter now **renders** image messages in the bubble with the shared viewer. All three
-surfaces use one upload path and one viewer — no duplicate storage or upload system.
-
-Still missing from the reference: VelCenter's own composer, conversation search, All/Unread/Support
-filters, and real presence (no presence event exists — must not be faked). Browser E2E remains blocked on
-credentials.
-
-Verified: typecheck 4/4, build 4/4, i18n 1268, backend suite 1113 pass / 8 Termux-only fails, diff clean.
+Full text: [`archive/AI_Handoff-2026-11-02-section-98-chat-images-seller-center.md`](./history/archive/AI_Handoff-2026-11-02-section-98-chat-images-seller-center.md).
 
 ---
 
-**Note on this file's size:** the ~55 KB edit-tool ceiling is real. §69 was archived on 2026-10-26;
-§76/§79 and §80/§81 on 2026-10-27; the 2026-10-04 payment-integrity narrative on 2026-10-27 with
-§83; §82 on 2026-10-28 with §84; §78 + §83 on 2026-10-30 with §85; §84 + §85 on 2026-10-30 with §87; and
-§86 + §87 on 2026-10-31 with §89; §88 on 2026-10-31 with §91; §89 on 2026-10-31 with §92; §90 on 2026-10-31 with §93; §91 on 2026-10-31 with §94; §92 on 2026-10-31 with §95; §93 on 2026-11-01 with §98; §94 on 2026-11-01 with §99; §95 on 2026-11-02 with §100; §96 + §97 on 2026-11-02 with §101
-(all verbatim + index row). Before appending again, archive the next-longest closed block the same way.
-Archiving is not deletion: the text is preserved verbatim.
+## §99. Chat inbox + thread redesign — **ARCHIVED** (moved 2026-11-02)
 
-## §99. Chat inbox + thread redesign, real presence (2026-11-01) — PARTIAL
-
-**SHA:** `930de65` → this commit. **Report:**
-[`.ai/history/2026-11-01-chat-inbox-redesign.md`](./history/2026-11-01-chat-inbox-redesign.md).
-
-Messages-style inbox in all three apps — search + All/Unread/Support over server data, avatar/preview/time/
-unread rows, one shared composer (`+` attach, emoji, Enter/Shift+Enter, disabled in flight, inline retry),
-mint outgoing + gray incoming bubbles, date separators, load-older with scroll anchoring, "new messages"
-chip. Presence is now REAL: `isUserOnline()` / `getUserLastSeenAt()` read the live socket registry and
-`chat:presence` is addressed to the other side of a customer↔seller thread only — no dot for support threads
-or internal rooms, nothing hardcoded. Image-only sends preview as `📷`. Reused the one chat core, the shared
-socket, `chat-message`/`chat-timeline` and the R2 `purpose=chat` upload: no new table, endpoint, socket or
-polling loop.
-
-**Production DB verified read-only (Neon `run_sql`, no writes):** `chat_messages.attachment_key`,
-`chat_messages_body_or_attachment_check` and `uq_chat_messages_client_id` exist — image messaging is
-schema-ready; no migration was run or needed.
-
-**Verified:** typecheck 4/4, backend `tsc`, build 4/4, i18n 1280/1280/1280, chat suites **34 pass / 38 skip /
-0 fail**, full suite **1113 pass / 375 skip / 8 fail** (the 8 are the known Termux DB-guard probes),
-`git diff --check` clean. **NOT RUN:** browser E2E and every DB-gated chat test — this device has no session
-(Google OAuth only) and no disposable database (PG18 `initdb` hangs at its bootstrap probe here); R2 upload is
-untested (no credentials). Presence is in-memory per process and resets on restart — documented, not hidden.
+Full text: [`archive/AI_Handoff-2026-11-02-section-99-chat-inbox-redesign.md`](./history/archive/AI_Handoff-2026-11-02-section-99-chat-inbox-redesign.md).
 
 ---
 
@@ -852,5 +815,28 @@ the disposable-PostgreSQL suite at **1486 pass / 0 fail / 1488 tests**, covering
 message ⇒ any staff read marks the thread read; asserted with two staff).
 
 **NOT RUN:** browser/E2E (no session; PG18 `initdb` hangs here) and UI upload (no R2 credentials).
+
+---
+
+## §102. VelCenter Support Inbox (2026-11-01) — PARTIAL
+
+**SHA:** `76133f1` → `e5971cb`. **Report:**
+[`.ai/history/2026-11-01-support-inbox-e2e-attempt.md`](./history/2026-11-01-support-inbox-e2e-attempt.md).
+
+Support is now an explicit inbox instead of a hidden corner of the customer tab.
+`GET /api/center/chat/conversations?type=support` merges the two existing support queries (customer support
+incl. legacy reserved-shop rows + seller support), tags each row `supportAudience`, sorts newest-first, and
+`/api/center/chat/unread` returns `support = customers + sellers`. The center UI defaults to a
+**Support Inbox** tab with a per-row audience label; the per-audience and internal tabs remain. No new table,
+endpoint family or message model, and the same `requireCenterMember` gate.
+
+**Verified in CI on `e5971cb`:** Production DB Verify **#59 all 4 jobs green** (production schema/identity
+verified; disposable PostgreSQL suite **1489 pass / 0 fail / 1491 tests**), Tests #232 ✅ — including the new
+DB test *"Support Inbox merges customer + seller support and excludes commerce"* (a private customer↔seller
+thread never appears) and the badge identity `support = customers + sellers`. Company read stays Model A.
+
+**NOT RUN:** browser/E2E in all three apps and real UI image upload — no session (Google OAuth only, no test
+accounts), no disposable DB (PG18 `initdb` hangs in this sandbox) and no R2 credentials on the device.
+Local: 8 failures are the documented Termux-only DB-guard probes; typecheck 4/4; builds 4/4.
 
 ---
