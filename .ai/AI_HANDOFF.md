@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§124 — VelCenter drawer fixed** · previous: **§123 — Drawer root cause (reverted fix)** · previous: **§122 — Local auth harness + measurement** · previous: **§121 — Dropdown repro BLOCKED** · previous: **§120 — VelCenter dropdown diagnostic** · previous: **§119 — VelCenter shell copy i18n** · previous: **§118 — VelCenter shell (drawer + collapse)** · previous: **§117 — VelCenter sidebar layout** · previous: **§116 — VelCenter language switcher** · previous: **§115 — LanguageProvider in VelCenter + VelSeller** · previous: **§114 — VelCenter/VelSeller UI audit** · previous: **§113 — Payment E2E with safe skips** · previous: **§112 — Refund/replay tests green** · previous: **§111 — Refund/replay harness BLOCKED** · previous: **§110 — Production marketplace audit** · previous: **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§125 — VelShop footer removed** · previous: **§124 — VelCenter drawer fixed** · previous: **§123 — Drawer root cause (reverted fix)** · previous: **§122 — Local auth harness + measurement** · previous: **§121 — Dropdown repro BLOCKED** · previous: **§120 — VelCenter dropdown diagnostic** · previous: **§119 — VelCenter shell copy i18n** · previous: **§118 — VelCenter shell (drawer + collapse)** · previous: **§117 — VelCenter sidebar layout** · previous: **§116 — VelCenter language switcher** · previous: **§115 — LanguageProvider in VelCenter + VelSeller** · previous: **§114 — VelCenter/VelSeller UI audit** · previous: **§113 — Payment E2E with safe skips** · previous: **§112 — Refund/replay tests green** · previous: **§111 — Refund/replay harness BLOCKED** · previous: **§110 — Production marketplace audit** · previous: **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -903,34 +903,15 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-120-dropdown-diagnostic.md`](
 
 ---
 
-## §121. VelCenter dropdowns — browser phase BLOCKED, no code change (2026-11-02)
+## §121. VelCenter dropdowns — browser phase BLOCKED, no code change (2026-11-02) — **ARCHIVED** (moved 2026-11-02)
 
-**SHA:** `70ac928` → this docs commit. Report:
-[`.ai/history/2026-11-02-velcenter-dropdown-fix.md`](./history/2026-11-02-velcenter-dropdown-fix.md).
-
-Reproduction was attempted and blocked: the deployed app redirects to `/auth` because it authenticates against
-`velnox-api.onrender.com` (different origin); a page-set cookie cannot satisfy that, and bypassing auth is
-forbidden. Nothing was measured, no root cause claimed, no fix applied. Static evidence stands from the
-diagnostic: `UserMenu` + all menu primitives portal via Radix; only `LanguageSwitcher` is non-portal, which
-does not explain a `(0,0)` symptom. **NOT TESTED:** every interactive/viewport case. Owner must run the
-rect-measurement steps in the report on a device. **Follow-up:** installing the API session cookie in the
-browser was attempted on both origins and is blocked by browser security (cross-origin cookie; the API origin's
-`script-src 'self'` blocks `browser_eval`), so the repro remains owner-only.
+Full text: [`archive/AI_Handoff-2026-11-02-section-121-dropdown-blocked.md`](./history/archive/AI_Handoff-2026-11-02-section-121-dropdown-blocked.md).
 
 ---
 
-## §122. VelCenter local authenticated harness + first measurement (2026-11-02)
+## §122. VelCenter local authenticated harness + first measurement (2026-11-02) — **ARCHIVED** (moved 2026-11-02)
 
-**SHA:** `a8a8266` → this commit. Report:
-[`.ai/history/2026-11-02-velcenter-local-auth-harness.md`](./history/2026-11-02-velcenter-local-auth-harness.md).
-
-The login wall was solved without bypassing auth: build with `VITE_API_URL=http://localhost:8899`, a scratch
-proxy (outside the repo) to the real API, `vite preview` on 5173, then set the owner's real session cookie on
-`localhost` (same site) → authenticated Center. At 492 px (mobile layout, `#center-nav` = `position: fixed`):
-LanguageSwitcher trigger `380,14` → panel `256,54 160x123`, `absolute`/`z-50`, no overflow — **it is anchored
-correctly**, so the "top-left" symptom is not this component. Other menus and 360/390/430/768+ **NOT TESTED**
-(WebView fixed at 492 px; DevTools MCP unavailable). No code changed. Background jobs 8/9 are the local harness; a continuation run could not finish — the preview answered with a
-body-less document and the remaining menus stayed untested, so still no root cause and no code change.
+Full text: [`archive/AI_Handoff-2026-11-02-section-122-harness.md`](./history/archive/AI_Handoff-2026-11-02-section-122-harness.md).
 
 ---
 
@@ -958,5 +939,17 @@ normal flow at the top-left (the owner's screenshot). The list now sits in a pla
 Measured at 492 px with the real API: closed → `display:none`; opened → overlay + all sections; selecting a
 section returns `?tab=…` and closes it; no horizontal overflow. velcenter typecheck + build pass. **NOT TESTED:**
 other viewports/menus and the 4-app i18n sweep.
+
+---
+
+## §125. VelShop footer removed — app-style (2026-11-02)
+
+**SHA:** `b32dae7` → this commit. Report: [`.ai/history/2026-11-02-velshop-app-shell-no-footer.md`](./history/2026-11-02-velshop-app-shell-no-footer.md).
+
+Owner wants VelShop to behave like an application: no footer, with เกี่ยวกับฉัน / เงื่อนไข / ติดต่อ / ออกจากระบบ
+living in the profile screen (Thaimart pattern, Velnox theme). Step 1 done: `ShopFooter` renders `null`
+centrally, so all ~20 pages lost the marketing footer without touching them. velShop typecheck + build pass.
+**Next:** restructure `ShopProfile.tsx` into the card sections + logout button; support channels must come from
+the owner (no invented LINE/email/phone).
 
 ---
