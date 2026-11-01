@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -777,25 +777,9 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-99-chat-inbox-redesign.md`](.
 
 ---
 
-## §100. Chat parity: VelCenter images, bell-free chat, real unread (2026-11-02) — PARTIAL
+## §100. Chat parity: VelCenter images, bell-free chat, real unread (2026-11-02) — **ARCHIVED** (moved 2026-11-02)
 
-**SHA:** `e58cd8b` → this commit. **Report:**
-[`.ai/history/2026-11-02-chat-parity-image-visibility-notifications.md`](./history/2026-11-02-chat-parity-image-visibility-notifications.md).
-
-**Root cause of "VelCenter can't see images":** its human bubble never rendered `attachmentUrl` — the image
-renderer existed only in the SYSTEM branch. Proven first: production `/api/health/r2` green, the stored
-object URL returned **HTTP 200 image/jpeg**, and all surfaces share one `mapMessage`/`loadMessages`. Fixed by
-rendering the shared `ChatImageMessage` in the human bubble and skipping the empty `<p>` of image-only rows.
-
-**Bell is business-only.** Every chat `notifyUser`/`notifyCompanyStaff` call and both helpers were removed;
-`GET /api/customer/notifications` filters `type <> 'chat'`, so the 8 historical chat rows in production stop
-showing without deleting data. Unread stays per conversation from `read_at`, and the preview now prefers
-`last_unread_body` (image-only → `📷`) through the existing partial index. Support is excluded from
-All/Unread in VelShop + VelSeller; VelCenter keeps its customer/seller/internal tabs.
-
-**Verified:** `chat-parity` 8/8, full suite **1121 pass / 375 skip / 8 fail** (known Termux DB-guard probes;
-two old source-contract tests updated to the no-bell contract), typecheck 4/4 + backend, build 4/4,
-i18n 1280. **NOT RUN:** browser/E2E (no session; PG18 `initdb` hangs here) and DB-gated suites.
+Full text: [`archive/AI_Handoff-2026-11-02-section-100-chat-parity.md`](./history/archive/AI_Handoff-2026-11-02-section-100-chat-parity.md).
 
 ---
 
@@ -838,5 +822,28 @@ thread never appears) and the badge identity `support = customers + sellers`. Co
 **NOT RUN:** browser/E2E in all three apps and real UI image upload — no session (Google OAuth only, no test
 accounts), no disposable DB (PG18 `initdb` hangs in this sandbox) and no R2 credentials on the device.
 Local: 8 failures are the documented Termux-only DB-guard probes; typecheck 4/4; builds 4/4.
+
+---
+
+## §103. Stripe sandbox commerce E2E (2026-11-01) — PARTIAL
+
+**SHA:** `17d02af` (no code change). **Report:**
+[`.ai/history/2026-11-01-stripe-sandbox-e2e.md`](./history/2026-11-01-stripe-sandbox-e2e.md).
+
+Sandbox verified (`acct_1UKCn2Kp4iwMdWLy`, every object `livemode:false`); MCP connected; webhook endpoint
+enabled with signature self-test `verified:true`. Created disposable customer `cus_VXvHJGDsqwtypE`, product
+`prod_VXvH3QgFUvktwy`, price 100.00 THB, and Checkout Session `cs_test_a16Ny…` (open, unpaid).
+
+**BLOCKED for payment completion:** this MCP exposes PaymentIntent READ only (`PostPaymentIntents` →
+"not available"), and hosted Checkout cannot be driven here — the WebView renders "This link is incomplete"
+with no interactive elements and Stripe's CSP blocks `browser_eval`. No PaymentIntent was created or
+confirmed, and nothing was fabricated (`payments/orders/payment_events` rows for the test session: 0/0/0).
+
+**Real pipeline proven from history (read-only):** PromptPay PI `pi_3UWgrNKp4iwMdWLy0QdDHuIa`
+(`succeeded`, 41930 thb) ↔ `payments` row `d4c540d9-…` (`paid`, 419.30 THB) with four processed
+`payment_events` (`payment_intent.created/requires_action/succeeded`, `checkout.session.completed`);
+`payment_events_event_id_key` is UNIQUE ⇒ webhook replay is idempotent. Connect: one account,
+`charges_enabled:false`, not onboarded ⇒ **NOT CONFIGURED**. Refund not attempted (no new payment; would need
+explicit owner approval).
 
 ---
