@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -801,17 +801,9 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-103-stripe-sandbox-e2e.md`](.
 
 ---
 
-## §104. Payment rail switching no longer dead-ends (2026-11-01) — PARTIAL
+## §104. Payment rail switching no longer dead-ends (2026-11-01) — **ARCHIVED** (moved 2026-11-02)
 
-**SHA:** `a373832` → this commit. **Report:**
-[`.ai/history/2026-11-01-payment-rail-switch-recovery.md`](./history/2026-11-01-payment-rail-switch-recovery.md).
-
-A purchase with an open PromptPay session answered CARD with `409 DUPLICATE_PAYMENT_IN_PROGRESS` and no way
-forward. Now the abandoned open session is expired (no money moved), its payment row moves to `cancelled`
-(freeing `idx_payments_one_active_stripe`), and a session for the chosen rail is minted; if Stripe refuses
-the expiry the honest 409 remains. Same-rail reuse, the durable request claim and webhook authority for
-`paid` are unchanged. Verified: checkout suites 45 pass/17 skip/0 fail, typecheck 4/4, build 4/4. The
-live rail switch is **NOT VERIFIED end-to-end** (card entry cannot be automated in the WebView).
+Full text: [`archive/AI_Handoff-2026-11-02-section-104-rail-switching.md`](./history/archive/AI_Handoff-2026-11-02-section-104-rail-switching.md).
 
 ---
 
@@ -865,5 +857,20 @@ authority on `paid`), so cleanup cannot downgrade money during a webhook race. T
 `status IN ('pending','requires_action')` (idempotent, no deletes) and the new rail then proceeds.
 `payment-abandonment` 8 pass + checkout/UX suites 58 tests 0 fail; full suite 8 Termux-only fails;
 backend tsc clean, typecheck 4/4, build 4/4.
+
+---
+
+## §109. Vercel deployments are healthy; the "failures" were superseded builds (2026-11-02)
+
+**HEAD:** `0524f46`. **Report:**
+[`.ai/history/2026-11-02-vercel-deployment-diagnosis.md`](./history/2026-11-02-vercel-deployment-diagnosis.md).
+
+Audited the four Vercel projects through the API: latest deployment of `0524f46` is **READY** for velshop
+(`dpl_4Bxe5u2u…`), velseller (`dpl_6nyrhFC4…`), velnox (`dpl_FRmmuSa8…`) and velcenter (`dpl_GjhMtn8Z…`).
+The three that "failed" were `CANCELED` builds of the previous commit `1ccc00c`, cancelled when the newer
+docs commit arrived mid-build; **zero ERROR deployments exist** for any project, so there was no
+type/dependency/config failure. Production domains answer 200 (velnox's real domain is
+`velnox-theta.vercel.app`; deployment URLs 302 to SSO by design). Local install/typecheck/build/tests green.
+No code fix was warranted; `velnox.com` does not resolve and is a separate DNS question.
 
 ---
