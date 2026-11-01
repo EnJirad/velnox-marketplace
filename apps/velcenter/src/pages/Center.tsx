@@ -1177,15 +1177,17 @@ export default function Center() {
             navCollapsed ? "md:grid-cols-[4.5rem_minmax(0,1fr)]" : "md:grid-cols-[15rem_minmax(0,1fr)]"
           }`}
         >
-          <TabsList
+          <div
+            className={
+              navOpen
+                ? "fixed inset-y-0 left-0 z-50 w-72 overflow-y-auto border-r border-slate-200 bg-white p-3 md:static md:z-auto md:w-full md:overflow-visible md:border-0 md:bg-transparent md:p-0"
+                : "hidden md:block"
+            }
+          >
+<TabsList
             id="center-nav"
             aria-label={t("center.nav.sections")}
-            className={`w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto md:sticky md:top-20 md:flex md:h-auto md:w-full md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:bg-transparent md:p-0 md:[&_[role=tab]]:w-full md:[&_[role=tab]]:justify-start md:[&_[role=tab]]:px-3 md:[&_[role=tab]]:py-2 ${
-              navCollapsed ? "md:[&_[role=tab]]:justify-center md:[&_[role=tab]]:px-1" : ""
-            } max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:w-72 max-md:flex-col max-md:items-stretch max-md:overflow-y-auto max-md:rounded-none max-md:border-y-0 max-md:border-l-0 max-md:bg-white max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:transition-transform ${
-              navOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"
-            }`}
-          >
+            className="flex w-full flex-col items-stretch gap-0.5 [&_[role=tab]]:w-full [&_[role=tab]]:justify-start [&_[role=tab]]:px-3 [&_[role=tab]]:py-2">
             <TabsTrigger value="overview" className="gap-1.5 rounded-[10px]">
               <TrendingUp className="size-4" /> {t("center.nav.overview")}
             </TabsTrigger>
@@ -1257,6 +1259,7 @@ export default function Center() {
               </TabsTrigger>
             )}
           </TabsList>
+          </div>
 
           {/* ============ Chat (customers / sellers / internal) ============ */}
           <TabsContent value="chat" className="mt-6">
