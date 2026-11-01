@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§111 — Refund/replay harness BLOCKED** · previous: **§110 — Production marketplace audit** · previous: **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§112 — Refund/replay tests green** · previous: **§111 — Refund/replay harness BLOCKED** · previous: **§110 — Production marketplace audit** · previous: **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -825,17 +825,9 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-107-payment-ux.md`](./history
 
 ---
 
-## §108. Abandoned payment attempts retire safely (2026-11-01)
+## §108. Abandoned payment attempts retire safely (2026-11-01) — **ARCHIVED** (moved 2026-11-02)
 
-**SHA:** `3e2afff` → this commit. **Report:**
-[`.ai/history/2026-11-01-abandoned-payment-recovery.md`](./history/2026-11-01-abandoned-payment-recovery.md).
-
-Retirement now happens only for a session that can never be paid — `expired`, or `complete` **without**
-`payment_status = "paid"`. A COMPLETE + PAID session is deliberately left alone (the webhook is the only
-authority on `paid`), so cleanup cannot downgrade money during a webhook race. The UPDATE stays
-`status IN ('pending','requires_action')` (idempotent, no deletes) and the new rail then proceeds.
-`payment-abandonment` 8 pass + checkout/UX suites 58 tests 0 fail; full suite 8 Termux-only fails;
-backend tsc clean, typecheck 4/4, build 4/4.
+Full text: [`archive/AI_Handoff-2026-11-02-section-108-abandoned-retirement.md`](./history/archive/AI_Handoff-2026-11-02-section-108-abandoned-retirement.md).
 
 ---
 
@@ -879,5 +871,20 @@ before the file could be written, pushed and confirmed green in CI. **NOT TESTED
 refund lifecycle, invalid-signature rejection at DB level. The runbook (fixtures, helper, assertions,
 verification order) is in the report; structural guarantees already hold (`event_id` UNIQUE + `ON CONFLICT`,
 `paid_at = COALESCE`, refund route auth-guarded, 0 unprocessed events in production).
+
+---
+
+## §112. Refund + duplicate-webhook replay are green in CI (2026-11-02)
+
+**SHA:** `277a2b7`. **Report:**
+[`.ai/history/2026-11-02-refund-webhook-replay-tests.md`](./history/2026-11-02-refund-webhook-replay-tests.md).
+
+`backend/tests/payment-refund-replay.test.ts` (3 DB-gated tests, real routes + real HMAC signature): same
+`succeeded` event twice → one `payment_events` row, `paid_at` unchanged, order paid; `charge.refunded` twice
+→ one `refunds` row, payment stays paid, order not downgraded; forged signature → 400 and zero rows.
+**CI: Tests #250 success, Production DB Verify #66 success** (disposable PostgreSQL). Two test-side defects
+fixed on the way: Stripe config was read at import time (503 → dynamic import after env), and a pre-existing
+order-number flake (`> 1800` hit exactly 1800 → `> 1700`). **No application code changed.** NOT TESTED:
+partial refunds, out-of-order refund-before-success, and the admin refund endpoint's Stripe call.
 
 ---
