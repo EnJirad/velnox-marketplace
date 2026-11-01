@@ -1186,9 +1186,30 @@ const myChatUi = {
   emoji: "အီမိုဂျီ",
 };
 
+/** Payment-UX copy (2026-11-02): countdown/expiry + typed payment errors. */
+const thPaymentUx = {
+  paymentNoLongerAvailable:
+    "คำสั่งซื้อนี้อยู่นอกช่วงเวลาชำระเงินแล้ว — กรุณาสร้างคำสั่งซื้อใหม่หรือติดต่อร้านค้า",
+  paymentAlreadyInProgress:
+    "มีรายการชำระเงินที่เปิดอยู่ ระบบกำลังพาคุณกลับไปยังหน้าชำระเงินเดิม",
+};
+const enPaymentUx = {
+  paymentNoLongerAvailable:
+    "This order is no longer within its payment window — start a new order or contact the shop",
+  paymentAlreadyInProgress:
+    "A payment is already in progress — taking you back to that payment page",
+};
+const myPaymentUx = {
+  paymentNoLongerAvailable:
+    "ဤအမှာစာသည် ငွေပေးချေရန် အချိန်ကုန်ဆုံးသွားပါပြီ — အမှာစာအသစ် ပြုလုပ်ပါ",
+  paymentAlreadyInProgress:
+    "ငွေပေးချေမှု တစ်ခု လုပ်ဆောင်နေပြီး ဖြစ်သည် — ထိုစာမျက်နှာသို့ ပြန်ပို့နေသည်",
+};
+
 export const translations: Record<Language, Dict> = {
   th: {
     ...th,
+    checkout: { ...th.checkout, ...thPaymentUx },
     chat: { ...th.chat, ...thChatUi },
     verification: { ...th.verification, ...thVerificationCopy },
     categories: { ...th.categories, ...thCategoriesCopy },
@@ -1200,6 +1221,7 @@ export const translations: Record<Language, Dict> = {
   } as Dict,
   en: {
     ...en,
+    checkout: { ...en.checkout, ...enPaymentUx },
     chat: { ...en.chat, ...enChatUi },
     verification: { ...en.verification, ...enVerificationCopy },
     categories: { ...en.categories, ...enCategoriesCopy },
@@ -1223,6 +1245,7 @@ export const translations: Record<Language, Dict> = {
     mapPicker: { ...myBase.mapPicker, ...myShopPatch.mapPicker },
     shopDetail: { ...myBase.shopDetail, ...myShopPatch.shopDetail },
     productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
+    checkout: { ...myBase.checkout, ...myPaymentUx },
     chat: { ...myChatPatch.chat, ...myChatUi },
     sellerChat: myChatPatch.sellerChat,
     notifications: { ...myBase.notifications, ...myNotifyPatch },

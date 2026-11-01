@@ -368,7 +368,8 @@ describe("resume payment — one shared control on every surface", () => {
 
   test("the control asks for the order and method, and never sends a user id (scenario 10)", () => {
     const src = read(RESUME_BUTTON);
-    expect(src).toContain("orderId,\n        method: chosen,");
+    // Whitespace-tolerant: the body still sends exactly the order + the rail.
+    expect(/orderId,\s+method: chosen,/.test(src)).toBe(true);
     // Ownership is proven by the server from the session cookie — no ownership
     // hint travels from the browser.
     expect(src).not.toContain("userId");

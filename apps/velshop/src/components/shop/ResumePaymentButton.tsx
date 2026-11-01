@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@velnox/shared/components/ui/dialog";
-import { api, useAction } from "@velnox/shared/lib/api-routes";
+import { ApiError, api, useAction } from "@velnox/shared/lib/api-routes";
 import { useLanguage } from "@/lib/i18n";
 import { Check, CreditCard, Loader2, QrCode, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -131,16 +131,32 @@ export function ResumePaymentButton({
     setPaying(true);
     setFailed(false);
     try {
-      const res = (await createStripeCheckout({
-        orderId,
-        method: chosen,
-        // A fresh idempotency key per attempt: the backend scope 'payment' row
-        // replays a completed attempt and, for an unfinished one, answers 409
-        // instead of opening a competing session. It is never a client-side
-        // substitute for the server's own order-level uniqueness rule.
-        requestKey: crypto.randomUUID(),
-        returnPath: returnPath ?? `/orders/${orderId}`,
-      })) as unknown as { url?: string | null };
+      let res: { url?: string | null } | null = null;
+      try {
+        res = (await createStripeCheckout({
+          orderId,
+          method: chosen,
+          // A fresh idempotency key per attempt: the backend replays a completed
+          // attempt and, while one is unfinished, answers 409 instead of opening
+          // a competing session. It never replaces server-side uniqueness.
+          requestKey: crypto.randomUUID(),
+          returnPath: returnPath ?? `/orders/${orderId}`,
+        })) as unknown as { url?: string | null };
+      } catch (firstErr) {
+        // A live attempt already exists. Ask once more for the SAME rail: the
+        // backend answers with that open session (`reused`) or, after retiring a
+        // stale row, mints exactly one new session. Never a silent second charge.
+        if (firstErr instanceof ApiError && firstErr.code === "DUPLICATE_PAYMENT_IN_PROGRESS") {
+          res = (await createStripeCheckout({
+            orderId,
+            method: chosen,
+            requestKey: crypto.randomUUID(),
+            returnPath: returnPath ?? `/orders/${orderId}`,
+          })) as unknown as { url?: string | null };
+        } else {
+          throw firstErr;
+        }
+      }
       const url = res?.url;
       if (typeof url !== "string" || url.trim() === "") {
         // Never navigate to a missing URL — surface a retryable error instead.
@@ -152,7 +168,16 @@ export function ResumePaymentButton({
       setFailed(true);
       // Release the loading state so the customer can try again.
       setPaying(false);
-      toast.error(err instanceof Error ? err.message : t("checkout.payStartFailed"));
+      // The backend's machine code decides the copy; raw server text is never
+      // shown as the only explanation.
+      const code = err instanceof ApiError ? err.code : null;
+      if (code === "INVALID_STATUS") {
+        toast.error(t("checkout.paymentNoLongerAvailable"));
+      } else if (code === "DUPLICATE_PAYMENT_IN_PROGRESS") {
+        toast.error(t("checkout.paymentAlreadyInProgress"));
+      } else {
+        toast.error(err instanceof Error ? err.message : t("checkout.payStartFailed"));
+      }
     }
   };
 
