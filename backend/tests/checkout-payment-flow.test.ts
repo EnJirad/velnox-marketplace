@@ -483,9 +483,11 @@ describe("backend contract — the session endpoint and the webhook", () => {
     // the customer can pay with the rail they just picked.
     expect(stripeSrc).toContain("stripe.checkout.sessions.expire(activeSessionId)");
     expect(stripeSrc).toContain("SET status = 'cancelled'");
-    // A session that already expired must also retire its dead row, or every
-    // later rail is blocked forever by the same 409.
-    expect(stripeSrc).toContain('existing.status !== "open"');
+    // A session that can never be paid (expired, or completed without a payment)
+    // must retire its dead row, or every later rail is blocked forever by 409…
+    expect(stripeSrc).toContain('existing.status === "expired"');
+    // …while a COMPLETE + PAID session is never retired: the webhook owns `paid`.
+    expect(stripeSrc).toContain('existing.payment_status !== "paid"');
   });
 
   test("the storefront can read the order's rail from the list endpoint", () => {

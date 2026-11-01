@@ -911,11 +911,20 @@ async function openCheckoutGroupSession(args: {
             fail(res, 409, "DUPLICATE_PAYMENT_IN_PROGRESS", "Your payment is being prepared. Please try again.");
             return;
           }
-        } else if (existing.status !== "open") {
-          // A session that already expired/cancelled can never be paid, yet its
-          // payment row still held the one-active-attempt slot and blocked every
-          // new rail with the same 409. Retire the dead row and continue: the
-          // customer is not stuck on an attempt that no longer exists.
+        } else if (
+          existing.status === "expired" ||
+          (existing.status === "complete" && existing.payment_status !== "paid")
+        ) {
+          // A session that can no longer be paid (expired, or completed WITHOUT a
+          // payment — async rails) kept its payment row in
+          // pending/requires_action, holding the one-active-attempt slot and
+          // answering every later attempt with the same 409.
+          //
+          // The guard matters: `status === "complete"` with
+          // `payment_status === "paid"` is a REAL payment whose webhook may still
+          // be in flight. Retiring that would downgrade a confirmed payment, so it
+          // deliberately falls through to the conflict instead — the webhook stays
+          // the only authority on `paid`.
           await query(
             `UPDATE payments SET status = 'cancelled', updated_at = NOW()
               WHERE id = $1 AND status IN ('pending', 'requires_action')`,
