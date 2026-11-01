@@ -871,13 +871,11 @@ No code fix was warranted; `velnox.com` does not resolve and is a separate DNS q
 **SHA:** `5965598`. **Report:**
 [`.ai/history/2026-11-02-production-marketplace-e2e-audit.md`](./history/2026-11-02-production-marketplace-e2e-audit.md).
 
-All four domains answer 200 except `velnox.com` (does not resolve; the corporate project lives on
-`velnox-theta.vercel.app`). Payment invariants hold on live evidence: signature-verified webhook only,
-`payment_events` UNIQUE `event_id` + `ON CONFLICT` (0 unprocessed events), one-active-attempt unique indexes
-per order **and** group, request idempotency, retire guard that cannot touch `complete+paid`, no deletes.
-Live data: `payments paid 2 / cancelled 3`, 0 paid orders without a paid payment, 0 stale active attempts.
-Typecheck 4/4 · builds 4/4 · local suite 8 Termux-only fails · CI disposable PG 1489/0.
-**NOT TESTED:** card success/failure in a browser, refund (`charge.refunded`), Stripe event resend, delayed
-webhook, role UI walkthrough. Next task: refund + duplicate-webhook replay harness in CI.
+Four domains 200 except `velnox.com` (unresolved; project is on `velnox-theta.vercel.app`). Payment invariants
+verified on live evidence: signed webhook only, `event_id` UNIQUE + `ON CONFLICT` (0 unprocessed), one-active
+unique per order **and** group, request idempotency, retire guard that cannot touch `complete+paid`, no
+deletes. Data: `paid 2 / cancelled 3`, 0 paid orders without a paid payment, 0 stale attempts. Typecheck 4/4 ·
+builds 4/4 · 8 Termux-only fails · CI disposable PG 1489/0. **NOT TESTED:** card browser flow, refund,
+webhook resend, delayed webhook, role UI walk. Next: refund + replay harness in CI.
 
 ---
