@@ -83,3 +83,24 @@ interaction, console output, and all eight viewport widths.
 ## 10. Protected scope
 
 No application, backend, schema, auth, payment or VelShop/VelSeller file was touched. Diff = `.ai/` only.
+
+---
+
+## 11. Follow-up attempt: logging in with the API cookie (2026-11-02)
+
+The owner asked me to use the session cookie directly. Three attempts were made, each blocked by a browser
+security boundary — not by VelCenter:
+
+| Attempt | Result |
+|---|---|
+| Set `velnox_session` on `velcenter.vercel.app` (page origin) | Cookie set (`document.cookie` returned true), but reload still redirected to `/auth?returnTo=%2F`: the app authenticates against the **API origin**, so a cookie on the Vercel origin is never sent with its XHR. |
+| Navigate to `https://velnox-api.onrender.com/api/health` and set the cookie **on the API origin** | `browser_eval` refused: `Content-Security-Policy: script-src 'self'` → `EvalError` (unsafe-eval blocked). No other tool in this environment can write a cookie for that origin (Chrome DevTools MCP cannot start on android/arm64). |
+| Third-party cookie path (set on API origin, consumed from velcenter) | Unreachable for the same reason as row 2; and Chrome blocks third-party cookies unless `SameSite=None; Secure`, which cannot be written. |
+
+Conclusion: the cookie is valid for `curl` (server-side header) but **cannot be installed into a browser by this
+agent** without bypassing origin policy. Bypassing it (proxy, token forging, disabling auth) is explicitly
+forbidden by the task and would not be a faithful test of production UI behaviour.
+
+What the owner can do in one minute on the device: sign in to `https://velcenter.vercel.app`, then run the
+rect-measurement snippet in §8 and paste the element that reports `x==0 && y==0`. That single data point decides
+whether the fix is the `LanguageSwitcher` migration or something in the Radix menus.
