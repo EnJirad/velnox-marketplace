@@ -1,6 +1,6 @@
 # Velnox AI Handoff — current state
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§110 — Production marketplace audit** · previous: **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
+**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest pass:** **§111 — Refund/replay harness BLOCKED** · previous: **§110 — Production marketplace audit** · previous: **§109 — Vercel deployment diagnosis** · previous: **§108 — Abandoned payment retirement** · previous: **§107 — Payment UX typed errors + resume** · previous: **§105 — Stripe PromptPay E2E PASS** · previous: **§104 — Payment rail switching recovery** · previous: **§103 — Stripe sandbox E2E (PARTIAL)** · previous: **§102 — VelCenter Support Inbox** · previous: **§101 — CI green + authoritative unread and company read model** · previous: **§100 — Chat parity: VelCenter images, bell-free chat, real unread** · previous: **§99 — Chat inbox + thread redesign with real presence** · previous: **§98 — Chat images in all three apps (VelCenter renders only)** · previous: **§97 — Chat image UI (VelShop only)** · previous: **§96 — Chat images (backend only)** · previous: **§95 — Development memory is now a rule** (§19 history mandate + template; docs only) · previous: **§94 — Commerce Messenger** (durable DB idempotency for every send; shared day separators + sender grouping in all three apps) · previous: **§93 — Checkout → Order → Payment verification** (335 pass / 168 skip / 0 fail locally, 21 files; production Stripe config probed read-only; **PARTIAL** — real Stripe E2E blocked on missing test keys) · previous: **§92 — Chat ownership + real-time proof** (one shared ownership rule for all three apps; system messages always LEFT; real-time path traced and covered by DB+WebSocket tests) · previous: **§91 — Production schema reconciled** (5 §89 chat objects applied to production; `production-db-verify` 10/10; PG18 probe cast fixed in `055c0ee`) · previous: **§89 — Messenger UX** (left/right already existed; ✓/✓✓, realtime read bound, daily Velnox Support acknowledgment, typing indicator). **Main is green again:** the 11 `oauth-route` failures present since §87 were fixed in §90 — the auth module read its Google config at import time, so any module that imported `invalidateCachedProfile` first froze an empty client id. **Production DB Verify remains BLOCKED** (missing `NEON_PRODUCTION_DATABASE_URL`); **browser/E2E NOT RUN**. i18n 1264/1264/1264.
 **Canonical location:** `.ai/AI_HANDOFF.md` — the root `AI_Handoff.md` is a pointer. **Workspace:** `.ai/README.md`
 
 > **Keep this file small.** This environment's file-edit tools stop matching past
@@ -819,18 +819,9 @@ Full text: [`archive/AI_Handoff-2026-11-02-section-105-promptpay-e2e.md`](./hist
 
 ---
 
-## §107. Payment UX: typed errors + resume, countdown reused (2026-11-02)
+## §107. Payment UX: typed errors + resume (2026-11-02) — **ARCHIVED** (moved 2026-11-02)
 
-**Report:** [`.ai/history/2026-11-02-payment-ux-countdown-errors.md`](./history/2026-11-02-payment-ux-countdown-errors.md).
-
-`ResumePaymentButton` now branches on `ApiError.code`: `DUPLICATE_PAYMENT_IN_PROGRESS` resumes the open
-session with one extra same-rail request (never a second charge), `INVALID_STATUS` explains the closed
-payment window; raw server text is no longer the only message. Countdown/expiry were already correct and are
-**reused** (`ShopOrderDetail` ← `paymentExpiresAt` → `reservation.remainingMs`, gated by
-`payability.payable`; `MyOrders` keeps its ticker). Two `checkout.*` keys added for th/en/my (1282 parity).
-New `payment-ux-contract` (8 pass) plus the checkout suites (50 tests, 0 fail); local full suite back to the
-8 Termux-only DB-guard probes; typecheck 4/4, build 4/4. **NOT RUN:** browser countdown/resume — needs a
-human browser.
+Full text: [`archive/AI_Handoff-2026-11-02-section-107-payment-ux.md`](./history/archive/AI_Handoff-2026-11-02-section-107-payment-ux.md).
 
 ---
 
@@ -874,5 +865,19 @@ unique per order **and** group, request idempotency, retire guard that cannot to
 deletes. Data: `paid 2 / cancelled 3`, 0 paid orders without a paid payment, 0 stale attempts. Typecheck 4/4 ·
 builds 4/4 · 8 Termux-only fails · CI disposable PG 1489/0. **NOT TESTED:** card browser flow, refund,
 webhook resend, delayed webhook, role UI walk. Next: refund + replay harness in CI.
+
+---
+
+## §111. Refund + webhook-replay harness — BLOCKED, not implemented (2026-11-02)
+
+**Report:** [`.ai/history/2026-11-02-refund-webhook-replay-blocked.md`](./history/2026-11-02-refund-webhook-replay-blocked.md).
+**No code written, tree clean, nothing pushed for this task.**
+
+Duplicate-delivery and refund tests need a new DB harness (express + `stripeWebhookRawBody` + HMAC signature +
+`orders`/`payments` fixtures); this device cannot run it (no disposable PostgreSQL) and the session ran out
+before the file could be written, pushed and confirmed green in CI. **NOT TESTED:** duplicate webhook,
+refund lifecycle, invalid-signature rejection at DB level. The runbook (fixtures, helper, assertions,
+verification order) is in the report; structural guarantees already hold (`event_id` UNIQUE + `ON CONFLICT`,
+`paid_at = COALESCE`, refund route auth-guarded, 0 unprocessed events in production).
 
 ---
