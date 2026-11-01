@@ -115,11 +115,13 @@ describe("order numbers — digits only", () => {
     const numbers = new Set<string>();
     for (let i = 0; i < 2_000; i += 1) numbers.add(generateOrderNumber());
     // Draws land in a handful of millisecond buckets, and each bucket offers
-    // 10^4 suffixes — so ~1 900 distinct values out of 2 000 draws is exactly
-    // what a random 4-digit suffix produces (expected ≈ 1 900). The bar is
-    // well above anything a sequential or timestamp-only number would reach,
-    // and below the value that would make this test flaky.
-    expect(numbers.size).toBeGreaterThan(1_800);
+    // 10^4 suffixes — so ~1 900 distinct values out of 2 000 draws is what a
+    // random 4-digit suffix produces. The bar sits BELOW that expectation with
+    // a real margin: an observed 1 800 (the birthday-bound tail) must not fail
+    // a generator that is behaving correctly, which is exactly how this test
+    // flaked on CI. It still proves the property: a sequential or
+    // timestamp-only number would be nowhere near 1 700 distinct values.
+    expect(numbers.size).toBeGreaterThan(1_700);
   });
 
   test("the suffix is wide enough that concurrent creation rarely collides", () => {
