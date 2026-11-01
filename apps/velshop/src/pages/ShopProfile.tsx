@@ -23,6 +23,7 @@ import {
   Bell,
   CalendarDays,
   ChevronRight,
+  CircleCheck,
   CircleUserRound,
   Heart,
   LifeBuoy,
@@ -32,9 +33,11 @@ import {
   Package,
   RefreshCw,
   Settings2,
+  Truck,
   ShieldCheck,
   ShoppingBag,
   UserRound,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -352,6 +355,30 @@ export default function ShopProfile() {
                     {renderRow(row)}
                   </div>
                 ))}
+              </div>
+            </section>
+
+            {/* Order status — four shortcuts, no fabricated counts */}
+            <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="grid grid-cols-4 divide-x divide-slate-100">
+                {[
+                  { icon: Wallet, labelKey: "profile.orderTiles.pendingPayment" },
+                  { icon: Package, labelKey: "profile.orderTiles.toBeShipped" },
+                  { icon: Truck, labelKey: "profile.orderTiles.toReceive" },
+                  { icon: CircleCheck, labelKey: "profile.orderTiles.completed" },
+                ].map((tile) => {
+                  const Icon = tile.icon;
+                  return (
+                    <Link
+                      key={tile.labelKey}
+                      to="/orders"
+                      className="flex flex-col items-center gap-1.5 px-1 py-3 text-center transition-colors hover:bg-slate-50 active:bg-slate-100"
+                    >
+                      <Icon className="size-5 text-slate-700" strokeWidth={1.75} />
+                      <span className="text-[11px] leading-tight text-slate-600">{t(tile.labelKey)}</span>
+                    </Link>
+                  );
+                })}
               </div>
             </section>
 

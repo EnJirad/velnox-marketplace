@@ -927,6 +927,7 @@ export const th = {
 
 
   profile: {
+    orderTiles: { pendingPayment: "ที่ต้องชำระ", toBeShipped: "ที่ต้องจัดส่ง", toReceive: "ที่ต้องได้รับ", completed: "สำเร็จ" },
     cookies: "นโยบายคุกกี้",
     cookiesDesc: "ดูว่าเราใช้คุกกี้อย่างไร",
     eyebrow: "velshop · โปรไฟล์ของฉัน",

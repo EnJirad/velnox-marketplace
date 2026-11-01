@@ -838,6 +838,7 @@ export const my = {
 
 
   profile: {
+    orderTiles: { pendingPayment: "ပေးချေရန်", toBeShipped: "ပို့ရန်", toReceive: "လက်ခံရန်", completed: "ပြီးစီး" },
     cookies: "Cookie မူဝါဒ",
     cookiesDesc: "Cookie များ အသုံးပြုပုံကို ကြည့်ပါ",
     eyebrow: "velshop · ကျွန်ုပ်၏ ပရိုဖိုင်",

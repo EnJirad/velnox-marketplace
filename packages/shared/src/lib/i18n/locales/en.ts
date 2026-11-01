@@ -901,6 +901,7 @@ export const en: Dict = {
 
 
   profile: {
+    orderTiles: { pendingPayment: "To pay", toBeShipped: "To ship", toReceive: "To receive", completed: "Completed" },
     cookies: "Cookie policy",
     cookiesDesc: "See how we use cookies",
     eyebrow: "velshop · My profile",
