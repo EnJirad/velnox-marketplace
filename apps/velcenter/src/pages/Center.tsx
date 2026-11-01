@@ -1140,17 +1140,17 @@ export default function Center() {
             )}
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            ศูนย์ควบคุม Velnox
+            {t("center.title")}
           </h1>
           <p className="mt-1.5 text-sm text-slate-500">
-            ภาพรวมทั้งบริษัท ออเดอร์ ระบบอัจฉริยะ และสิทธิ์การเข้าถึงตามยศ
+            {t("center.subtitle")}
           </p>
           {/* Subtle transport state — no badge while live, no blocking error
               while reconnecting (REST still works). */}
           {realtimeState !== "open" && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/15">
               <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-              กำลังเชื่อมต่อเรียลไทม์ใหม่…
+              {t("center.realtime.reconnecting")}
             </p>
           )}
         </div>
@@ -1159,7 +1159,7 @@ export default function Center() {
           <div className="mt-6 flex flex-col items-start gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="flex items-center gap-2 text-sm text-red-700">
               <AlertTriangle className="size-4 shrink-0" />
-              โหลดตัวเลขคิวงานไม่สำเร็จ: {queueError}
+              {t("center.queue.loadFailed")} {queueError}
             </p>
             <Button variant="outline" size="sm" className="shrink-0 rounded-[10px]" onClick={retryQueues}>
               ลองใหม่
@@ -1179,7 +1179,7 @@ export default function Center() {
         >
           <TabsList
             id="center-nav"
-            aria-label="Sections"
+            aria-label={t("center.nav.sections")}
             className={`w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto md:sticky md:top-20 md:flex md:h-auto md:w-full md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:bg-transparent md:p-0 md:[&_[role=tab]]:w-full md:[&_[role=tab]]:justify-start md:[&_[role=tab]]:px-3 md:[&_[role=tab]]:py-2 ${
               navCollapsed ? "md:[&_[role=tab]]:justify-center md:[&_[role=tab]]:px-1" : ""
             } max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:w-72 max-md:flex-col max-md:items-stretch max-md:overflow-y-auto max-md:rounded-none max-md:border-y-0 max-md:border-l-0 max-md:bg-white max-md:p-3 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:transition-transform ${
@@ -1187,13 +1187,13 @@ export default function Center() {
             }`}
           >
             <TabsTrigger value="overview" className="gap-1.5 rounded-[10px]">
-              <TrendingUp className="size-4" /> ภาพรวม
+              <TrendingUp className="size-4" /> {t("center.nav.overview")}
             </TabsTrigger>
             <TabsTrigger value="chat" className="gap-1.5 rounded-[10px]">
-              <MessageCircle className="size-4" /> แชท
+              <MessageCircle className="size-4" /> {t("center.nav.chat")}
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-1.5 rounded-[10px]">
-              <ShoppingBag className="size-4" /> ออเดอร์
+              <ShoppingBag className="size-4" /> {t("center.nav.orders")}
               {/*
                 The badge must not depend on how many rows happen to be loaded:
                 with pagination the first page can hold zero pending orders while
@@ -1207,7 +1207,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="intel" className="gap-1.5 rounded-[10px]">
-              <BrainCircuit className="size-4" /> Intelligence
+              <BrainCircuit className="size-4" /> {t("center.nav.intel")}
               {dueCount > 0 && (
                 <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
                   {dueCount}
@@ -1215,7 +1215,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="products" className="gap-1.5 rounded-[10px]">
-              <Package className="size-4" /> สินค้า
+              <Package className="size-4" /> {t("center.nav.products")}
               {pendingProducts > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
                   {pendingProducts}
@@ -1223,7 +1223,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="sellers" className="gap-1.5 rounded-[10px]">
-              <Store className="size-4" /> พ่อค้า
+              <Store className="size-4" /> {t("center.nav.sellers")}
               {pendingSellers > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
                   {pendingSellers}
@@ -1232,7 +1232,7 @@ export default function Center() {
             </TabsTrigger>
             {canSee("categories") && (
               <TabsTrigger value="categories" className="gap-1.5 rounded-[10px]">
-                <Tag className="size-4" /> หมวดหมู่
+                <Tag className="size-4" /> {t("center.nav.categories")}
               </TabsTrigger>
             )}
 

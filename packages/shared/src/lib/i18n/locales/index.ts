@@ -1206,9 +1206,33 @@ const myPaymentUx = {
     "ငွေပေးချေမှု တစ်ခု လုပ်ဆောင်နေပြီး ဖြစ်သည် — ထိုစာမျက်နှာသို့ ပြန်ပို့နေသည်",
 };
 
+/** VelCenter shell copy (2026-11-02). */
+const thCenterUi = {
+  nav: { sections: "ส่วนงาน", overview: "ภาพรวม", chat: "แชท", orders: "ออเดอร์", intel: "Intelligence", products: "สินค้า", sellers: "พ่อค้า", categories: "หมวดหมู่" },
+  title: "ศูนย์ควบคุม Velnox",
+  subtitle: "ภาพรวมทั้งบริษัท ออเดอร์ ระบบอัจฉริยะ และสิทธิ์การเข้าถึงตามยศ",
+  realtime: { reconnecting: "กำลังเชื่อมต่อเรียลไทม์ใหม่…" },
+  queue: { loadFailed: "โหลดตัวเลขคิวงานไม่สำเร็จ:" },
+};
+const enCenterUi = {
+  nav: { sections: "Sections", overview: "Overview", chat: "Chat", orders: "Orders", intel: "Intelligence", products: "Products", sellers: "Sellers", categories: "Categories" },
+  title: "Velnox Control Center",
+  subtitle: "Company overview, orders, intelligence and rank-based access control",
+  realtime: { reconnecting: "Reconnecting live updates…" },
+  queue: { loadFailed: "Could not load queue counts:" },
+};
+const myCenterUi = {
+  nav: { sections: "ကဏ္ဍများ", overview: "ခြုံငုံသုံးသပ်ချက်", chat: "စကားပြောချက်", orders: "အမှာစာများ", intel: "အထောက်အထား", products: "ကုန်ပစ္စည်းများ", sellers: "ဆိုင်ရှင်များ", categories: "အမျိုးအစားများ" },
+  title: "Velnox ထိန်းချုပ်ရေးစင်တာ",
+  subtitle: "ကုမ္ပဏီအခြေအနေ၊ အမှာစာများ၊ အထောက်အထားနှင့် ရာထူးအလိုက် ဝင်ရောက်ခွင့်",
+  realtime: { reconnecting: "တိုက်ရိုက်အချက်အလက် ပြန်ချိတ်ဆက်နေသည်…" },
+  queue: { loadFailed: "တန်းစီအရေအတွက် မရယူနိုင်ပါ:" },
+};
+
 export const translations: Record<Language, Dict> = {
   th: {
     ...th,
+    center: thCenterUi,
     checkout: { ...th.checkout, ...thPaymentUx },
     chat: { ...th.chat, ...thChatUi },
     verification: { ...th.verification, ...thVerificationCopy },
@@ -1221,6 +1245,7 @@ export const translations: Record<Language, Dict> = {
   } as Dict,
   en: {
     ...en,
+    center: enCenterUi,
     checkout: { ...en.checkout, ...enPaymentUx },
     chat: { ...en.chat, ...enChatUi },
     verification: { ...en.verification, ...enVerificationCopy },
@@ -1245,6 +1270,7 @@ export const translations: Record<Language, Dict> = {
     mapPicker: { ...myBase.mapPicker, ...myShopPatch.mapPicker },
     shopDetail: { ...myBase.shopDetail, ...myShopPatch.shopDetail },
     productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
+    center: myCenterUi,
     checkout: { ...myBase.checkout, ...myPaymentUx },
     chat: { ...myChatPatch.chat, ...myChatUi },
     sellerChat: myChatPatch.sellerChat,
