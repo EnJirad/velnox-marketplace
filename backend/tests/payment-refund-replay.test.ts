@@ -16,19 +16,23 @@
  * Signatures are produced locally with the same HMAC scheme Stripe uses, so
  * `constructEventAsync` verifies them for real — no bypass.
  */
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { createHmac, randomUUID } from "crypto";
 import express from "express";
 import cookieParser from "cookie-parser";
 
 import { stripeWebhookRawBody } from "../middleware/stripe-raw-body.js";
-import { setupStripeRoutes } from "../routes/stripe.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
 import { purgeUsers } from "./helpers/purge.js";
 
 if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "test-secret-for-unit-tests-only-32chars!!";
 
+// The Stripe route reads its configuration AT IMPORT TIME, so the test keys must
+// exist before the module is loaded — the route is imported dynamically inside
+// buildApp(), after these assignments run.
 const WEBHOOK_SECRET = "whsec_test_refund_replay_only";
+process.env.STRIPE_SECRET_KEY = "sk_test_replay_only_not_a_real_key";
+process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
 const testFn = hasTestDatabase() ? test : test.skip;
 
 function stripeSignature(payload: string, secret: string, timestamp = Math.floor(Date.now() / 1000)) {
@@ -39,26 +43,22 @@ function stripeSignature(payload: string, secret: string, timestamp = Math.floor
 describe("refund + duplicate webhook replay (requires TEST_DATABASE_URL)", () => {
   const fixtureUsers: string[] = [];
 
-  beforeAll(() => {
-    process.env.STRIPE_SECRET_KEY = "[redacted]";
-    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
-  });
-
   afterAll(async () => {
     await purgeUsers(fixtureUsers);
   });
 
-  function buildApp(): express.Express {
+  async function buildApp(): Promise<express.Express> {
     const app = express();
     app.use(stripeWebhookRawBody);
     app.use(express.json());
     app.use(cookieParser());
+    const { setupStripeRoutes } = await import("../routes/stripe.js");
     setupStripeRoutes(app);
     return app;
   }
 
   async function withServer<T>(fn: (base: string) => Promise<T>): Promise<T> {
-    const server = buildApp().listen(0);
+    const server = (await buildApp()).listen(0);
     const port = (server.address() as { port: number }).port;
     try {
       return await fn(`http://127.0.0.1:${port}`);
