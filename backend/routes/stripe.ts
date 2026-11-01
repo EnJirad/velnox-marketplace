@@ -911,6 +911,16 @@ async function openCheckoutGroupSession(args: {
             fail(res, 409, "DUPLICATE_PAYMENT_IN_PROGRESS", "Your payment is being prepared. Please try again.");
             return;
           }
+        } else if (existing.status !== "open") {
+          // A session that already expired/cancelled can never be paid, yet its
+          // payment row still held the one-active-attempt slot and blocked every
+          // new rail with the same 409. Retire the dead row and continue: the
+          // customer is not stuck on an attempt that no longer exists.
+          await query(
+            `UPDATE payments SET status = 'cancelled', updated_at = NOW()
+              WHERE id = $1 AND status IN ('pending', 'requires_action')`,
+            [activePayment.rows[0].id],
+          );
         }
       } catch {
         /* fall through to the conflict below */
