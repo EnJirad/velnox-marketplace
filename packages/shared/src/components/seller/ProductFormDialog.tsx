@@ -78,6 +78,8 @@ interface AttributeForm {
 }
 
 interface DraftImage {
+  /** Set for images that already exist in the database (edit mode). */
+  id?: string;
   url: string;
   objectKey?: string;
   alt?: string;
@@ -489,8 +491,18 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // ─── Draft state (for new products) ──────────────────────────────────
   const [draftId] = useState(() => crypto.randomUUID());
-  const [galleryImages, setGalleryImages] = useState<DraftImage[]>([]);
-  const [detailImages, setDetailImages] = useState<DraftImage[]>([]);
+  // Existing product images are the editor's starting point: without this the
+  // form opened empty for a product that already had images.
+  const [galleryImages, setGalleryImages] = useState<DraftImage[]>(() =>
+    (product?.images ?? [])
+      .filter((i) => (i.imageType ?? "gallery") === "gallery")
+      .map((i) => ({ id: i.id, url: i.url, alt: i.alt ?? "", objectKey: i.storageKey ?? undefined })),
+  );
+  const [detailImages, setDetailImages] = useState<DraftImage[]>(() =>
+    (product?.images ?? [])
+      .filter((i) => i.imageType === "detail")
+      .map((i) => ({ id: i.id, url: i.url, alt: i.alt ?? "", objectKey: i.storageKey ?? undefined })),
+  );
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [uploadingDetail, setUploadingDetail] = useState(false);
 
@@ -626,7 +638,23 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     } finally { setUploadingGallery(false); }
   };
 
-  const removeGalleryImage = (index: number) => setGalleryImages((prev) => prev.filter((_, i) => i !== index));
+  // Existing images are deleted on the server immediately (ownership enforced
+  // there); new drafts are just dropped from local state.
+  const removeGalleryImage = async (index: number) => {
+    const img = galleryImages[index];
+    if (img?.id) {
+      const baseUrl = API_BASE();
+      const res = await fetch(`${baseUrl}/api/seller/products/images/${img.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        toast.error("ลบรูปไม่สำเร็จ กรุณาลองอีกครั้ง");
+        return;
+      }
+    }
+    setGalleryImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
   // ─── Detail image upload (draft) ──────────────────────────────────────
   const handleDetailUpload = async (files: FileList | File[]) => {
@@ -642,7 +670,21 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     } finally { setUploadingDetail(false); }
   };
 
-  const removeDetailImage = (index: number) => setDetailImages((prev) => prev.filter((_, i) => i !== index));
+  const removeDetailImage = async (index: number) => {
+    const img = detailImages[index];
+    if (img?.id) {
+      const baseUrl = API_BASE();
+      const res = await fetch(`${baseUrl}/api/seller/products/images/${img.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        toast.error("ลบรูปไม่สำเร็จ กรุณาลองอีกครั้ง");
+        return;
+      }
+    }
+    setDetailImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
   // ─── Option value image upload (draft) ──────────────────────────────
   const handleOptionImageUpload = async (groupIndex: number, valueIndex: number, file: File) => {
@@ -708,7 +750,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     else if (!form.category) errors.push("กรุณาเลือกหมวดหมู่สินค้า");
     else if (!categories.some((c) => c.slug === form.category)) errors.push("หมวดหมู่ที่เลือกไม่พร้อมใช้งาน กรุณาเลือกหมวดหมู่ใหม่");
     if (variantCount > 100) errors.push("จำนวน Variant เกินขีดจำกัด 100 — กรุณาลดจำนวนตัวเลือก");
-    if (galleryImages.length === 0 && (!current?.images || current.images.length === 0)) errors.push("ต้องมีรูปตัวอย่างสินค้าอย่างน้อย 1 รูป");
+    if (galleryImages.length === 0) errors.push("ต้องมีรูปตัวอย่างสินค้าอย่างน้อย 1 รูป");
     // Validate option values
     for (const group of optionGroups) {
       if (group.name.trim() && group.values.filter((v) => v.value.trim()).length < 2) {
@@ -762,22 +804,42 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         if (updated) {
           // Product-level stock removed — variant stock is source of truth
           await saveOptions(current.id);
-          // Upload detail images (edit mode)
-          if (detailImages.length > 0) {
-            const baseUrl = API_BASE();
-            for (let i = 0; i < detailImages.length; i++) {
-              const img = detailImages[i];
-              if (img.url) {
-                await fetch(`${baseUrl}/api/seller/products/save-image`, {
-                  method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-                  body: JSON.stringify({ productId: current.id, objectKey: img.objectKey || img.url, cdnUrl: img.url, alt: img.alt || "", imageType: "detail" }),
-                }).catch(() => {});
-              }
-            }
+          // Persist only images that were added in this session; the ones that
+          // already had an id are untouched by the product PATCH.
+          const baseUrl = API_BASE();
+          const pending = [
+            ...galleryImages.filter((img) => !img.id && img.url).map((img) => ({ img, imageType: "gallery" as const })),
+            ...detailImages.filter((img) => !img.id && img.url).map((img) => ({ img, imageType: "detail" as const })),
+          ];
+          for (const { img, imageType } of pending) {
+            await fetch(`${baseUrl}/api/seller/products/save-image`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                productId: current.id,
+                objectKey: img.objectKey || img.url,
+                cdnUrl: img.url,
+                alt: img.alt || "",
+                imageType,
+              }),
+            }).catch(() => {});
           }
+
+          // Re-read the product so the caller receives the authoritative image
+          // list (old + newly saved), not just the PATCH payload.
+          let fresh = updated;
+          try {
+            const detailRes = await fetch(`${baseUrl}/api/products/${current.id}`, { credentials: "include" });
+            if (detailRes.ok) {
+              const detailJson = await detailRes.json();
+              fresh = detailJson.data ?? detailJson ?? updated;
+            }
+          } catch { /* keep the PATCH payload */ }
+
           toast.success("บันทึกสินค้าแล้ว");
-          setCurrent(updated);
-          onSaved?.(updated);
+          setCurrent(fresh);
+          onSaved?.(fresh);
         }
       } else {
         // NEW product: use create-full for atomic creation
@@ -1008,13 +1070,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                             )}
                           </div>
                           <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-9 min-w-0 flex-1 text-xs" />
-                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
+                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3.5" /></Button>
                         </>
                       ) : (
                         <>
                           {/* TEXT group — compact row, no image, no placeholder */}
                           <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-7 min-w-0 flex-1 text-xs" />
-                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3" /></Button>
+                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3.5" /></Button>
                         </>
                       )}
                     </div>
@@ -1115,19 +1177,24 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               <p className="text-xs text-slate-500">รูปหลักแสดงที่หน้าร้าน</p>
             </div>
             <span className="text-xs tabular-nums text-slate-400">
-              {isEdit ? (current?.images?.filter((i) => i.imageType === "gallery" || !i.imageType).length ?? 0) : galleryImages.length} / 10
+              {galleryImages.length} / 10
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(isEdit && current?.images ? current.images.filter((i) => i.imageType === "gallery" || !i.imageType) : galleryImages).map((img, i) => (
-              <div key={i} className="relative size-20 shrink-0 overflow-hidden rounded-lg border border-slate-200">
-                <img src={"url" in img ? (img as any).url : ""} alt="" className="size-full object-cover" />
-                {!isEdit && (
-                  <button type="button" className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600" onClick={() => removeGalleryImage(i)}><X className="size-2.5" /></button>
-                )}
+            {galleryImages.map((img, i) => (
+              <div key={img.id ?? `new-${i}`} className="relative size-20 shrink-0 overflow-hidden rounded-lg border border-slate-200">
+                <img src={img.url} alt={img.alt || ""} className="size-full object-cover" loading="eager" />
+                <button
+                  type="button"
+                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600"
+                  aria-label="ลบรูปตัวอย่าง"
+                  onClick={() => void removeGalleryImage(i)}
+                >
+                  <X className="size-3.5" />
+                </button>
               </div>
             ))}
-            {(!isEdit ? galleryImages.length < 10 : (!current?.images || current.images.filter((i) => i.imageType === "gallery").length < 10)) && (
+            {galleryImages.length < 10 && (
               <label className="flex size-20 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple className="hidden" onChange={(e) => { if (e.target.files) handleGalleryUpload(e.target.files); e.target.value = ""; }} />
                 {uploadingGallery ? <Loader2 className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
@@ -1144,16 +1211,21 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               <p className="text-xs text-slate-500">แสดงในแท็บรายละเอียด (ไม่บังคับ)</p>
             </div>
             <span className="text-xs tabular-nums text-slate-400">
-              {isEdit ? ((current as any)?.detailImages?.length ?? 0) : detailImages.length} / 10
+              {detailImages.length} / 10
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(isEdit && (current as any)?.detailImages ? (current as any).detailImages : detailImages).map((img: any, i: number) => (
-              <div key={i} className="relative size-20 shrink-0 overflow-hidden rounded-lg border border-slate-200">
-                <img src={img.url || ""} alt="" className="size-full object-cover" />
-                {!isEdit && (
-                  <button type="button" className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600" onClick={() => removeDetailImage(i)}><X className="size-2.5" /></button>
-                )}
+            {detailImages.map((img, i) => (
+              <div key={img.id ?? `new-detail-${i}`} className="relative size-20 shrink-0 overflow-hidden rounded-lg border border-slate-200">
+                <img src={img.url} alt={img.alt || ""} className="size-full object-cover" loading="eager" />
+                <button
+                  type="button"
+                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600"
+                  aria-label="ลบรูปรายละเอียด"
+                  onClick={() => void removeDetailImage(i)}
+                >
+                  <X className="size-3.5" />
+                </button>
               </div>
             ))}
             {detailImages.length < 10 && (
