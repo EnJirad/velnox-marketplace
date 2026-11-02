@@ -105,6 +105,7 @@ import {
   Users,
   Menu,
   PanelLeft,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -1117,7 +1118,7 @@ export default function Center() {
           type="button"
           aria-label="ปิดเมนู"
           onClick={() => setNavOpen(false)}
-          className="fixed inset-0 z-40 cursor-default bg-slate-900/40 md:hidden"
+          className="fixed inset-0 z-30 cursor-default bg-slate-900/40 md:hidden"
         />
       )}
 
@@ -1181,10 +1182,25 @@ export default function Center() {
           <div
             className={
               navOpen
-                ? "fixed inset-y-0 left-0 z-50 w-72 overflow-y-auto border-r border-slate-200 bg-white p-3 md:static md:z-auto md:w-full md:overflow-visible md:border-0 md:bg-transparent md:p-0"
+                ? "fixed inset-x-0 bottom-0 top-16 z-50 w-72 overflow-y-auto border-r border-slate-200 bg-white px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 shadow-xl md:static md:z-auto md:w-full md:overflow-visible md:border-0 md:bg-transparent md:px-0 md:pb-0 md:pt-0 md:shadow-none"
                 : "hidden md:block"
             }
           >
+            {navOpen && (
+              <div className="mb-2 flex items-center justify-between px-1 md:hidden">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {t("center.nav.sections")}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setNavOpen(false)}
+                  aria-label="ปิดเมนู"
+                  className="flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            )}
 <TabsList
             id="center-nav"
             aria-label={t("center.nav.sections")}
