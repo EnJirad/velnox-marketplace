@@ -54,7 +54,6 @@ const SORT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "price_asc", label: "products.sortPriceAsc" },
   { value: "price_desc", label: "products.sortPriceDesc" },
   { value: "popular", label: "products.sortPopular" },
-  { value: "rating", label: "products.sortRating" },
 ];
 
 interface ShopRow {

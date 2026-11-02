@@ -2,7 +2,6 @@ import { ProductCard } from "@/components/shop/ProductCard";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { Button } from "@velnox/shared/components/ui/button";
-import { Input } from "@velnox/shared/components/ui/input";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
@@ -44,7 +43,6 @@ import {
   PawPrint,
   PenTool,
   RefreshCw,
-  Search,
   ShoppingBag,
   ShoppingBasket,
   Smartphone,
@@ -135,7 +133,7 @@ function useCommerceData<T>(load: () => Promise<T>) {
 }
 
 export default function ShopHome() {
-  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { t, lang } = useLanguage();
   const { track } = useTracking();
   const navigate = useNavigate();
@@ -170,7 +168,6 @@ export default function ShopHome() {
     }, []),
   );
 
-  const [query, setQuery] = useState("");
   const toggleWishlist = useAction(api.customer.toggleWishlistAction);
   const myWishlist = useAction(api.customer.myWishlist);
   const categoryTree = useAction(api.customer.categoryTreeAction);
@@ -225,11 +222,17 @@ export default function ShopHome() {
     [products],
   );
 
-  const lastSearchTracked = useRef("");
-  useEffect(() => {
-    const term = query.trim();
-    if (term && term !== lastSearchTracked.current) { lastSearchTracked.current = term; track("SEARCH", { value: term.slice(0, 60) }); }
-  }, [query, track]);
+  // Banner target = the category with the most published products (real count).
+  const bannerCategory = popularCategories[0] ?? null;
+
+  // "New arrivals" = newest real listings, minus anything already shown above.
+  const newProducts = useMemo(() => {
+    const shown = new Set(popularProducts.map((p) => p.id));
+    return [...products]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .filter((p) => !shown.has(p.id))
+      .slice(0, 8);
+  }, [products, popularProducts]);
 
   const handleCategory = (id: StoreProductCategory) => {
     track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: catNameMap.get(id) ?? PRODUCT_CATEGORY_META[id]?.label ?? id } });
@@ -268,30 +271,42 @@ export default function ShopHome() {
 
   useEffect(() => { setSeo({ title: t("home.seoTitle", { shop: "VelShop" }), description: t("home.seoDesc", { tagline: "ซื้อขายของจริง ปลีกและส่ง ในที่เดียว" }) }); }, [t]);
 
-  const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "";
   const showReorder = reminders.length > 0;
   const showRegulars = !showReorder && regulars.length > 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
-      <section className="border-b border-slate-100 bg-white">
-        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#10B981]">
-              {isAuthenticated && firstName ? t("home.heroWelcomeShort", { name: firstName }) : t("home.eyebrow")}
-            </p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{t("home.heroTitle")}</h1>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">{t("home.heroDesc")}</p>
-            <form className="mx-auto mt-5 flex max-w-xl items-center gap-2 rounded-full border border-slate-200 bg-white p-1.5 shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition-shadow focus-within:border-[#10B981]/50 focus-within:shadow-[0_8px_24px_rgba(16,185,129,0.12)]" onSubmit={(e) => { e.preventDefault(); const q = query.trim(); if (q) track("SEARCH", { value: q.slice(0, 60) }); navigate(q ? `/products?q=${encodeURIComponent(q)}` : "/products"); }} role="search">
-              <Search className="ml-3 size-5 shrink-0 text-slate-400" />
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("home.searchPlaceholder")} className="h-10 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0" aria-label={t("header.ariaSearch")} />
-              <Button type="submit" className="h-9 shrink-0 gap-1.5 rounded-full bg-slate-900 px-5 text-white hover:bg-slate-800">{t("common.search")}<ArrowRight className="size-4" /></Button>
-            </form>
-            {/* Search is the primary discovery action — Shop Now removed */}
-          </div>
-        </div>
-      </section>
+
+      {/* Discovery banner — built from the real top category and its live count.
+          No campaign/discount copy: there is no campaign source in this build. */}
+      {!productsData.loading && bannerCategory && (() => {
+        const [catId, catCount] = bannerCategory;
+        const BannerIcon = (CATEGORY_ICONS as Record<string, LucideIcon>)[catId] ?? Package;
+        const catLabel =
+          catNameMap.get(catId) ?? (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[catId]?.label ?? catId;
+        return (
+          <section className="border-b border-slate-100 bg-white">
+            <div className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6 sm:py-4">
+              <Link
+                to={`/products?category=${encodeURIComponent(catId)}`}
+                onClick={() => handleCategory(catId as StoreProductCategory)}
+                className="flex items-center gap-3 rounded-2xl border border-[#10B981]/25 bg-gradient-to-r from-[#ECFDF5] via-white to-white p-3 transition-shadow hover:shadow-[0_6px_20px_rgba(15,23,42,0.06)] sm:gap-4 sm:p-4"
+              >
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white text-[#10B981] ring-1 ring-[#10B981]/20 sm:size-14">
+                  <BannerIcon className="size-6 sm:size-7" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#10B981]">{t("home.bannerEyebrow")}</span>
+                  <span className="mt-0.5 block truncate text-base font-bold tracking-tight text-slate-900 sm:text-lg">{catLabel}</span>
+                  <span className="mt-0.5 block text-[11px] text-slate-500">{t("home.categoryCount", { count: catCount })}</span>
+                </span>
+                <span className="shrink-0 rounded-full bg-[#10B981] px-3 py-2 text-xs font-semibold text-white sm:px-4">{t("home.bannerCta")}</span>
+              </Link>
+            </div>
+          </section>
+        );
+      })()}
 
       {!productsData.loading && popularCategories.length > 0 && (
         <section className="border-b border-slate-100 bg-white">
@@ -300,8 +315,27 @@ export default function ShopHome() {
               <div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.categoriesTitle")}</h2><p className="mt-0.5 text-xs text-slate-400">{t("home.categoriesDesc")}</p></div>
               <Link to="/categories" onClick={() => track("CATEGORY_VIEW", { value: "all", context: { label: "explore" } })} className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("home.viewAllCategories")}<ArrowRight className="size-3.5" /></Link>
             </div>
-            <div className="mt-4 flex gap-3 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-6">
-              {popularCategories.map(([id, count]) => { const Icon = (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package; const meta = (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id]; return (<Link key={id} to={`/products?category=${id}`} onClick={() => handleCategory(id as StoreProductCategory)} className="group flex min-w-[110px] flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white p-3.5 text-center transition-colors hover:border-[#10B981]/40 sm:min-w-0"><span className="flex size-11 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#10B981] transition-colors group-hover:bg-[#10B981] group-hover:text-white"><Icon className="size-5" /></span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-900">{catNameMap.get(id) ?? meta?.label ?? id}</span><span className="mt-0.5 block text-[11px] text-slate-400">{t("home.categoryCount", { count })}</span></span></Link>); })}
+            <div className="mt-3 grid grid-cols-4 gap-x-2 gap-y-3 sm:grid-cols-6 sm:gap-y-4 lg:grid-cols-6">
+              {popularCategories.map(([id, count]) => {
+                const Icon = (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package;
+                const meta = (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id];
+                return (
+                  <Link
+                    key={id}
+                    to={`/products?category=${id}`}
+                    onClick={() => handleCategory(id as StoreProductCategory)}
+                    aria-label={`${catNameMap.get(id) ?? meta?.label ?? id} — ${t("home.categoryCount", { count })}`}
+                    className="group flex min-w-0 flex-col items-center gap-1.5 rounded-xl py-1 transition-colors"
+                  >
+                    <span className="flex size-14 items-center justify-center rounded-full bg-[#F1F5F9] text-slate-700 ring-1 ring-slate-200 transition-colors group-hover:bg-[#ECFDF5] group-hover:text-[#10B981] group-hover:ring-[#10B981]/30 group-focus-visible:ring-2 group-focus-visible:ring-[#10B981]">
+                      <Icon className="size-[22px]" />
+                    </span>
+                    <span className="w-full truncate text-center text-[11px] font-medium leading-4 text-slate-600 group-hover:text-slate-900">
+                      {catNameMap.get(id) ?? meta?.label ?? id}
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -347,9 +381,21 @@ export default function ShopHome() {
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><TrendingUp className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.trendingTitle")}</h2><p className="text-xs text-slate-400">{t("home.trendingDesc")}</p></div></div>
-              <Link to="/products" className="hidden shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700 sm:inline-flex">{t("common.viewAll")}<ArrowRight className="size-3.5" /></Link>
+              <Link to="/products?sort=popular" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("common.viewAll")}<ArrowRight className="size-3.5" /></Link>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{popularProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
+          </div>
+        </section>
+      )}
+
+      {!productsData.loading && newProducts.length > 0 && (
+        <section className="border-b border-slate-100 bg-white">
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><Sparkles className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.newTitle")}</h2><p className="text-xs text-slate-400">{t("home.newDesc")}</p></div></div>
+              <Link to="/products?sort=newest" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("common.viewAll")}<ArrowRight className="size-3.5" /></Link>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{newProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-new")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
       )}

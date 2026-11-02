@@ -77,6 +77,7 @@ export const en: Dict = {
     orders: "Orders",
     wishlist: "Wishlist",
     cart: "Cart",
+    market: "Market",
     profile: "Profile",
     notifications: "Notifications",
     account: "My account",
@@ -218,6 +219,10 @@ export const en: Dict = {
 
   home: {
     eyebrow: "velshop · Velnox marketplace",
+    bannerEyebrow: "Popular category",
+    bannerCta: "Browse",
+    newTitle: "New arrivals",
+    newDesc: "Freshly listed by shops on Velnox",
     heroWelcome: "Hello {name} — Velnox remembers you and picks the best for you",
     availableProducts: "Products available",
     searchPlaceholder: "Search products...",

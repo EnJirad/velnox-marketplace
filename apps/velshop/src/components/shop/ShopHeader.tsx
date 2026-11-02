@@ -5,6 +5,7 @@ import { Logo, LogoMark } from "@velnox/shared/components/Logo";
 import { Button } from "@velnox/shared/components/ui/button";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useChatUnread } from "@velnox/shared/hooks/use-chat-unread";
+import { useTracking } from "@velnox/shared/lib/track";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
 import { MessageCircle, Search, ShoppingCart, User } from "lucide-react";
@@ -27,6 +28,7 @@ export function ShopHeader() {
   const { isAuthenticated, isLoading } = useAuth();
   const { count } = useCart();
   const { t } = useLanguage();
+  const { track } = useTracking();
   const location = useLocation();
   const navigate = useNavigate();
   const [cartOpen, setCartOpen] = useState(false);
@@ -34,6 +36,10 @@ export function ShopHeader() {
   const { count: chatUnread } = useChatUnread("customer");
 
   const onProducts = location.pathname === "/products";
+  // Search belongs to the storefront (Home) only. The Marketplace renders its own
+  // prominent search area inside the page, so the header never stacks a second
+  // search box on top of it, and utility screens carry no search at all.
+  const showSearch = location.pathname === "/";
   const urlQ = onProducts ? (new URLSearchParams(location.search).get("q") ?? "") : "";
   const [query, setQuery] = useState(urlQ);
 
@@ -45,6 +51,7 @@ export function ShopHeader() {
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
     const term = query.trim();
+    if (term) track("SEARCH", { value: term.slice(0, 60) });
     const next = new URLSearchParams(onProducts ? location.search : "");
     if (term) next.set("q", term);
     else next.delete("q");
@@ -90,27 +97,30 @@ export function ShopHeader() {
             <LogoMark className="size-8 rounded-[10px] bg-white" />
           </Link>
 
-          <form role="search" onSubmit={submitSearch} className="flex min-w-0 flex-1">
-            <div className="relative flex min-w-0 flex-1 items-center">
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t("header.searchPlaceholder")}
-                aria-label={t("header.ariaSearch")}
-                enterKeyHint="search"
-                className="h-10 w-full min-w-0 appearance-none rounded-full bg-white pl-4 pr-10 text-[13px] text-slate-900 outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-white/70 [&::-webkit-search-cancel-button]:hidden"
-              />
-              <button
-                type="submit"
-                aria-label={t("header.ariaSearch")}
-                className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:text-[#10B981]"
-              >
-                <Search className="size-[18px]" />
-              </button>
-            </div>
-          </form>
-
+          {showSearch ? (
+            <form role="search" onSubmit={submitSearch} className="flex min-w-0 flex-1">
+              <div className="relative flex min-w-0 flex-1 items-center">
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("header.searchPlaceholder")}
+                  aria-label={t("header.ariaSearch")}
+                  enterKeyHint="search"
+                  className="h-10 w-full min-w-0 appearance-none rounded-full bg-white pl-4 pr-10 text-[13px] text-slate-900 outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-white/70 [&::-webkit-search-cancel-button]:hidden"
+                />
+                <button
+                  type="submit"
+                  aria-label={t("header.ariaSearch")}
+                  className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:text-[#10B981]"
+                >
+                  <Search className="size-[18px]" />
+                </button>
+              </div>
+            </form>
+          ) : (
+            <span className="min-w-0 flex-1" aria-hidden="true" />
+          )}
           <LanguageSwitcher variant="mobile" tone="brand" />
 
           <button
@@ -154,7 +164,7 @@ export function ShopHeader() {
           {/* Desktop navigation */}
           <nav className="ml-3 hidden items-center gap-1 md:flex" aria-label={t("nav.home")}>
             {navItem("/", t("nav.home"), true)}
-            {navItem("/products", t("nav.products"))}
+            {navItem("/products", t("nav.market"))}
             {navItem("/categories", t("nav.categories"))}
           </nav>
 

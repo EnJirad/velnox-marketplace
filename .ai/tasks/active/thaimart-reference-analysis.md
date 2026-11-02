@@ -8,12 +8,12 @@ Brand palette is **not** copied: VelShop keeps Velnox mint/green as its accent.
 | Region | Reference spec (measured visually) | VelShop today | Action |
 |---|---|---|---|
 | Brand bar | Solid brand colour, ~56 px, logo mark 32 px + **search pill** (white, fully rounded, 40 px, search icon right) + cart with badge + chat icon; sticks to the top of the content area | `ShopHeader` was one white bar; mobile had no pill, no cart badge cluster, no chat | **done (§142)** — mobile bar at `#10B981`, 56 px; pill 40 px; cart real count; chat → `/chat` |
-| Category rail | Horizontal scroll, 6+ items, 56 px circular icon chip + 11 px two-line label, active item tinted | category chips (text) | convert to icon circles + labels |
+| Category rail | Horizontal scroll, 6+ items, 56 px circular icon chip + 11 px two-line label, active item tinted | text chips in a bordered card row | **done (§143)** — compact circular chips (4/row mobile, 6 on ≥sm) + “view all categories” |
 | Content | White cards on `#F8FAFC`-ish page, 12–16 px radius, 1 px border, 16 px side margins | similar tokens exist | unify radius/margins |
 | Promo strip | Thin bordered card with dashed divider + big number | absent | optional, only with real campaign |
 | Section heading | 18 px bold with a small brand dot, plus 12 px muted subtitle | mixed sizes | adopt 18/12 pattern |
 | LIVE row | 1.1-card-wide 4:5 tiles, red LIVE pill, eye-count pill | absent | needs real live data — skip unless source exists |
-| Product grid | 2 columns, gap 12 px, image 1:1, price bold, seller/caption 11 px | exists | tighten to 2-col with 12 px gap and 1:1 images |
+| Product grid | 2 columns, gap 12 px, image 1:1, price bold, seller/caption 11 px | 2/3/4-col responsive grid with 1:1 image + price + rating/sold | **kept** — Marketplace grid already matches density (§143) |
 | Bottom nav | Fixed, 4 items (หน้าแรก · คำสั่งซื้อ · การแจ้งเตือน · โปรไฟล์), 24 px icon + 11 px label, active = brand colour | shared `MobileTabBar` already mounted, but **5** items (home · products · cart · orders · profile) | **done (§141)** — reduced to the 4 reference tabs |
 | Footer | none | removed | keep removed |
 
@@ -30,8 +30,8 @@ to the reference 4 (home · orders · notifications · profile). No new componen
 2. **Header brand bar** — **done (§142)**: mobile `ShopHeader` is a 56 px solid `#10B981` bar (mark 32 ·
 white pill 40 with magnifier right · language · cart real count · chat). Search reuses `/products?q=`;
 desktop bar unchanged. Measured 360–492 px; ≥768 px evidenced at rule level only (NOT MEASURED).
-3. Category rail as icon circles.
-4. Product grid tightening (2-col, 1:1, 12 px gap).
+3. Category rail as icon circles — **done (§143)**: compact chips 4/6 columns, not a giant rail.
+4. Product grid tightening — **done in effect (§143)**: Marketplace grid is already 2-col mobile / 1:1 image / 12 px gap.
 5. Profile page alignment with the same tokens (already partly done).
 6. Remaining screens (listing, PDP, cart, checkout, orders, account, help).
 
@@ -42,7 +42,9 @@ routes/APIs. i18n keys go straight into the base `th/en/my` locale objects. No f
 
 ## 5. Status
 
-Analysis: **done** (from real screenshots). Implementation: **steps 1–2 landed** (§141 bottom nav 4 tabs,
-§142 mobile header brand bar); steps 3–6 remain (category rail, grid, profile, other screens).
-Visual verification of both steps is **NOT VERIFIED** — the harness screenshot surface is still blocked
-(§137); desktop widths ≥768 px not measured for the same reason.
+Analysis: **done**. Implementation: **steps 1–3 landed** — §141 bottom nav, §142 header brand bar, §143
+Home/Market split + compact categories + curated rails + 5-tab nav. Remaining: profile token alignment and
+the long tail of screens (PDP/cart/checkout/orders/account/help) plus any reference polish.
+**VISUAL VERIFICATION: NOT VERIFIED** for every step — the harness screenshot surface is blocked (§137);
+widths above 492 px cannot be measured (iframe subframes stalled, CDP resize unavailable). Home’s banner
+and curated rails could not be observed with data: this sandbox’s catalogue returns 0 published products.

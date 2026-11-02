@@ -101,6 +101,7 @@ export const th = {
     orders: "ออเดอร์",
     wishlist: "รายการโปรด",
     cart: "ตะกร้า",
+    market: "ตลาด",
     profile: "โปรไฟล์",
     notifications: "การแจ้งเตือน",
     account: "บัญชีของฉัน",
@@ -242,6 +243,10 @@ export const th = {
 
   home: {
     eyebrow: "velshop · ตลาดออนไลน์ Velnox",
+    bannerEyebrow: "หมวดหมู่ยอดนิยม",
+    bannerCta: "เลือกดู",
+    newTitle: "สินค้าใหม่",
+    newDesc: "อัปเดตล่าสุดจากร้านค้าในตลาด",
     heroWelcome: "สวัสดี {name} — Velnox จำคุณได้ และคัดสิ่งที่ดีที่สุดมาให้คุณ",
     availableProducts: "สินค้าที่มีจำหน่าย",
     searchPlaceholder: "ค้นหาสินค้า...",

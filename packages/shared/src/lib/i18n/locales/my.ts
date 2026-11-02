@@ -84,6 +84,7 @@ export const my = {
     orders: "အမှာစာများ",
     wishlist: "နှစ်သက်ရာများ",
     cart: "ခြင်းတောင်း",
+    market: "ဈေးကွက်",
     profile: "ပရိုဖိုင်",
     notifications: "အသိပေးချက်များ",
     account: "ကျွန်ုပ်၏ အကောင့်",
@@ -159,6 +160,10 @@ export const my = {
 
   home: {
     eyebrow: "velshop · Velnox အွန်လိုင်းဈေးကွက်",
+    bannerEyebrow: "လူကြိုက်များသော အမျိုးအစား",
+    bannerCta: "ကြည့်ရန်",
+    newTitle: "ကုန်ပစ္စည်းအသစ်များ",
+    newDesc: "Velnox ဈေးကွက်ရှိ ဆိုင်များမှ အသစ်ဆုံး ပစ္စည်းများ",
     heroWelcome: "မင်္ဂလာပါ {name} — Velnox သည် သင့်ကို မှတ်မိပြီး အကောင်းဆုံးကို ရွေးပေးပါသည်",
     availableProducts: "ဝယ်ယူနိုင်သော ကုန်ပစ္စည်းများ",
     searchPlaceholder: "ကုန်ပစ္စည်းရှာဖွေရန်...",
