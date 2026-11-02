@@ -33,6 +33,8 @@ import {
   resolveCreationStatus,
 } from "../lib/product-lifecycle.js";
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { sanitiseSegment, sanitiseSubfolder } from "../lib/upload-paths.js";
+import { isUploadTooLarge } from "../lib/media-config.js";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { query, getClient } from "../db/index.js";
@@ -1525,8 +1527,11 @@ export function setupProductRoutes(app: Express): void {
       }
 
       const uniqueId = crypto.randomUUID().replace(/-/g, "").substring(0, 12);
-      const safeSubfolder = subfolder || "preview";
-      const objectKey = `draft-uploads/${seller.id}/${draftId}/${safeSubfolder}/${uniqueId}.webp`;
+      // Both values come from the client: keep them to safe segments so a
+      // presigned PUT can never be minted outside this seller's draft prefix.
+      const safeDraftId = sanitiseSegment(draftId, crypto.randomUUID().replace(/-/g, "").substring(0, 12));
+      const safeSubfolder = sanitiseSubfolder(subfolder);
+      const objectKey = `draft-uploads/${seller.id}/${safeDraftId}/${safeSubfolder}/${uniqueId}.webp`;
 
       const command = new PutObjectCommand({
         Bucket: getR2Config().bucket,
@@ -1647,11 +1652,18 @@ export function setupProductRoutes(app: Express): void {
         }
       }
 
-      // Verify R2 object exists
+      // Verify R2 object exists and is within the documented size limit — the
+      // size is read from storage, never trusted from the client.
+      let storedSize: number | undefined;
       try {
-        await getR2().send(new HeadObjectCommand({ Bucket: getR2Config().bucket, Key: objectKey }));
+        const head = await getR2().send(new HeadObjectCommand({ Bucket: getR2Config().bucket, Key: objectKey }));
+        storedSize = head.ContentLength;
       } catch {
         res.status(400).json({ success: false, error: { code: "R2_OBJECT_NOT_FOUND", message: "Upload not found in storage" } });
+        return;
+      }
+      if (isUploadTooLarge(storedSize)) {
+        res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: "File exceeds the maximum allowed size" } });
         return;
       }
 
