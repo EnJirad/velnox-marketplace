@@ -276,7 +276,7 @@ export default function Reorder() {
             <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
               เพิ่มสินค้าและตั้งจุดสั่งซื้อซ้ำที่หน้า "ร้านของฉัน" — เมื่อมีออเดอร์จริง ระบบจะเริ่มคาดการณ์รอบถัดไปให้
             </p>
-            <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild>
+            <Button className="mt-6 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]" asChild>
               <a href="/seller/shop">
                 <Store className="size-4" />
                 ไปที่ร้านของฉัน

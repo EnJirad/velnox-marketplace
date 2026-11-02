@@ -270,7 +270,7 @@ export default function SellerOrderDetail() {
             {error ?? t("orderDetail.notFoundDesc")}
           </p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-            <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
+            <Button className="gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]" onClick={() => void load()}>
               <RefreshCw className="size-4" />
               {t("orderDetail.retry")}
             </Button>

@@ -122,7 +122,7 @@ export default function Income() {
             <button
               type="button"
               onClick={retry}
-              className="mt-6 inline-flex items-center gap-1.5 rounded-[10px] bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+              className="mt-6 inline-flex items-center gap-1.5 rounded-[10px] bg-[#10B981] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#059669]"
             >
               ลองอีกครั้ง
             </button>

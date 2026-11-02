@@ -434,7 +434,7 @@ export default function SellerProfile() {
           <Button
             onClick={handleSave}
             disabled={saving}
-            className="w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800 h-11 rounded-[10px]"
+            className="w-full gap-1.5 bg-[#10B981] text-white hover:bg-[#059669] h-11 rounded-[10px]"
           >
             {saving ? (
               <Loader2 className="size-4 animate-spin" />

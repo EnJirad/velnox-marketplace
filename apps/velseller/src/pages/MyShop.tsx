@@ -478,7 +478,7 @@ export default function MyShop() {
               </div>
               <Button
                 type="submit"
-                className="mt-2 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                className="mt-2 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
                 disabled={opening}
               >
                 {opening && <Loader2 className="size-4 animate-spin" />}
@@ -561,7 +561,7 @@ export default function MyShop() {
             </p>
           </div>
           <Button
-            className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+            className="gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
             onClick={() => {
               setEditing(null);
               setFormOpen(true);
@@ -689,7 +689,7 @@ export default function MyShop() {
                   onClick={() => setStatusFilter(f.key)}
                   className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
-                      ? "border-slate-900 bg-slate-900 text-white"
+                      ? "border-[#10B981] bg-[#10B981] text-white"
                       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
                   }`}
                 >
@@ -711,7 +711,7 @@ export default function MyShop() {
                 velshop เมื่อทีมงานอนุมัติ
               </p>
               <Button
-                className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                className="mt-6 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
                 onClick={() => {
                   setEditing(null);
                   setFormOpen(true);
@@ -895,7 +895,7 @@ export default function MyShop() {
                     <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
                       <Button
                         size="sm"
-                        className="flex-1 gap-1.5 bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
+                        className="flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-400"
                         onClick={() => handleTogglePublish(product)}
                         disabled={togglingId === product.id || product.status === "pending_review" || terminal}
                       >
@@ -1089,7 +1089,7 @@ export default function MyShop() {
             )}
             {verifyStep < 3 ? (
               <Button
-                className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                className="gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
                 onClick={() => setVerifyStep((s) => (s + 1) as 1 | 2 | 3)}
                 disabled={
                   (verifyStep === 1 && (!personalInfo.firstName || !personalInfo.lastName || !personalInfo.phone || !personalInfo.address)) ||
@@ -1099,7 +1099,7 @@ export default function MyShop() {
                 ถัดไป
               </Button>
             ) : (
-              <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void handleSubmitVerification()} disabled={verifyBusy || hasUploadingFiles || !hasUploadedFiles}>
+              <Button className="gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]" onClick={() => void handleSubmitVerification()} disabled={verifyBusy || hasUploadingFiles || !hasUploadedFiles}>
                 {(verifyBusy || hasUploadingFiles) && <Loader2 className="size-4 animate-spin" />}
                 {hasUploadingFiles ? "กำลังอัปโหลด..." : t("verification.submitForVerification")}
               </Button>
