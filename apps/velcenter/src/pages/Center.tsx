@@ -1204,7 +1204,7 @@ export default function Center() {
 <TabsList
             id="center-nav"
             aria-label={t("center.nav.sections")}
-            className="flex w-full flex-col items-stretch gap-0.5 [&_[role=tab]]:w-full [&_[role=tab]]:justify-start [&_[role=tab]]:px-3 [&_[role=tab]]:py-2">
+            className="flex h-auto w-full flex-col items-stretch gap-0.5 [&_[role=tab]]:w-full [&_[role=tab]]:justify-start [&_[role=tab]]:px-3 [&_[role=tab]]:py-2">
             <TabsTrigger value="overview" className="gap-1.5 rounded-[10px]">
               <TrendingUp className="size-4" /> {t("center.nav.overview")}
             </TabsTrigger>
