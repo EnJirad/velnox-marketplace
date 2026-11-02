@@ -337,7 +337,7 @@ export default function ShopProducts() {
       {/* Category */}
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t("products.category")}</p>
-        <div className="mt-3 flex flex-wrap gap-1.5 lg:max-h-[340px] lg:flex-col lg:items-stretch lg:gap-1 lg:overflow-y-auto lg:pr-1">
+        <div className="mt-3 flex flex-wrap gap-1.5 lg:max-h-[340px] lg:flex-col lg:items-stretch lg:gap-1 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-1">
           {categoryOptions.map((c) => (
             <button
               key={c.id}
