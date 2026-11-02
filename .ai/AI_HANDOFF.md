@@ -1257,5 +1257,14 @@ header pill present, 5 tabs, overflow 0 · tests 1139/382/8 (8 = sandbox DB-guar
 
 **Not verified:** mobile 360/390/430 renders (no real viewport), in-app screenshots, and in-app DOM probes of
 `/products` `/orders` `/notifications` `/profile` / PDP (documents broke under the injected script).
+`image.thum.io` renders a **1280 CSS px** viewport and scales to the requested output width, so desktop
+evidence is 1280 px — never quote it as 1440 px.
+
+**Deployed twice and verified:** `0544b58` (accent chip + soft rows + 340 px cap) then `6ffeed5`
+(+ `lg:overflow-x-hidden`, because the first re-render still showed a horizontal scrollbar under the capped
+list). Each deploy was confirmed by fetching the production CSS and grepping the new class
+(`index-DWsdvEgl.css` → `.lg\:max-h-\[340px\]`, `index-r0p13K9O.css` → `.lg\:overflow-x-hidden`).
+Screenshots: `products-1440.png` (before) → `products-1440-after.png` (fix 1) → `products-after2.png`
+(fix 2, scrollbar gone).
 
 **Record:** [`.ai/history/2026-11-02-velshop-production-audit-filter-polish.md`](./history/2026-11-02-velshop-production-audit-filter-polish.md).

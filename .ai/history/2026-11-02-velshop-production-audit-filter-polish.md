@@ -33,7 +33,20 @@
 
 ## Fix verification
 
-Local after-change: typecheck, build and i18n pass; the class strings now carry
-`lg:max-h-[340px]`, `bg-[#10B981]` for the active chip and `bg-slate-50` rows for the rest. Post-deploy
-re-screenshot is described in the handoff; where it could not be re-captured, the state is recorded as
-NOT VERIFIED rather than assumed.
+**Fix 1 — `0544b58`** (accent chip, soft rows, capped list). Deployed: production CSS
+`index-DWsdvEgl.css` contained `.lg\:max-h-\[340px\]`, so the build reached Vercel.
+
+**Fix 2 — `6ffeed5`** (add `lg:overflow-x-hidden`). Re-render of `/products` after fix 1 showed a thin
+horizontal scrollbar under the capped list (vertical-only overflow set, sideways overflow possible).
+After fix 2 the deployed CSS `index-r0p13K9O.css` contains `.lg\:overflow-x-hidden` and the same
+re-render (`products-after2.png`) shows the mint active chip, soft rows and **no horizontal scrollbar**.
+
+| Evidence file (untracked, `.harness/shots/`) | State |
+|---|---|
+| `products-1440.png` | before: outlined wall, near-black active chip |
+| `products-1440-after.png` | after fix 1: mint chip + soft rows, horizontal scrollbar visible |
+| `products-after2.png` | after fix 2: horizontal scrollbar gone |
+
+**Renderer caveat (measured):** `image.thum.io` renders a **1280 CSS px** viewport and scales the output to
+the requested pixel width (1280 → 1440 = ×1.125). The screenshots therefore prove the desktop composition
+at 1280 px, not at 1440 px. They must not be quoted as 1440 px layout evidence.
