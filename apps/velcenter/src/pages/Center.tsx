@@ -10,7 +10,7 @@ import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 import CategoriesManagement from "../components/CategoriesManagement";
 import ChatManagement from "../components/ChatManagement";
 import ProductModerationQueue from "../components/ProductModerationQueue";
-import { AnnouncementSettings } from "../components/AnnouncementSettings";
+import { MarketingBanners } from "../components/MarketingBanners";
 import SellerVerificationQueue from "../components/SellerVerificationQueue";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
@@ -88,6 +88,7 @@ import {
   History,
   Image as ImageIcon,
   MessageCircle,
+  Megaphone,
   KeyRound,
   Loader2,
   Package,
@@ -111,7 +112,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings" | "chat";
+type Tab = "overview" | "marketing" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings" | "chat";
 
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
@@ -232,7 +233,10 @@ function canSeeTab(
     // Company control plane: the owner, an admin in the general department (the
     // platform's department rule), or a staff account the owner granted
     // `settings.manage` — the code GET/PATCH /api/admin/settings enforce.
+    // Marketing shares the exact same gate: banners write platform_settings
+    // through PUT /api/admin/announcements, which enforces settings.manage.
     case "settings":
+    case "marketing":
       return role === "owner"
         || (role === "admin" && department === "general")
         || (role === "staff" && holds("settings.manage"));
@@ -1179,6 +1183,9 @@ export default function Center() {
             navCollapsed ? "md:grid-cols-[4.5rem_minmax(0,1fr)]" : "md:grid-cols-[15rem_minmax(0,1fr)]"
           }`}
         >
+          {/* R4: when the rail is collapsed the labels are hidden — without this
+              they paint across the content column (brief audit R4). The drawer
+              (mobile) and the expanded rail keep full labels. */}
           <div
             className={
               navOpen
@@ -1204,15 +1211,24 @@ export default function Center() {
 <TabsList
             id="center-nav"
             aria-label={t("center.nav.sections")}
-            className="flex h-auto w-full flex-col items-stretch gap-0.5 [&_[role=tab]]:w-full [&_[role=tab]]:justify-start [&_[role=tab]]:px-3 [&_[role=tab]]:py-2">
+            className={`flex h-auto w-full flex-col items-stretch gap-0.5 [&_[role=tab]]:w-full [&_[role=tab]]:justify-start [&_[role=tab]]:px-3 [&_[role=tab]]:min-h-11 ${
+              navCollapsed
+                ? "[&_[role=tab]]:justify-center [&_[role=tab]_.nav-label]:sr-only"
+                : ""
+            }`}>
+            {/* R5: min-h-11 keeps every nav row at the 44px touch target
+                (the shared TabsTrigger base is py-1 ≈ 36px). Labels stay visible
+                in the drawer and the expanded rail; the collapsed rail keeps
+                them for screen readers only (R4) — each tab still has an
+                accessible name because the icon alone is not a name. */}
             <TabsTrigger value="overview" className="gap-1.5 rounded-[10px]">
-              <TrendingUp className="size-4" /> {t("center.nav.overview")}
+              <TrendingUp className="size-4" /> <span className="nav-label">{t("center.nav.overview")}</span>
             </TabsTrigger>
             <TabsTrigger value="chat" className="gap-1.5 rounded-[10px]">
-              <MessageCircle className="size-4" /> {t("center.nav.chat")}
+              <MessageCircle className="size-4" /> <span className="nav-label">{t("center.nav.chat")}</span>
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-1.5 rounded-[10px]">
-              <ShoppingBag className="size-4" /> {t("center.nav.orders")}
+              <ShoppingBag className="size-4" /> <span className="nav-label">{t("center.nav.orders")}</span>
               {/*
                 The badge must not depend on how many rows happen to be loaded:
                 with pagination the first page can hold zero pending orders while
@@ -1226,7 +1242,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="intel" className="gap-1.5 rounded-[10px]">
-              <BrainCircuit className="size-4" /> {t("center.nav.intel")}
+              <BrainCircuit className="size-4" /> <span className="nav-label">{t("center.nav.intel")}</span>
               {dueCount > 0 && (
                 <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
                   {dueCount}
@@ -1234,7 +1250,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="products" className="gap-1.5 rounded-[10px]">
-              <Package className="size-4" /> {t("center.nav.products")}
+              <Package className="size-4" /> <span className="nav-label">{t("center.nav.products")}</span>
               {pendingProducts > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
                   {pendingProducts}
@@ -1242,7 +1258,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="sellers" className="gap-1.5 rounded-[10px]">
-              <Store className="size-4" /> {t("center.nav.sellers")}
+              <Store className="size-4" /> <span className="nav-label">{t("center.nav.sellers")}</span>
               {pendingSellers > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
                   {pendingSellers}
@@ -1251,28 +1267,33 @@ export default function Center() {
             </TabsTrigger>
             {canSee("categories") && (
               <TabsTrigger value="categories" className="gap-1.5 rounded-[10px]">
-                <Tag className="size-4" /> {t("center.nav.categories")}
+                <Tag className="size-4" /> <span className="nav-label">{t("center.nav.categories")}</span>
               </TabsTrigger>
             )}
 
             {canSee("staff") && (
               <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
-                <Users className="size-4" /> ผู้ใช้ & ลูกค้า
+                <Users className="size-4" /> <span className="nav-label">ผู้ใช้ & ลูกค้า</span>
               </TabsTrigger>
             )}
             {canSee("audit") && (
               <TabsTrigger value="audit" className="gap-1.5 rounded-[10px]">
-                <History className="size-4" /> Audit Logs
+                <History className="size-4" /> <span className="nav-label">Audit Logs</span>
               </TabsTrigger>
             )}
             {canSee("incidents") && (
               <TabsTrigger value="incidents" className="gap-1.5 rounded-[10px]">
-                <AlertTriangle className="size-4" /> ตรวจสอบยอดเงิน
+                <AlertTriangle className="size-4" /> <span className="nav-label">ตรวจสอบยอดเงิน</span>
+              </TabsTrigger>
+            )}
+            {canSee("marketing") && (
+              <TabsTrigger value="marketing" className="gap-1.5 rounded-[10px]">
+                <Megaphone className="size-4" /> <span className="nav-label">{t("marketing.navLabel")}</span>
               </TabsTrigger>
             )}
             {canSee("settings") && (
               <TabsTrigger value="settings" className="gap-1.5 rounded-[10px]">
-                <Settings className="size-4" /> ตั้งค่าระบบ
+                <Settings className="size-4" /> <span className="nav-label">ตั้งค่าระบบ</span>
               </TabsTrigger>
             )}
           </TabsList>
@@ -2329,6 +2350,16 @@ export default function Center() {
               still moves only through the existing operator refund route. */}
           <PaymentIncidentTab />
 
+          {/* ============ Marketing (banner contract v2) ==================
+              Homepage content management lives here — deliberately NOT inside
+              Settings. Banners write platform_settings via
+              PUT /api/admin/announcements, which enforces settings.manage. */}
+          {canSee("marketing") && (
+            <TabsContent value="marketing" className="mt-6">
+              <MarketingBanners />
+            </TabsContent>
+          )}
+
           {/* ============ Company / System Settings =========================
               VelCenter is the company control plane, so this screen configures
               the platform/company — not one shop. Editable values persist to
@@ -2351,9 +2382,11 @@ export default function Center() {
               )}
 
               <div className="grid gap-5 lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
-                {/* Section nav — scrollable strip on mobile, sidebar on desktop */}
+                {/* Section nav — wrapping chip grid on mobile (nothing scrolls
+                    sideways or gets clipped), sidebar on desktop. min-h-11 keeps
+                    every section a 44px touch target. */}
                 <nav aria-label="หมวดการตั้งค่า" className="lg:sticky lg:top-24 lg:self-start">
-                  <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-col lg:gap-1">
                     {SETTINGS_SECTIONS.map((section) => {
                       const Icon = section.icon;
                       const active = settingsSection === section.id;
@@ -2363,12 +2396,12 @@ export default function Center() {
                           type="button"
                           onClick={() => setSettingsSection(section.id)}
                           aria-current={active ? "page" : undefined}
-                          className={`flex shrink-0 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm font-medium transition-colors lg:w-full ${
+                          className={`flex min-h-11 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm font-medium transition-colors lg:w-full ${
                             active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
                           }`}
                         >
                           <Icon className="size-4 shrink-0" />
-                          <span className="whitespace-nowrap">{section.label}</span>
+                          <span className="min-w-0">{section.label}</span>
                         </button>
                       );
                     })}
@@ -2376,7 +2409,6 @@ export default function Center() {
                 </nav>
 
                 <div className="min-w-0 space-y-5">
-                  <AnnouncementSettings />
                   {/* ---------- Company / platform identity ---------- */}
                   {settingsSection === "company" && (
                     <Card className="border-slate-200 shadow-none">
@@ -2421,13 +2453,16 @@ export default function Center() {
                               />
                             </div>
                             <div className="grid gap-2">
-                              <Label htmlFor="settings-announcement">ประกาศ / แบนเนอร์</Label>
+                              <Label htmlFor="settings-announcement">ประกาศหน้าร้านค้า (ShopDetail)</Label>
                               <Input
                                 id="settings-announcement"
                                 value={form.announcement}
                                 onChange={(e) => setForm((f) => ({ ...f, announcement: e.target.value }))}
                                 placeholder="เช่น สินค้าใหม่เข้าคลังแล้ว!"
                               />
+                              <p className="text-[10px] text-slate-400">
+                                ประกาศนี้แสดงในหน้าร้านค้าแต่ละร้านเท่านั้น — แบนเนอร์หน้าแรกอยู่ที่แท็บ การตลาด
+                              </p>
                             </div>
                           </div>
                           <div className="grid gap-2">

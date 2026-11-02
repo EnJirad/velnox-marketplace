@@ -6,12 +6,18 @@ import { useLanguage } from "@/lib/i18n";
 
 export interface Announcement {
   id: string;
-  /** Short label above the title, e.g. the announcement type. */
+  /**
+   * Short label above the title, e.g. the banner type. Rendered only when the
+   * slide has text — an image-only slide stays clean (BAN-10).
+   */
   eyebrow: string;
+  /** Optional since contract v2: an image-only banner has no copy at all. */
   title: string;
-  description: string;
+  subtitle: string;
   /** Optional destination. The whole slide becomes a link when present. */
   href?: string;
+  /** Optional CTA label from the banner; the generic storefront label is the fallback. */
+  ctaLabel?: string | null;
   /** Optional real image (R2 URL minted by the backend). */
   imageUrl?: string | null;
 }
@@ -160,20 +166,30 @@ export function AnnouncementCarousel({
         onPointerCancel={endDrag}
       >
         {items.map((item, i) => {
+          // Contract v2: the three content modes render differently — an
+          // image-only slide fills the area with the image (no empty text
+          // column), a text-only slide keeps the copy layout, both combine.
+          const hasText = Boolean(item.title || item.subtitle || item.eyebrow);
           const body = (
             <>
-              <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#059669] sm:text-[11px]">
-                {item.eyebrow}
-              </span>
-              <span className="mt-1 line-clamp-1 text-base font-bold tracking-tight text-slate-900 sm:text-lg">
-                {item.title}
-              </span>
-              <span className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-600 sm:text-xs sm:leading-5">
-                {item.description}
-              </span>
-              {item.href && (
+              {item.eyebrow && (
+                <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#059669] sm:text-[11px]">
+                  {item.eyebrow}
+                </span>
+              )}
+              {item.title && (
+                <span className="mt-1 line-clamp-1 text-base font-bold tracking-tight text-slate-900 sm:text-lg">
+                  {item.title}
+                </span>
+              )}
+              {item.subtitle && (
+                <span className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-600 sm:text-xs sm:leading-5">
+                  {item.subtitle}
+                </span>
+              )}
+              {item.href && hasText && (
                 <span className="mt-2 inline-flex w-fit items-center gap-1 text-[11px] font-semibold text-[#059669] sm:text-xs">
-                  {t("home.bannerCta")}
+                  {item.ctaLabel || t("home.bannerCta")}
                   <ArrowRight className="size-3.5" />
                 </span>
               )}
@@ -188,41 +204,95 @@ export function AnnouncementCarousel({
               aria-hidden={i !== index}
               className="flex w-full shrink-0 items-stretch"
             >
-              <div className="flex min-w-0 flex-1 flex-col justify-center px-4 py-3 sm:px-6">
-                {item.href ? (
-                  item.href.startsWith("http") ? (
-                    <a
-                      href={item.href}
-                      rel="noopener noreferrer"
-                      className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
-                    >
-                      {body}
-                    </a>
+              {hasText && (
+                <div className="flex min-w-0 flex-1 flex-col justify-center px-4 py-3 sm:px-6">
+                  {item.href ? (
+                    item.href.startsWith("http") ? (
+                      <a
+                        href={item.href}
+                        rel="noopener noreferrer"
+                        className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                      >
+                        {body}
+                      </a>
+                    ) : (
+                      <Link
+                        to={item.href}
+                        className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                      >
+                        {body}
+                      </Link>
+                    )
                   ) : (
-                    <Link
-                      to={item.href}
-                      className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
-                    >
-                      {body}
-                    </Link>
-                  )
-                ) : (
-                  body
-                )}
-              </div>
+                    body
+                  )}
+                </div>
+              )}
               {item.imageUrl && (
-                <div className="relative h-full w-[32%] shrink-0 overflow-hidden sm:w-[38%]">
-                  <img
-                    src={item.imageUrl}
-                    alt=""
-                    className="size-full object-cover"
-                    loading={i === index ? "eager" : "lazy"}
-                    decoding="async"
-                  />
-                  <span
-                    className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[#ECFDF5] to-transparent"
-                    aria-hidden="true"
-                  />
+                <div
+                  className={cn(
+                    "relative h-full overflow-hidden",
+                    hasText ? "w-[32%] shrink-0 sm:w-[38%]" : "w-full",
+                  )}
+                >
+                  {hasText ? (
+                    <img
+                      src={item.imageUrl}
+                      alt=""
+                      className="size-full object-cover"
+                      loading={i === index ? "eager" : "lazy"}
+                      decoding="async"
+                    />
+                  ) : (
+                    // Image-only slide: the image IS the content, so the CTA
+                    // destination (if any) applies to the image itself (D8).
+                    item.href ? (
+                      item.href.startsWith("http") ? (
+                        <a
+                          href={item.href}
+                          rel="noopener noreferrer"
+                          aria-label={item.ctaLabel || t("home.bannerCta")}
+                          className="block size-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#10B981]"
+                        >
+                          <img
+                            src={item.imageUrl}
+                            alt=""
+                            className="size-full object-cover"
+                            loading={i === index ? "eager" : "lazy"}
+                            decoding="async"
+                          />
+                        </a>
+                      ) : (
+                        <Link
+                          to={item.href}
+                          aria-label={item.ctaLabel || t("home.bannerCta")}
+                          className="block size-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#10B981]"
+                        >
+                          <img
+                            src={item.imageUrl}
+                            alt=""
+                            className="size-full object-cover"
+                            loading={i === index ? "eager" : "lazy"}
+                            decoding="async"
+                          />
+                        </Link>
+                      )
+                    ) : (
+                      <img
+                        src={item.imageUrl}
+                        alt=""
+                        className="size-full object-cover"
+                        loading={i === index ? "eager" : "lazy"}
+                        decoding="async"
+                      />
+                    )
+                  )}
+                  {hasText && (
+                    <span
+                      className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[#ECFDF5] to-transparent"
+                      aria-hidden="true"
+                    />
+                  )}
                 </div>
               )}
             </div>

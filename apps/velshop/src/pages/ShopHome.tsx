@@ -1,5 +1,6 @@
 import { ProductCard } from "@/components/shop/ProductCard";
 import { AnnouncementCarousel, type Announcement } from "@/components/shop/AnnouncementCarousel";
+import { HomePromoStrip, type PromoStripBanner } from "@/components/shop/HomePromoStrip";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -235,7 +236,7 @@ export default function ShopHome() {
       .slice(0, 8);
   }, [products, popularProducts]);
 
-  // Owner-managed announcements (VelCenter → Settings) come from
+  // Owner-managed banners (VelCenter → Marketing) come from
   // GET /api/announcements. With none published, the storefront falls back to
   // honest platform facts it already has — never a fabricated campaign.
   const announcementsData = useCommerceData(
@@ -251,15 +252,28 @@ export default function ShopHome() {
   const announcements = useMemo<Announcement[]>(() => {
     const remote = (announcementsData.data ?? []) as any[];
     const published: Announcement[] = remote
-      .filter((row) => row && typeof row.title === "string" && row.title.trim())
-      .map((row) => ({
-        id: String(row.id ?? row.title),
-        eyebrow: t("announce.eyebrow"),
-        title: String(row.title),
-        description: typeof row.description === "string" ? row.description : "",
-        href: typeof row.linkUrl === "string" && row.linkUrl ? row.linkUrl : undefined,
-        imageUrl: typeof row.imageUrl === "string" && row.imageUrl ? row.imageUrl : null,
-      }));
+      // home_hero placement (the v1 default) drives the carousel
+      .filter((row) => row && (row.placement ?? "home_hero") === "home_hero")
+      .map((row): Announcement | null => {
+        const title = typeof row.title === "string" ? row.title.trim() : "";
+        const subtitle = typeof row.subtitle === "string" ? row.subtitle.trim() : "";
+        const imageUrl = typeof row.imageUrl === "string" && row.imageUrl ? row.imageUrl : null;
+        // An empty banner never renders — the backend also rejects it on save.
+        if (!title && !subtitle && !imageUrl) return null;
+        const typeKey =
+          row.type === "promotion" ? "marketing.typePromotion" : row.type === "ad" ? "marketing.typeAd" : "marketing.typeAnnouncement";
+        return {
+          id: String(row.id ?? title ?? imageUrl),
+          // The type eyebrow only sits above text — an image-only slide stays clean.
+          eyebrow: title || subtitle ? t(typeKey) : "",
+          title,
+          subtitle,
+          href: typeof row.ctaUrl === "string" && row.ctaUrl ? row.ctaUrl : undefined,
+          ctaLabel: typeof row.ctaLabel === "string" && row.ctaLabel ? row.ctaLabel : null,
+          imageUrl,
+        };
+      })
+      .filter((item): item is Announcement => item !== null);
     if (published.length > 0) return published;
 
     const fallback: Announcement[] = [
@@ -267,7 +281,7 @@ export default function ShopHome() {
         id: "welcome",
         eyebrow: t("announce.eyebrow"),
         title: t("announce.welcomeTitle"),
-        description: t("announce.welcomeDesc"),
+        subtitle: t("announce.welcomeDesc"),
       },
     ];
     if (products.length > 0) {
@@ -275,7 +289,7 @@ export default function ShopHome() {
         id: "catalogue",
         eyebrow: t("announce.eyebrow"),
         title: t("announce.catalogueTitle"),
-        description: t("announce.catalogueDesc", { count: products.length }),
+        subtitle: t("announce.catalogueDesc", { count: products.length }),
         href: "/products",
       });
     }
@@ -285,12 +299,33 @@ export default function ShopHome() {
         id: "verified",
         eyebrow: t("announce.eyebrow"),
         title: t("announce.verifiedTitle"),
-        description: t("announce.verifiedDesc", { count: verified }),
+        subtitle: t("announce.verifiedDesc", { count: verified }),
         href: "/products?verified=true",
       });
     }
     return fallback;
   }, [announcementsData.data, products, t]);
+
+  const stripBanners = useMemo<PromoStripBanner[]>(() => {
+    const remote = (announcementsData.data ?? []) as any[];
+    return remote
+      .filter((row) => row && row.placement === "home_strip")
+      .map((row): PromoStripBanner | null => {
+        const title = typeof row.title === "string" ? row.title.trim() : "";
+        const subtitle = typeof row.subtitle === "string" ? row.subtitle.trim() : "";
+        const imageUrl = typeof row.imageUrl === "string" && row.imageUrl ? row.imageUrl : null;
+        if (!title && !subtitle && !imageUrl) return null;
+        return {
+          id: String(row.id ?? title ?? imageUrl),
+          title,
+          subtitle,
+          imageUrl,
+          href: typeof row.ctaUrl === "string" && row.ctaUrl ? row.ctaUrl : undefined,
+          ctaLabel: typeof row.ctaLabel === "string" && row.ctaLabel ? row.ctaLabel : null,
+        };
+      })
+      .filter((item): item is PromoStripBanner => item !== null);
+  }, [announcementsData.data]);
 
   const handleCategory = (id: StoreProductCategory) => {
     track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: catNameMap.get(id) ?? PRODUCT_CATEGORY_META[id]?.label ?? id } });
@@ -376,6 +411,9 @@ export default function ShopHome() {
           </div>
         </section>
       )}
+
+      {/* Admin-managed promo strip (banner contract v2, home_strip placement) */}
+      <HomePromoStrip banners={stripBanners} />
 
       {CUSTOMER_MEMORY_ENABLED && !authLoading && isAuthenticated && !remindersData.loading && showReorder && (
         <section className="border-b border-slate-100 bg-white">

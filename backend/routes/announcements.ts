@@ -1,36 +1,32 @@
 /**
- * Storefront announcements (VelShop home carousel).
+ * Storefront banners (VelShop home hero carousel + promo strip).
  *
  * Storage: `platform_settings` key `shop_announcements` holding a JSON array.
  * No new table and no schema migration deliberately — the platform settings
- * store already exists for owner-managed configuration, and the shape is small
- * (a handful of slides with an optional image URL, copy and destination).
+ * store already exists for owner-managed configuration, the shape is small
+ * (a handful of slides), and the key is kept so previously published content
+ * survives this upgrade (v1 rows are mapped on read — see lib/banners.ts).
  *
- *   GET  /api/announcements          public — active items only, sorted
+ *   GET  /api/announcements          public — active + in-schedule, sorted
+ *   GET  /api/admin/announcements    settings.manage — full list (incl. inactive)
  *   PUT  /api/admin/announcements    settings.manage — replace the list
  *
  * Images are uploaded through the existing R2 presign flow with
  * `purpose: "announcement"`, so the carousel only ever holds real URLs minted by
  * this backend.
+ *
+ * Banner rules live in `lib/banners.ts` (pure, unit-tested); this module does
+ * only IO. An invalid item fails the save with 400 + item index — v1 silently
+ * dropped invalid items, which made "empty banner rejected" indistinguishable
+ * from "empty banner disappeared".
  */
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import { userHasPermission } from "../lib/permissions.js";
+import { isBannerVisible, normaliseBanners, type Banner } from "../lib/banners.js";
 
 const SETTINGS_KEY = "shop_announcements";
-const MAX_ITEMS = 10;
-const MAX_TEXT = 240;
-
-export interface AnnouncementItem {
-  id: string;
-  title: string;
-  description: string;
-  imageUrl: string | null;
-  linkUrl: string | null;
-  active: boolean;
-  sortOrder: number;
-}
 
 /** Values may be stored JSON-encoded or raw (older rows) — accept both. */
 function parseStoredValue(value: unknown): unknown {
@@ -42,57 +38,18 @@ function parseStoredValue(value: unknown): unknown {
   }
 }
 
-function asText(value: unknown, max = MAX_TEXT): string {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-
-function asUrl(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const raw = value.trim();
-  if (!raw) return null;
-  // Only http(s) images and in-app paths — never javascript: or data: payloads.
-  if (raw.startsWith("/")) return raw.slice(0, 500);
-  if (/^https?:\/\//i.test(raw)) return raw.slice(0, 1000);
-  return null;
-}
-
-function normaliseItem(input: unknown, index: number): AnnouncementItem | null {
-  if (!input || typeof input !== "object") return null;
-  const row = input as Record<string, unknown>;
-  const title = asText(row.title, 120);
-  if (!title) return null;
-  const id = asText(row.id, 64) || `a${index + 1}`;
-  return {
-    id,
-    title,
-    description: asText(row.description),
-    imageUrl: asUrl(row.imageUrl),
-    linkUrl: asUrl(row.linkUrl),
-    active: row.active !== false,
-    sortOrder: Number.isFinite(Number(row.sortOrder)) ? Number(row.sortOrder) : index,
-  };
-}
-
-export function normaliseAnnouncements(input: unknown): AnnouncementItem[] {
-  if (!Array.isArray(input)) return [];
-  return input
-    .map((item, index) => normaliseItem(item, index))
-    .filter((item): item is AnnouncementItem => item !== null)
-    .slice(0, MAX_ITEMS)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
-}
-
-async function readAnnouncements(): Promise<AnnouncementItem[]> {
+async function readAnnouncements(): Promise<Banner[]> {
   const result = await query("SELECT value FROM platform_settings WHERE key = $1", [SETTINGS_KEY]);
   if (result.rows.length === 0) return [];
-  return normaliseAnnouncements(parseStoredValue(result.rows[0].value));
+  return normaliseBanners(parseStoredValue(result.rows[0].value)).items;
 }
 
 export function setupAnnouncementRoutes(app: Express): void {
   // ── Public: what VelShop renders ------------------------------------------
   app.get("/api/announcements", async (_req: Request, res: Response) => {
     try {
-      const items = (await readAnnouncements()).filter((item) => item.active);
+      const now = new Date();
+      const items = (await readAnnouncements()).filter((item) => isBannerVisible(item, now));
       res.json({ success: true, data: items });
     } catch (error) {
       console.error("[announcements] read failed:", error);
@@ -101,7 +58,7 @@ export function setupAnnouncementRoutes(app: Express): void {
     }
   });
 
-  // ── Admin: replace the list (VelCenter settings) --------------------------
+  // ── Admin: full list (VelCenter marketing) ---------------------------------
   app.get("/api/admin/announcements", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
@@ -117,11 +74,12 @@ export function setupAnnouncementRoutes(app: Express): void {
       console.error("[announcements] admin read failed:", error);
       res.status(500).json({
         success: false,
-        error: { code: "ANNOUNCEMENT_READ_FAILED", message: "Could not read announcements" },
+        error: { code: "ANNOUNCEMENT_READ_FAILED", message: "Could not read banners" },
       });
     }
   });
 
+  // ── Admin: replace the list -------------------------------------------------
   app.put("/api/admin/announcements", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.userId;
@@ -133,12 +91,24 @@ export function setupAnnouncementRoutes(app: Express): void {
         return;
       }
 
-      const items = normaliseAnnouncements((req.body as { items?: unknown })?.items);
+      const { items, rejections } = normaliseBanners((req.body as { items?: unknown })?.items);
+      const firstRejection = rejections[0];
+      if (firstRejection) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: `banner ${firstRejection.index}: ${firstRejection.reason}`,
+          },
+        });
+        return;
+      }
+
       const payload = JSON.stringify(items);
       if (payload.length > 20_000) {
         res.status(400).json({
           success: false,
-          error: { code: "VALIDATION_ERROR", message: "Too much content for announcements" },
+          error: { code: "VALIDATION_ERROR", message: "Too much content for banners" },
         });
         return;
       }
@@ -151,7 +121,7 @@ export function setupAnnouncementRoutes(app: Express): void {
                description = EXCLUDED.description,
                updated_at = NOW(),
                updated_by = EXCLUDED.updated_by`,
-        [SETTINGS_KEY, payload, "VelShop home announcements (JSON array)", userId],
+        [SETTINGS_KEY, payload, "VelShop home banners (JSON array)", userId],
       );
 
       res.json({ success: true, data: items });
@@ -159,7 +129,7 @@ export function setupAnnouncementRoutes(app: Express): void {
       console.error("[announcements] save failed:", error);
       res.status(500).json({
         success: false,
-        error: { code: "ANNOUNCEMENT_SAVE_FAILED", message: "Could not save announcements" },
+        error: { code: "ANNOUNCEMENT_SAVE_FAILED", message: "Could not save banners" },
       });
     }
   });

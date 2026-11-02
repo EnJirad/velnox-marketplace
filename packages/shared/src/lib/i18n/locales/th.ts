@@ -500,24 +500,50 @@ export const th = {
     verifiedDesc: "{count} รายการผ่านการตรวจสอบจาก Velnox",
   },
 
-  announceAdmin: {
-    title: "แบนเนอร์ประกาศหน้าแรก",
-    desc: "แสดงบนสุดของ VelShop ตามลำดับ พร้อมรูปและลิงก์ (ไม่บังคับ)",
-    add: "เพิ่มประกาศ",
-    empty: "ยังไม่มีประกาศ — กดเพิ่มประกาศเพื่อเริ่ม",
-    fieldTitle: "หัวข้อ",
-    fieldDesc: "ข้อความสั้น",
-    fieldLink: "ลิงก์ (ไม่บังคับ)",
+  /**
+   * VelCenter Marketing (banner management) — renamed from `announceAdmin` and
+   * extended for the banner contract v2 (type, placement, optional CTA +
+   * scheduling, explicit validation errors). Also the storefront strip copy
+   * (`strip`) and the type/eyebrow labels (`typeX`).
+   */
+  marketing: {
+    navLabel: "การตลาด",
+    title: "แบนเนอร์และโปรโมชันหน้าแรก",
+    desc: "จัดการคอนเทนต์โฆษณาบนหน้าแรก VelShop — รูปอย่างเดียว ข้อความอย่างเดียว หรือทั้งสองอย่าง ก็แสดงได้",
+    add: "เพิ่มแบนเนอร์",
+    empty: "ยังไม่มีแบนเนอร์ — กดเพิ่มแบนเนอร์เพื่อเริ่ม",
+    fieldTitle: "หัวข้อ (ไม่บังคับ)",
+    fieldTitleHint: "ถ้าไม่กรอก จะแสดงเป็นแบนเนอร์รูปอย่างเดียว",
+    fieldSubtitle: "ข้อความ (ไม่บังคับ)",
+    fieldType: "ประเภท",
+    fieldPlacement: "ตำแหน่งแสดง",
+    typeAnnouncement: "ประกาศ",
+    typePromotion: "โปรโมชัน",
+    typeAd: "โฆษณา",
+    placementHero: "หน้าแรก — แถบหลัก (หมุนเวียน)",
+    placementStrip: "หน้าแรก — แถบโปรโมชัน (เรียงใหม่)",
+    fieldCtaLabel: "ข้อความปุ่ม CTA (ไม่บังคับ)",
+    fieldCtaUrl: "ลิงก์ปลายทาง (ไม่บังคับ)",
+    fieldStartsAt: "เริ่มแสดง (ไม่บังคับ)",
+    fieldEndsAt: "หยุดแสดง (ไม่บังคับ)",
     active: "แสดง",
     save: "บันทึก",
-    saved: "บันทึกประกาศแล้ว",
+    saved: "บันทึกแบนเนอร์แล้ว",
     saveFailed: "บันทึกไม่สำเร็จ",
-    upload: "รูป",
+    upload: "รูป (ไม่บังคับ)",
+    uploadHint: "ข้ามได้ — แบนเนอร์ข้อความอย่างเดียวก็แสดงได้",
     uploaded: "อัปโหลดรูปแล้ว",
     uploadFailed: "อัปโหลดรูปไม่สำเร็จ",
+    removeImage: "เอารูปออก",
     up: "เลื่อนขึ้น",
     down: "เลื่อนลง",
     remove: "ลบ",
+    emptyBannerError: "แบนเนอร์ต้องมีเนื้อหาอย่างน้อยหนึ่งอย่าง: หัวข้อ ข้อความ หรือรูป",
+    rejectPrefix: "แบนเนอร์ที่ {index}",
+    unsaved: "ยังไม่ได้บันทึก",
+    errSchedule: "วันหยุดแสดงต้องหลังวันเริ่มแสดง",
+    stripEyebrow: "โปรโมชัน",
+    stripCta: "ดูทั้งหมด",
   },
 
   sellerNav: {
