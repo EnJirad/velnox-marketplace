@@ -1,4 +1,5 @@
 import { ProductCard } from "@/components/shop/ProductCard";
+import { AnnouncementCarousel, type Announcement } from "@/components/shop/AnnouncementCarousel";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -234,17 +235,40 @@ export default function ShopHome() {
       .slice(0, 8);
   }, [products, popularProducts]);
 
-  // Banner artwork = a real product image from that same category (never a
-  // stock/placeholder asset, never a fabricated campaign creative).
-  const bannerProduct = useMemo(() => {
-    if (!bannerCategory) return null;
-    const [catId] = bannerCategory;
-    return (
-      products.find(
-        (p) => p.category === catId && Boolean(p.primaryImage?.displayUrl ?? p.primaryImage?.url),
-      ) ?? null
-    );
-  }, [products, bannerCategory]);
+  // Announcements are derived from data the storefront already has: a neutral
+  // platform welcome, the real number of listed products and the real number of
+  // Velnox-verified listings. No campaign, discount or countdown claim is made,
+  // because no announcement/campaign content system exists in this build.
+  const announcements = useMemo<Announcement[]>(() => {
+    const list: Announcement[] = [
+      {
+        id: "welcome",
+        eyebrow: t("announce.eyebrow"),
+        title: t("announce.welcomeTitle"),
+        description: t("announce.welcomeDesc"),
+      },
+    ];
+    if (products.length > 0) {
+      list.push({
+        id: "catalogue",
+        eyebrow: t("announce.eyebrow"),
+        title: t("announce.catalogueTitle"),
+        description: t("announce.catalogueDesc", { count: products.length }),
+        href: "/products",
+      });
+    }
+    const verified = products.filter((p) => p.isVerifiedProduct).length;
+    if (verified > 0) {
+      list.push({
+        id: "verified",
+        eyebrow: t("announce.eyebrow"),
+        title: t("announce.verifiedTitle"),
+        description: t("announce.verifiedDesc", { count: verified }),
+        href: "/products?verified=true",
+      });
+    }
+    return list;
+  }, [products, t]);
 
   const handleCategory = (id: StoreProductCategory) => {
     track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: catNameMap.get(id) ?? PRODUCT_CATEGORY_META[id]?.label ?? id } });
@@ -290,57 +314,13 @@ export default function ShopHome() {
     <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
-      {/* Discovery banner — real top category, its live count and a real product
-          image from that category. No campaign/discount copy exists in this build. */}
-      {!productsData.loading && bannerCategory && (() => {
-        const [catId, catCount] = bannerCategory;
-        const BannerIcon = (CATEGORY_ICONS as Record<string, LucideIcon>)[catId] ?? Package;
-        const catLabel =
-          catNameMap.get(catId) ?? (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[catId]?.label ?? catId;
-        const image = bannerProduct?.primaryImage;
-        const imageUrl = image?.displayUrl ?? image?.url ?? null;
-        return (
-          <section className="bg-white">
-            <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6 sm:pt-4">
-              <Link
-                to={`/products?category=${encodeURIComponent(catId)}`}
-                onClick={() => handleCategory(catId as StoreProductCategory)}
-                className="group relative flex h-[150px] w-full overflow-hidden rounded-2xl border border-[#10B981]/20 bg-[#ECFDF5] transition-shadow hover:shadow-[0_10px_30px_rgba(16,185,129,0.16)] md:h-[240px]"
-              >
-                <span className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-4 py-3 sm:px-6">
-                  <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#059669] sm:text-[11px]">
-                    <span className="flex size-6 items-center justify-center rounded-full bg-white text-[#10B981] ring-1 ring-[#10B981]/20">
-                      <BannerIcon className="size-3.5" />
-                    </span>
-                    {t("home.bannerEyebrow")}
-                  </span>
-                  <span className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-2xl">{catLabel}</span>
-                  <span className="text-[11px] text-slate-500 sm:text-xs">{t("home.categoryCount", { count: catCount })}</span>
-                  <span className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-[#10B981] px-3 py-1.5 text-[11px] font-semibold text-white sm:px-4 sm:py-2 sm:text-xs">
-                    {t("home.bannerCta")}
-                    <ArrowRight className="size-3.5" />
-                  </span>
-                </span>
-                {imageUrl && (
-                  <span className="relative block h-full w-[38%] shrink-0 sm:w-[42%]">
-                    <img
-                      src={imageUrl}
-                      alt={bannerProduct?.name ?? catLabel}
-                      className="size-full object-cover"
-                      loading="eager"
-                      decoding="async"
-                    />
-                    <span
-                      className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[#ECFDF5] to-transparent"
-                      aria-hidden="true"
-                    />
-                  </span>
-                )}
-              </Link>
-            </div>
-          </section>
-        );
-      })()}
+      {/* Announcement / promotion carousel — platform-level messages only.
+          Content is derived from real storefront data; no campaign system exists. */}
+      <section className="bg-white">
+        <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6 sm:pt-4">
+          <AnnouncementCarousel items={announcements} />
+        </div>
+      </section>
 
       {!productsData.loading && popularCategories.length > 0 && (
         <section className="border-b border-slate-100 bg-white">

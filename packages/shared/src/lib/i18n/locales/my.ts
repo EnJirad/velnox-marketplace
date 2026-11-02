@@ -158,6 +158,21 @@ export const my = {
     shopVisit: "{name} ဆိုင်သို့ သွားရန်",
   },
 
+  announce: {
+    region: "Velnox အသိပေးချက်များ",
+    position: "အသိပေးချက် {current} / {total}",
+    goTo: "အသိပေးချက် {index} သို့ သွားရန်",
+    prev: "ယခင် အသိပေးချက်",
+    next: "နောက် အသိပေးချက်",
+    eyebrow: "Velnox အသိပေးချက်",
+    welcomeTitle: "VelShop မှ ကြိုဆိုပါသည်",
+    welcomeDesc: "Velnox ရှိ စစ်မှန်သော ဆိုင်များမှ ဝယ်ယူပါ — လက်လီနှင့် လက်ကား တစ်နေရာတည်း",
+    catalogueTitle: "ယနေ့ ဈေးကွက်ထဲရှိ ပစ္စည်းများ",
+    catalogueDesc: "ပစ္စည်း {count} မျိုး ဝယ်ယူနိုင်ပါသည်",
+    verifiedTitle: "အတည်ပြုပြီး ပစ္စည်းများ",
+    verifiedDesc: "ပစ္စည်း {count} မျိုး Velnox စစ်ဆေးမှု အောင်မြင်ထားသည်",
+  },
+
   home: {
     eyebrow: "velshop · Velnox အွန်လိုင်းဈေးကွက်",
     bannerEyebrow: "လူကြိုက်များသော အမျိုးအစား",

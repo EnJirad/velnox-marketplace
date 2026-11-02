@@ -241,6 +241,21 @@ export const th = {
     shopVisit: "เยี่ยมชมร้าน {name}",
   },
 
+  announce: {
+    region: "ประกาศจาก Velnox",
+    position: "ประกาศที่ {current} จาก {total}",
+    goTo: "ไปที่ประกาศที่ {index}",
+    prev: "ประกาศก่อนหน้า",
+    next: "ประกาศถัดไป",
+    eyebrow: "ประกาศจาก Velnox",
+    welcomeTitle: "ยินดีต้อนรับสู่ VelShop",
+    welcomeDesc: "เลือกซื้อจากร้านค้าจริงบน Velnox — ปลีกและส่งในที่เดียว",
+    catalogueTitle: "สินค้าในตลาดวันนี้",
+    catalogueDesc: "มีสินค้าพร้อมจำหน่าย {count} รายการ",
+    verifiedTitle: "สินค้าที่ผ่านการยืนยัน",
+    verifiedDesc: "{count} รายการผ่านการตรวจสอบจาก Velnox",
+  },
+
   home: {
     eyebrow: "velshop · ตลาดออนไลน์ Velnox",
     bannerEyebrow: "หมวดหมู่ยอดนิยม",

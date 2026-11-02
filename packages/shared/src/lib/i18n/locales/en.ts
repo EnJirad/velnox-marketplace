@@ -217,6 +217,21 @@ export const en: Dict = {
     shopVisit: "Visit {name}",
   },
 
+  announce: {
+    region: "Velnox announcements",
+    position: "Announcement {current} of {total}",
+    goTo: "Go to announcement {index}",
+    prev: "Previous announcement",
+    next: "Next announcement",
+    eyebrow: "Velnox announcement",
+    welcomeTitle: "Welcome to VelShop",
+    welcomeDesc: "Buy from real shops on Velnox — retail and wholesale in one place",
+    catalogueTitle: "In the market today",
+    catalogueDesc: "{count} items are available to order",
+    verifiedTitle: "Verified listings",
+    verifiedDesc: "{count} items passed Velnox review",
+  },
+
   home: {
     eyebrow: "velshop · Velnox marketplace",
     bannerEyebrow: "Popular category",

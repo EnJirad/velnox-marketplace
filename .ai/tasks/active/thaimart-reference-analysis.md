@@ -46,8 +46,10 @@ routes/APIs. i18n keys go straight into the base `th/en/my` locale objects. No f
 Analysis: **done**. Implementation: **steps 1–4 landed** (§141 bottom nav, §142 header brand bar, §143
 Home/Market split + compact categories + curated rails + 5-tab nav, §144 image-led real-data banner and
 Home density), plus **§145 production audit** (marketplace category filter restyled to the accent and
-capped in height). Remaining: profile token alignment and the long tail of screens (PDP/cart/checkout/
-orders/account/help). Mobile viewport renders (360/390/430) remain unverified — the harness cannot resize.
+capped in height) and **§146** (Home banner replaced by a real-data announcement carousel; shared
+select/dropdown positioning moved to Radix popper with an internal height cap). Remaining: profile token
+alignment and the long tail of screens (PDP/cart/checkout/orders/account/help). Mobile viewport renders
+(360/390/430) remain unverified — the harness cannot resize.
 **VISUAL VERIFICATION: NOT VERIFIED** for every step — the harness screenshot surface is blocked (§137);
 widths above 492 px cannot be measured (iframe subframes stalled, CDP resize unavailable). Home’s banner
 and curated rails could not be observed with data: this sandbox’s catalogue returns 0 published products.
