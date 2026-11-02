@@ -8,6 +8,7 @@ Brand palette is **not** copied: VelShop keeps Velnox mint/green as its accent.
 | Region | Reference spec (measured visually) | VelShop today | Action |
 |---|---|---|---|
 | Brand bar | Solid brand colour, ~56 px, logo mark 32 px + **search pill** (white, fully rounded, 40 px, search icon right) + cart with badge + chat icon; sticks to the top of the content area | `ShopHeader` was one white bar; mobile had no pill, no cart badge cluster, no chat | **done (§142)** — mobile bar at `#10B981`, 56 px; pill 40 px; cart real count; chat → `/chat` |
+| Promo/banner | Wide card above the categories; image-led, short copy | category/tint card, no imagery | **done (§144)** — real top category + live count + real product photo (R2), no campaign claims |
 | Category rail | Horizontal scroll, 6+ items, 56 px circular icon chip + 11 px two-line label, active item tinted | text chips in a bordered card row | **done (§143)** — compact circular chips (4/row mobile, 6 on ≥sm) + “view all categories” |
 | Content | White cards on `#F8FAFC`-ish page, 12–16 px radius, 1 px border, 16 px side margins | similar tokens exist | unify radius/margins |
 | Promo strip | Thin bordered card with dashed divider + big number | absent | optional, only with real campaign |
@@ -42,9 +43,10 @@ routes/APIs. i18n keys go straight into the base `th/en/my` locale objects. No f
 
 ## 5. Status
 
-Analysis: **done**. Implementation: **steps 1–3 landed** — §141 bottom nav, §142 header brand bar, §143
-Home/Market split + compact categories + curated rails + 5-tab nav. Remaining: profile token alignment and
-the long tail of screens (PDP/cart/checkout/orders/account/help) plus any reference polish.
+Analysis: **done**. Implementation: **steps 1–4 landed** — §141 bottom nav, §142 header brand bar, §143
+Home/Market split + compact categories + curated rails + 5-tab nav, §144 image-led real-data banner and
+Home density. Remaining: profile token alignment and the long tail of screens (PDP/cart/checkout/orders/
+account/help).
 **VISUAL VERIFICATION: NOT VERIFIED** for every step — the harness screenshot surface is blocked (§137);
 widths above 492 px cannot be measured (iframe subframes stalled, CDP resize unavailable). Home’s banner
 and curated rails could not be observed with data: this sandbox’s catalogue returns 0 published products.

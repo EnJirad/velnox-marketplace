@@ -234,6 +234,18 @@ export default function ShopHome() {
       .slice(0, 8);
   }, [products, popularProducts]);
 
+  // Banner artwork = a real product image from that same category (never a
+  // stock/placeholder asset, never a fabricated campaign creative).
+  const bannerProduct = useMemo(() => {
+    if (!bannerCategory) return null;
+    const [catId] = bannerCategory;
+    return (
+      products.find(
+        (p) => p.category === catId && Boolean(p.primaryImage?.displayUrl ?? p.primaryImage?.url),
+      ) ?? null
+    );
+  }, [products, bannerCategory]);
+
   const handleCategory = (id: StoreProductCategory) => {
     track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: catNameMap.get(id) ?? PRODUCT_CATEGORY_META[id]?.label ?? id } });
   };
@@ -278,30 +290,52 @@ export default function ShopHome() {
     <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
-      {/* Discovery banner — built from the real top category and its live count.
-          No campaign/discount copy: there is no campaign source in this build. */}
+      {/* Discovery banner — real top category, its live count and a real product
+          image from that category. No campaign/discount copy exists in this build. */}
       {!productsData.loading && bannerCategory && (() => {
         const [catId, catCount] = bannerCategory;
         const BannerIcon = (CATEGORY_ICONS as Record<string, LucideIcon>)[catId] ?? Package;
         const catLabel =
           catNameMap.get(catId) ?? (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[catId]?.label ?? catId;
+        const image = bannerProduct?.primaryImage;
+        const imageUrl = image?.displayUrl ?? image?.url ?? null;
         return (
-          <section className="border-b border-slate-100 bg-white">
-            <div className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6 sm:py-4">
+          <section className="bg-white">
+            <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6 sm:pt-4">
               <Link
                 to={`/products?category=${encodeURIComponent(catId)}`}
                 onClick={() => handleCategory(catId as StoreProductCategory)}
-                className="flex items-center gap-3 rounded-2xl border border-[#10B981]/25 bg-gradient-to-r from-[#ECFDF5] via-white to-white p-3 transition-shadow hover:shadow-[0_6px_20px_rgba(15,23,42,0.06)] sm:gap-4 sm:p-4"
+                className="group relative flex h-[150px] w-full overflow-hidden rounded-2xl border border-[#10B981]/20 bg-[#ECFDF5] transition-shadow hover:shadow-[0_10px_30px_rgba(16,185,129,0.16)] md:h-[240px]"
               >
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white text-[#10B981] ring-1 ring-[#10B981]/20 sm:size-14">
-                  <BannerIcon className="size-6 sm:size-7" />
+                <span className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-4 py-3 sm:px-6">
+                  <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#059669] sm:text-[11px]">
+                    <span className="flex size-6 items-center justify-center rounded-full bg-white text-[#10B981] ring-1 ring-[#10B981]/20">
+                      <BannerIcon className="size-3.5" />
+                    </span>
+                    {t("home.bannerEyebrow")}
+                  </span>
+                  <span className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-2xl">{catLabel}</span>
+                  <span className="text-[11px] text-slate-500 sm:text-xs">{t("home.categoryCount", { count: catCount })}</span>
+                  <span className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-[#10B981] px-3 py-1.5 text-[11px] font-semibold text-white sm:px-4 sm:py-2 sm:text-xs">
+                    {t("home.bannerCta")}
+                    <ArrowRight className="size-3.5" />
+                  </span>
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#10B981]">{t("home.bannerEyebrow")}</span>
-                  <span className="mt-0.5 block truncate text-base font-bold tracking-tight text-slate-900 sm:text-lg">{catLabel}</span>
-                  <span className="mt-0.5 block text-[11px] text-slate-500">{t("home.categoryCount", { count: catCount })}</span>
-                </span>
-                <span className="shrink-0 rounded-full bg-[#10B981] px-3 py-2 text-xs font-semibold text-white sm:px-4">{t("home.bannerCta")}</span>
+                {imageUrl && (
+                  <span className="relative block h-full w-[38%] shrink-0 sm:w-[42%]">
+                    <img
+                      src={imageUrl}
+                      alt={bannerProduct?.name ?? catLabel}
+                      className="size-full object-cover"
+                      loading="eager"
+                      decoding="async"
+                    />
+                    <span
+                      className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[#ECFDF5] to-transparent"
+                      aria-hidden="true"
+                    />
+                  </span>
+                )}
               </Link>
             </div>
           </section>
@@ -310,7 +344,7 @@ export default function ShopHome() {
 
       {!productsData.loading && popularCategories.length > 0 && (
         <section className="border-b border-slate-100 bg-white">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+          <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5">
             <div className="flex items-end justify-between gap-3">
               <div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.categoriesTitle")}</h2><p className="mt-0.5 text-xs text-slate-400">{t("home.categoriesDesc")}</p></div>
               <Link to="/categories" onClick={() => track("CATEGORY_VIEW", { value: "all", context: { label: "explore" } })} className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("home.viewAllCategories")}<ArrowRight className="size-3.5" /></Link>
@@ -371,7 +405,7 @@ export default function ShopHome() {
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
             <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><Sparkles className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{recommendData.data?.source === "personal" ? t("home.recsPersonal") : t("home.recsPopular")}</h2><p className="text-xs text-slate-400">{recommendData.data?.source === "personal" ? t("home.recsPersonalDesc") : t("home.recsPopularDesc")}</p></div></div>
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{recommendations.slice(0, 8).map(({ product }) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-recommended")} onAdd={handleAdd} badgeLabel={t("home.badgeRecommended")} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{recommendations.slice(0, 8).map(({ product }) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-recommended")} onAdd={handleAdd} badgeLabel={t("home.badgeRecommended")} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
       )}
@@ -383,7 +417,7 @@ export default function ShopHome() {
               <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><TrendingUp className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.trendingTitle")}</h2><p className="text-xs text-slate-400">{t("home.trendingDesc")}</p></div></div>
               <Link to="/products?sort=popular" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("common.viewAll")}<ArrowRight className="size-3.5" /></Link>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{popularProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{popularProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
       )}
@@ -395,13 +429,13 @@ export default function ShopHome() {
               <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><Sparkles className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.newTitle")}</h2><p className="text-xs text-slate-400">{t("home.newDesc")}</p></div></div>
               <Link to="/products?sort=newest" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("common.viewAll")}<ArrowRight className="size-3.5" /></Link>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{newProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-new")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{newProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-new")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
       )}
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-        {productsData.loading ? (<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => (<div key={i} className="h-64 animate-pulse rounded-xl border border-slate-200 bg-white" />))}</div>) : products.length === 0 ? (<div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]"><ShoppingBag className="size-7 text-[#10B981]" /></span><h2 className="mt-5 text-lg font-semibold text-slate-900">{t("home.emptyTitle")}</h2><p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("home.emptyDesc")}</p></div>) : null}
+        {productsData.loading ? (<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => (<div key={i} className="h-64 animate-pulse rounded-xl border border-slate-200 bg-white" />))}</div>) : products.length === 0 ? (<div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]"><ShoppingBag className="size-7 text-[#10B981]" /></span><h2 className="mt-5 text-lg font-semibold text-slate-900">{t("home.emptyTitle")}</h2><p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("home.emptyDesc")}</p></div>) : null}
       </main>
       <ShopFooter />
 
