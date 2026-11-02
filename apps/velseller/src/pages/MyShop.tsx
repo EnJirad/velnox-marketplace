@@ -97,7 +97,9 @@ export default function MyShop() {
         console.log(`[VERIFICATION UPLOAD] confirmation completed status=200 purpose=${info.purpose}`);
       } catch (err) {
         console.error(`[VERIFICATION UPLOAD] confirmation failed purpose=${info.purpose}`, err);
-        toast.error(`บันทึกหลักฐาน "${info.filename}" ไม่สำเร็จ กรุณาลองอีกครั้ง`);
+        toast.error(
+        t("sellerDash.shop.toastEvidenceFailed", { filename: info.filename }),
+      );
       }
     },
     [confirmEvidence],
@@ -232,7 +234,7 @@ export default function MyShop() {
   const handleOpenShop = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!onboard.shopName.trim()) {
-      toast.error("กรุณากรอกชื่อร้านค้า");
+      toast.error(t("sellerDash.shop.toastShopNameRequired"));
       return;
     }
     setOpening(true);
@@ -243,11 +245,11 @@ export default function MyShop() {
         description: onboard.description.trim() || undefined,
         taxId: onboard.taxId.trim() || undefined,
       });
-      toast.success("เปิดร้านค้าแล้ว 🎉 — จัดการสินค้าได้เลย");
+      toast.success(t("sellerDash.shop.toastShopOpened"));
       setProfile(await mySellerProfile());
     } catch (error) {
       console.error("Open shop error:", error);
-      toast.error(error instanceof Error ? error.message : "เปิดร้านไม่สำเร็จ กรุณาลองอีกครั้ง");
+      toast.error(error instanceof Error ? error.message : t("sellerDash.shop.toastShopOpenFailed"));
     } finally {
       setOpening(false);
     }
@@ -268,14 +270,14 @@ export default function MyShop() {
       // If auto-approval is on, backend will set status to 'published' directly.
       const updated = await setStatus({ productId: product.id, status: "pending_review" });
       toast.success(
-        updated?.status === "published" ? "ประกาศขายหน้าร้านแล้ว 🛍️" : t("productModeration.submittedToast"),
+        updated?.status === "published" ? t("sellerDash.shop.toastPublished") : t("productModeration.submittedToast"),
       );
       if (updated) {
         setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
       }
     } catch (error) {
       console.error("Toggle publish error:", error);
-      toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
+      toast.error(error instanceof Error ? error.message : t("sellerDash.shop.toastFailed"));
     } finally {
       setTogglingId(null);
     }
@@ -292,13 +294,13 @@ export default function MyShop() {
 
     // Block if uploads are still in progress
     if (hasUploadingFiles) {
-      toast.error("กรุณารอให้อัปโหลดไฟล์เสร็จสิ้นก่อนส่ง");
+      toast.error(t("sellerDash.shop.toastWaitUpload"));
       return;
     }
 
     // Require at least one successfully uploaded evidence file
     if (!hasUploadedFiles) {
-      toast.error("กรุณาอัปโหลดหลักฐานอย่างน้อย 1 ไฟล์");
+      toast.error(t("sellerDash.shop.toastNeedEvidence"));
       return;
     }
 
@@ -329,7 +331,7 @@ export default function MyShop() {
       setEvidenceFiles([]);
     } catch (error) {
       console.error("Verification submit error:", error);
-      toast.error(error instanceof Error ? error.message : "ไม่สำเร็จ กรุณาลองอีกครั้ง");
+      toast.error(error instanceof Error ? error.message : t("sellerDash.shop.toastFailed"));
     } finally {
       setVerifyBusy(false);
     }
@@ -342,12 +344,12 @@ export default function MyShop() {
     setDeletingBusy(true);
     try {
       await deleteProduct({ productId: deleting.id });
-      toast.success("ลบสินค้าแล้ว");
+      toast.success(t("sellerDash.shop.toastDeleted"));
       setProducts((prev) => prev.filter((p) => p.id !== deleting.id));
       setDeleting(null);
     } catch (error) {
       console.error("Delete error:", error);
-      toast.error(error instanceof Error ? error.message : "ลบไม่สำเร็จ");
+      toast.error(error instanceof Error ? error.message : t("sellerDash.shop.toastDeleteFailed"));
     } finally {
       setDeletingBusy(false);
     }
@@ -396,7 +398,7 @@ export default function MyShop() {
   };
 
   const toggleLabel = (product: StoreProduct) => {
-    if (product.status === "published") return "ปิดขาย";
+    if (product.status === "published") return t("sellerDash.shop.toggleUnpublish");
     if (product.status === "pending_review") return t("productModeration.statusPendingReview");
     if (product.status === "rejected") return t("productModeration.submitForReview");
     // suspended/archived are terminal (admin-only) — no seller transition
@@ -551,13 +553,13 @@ export default function MyShop() {
           <div>
             <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
               <Store className="size-4 text-[#10B981]" />
-              velseller · ร้านของฉัน
+              {t("sellerDash.shop.eyebrow")}
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
               {shop.name}
             </h1>
             <p className="mt-1.5 max-w-lg text-sm leading-6 text-slate-500">
-              {shop.description || "จัดการสินค้า รูปภาพ และสต็อกของคุณ — ขายที่หน้าร้าน velshop"}
+              {shop.description || t("sellerDash.shop.subFallback")}
             </p>
           </div>
           <Button
@@ -568,7 +570,7 @@ export default function MyShop() {
             }}
           >
             <Plus className="size-4" />
-            เพิ่มสินค้า
+            {t("sellerDash.shop.ctaAddProduct")}
           </Button>
         </div>
 
@@ -579,7 +581,7 @@ export default function MyShop() {
               <Store className="size-5 text-[#10B981]" />
             </span>
             <div>
-              <p className="text-xs text-slate-400">ร้านค้า</p>
+              <p className="text-xs text-slate-400">{t("sellerDash.shop.cardShop")}</p>
               <p className="text-sm font-semibold text-slate-900">{shop.name}</p>
               {shop.slug && <p className="text-xs text-slate-400">velshop/{shop.slug}</p>}
             </div>
@@ -589,9 +591,9 @@ export default function MyShop() {
               <BadgePercent className="size-5 text-slate-600" />
             </span>
             <div>
-              <p className="text-xs text-slate-400">ค่าธรรมเนียม Velnox</p>
+              <p className="text-xs text-slate-400">{t("sellerDash.shop.cardFee")}</p>
               <p className="text-sm font-semibold text-slate-900">
-                {(shop.commissionRate * 100).toLocaleString("th-TH")}% ต่อชิ้น
+                {t("sellerDash.shop.cardFeeValue", { rate: (shop.commissionRate * 100).toLocaleString("th-TH") })}
               </p>
             </div>
           </div>
@@ -600,8 +602,8 @@ export default function MyShop() {
               <ShieldCheck className="size-5 text-[#10B981]" />
             </span>
             <div>
-              <p className="text-xs text-slate-400">นโยบายตีกลับ</p>
-              <p className="text-sm font-semibold text-slate-900">ครอบคลุมไม่เกิน 10% ของยอดขาย</p>
+              <p className="text-xs text-slate-400">{t("sellerDash.shop.cardReturnPolicy")}</p>
+              <p className="text-sm font-semibold text-slate-900">{t("sellerDash.shop.cardReturnValue")}</p>
             </div>
           </div>
 
@@ -622,7 +624,7 @@ export default function MyShop() {
                 return (
                   <button
                     type="button"
-                    className="text-[11px] font-medium text-[#10B981] underline-offset-2 hover:underline"
+                    className="inline-flex min-h-11 items-center text-[11px] font-medium text-[#10B981] underline-offset-2 hover:underline"
                     onClick={() => {
                       setVerifyTarget({ kind: "seller" });
                       setVerifyNotes("");
@@ -640,9 +642,9 @@ export default function MyShop() {
         <section className="mt-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-slate-900">สินค้าของฉัน</h2>
+              <h2 className="text-base font-semibold text-slate-900">{t("sellerDash.shop.productsTitle")}</h2>
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-                {products.length} รายการ
+                {t("sellerDash.shop.productsCount", { count: products.length })}
               </span>
             </div>
             <div className="relative w-full sm:max-w-64">
@@ -650,9 +652,9 @@ export default function MyShop() {
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="ค้นหาสินค้าของคุณ..."
+                placeholder={t("sellerDash.shop.searchPlaceholder")}
                 className="h-10 rounded-[10px] border-slate-200 bg-white pl-9"
-                aria-label="ค้นหาสินค้า"
+                aria-label={t("sellerDash.shop.searchAria")}
               />
             </div>
           </div>
@@ -661,19 +663,19 @@ export default function MyShop() {
           <div className="mt-4 grid grid-cols-2 gap-2 sm:max-w-lg sm:grid-cols-4">
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center">
               <p className="text-lg font-bold tabular-nums text-slate-900">{products.length}</p>
-              <p className="text-[11px] text-slate-400">ทั้งหมด</p>
+              <p className="text-[11px] text-slate-400">{t("sellerDash.shop.statAll")}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center">
               <p className="text-lg font-bold tabular-nums text-emerald-600">{publishedCount}</p>
-              <p className="text-[11px] text-slate-400">ขายหน้าร้าน</p>
+              <p className="text-[11px] text-slate-400">{t("sellerDash.shop.statPublished")}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center">
               <p className="text-lg font-bold tabular-nums text-amber-600">{pendingCount}</p>
-              <p className="text-[11px] text-slate-400">รอตรวจสอบ</p>
+              <p className="text-[11px] text-slate-400">{t("sellerDash.shop.statPending")}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center">
               <p className="text-lg font-bold tabular-nums text-rose-600">{rejectedCount}</p>
-              <p className="text-[11px] text-slate-400">ถูกปฏิเสธ</p>
+              <p className="text-[11px] text-slate-400">{t("sellerDash.shop.statRejected")}</p>
             </div>
           </div>
 
@@ -686,8 +688,9 @@ export default function MyShop() {
                 <button
                   key={f.key}
                   type="button"
+                  aria-pressed={active}
                   onClick={() => setStatusFilter(f.key)}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={`inline-flex min-h-11 shrink-0 items-center rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
                       ? "border-[#10B981] bg-[#10B981] text-white"
                       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
@@ -705,10 +708,9 @@ export default function MyShop() {
               <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
                 <Package className="size-7 text-[#10B981]" />
               </span>
-              <h3 className="mt-5 text-lg font-semibold text-slate-900">ยังไม่มีสินค้า</h3>
+              <h3 className="mt-5 text-lg font-semibold text-slate-900">{t("sellerDash.shop.emptyTitle")}</h3>
               <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
-                เพิ่มสินค้าตัวแรกพร้อมอัปโหลดรูป — เมื่อประกาศขาย สินค้าจะถูกส่งตรวจสอบ แล้วแสดงที่หน้าร้าน
-                velshop เมื่อทีมงานอนุมัติ
+                {t("sellerDash.shop.emptyDesc")}
               </p>
               <Button
                 className="mt-6 gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]"
@@ -718,15 +720,15 @@ export default function MyShop() {
                 }}
               >
                 <Plus className="size-4" />
-                เพิ่มสินค้าแรก
+                {t("sellerDash.shop.ctaAddFirst")}
               </Button>
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="mt-3 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
               <Search className="size-7 text-slate-300" />
-              <h3 className="mt-4 text-base font-semibold text-slate-900">ไม่พบสินค้าที่ค้นหา</h3>
+              <h3 className="mt-4 text-base font-semibold text-slate-900">{t("sellerDash.shop.noMatchTitle")}</h3>
               <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
-                ลองเปลี่ยนคำค้นหา หรือเพิ่มสินค้าใหม่จากปุ่ม "เพิ่มสินค้า"
+                {t("sellerDash.shop.noMatchDesc")}
               </p>
             </div>
           ) : (
@@ -736,11 +738,11 @@ export default function MyShop() {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-5 text-slate-400">สินค้า</TableHead>
-                    <TableHead className="text-slate-400">ราคา</TableHead>
-                    <TableHead className="text-slate-400">สต็อก</TableHead>
-                    <TableHead className="text-slate-400">สถานะ</TableHead>
-                    <TableHead className="pr-5 text-right text-slate-400">จัดการ</TableHead>
+                    <TableHead className="pl-5 text-slate-400">{t("sellerDash.shop.colProduct")}</TableHead>
+                    <TableHead className="text-slate-400">{t("sellerDash.shop.colPrice")}</TableHead>
+                    <TableHead className="text-slate-400">{t("sellerDash.shop.colStock")}</TableHead>
+                    <TableHead className="text-slate-400">{t("sellerDash.shop.colStatus")}</TableHead>
+                    <TableHead className="pr-5 text-right text-slate-400">{t("sellerDash.shop.colActions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -768,8 +770,8 @@ export default function MyShop() {
                                 {PRODUCT_CATEGORY_META[(product.categorySlug ?? product.category) as StoreProduct["category"]]?.label
                                   ?? product.categorySlug ?? product.category}
                                 {product.images && product.images.length > 0
-                                  ? ` · ${product.images.length} รูป`
-                                  : " · ยังไม่มีรูป"}
+                                  ? ` · ${t("sellerDash.shop.imagesCount", { count: product.images.length })}`
+                                  : ` · ${t("sellerDash.shop.noImages")}`}
                                 {product.supplier ? ` · ${product.supplier}` : ""}
                               </p>
                             </div>
@@ -785,8 +787,11 @@ export default function MyShop() {
                           <p className="font-medium tabular-nums text-slate-900">{available}</p>
                           <p className="text-xs text-slate-400">
                             {product.inventory?.reservedQuantity
-                              ? `จองแล้ว ${product.inventory.reservedQuantity} · จุดสั่งซื้อซ้ำ ${product.inventory.reorderLevel}`
-                              : `จุดสั่งซื้อซ้ำ ${product.inventory?.reorderLevel ?? 0}`}
+                              ? t("sellerDash.shop.reservedInfo", {
+                                  reserved: product.inventory.reservedQuantity,
+                                  reorder: product.inventory.reorderLevel,
+                                })
+                              : t("sellerDash.shop.reorderInfo", { reorder: product.inventory?.reorderLevel ?? 0 })}
                           </p>
                         </TableCell>
                         <TableCell>
@@ -827,7 +832,7 @@ export default function MyShop() {
                               title={isTerminal(product) ? t("productModeration.suspendedActionDisabled") : undefined}
                             >
                               <Pencil className="size-3.5" />
-                              แก้ไข
+                              {t("sellerDash.shop.actionEdit")}
                             </Button>
                             <Button
                               variant="ghost"
@@ -880,14 +885,14 @@ export default function MyShop() {
                         <p className="mt-0.5 truncate text-xs text-slate-400">
                           {PRODUCT_CATEGORY_META[(product.categorySlug ?? product.category) as StoreProduct["category"]]?.label
                             ?? product.categorySlug ?? product.category}
-                          {product.images && product.images.length > 0 ? ` · ${product.images.length} รูป` : " · ยังไม่มีรูป"}
+                          {product.images && product.images.length > 0 ? ` · ${t("sellerDash.shop.imagesCount", { count: product.images.length })}` : ` · ${t("sellerDash.shop.noImages")}`}
                         </p>
                         <div className="mt-1.5 flex flex-wrap items-center gap-2">
                           <p className="text-sm font-bold tabular-nums text-slate-900">
                             {formatBaht(product.price)}
                             <span className="text-xs font-normal text-slate-400"> / {product.unit}</span>
                           </p>
-                          <span className="text-xs text-slate-400">· สต็อก {available}</span>
+                          <span className="text-xs text-slate-400">· {t("sellerDash.shop.mobileStock", { available })}</span>
                           {renderStatus(product)}
                         </div>
                       </div>
@@ -919,15 +924,15 @@ export default function MyShop() {
                         disabled={terminal}
                       >
                         <Pencil className="size-3.5" />
-                        แก้ไข
+                        {t("sellerDash.shop.actionEdit")}
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-9 shrink-0 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        className="size-11 shrink-0 text-slate-400 hover:bg-red-50 hover:text-red-600"
                         onClick={() => setDeleting(product)}
                         disabled={terminal}
-                        aria-label={`ลบ ${product.name}`}
+                        aria-label={t("sellerDash.shop.deleteAria", { name: product.name })}
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -1111,19 +1116,19 @@ export default function MyShop() {
       <AlertDialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>ลบสินค้านี้?</AlertDialogTitle>
+            <AlertDialogTitle>{t("sellerDash.shop.deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              “{deleting?.name}” จะถูกลบออกจากร้านค้า พร้อมรูปภาพและข้อมูลสต็อกทั้งหมด
+              {t("sellerDash.shop.deleteDesc", { name: deleting?.name ?? "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingBusy}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogCancel disabled={deletingBusy}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 text-white hover:bg-red-700"
               onClick={handleDelete}
               disabled={deletingBusy}
             >
-              {deletingBusy ? "กำลังลบ..." : "ลบสินค้า"}
+              {deletingBusy ? t("sellerDash.shop.deleting") : t("sellerDash.shop.deleteAction")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

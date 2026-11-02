@@ -22,6 +22,7 @@ import {
   isAchieved,
   type Goal,
 } from "@velnox/shared/lib/goals";
+import { useLanguage } from "@velnox/shared/lib/i18n";
 import { useMutation, useQuery } from "@velnox/shared/lib/api-routes";
 import { CheckCircle2, Gauge, Plus, Target, Timer } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -29,6 +30,7 @@ import { toast } from "sonner";
 
 export default function SellerGoals() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const goals = useQuery(api.goals.list);
   const removeGoal = useMutation(api.goals.remove);
 
@@ -58,17 +60,17 @@ export default function SellerGoals() {
     setDeleting(true);
     try {
       await removeGoal({ goalId: deleteGoal._id });
-      toast.success("ลบเป้าหมายแล้ว");
+      toast.success(t("sellerDash.goals.toastDeleted"));
       setDeleteGoal(null);
     } catch (error) {
       console.error("Goal delete error:", error);
-      toast.error("ลบไม่สำเร็จ กรุณาลองอีกครั้ง");
+      toast.error(t("sellerDash.goals.toastDeleteFailed"));
     } finally {
       setDeleting(false);
     }
   };
 
-  const firstName = user?.name?.split(/\s+/)[0] || "เจ้าของธุรกิจ";
+  const firstName = user?.name?.split(/\s+/)[0] || t("sellerDash.goals.fallbackName");
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -82,10 +84,10 @@ export default function SellerGoals() {
               {formatThaiDate(Date.now())}
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              สวัสดี, {firstName} 👋
+              {t("sellerDash.goals.greeting", { name: firstName })}
             </h1>
             <p className="mt-1.5 text-sm text-slate-500">
-              นี่คือภาพรวมเป้าหมายธุรกิจของคุณวันนี้ — จากข้อมูลการขายจริงของร้านคุณ
+              {t("sellerDash.goals.subtitle")}
             </p>
           </div>
           <Button
@@ -96,7 +98,7 @@ export default function SellerGoals() {
             }}
           >
             <Plus className="size-4" />
-            สร้างเป้าหมาย
+            {t("sellerDash.goals.ctaCreate")}
           </Button>
         </div>
 
@@ -105,40 +107,40 @@ export default function SellerGoals() {
           <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex items-center gap-2 text-slate-400">
               <Target className="size-4" />
-              <p className="text-xs font-medium uppercase tracking-wide">เป้าหมายทั้งหมด</p>
+              <p className="text-xs font-medium uppercase tracking-wide">{t("sellerDash.goals.kpiTotal")}</p>
             </div>
             <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
               {stats.total}
             </p>
-            <p className="mt-1 text-xs text-slate-400">เป้าหมายที่ตั้งไว้</p>
+            <p className="mt-1 text-xs text-slate-400">{t("sellerDash.goals.kpiTotalSub")}</p>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex items-center gap-2 text-slate-400">
               <Timer className="size-4" />
-              <p className="text-xs font-medium uppercase tracking-wide">กำลังดำเนินการ</p>
+              <p className="text-xs font-medium uppercase tracking-wide">{t("sellerDash.goals.kpiActive")}</p>
             </div>
             <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
               {stats.active}
             </p>
-            <p className="mt-1 text-xs text-slate-400">ยังไม่ถึงเป้า</p>
+            <p className="mt-1 text-xs text-slate-400">{t("sellerDash.goals.kpiActiveSub")}</p>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex items-center gap-2 text-emerald-600">
               <CheckCircle2 className="size-4" />
-              <p className="text-xs font-medium uppercase tracking-wide">สำเร็จแล้ว</p>
+              <p className="text-xs font-medium uppercase tracking-wide">{t("sellerDash.goals.kpiAchieved")}</p>
             </div>
             <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
               {stats.achieved}
             </p>
-            <p className="mt-1 text-xs text-slate-400">บรรลุเป้าหมาย</p>
+            <p className="mt-1 text-xs text-slate-400">{t("sellerDash.goals.kpiAchievedSub")}</p>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex items-center gap-2 text-slate-400">
               <Gauge className="size-4" />
-              <p className="text-xs font-medium uppercase tracking-wide">ความคืบหน้าเฉลี่ย</p>
+              <p className="text-xs font-medium uppercase tracking-wide">{t("sellerDash.goals.kpiAvg")}</p>
             </div>
             <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
               {stats.avg}%
@@ -168,11 +170,10 @@ export default function SellerGoals() {
               <Target className="size-7 text-[#10B981]" />
             </span>
             <h2 className="mt-5 text-lg font-semibold text-slate-900">
-              ยังไม่มีเป้าหมายธุรกิจ
+              {t("sellerDash.goals.emptyTitle")}
             </h2>
             <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
-              เริ่มต้นด้วยการตั้งเป้าหมายแรก เช่น ยอดขาย ออเดอร์ หรือลูกค้าใหม่
-              แล้วให้ Velnox จำและช่วยคุณติดตาม
+              {t("sellerDash.goals.emptyDesc")}
             </p>
             <Button
               className="mt-6 gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]"
@@ -182,7 +183,7 @@ export default function SellerGoals() {
               }}
             >
               <Plus className="size-4" />
-              สร้างเป้าหมายแรก
+              {t("sellerDash.goals.ctaCreateFirst")}
             </Button>
           </div>
         ) : (
@@ -211,12 +212,14 @@ export default function SellerGoals() {
               </span>
               <div>
                 <p className="text-sm font-semibold text-slate-900">
-                  ผลรวมค่าเป้าหมาย {formatNumber(
-                    goals.reduce((sum: any, g: any) => sum + g.targetValue, 0),
-                  )}
+                  {t("sellerDash.goals.summaryTotal", {
+                    total: formatNumber(
+                      goals.reduce((sum: any, g: any) => sum + g.targetValue, 0),
+                    ),
+                  })}
                 </p>
                 <p className="text-xs text-slate-400">
-                  รวมทุกหมวดหมู่ — อัปเดตอัตโนมัติทุกครั้งที่คุณบันทึกความคืบหน้า
+                  {t("sellerDash.goals.summaryNote")}
                 </p>
               </div>
             </div>
@@ -229,7 +232,7 @@ export default function SellerGoals() {
               }}
             >
               <Plus className="size-4" />
-              เพิ่มเป้าหมาย
+              {t("sellerDash.goals.ctaAdd")}
             </Button>
           </div>
         )}
@@ -248,19 +251,19 @@ export default function SellerGoals() {
       <AlertDialog open={deleteGoal !== null} onOpenChange={(open) => !open && setDeleteGoal(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>ลบเป้าหมายนี้?</AlertDialogTitle>
+            <AlertDialogTitle>{t("sellerDash.goals.deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              “{deleteGoal?.title}” จะถูกลบถาวร และไม่สามารถกู้คืนได้
+              {t("sellerDash.goals.deleteDesc", { title: deleteGoal?.title ?? "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 text-white hover:bg-red-700"
               onClick={handleDelete}
               disabled={deleting}
             >
-              {deleting ? "กำลังลบ..." : "ลบเป้าหมาย"}
+              {deleting ? t("sellerDash.goals.deleting") : t("sellerDash.goals.deleteAction")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

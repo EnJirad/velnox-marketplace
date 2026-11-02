@@ -234,7 +234,7 @@ export default function SellerOrders() {
                   type="button"
                   aria-pressed={active}
                   onClick={() => setStatusFilter(value)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={`inline-flex min-h-11 items-center rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
                       ? "border-[#10B981] bg-[#10B981] text-white"
                       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
@@ -254,7 +254,7 @@ export default function SellerOrders() {
               <button
                 type="button"
                 onClick={retry}
-                className="ml-auto rounded-[10px] border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+                className="ml-auto inline-flex min-h-11 items-center rounded-[10px] border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
               >
                 {t("common.retry")}
               </button>
