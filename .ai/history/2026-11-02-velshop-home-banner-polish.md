@@ -1,63 +1,40 @@
 # 2026-11-02 — Home storefront polish: image banner + density (step 4)
 
-Start SHA `b3b2315` (equal to `origin/main` at start), clean tree.
+| # | Field | Value |
+|---|---|---|
+| 1 | Date + time (timezone) | 2026-11-02 09:09 +07 (02:09Z) |
+| 2 | AI / agent | AndroidHarness (Coding agent) |
+| 3 | Git branch | `main` |
+| 4 | Commit SHA before | `b3b23154811ad6e830d9db5adec6ea0453e4dc94` |
+| 5 | Commit SHA after | `04e5081a1a02b5968ffe45bcf7c0e02f7346bbe4` (pushed; `LOCAL == REMOTE`) |
+| 6 | Purpose | Make Home read as a polished storefront: image-led real-data banner, tighter category/rail density, desktop column response — without touching the IA from §143 |
+| 7 | Inspected before changing | `ShopHome.tsx` (banner, categories, rails, memory rails), `ShopHeader.tsx`, `ProductCard.tsx`, `packages/shared/src/lib/commerce.ts` (`StoreProduct.primaryImage`, `displayUrl`), `backend/routes/products.ts` (catalog query/sort), `.ai/AI_HANDOFF.md` §140–143, history `2026-11-02-velshop-home-marketplace-ia.md` |
+| 8 | Files touched | `apps/velshop/src/pages/ShopHome.tsx`; `.ai/AI_HANDOFF.md`; `.ai/tasks/active/thaimart-reference-analysis.md`; this record |
+| 9 | Added | `bannerProduct` memo (real image lookup); image column + gradient seam + CTA chip in the banner; `h-[150px] md:h-[240px]`; rail grids `sm:grid-cols-3 lg:grid-cols-4`; category padding `py-4 sm:py-5` |
+| 10 | Removed | Icon-tile-only banner layout (replaced); `md:grid-cols-3 xl:grid-cols-4` on Home rails |
+| 11 | What changed | Banner is now image-led from a real product photo (`primaryImage.displayUrl ?? url`, Cloudflare R2 CDN); desktop/tablet grid breakpoints moved to `sm`/`lg`; category section spacing tightened |
+| 12 | Why it changed | Owner asked for a storefront that feels like the reference (density, banner prominence); previous banner had no imagery, and Home rails only reached 4 columns at `xl` |
+| 13 | Systems affected | VelShop Home presentation only (one page component + docs) |
+| 14 | Confirmed unaffected, how | Header/mobile bar, five-tab `MobileTabBar`, route-aware search, Marketplace filters/sort/pagination, cart drawer, `ProductCard` component, backend, DB, auth/RBAC, payment — none of their files were edited (`git diff --stat`: one app file + 3 docs); typecheck of all four apps passed |
+| 15 | Checks run (real commands) | `bun run typecheck` · `bun run build:velshop` · `bun packages/shared/scripts/i18n-check.ts` · `timeout 200 bun test backend/tests` · `git diff --check` · live dev server `VITE_API_URL=http://127.0.0.1:5186 bun run dev:velshop -- --port 5188` with a temporary read-only proxy (`.harness/proxy.py`, untracked) |
+| 16 | Result of each check | typecheck **PASS** (4/4 apps exit 0) · build **PASS** (8.26 s) · i18n **PASS** (th/en/my = 1310 each) · tests **1139 pass / 382 skip / 8 FAIL** (all 8 in `test-database-isolation.test.ts` "a real test process fails closed" — subprocess probes, sandbox limitation, no backend file touched) · `diff --check` **PASS** · DOM measurement **PASS** · screenshots **BLOCKED** |
+| 17 | Problems found | Harness injected script still breaks documents intermittently (§137); preview surface hidden so no screenshots; iframes stall at `readyState: loading` and CDP resize is unavailable on android/arm64; production catalogue holds only **1** published product, so Home honestly renders one category chip and one card per rail |
+| 18 | Limitations / not checked | **VISUAL VERIFICATION: NOT VERIFIED** — no pixel comparison with the reference screenshot. 768/1024/1440 **NOT MEASURED**; desktop evidenced only at rule level (`.md\:h-\[240px\]` in `@media(min-width:48rem)`, `.sm\:grid-cols-3` in `40rem`, `.lg\:grid-cols-4` in `64rem`) |
+| 19 | Work still open | Profile token alignment; the long tail of screens (PDP/cart/checkout/orders/account/help); re-run §137 to unblock screenshots |
+| 20 | Next agent must know | Banner data source = top published category + its live count + first product image in that category (no campaign system exists — never invent campaign/discount copy). Home fetch is one catalog call (`limit=100`) and renders at most 16 cards. Do not "fill" the empty state with mock data; the catalogue really is nearly empty |
 
-## What changed
+## Measured (492 CSS px, real catalogue through the read-only proxy)
 
-**1. Banner now carries a real product image.** Source chain, all real:
-
-- category = the published category with the most products (`popularCategories[0]`, derived from
-  `GET /api/products/catalog`)
-- count = that category's live product count
-- image = `primaryImage.displayUrl ?? primaryImage.url` of the first product in that category that has
-  one (Cloudflare R2 CDN URL — `https://pub-…r2.dev/…`), `object-fit: cover`, `alt` = the real product name
-- destination = `/products?category=<slug>` (no dead button)
-
-No campaign table exists, so the banner still does not claim a sale. Yesterday's eyebrow "Popular
-category" + "N products" + "Browse" copy is unchanged — every string is either a locale key or a real
-number.
-
-Composition: `h-[150px]` mobile / `md:h-[240px]`, `rounded-2xl`, mint `#ECFDF5` surface, text column
-left with a 36 px icon chip, image column 38 % (42 % ≥sm) right, soft gradient seam over the image edge.
-Falls back to the text-only banner when the category has no product image.
-
-**2. Density.** Home rails now use `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4` (was
-`2 / md:3 / xl:4`), so tablets get 3 and desktop 4 columns inside the existing `max-w-6xl` container.
-Category section vertical padding tightened (`py-4 sm:py-5`), chips keep `size-14` circles with 11 px
-labels and 4-per-row mobile / 6-per-row ≥sm.
-
-Unchanged on purpose: header, five-tab nav, route-aware search, Marketplace filters/sort, memory rails,
-product card component (already 1:1 image, white surface, dominant price, no invented metadata).
-
-## Verification
-
-Live dev server (Vite) pointed at the production read-only API through a temporary local proxy in
-`.harness/` (not committed, no app code, no secrets) so real catalogue data was visible.
-
-| Check | Result |
+| Element | Measurement |
 |---|---|
-| header | 56 px, pill present on `/` |
-| banner | 460 × **150** px at 492 px viewport, y = 68 (below header) |
-| banner image | 174 × 148, `object-fit: cover`, real R2 URL, natural 1280 × 1810, `alt` = product name |
-| banner text | `หมวดหมู่ยอดนิยม · หูฟังและลำโพง · 1 สินค้า · เลือกดู` — all real |
-| category chips | rendered from real categories (this catalogue exposes one) |
-| cards | product card + PDP link present, no fake ratings/discounts added |
+| header | 56 px, search pill present on `/` |
+| banner | 460 × 150 px, y = 68 (below the header, no overlap) |
+| banner image | 174 × 148, `object-fit: cover`, natural 1280 × 1810, `alt` = real product name |
+| banner text | `หมวดหมู่ยอดนิยม · หูฟังและลำโพง · 1 สินค้า · เลือกดู` — locale keys + real count only |
+| category chips | rendered from real categories (one exists in this catalogue) |
 | horizontal overflow | 0 |
-| typecheck | 4 apps exit 0 |
-| build | `bun run build:velshop` exit 0 (8.26 s) |
-| i18n | th/en/my **1310** each, parity OK |
-| tests | 1139 pass / 382 skip / **8 fail** — all in `test-database-isolation.test.ts`, subprocess probes that cannot run in this sandbox |
 
-## Blocked
+## Post-push addendum
 
-- **VISUAL VERIFICATION: NOT VERIFIED** — `browser_screenshot` still returns "Browser preview is hidden
-  or detached" (§137); no pixel comparison against the reference screenshot is claimed.
-- **Desktop 768 / 1024 / 1440: NOT VERIFIED.** The preview surface cannot be resized (CDP unavailable
-  on android/arm64) and iframe probes never leave `readyState: "loading"`. Desktop is evidenced only at
-  rule level from the built stylesheet: `.md\:h-\[240px\]` inside `@media(min-width:48rem)`,
-  `.sm\:grid-cols-3` inside `40rem`, `.lg\:grid-cols-4` inside `64rem`.
-
-## Note on data size
-
-The production catalogue currently exposes a single published product, so the Home page legitimately
-shows one category chip and one card per rail. Nothing was padded or duplicated to look fuller.
+Rulebook compliance pass after the push: this record was rebuilt into the §18 twenty-field format, and
+`04e5081` is verified on the remote (`git fetch` → `LOCAL == REMOTE`, working tree clean).
