@@ -818,6 +818,15 @@ export function setupProductRoutes(app: Express): void {
         }
       }
 
+      // Variant count guard — mirrors the 100-limit enforced by the variant
+      // generate endpoint (product-options.ts). create-full bypasses that
+      // endpoint, so the same cap is enforced here before any database write.
+      const MAX_VARIANTS = 100;
+      if (Array.isArray(variantsData) && variantsData.length > MAX_VARIANTS) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: `Maximum ${MAX_VARIANTS} variants allowed per product` } });
+        return;
+      }
+
       // Generate unique slug
       const baseSlug = slugify(productData.name.trim());
       let slug = baseSlug;

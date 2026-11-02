@@ -40,6 +40,7 @@ import { pendingUploads, seedGalleries } from "@velnox/shared/lib/product-images
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useLanguage } from "@velnox/shared/lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────
 interface ProductFormDialogProps {
@@ -155,6 +156,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
   const [editFields, setEditFields] = useState<{ price: string; compareAtPrice: string; discountPercent: string; stock: string; sku: string; status: string }>({ price: "", compareAtPrice: "", discountPercent: "", stock: "", sku: "", status: "active" });
   const [loaded, setLoaded] = useState(false);
   const [featuredVariantId, setFeaturedVariantId] = useState<string | null>(null);
+  const { t } = useLanguage();
   const baseUrl = API_BASE();
 
   const fetchVariants = useCallback(async () => {
@@ -193,9 +195,9 @@ function VariantManager({ productId, price }: { productId: string; price: number
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({}),
       });
       const data = await res.json();
-      if (data.success) { toast.success(`สร้าง ${data.data?.variants?.length ?? 0} variants สำเร็จ`); await fetchVariants(); }
-      else toast.error(data.error?.message || "สร้าง variant ไม่สำเร็จ");
-    } catch { toast.error("สร้าง variant ไม่สำเร็จ"); }
+      if (data.success) { toast.success(t("productForm.variants.createdToast", { count: data.data?.variants?.length ?? 0 })); await fetchVariants(); }
+      else toast.error(data.error?.message || t("productForm.variants.generateFailed"));
+    } catch { toast.error(t("productForm.variants.generateFailed")); }
     setGenerating(false);
   };
 
@@ -214,9 +216,9 @@ function VariantManager({ productId, price }: { productId: string; price: number
         body: JSON.stringify({ price: finalPrice, compareAtPrice: fullPrice || null, discountPercent: discPct || null, stock: Number(editFields.stock), sku: editFields.sku || null, status: editFields.status }),
       });
       const data = await res.json();
-      if (data.success) { setEditingId(null); await fetchVariants(); toast.success("บันทึก variant แล้ว"); }
-      else toast.error(data.error?.message || "บันทึกไม่สำเร็จ");
-    } catch { toast.error("บันทึกไม่สำเร็จ"); }
+      if (data.success) { setEditingId(null); await fetchVariants(); toast.success(t("productForm.variants.savedToast")); }
+      else toast.error(data.error?.message || t("productForm.variants.saveFailed"));
+    } catch { toast.error(t("productForm.variants.saveFailed")); }
   };
 
   const handleSetFeatured = async (variantId: string) => {
@@ -226,9 +228,9 @@ function VariantManager({ productId, price }: { productId: string; price: number
         body: JSON.stringify({ variantId }),
       });
       const data = await res.json();
-      if (data.success) { setFeaturedVariantId(variantId); toast.success("ตั้งเป็นราคาหลักแล้ว"); }
-      else toast.error(data.error?.message || "ไม่สำเร็จ");
-    } catch { toast.error("ไม่สำเร็จ"); }
+      if (data.success) { setFeaturedVariantId(variantId); toast.success(t("productForm.variants.featuredToast")); }
+      else toast.error(data.error?.message || t("productForm.variants.actionFailed"));
+    } catch { toast.error(t("productForm.variants.actionFailed")); }
   };
 
   const handleVariantImageDelete = async (variantId: string, imageId: string) => {
@@ -249,7 +251,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
 
   const handleVariantImageUpload = async (variantId: string, file: File) => {
     const ACCEPT = ["image/jpeg", "image/png", "image/webp", "image/avif"];
-    if (!ACCEPT.includes(file.type)) { toast.error("ไฟล์ไม่ใช่รูปภาพที่รองรับ"); return; }
+    if (!ACCEPT.includes(file.type)) { toast.error(t("productForm.variants.unsupportedFile")); return; }
     setUploadingVariantImage(variantId);
     try {
       const intentRes = await fetch(`${baseUrl}/api/seller/products/image-upload-intent`, {
@@ -267,10 +269,10 @@ function VariantManager({ productId, price }: { productId: string; price: number
       const saveData = await saveRes.json();
       if (!saveData.success) throw new Error(saveData.error?.message || "Failed to save variant image");
       await fetchVariants();
-      toast.success("อัปโหลดรูป variant สำเร็จ");
+      toast.success(t("productForm.variants.imageUploaded"));
     } catch (err) {
       console.error("Variant image upload error:", err);
-      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
+      toast.error(err instanceof Error ? err.message : t("productForm.variants.uploadFailed"));
     } finally { setUploadingVariantImage(null); }
   };
 
@@ -279,9 +281,9 @@ function VariantManager({ productId, price }: { productId: string; price: number
       <div className="mt-3 border-t border-slate-200 pt-3">
         <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-[#10B981] text-sm text-[#10B981] hover:bg-[#ECFDF5]" onClick={handleGenerate} disabled={generating}>
           {generating ? <Loader2 className="size-4 animate-spin" /> : <ListOrdered className="size-4" />}
-          สร้าง Variants จากตัวเลือก
+          {t("productForm.variants.generateCta")}
         </Button>
-        <p className="mt-1 text-[11px] text-slate-400">สร้าง combination ของตัวเลือกอัตโนมัติ เช่น สีแดง+S, สีแดง+M</p>
+        <p className="mt-1 text-[11px] text-slate-400">{t("productForm.variants.generateDesc")}</p>
       </div>
     );
   }
@@ -289,10 +291,10 @@ function VariantManager({ productId, price }: { productId: string; price: number
   return (
     <div className="mt-3 border-t border-slate-200 pt-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-slate-700">Variants ({variants.length})</p>
+        <p className="text-xs font-semibold text-slate-700">{t("productForm.variants.countLabel", { count: variants.length })}</p>
         <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 text-xs text-[#10B981]" onClick={handleGenerate} disabled={generating}>
           {generating ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
-          สร้างใหม่
+          {t("productForm.variants.regenerate")}
         </Button>
       </div>
       <div className="mt-2 space-y-1.5">
@@ -319,14 +321,14 @@ function VariantManager({ productId, price }: { productId: string; price: number
                 <div className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-slate-900">{v.name}</span>
                   <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                    <Input value={editFields.compareAtPrice} onChange={(e) => setEditFields((f) => ({ ...f, compareAtPrice: e.target.value }))} type="number" className="h-7 min-w-0 text-xs" placeholder="ราคาเต็ม" />
-                    <Input value={editFields.discountPercent} onChange={(e) => setEditFields((f) => ({ ...f, discountPercent: e.target.value }))} type="number" min="0" className="h-7 min-w-0 text-xs" placeholder="ส่วนลด %" />
-                    <Input value={editFields.stock} onChange={(e) => setEditFields((f) => ({ ...f, stock: e.target.value }))} type="number" className="h-7 min-w-0 text-xs" placeholder="สต็อก" />
+                    <Input value={editFields.compareAtPrice} onChange={(e) => setEditFields((f) => ({ ...f, compareAtPrice: e.target.value }))} type="number" className="h-7 min-w-0 text-xs" placeholder={t("productForm.variants.fullPricePlaceholder")} />
+                    <Input value={editFields.discountPercent} onChange={(e) => setEditFields((f) => ({ ...f, discountPercent: e.target.value }))} type="number" min="0" className="h-7 min-w-0 text-xs" placeholder={t("productForm.variants.discountPlaceholder")} />
+                    <Input value={editFields.stock} onChange={(e) => setEditFields((f) => ({ ...f, stock: e.target.value }))} type="number" className="h-7 min-w-0 text-xs" placeholder={t("productForm.variants.stockPlaceholder")} />
                     <Input value={editFields.sku} onChange={(e) => setEditFields((f) => ({ ...f, sku: e.target.value }))} className="h-7 min-w-0 text-xs" placeholder="SKU" />
                   </div>
                   <div className="mt-1.5 flex items-center gap-1.5">
-                    <Button type="button" size="sm" className="h-7 text-xs" onClick={() => saveEdit(v.id)}>บันทึก</Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}>ยกเลิก</Button>
+                    <Button type="button" size="sm" className="h-7 text-xs" onClick={() => saveEdit(v.id)}>{t("productForm.variants.save")}</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}>{t("common.cancel")}</Button>
                   </div>
                 </div>
               </div>
@@ -354,19 +356,19 @@ function VariantManager({ productId, price }: { productId: string; price: number
                     <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
                     {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(v.discountPercent)}%</span>}
                     <Badge className={`shrink-0 text-[10px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
-                    <button type="button" className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${featuredVariantId === v.id ? "bg-amber-100 text-amber-700 font-semibold" : "text-slate-400 hover:text-amber-600"}`} onClick={() => handleSetFeatured(v.id)} title="ใช้เป็นราคาหลัก">
+                    <button type="button" className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${featuredVariantId === v.id ? "bg-amber-100 text-amber-700 font-semibold" : "text-slate-400 hover:text-amber-600"}`} onClick={() => handleSetFeatured(v.id)} title={t("productForm.variants.featuredTitle")}>
                       {featuredVariantId === v.id ? "★" : "☆"}
                     </button>
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="tabular-nums font-semibold text-slate-900">฿{(() => { const full = v.compareAtPrice || v.price || 0; const disc = v.discountPercent || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
                     {v.compareAtPrice && v.compareAtPrice > v.price && <span className="text-[10px] text-slate-400 line-through">฿{v.compareAtPrice.toLocaleString()}</span>}
-                    <span className={`tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} ชิ้น</span>
+                    <span className={`tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{t("productForm.variants.stockUnit", { count: v.stock })}</span>
                     {v.sku && <span className="font-mono text-[10px] text-slate-400">{v.sku}</span>}
                   </div>
                   <div className="mt-1 flex items-center gap-1">
-                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => startEdit(v)}><Pencil className="size-3" />แก้ไข</Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[10px] text-slate-500 hover:text-red-600" onClick={() => handleDelete(v.id)}><Trash2 className="size-3" />ลบ</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => startEdit(v)}><Pencil className="size-3" />{t("productForm.variants.edit")}</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[10px] text-slate-500 hover:text-red-600" onClick={() => handleDelete(v.id)}><Trash2 className="size-3" />{t("productForm.variants.delete")}</Button>
                   </div>
                 </div>
               </div>
@@ -418,6 +420,7 @@ const defaultForm = {
 
 function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const createProduct = useAction(api.commerce.createProductAction);
   const createFullProduct = useAction(api.commerce.createFullProductAction);
   const updateProduct = useAction(api.commerce.updateProductAction);
@@ -435,7 +438,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           supplier: product.supplier ?? "",
           published: product.status === "published",
         }
-      : defaultForm,
+      : { ...defaultForm, unit: t("productForm.defaultUnit") },
   );
   const [current, setCurrent] = useState<StoreProduct | null>(product ?? null);
   const [saving, setSaving] = useState(false);
@@ -626,9 +629,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     try {
       const results = await Promise.all(list.map((f) => draftUpload(draftId, f, "preview")));
       setGalleryImages((prev) => [...prev, ...results]);
-      toast.success(`อัปโหลด ${results.length} รูปสำเร็จ`);
+      toast.success(t("productForm.uploadCountToast", { count: results.length }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
+      toast.error(err instanceof Error ? err.message : t("productForm.uploadFailed"));
     } finally { setUploadingGallery(false); }
   };
 
@@ -643,7 +646,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         credentials: "include",
       });
       if (!res.ok) {
-        toast.error("ลบรูปไม่สำเร็จ กรุณาลองอีกครั้ง");
+        toast.error(t("productForm.deleteImageFailed"));
         return;
       }
     }
@@ -658,9 +661,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     try {
       const results = await Promise.all(list.map((f) => draftUpload(draftId, f, "details")));
       setDetailImages((prev) => [...prev, ...results]);
-      toast.success(`อัปโหลด ${results.length} รูปสำเร็จ`);
+      toast.success(t("productForm.uploadCountToast", { count: results.length }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
+      toast.error(err instanceof Error ? err.message : t("productForm.uploadFailed"));
     } finally { setUploadingDetail(false); }
   };
 
@@ -673,7 +676,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         credentials: "include",
       });
       if (!res.ok) {
-        toast.error("ลบรูปไม่สำเร็จ กรุณาลองอีกครั้ง");
+        toast.error(t("productForm.deleteImageFailed"));
         return;
       }
     }
@@ -683,15 +686,15 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   // ─── Option value image upload (draft) ──────────────────────────────
   const handleOptionImageUpload = async (groupIndex: number, valueIndex: number, file: File) => {
     const ACCEPT = ["image/jpeg", "image/png", "image/webp", "image/avif"];
-    if (!ACCEPT.includes(file.type)) { toast.error("ไฟล์ไม่ใช่รูปภาพที่รองรับ"); return; }
-    if (file.size > 5 * 1024 * 1024) { toast.error("ไฟล์ใหญ่เกิน 5 MB"); return; }
+    if (!ACCEPT.includes(file.type)) { toast.error(t("productForm.variants.unsupportedFile")); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error(t("productForm.fileTooLarge")); return; }
     try {
       const img = await draftUpload(draftId, file, `options/${groupIndex}/${valueIndex}`);
       updateOptionValueImage(groupIndex, valueIndex, img.url);
-      toast.success("อัปโหลดรูปตัวเลือกสำเร็จ");
+      toast.success(t("productForm.optionImageUploaded"));
     } catch (err) {
       console.error("Option image upload error:", err);
-      toast.error(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
+      toast.error(err instanceof Error ? err.message : t("productForm.variants.uploadFailed"));
     }
   };
 
@@ -738,17 +741,17 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   // ─── Validation ───────────────────────────────────────────────────────
   const validate = useCallback((): string[] => {
     const errors: string[] = [];
-    if (!form.name.trim()) errors.push("กรุณากรอกชื่อสินค้า");
-    if (categoriesLoading) errors.push("กำลังโหลดหมวดหมู่สินค้า กรุณารอสักครู่");
-    else if (categoriesError) errors.push("โหลดหมวดหมู่สินค้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-    else if (!form.category) errors.push("กรุณาเลือกหมวดหมู่สินค้า");
-    else if (!categories.some((c) => c.slug === form.category)) errors.push("หมวดหมู่ที่เลือกไม่พร้อมใช้งาน กรุณาเลือกหมวดหมู่ใหม่");
-    if (variantCount > 100) errors.push("จำนวน Variant เกินขีดจำกัด 100 — กรุณาลดจำนวนตัวเลือก");
-    if (galleryImages.length === 0) errors.push("ต้องมีรูปตัวอย่างสินค้าอย่างน้อย 1 รูป");
+    if (!form.name.trim()) errors.push(t("productForm.errName"));
+    if (categoriesLoading) errors.push(t("productForm.errCategoriesLoading"));
+    else if (categoriesError) errors.push(t("productForm.errCategoriesLoad"));
+    else if (!form.category) errors.push(t("productForm.errCategoryRequired"));
+    else if (!categories.some((c) => c.slug === form.category)) errors.push(t("productForm.errCategoryUnavailable"));
+    if (variantCount > 100) errors.push(t("productForm.errVariantLimit"));
+    if (galleryImages.length === 0) errors.push(t("productForm.errGalleryRequired"));
     // Validate option values
     for (const group of optionGroups) {
       if (group.name.trim() && group.values.filter((v) => v.value.trim()).length < 2) {
-        errors.push(`กลุ่มตัวเลือก "${group.name}" ต้องมีอย่างน้อย 2 ค่า`);
+        errors.push(t("productForm.errGroupValues", { name: group.name }));
       }
     }
     // Validate variants: each must have fullPrice > 0
@@ -756,15 +759,21 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       for (const v of draftVariants) {
         const fullPrice = Number(v.compareAtPrice);
         if (!v.compareAtPrice || !Number.isFinite(fullPrice) || fullPrice < 0) {
-          errors.push(`Variant "${v.name}" ต้องกรอกราคาเต็มที่ถูกต้อง`);
+          errors.push(t("productForm.errVariantFullPrice", { name: v.name }));
         }
         const disc = Number(v.discountPercent);
         if (v.discountPercent && (!Number.isFinite(disc) || disc < 0 || disc > 100)) {
-          errors.push(`Variant "${v.name}" ส่วนลดต้องอยู่ระหว่าง 0-100%`);
+          errors.push(t("productForm.errVariantDiscount", { name: v.name }));
+        }
+        // AC-02: an explicitly negative stock is a validation error, not a
+        // silent clamp (the create-full clamp stays as defense in depth).
+        const stockNum = Number(v.stock);
+        if (v.stock !== "" && (!Number.isFinite(stockNum) || stockNum < 0)) {
+          errors.push(t("productForm.errStockNegative", { name: v.name }));
         }
       }
       const hasStock = draftVariants.some((v) => Number(v.stock) > 0);
-      if (!hasStock) errors.push("ต้องมี variant อย่างน้อย 1 ตัวที่มี stock > 0");
+      if (!hasStock) errors.push(t("productForm.errVariantStock"));
     }
     return errors;
   }, [form, galleryImages, current, optionGroups, draftVariants, isEdit, categories, categoriesError, categoriesLoading]);
@@ -789,7 +798,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           productId: current.id,
           name: form.name,
           category: form.category,
-          unit: form.unit.trim() || "ชิ้น",
+          unit: form.unit.trim() || t("productForm.defaultUnit"),
           price: 0,
           description: form.description || undefined,
           supplier: form.supplier || undefined,
@@ -837,7 +846,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           setGalleryImages(reseeded.gallery);
           setDetailImages(reseeded.detail);
 
-          toast.success("บันทึกสินค้าแล้ว");
+          toast.success(t("productForm.savedToast"));
           setCurrent(fresh);
           onSaved?.(fresh);
         }
@@ -849,7 +858,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           product: {
             name: form.name.trim(),
             category: form.category,
-            unit: form.unit.trim() || "ชิ้น",
+            unit: form.unit.trim() || t("productForm.defaultUnit"),
             price: firstFullPrice,
             description: form.description || "",
             supplier: form.supplier || null,
@@ -906,7 +915,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
         const created = await createFullProduct(payload);
         if (created) {
-          toast.success("เพิ่มสินค้าสำเร็จ! สินค้าอยู่ในสถานะรอดำเนินการตรวจสอบ");
+          toast.success(t("productForm.createdToast"));
           onSaved?.(created);
           onClose();
         }
@@ -916,9 +925,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       const message = error instanceof Error ? error.message : "";
       // Surface category failures as an actual category error, not a generic save failure.
       if (/categor/i.test(message)) {
-        toast.error(`หมวดหมู่สินค้าไม่ถูกต้อง: ${message}`);
+        toast.error(t("productForm.errCategoryInvalid", { message }));
       } else {
-        toast.error(message || "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
+        toast.error(message || t("productForm.errSaveFailed"));
       }
     } finally { setSaving(false); }
   };
@@ -952,9 +961,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         loading={categoriesLoading}
       />
       <DialogHeader>
-        <DialogTitle>{current ? "แก้ไขสินค้า" : "เพิ่มสินค้าใหม่"}</DialogTitle>
+        <DialogTitle>{current ? t("productForm.editTitle") : t("productForm.createTitle")}</DialogTitle>
         <DialogDescription>
-          {current ? `แก้ไขสินค้า ${current.name}` : `เพิ่มสินค้าใหม่ให้ร้าน ${shop.name} — กรอกข้อมูลทั้งหมดแล้วกด "เพิ่มสินค้า" เพียงครั้งเดียว`}
+          {current ? t("productForm.editDesc", { name: current.name }) : t("productForm.createDesc", { shop: shop.name })}
         </DialogDescription>
       </DialogHeader>
 
@@ -962,7 +971,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         {/* ═══ Validation Errors ═══════════════════════════════════════ */}
         {validationErrors.length > 0 && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-            <p className="text-xs font-semibold text-red-700">กรุณาแก้ไขข้อผิดพลาด:</p>
+            <p className="text-xs font-semibold text-red-700">{t("productForm.fixErrors")}</p>
             <ul className="mt-1 list-disc pl-4 text-xs text-red-600">
               {validationErrors.map((err, i) => <li key={i}>{err}</li>)}
             </ul>
@@ -971,15 +980,15 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
         {/* ═══ Section 1: Product Info ═══════════════════════════════ */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">ข้อมูลสินค้า</h3>
+          <h3 className="mb-3 text-sm font-semibold text-slate-900">{t("productForm.infoSection")}</h3>
           <div className="grid gap-3">
             <div className="grid gap-2">
-              <Label htmlFor="p-name">ชื่อสินค้า *</Label>
-              <Input id="p-name" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="เช่น แชมพูสมุนไพร ขนาด 300 มล." required />
+              <Label htmlFor="p-name">{t("productForm.nameLabel")}</Label>
+              <Input id="p-name" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder={t("productForm.namePlaceholder")} required />
             </div>
             <div className="grid min-w-0 grid-cols-2 gap-3">
               <div className="grid min-w-0 gap-2">
-                <Label>หมวดหมู่</Label>
+                <Label>{t("productForm.categoryLabel")}</Label>
                 <button
                   type="button"
                   onClick={() => setPickerOpen(true)}
@@ -988,31 +997,31 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                   className="flex h-10 w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-slate-200 bg-white px-3 text-left text-sm transition-colors hover:border-[#10B981] disabled:opacity-50"
                 >
                   {categoriesLoading ? (
-                    <span className="min-w-0 flex-1 truncate text-slate-400">กำลังโหลด...</span>
+                    <span className="min-w-0 flex-1 truncate text-slate-400">{t("productForm.loadingCategories")}</span>
                   ) : selectedCategoryName ? (
                     <span className="min-w-0 flex-1 truncate text-slate-900">
                       {selectedCategoryName}
                     </span>
                   ) : (
-                    <span className="min-w-0 flex-1 truncate text-slate-400">เลือกหมวดหมู่</span>
+                    <span className="min-w-0 flex-1 truncate text-slate-400">{t("productForm.selectCategory")}</span>
                   )}
                   <ChevronDown className="size-4 shrink-0 text-slate-400" />
                 </button>
                 {categoriesError && (
                   <p className="text-[11px] text-red-600">
-                    โหลดหมวดหมู่ไม่สำเร็จ{" "}
-                    <button type="button" className="underline" onClick={() => void loadCategories()}>ลองใหม่</button>
+                    {t("productForm.categoriesFailed")}{" "}
+                    <button type="button" className="underline" onClick={() => void loadCategories()}>{t("productForm.retry")}</button>
                   </p>
                 )}
               </div>
               <div className="grid min-w-0 gap-2">
-                <Label htmlFor="p-unit">หน่วย</Label>
-                <Input id="p-unit" value={form.unit} onChange={(e) => set("unit", e.target.value)} placeholder="ชิ้น, กล่อง, ถุง" />
+                <Label htmlFor="p-unit">{t("productForm.unitLabel")}</Label>
+                <Input id="p-unit" value={form.unit} onChange={(e) => set("unit", e.target.value)} placeholder={t("productForm.unitPlaceholder")} />
               </div>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="p-desc">คำอธิบายสินค้า</Label>
-              <Textarea id="p-desc" value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="เช่น สูตรคลาสสิก ปราศจากสารกันเสีย" rows={2} />
+              <Label htmlFor="p-desc">{t("productForm.descLabel")}</Label>
+              <Textarea id="p-desc" value={form.description} onChange={(e) => set("description", e.target.value)} placeholder={t("productForm.descPlaceholder")} rows={2} />
             </div>
           </div>
         </div>
@@ -1023,14 +1032,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-center gap-2">
             <ListOrdered className="size-4 text-[#10B981]" />
-            <h3 className="text-sm font-semibold text-slate-900">ตัวเลือกสินค้า (Option Groups)</h3>
+            <h3 className="text-sm font-semibold text-slate-900">{t("productForm.optionsSection")}</h3>
           </div>
-          <p className="mt-1 text-xs text-slate-500">สร้างตัวเลือกสินค้า เช่น สี, ขนาด — ระบบจะสร้าง Variant อัตโนมัติ</p>
+          <p className="mt-1 text-xs text-slate-500">{t("productForm.optionsDesc")}</p>
 
           {variantCount > 100 && (
             <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-3">
-              <p className="text-xs font-semibold text-red-700">⚠ ตัวเลือกที่เลือกจะสร้าง {variantCount.toLocaleString()} Variants — เกินขีดจำกัดสูงสุด 100</p>
-              <p className="mt-1 text-[11px] text-red-500">กรุณาลดจำนวนตัวเลือกหรือยกเลิกบางค่าก่อนดำเนินการต่อ</p>
+              <p className="text-xs font-semibold text-red-700">{t("productForm.variantLimitWarn", { count: variantCount.toLocaleString() })}</p>
+              <p className="mt-1 text-[11px] text-red-500">{t("productForm.variantLimitHint")}</p>
             </div>
           )}
 
@@ -1038,12 +1047,12 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             {optionGroups.map((group, gi) => (
               <div key={gi} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-center gap-2">
-                  <Input value={group.name} onChange={(e) => updateGroupName(gi, e.target.value)} placeholder="เช่น สี, ขนาด, รสชาติ" className="h-8 text-sm" />
+                  <Input value={group.name} onChange={(e) => updateGroupName(gi, e.target.value)} placeholder={t("productForm.groupNamePlaceholder")} className="h-8 text-sm" />
                   <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
-                    <button type="button" className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${group.displayType === "text" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "text")}>ข้อความ</button>
-                    <button type="button" className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${group.displayType === "image" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "image")}>รูปภาพ</button>
+                    <button type="button" className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${group.displayType === "text" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "text")}>{t("productForm.displayText")}</button>
+                    <button type="button" className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${group.displayType === "image" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "image")}>{t("productForm.displayImage")}</button>
                   </div>
-                  <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 text-red-400 hover:text-red-600" onClick={() => removeOptionGroup(gi)} aria-label="ลบกลุ่มตัวเลือก"><X className="size-4" /></Button>
+                  <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 text-red-400 hover:text-red-600" onClick={() => removeOptionGroup(gi)} aria-label={t("productForm.removeGroupAria")}><X className="size-4" /></Button>
                 </div>
                 <div className="mt-2 space-y-2">
                   {group.values.map((val, vi) => (
@@ -1066,17 +1075,17 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                               <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOptionImageUpload(gi, vi, f); e.target.value = ""; }} />
                             </label>
                             {val.imageUrl && (
-                              <button type="button" className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600" onClick={() => updateOptionValueImage(gi, vi, null)} aria-label="ลบรูปตัวเลือก"><X className="size-2.5" /></button>
+                              <button type="button" className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600" onClick={() => updateOptionValueImage(gi, vi, null)} aria-label={t("productForm.removeValueImageAria")}><X className="size-2.5" /></button>
                             )}
                           </div>
-                          <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-9 min-w-0 flex-1 text-xs" />
-                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3.5" /></Button>
+                          <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder={t("productForm.valuePlaceholder")} className="h-9 min-w-0 flex-1 text-xs" />
+                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label={t("productForm.removeValueAria")}><X className="size-3.5" /></Button>
                         </>
                       ) : (
                         <>
                           {/* TEXT group — compact row, no image, no placeholder */}
-                          <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder="เช่น ดำ, ขาว, AI Version" className="h-7 min-w-0 flex-1 text-xs" />
-                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label="ลบค่า"><X className="size-3.5" /></Button>
+                          <Input value={val.value} onChange={(e) => updateOptionValue(gi, vi, e.target.value)} placeholder={t("productForm.valuePlaceholder")} className="h-7 min-w-0 flex-1 text-xs" />
+                          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeOptionValue(gi, vi)} aria-label={t("productForm.removeValueAria")}><X className="size-3.5" /></Button>
                         </>
                       )}
                     </div>
@@ -1084,21 +1093,21 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                   <div className="flex items-center gap-1.5">
                     <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => {
                       setOptionGroups((prev) => prev.map((g, i) => i === gi ? { ...g, values: g.values.map((v) => ({ ...v, isEnabled: true })) } : g));
-                    }}>เลือกทั้งหมด</Button>
+                    }}>{t("productForm.selectAll")}</Button>
                     <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-[10px] text-slate-500 hover:text-slate-700" onClick={() => {
                       setOptionGroups((prev) => prev.map((g, i) => i === gi ? { ...g, values: g.values.map((v) => ({ ...v, isEnabled: false })) } : g));
-                    }}>ยกเลิกทั้งหมด</Button>
+                    }}>{t("productForm.clearAll")}</Button>
                     <div className="flex-1" />
-                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-xs text-[#10B981]" onClick={() => addOptionValue(gi)}><Plus className="size-3" />เพิ่มค่า</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-xs text-[#10B981]" onClick={() => addOptionValue(gi)}><Plus className="size-3" />{t("productForm.addValue")}</Button>
                   </div>
                 </div>
               </div>
             ))}
-            <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-slate-300 text-sm text-slate-600" onClick={addOptionGroup}><Plus className="size-4" />เพิ่มกลุ่มตัวเลือก</Button>
+            <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-slate-300 text-sm text-slate-600" onClick={addOptionGroup}><Plus className="size-4" />{t("productForm.addGroup")}</Button>
           </div>
 
           {variantSummary && (
-            <p className="mt-3 text-xs text-slate-500">Variant ที่จะสร้าง: {variantSummary} ({variantCount} รายการ)</p>
+            <p className="mt-3 text-xs text-slate-500">{t("productForm.willCreate", { summary: variantSummary, count: variantCount })}</p>
           )}
         </div>
 
@@ -1109,31 +1118,31 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               <RefreshCw className="size-4 text-[#10B981]" />
               <h3 className="text-sm font-semibold text-slate-900">Variants ({draftVariants.length})</h3>
             </div>
-            <p className="mt-1 text-xs text-slate-500">ราคาเต็ม + ส่วนลด % → ราคาหลังลด (ระบบคำนวณอัตโนมัติ) พร้อมสต็อก, SKU, และรูป</p>
+            <p className="mt-1 text-xs text-slate-500">{t("productForm.variantDesc")}</p>
 
             <div className="mt-3 space-y-3 max-h-96 overflow-y-auto">
               {draftVariants.map((v) => (
                 <div key={v.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold text-slate-900">{v.name}</p>
-                    {Number(v.stock) <= 0 && <Badge className="text-[10px] bg-red-50 text-red-600">หมด</Badge>}
+                    {Number(v.stock) <= 0 && <Badge className="text-[10px] bg-red-50 text-red-600">{t("productForm.outOfStock")}</Badge>}
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-2">
                     <div className="grid gap-1">
-                      <Label className="text-[10px]">ราคาเต็ม</Label>
+                      <Label className="text-[10px]">{t("productForm.fullPriceLabel")}</Label>
                       <Input type="number" min="0" step="0.5" value={v.compareAtPrice || v.price} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, compareAtPrice: e.target.value } : pv))} className="h-7 text-xs" />
                     </div>
                     <div className="grid gap-1">
-                      <Label className="text-[10px]">ส่วนลด %</Label>
+                      <Label className="text-[10px]">{t("productForm.discountLabel")}</Label>
                       <Input type="number" min="0" max="100" value={v.discountPercent} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, discountPercent: e.target.value } : pv))} className="h-7 text-xs" placeholder="0" />
                     </div>
                     <div className="grid gap-1">
-                      <Label className="text-[10px]">สต็อก</Label>
+                      <Label className="text-[10px]">{t("productForm.stockLabel")}</Label>
                       <Input type="number" min="0" value={v.stock} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, stock: e.target.value } : pv))} className="h-7 text-xs" />
                     </div>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="text-[10px] text-slate-500">ราคาหลังลด:</span>
+                    <span className="text-[10px] text-slate-500">{t("productForm.finalPrice")}</span>
                     <span className="text-xs font-bold text-[#10B981]">฿{(() => { const full = Number(v.compareAtPrice) || 0; const disc = Number(v.discountPercent) || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
                     {Number(v.discountPercent) > 0 && <span className="rounded bg-red-50 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{Math.round(Number(v.discountPercent))}%</span>}
                   </div>
@@ -1141,7 +1150,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                     <button type="button" className="mt-1.5 text-[10px] text-blue-500 hover:text-blue-700" onClick={() => {
                       const first = draftVariants[0];
                       if (first) setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? pv : { ...pv, compareAtPrice: first.compareAtPrice, discountPercent: first.discountPercent }));
-                    }}>คัดลอกราคาจาก Variant แรก</button>
+                    }}>{t("productForm.copyFromFirst")}</button>
                   )}
                   <label className="mt-1.5 flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -1151,16 +1160,16 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                       checked={featuredVariantKey === v.key}
                       onChange={() => setFeaturedVariantKey(v.key)}
                     />
-                    <span className="text-[10px] text-slate-600">★ ใช้เป็นราคาหลัก</span>
+                    <span className="text-[10px] text-slate-600">{t("productForm.featuredBadge")}</span>
                   </label>
                   <div className="mt-2 grid grid-cols-4 gap-2">
                     <div className="grid gap-1">
                       <Label className="text-[10px]">SKU</Label>
-                      <Input value={v.sku} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, sku: e.target.value } : pv))} className="h-7 text-xs" placeholder="ไม่บังคับ" />
+                      <Input value={v.sku} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, sku: e.target.value } : pv))} className="h-7 text-xs" placeholder={t("productForm.skuPlaceholder")} />
                     </div>
                     <div className="col-span-3 grid gap-1">
-                      <Label className="text-[10px]">รูป (Option Value)</Label>
-                      <p className="text-[10px] text-slate-400">รูปมาจากตัวเลือกสินค้า เช่น สีดำ → รูปดำ</p>
+                      <Label className="text-[10px]">{t("productForm.valueImageLabel")}</Label>
+                      <p className="text-[10px] text-slate-400">{t("productForm.valueImageHint")}</p>
                     </div>
                   </div>
                 </div>
@@ -1173,8 +1182,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">รูปตัวอย่างสินค้า *</h3>
-              <p className="text-xs text-slate-500">รูปหลักแสดงที่หน้าร้าน</p>
+              <h3 className="text-sm font-semibold text-slate-900">{t("productForm.gallerySection")}</h3>
+              <p className="text-xs text-slate-500">{t("productForm.galleryHint")}</p>
             </div>
             <span className="text-xs tabular-nums text-slate-400">
               {galleryImages.length} / 10
@@ -1187,7 +1196,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                 <button
                   type="button"
                   className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600"
-                  aria-label="ลบรูปตัวอย่าง"
+                  aria-label={t("productForm.removeGalleryAria")}
                   onClick={() => void removeGalleryImage(i)}
                 >
                   <X className="size-3.5" />
@@ -1207,8 +1216,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">รูปรายละเอียดสินค้า</h3>
-              <p className="text-xs text-slate-500">แสดงในแท็บรายละเอียด (ไม่บังคับ)</p>
+              <h3 className="text-sm font-semibold text-slate-900">{t("productForm.detailSection")}</h3>
+              <p className="text-xs text-slate-500">{t("productForm.detailHint")}</p>
             </div>
             <span className="text-xs tabular-nums text-slate-400">
               {detailImages.length} / 10
@@ -1221,7 +1230,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                 <button
                   type="button"
                   className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600"
-                  aria-label="ลบรูปรายละเอียด"
+                  aria-label={t("productForm.removeDetailAria")}
                   onClick={() => void removeDetailImage(i)}
                 >
                   <X className="size-3.5" />
@@ -1241,26 +1250,26 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-center gap-2">
             <Tag className="size-4 text-amber-500" />
-            <h3 className="text-sm font-semibold text-slate-900">ข้อมูลสินค้า (Attributes)</h3>
+            <h3 className="text-sm font-semibold text-slate-900">{t("productForm.attrSection")}</h3>
           </div>
-          <p className="mt-1 text-xs text-slate-500">ข้อมูลเพิ่มเติม เช่น แบรนด์, วัสดุ — ไม่ใช้สำหรับเลือกซื้อ</p>
+          <p className="mt-1 text-xs text-slate-500">{t("productForm.attrHint")}</p>
           <div className="mt-3 space-y-2">
             {attributes.map((attr, ai) => (
               <div key={ai} className="flex items-center gap-2">
-                <Input value={attr.name} onChange={(e) => updateAttribute(ai, "name", e.target.value)} placeholder="ชื่อ เช่น แบรนด์" className="h-8 flex-1 text-sm" />
-                <Input value={attr.value} onChange={(e) => updateAttribute(ai, "value", e.target.value)} placeholder="ค่า เช่น Nike" className="h-8 flex-1 text-sm" />
-                <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeAttribute(ai)} aria-label="ลบ attribute"><X className="size-4" /></Button>
+                <Input value={attr.name} onChange={(e) => updateAttribute(ai, "name", e.target.value)} placeholder={t("productForm.attrNamePlaceholder")} className="h-8 flex-1 text-sm" />
+                <Input value={attr.value} onChange={(e) => updateAttribute(ai, "value", e.target.value)} placeholder={t("productForm.attrValuePlaceholder")} className="h-8 flex-1 text-sm" />
+                <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 text-slate-400 hover:text-red-500" onClick={() => removeAttribute(ai)} aria-label={t("productForm.removeAttrAria")}><X className="size-4" /></Button>
               </div>
             ))}
-            <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-slate-300 text-sm text-slate-600" onClick={addAttribute}><Plus className="size-4" />เพิ่มข้อมูลสินค้า</Button>
+            <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-slate-300 text-sm text-slate-600" onClick={addAttribute}><Plus className="size-4" />{t("productForm.addAttr")}</Button>
           </div>
         </div>
 
         {/* ═══ Section 9: Edit Mode — Variant Manager (existing products) ═══ */}
         {isEdit && current && (
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-1 text-sm font-semibold text-slate-900">จัดการ Variants</h3>
-            <p className="mb-2 text-xs text-slate-500">แก้ไขราคา, สต็อก, รูปภาพ และ SKU ของแต่ละ Variant</p>
+            <h3 className="mb-1 text-sm font-semibold text-slate-900">{t("productForm.manageVariants")}</h3>
+            <p className="mb-2 text-xs text-slate-500">{t("productForm.manageVariantsHint")}</p>
             <VariantManager productId={current.id} price={current.price} />
           </div>
         )}
@@ -1270,25 +1279,25 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           <Store className="size-4 shrink-0 text-[#10B981]" />
           <div className="flex-1">
             <p className="text-sm font-medium text-slate-900">
-              {isEdit ? "บันทึกการแก้ไข" : "เพิ่มสินค้า — สินค้าจะอยู่ในสถานะรอดำเนินการตรวจสอบ"}
+              {isEdit ? t("productForm.submitEdit") : t("productForm.submitCreate")}
             </p>
             <p className="text-xs text-slate-400">
-              {isEdit ? "แก้ไขข้อมูลสินค้าที่มีอยู่" : "กรอกข้อมูลทั้งหมดแล้วกดเพิ่มเพียงครั้งเดียว"}
+              {isEdit ? t("productForm.editHint") : t("productForm.createHint")}
             </p>
           </div>
           {!isEdit && (
-            <Switch checked={form.published} onCheckedChange={(v) => set("published", v)} aria-label="ส่งตรวจสอบ" />
+            <Switch checked={form.published} onCheckedChange={(v) => set("published", v)} aria-label={t("productForm.reviewAria")} />
           )}
         </div>
 
         <DialogFooter className="mt-2 gap-2">
           <Button type="button" variant="outline" className="border-slate-200 text-slate-700" onClick={onClose} disabled={saving}>
-            {current && !isEdit ? "ปิด" : "ยกเลิก"}
+            {current && !isEdit ? t("productForm.close") : t("common.cancel")}
           </Button>
           {(isEdit || !current) && (
             <Button type="submit" disabled={saving}>
               {saving && <Loader2 className="size-4 animate-spin" />}
-              {isEdit ? "บันทึกการแก้ไข" : "เพิ่มสินค้า"}
+              {isEdit ? t("productForm.submitEdit") : t("productForm.submitCreateShort")}
             </Button>
           )}
         </DialogFooter>
