@@ -7,7 +7,7 @@ import {
 } from "@velnox/shared/lib/app-shell";
 import { siteBasename } from "@velnox/shared/lib/sites";
 import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/MobileTabBar";
-import { LanguageProvider } from "@velnox/shared/lib/i18n";
+import { LanguageProvider, useLanguage } from "@velnox/shared/lib/i18n";
 import { RealtimeProvider } from "@velnox/shared/components/RealtimeProvider";
 import { useSellerApplication } from "@velnox/shared/hooks/use-seller-application";
 import { shouldShowSellerTab } from "@velnox/shared/lib/seller-access";
@@ -19,14 +19,17 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import "../../../packages/shared/src/index.css";
 import { initMonitoring } from "@velnox/shared/lib/monitoring";
 
-/** App-like bottom navigation for mobile (velseller). */
-const SELLER_TABS: MobileTabItem[] = [
-  { to: "/seller/goals", label: "เป้าหมาย", icon: Target },
-  { to: "/seller/shop", label: "ร้านของฉัน", icon: Store },
-  { to: "/seller/orders", label: "ออเดอร์", icon: ShoppingBag },
-  { to: "/seller/income", label: "รายได้", icon: Wallet },
-  { to: "/seller/profile", label: "โปรไฟล์", icon: UserCircle },
-];
+/** App-like bottom navigation for mobile (velseller) — labels follow the active language. */
+function useSellerTabs(): MobileTabItem[] {
+  const { t } = useLanguage();
+  return [
+    { to: "/seller/goals", label: t("sellerNav.goals"), icon: Target },
+    { to: "/seller/shop", label: t("sellerNav.shop"), icon: Store },
+    { to: "/seller/orders", label: t("sellerNav.orders"), icon: ShoppingBag },
+    { to: "/seller/income", label: t("sellerNav.income"), icon: Wallet },
+    { to: "/seller/profile", label: t("sellerNav.profile"), icon: UserCircle },
+  ];
+}
 
 /**
  * The seller tab bar IS a seller surface: it renders only for an approved seller
@@ -41,6 +44,7 @@ const SELLER_TABS: MobileTabItem[] = [
  */
 function SellerTabBar() {
   const { sellerAccess, loading, error } = useSellerApplication();
+  const SELLER_TABS = useSellerTabs();
   // One shared decision: approved only, and never while loading or after an API
   // error (fail closed — see shouldShowSellerTab).
   if (!shouldShowSellerTab({ sellerAccess, loading, error })) return null;

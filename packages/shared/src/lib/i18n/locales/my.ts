@@ -193,6 +193,16 @@ export const my = {
     remove: "ဖျက်ရန်",
   },
 
+  sellerNav: {
+    goals: "ပန်းတိုင်များ",
+    shop: "ကျွန်ုပ်၏ဆိုင်",
+    reorder: "ပြန်မှာယူရန်",
+    orders: "အမှာစာများ",
+    chat: "ချတ်",
+    income: "ဝင်ငွေ",
+    profile: "ပရိုဖိုင်",
+  },
+
   home: {
     eyebrow: "velshop · Velnox အွန်လိုင်းဈေးကွက်",
     bannerEyebrow: "လူကြိုက်များသော အမျိုးအစား",

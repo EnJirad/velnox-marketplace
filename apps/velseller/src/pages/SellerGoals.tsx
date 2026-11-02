@@ -89,7 +89,7 @@ export default function SellerGoals() {
             </p>
           </div>
           <Button
-            className="gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+            className="gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]"
             onClick={() => {
               setEditingGoal(null);
               setFormOpen(true);
@@ -175,7 +175,7 @@ export default function SellerGoals() {
               แล้วให้ Velnox จำและช่วยคุณติดตาม
             </p>
             <Button
-              className="mt-6 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+              className="mt-6 gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]"
               onClick={() => {
                 setEditingGoal(null);
                 setFormOpen(true);

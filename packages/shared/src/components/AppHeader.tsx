@@ -2,19 +2,21 @@ import { Logo } from "@velnox/shared/components/Logo";
 import { SellerNotificationBell } from "@velnox/shared/components/SellerNotificationBell";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import { useChatUnread } from "@velnox/shared/hooks/use-chat-unread";
+import { useLanguage } from "@velnox/shared/lib/i18n";
 import { MessageCircle, RefreshCw, ShoppingBag, Store, Target, Wallet } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 const NAV_ITEMS = [
-  { to: "/seller/goals", label: "แดชบอร์ดเป้าหมาย", icon: Target },
-  { to: "/seller/shop", label: "ร้านของฉัน", icon: Store },
-  { to: "/seller/reorder", label: "Smart Reorder", icon: RefreshCw },
-  { to: "/seller/orders", label: "ออเดอร์", icon: ShoppingBag },
-  { to: "/seller/chat", label: "แชท", icon: MessageCircle },
-  { to: "/seller/income", label: "รายได้", icon: Wallet },
+  { to: "/seller/goals", labelKey: "sellerNav.goals", icon: Target },
+  { to: "/seller/shop", labelKey: "sellerNav.shop", icon: Store },
+  { to: "/seller/reorder", labelKey: "sellerNav.reorder", icon: RefreshCw },
+  { to: "/seller/orders", labelKey: "sellerNav.orders", icon: ShoppingBag },
+  { to: "/seller/chat", labelKey: "sellerNav.chat", icon: MessageCircle },
+  { to: "/seller/income", labelKey: "sellerNav.income", icon: Wallet },
 ];
 
 export function AppHeader() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   // Real unread chat count from the server (scoped to this seller's own
@@ -50,7 +52,7 @@ export function AppHeader() {
                   }`}
                 >
                   <item.icon className="size-4" />
-                  {item.label}
+                  {t(item.labelKey)}
                   {item.to === "/seller/chat" && chatBadge}
                 </Link>
               );

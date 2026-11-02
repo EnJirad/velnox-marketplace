@@ -252,6 +252,16 @@ export const en: Dict = {
     remove: "Remove",
   },
 
+  sellerNav: {
+    goals: "Goals",
+    shop: "My shop",
+    reorder: "Smart reorder",
+    orders: "Orders",
+    chat: "Chat",
+    income: "Income",
+    profile: "Profile",
+  },
+
   home: {
     eyebrow: "velshop · Velnox marketplace",
     bannerEyebrow: "Popular category",

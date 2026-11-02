@@ -276,6 +276,16 @@ export const th = {
     remove: "ลบ",
   },
 
+  sellerNav: {
+    goals: "เป้าหมาย",
+    shop: "ร้านของฉัน",
+    reorder: "สั่งซื้อซ้ำ",
+    orders: "ออเดอร์",
+    chat: "แชท",
+    income: "รายได้",
+    profile: "โปรไฟล์",
+  },
+
   home: {
     eyebrow: "velshop · ตลาดออนไลน์ Velnox",
     bannerEyebrow: "หมวดหมู่ยอดนิยม",

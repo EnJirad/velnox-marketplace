@@ -274,7 +274,7 @@ export default function SellerOrders() {
               </span>
               <h2 className="mt-5 text-lg font-semibold text-slate-900">{t("common.error")}</h2>
               <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("sellerOrders.desc")}</p>
-              <Button className="mt-6 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]" onClick={retry}>
+              <Button className="mt-6 gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]" onClick={retry}>
                 <RefreshCw className="size-4" />
                 {t("common.retry")}
               </Button>
