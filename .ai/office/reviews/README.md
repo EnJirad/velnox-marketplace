@@ -1,38 +1,33 @@
-# `reviews/` — verdicts written by Agent 01
+# `reviews/` — QA reports written by AI 02
 
-One file per task: `REVIEW-<slug>.md`. Written **after** inspecting the artefact,
-never from the subagent's report.
+One file per QA round: `QA-<slug>-rN.md`. AI 02 writes these **after**
+independently verifying the artefact — never from AI 01's claims.
 
-## Template
+## Outcome vocabulary
 
-```
-# Review — <slug>
+| Outcome | Meaning |
+|---|---|
+| `PASS` | all applicable acceptance criteria verified with AI 02's own command output on the current file state |
+| `FAIL` | specific defects or missing requirements — numbered, with evidence |
+| `BLOCKED` | verification impossible: missing access, infrastructure or resources |
+| `NOT VERIFIED` | insufficient evidence — never counts as PASS |
 
-Round: <n>   Commit/baseline: <short sha>   Verdict: ACCEPTED | CHANGES REQUIRED
+## Report shape
 
-## Criteria
-
-| # | Criterion | Result | Evidence |
-|---|-----------|--------|----------|
-| 1 | <criterion> | PASS | <command + output> |
-
-## Findings
-
-1. (blocking|minor) path/to/file:N — expected / actual / required
-
-## Checks run
-
-<command> → exit <code> (<observed>)
-
-## Notes for the next round
-```
+`QA REPORT <slug> — ROUND <n>` · OUTCOME · per-criterion evidence · numbered
+defects (`file:line`, expected / actual / evidence, severity) · regressions ·
+blockers · not-verified items.
 
 ## Rules
 
-1. **Evidence or it did not happen.** Every PASS names the command that proved it.
-2. **Read the file, not the diff alone.** Untracked new files are invisible to
+1. Evidence or it did not happen — every PASS names the command that proved it.
+2. Re-run previously passing checks after later modifications.
+3. Read the file, not the diff alone — untracked new files are invisible to
    `git diff` (`DECISIONS.md` D-008).
-3. **Re-run the verification yourself.** A subagent's exit codes are not yours.
-4. **Findings are numbered and actionable.** "Improve the code" is not a finding.
-5. **State the verdict explicitly** — ACCEPTED or CHANGES REQUIRED. Ambiguity
-   burns a round.
+4. AI 02 is read-only with respect to source during QA; the only write is this
+   report.
+5. Never approve on AI 01's word. A discrepancy between AI 01's report and the
+   observed state is itself a (low-severity) process defect.
+
+Historical note: v1 of this folder held review verdicts written by the main
+agent, when the roles were inverted (`DECISIONS.md` D-009).

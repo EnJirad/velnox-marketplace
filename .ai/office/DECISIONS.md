@@ -146,3 +146,74 @@ untracked.
 **Consequence:** the review step must either `git add -N <path>` (intent-to-add,
 which does not stage content) or read the file directly. This system's review
 template prefers reading the file plus an explicit checklist.
+
+---
+
+## D-009 — Role inversion: AI 01 implements, AI 02 plans and QA-verifies
+
+**Status:** accepted · 2026-11-02 · task `office-audit-001`
+
+v1 assigned architect to the main agent and developer to the subagent. The
+owner's required architecture is the inverse: AI 01 (main, implements), AI 02
+(subagent, plans and independently verifies). Role files were rewritten;
+`architect.md` / `developer.md` filenames kept — they still name their roles,
+only the agent-to-slot mapping flipped.
+
+**Evidence:** the QA defect loop ran end to end after the inversion — AI 02
+caught a deliberately introduced regression (double-minus money formatting) as
+`FAIL` with `file:line`, expected/actual/evidence, then re-verified the fix in
+code and returned `PASS` (`reviews/QA-qa-smoke-r1.md`, `QA-qa-smoke-r2.md`).
+
+---
+
+## D-010 — Plan/Execute dual model is a separate platform feature
+
+**Status:** accepted · 2026-11-02
+
+`planning_provider_id` / `execution_provider_id` are distinct settings from
+`subagent_provider_id`; all four currently resolve to provider `fb81151c-…`.
+Configured values: `cx/gpt-6-astra[1m]` (plan), `af/gpt-oss-120b` (execute).
+
+**Verified:** the settings exist with these values (store inspection 2026-11-02).
+**NOT VERIFIED:** which model actually executes plan-mode steps at runtime — no
+tool observes this, and task-control records only show `mode: ACT`. Therefore:
+Plan/Execute may supplement the workflow, but AI 01's implementation and AI 02's
+independent QA remain the authority. A plan-mode draft is input to AI 01, never
+a replacement for AI 02's brief or QA PASS.
+
+**Revisit if:** a future build exposes plan/execute session records to inspect.
+
+---
+
+## D-011 — QA vocabulary is PASS / FAIL / BLOCKED / NOT VERIFIED, blind to implementation claims
+
+**Status:** accepted · 2026-11-02
+
+QA reads the artefact and re-runs checks on the current file state. It must
+never approve on AI 01's word. When implementation reports lag the actual state,
+QA's own evidence wins and the discrepancy becomes a process defect.
+
+**Evidence:** in the round-1 QA test, AI 01's "7 pass, 0 fail" claim described a
+pre-regression state while QA saw the post-regression state; AI 02 correctly
+ruled `FAIL` on its own output and logged the report inaccuracy as D2 (low).
+Lesson recorded in the role docs: implementation reports must state the exact
+file state they describe.
+
+---
+
+## D-012 — QA-loop test fixtures are disposable and cleaned up
+
+**Status:** accepted · 2026-11-02
+
+Deliberate defects are introduced only into isolated fixtures, never production
+files. After the loop completes, fixtures are deleted; QA reports in
+`reviews/` remain the evidence record.
+
+**Evidence:** `.ai/office/tests/qa-smoke/` (money helper + 7-case bun test)
+exercised plan → implement → QA FAIL → fix → QA PASS, then was deleted before
+commit. No production file was touched: `git status` after cleanup shows only
+`.ai/office/` documentation changes, and `bun run typecheck`,
+`bun --filter @velnox/backend typecheck`, `bun run i18n:check` all exit 0.
+
+Host note: `bun test .ai/office/tests/qa-smoke/` (directory filter) matches no
+test files on bun 1.4.4 here — the `./`-prefixed file-path form is required.

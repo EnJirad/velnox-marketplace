@@ -1,146 +1,111 @@
-# Architecture — Velnox Two-Agent Development System
+# Architecture — Velnox AI Office (two-agent development system)
 
-Designed against **Android Harness v3.1 capabilities as verified on this device**,
-not against assumptions. Every platform claim below was checked; the evidence is
-recorded in `DECISIONS.md`.
+Designed against **verified v3.1 runtime capabilities on this device**. Every
+platform claim was checked; evidence lives in `DECISIONS.md`. Audited and
+reconfigured 2026-11-02 (task `office-audit-001`).
 
-## 1. Shape
+## 1. Shape — role-inverted from v1
 
-No server. No database. No dashboard. One workspace, one orchestrator, one
-coding subagent, and a small folder of files that survives between rounds.
+AI 01 (main) implements. AI 02 (subagent) plans and QA-verifies.
 
 ```
-                    ┌──────────────────────────────────────────┐
-  user request ───► │ AGENT 01  Architect · Planner · QA        │
-                    │ main Code session (main model)           │
-                    │ tools: read, git, shell, browser, task   │
-                    └───────┬──────────────────────▲───────────┘
-                            │                      │
-              task (foreground)                    │ final answer
-                            ▼                      │
-                    ┌──────────────────────────────┴───────────┐
-                    │ AGENT 02  Senior Developer               │
-                    │ nested subagent (subagent_model)         │
-                    │ tools: write/edit/patch + shell + git    │
-                    └───────┬──────────────────────────────────┘
-                            │ writes
+  user request ───► │ AI 01 · MAIN DEVELOPER                    │
+                    │ main Code session · ag/claude-opus-5-5     │
+                    │ classifies → delegates → implements        │
+                    │ → verifies → fixes → ships (git)           │
+                    └───────┬──────────────────────▲────────────┘
+              task (Phase A: plan) │                     │ Task Brief / QA Report
+                            ▼      │                     │
+                    ┌──────────────┴─────────────────────┴─────┐
+                    │ AI 02 · ARCHITECT · PLANNER · QA          │
+                    │ nested subagent · cx/gpt-6-astra          │
+                    │ Phase A: analyse, brief, criteria         │
+                    │ Phase B: independent QA (read-only)       │
+                    └───────┬───────────────────────────────────┘
                             ▼
-                 ┌────────────────────────────────┐
-                 │ ONE shared workspace            │
-                 │ velnox-marketplace-81f20048     │
-                 └────────────────────────────────┘
+                 ONE shared workspace (velnox-marketplace)
 ```
 
-`task` is the only channel. It is synchronous: the subagent's final answer is the
-return value of the call, so the loop is a plain sequence inside one Code run —
-no polling, no queue, no server.
+Planning-only requests stop after Phase A: the brief goes to the user, no code
+is written. Analysis-only requests are read-only end to end.
 
-## 2. Why this and not something else
+## 2. Verified model configuration (2026-11-02)
 
-| Option | Verdict |
-|---|---|
-| `task` tool (nested agent) | **chosen** — built in, shares workspace, returns an answer to the caller |
-| Two Code chats side by side | rejected — no return channel, user becomes the message bus |
-| Robot/Automation task | rejected for orchestration — see §6 |
-| External server / queue | rejected — the platform already does this in-process |
+| Slot | Setting key | Value | Provider |
+|---|---|---|---|
+| AI 01 main | `active_model` | `ag/claude-opus-5-5` | `fb81151c-…` |
+| Planning | `planning_model` | `cx/gpt-6-astra[1m]` | `fb81151c-…` |
+| AI 02 subagent | `subagent_model` | `cx/gpt-6-astra` | `fb81151c-…` |
+| Execution | `execution_model` | `af/gpt-oss-120b` | `fb81151c-…` |
 
-## 3. State lives in files, not in context
+One custom-endpoint provider (`fb81151c-cc54-4a6c-9d87-7380a2e81a37`) serves all
+four slots. Historical values (`rb/deepseek-v4.1-flash-1017`, `rb/gpt-6-luna`)
+were current before this audit — see `DECISIONS.md` D-004, history preserved.
 
-A subagent starts with **zero** conversation history, and a later round starts
-fresh again. Anything the loop needs must exist on disk:
+### Plan/Execute feature
+
+`planning_provider_id` + `execution_provider_id` are **separate settings** from
+`subagent_provider_id`: dual Plan/Execute is a distinct platform feature, not
+subagent delegation. Configured with `cx/gpt-6-astra[1m]` (plan) and
+`af/gpt-oss-120b` (execute). **Runtime semantics NOT VERIFIED**: no tool exists
+to observe which model executes plan-mode steps, and task-control records show
+only `mode: ACT`. Integration rule regardless: dual planning may supplement, but
+AI 01 implements and AI 02 verifies — Plan/Execute must not silently replace
+either role. If the app's plan mode is used, its plan is input to AI 01, never a
+substitute for AI 02's brief or QA.
+
+## 3. State lives in files
 
 | Path | Owner | Purpose |
 |---|---|---|
-| `tasks/active/<slug>.md` | Agent 01 | the brief; the only thing Agent 02 must obey |
-| `tasks/active/<slug>-rN.md` | Agent 01 | per-round brief when a round needs its own criteria |
-| `handoffs/smoke-*`, `handoffs/<slug>.md` | Agent 02 | what it did, what it ran, what is open |
-| `reviews/<slug>.md` | Agent 01 | independent verdict with evidence and findings |
-| `DECISIONS.md` | Agent 01 | durable decisions + platform facts |
-| `PROJECT_CONTEXT.md` | shared | pointer brief; never duplicates `.ai/context/*` |
-| `agents/architect.md` | Agent 01 | orchestrator role |
-| `agents/developer.md` | Agent 02 | developer role, prepended to every task |
+| `tasks/active/<slug>.md` | AI 01 | task record: request, brief ref, status, files, tests, QA outcome, round, final status |
+| `handoffs/brief-*.md` | AI 02 | Task Briefs (Phase A output) |
+| `handoffs/impl-*.md` | AI 01 | implementation reports (optional but recommended) |
+| `reviews/QA-*-rN.md` | AI 02 | QA reports per round |
+| `DECISIONS.md` | AI 01 | durable decisions, append-only |
+| `PROJECT_CONTEXT.md` | shared | pointer brief into the real docs |
 
-Rule of thumb: **if the next round would need it, write it down.** A finding that
-only exists in chat is lost at the next delegation.
+## 4. Concurrency rule
 
-## 4. Concurrency rule — one writer
+Foreground delegation only, one `task` call at a time, one writer. During Phase
+B QA, AI 02 is read-only with respect to source. During implementation, AI 01
+edits; AI 02 may write only its own brief/records.
 
-- Delegation is **foreground** (`background: false`). Background subagents are
-  read-only in this build, and a background writer would race the orchestrator.
-- While a round is open, Agent 01 does not edit source. It may write review and
-  decision records (different files, no conflict).
-- One `task` call at a time. Never fan out parallel writers into one workspace.
+## 5. QA protocol
 
-## 5. The loop, with the stopping rule
+Outcomes: `PASS` / `FAIL` / `BLOCKED` / `NOT VERIFIED`.
 
-```
-round = 1
-while round <= MAX_ROUNDS (default 5):
-    delegate brief (or correction findings)
-    review artefact against numbered criteria   ← never the self-report
-    if all criteria pass: break
-    if blocker needing a human: stop and ask
-    round += 1
-else:
-    stop, report "budget exhausted" with the open findings
-```
-
-Acceptance criteria must be **observable**: a file state, an exit code, a string
-that must exist, a route that must respond. "Looks good" is not a criterion.
+- QA verifies the **artefact**, never AI 01's claims; every criterion needs
+  command output on the current file state.
+- Defects are numbered with severity, `file:line`, expected/actual/evidence.
+- Previously passing checks are re-run after later modifications.
+- AI 02 never edits source during QA; never approves on AI 01's word.
+- Correction loop: AI 01 fixes every valid defect → QA again. Budget **5**
+  rounds; on exhaustion stop, preserve work, report, ask the user.
 
 ## 6. Platform capabilities, verified
 
-Verified on this device (v3.1 unless noted):
-
 | Capability | Status | Detail |
 |---|---|---|
-| Nested agent via `task` | **available** | returns final answer to the parent |
-| Subagent may **edit files** | **available** | a probe subagent listed `write_file`, `edit_file`, `apply_patch`, `multi_edit`, `delete_file` |
-| Subagent may run shell/git/browser/MCP | **available** | full tool set observed |
-| Subagent recursion | **not available** | subagents cannot spawn subagents |
-| Subagent ↔ user | **not available** | a subagent cannot ask a question |
-| Shared workspace | **confirmed** | probe returned the same `git rev-parse --show-toplevel`, branch and SHA |
-| Per-call `model` override | **not effective** | accepted without error but the Sub-Agent settings model takes precedence |
-| Dedicated subagent model setting | **available** | `subagent_provider_id` + `subagent_model` (single pair, applies to *all* subagents) |
-| Planning model setting | **available** | `planning_provider_id` + `planning_model`, separate from subagent |
-| Background subagents | **read-only** | `background_subagents` setting; background delegates explore only |
-| Automation (scheduled) | **available** | single-agent scheduled run with `checkCommand` + `maxAttempts` |
-| Checkpoints | **partial** | per-file `file_history` / `file_restore`; git is the real checkpoint |
-| Build/Test shortcuts | **available** | project-scoped command list, mirrors `package.json` scripts |
+| Nested agent via `task` | **available** | returns final answer to the caller |
+| Subagent may edit files | **available** | full write/edit/patch tool set (probe) |
+| Subagent recursion / user questions | **not available** | briefs must be self-contained |
+| Shared workspace | **confirmed** | identical `git rev-parse --show-toplevel` |
+| Per-call `model` override | **not effective** | Sub-Agent setting wins (probe: invalid id accepted and ran) |
+| One subagent model for all subagents | **confirmed** | single `subagent_model` setting |
+| Plan/Execute dual model | **configured** | separate settings; runtime semantics unverified |
+| Background subagents | **read-only** | implementation must be foreground |
+| Automation (scheduled) | **available** | single-agent schema only; not used for this workflow |
+| Checkpoints | **partial** | per-file `file_history`; git is the real checkpoint |
+| Build/Test shortcuts | **available** | project-scoped, mirror `package.json` scripts |
 
-## 7. Model assignment
+## 7. Host quirks that bite
 
-- **Agent 01** = the main session model (`active_model`). It does planning and
-  judgement; that is where model quality pays.
-- **Agent 02** = `subagent_model`. It does focused implementation against a
-  written brief, which tolerates a cheaper/faster model.
-- They are **already different** on this device (`rb/deepseek-v4.1-flash-1017`
-  vs `rb/deepseek-v4.1-flash`), but same family. To get a genuinely independent
-  second model, change **Settings → Sub-Agent model** (see `RUNBOOK.md`).
-- There is **one** subagent model for all subagents. Round-by-round model
-  switching per call is not supported in v3.1.
-
-## 8. Automation — what it can and cannot do
-
-`automation.xml` shows the real task schema: `prompt`, `providerId`, `model`,
-`checkCommand`, `schedule`, `hour`, `minute`, `maxAttempts`, `enabled`.
-
-- It runs **one** agent with **one** model. It has no field for a second agent,
-  no round counter, and no notion of a reviewer.
-- A scheduled run *could* carry a prompt that instructs the agent to use `task`,
-  so a single scheduled run can execute one full two-agent cycle. It cannot
-  supervise repeated rounds beyond its own `maxAttempts` retry logic.
-- **Not configured here, deliberately.** A scheduled job that edits the project
-  on a timer is exactly what the user forbade without an explicit request. The
-  supported entry point is a normal Code chat (see `RUNBOOK.md`).
-
-## 9. Failure modes and their tells
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| Subagent returns "I don't have that context" | brief was not self-contained | put the plan in the brief file, not in chat |
-| Subagent edited files outside the list | scope not explicit | name the allowed paths; treat violations as blocking |
-| `git diff` empty after a round | new files are **untracked**; `diff` ignores them | `git add -N <path>` or read the file directly |
-| Same finding repeats every round | finding was vague | number it, quote the line, state the required outcome |
-| Round 5 still failing | criteria were not observable | rewrite criteria, then restart the loop |
-| Two writers conflict | background/parallel delegation used | serialize; foreground only |
+- `bun test <path>` needs a `./` prefix on this host (bun 1.4.4): use
+  `bun test ./.ai/office/tests/qa-smoke/money.test.ts`, not a directory filter.
+- New files are untracked → invisible to `git diff`; use `git add -N` or read.
+- `bun run lint` / `format` are placeholders that prove nothing.
+- On Android/Termux, `process.execPath` is the linker; the
+  `test-database-isolation` end-to-end probes fail for that reason alone
+  (8 known environmental failures in `bun run test`; root cause in
+  `.ai/automation-reports/daily-health-report.md`).

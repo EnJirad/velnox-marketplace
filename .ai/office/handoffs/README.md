@@ -1,24 +1,22 @@
-# `handoffs/` — what Agent 02 produced
+# `handoffs/` — cross-agent records
 
-Agent 02 writes here (or reports here) at the end of every round. A handoff is a
-claim; the architect verifies it and records the verdict in `../reviews/`.
+Two kinds of file, written by different agents:
 
-## Required content
-
-- `STATUS:` done | partial | blocked
-- `ROUND:` the round it answers
-- `SHA:` `git rev-parse --short HEAD` at the time of writing
-- `## Commands Run` — the real command and its real exit code
-- `## Risks` — what could still break
-- last line exactly `STATUS: implemented` for completed work
+| File | Author | Content |
+|---|---|---|
+| `brief-<slug>.md` | AI 02 | Task Brief from Phase A planning (REQUEST / AFFECTED FILES / APPROACH / STEPS / ACCEPTANCE CRITERIA / TEST CASES / RISKS / SCOPE LIMITS) |
+| `impl-<slug>.md` | AI 01 | implementation report: files changed, commands run with real exit codes, deviations from the brief, and **the exact file state the report describes** |
 
 ## Rules
 
-- Never write a command you did not run.
-- Never claim a check you skipped; say `not run`.
-- Stay inside the brief's file list.
+- A handoff is a claim. The receiving agent verifies it against the real
+  workspace before acting on it.
+- Never write a command you did not run; never claim a skipped check.
+- Implementation reports must state the exact file state they describe — a
+  report describing an earlier state reads as false evidence to QA
+  (`DECISIONS.md` D-011).
+- New files are untracked, so `git diff` shows nothing for them; use
+  `git status --short --untracked-files=all` and read files directly.
 
-## Known gotcha
-
-New files are untracked, so `git diff` shows nothing for them. Reviewers must use
-`git status --short`, read the file, or `git add --intent-to-add <path>`.
+Historical note: `smoke-01.md` / `smoke-02.md` are v1 smoke-test records from
+before the role inversion and are kept as history.

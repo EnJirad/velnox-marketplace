@@ -1,41 +1,27 @@
-# `tasks/active/` — briefs written by Agent 01
+# `tasks/active/` — task records written by AI 01
 
-One file per task. The file is handed to Agent 02 **verbatim**, so it must stand
-alone: no "as we discussed", no pronouns pointing at chat.
+One file per task: `<slug>.md`. It is the durable record of the whole loop —
+the thing that survives between delegation rounds and lets any reader audit what
+happened.
 
-## Naming
+## Required fields (per task)
 
-| File | Meaning |
-|---|---|
-| `TEMPLATE.md` | copy this; never edit it as a task |
-| `<slug>.md` | the main brief |
-| `<slug>-rN.md` | optional brief for round `N` when that round needs its own criteria |
+1. **Task ID** — unique slug, matches the filename.
+2. **Original user request** — quoted.
+3. **Task Brief** — reference to `../handoffs/brief-<slug>.md` (AI 02's output).
+4. **Implementation status** — current round, what AI 01 has done.
+5. **Modified file list** — actual paths, kept current.
+6. **Test results** — real commands and exit codes.
+7. **QA report** — reference to `../reviews/QA-<slug>-rN.md`, outcome per round.
+8. **Correction round number** — current round of max 5.
+9. **Final acceptance status** — one of: `ACCEPTED (QA PASS)` · `OPEN` ·
+   `BLOCKED` · `BUDGET EXHAUSTED`.
 
-Move a brief to `tasks/done/` only after the review record shows every criterion
-met.
+## Rules
 
-## Non-negotiables in a brief
+- Update the record at every state change; do not batch updates to the end.
+- Move to `tasks/done/` only after final acceptance status is `ACCEPTED`.
+- `TEMPLATE.md` is a copy source, never edited as a task.
 
-1. **Scope — files allowed to change.** An explicit list. Everything else is a
-   review finding.
-2. **Acceptance criteria, numbered and observable.** A file state, an exit code,
-   a string that must exist. Not "looks good".
-3. **Verification commands.** Copy the real ones from `PROJECT_CONTEXT.md`.
-   Never invent a command.
-4. **Commit policy.** Default `do not commit` — the architect decides when.
-5. **Round number** and the round budget.
-
-## Correction rounds
-
-A correction does not need a new brief file. Call `task` with the finding list
-inline, in this shape:
-
-```
-FINDING 1 (blocking) — path/to/file.ext:LINE
-  Expected: <the required state>
-  Actual:   <what is there now>
-  Required: <the exact change>
-```
-
-Number the findings, quote the line, state the outcome. Vague feedback is the
-architect's defect.
+Historical note: v1 briefs (`smoke-001-*.md`) were written for the pre-inversion
+protocol where the main agent planned; kept as history.
