@@ -337,7 +337,7 @@ export default function ShopProducts() {
       {/* Category */}
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t("products.category")}</p>
-        <div className="mt-3 flex flex-wrap gap-1.5 lg:flex-col lg:items-start lg:gap-1">
+        <div className="mt-3 flex flex-wrap gap-1.5 lg:max-h-[340px] lg:flex-col lg:items-stretch lg:gap-1 lg:overflow-y-auto lg:pr-1">
           {categoryOptions.map((c) => (
             <button
               key={c.id}
@@ -345,8 +345,8 @@ export default function ShopProducts() {
               onClick={() => updateParam("category", c.id === "all" ? null : c.id)}
               className={`rounded-full px-3 py-2 text-xs font-medium transition-colors lg:w-full lg:rounded-[10px] lg:text-left ${
                 category === c.id
-                  ? "bg-slate-900 text-white"
-                  : "border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900"
+                  ? "border border-[#10B981] bg-[#10B981] text-white"
+                  : "border border-transparent bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               {c.label}
