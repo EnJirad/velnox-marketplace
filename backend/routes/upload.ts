@@ -8,6 +8,7 @@ import { headR2Object } from "../lib/r2-objects.js";
 import { invalidateCachedProfile } from "./auth.js";
 import { randomUUID } from "node:crypto";
 import { isChatParticipant, isConversationId, loadChatAudience } from "../lib/chat-access.js";
+import { userHasPermission } from "../lib/permissions.js";
 
 // ─── R2 Client ──────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ const ALLOWED_TYPES: string[] = [...ALLOWED_UPLOAD_TYPES];
 // refused before any URL is signed (same contract as the evidence flow in
 // routes/verification.ts).
 
-const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat"] as const;
+const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat", "announcement"] as const;
 type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
 
 const PROFILE_IMAGE_KINDS = ["avatar", "cover"] as const;
@@ -80,6 +81,8 @@ function purposeFromObjectKey(objectKey: string): UploadPurpose | null {
     if (parts[2] === "logo.webp") return "shop-logo";
     if (parts[2] === "cover.webp") return "shop-cover";
   }
+  // Storefront announcement artwork: announcements/{userId}/{uuid}.webp
+  if (parts[0] === "announcements" && parts.length >= 3) return "announcement";
   return null;
 }
 
@@ -163,6 +166,10 @@ function validateObjectKeyOwnership(objectKey: string, userId: string): boolean 
   // route, which only accepts keys under that conversation for that sender.
   if (parts.length === 4 && parts[0] === "chat") {
     return parts[2] === userId;
+  }
+  // Announcement artwork: announcements/{userId}/{uuid}.webp
+  if (parts.length >= 3 && parts[0] === "announcements") {
+    return parts[1] === userId;
   }
   // Shop keys: shop/{shopId}/logo.webp or shop/{shopId}/cover.webp
   if (parts.length >= 3 && parts[0] === "shop") {
@@ -335,6 +342,15 @@ export function setupUploadRoutes(app: Express): void {
           return;
         }
         objectKey = `chat/${conversationId}/${userId}/${randomUUID()}.webp`;
+      } else if (purpose === "announcement") {
+        // Storefront announcement artwork is owner/company content: only an
+        // account holding settings.manage may mint this namespace.
+        if (!(await userHasPermission(userId, "settings.manage"))) {
+          r2Log("presign", { step: "announcement_permission", status: "denied" });
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "settings.manage permission required" } });
+          return;
+        }
+        objectKey = `announcements/${userId}/${randomUUID()}.webp`;
       } else {
         // that validateObjectKeyOwnership verifies. The old
         // `<purpose>/<userId>.webp` shape let a client invent a bucket
@@ -453,7 +469,7 @@ export function setupUploadRoutes(app: Express): void {
         } catch (coverErr: any) {
           if (coverErr?.code !== "42703") throw coverErr;
         }
-      } else {
+      } else if (purpose === "shop-logo" || purpose === "shop-cover") {
         // shop-logo / shop-cover — ownership was proven before the media row
         // was written, so the reference can move now.
         // Extract shopId from objectKey: shop/{shopId}/logo.webp or shop/{shopId}/cover.webp
@@ -464,6 +480,8 @@ export function setupUploadRoutes(app: Express): void {
           await query(`UPDATE shops SET ${col} = $1, updated_at = NOW() WHERE id = $2`, [publicUrl, shopId]);
         }
       }
+      // `announcement` uploads only need the media row above; the URL is stored
+      // with the announcement itself (PUT /api/admin/announcements).
 
       invalidateCachedProfile(userId);
       // Also invalidate the /api/customer/profile cache (routes/index.ts) so

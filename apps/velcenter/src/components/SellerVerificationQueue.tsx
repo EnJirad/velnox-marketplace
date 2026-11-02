@@ -1,4 +1,11 @@
 import { Badge } from "@velnox/shared/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@velnox/shared/components/ui/select";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Card, CardContent } from "@velnox/shared/components/ui/card";
 import { Input } from "@velnox/shared/components/ui/input";
@@ -215,17 +222,18 @@ export default function SellerVerificationQueue() {
           />
         </div>
         <div className="flex gap-2">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-9 rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
-          >
-            <option value="pending">{t("review.filterPending")}</option>
-            <option value="all">{t("review.filterAll")}</option>
-            <option value="verified">{t("review.filterVerified")}</option>
-            <option value="rejected">{t("review.filterRejected")}</option>
-            <option value="suspended">{t("review.filterSuspended")}</option>
-          </select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-9 w-[160px] rounded-[10px] border-slate-200 bg-white text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">{t("review.filterPending")}</SelectItem>
+              <SelectItem value="all">{t("review.filterAll")}</SelectItem>
+              <SelectItem value="verified">{t("review.filterVerified")}</SelectItem>
+              <SelectItem value="rejected">{t("review.filterRejected")}</SelectItem>
+              <SelectItem value="suspended">{t("review.filterSuspended")}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

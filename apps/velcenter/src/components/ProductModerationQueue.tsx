@@ -1,4 +1,11 @@
 import { Badge } from "@velnox/shared/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@velnox/shared/components/ui/select";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Card, CardContent } from "@velnox/shared/components/ui/card";
 import {
@@ -692,28 +699,28 @@ export default function ProductModerationQueue() {
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label="กรองตามสถานะสินค้า"
-            className="h-9 flex-1 rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40 sm:flex-none"
-          >
-            <option value="pending_review">รอตรวจสอบ</option>
-            <option value="all">ทั้งหมด</option>
-            <option value="published">เผยแพร่แล้ว</option>
-            <option value="rejected">ปฏิเสธ</option>
-            <option value="draft">ร่าง</option>
-            <option value="suspended">ระงับ</option>
-          </select>
-          <select
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value)}
-            aria-label="เรียงลำดับ"
-            className="h-9 flex-1 rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40 sm:flex-none"
-          >
-            <option value="newest">ใหม่สุด</option>
-            <option value="oldest">เก่าสุด</option>
-          </select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger aria-label="กรองตามสถานะสินค้า" className="h-9 flex-1 rounded-[10px] border-slate-200 bg-white text-sm sm:flex-none sm:w-[150px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending_review">รอตรวจสอบ</SelectItem>
+              <SelectItem value="all">ทั้งหมด</SelectItem>
+              <SelectItem value="published">เผยแพร่แล้ว</SelectItem>
+              <SelectItem value="rejected">ปฏิเสธ</SelectItem>
+              <SelectItem value="draft">ร่าง</SelectItem>
+              <SelectItem value="suspended">ระงับ</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortOrder} onValueChange={setSortOrder}>
+            <SelectTrigger aria-label="เรียงลำดับ" className="h-9 flex-1 rounded-[10px] border-slate-200 bg-white text-sm sm:flex-none sm:w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">ใหม่สุด</SelectItem>
+              <SelectItem value="oldest">เก่าสุด</SelectItem>
+            </SelectContent>
+          </Select>
           <Button variant="outline" size="sm" onClick={expandAll} className="rounded-[10px]">
             <ChevronDown className="size-3.5" /> ขยาย
           </Button>

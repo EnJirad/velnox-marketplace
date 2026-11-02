@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { Link } from "react-router";
 import { cn } from "@velnox/shared/lib/utils";
 import { useLanguage } from "@/lib/i18n";
 
@@ -11,6 +12,8 @@ export interface Announcement {
   description: string;
   /** Optional destination. The whole slide becomes a link when present. */
   href?: string;
+  /** Optional real image (R2 URL minted by the backend). */
+  imageUrl?: string | null;
 }
 
 interface AnnouncementCarouselProps {
@@ -183,14 +186,44 @@ export function AnnouncementCarousel({
               aria-roledescription="slide"
               aria-label={`${i + 1} / ${count}`}
               aria-hidden={i !== index}
-              className="flex w-full shrink-0 flex-col justify-center px-4 py-3 sm:px-6"
+              className="flex w-full shrink-0 items-stretch"
             >
-              {item.href ? (
-                <a href={item.href} className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]">
-                  {body}
-                </a>
-              ) : (
-                body
+              <div className="flex min-w-0 flex-1 flex-col justify-center px-4 py-3 sm:px-6">
+                {item.href ? (
+                  item.href.startsWith("http") ? (
+                    <a
+                      href={item.href}
+                      rel="noopener noreferrer"
+                      className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                    >
+                      {body}
+                    </a>
+                  ) : (
+                    <Link
+                      to={item.href}
+                      className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                    >
+                      {body}
+                    </Link>
+                  )
+                ) : (
+                  body
+                )}
+              </div>
+              {item.imageUrl && (
+                <div className="relative h-full w-[32%] shrink-0 overflow-hidden sm:w-[38%]">
+                  <img
+                    src={item.imageUrl}
+                    alt=""
+                    className="size-full object-cover"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <span
+                    className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[#ECFDF5] to-transparent"
+                    aria-hidden="true"
+                  />
+                </div>
               )}
             </div>
           );

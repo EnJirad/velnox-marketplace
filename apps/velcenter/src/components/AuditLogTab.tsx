@@ -5,6 +5,13 @@ import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@velnox/shared/components/ui/card";
 import { Input } from "@velnox/shared/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@velnox/shared/components/ui/select";
 import { Label } from "@velnox/shared/components/ui/label";
 import { TabsContent } from "@velnox/shared/components/ui/tabs";
 import {
@@ -313,32 +320,32 @@ export default function AuditLogTab() {
                 className="rounded-[10px] pl-9"
               />
             </div>
-            <select
-              value={actionFilter}
-              onChange={(e) => setActionFilter(e.target.value)}
-              aria-label="กรองตาม action"
-              className="h-10 rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
-            >
-              <option value="all">ทุก action</option>
-              {actionOptions.map((code) => (
-                <option key={code} value={code}>
-                  {actionLabel(code)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={entityFilter}
-              onChange={(e) => setEntityFilter(e.target.value)}
-              aria-label="กรองตามประเภทเป้าหมาย"
-              className="h-10 rounded-[10px] border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
-            >
-              <option value="all">ทุกประเภท</option>
-              {Object.entries(ENTITY_LABELS).map(([code, label]) => (
-                <option key={code} value={code}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            <Select value={actionFilter} onValueChange={setActionFilter}>
+              <SelectTrigger aria-label="กรองตาม action" className="h-10 w-full rounded-[10px] border-slate-200 bg-white text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ทุก action</SelectItem>
+                {actionOptions.map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {actionLabel(code)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={entityFilter} onValueChange={setEntityFilter}>
+              <SelectTrigger aria-label="กรองตามประเภทเป้าหมาย" className="h-10 w-full rounded-[10px] border-slate-200 bg-white text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ทุกประเภท</SelectItem>
+                {Object.entries(ENTITY_LABELS).map(([code, label]) => (
+                  <SelectItem key={code} value={code}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="grid grid-cols-2 gap-2 lg:col-span-1">
               <div className="grid gap-1">
                 <Label htmlFor="audit-from" className="text-[11px] text-slate-400">จากวันที่</Label>

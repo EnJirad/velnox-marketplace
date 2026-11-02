@@ -32,6 +32,13 @@ import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@velnox/shared/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -398,18 +405,25 @@ export default function CategoriesManagement() {
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid min-w-0 gap-2">
                 <Label>หมวดหมู่แม่</Label>
-                <select
-                  value={form.parent_id}
-                  onChange={(e) => setForm((p) => ({ ...p, parent_id: e.target.value }))}
-                  className="w-full min-w-0 max-w-full truncate rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                <Select
+                  value={form.parent_id || "__root__"}
+                  onValueChange={(value) =>
+                    setForm((p) => ({ ...p, parent_id: value === "__root__" ? "" : value }))
+                  }
                 >
-                  <option value="">ไม่มี (หมวดหมู่หลัก)</option>
-                  {flatCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {"  ".repeat(c.depth)}{c.name}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full min-w-0 truncate rounded-lg border-slate-200 bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__root__">ไม่มี (หมวดหมู่หลัก)</SelectItem>
+                    {flatCategories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {"\u00a0\u00a0".repeat(c.depth)}
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid min-w-0 gap-2">
                 <Label>ลำดับ</Label>

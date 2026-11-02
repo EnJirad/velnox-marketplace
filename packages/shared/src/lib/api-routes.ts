@@ -336,6 +336,10 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.centerAdmin.setProductModerationStatus": (a) => apiPatch(`/api/admin/products/${a.productId}/moderation`, a),
   "api.centerAdmin.getPlatformSettings": () => apiGet("/api/admin/settings"),
   "api.centerAdmin.updatePlatformSettingAction": (a) => apiPatch("/api/admin/settings", a),
+  // Storefront announcements (VelCenter → Settings → home carousel).
+  "api.centerAdmin.getAnnouncements": () => apiGet("/api/admin/announcements"),
+  "api.centerAdmin.saveAnnouncementsAction": (a) => apiPut("/api/admin/announcements", a),
+  "api.storefront.announcements": () => apiGet("/api/announcements"),
   "api.centerAdmin.marketOverviewAction": () => apiGet("/api/admin/market-overview"),
   "api.centerAdmin.dashboardCounts": () => apiGet("/api/admin/dashboard/counts"),
   "api.centerAdmin.ordersListAction": (a) => apiGet(`/api/admin/orders?limit=${a?.limit ?? 100}`),

@@ -10,6 +10,7 @@ import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 import CategoriesManagement from "../components/CategoriesManagement";
 import ChatManagement from "../components/ChatManagement";
 import ProductModerationQueue from "../components/ProductModerationQueue";
+import { AnnouncementSettings } from "../components/AnnouncementSettings";
 import SellerVerificationQueue from "../components/SellerVerificationQueue";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
@@ -2359,6 +2360,7 @@ export default function Center() {
                 </nav>
 
                 <div className="min-w-0 space-y-5">
+                  <AnnouncementSettings />
                   {/* ---------- Company / platform identity ---------- */}
                   {settingsSection === "company" && (
                     <Card className="border-slate-200 shadow-none">

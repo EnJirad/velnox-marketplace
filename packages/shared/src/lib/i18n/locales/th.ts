@@ -256,6 +256,26 @@ export const th = {
     verifiedDesc: "{count} รายการผ่านการตรวจสอบจาก Velnox",
   },
 
+  announceAdmin: {
+    title: "แบนเนอร์ประกาศหน้าแรก",
+    desc: "แสดงบนสุดของ VelShop ตามลำดับ พร้อมรูปและลิงก์ (ไม่บังคับ)",
+    add: "เพิ่มประกาศ",
+    empty: "ยังไม่มีประกาศ — กดเพิ่มประกาศเพื่อเริ่ม",
+    fieldTitle: "หัวข้อ",
+    fieldDesc: "ข้อความสั้น",
+    fieldLink: "ลิงก์ (ไม่บังคับ)",
+    active: "แสดง",
+    save: "บันทึก",
+    saved: "บันทึกประกาศแล้ว",
+    saveFailed: "บันทึกไม่สำเร็จ",
+    upload: "รูป",
+    uploaded: "อัปโหลดรูปแล้ว",
+    uploadFailed: "อัปโหลดรูปไม่สำเร็จ",
+    up: "เลื่อนขึ้น",
+    down: "เลื่อนลง",
+    remove: "ลบ",
+  },
+
   home: {
     eyebrow: "velshop · ตลาดออนไลน์ Velnox",
     bannerEyebrow: "หมวดหมู่ยอดนิยม",

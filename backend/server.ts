@@ -21,6 +21,7 @@ import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupCenterRoutes } from "./routes/center.js";
+import { setupAnnouncementRoutes } from "./routes/announcements.js";
 import { registerVerificationRoutes } from "./routes/verification.js";
 import { startPaymentReservationScheduler } from "./jobs/payment-reservation-scheduler.js";
 import { setupProductOptionRoutes } from "./routes/product-options.js";
@@ -438,6 +439,9 @@ setupAdminRoutes(app);
 
 // ─── Center (company dashboard: overview/orders/intel/staff/audit) ──────
 setupCenterRoutes(app);
+
+// ─── Storefront announcements (VelShop home carousel, platform_settings) ─
+setupAnnouncementRoutes(app);
 
 // ─── Verification (dual seller + product verification system) ──────
 registerVerificationRoutes(app);

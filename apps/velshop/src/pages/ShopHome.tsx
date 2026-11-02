@@ -235,12 +235,34 @@ export default function ShopHome() {
       .slice(0, 8);
   }, [products, popularProducts]);
 
-  // Announcements are derived from data the storefront already has: a neutral
-  // platform welcome, the real number of listed products and the real number of
-  // Velnox-verified listings. No campaign, discount or countdown claim is made,
-  // because no announcement/campaign content system exists in this build.
+  // Owner-managed announcements (VelCenter → Settings) come from
+  // GET /api/announcements. With none published, the storefront falls back to
+  // honest platform facts it already has — never a fabricated campaign.
+  const announcementsData = useCommerceData(
+    useCallback(async () => {
+      try {
+        return await apiGet<any[]>("/api/announcements");
+      } catch {
+        return [];
+      }
+    }, []),
+  );
+
   const announcements = useMemo<Announcement[]>(() => {
-    const list: Announcement[] = [
+    const remote = (announcementsData.data ?? []) as any[];
+    const published: Announcement[] = remote
+      .filter((row) => row && typeof row.title === "string" && row.title.trim())
+      .map((row) => ({
+        id: String(row.id ?? row.title),
+        eyebrow: t("announce.eyebrow"),
+        title: String(row.title),
+        description: typeof row.description === "string" ? row.description : "",
+        href: typeof row.linkUrl === "string" && row.linkUrl ? row.linkUrl : undefined,
+        imageUrl: typeof row.imageUrl === "string" && row.imageUrl ? row.imageUrl : null,
+      }));
+    if (published.length > 0) return published;
+
+    const fallback: Announcement[] = [
       {
         id: "welcome",
         eyebrow: t("announce.eyebrow"),
@@ -249,7 +271,7 @@ export default function ShopHome() {
       },
     ];
     if (products.length > 0) {
-      list.push({
+      fallback.push({
         id: "catalogue",
         eyebrow: t("announce.eyebrow"),
         title: t("announce.catalogueTitle"),
@@ -259,7 +281,7 @@ export default function ShopHome() {
     }
     const verified = products.filter((p) => p.isVerifiedProduct).length;
     if (verified > 0) {
-      list.push({
+      fallback.push({
         id: "verified",
         eyebrow: t("announce.eyebrow"),
         title: t("announce.verifiedTitle"),
@@ -267,8 +289,8 @@ export default function ShopHome() {
         href: "/products?verified=true",
       });
     }
-    return list;
-  }, [products, t]);
+    return fallback;
+  }, [announcementsData.data, products, t]);
 
   const handleCategory = (id: StoreProductCategory) => {
     track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: catNameMap.get(id) ?? PRODUCT_CATEGORY_META[id]?.label ?? id } });

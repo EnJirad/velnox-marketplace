@@ -113,8 +113,14 @@ describe("upload routes enforce the limits server-side", () => {
   });
 
   test("the presign purpose allowlist can only mint namespaces confirm validates", () => {
-    expect(uploadSrc).toContain('const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat"] as const;');
+    expect(uploadSrc).toContain(
+      'const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat", "announcement"] as const;',
+    );
     expect(uploadSrc).toContain("if (!isUploadPurpose(purpose))");
+    // Announcement artwork is owner/company content: the namespace is
+    // announcements/{userId}/… and confirm only accepts that same owner segment.
+    expect(uploadSrc).toContain('if (parts.length >= 3 && parts[0] === "announcements")');
+    expect(uploadSrc).toContain("objectKey = `announcements/${userId}/${randomUUID()}.webp`;");
     // Chat images are minted by the server under chat/{conversation}/{sender}/…
     // and validateObjectKeyOwnership accepts exactly that shape for the sender.
     expect(uploadSrc).toContain('if (parts.length === 4 && parts[0] === "chat")');

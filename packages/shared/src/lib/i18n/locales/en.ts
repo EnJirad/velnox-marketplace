@@ -232,6 +232,26 @@ export const en: Dict = {
     verifiedDesc: "{count} items passed Velnox review",
   },
 
+  announceAdmin: {
+    title: "Home announcement banner",
+    desc: "Shown at the top of VelShop in this order, with an optional image and link",
+    add: "Add announcement",
+    empty: "No announcements yet — add one to start",
+    fieldTitle: "Title",
+    fieldDesc: "Short message",
+    fieldLink: "Link (optional)",
+    active: "Visible",
+    save: "Save",
+    saved: "Announcements saved",
+    saveFailed: "Could not save",
+    upload: "Image",
+    uploaded: "Image uploaded",
+    uploadFailed: "Image upload failed",
+    up: "Move up",
+    down: "Move down",
+    remove: "Remove",
+  },
+
   home: {
     eyebrow: "velshop · Velnox marketplace",
     bannerEyebrow: "Popular category",
