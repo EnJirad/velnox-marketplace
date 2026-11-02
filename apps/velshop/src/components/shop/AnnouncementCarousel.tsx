@@ -216,7 +216,7 @@ export function AnnouncementCarousel({
                     src={item.imageUrl}
                     alt=""
                     className="size-full object-cover"
-                    loading="lazy"
+                    loading={i === index ? "eager" : "lazy"}
                     decoding="async"
                   />
                   <span
