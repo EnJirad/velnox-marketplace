@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { CategoryPicker } from "@velnox/shared/components/seller/CategoryPicker";
+import { pendingUploads, seedGalleries } from "@velnox/shared/lib/product-images";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -493,16 +494,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const [draftId] = useState(() => crypto.randomUUID());
   // Existing product images are the editor's starting point: without this the
   // form opened empty for a product that already had images.
-  const [galleryImages, setGalleryImages] = useState<DraftImage[]>(() =>
-    (product?.images ?? [])
-      .filter((i) => (i.imageType ?? "gallery") === "gallery")
-      .map((i) => ({ id: i.id, url: i.url, alt: i.alt ?? "", objectKey: i.storageKey ?? undefined })),
-  );
-  const [detailImages, setDetailImages] = useState<DraftImage[]>(() =>
-    (product?.images ?? [])
-      .filter((i) => i.imageType === "detail")
-      .map((i) => ({ id: i.id, url: i.url, alt: i.alt ?? "", objectKey: i.storageKey ?? undefined })),
-  );
+  const initialImages = seedGalleries(product?.images);
+  const [galleryImages, setGalleryImages] = useState<DraftImage[]>(initialImages.gallery);
+  const [detailImages, setDetailImages] = useState<DraftImage[]>(initialImages.detail);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [uploadingDetail, setUploadingDetail] = useState(false);
 
@@ -808,8 +802,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           // already had an id are untouched by the product PATCH.
           const baseUrl = API_BASE();
           const pending = [
-            ...galleryImages.filter((img) => !img.id && img.url).map((img) => ({ img, imageType: "gallery" as const })),
-            ...detailImages.filter((img) => !img.id && img.url).map((img) => ({ img, imageType: "detail" as const })),
+            ...pendingUploads(galleryImages).map((img) => ({ img, imageType: "gallery" as const })),
+            ...pendingUploads(detailImages).map((img) => ({ img, imageType: "detail" as const })),
           ];
           for (const { img, imageType } of pending) {
             await fetch(`${baseUrl}/api/seller/products/save-image`, {
@@ -836,6 +830,12 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               fresh = detailJson.data ?? detailJson ?? updated;
             }
           } catch { /* keep the PATCH payload */ }
+
+          // Re-seed from the server list so a second save cannot re-upload the
+          // same images (they now carry ids) and the thumbnails show stored ones.
+          const reseeded = seedGalleries((fresh as any)?.images);
+          setGalleryImages(reseeded.gallery);
+          setDetailImages(reseeded.detail);
 
           toast.success("บันทึกสินค้าแล้ว");
           setCurrent(fresh);
