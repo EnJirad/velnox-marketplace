@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@velnox/shared/components/ui/alert-dialog";
 import { Button } from "@velnox/shared/components/ui/button";
+import { Card } from "@velnox/shared/components/ui/card";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
@@ -24,7 +25,7 @@ import {
 } from "@velnox/shared/lib/goals";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { useMutation, useQuery } from "@velnox/shared/lib/api-routes";
-import { CheckCircle2, Gauge, Plus, Target, Timer } from "lucide-react";
+import { CheckCircle2, Gauge, Plus, Target, Timer, TrendingUp, Users, ShoppingBag, ArrowUpRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -43,15 +44,27 @@ export default function SellerGoals() {
   const stats = useMemo(() => {
     const list = goals ?? [];
     const achieved = list.filter(isAchieved).length;
+    const totalRevenue = list
+      .filter((g) => g.category === "revenue")
+      .reduce((sum, g) => sum + g.targetValue, 0);
+    const totalOrders = list
+      .filter((g) => g.category === "orders")
+      .reduce((sum, g) => sum + g.targetValue, 0);
+    const totalCustomers = list
+      .filter((g) => g.category === "customers")
+      .reduce((sum, g) => sum + g.targetValue, 0);
     const avg =
       list.length > 0
-        ? Math.round(list.reduce((sum: any, g: any) => sum + goalPercent(g), 0) / list.length)
+        ? Math.round(list.reduce((sum, g) => sum + goalPercent(g), 0) / list.length)
         : 0;
     return {
       total: list.length,
       active: list.length - achieved,
       achieved,
       avg,
+      totalRevenue,
+      totalOrders,
+      totalCustomers,
     };
   }, [goals]);
 
@@ -102,56 +115,49 @@ export default function SellerGoals() {
           </Button>
         </div>
 
-        {/* KPI row */}
-        <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-slate-400">
-              <Target className="size-4" />
-              <p className="text-xs font-medium uppercase tracking-wide">{t("sellerDash.goals.kpiTotal")}</p>
-            </div>
-            <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
-              {stats.total}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">{t("sellerDash.goals.kpiTotalSub")}</p>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-slate-400">
-              <Timer className="size-4" />
-              <p className="text-xs font-medium uppercase tracking-wide">{t("sellerDash.goals.kpiActive")}</p>
-            </div>
-            <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
-              {stats.active}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">{t("sellerDash.goals.kpiActiveSub")}</p>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-emerald-600">
-              <CheckCircle2 className="size-4" />
-              <p className="text-xs font-medium uppercase tracking-wide">{t("sellerDash.goals.kpiAchieved")}</p>
-            </div>
-            <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
-              {stats.achieved}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">{t("sellerDash.goals.kpiAchievedSub")}</p>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-slate-400">
-              <Gauge className="size-4" />
-              <p className="text-xs font-medium uppercase tracking-wide">{t("sellerDash.goals.kpiAvg")}</p>
-            </div>
-            <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
-              {stats.avg}%
-            </p>
-            <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-[#10B981] transition-all duration-500"
-                style={{ width: `${stats.avg}%` }}
-              />
-            </div>
-          </div>
+        {/* KPI Dashboard — 5 cards: Revenue, Orders, Customers, Units, Avg Progress */}
+        <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+          <KpiCard
+            icon={TrendingUp}
+            iconClass="text-emerald-600"
+            bgClass="bg-emerald-50 text-emerald-600 ring-emerald-600/10"
+            label={t("sellerDash.goals.kpiRevenue")}
+            value={formatNumber(stats.totalRevenue)}
+            subtitle={t("sellerDash.goals.kpiRevenueSub")}
+          />
+          <KpiCard
+            icon={ShoppingBag}
+            iconClass="text-sky-600"
+            bgClass="bg-sky-50 text-sky-600 ring-sky-600/10"
+            label={t("sellerDash.goals.kpiOrders")}
+            value={formatNumber(stats.totalOrders)}
+            subtitle={t("sellerDash.goals.kpiOrdersSub")}
+          />
+          <KpiCard
+            icon={Users}
+            iconClass="text-amber-600"
+            bgClass="bg-amber-50 text-amber-600 ring-amber-600/10"
+            label={t("sellerDash.goals.kpiCustomers")}
+            value={formatNumber(stats.totalCustomers)}
+            subtitle={t("sellerDash.goals.kpiCustomersSub")}
+          />
+          <KpiCard
+            icon={Target}
+            iconClass="text-amber-600"
+            bgClass="bg-amber-50 text-amber-600 ring-amber-600/10"
+            label={t("sellerDash.goals.kpiUnits")}
+            value={formatNumber(stats.totalUnits)}
+            subtitle={t("sellerDash.goals.kpiUnitsSub")}
+          />
+          <KpiCard
+            icon={Gauge}
+            iconClass="text-slate-600"
+            bgClass="bg-slate-50 text-slate-600 ring-slate-600/10"
+            label={t("sellerDash.goals.kpiAvg")}
+            value={`${stats.avg}%`}
+            subtitle={t("sellerDash.goals.kpiAvgSub")}
+            progress={stats.avg}
+          />
         </div>
 
         {/* Goals grid */}
@@ -236,6 +242,7 @@ export default function SellerGoals() {
             </Button>
           </div>
         )}
+
       </main>
 
       {/* Dialogs */}
@@ -268,6 +275,42 @@ export default function SellerGoals() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// ── KPI Card Component ───
+interface KpiCardProps {
+  icon: React.ReactNode;
+  iconClass: string;
+  bgClass: string;
+  label: string;
+  value: string | number;
+  subtitle: string;
+  progress?: number;
+}
+
+function KpiCard({ icon, iconClass, bgClass, label, value, subtitle, progress }: KpiCardProps) {
+  return (
+    <div className={`rounded-xl border border-slate-200 bg-white p-4 sm:p-5 ${bgClass}`}>
+      <div className="flex items-center gap-2">
+        <span className={`flex size-4 items-center justify-center rounded-[10px] ${iconClass}`}>
+          {icon}
+        </span>
+        <p className="text-xs font-medium uppercase tracking-wide">{label}</p>
+      </div>
+      <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
+        {value}
+      </p>
+      <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
+      {progress !== undefined && (
+        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-full rounded-full bg-[#10B981] transition-all duration-500"
+            style={{ width: `${Math.min(progress, 100)}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }
