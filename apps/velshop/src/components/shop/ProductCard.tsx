@@ -1,6 +1,6 @@
 import { useLanguage } from "@/lib/i18n";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
-import { VBadge } from "@velnox/shared/components/VBadge";
+
 import { Heart, ImageOff, Loader2, Star } from "lucide-react";
 import { Link } from "react-router";
 
@@ -67,21 +67,10 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             </span>
           );
         })()}
-        {/* V Badge — TOP-LEFT overlay */}
-        <VBadge
-          sellerVerification={(product as any).sellerVerificationStatus}
-          size="sm"
-        />
-        {outOfStock && (
-          <span className="absolute left-2 top-2 z-10 rounded bg-slate-900/70 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-            {t("product.outOfStock")}
-          </span>
-        )}
-        {badgeLabel && !outOfStock && (
-          <span className="absolute left-2 top-2 z-10 rounded bg-[#10B981] px-1.5 py-0.5 text-[9px] font-semibold text-white">
-            {badgeLabel}
-          </span>
-        )}
+        {/* V Badge removed per design decision — product cards no longer show the seller verification badge */}
+        <span className="absolute left-2 top-2 z-10 rounded bg-[#10B981] px-1.5 py-0.5 text-[9px] font-semibold text-white">
+          {badgeLabel}
+        </span>
         {onWishlist && (
           <button
             type="button"
