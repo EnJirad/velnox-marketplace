@@ -3,6 +3,7 @@ import { SITE_URLS } from "@velnox/shared/lib/sites";
 import { useSearchParams } from "react-router";
 import { ProductFormDialog } from "@velnox/shared/components/seller/ProductFormDialog";
 import { EvidenceUploader, type EvidenceFile } from "@velnox/shared/components/seller/EvidenceUploader";
+import { VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";

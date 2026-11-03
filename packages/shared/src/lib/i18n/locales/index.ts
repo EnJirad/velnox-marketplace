@@ -1229,9 +1229,88 @@ const myCenterUi = {
   queue: { loadFailed: "တန်းစီအရေအတွက် မရယူနိုင်ပါ:" },
 };
 
+/**
+ * Seller performance (Phase 1) — page-level copy for the seller dashboard.
+ * Authored as a patch namespace so the large dictionaries are not edited; the
+ * three languages carry the identical key set (guard: bun run i18n:check).
+ */
+const thSellerPerf = {
+  businessTitle: "\u0e20\u0e32\u0e1e\u0e23\u0e27\u0e21\u0e18\u0e38\u0e23\u0e01\u0e34\u0e08",
+  unitsLabel: "\u0e0a\u0e34\u0e49\u0e19\u0e17\u0e35\u0e48\u0e02\u0e32\u0e22\u0e44\u0e14\u0e49",
+  goalsTitle: "\u0e40\u0e1b\u0e49\u0e32\u0e2b\u0e21\u0e32\u0e22\u0e02\u0e2d\u0e07\u0e04\u0e38\u0e13",
+  loadFailed: "\u0e42\u0e2b\u0e25\u0e14\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08",
+  loadFailedDesc: "\u0e23\u0e30\u0e1a\u0e1a\u0e14\u0e36\u0e07\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e08\u0e32\u0e01\u0e40\u0e0b\u0e34\u0e23\u0e4c\u0e1f\u0e40\u0e27\u0e2d\u0e23\u0e4c\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08 \u0e01\u0e23\u0e38\u0e13\u0e32\u0e25\u0e2d\u0e07\u0e2d\u0e35\u0e01\u0e04\u0e23\u0e31\u0e49\u0e07",
+  progressNote: "\u0e04\u0e27\u0e32\u0e21\u0e04\u0e37\u0e1a\u0e2b\u0e19\u0e49\u0e32\u0e40\u0e1b\u0e49\u0e32\u0e2b\u0e21\u0e32\u0e22\u0e04\u0e34\u0e14\u0e08\u0e32\u0e01\u0e22\u0e2d\u0e14\u0e17\u0e35\u0e48\u0e04\u0e38\u0e13\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u0e44\u0e27\u0e49",
+};
+const enSellerPerf = {
+  businessTitle: "Business snapshot",
+  unitsLabel: "Units sold",
+  goalsTitle: "Your goals",
+  loadFailed: "Could not load your data",
+  loadFailedDesc: "The server did not return your data. Please try again.",
+  progressNote: "Goal progress is based on the values you record",
+};
+const mySellerPerf = {
+  businessTitle: "\u1005\u102e\u1038\u1015\u103d\u102c\u1038\u101b\u1031\u1038 \u1021\u1014\u103e\u1005\u103a\u1001\u103b\u102f\u1015\u103a",
+  unitsLabel: "\u101b\u1031\u102c\u1004\u103a\u1038\u101b\u101e\u100a\u1037\u103a \u1021\u101b\u1031\u1021\u1010\u103d\u1000\u103a",
+  goalsTitle: "\u101e\u1004\u1037\u103a \u101b\u100a\u103a\u1019\u103e\u1014\u103a\u1038\u1001\u103b\u1000\u103a\u1019\u103b\u102c\u1038",
+  loadFailed: "\u1012\u1031\u1010\u102c \u101b\u101a\u1030\u1019\u101b\u1015\u102b\u1019\u103a",
+  loadFailedDesc: "\u1006\u102c\u1017\u102c\u1019\u103e \u1012\u1031\u1010\u102c \u1019\u101b\u101b\u101b\u101b\u101b\u103a\u1015\u102b\u104b \u1012\u1010\u103a\u1019\u1036 \u1000\u103c\u102d\u102f\u1038\u1005\u102c\u1038\u1015\u102b\u104b",
+  progressNote: "\u101b\u100a\u103a\u1019\u103e\u1014\u103a\u1038\u1001\u103b\u1000\u103a \u1010\u102d\u102f\u1038\u1010\u1000\u103a\u1019\u103e\u102f\u1000\u102d\u102f \u101e\u1004\u103a\u1019\u103e\u1010\u103a\u1010\u1019\u103a\u1038\u1010\u1004\u103a\u1012\u1000\u103a \u1010\u1014\u103a\u1016\u102d\u102f\u1038\u1019\u103b\u102c\u1038\u1021\u1015\u1031\u102b\u103a\u103a \u1010\u103d\u1000\u103a\u1001\u103b\u1000\u103a\u101e\u100a\u103a",
+};
+
+/** Goal-card labels — merged into `sellerDash.goals` for all three languages. */
+const thGoalLabels = {
+  atRisk: "\u0e40\u0e01\u0e34\u0e19\u0e01\u0e33\u0e2b\u0e19\u0e14",
+  onTrack: "\u0e15\u0e32\u0e21\u0e41\u0e1c\u0e19",
+  dueOn: "\u0e01\u0e33\u0e2b\u0e19\u0e14 {date}",
+  recordProgress: "\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u0e04\u0e27\u0e32\u0e21\u0e04\u0e37\u0e1a\u0e2b\u0e19\u0e49\u0e32",
+  optionsAria: "\u0e15\u0e31\u0e27\u0e40\u0e25\u0e37\u0e2d\u0e01\u0e40\u0e1b\u0e49\u0e32\u0e2b\u0e21\u0e32\u0e22",
+  editGoal: "\u0e41\u0e01\u0e49\u0e44\u0e02\u0e40\u0e1b\u0e49\u0e32\u0e2b\u0e21\u0e32\u0e22",
+  categoryRevenue: "\u0e22\u0e2d\u0e14\u0e02\u0e32\u0e22",
+  categoryOrders: "\u0e2d\u0e2d\u0e40\u0e14\u0e2d\u0e23\u0e4c",
+  categoryCustomers: "\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32\u0e43\u0e2b\u0e21\u0e48",
+  categoryOther: "\u0e2d\u0e37\u0e48\u0e19 \u0e46",
+  periodMonthly: "\u0e23\u0e32\u0e22\u0e40\u0e14\u0e37\u0e2d\u0e19",
+  periodQuarterly: "\u0e23\u0e32\u0e22\u0e44\u0e15\u0e23\u0e21\u0e32\u0e2a",
+  periodYearly: "\u0e23\u0e32\u0e22\u0e1b\u0e35",
+};
+const enGoalLabels = {
+  atRisk: "Overdue",
+  onTrack: "On track",
+  dueOn: "Due {date}",
+  recordProgress: "Record progress",
+  optionsAria: "Goal options",
+  editGoal: "Edit goal",
+  categoryRevenue: "Revenue",
+  categoryOrders: "Orders",
+  categoryCustomers: "New customers",
+  categoryOther: "Other",
+  periodMonthly: "Monthly",
+  periodQuarterly: "Quarterly",
+  periodYearly: "Yearly",
+};
+const myGoalLabels = {
+  atRisk: "\u1000\u103b\u1031\u102c\u103a\u101c\u103d\u1014\u103a\u1015\u103c\u102e\u1038",
+  onTrack: "\u1021\u1005\u102e\u1021\u1005\u1009\u103a\u1021\u1010\u102d\u102f\u1004\u103a\u1038",
+  dueOn: "\u101e\u1010\u103a\u1019\u103e\u1010\u103a\u101b\u1000\u103a {date}",
+  recordProgress: "\u1010\u102d\u102f\u1038\u1010\u1000\u103a\u1019\u103e\u102f \u1019\u103e\u1010\u103a\u1010\u1019\u103a\u1038\u1010\u1004\u103a\u1015\u102b",
+  optionsAria: "\u101b\u100a\u103a\u1019\u103e\u1014\u103a\u1038\u1001\u103b\u1000\u103a \u101b\u103d\u1031\u1038\u1001\u103b\u101a\u103a\u1005\u101b\u102c\u1019\u103b\u102c\u1038",
+  editGoal: "\u101b\u100a\u103a\u1019\u103e\u1014\u103a\u1038\u1001\u103b\u1000\u103a \u1015\u103c\u1004\u103a\u1006\u1004\u103a\u1015\u102b",
+  categoryRevenue: "\u101b\u1031\u102c\u1004\u103a\u1038\u101b\u1004\u103d\u1031",
+  categoryOrders: "\u1019\u103e\u102c\u101a\u1030\u1019\u103e\u102f",
+  categoryCustomers: "\u101d\u101a\u103a\u101a\u1030\u101e\u1030\u1021\u101e\u1005\u103a",
+  categoryOther: "\u1021\u1001\u102c\u1038",
+  periodMonthly: "\u101c\u1005\u103a\u1005\u102f",
+  periodQuarterly: "\u101e\u102f\u1000\u103a\u1010\u1031\u102c\u1004\u103a\u1038",
+  periodYearly: "\u1014\u103e\u1005\u103a\u1005\u102f",
+};
+
 export const translations: Record<Language, Dict> = {
   th: {
     ...th,
+    sellerPerf: thSellerPerf,
+    sellerDash: { ...th.sellerDash, goals: { ...th.sellerDash.goals, ...thGoalLabels } },
     center: thCenterUi,
     checkout: { ...th.checkout, ...thPaymentUx },
     chat: { ...th.chat, ...thChatUi },
@@ -1245,6 +1324,8 @@ export const translations: Record<Language, Dict> = {
   } as Dict,
   en: {
     ...en,
+    sellerPerf: enSellerPerf,
+    sellerDash: { ...en.sellerDash, goals: { ...en.sellerDash.goals, ...enGoalLabels } },
     center: enCenterUi,
     checkout: { ...en.checkout, ...enPaymentUx },
     chat: { ...en.chat, ...enChatUi },
@@ -1258,6 +1339,8 @@ export const translations: Record<Language, Dict> = {
   } as Dict,
   my: {
     ...myBase,
+    sellerPerf: mySellerPerf,
+    sellerDash: { ...myBase.sellerDash, goals: { ...myBase.sellerDash.goals, ...myGoalLabels } },
     ...myOrderPatch,
     header: { ...myBase.header, ...myShopPatch.header },
     footer: { ...myBase.footer, ...myShopPatch.footer },

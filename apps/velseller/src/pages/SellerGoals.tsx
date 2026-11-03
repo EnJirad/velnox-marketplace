@@ -13,27 +13,72 @@ import {
   AlertDialogTitle,
 } from "@velnox/shared/components/ui/alert-dialog";
 import { Button } from "@velnox/shared/components/ui/button";
-import { Card } from "@velnox/shared/components/ui/card";
-import { api } from "@velnox/shared/lib/api-routes";
+import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
+import { formatBaht, formatIsoDate } from "@velnox/shared/lib/commerce";
 import {
   formatNumber,
-  formatThaiDate,
   goalPercent,
   isAchieved,
   type Goal,
 } from "@velnox/shared/lib/goals";
 import { useLanguage } from "@velnox/shared/lib/i18n";
-import { useMutation, useQuery } from "@velnox/shared/lib/api-routes";
-import { CheckCircle2, Gauge, Plus, Target, Timer, TrendingUp, Users, ShoppingBag, ArrowUpRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  Gauge,
+  Loader2,
+  PackageCheck,
+  Plus,
+  RefreshCw,
+  Target,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+
+/**
+ * Seller Goals / Performance — Phase 1 (P1-A).
+ *
+ * DATA AUTHORITY
+ * --------------
+ * Every number on this page comes from an existing authenticated seller endpoint:
+ *
+ *   GET /api/seller/goals   (`api.goals.list`)             → the goal records
+ *   GET /api/seller/income  (`api.commerce.sellerIncomeReport`) → gross / units /
+ *                                                           returns / net payout
+ *
+ * Nothing is hard-coded and nothing is estimated in the browser. Goal progress
+ * itself is still the value the seller recorded through
+ * `POST /api/seller/goals/:id/progress`; computing progress from order data
+ * server-side is Phase 2, so the page states that fact instead of implying it.
+ *
+ * ERROR HONESTY
+ * -------------
+ * `useQuery` swallows failures and returns `undefined`, which would render a
+ * fake "0". This page loads through `useAction` with explicit loading/error
+ * state, so a failed request shows a retry affordance — never a zero.
+ */
+
+interface IncomeSnapshot {
+  gross: number;
+  grossCount: number;
+  returns: number;
+  payout: number;
+}
 
 export default function SellerGoals() {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const goals = useQuery(api.goals.list);
-  const removeGoal = useMutation(api.goals.remove);
+
+  const fetchGoals = useAction(api.goals.list);
+  const fetchIncome = useAction(api.commerce.sellerIncomeReport);
+  const removeGoal = useAction(api.goals.remove);
+
+  const [goals, setGoals] = useState<Goal[] | null>(null);
+  const [income, setIncome] = useState<IncomeSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
@@ -41,30 +86,55 @@ export default function SellerGoals() {
   const [deleteGoal, setDeleteGoal] = useState<Goal | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const [goalRows, incomeReport] = await Promise.all([
+        fetchGoals(),
+        fetchIncome(),
+      ]);
+      setGoals(Array.isArray(goalRows) ? (goalRows as Goal[]) : []);
+
+      if (incomeReport && typeof incomeReport === "object") {
+        const report = incomeReport as Record<string, unknown>;
+        setIncome({
+          gross: Number(report.gross ?? 0),
+          grossCount: Number(report.grossCount ?? 0),
+          returns: Number(report.returns ?? 0),
+          payout: Number(report.payout ?? 0),
+        });
+      } else {
+        setIncome(null);
+      }
+    } catch (error) {
+      console.error("Seller performance load failed:", error);
+      setFailed(true);
+      setGoals(null);
+      setIncome(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchGoals, fetchIncome]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   const stats = useMemo(() => {
     const list = goals ?? [];
     const achieved = list.filter(isAchieved).length;
-    const totalRevenue = list
-      .filter((g) => g.category === "revenue")
-      .reduce((sum, g) => sum + g.targetValue, 0);
-    const totalOrders = list
-      .filter((g) => g.category === "orders")
-      .reduce((sum, g) => sum + g.targetValue, 0);
-    const totalCustomers = list
-      .filter((g) => g.category === "customers")
-      .reduce((sum, g) => sum + g.targetValue, 0);
-    const avg =
+    const average =
       list.length > 0
-        ? Math.round(list.reduce((sum, g) => sum + goalPercent(g), 0) / list.length)
+        ? Math.round(list.reduce((sum, goal) => sum + goalPercent(goal), 0) / list.length)
         : 0;
+    const targeted = list.reduce((sum, goal) => sum + Number(goal.targetValue ?? 0), 0);
     return {
       total: list.length,
       active: list.length - achieved,
       achieved,
-      avg,
-      totalRevenue,
-      totalOrders,
-      totalCustomers,
+      average,
+      targeted,
     };
   }, [goals]);
 
@@ -75,6 +145,7 @@ export default function SellerGoals() {
       await removeGoal({ goalId: deleteGoal._id });
       toast.success(t("sellerDash.goals.toastDeleted"));
       setDeleteGoal(null);
+      await load();
     } catch (error) {
       console.error("Goal delete error:", error);
       toast.error(t("sellerDash.goals.toastDeleteFailed"));
@@ -91,167 +162,212 @@ export default function SellerGoals() {
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         {/* Page header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-400">
-              {formatThaiDate(Date.now())}
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              {formatIsoDate(Date.now())}
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="mt-1 truncate text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
               {t("sellerDash.goals.greeting", { name: firstName })}
             </h1>
-            <p className="mt-1.5 text-sm text-slate-500">
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">
               {t("sellerDash.goals.subtitle")}
             </p>
           </div>
           <Button
-            className="gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]"
+            className="h-11 shrink-0 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
             onClick={() => {
               setEditingGoal(null);
               setFormOpen(true);
             }}
           >
-            <Plus className="size-4" />
+            <Plus className="size-4" aria-hidden="true" />
             {t("sellerDash.goals.ctaCreate")}
           </Button>
-        </div>
+        </header>
 
-        {/* KPI Dashboard — 5 cards: Revenue, Orders, Customers, Units, Avg Progress */}
-        <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
-          <KpiCard
-            icon={TrendingUp}
-            iconClass="text-emerald-600"
-            bgClass="bg-emerald-50 text-emerald-600 ring-emerald-600/10"
-            label={t("sellerDash.goals.kpiRevenue")}
-            value={formatNumber(stats.totalRevenue)}
-            subtitle={t("sellerDash.goals.kpiRevenueSub")}
-          />
-          <KpiCard
-            icon={ShoppingBag}
-            iconClass="text-sky-600"
-            bgClass="bg-sky-50 text-sky-600 ring-sky-600/10"
-            label={t("sellerDash.goals.kpiOrders")}
-            value={formatNumber(stats.totalOrders)}
-            subtitle={t("sellerDash.goals.kpiOrdersSub")}
-          />
-          <KpiCard
-            icon={Users}
-            iconClass="text-amber-600"
-            bgClass="bg-amber-50 text-amber-600 ring-amber-600/10"
-            label={t("sellerDash.goals.kpiCustomers")}
-            value={formatNumber(stats.totalCustomers)}
-            subtitle={t("sellerDash.goals.kpiCustomersSub")}
-          />
-          <KpiCard
-            icon={Target}
-            iconClass="text-amber-600"
-            bgClass="bg-amber-50 text-amber-600 ring-amber-600/10"
-            label={t("sellerDash.goals.kpiUnits")}
-            value={formatNumber(stats.totalUnits)}
-            subtitle={t("sellerDash.goals.kpiUnitsSub")}
-          />
-          <KpiCard
-            icon={Gauge}
-            iconClass="text-slate-600"
-            bgClass="bg-slate-50 text-slate-600 ring-slate-600/10"
-            label={t("sellerDash.goals.kpiAvg")}
-            value={`${stats.avg}%`}
-            subtitle={t("sellerDash.goals.kpiAvgSub")}
-            progress={stats.avg}
-          />
-        </div>
-
-        {/* Goals grid */}
-        {goals === undefined ? (
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-56 animate-pulse rounded-xl border border-slate-200 bg-white"
-              />
-            ))}
-          </div>
-        ) : goals.length === 0 ? (
-          <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-              <Target className="size-7 text-[#10B981]" />
-            </span>
-            <h2 className="mt-5 text-lg font-semibold text-slate-900">
-              {t("sellerDash.goals.emptyTitle")}
-            </h2>
-            <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
-              {t("sellerDash.goals.emptyDesc")}
-            </p>
-            <Button
-              className="mt-6 gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]"
-              onClick={() => {
-                setEditingGoal(null);
-                setFormOpen(true);
-              }}
-            >
-              <Plus className="size-4" />
-              {t("sellerDash.goals.ctaCreateFirst")}
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {goals.map((goal: any) => (
-              <GoalCard
-                key={goal._id}
-                goal={goal}
-                onEdit={(g) => {
-                  setEditingGoal(g);
-                  setFormOpen(true);
-                }}
-                onDelete={(g) => setDeleteGoal(g)}
-                onRecordProgress={(g) => setProgressGoal(g)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Summary strip */}
-        {goals && goals.length > 0 && (
-          <div className="mt-8 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 items-center justify-center rounded-[10px] bg-slate-100">
-                <Target className="size-4 text-slate-600" />
+        {/* Failure state — never a fake zero */}
+        {failed ? (
+          <section
+            role="alert"
+            className="mt-7 flex flex-col gap-4 rounded-xl border border-rose-200 bg-rose-50/60 p-5 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="flex items-start gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-white text-rose-600 ring-1 ring-inset ring-rose-200">
+                <AlertTriangle className="size-4" aria-hidden="true" />
               </span>
               <div>
-                <p className="text-sm font-semibold text-slate-900">
-                  {t("sellerDash.goals.summaryTotal", {
-                    total: formatNumber(
-                      goals.reduce((sum: any, g: any) => sum + g.targetValue, 0),
-                    ),
-                  })}
-                </p>
-                <p className="text-xs text-slate-400">
-                  {t("sellerDash.goals.summaryNote")}
-                </p>
+                <p className="text-sm font-semibold text-rose-900">{t("sellerPerf.loadFailed")}</p>
+                <p className="mt-0.5 text-sm text-rose-700">{t("sellerPerf.loadFailedDesc")}</p>
               </div>
             </div>
             <Button
               variant="outline"
-              className="shrink-0 gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-[#10B981] hover:bg-[#ECFDF5] hover:text-emerald-700"
-              onClick={() => {
-                setEditingGoal(null);
-                setFormOpen(true);
-              }}
+              className="h-11 shrink-0 gap-1.5 border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
+              onClick={() => void load()}
             >
-              <Plus className="size-4" />
-              {t("sellerDash.goals.ctaAdd")}
+              <RefreshCw className="size-4" aria-hidden="true" />
+              {t("sellerDash.income.retry")}
             </Button>
-          </div>
-        )}
+          </section>
+        ) : null}
 
+        {!failed ? (
+          <>
+            {/* Business snapshot — real income report values */}
+            <section className="mt-7">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                {t("sellerPerf.businessTitle")}
+              </h2>
+              <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <MetricCard
+                  icon={TrendingUp}
+                  tone="emerald"
+                  label={t("sellerDash.income.kpiGross")}
+                  value={income ? formatBaht(income.gross) : null}
+                  loading={loading}
+                  caption={t("sellerDash.income.kpiGrossSub", {
+                    count: income ? statsUnits(income) : 0,
+                  })}
+                />
+                <MetricCard
+                  icon={Wallet}
+                  iconTone="text-sky-600"
+                  chipClass="bg-sky-50 text-sky-600 ring-sky-600/10"
+                  label={t("sellerDash.income.kpiPayout")}
+                  value={income ? formatBaht(income.payout) : null}
+                  loading={loading}
+                  caption={t("sellerDash.income.kpiPayoutSub")}
+                />
+                <MetricCard
+                  icon={PackageCheck}
+                  iconTone="text-amber-600"
+                  chipClass="bg-amber-50 text-amber-600 ring-amber-600/10"
+                  label={t("sellerPerf.unitsLabel")}
+                  value={income ? formatNumber(income.grossCount) : null}
+                  loading={loading}
+                  caption={t("sellerDash.goals.summaryNote")}
+                />
+                <MetricCard
+                  icon={AlertTriangle}
+                  iconTone="text-rose-600"
+                  chipClass="bg-rose-50 text-rose-600 ring-rose-600/10"
+                  label={t("sellerDash.income.kpiReturns")}
+                  value={income ? formatBaht(income.returns) : null}
+                  loading={loading}
+                  caption={t("sellerDash.income.feeFootnote")}
+                />
+              </div>
+            </section>
+
+            {/* Goals summary */}
+            <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {t("sellerDash.goals.kpiTotal")}
+                </h2>
+                <p className="text-xs text-slate-500">{t("sellerPerf.progressNote")}</p>
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <SummaryStat label={t("sellerDash.goals.kpiTotal")} value={String(stats.total)} />
+                <SummaryStat label={t("sellerDash.goals.kpiActive")} value={String(stats.active)} />
+                <SummaryStat
+                  label={t("sellerDash.goals.kpiAchieved")}
+                  value={String(stats.achieved)}
+                />
+                <SummaryStat
+                  label={t("sellerDash.goals.kpiAvg")}
+                  value={`${stats.average}%`}
+                  progress={stats.average}
+                />
+              </dl>
+            </section>
+
+            {/* Goals grid */}
+            <section className="mt-8">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold tracking-tight text-slate-900">
+                  {t("sellerPerf.goalsTitle")}
+                </h2>
+                {stats.total > 0 ? (
+                  <span className="text-xs text-slate-500">
+                    {t("sellerDash.goals.summaryTotal", {
+                      total: formatNumber(stats.targeted),
+                    })}
+                  </span>
+                ) : null}
+              </div>
+
+              {loading && goals === null ? (
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="h-56 animate-pulse rounded-xl border border-slate-200 bg-white"
+                    />
+                  ))}
+                </div>
+              ) : goals && goals.length > 0 ? (
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {goals.map((goal) => (
+                    <GoalCard
+                      key={goal._id}
+                      goal={goal}
+                      onEdit={(target) => {
+                        setEditingGoal(target);
+                        setFormOpen(true);
+                      }}
+                      onDelete={(target) => setDeleteGoal(target)}
+                      onRecordProgress={(target) => setProgressGoal(target)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+                  <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+                    <Target className="size-7 text-[#10B981]" aria-hidden="true" />
+                  </span>
+                  <h3 className="mt-5 text-lg font-semibold text-slate-900">
+                    {t("sellerDash.goals.emptyTitle")}
+                  </h3>
+                  <p className="mt-1.5 max-w-md text-sm leading-6 text-slate-500">
+                    {t("sellerDash.goals.emptyDesc")}
+                  </p>
+                  <Button
+                    className="mt-6 h-11 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+                    onClick={() => {
+                      setEditingGoal(null);
+                      setFormOpen(true);
+                    }}
+                  >
+                    <Plus className="size-4" aria-hidden="true" />
+                    {t("sellerDash.goals.ctaCreateFirst")}
+                  </Button>
+                </div>
+              )}
+            </section>
+          </>
+        ) : (
+          <div className="mt-6 h-40 animate-pulse rounded-xl border border-slate-200 bg-white" />
+        )}
       </main>
 
-      {/* Dialogs */}
-      <GoalFormDialog open={formOpen} onOpenChange={setFormOpen} goal={editingGoal} />
+      <GoalFormDialog
+        open={formOpen}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) void load();
+        }}
+        goal={editingGoal}
+      />
       <ProgressDialog
         goal={progressGoal}
         open={progressGoal !== null}
         onOpenChange={(open) => {
-          if (!open) setProgressGoal(null);
+          if (!open) {
+            setProgressGoal(null);
+            void load();
+          }
         }}
       />
 
@@ -264,13 +380,25 @@ export default function SellerGoals() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogCancel className="h-11" disabled={deleting}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-600 text-white hover:bg-red-700"
-              onClick={handleDelete}
+              className="h-11 bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDelete();
+              }}
               disabled={deleting}
             >
-              {deleting ? t("sellerDash.goals.deleting") : t("sellerDash.goals.deleteAction")}
+              {deleting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  {t("sellerDash.goals.deleting")}
+                </>
+              ) : (
+                t("sellerDash.goals.deleteAction")
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -279,38 +407,87 @@ export default function SellerGoals() {
   );
 }
 
-// ── KPI Card Component ───
-interface KpiCardProps {
-  icon: React.ReactNode;
-  iconClass: string;
-  bgClass: string;
-  label: string;
-  value: string | number;
-  subtitle: string;
-  progress?: number;
+/** Units sold — the income report names this field `grossCount`. */
+function statsUnits(income: IncomeSnapshot): number {
+  return Number.isFinite(income.grossCount) ? income.grossCount : 0;
 }
 
-function KpiCard({ icon, iconClass, bgClass, label, value, subtitle, progress }: KpiCardProps) {
+interface MetricCardProps {
+  icon: typeof Gauge;
+  label: string;
+  value: string | null;
+  caption: string;
+  loading: boolean;
+  iconTone?: string;
+  chipClass?: string;
+  tone?: "emerald";
+}
+
+/**
+ * One KPI tile. `value === null` renders an explicit em dash ("not available")
+ * instead of a fabricated zero, which is what an unreported metric means.
+ */
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  caption,
+  loading,
+  iconTone = "text-emerald-600",
+  chipClass = "bg-emerald-50 ring-emerald-600/10",
+}: MetricCardProps) {
   return (
-    <div className={`rounded-xl border border-slate-200 bg-white p-4 sm:p-5 ${bgClass}`}>
+    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
       <div className="flex items-center gap-2">
-        <span className={`flex size-4 items-center justify-center rounded-[10px] ${iconClass}`}>
-          {icon}
+        <span
+          className={`flex size-7 items-center justify-center rounded-[9px] ring-1 ring-inset ${chipClass}`}
+        >
+          <Icon className={`size-4 ${iconTone}`} aria-hidden="true" />
         </span>
-        <p className="text-xs font-medium uppercase tracking-wide">{label}</p>
+        <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">
+          {label}
+        </p>
       </div>
-      <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
-        {value}
-      </p>
-      <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
-      {progress !== undefined && (
-        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+      {loading ? (
+        <div className="mt-3 h-8 w-24 animate-pulse rounded bg-slate-100" />
+      ) : (
+        <p className="mt-2 truncate text-xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-2xl">
+          {value ?? "—"}
+        </p>
+      )}
+      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{caption}</p>
+    </div>
+  );
+}
+
+function SummaryStat({
+  label,
+  value,
+  progress,
+}: {
+  label: string;
+  value: string;
+  progress?: number;
+}) {
+  return (
+    <div>
+      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="mt-1 text-xl font-bold tabular-nums tracking-tight text-slate-900">{value}</dd>
+      {progress !== undefined ? (
+        <div
+          className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={label}
+        >
           <div
             className="h-full rounded-full bg-[#10B981] transition-all duration-500"
             style={{ width: `${Math.min(progress, 100)}%` }}
           />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
