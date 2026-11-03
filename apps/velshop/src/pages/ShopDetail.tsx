@@ -12,7 +12,6 @@ import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
 import { useTracking } from "@velnox/shared/lib/track";
 import { setSeo } from "@/lib/seo";
 import { useAction } from "@velnox/shared/lib/api-routes";
-import { VBadge } from "@velnox/shared/components/VBadge";
 import { ArrowLeft, ChevronDown, ChevronUp, MessageCircle, Package, ShieldCheck, Star, Store } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -257,7 +256,6 @@ export default function ShopDetail() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">{shop.name}</h1>
-                <VBadge sellerOnly sellerVerification={(shop as any).verificationStatus} size="md" />
               </div>
 
               {/* Stats row */}

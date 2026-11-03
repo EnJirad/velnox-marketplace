@@ -20,6 +20,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
+import { normalizeAddressSnapshot } from "../lib/order-address.js";
 import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
 // The ONE order-row lock and the money-outranks-cancel rule (see the module
 // header: every transaction writing orders + payments takes the order lock
@@ -161,16 +162,6 @@ function orderAddressSnapshot(a: any): Record<string, unknown> | null {
     postalCode: a.postal_code || null,
     country: a.country || "TH",
   };
-}
-
-function parseShippingAddress(raw: unknown): Record<string, unknown> | null {
-  if (!raw || typeof raw !== "string") return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -1350,7 +1341,7 @@ export function setupCartRoutes(app: Express): void {
           shippingFee: parseFloat(r.shipping_fee) || 0,
           total: parseFloat(r.total_amount) || 0,
           currency: r.currency ?? "THB",
-          addressSnapshot: parseShippingAddress(r.shipping_address),
+          addressSnapshot: normalizeAddressSnapshot(r.shipping_address),
           note: r.notes,
           shopId: r.shop_id,
           shopName: r.shop_name,
@@ -1441,7 +1432,7 @@ export function setupCartRoutes(app: Express): void {
           shippingFee: parseFloat(order.shipping_fee) || 0,
           total: parseFloat(order.total_amount) || 0,
           currency: order.currency ?? "THB",
-          addressSnapshot: parseShippingAddress(order.shipping_address),
+          addressSnapshot: normalizeAddressSnapshot(order.shipping_address),
           note: order.notes,
           shopId: order.shop_id,
           shopName: order.shop_name,

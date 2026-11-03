@@ -2,7 +2,6 @@ import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { Badge } from "@velnox/shared/components/ui/badge";
-import { VBadge } from "@velnox/shared/components/VBadge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@velnox/shared/components/ui/sheet";
@@ -1168,11 +1167,6 @@ export default function ShopProductDetail() {
                   <span className="text-xs font-medium text-slate-400">{(t as any)("productDetail.noImage") ?? "\u0e44\u0e21\u0e48\u0e21\u0e35\u0e23\u0e39\u0e1b\u0e20\u0e32\u0e1e\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32"}</span>
                 </span>
               )}
-              {/* V Badge — TOP-LEFT overlay */}
-              <VBadge
-                sellerVerification={(product as any).sellerVerificationStatus}
-                size="md"
-              />
               <button type="button" onClick={handleWishlist} disabled={wishToggling} className={`absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-colors ${wishlisted ? "text-rose-500" : "text-slate-400 hover:text-rose-500"}`} aria-label={t("productDetail.ariaWishlist")}>
                 {wishToggling ? <Loader2 className="size-4 animate-spin" /> : <Heart className={`size-4 ${wishlisted ? "fill-rose-500" : ""}`} />}
               </button>
@@ -1240,10 +1234,6 @@ export default function ShopProductDetail() {
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <ProductTitle name={product.name} t={t} />
-              <VBadge
-                sellerVerification={product.sellerVerificationStatus}
-                size="md"
-              />
             </div>
 
             {/* Price + Rating */}
@@ -1558,7 +1548,6 @@ export default function ShopProductDetail() {
             <div className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5">
                 <p className="truncate text-sm font-semibold text-slate-900">{product.shopName ?? t("productDetail.defaultShop")}</p>
-                <VBadge sellerOnly sellerVerification={product.sellerVerificationStatus} size="sm" />
               </span>
               <p className="mt-0.5 text-xs text-slate-400">{t("productDetail.viewShop")}</p>
             </div>

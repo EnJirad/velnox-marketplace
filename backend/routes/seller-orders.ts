@@ -25,6 +25,11 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
+import {
+  normalizeAddressSnapshot,
+  orderContact,
+  parseShippingAddress,
+} from "../lib/order-address.js";
 // Order-scoped realtime events (addressed to the order's entitled sessions:
 // the customer, this order's seller, connected VelCenter sessions) and the
 // customer notification rows the same transitions write.
@@ -135,43 +140,16 @@ async function resolveApprovedSellerId(userId: string): Promise<string | null> {
   return row.id as string;
 }
 
-function parseShippingAddress(raw: unknown): Record<string, unknown> | null {
-  if (!raw || typeof raw !== "string") return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** A non-empty trimmed string, or null. */
-function text(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
 
 /**
  * The customer contact a SELLER sees for one order.
  *
- * The order's OWN snapshot (`orders.shipping_address.recipientName` / `.phone`)
- * wins over the account row. The seller uses these values to pack and hand the
- * parcel over, so they must be the details the customer entered FOR THIS ORDER:
- * if the customer later changes their phone or display name, an order placed
- * last week must still show the recipient and number it was placed with. The
- * account values remain as a fallback for legacy orders written before the
- * snapshot carried them — never as the source of truth.
+ * The order's OWN snapshot wins over the account row (see
+ * `lib/order-address.ts` for the full rule and the JSONB parsing defect it
+ * fixes). Re-exported here because the fulfilment tests import it from this
+ * module.
  */
-export function orderContact(
-  address: Record<string, unknown> | null,
-  account: { name?: string | null; phone?: string | null } | undefined,
-): { name: string | null; phone: string | null } {
-  return {
-    name: text(address?.recipientName) ?? text(account?.name),
-    phone: text(address?.phone) ?? text(account?.phone),
-  };
-}
+export { orderContact };
 
 /**
  * Load the seller's items for one or more orders. Only items belonging to
@@ -376,7 +354,7 @@ export function setupSellerOrderRoutes(app: Express): void {
       const orders = rows.map((r: any) => {
         const items = itemsByOrder[r.id] ?? [];
         const customer = customers.get(r.user_id);
-        const addressSnapshot = parseShippingAddress(r.shipping_address);
+        const addressSnapshot = normalizeAddressSnapshot(r.shipping_address);
         // The order's snapshot decides the contact shown to the seller — see
         // `orderContact()`. `orders.shipping_address` is selected above.
         const contact = orderContact(addressSnapshot, customer);
@@ -480,7 +458,7 @@ export function setupSellerOrderRoutes(app: Express): void {
       ]);
       const items = itemsByOrder[orderId] ?? [];
       const customer = customerRes.rows[0];
-      const addressSnapshot = parseShippingAddress(order.shipping_address);
+      const addressSnapshot = normalizeAddressSnapshot(order.shipping_address);
       // Same rule as the list: the order's snapshot is the recipient the seller
       // must actually ship to, and it never follows a later profile edit.
       const contact = orderContact(addressSnapshot, customer);
