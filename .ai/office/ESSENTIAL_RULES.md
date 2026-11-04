@@ -75,14 +75,24 @@ password, a token, or a pasted cookie.
   `… <account>` prints `velnox_session=…` for `curl -b`,
   `… <account> --curl <url>`, `… <account> --check` verifies against
   `GET /api/auth/me`.
+- **Safe mode is the default.** The proxy forwards only `GET` and `HEAD`; every
+  other method is `405` and never reaches the backend. Writes require
+  `PROXY_ALLOW_WRITES=1` **and** a non-production API base — enabling write mode
+  against the production API throws at startup.
+- **Access gate.** `/api/*` needs the per-run token: open
+  `/?access=<token>` once (token file `.ai/secrets/proxy-access-token`, mode 0600);
+  it becomes an httpOnly `SameSite=Strict` cookie. Host, Origin and
+  `Sec-Fetch-Site` are allowlisted to the local origin, so another local page
+  cannot drive the proxy.
 - **Localhost browser session:**
   `VITE_API_URL= bun run build:velseller` (API calls become relative), then
   `bun .ai/office/scripts/dev-session-proxy.mjs seller 3001`, then open
-  `http://localhost:3001/seller/shop`. The proxy adds the `httpOnly` cookie
-  server-side; the session is `httpOnly`, so JavaScript cannot set it and the
-  browser must reach one origin.
+  `http://127.0.0.1:3001/?access=<token>` and go to `/seller/shop`. The proxy
+  adds the `httpOnly` session cookie server-side; the session is `httpOnly`, so
+  JavaScript cannot set it and the browser must reach one origin.
 - The proxy is **not a mock**: every `/api/*` request is answered by the real
-  backend. It writes nothing. Do not use it to exercise destructive actions.
+  backend. It writes nothing in safe mode. Origin/Referer are never rewritten to
+  impersonate a deployed frontend — that would be a trust bypass, not a feature.
 - An expired cookie (the helper reports it) means the owner must sign in again;
   never mint, forge, or extend a session server-side.
 - Account scope: `customer` (velshop) and `seller` (velseller/velcenter). Pick the
