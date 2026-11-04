@@ -54,8 +54,39 @@ project documentation, never these rules. Full detail: `.ai/AI_RULES.md`.
 - `.ai/` is committed and public.
 
 ## 10. Task routing (auto-selected by AI 01 — never ask the user)
+
 - **T1 QUICK** — typos, translations, colour/spacing, small isolated fix → AI 01 executes immediately, targeted checks, no AI 02 planning.
 - **T2 STANDARD** — new feature, multi-file change, subsystem work → AI 02 plans → AI 01 implements → AI 02 QA.
 - **T3 CRITICAL** — auth, payment, database schema, financial logic, security → full two-agent workflow, full relevant checks.
 - Critical file patterns always force T3, even when the request looks trivial.
 - Uncertain classification falls back to **T2** — never silently downgrade toward T1.
+
+## 11. Browser and localhost testing — use the local cookie store
+
+Any browser work, responsive check, or localhost preview that needs a signed-in
+session MUST use the local cookie store instead of asking the owner for a
+password, a token, or a pasted cookie.
+
+- **Store:** `.ai/secrets/browser-cookies.json` — **gitignored**, live production
+  sessions. Never commit it, never print a token, never screenshot a cookie.
+  (`.ai/secrets/` is the only place in this repo allowed to hold one.)
+- **Read it with the helper**, never by re-typing a token:
+  `bun .ai/office/scripts/cookies.mjs` lists accounts (no secrets),
+  `… <account>` prints `velnox_session=…` for `curl -b`,
+  `… <account> --curl <url>`, `… <account> --check` verifies against
+  `GET /api/auth/me`.
+- **Localhost browser session:**
+  `VITE_API_URL= bun run build:velseller` (API calls become relative), then
+  `bun .ai/office/scripts/dev-session-proxy.mjs seller 3001`, then open
+  `http://localhost:3001/seller/shop`. The proxy adds the `httpOnly` cookie
+  server-side; the session is `httpOnly`, so JavaScript cannot set it and the
+  browser must reach one origin.
+- The proxy is **not a mock**: every `/api/*` request is answered by the real
+  backend. It writes nothing. Do not use it to exercise destructive actions.
+- An expired cookie (the helper reports it) means the owner must sign in again;
+  never mint, forge, or extend a session server-side.
+- Account scope: `customer` (velshop) and `seller` (velseller/velcenter). Pick the
+  account the test actually needs; the helper refuses unknown names.
+- `.ai/` is public. A cookie store inside it is only safe because the directory is
+  ignored — verify `git check-ignore -v .ai/secrets/browser-cookies.json` before
+  adding any file there.

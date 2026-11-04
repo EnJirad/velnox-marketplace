@@ -70,6 +70,7 @@ DB:       run db/run-sqleditor.sql once in Neon SQL Editor
 
 | Need | Read |
 |------|------|
+| Browser / localhost session cookie | `.ai/secrets/browser-cookies.json` + §11 of `ESSENTIAL_RULES.md` |
 | Always-on safety rules | `.ai/office/ESSENTIAL_RULES.md` |
 | Full rules | `.ai/AI_RULES.md` |
 | Current state | `.ai/AI_HANDOFF.md` |

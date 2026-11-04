@@ -14,3 +14,6 @@ coverage/
 # Agent / tooling caches that must never be committed
 .codegraph/
 .harness/
+
+# Local browser session cookies (live credentials — NEVER commit)
+.ai/secrets/
