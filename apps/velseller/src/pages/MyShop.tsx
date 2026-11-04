@@ -461,9 +461,11 @@ export default function MyShop() {
             <div className="min-w-0">
               <p className="text-xs text-slate-500">{t("sellerDash.shop.cardFee")}</p>
               <p className="text-sm font-semibold text-slate-900">
-                {t("sellerDash.shop.cardFeeValue", {
-                  rate: (shop.commissionRate * 100).toLocaleString(),
-                })}
+                {Number.isFinite(shop.commissionRate)
+                  ? t("sellerDash.shop.cardFeeValue", {
+                      rate: (shop.commissionRate * 100).toLocaleString(),
+                    })
+                  : t("sellerDash.shop.cardFeeUnknown")}
               </p>
             </div>
           </div>

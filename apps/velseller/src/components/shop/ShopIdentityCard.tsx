@@ -77,12 +77,15 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
   }));
 
   const shopHref = shop.slug ? `${SITE_URLS.velshop}/shop/${shop.slug}` : null;
+  // A payload without `status` must not be shown as "closed": unknown ≠ closed.
   const statusLabel =
     shop.status === "active"
       ? t("sellerDash.shop.shopStatusActive")
       : shop.status === "suspended"
         ? t("sellerDash.shop.shopStatusSuspended")
-        : t("sellerDash.shop.shopStatusClosed");
+        : shop.status === "closed"
+          ? t("sellerDash.shop.shopStatusClosed")
+          : null;
 
   const openEditor = () => {
     setForm({
@@ -193,9 +196,11 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
           <h1 id="shop-identity-name" className="text-xl font-bold tracking-tight text-slate-900">
             {shop.name}
           </h1>
-          <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-500/10 hover:bg-slate-100">
-            {statusLabel}
-          </Badge>
+          {statusLabel && (
+            <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-500/10 hover:bg-slate-100">
+              {statusLabel}
+            </Badge>
+          )}
           <VerificationStatusLabel status={verificationStatus} />
         </div>
 

@@ -1482,6 +1482,9 @@ const enSellerShopExt = {
 };
 
 const mySellerShopExt = {
+  cardFeeUnknown: "မသတ်မှတ်ရသေး",
+  togglePublish: "ရောင်းချမည်",
+  togglePending: "စစ်ဆေးနေသည်",
   identityEdit: "ဆိုင်အချက်အလက် ပြင်",
   identityEditDesc: "velshop တွင် ဝယ်သူများ မြင်ရသော ဆိုင်အမည်၊ ဖော်ပြချက်နှင့် ဆက်သွယ်ရန် ဖုန်း",
   fieldName: "ဆိုင်အမည်",
