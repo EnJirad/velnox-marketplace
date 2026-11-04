@@ -153,3 +153,32 @@ passes; the three blocked items are environmental and are named above.
 
 - `7a0e3050ed0bba40e7b8a93a8fc2734cd413f2b3` — 403 gate fix + 2 contract tests
 - this report — documentation commit immediately after
+
+---
+
+## 12. Addendum — browser verification unblocked, three defects fixed
+
+A local cookie store plus an authenticated preview proxy removed the blocker
+that §3 reported. No credential was pasted into the chat again, no auth check was
+weakened, and the proxy talks to the real backend.
+
+Method: `VITE_API_URL= bun run build:velseller` → `dev-session-proxy.mjs seller
+3001` → `http://localhost:3001/seller/shop`, signed in as the `seller` account
+from the cookie store (`GET /api/auth/me` = 200, role `seller`).
+
+**First authenticated render exposed three defects, all now fixed (`d2695b5`):**
+
+| Defect | Cause | Fix |
+|---|---|---|
+| `NaN% ต่อชิ้น` | `GET /api/seller/profile` never returned `commissionRate` | endpoint returns it; UI shows "not set" when absent |
+| Shop shown as **ปิดร้าน** (closed) | payload had no `status`; the badge defaulted to closed | status returned; badge hidden when genuinely unknown |
+| Raw key `sellerDash.shop.togglePublish` | `togglePublish` / `togglePending` missing from th/en | keys added (th/en/my) |
+
+Re-verified after the fix in the same session: page shows `ยังไม่ระบุ`, no false
+status badge, `เปิดขาย` label, real shop `SUPER GADGET ZENE`, 2 products, filter
+counts, verified badge.
+
+Status changes: **BROWSER VERIFIED** (load, existing shop, products, filters,
+i18n, states). **RESPONSIVE VERIFIED** still NOT VERIFIED — the in-app browser
+has no resize control, so 360/390/768/1024/1440 remain unproven.
+**IMPECCABLE EXECUTED** remains BLOCKED (engine is ET_EXEC arm64; see §2).
