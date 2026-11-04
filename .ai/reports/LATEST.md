@@ -1,131 +1,162 @@
-# AI Report — Cookie exposure removal, write-mode proof, VelCenter owner QA
+# AI Report — VelCenter nav fix + browser QA
 
-**Date:** 2026-11-04
+## 1. Summary
 
-## A. Repository state
+VelCenter's navigation rail did not change tabs when activated by a plain
+`click`. Root cause: Radix `TabsTrigger` activates on **mousedown**, and both
+assistive technology and the automated browser dispatch a `click` — so no
+navigation happened and `aria-selected` stayed on the previous item. Every nav
+trigger now also calls one shared `selectTab()` (URL + drawer close). Verified in
+the browser: click → `?tab=orders` → live orders module; second click →
+`?tab=sellers` → seller-review queue.
 
-| | |
+## 2. Starting SHA
+
+`b205112` (main, clean tree)
+
+## 3. Final SHA
+
+`63d7b0ac8667024ae64b228bdb262846cda22e4d` (fix) + this report's commit.
+
+## 2–3 note on scope
+
+Only `apps/velcenter/src/pages/Center.tsx` changed, plus one new test file.
+
+## 4. Root cause
+
+`Center.tsx` renders `<Tabs value={tab} onValueChange={…}>` with `tab` derived
+from `?tab=`. Radix's Trigger calls `onValueChange` from its `onMouseDown`
+handler; there is no `onClick` path. Consequences, reproduced before the fix:
+
+| Probe | Before |
 |---|---|
-| Branch | `main` |
-| Starting SHA | `e1f0a8b` |
-| Hardening commit | `c52cd839494cb5818dd3e444dbf629cf1bf54d10` |
-| Final SHA | this report's commit (immediately after `c52cd83`) |
-| Working tree | clean; only the files listed below touched |
+| `el.click()` on ออเดอร์ | `location.search` stayed `""`, `aria-selected` stayed ภาพรวม |
+| Harness click (same event model) | same — URL never moved |
+| Direct `?tab=orders` load | page did not paint in this WebView (see §15) |
 
-## B. Cookie security
+## 5. Files changed
 
-**Raw output removed.** `cookies.mjs` can no longer emit a session cookie:
+- `apps/velcenter/src/pages/Center.tsx` — `selectTab()` helper; 12 nav triggers
+  gained `onClick`; `onValueChange` now calls the same helper.
+- `backend/tests/velcenter-nav.test.ts` — **new**, 4 contracts.
 
-| Mode | Before | Now |
-|---|---|---|
-| bare `<account>` | printed `velnox_session=…` | refuses: "raw cookie output is disabled" |
-| `--header` | printed a full `Cookie:` header | removed |
-| `--curl <url>` | embedded the cookie in a runnable command | removed |
-| `<account> --check` | identity JSON | unchanged — role/name/expiry only |
-| `--status` | — | expiry + permissions + git-ignore state |
-| `--export-file` | — | human-only (`ALLOW_COOKIE_EXPORT=1`), writes a 0600 file, refuses the secrets dir |
+## 6. Implementation details
 
-Guards kept: tracked-file refusal, `--check` refuses expired sessions, error
-messages never include a value, no URL is generated with credentials.
+- `selectTab(next)` = `setTab(next)` (writes `?tab=`, `{replace:true}`) +
+  `setNavOpen(false)`. One navigation state, still URL-derived; `canSee(tab)`
+  gating untouched.
+- Radix activation (mousedown) and click activation now converge on the same
+  function; a click therefore fires `selectTab` once (mousedown) and again via
+  `onClick` with the same value — the second call is a no-op state write.
+- The people-segment `Tabs` (staff/customer) was deliberately **not** wired; a
+  test asserts it.
 
-Evidence: 7 CLI tests (`proxy-write-mode.test.ts`) run the helper as a process
-and assert its **output** never contains the stored token.
+## 7. Impeccable execution evidence
 
-Storage: `.ai/secrets/` is gitignored (`git check-ignore` asserted in tests),
-store is `0600`, and the test fails if the mode is anything else.
+Commands executed:
 
-## C. Write mode
+```
+.data/…/skills/impeccable/scripts/impeccable context
+→ error: "…/.impeccable/bin/0.1.18/impeccable" has unexpected e_type: 2
+od -An -tx1 -N20 <engine>  → 7f 45 4c 46 02 01 01 00 … 02 00 b7 00
+```
 
-Fail-closed. Safe mode is the default and only `GET`/`HEAD` reach the backend.
+ELF64, `e_type = 0x0002` (ET_EXEC, non-PIE), `e_machine 0xB7` (AArch64); Android
+bionic only executes `ET_DYN`. **IMPECCABLE: BLOCKED.** No visual redesign was
+attempted; the fix is behavioural (event model), not a style change.
 
-Write mode requires **all** of:
+## 8. Tab switching browser test results
 
-1. `PROXY_ALLOW_WRITES=1`
-2. `PROXY_TEST_ENV_ID` (`^[a-z0-9][a-z0-9-]{2,31}$`, no "prod")
-3. `PROXY_TEST_API_BASE` — `http://` + `localhost`/`127.0.0.1` + port 1024–65535
-4. `PROXY_TEST_DB_PROOF` — a 0600 JSON file with
-   `environment: "test"`, `writesApproved: true`, `disposable: true`,
-   matching `envId` and `apiBase`, `databaseUrlHost` loopback, future `expiresAt`
+Owner session (`role: owner`, from `GET /api/auth/me`), local preview proxy,
+`safe mode` (GET only).
 
-Rejected and tested: writes disabled by default; bare flag; missing/blank env id;
-"prod" env id; the known production API; a `.vercel.app` alias; unknown remote
-host; URL credentials; `https` to loopback; privileged port; missing proof;
-group-readable proof; malformed JSON; non-test environment; `writesApproved:false`;
-non-disposable DB; env-id mismatch; API-base mismatch; remote database host;
-expired proof. A fully proven local stack is the only accepted case.
+| # | Nav item | Expected | Actual URL | Rendered content | Active state | Result |
+|---|---|---|---|---|---|---|
+| 1 | (initial) | dashboard | `/` | revenue ฿419.3, 5 orders, 2 shops, 2 products, low-stock 1 | ภาพรวม | PASS |
+| 2 | ออเดอร์ | orders | `/?tab=orders` | 5 real orders, status selectors (paid/ยกเลิก/expired/เสร็จสิ้น) | ออเดอร์ | PASS |
+| 3 | พ่อค้า | sellers | `/?tab=sellers` | seller-verification queue, search box, status filter "รอการยืนยัน" | พ่อค้า | PASS |
+| 4 | same-item click | no-op | unchanged | unchanged | unchanged | PASS |
 
-Also fixed during this pass: a bare `allowWrites: true` without a verified
-`writeMode` used to construct a proxy over the production API — it now throws
-`NO_VERIFIED_TEST_ENVIRONMENT`.
+Not exercised in-browser (harness wedged / time): แชท · Intelligence · สินค้า ·
+หมวดหมู่ · ผู้ใช้ & ลูกค้า · Audit Logs · ตรวจสอบยอดเงิน · การตลาด · ตั้งค่าระบบ —
+their triggers carry the identical handler and are covered by the source
+contracts, but they were **not** clicked through.
 
-## D. VelCenter QA — genuine owner session
+Back/forward: tab changes use `setSearchParams(…, { replace: true })`, so tabs do
+not create history entries — Back leaves the document instead of stepping tabs.
+That is the existing design, not a regression.
 
-Identity from `GET /api/auth/me`: **role `owner`** (the store entry formerly
-labelled "customer" is the site owner; renamed to `owner`).
+## 9. Responsive test results
 
-**Verified in the browser** (`http://localhost:3001/`, safe mode, read-only):
-
-- Shell renders: header, owner chip ("เจ้าของบริษัท"), 12-module tablist
-  (ภาพรวม · แชท · ออเดอร์ · Intelligence · สินค้า · พ่อค้า · หมวดหมู่ ·
-  ผู้ใช้ & ลูกค้า · Audit Logs · ตรวจสอบยอดเงิน · การตลาด · ตั้งค่าระบบ).
-- Dashboard shows real data, not placeholders: revenue ฿419.3, 5 orders,
-  2 approved shops, 2 products, 1 low-stock, 1 reorder-due, intelligence summary.
-- 12 admin API calls observed in the proxy log, all `200`
-  (`overview`, `dashboard/counts`, `market-overview`, `verifications`, `users`,
-  `settings`, `permissions`, `bootstrap-status`, `seller/status`, catalog).
-
-**API-level module check** (owner cookie, read-only `GET`): `admin/orders`,
-`admin/sellers`, `admin/verifications`, `admin/permissions`, `admin/audit-logs`,
-`admin/dashboard/counts`, `admin/payment-incidents`, `admin/categories` → all `200`.
-
-**Module UI: NOT VERIFIED.** The drawer opens and the tab buttons receive the
-click (hit-test confirms the button is the top element at the click point), but
-`aria-selected` stays on ภาพรวม — the panel never switches. That is a harness
-limitation of the hidden WebView's synthetic clicks, or a real drawer-click bug;
-it was not resolved here, so no module screenshot or per-module UI claim is made.
-
-**Responsive: NOT VERIFIED** — the WebView cannot resize and the Chrome DevTools
-MCP cannot start on this platform (`Cannot download a binary for the provided
-platform: android (arm64)`).
-
-No write was performed: every request in this task was `GET`.
-
-## E. Test results
-
-| Item | Status |
+| Width | Result |
 |---|---|
-| Cookie-output exposure (7 CLI tests) | **AUTOMATED TEST PASSED** |
-| Write-mode rejection matrix + acceptance (22 tests) | **AUTOMATED TEST PASSED** |
-| Proxy safe-mode suite (30 tests, unchanged) | **AUTOMATED TEST PASSED** |
-| Full backend suite | **AUTOMATED TEST PASSED** — 1693 pass / 389 skip / 0 fail |
-| `typecheck` (all apps) | PASS |
-| `velcenter` production build | PASS |
-| `git diff --check` | PASS |
-| VelCenter dashboard (owner) | BROWSER VERIFIED |
-| VelCenter modules UI | NOT VERIFIED (tab switching did not register) |
-| Responsive | NOT VERIFIED |
-| Impeccable | NOT APPLICABLE this change (no UI change); engine still blocked |
+| 360px | **NOT VERIFIED** |
+| 390px | **NOT VERIFIED** |
+| 768px | **NOT VERIFIED** |
+| 1024px | **NOT VERIFIED** |
+| 1440px | **NOT VERIFIED** |
 
-## F. AI 02 review
+Blocker: the in-app WebView exposes no resize control; `mcp__chrome_devtools__*`
+fails with `Cannot download a binary for the provided platform: android (arm64)`;
+an in-page iframe harness at 1024 px timed out before it could be measured.
+No responsive claim is made.
 
-- **Plan (accepted):** remove the three raw-cookie modes, replace curl usage with
-  a request-runner/proxy, and make write mode a proof-file gate rather than one
-  URL comparison. Adopted almost verbatim.
-- **Independent final review of `c52cd83`: PASS.** It confirmed (1) no normal CLI
-  path prints a cookie, (2) no path enables a write against a non-loopback or
-  unproven target, (3) the tests assert those properties, noting the cookie tests
-  are representative rather than exhaustive.
-- Earlier in the same session AI 02 returned **FAIL** on the previous proxy test
-  set; the four gaps it named were fixed before this commit.
+## 10. Authorization regression
 
-## G. Remaining risks
+- Tab visibility still flows through `canSee(urlTab)`; an unseen tab falls back
+  to `overview` (`Center.tsx:275, 306-307`). Unchanged by the fix.
+- Seller session on VelCenter still gets the company-only screen (checked in the
+  previous task); owner gets the rail.
+- The nav selector writes only `?tab=`; it cannot grant a permission.
 
-1. A *verified* test deployment could still be misconfigured to point at
-   production internally; the proof file cannot see inside that service.
-2. An isolated test database can contain real data; isolation ≠ safety.
-3. VelCenter module UI is unverified — needs a browser whose clicks reach the
-   tablist (or a fix if this is a genuine drawer bug).
-4. Responsive testing is blocked on this device (no resize capability).
-5. Impeccable remains blocked (arm64 `ET_EXEC` engine).
-6. Two seller-application UIs still coexist (`RequireRole.tsx` vs
-   `ShopOnboarding.tsx`) — owner decision needed.
+## 11. Automated test results
+
+| Command | Result |
+|---|---|
+| `bun test backend/tests/velcenter-nav.test.ts` | 4 pass |
+| `bun test … proxy-security … proxy-write-mode … velcenter-nav` | 63 pass / 0 fail |
+| `git diff --check` | exit 0 |
+| `bun --filter @velnox/velcenter typecheck` | exit 0 |
+
+## 12. Build results
+
+`VITE_API_URL= bun run build:velcenter` → `✓ built in 11.26s`, exit 0.
+
+## 13. Security regression results
+
+Cookie store and proxy hardening untouched: `cookies.mjs` still cannot print a
+session cookie, write mode still requires the proof file, safe mode still
+GET/HEAD-only, gate/Host/Origin/Sec-Fetch-Site checks unchanged. `proxy-security`
+(30) and `proxy-write-mode` (29) suites both green.
+
+## 14. Screenshots / evidence
+
+No screenshots: the harness surface is hidden (no capture capability). Evidence
+is DOM text, URL transitions and proxy request logs.
+
+## 15. BLOCKED
+
+1. **Responsive QA** at all five widths — no resize path on this device.
+2. **IMPECCABLE** — arm64 ET_EXEC engine cannot run under bionic.
+3. **Deep-link paint**: loading `/?tab=orders` directly sometimes renders a blank
+   document in this WebView (no title, `document.body === null`) while the proxy
+   returns `200 text/html`. Click-driven navigation works. Cause is in the
+   harness/WebView, not proven in app code.
+
+## 16. NOT VERIFIED
+
+- The nine modules not clicked through (§8).
+- Mobile drawer interaction at real mobile widths (no resize).
+- Keyboard activation (Enter/Space on a focused trigger) — not exercised.
+- Browser back/forward per-tab (replace semantics; not applicable).
+
+## 17. Remaining risks
+
+- `selectTab` may be invoked twice per activation (mousedown + click). The URL
+  write is idempotent, but a panel that fetches on tab change could double-fetch
+  on a real click. Worth a follow-up measurement.
+- Native keyboard activation of Radix triggers relies on Radix's key handling;
+  the new `onClick` also covers Enter/Space in browsers that synthesise a click,
+  but that path was not tested here.
+- The drawer's outside-click/scroll lock behaviour was not re-tested after the
+  change.
