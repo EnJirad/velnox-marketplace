@@ -233,15 +233,37 @@ describe("test database guard — a real test process fails closed", () => {
   const PROBE = 'await import("./backend/db/test-database.ts").then((m) => m.assertTestDatabaseIsSafe());';
   const POOL_PROBE = 'await import("./backend/db/index.ts");';
 
+  /**
+   * The bun executable to re-enter for a probe.
+   *
+   * On Android/Termux `process.execPath` is the platform's dynamic loader
+   * (`/…/lib/…/linker64`), not Bun, so spawning it runs the linker instead of
+   * the probe and every assertion here fails for an environmental reason. The
+   * real executable is `process.argv[0]`/`process.argv0`. Keep `execPath` as the
+   * fallback so behaviour on a normal host is unchanged.
+   */
+  const probeBinary = (() => {
+    const argv0 = process.argv0 || process.argv?.[0] || "";
+    if (argv0 && !argv0.includes("linker") && argv0 !== process.execPath) return argv0;
+    return process.execPath;
+  })();
+
   function runBunProbe(script: string, databaseEnv: Record<string, string>) {
     return Bun.spawnSync({
-      cmd: [process.execPath, "-e", script],
+      cmd: [probeBinary, "-e", script],
       cwd: repoRoot,
       // A deliberately minimal environment: no real credentials are forwarded.
+      // The loader paths ARE forwarded — on Android/Termux bun is linked against
+      // the userspace libraries and aborts with `CANNOT LINK EXECUTABLE` when
+      // LD_LIBRARY_PATH is stripped. Paths are not secrets; database URLs are,
+      // and those still come only from `databaseEnv`.
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         NODE_ENV: "test",
+        ...(process.env.LD_LIBRARY_PATH ? { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH } : {}),
+        ...(process.env.PREFIX ? { PREFIX: process.env.PREFIX } : {}),
+        ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
         ...databaseEnv,
       },
       stdout: "pipe",

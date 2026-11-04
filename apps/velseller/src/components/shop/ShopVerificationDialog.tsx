@@ -57,7 +57,13 @@ export function ShopVerificationDialog({
   const [busy, setBusy] = useState(false);
 
   const hasUploading = files.some((f) => f.status === "uploading" || f.status === "pending");
-  const hasUploaded = files.some((f) => f.status === "uploaded" && f.cdnUrl);
+  // The same three purposes `POST /api/seller/apply` requires: a verification
+  // case without them cannot be approved, so the wizard asks for the full set.
+  const REQUIRED_PURPOSES = ["id_card", "id_card_back", "selfie_id"] as const;
+  const uploadedFor = (purpose: string) =>
+    files.find((f) => f.purpose === purpose && f.status === "uploaded" && f.cdnUrl);
+  const missingPurposes = REQUIRED_PURPOSES.filter((purpose) => !uploadedFor(purpose));
+  const hasUploaded = missingPurposes.length === 0;
 
   useEffect(() => {
     if (!open) return;
@@ -131,8 +137,7 @@ export function ShopVerificationDialog({
     }
     setBusy(true);
     try {
-      const evidenceUrls = files.filter((f) => f.status === "uploaded" && f.cdnUrl).map((f) => f.cdnUrl!);
-      await submitSellerVerification({ verificationType: "identity", evidenceUrls });
+      const evidenceUrls = files.filter((f) => f.status === "uploaded" && f.cdnUrl).map((f) => f.cdnUrl!);      await submitSellerVerification({ verificationType: "identity", evidenceUrls });
       toast.success(t("verification.sellerVerificationSubmitted"));
       await onSubmitted();
       onOpenChange(false);
@@ -206,6 +211,15 @@ export function ShopVerificationDialog({
               description={t("sellerDash.shop.verifyReq1")}
               files={files.filter((f) => f.purpose === "id_card")}
               onFilesChange={(next) => replacePurpose("id_card", next)}
+              onUploadSuccess={handleUploaded}
+              maxFiles={2}
+            />
+            <EvidenceUploader
+              purpose="id_card_back"
+              label={t("sellerDash.shop.verifyDocIdCardBack")}
+              description={t("sellerDash.shop.verifyReq1")}
+              files={files.filter((f) => f.purpose === "id_card_back")}
+              onFilesChange={(next) => replacePurpose("id_card_back", next)}
               onUploadSuccess={handleUploaded}
               maxFiles={2}
             />

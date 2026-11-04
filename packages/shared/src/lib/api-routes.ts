@@ -245,8 +245,34 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.commerce.createSellerApplication": (a) => apiPost("/api/seller/apply", a),
   // Shop identity (name / description / phone). The backend derives the shop
   // from the session, so no shop id is ever sent by the client.
-  "api.seller.updateShop": (a?: { name?: string; description?: string | null; phone?: string | null }) =>
-    apiPatch("/api/seller/shop", a),
+  "api.seller.updateShop": (a?: {
+    name?: string;
+    description?: string | null;
+    phone?: string | null;
+    category?: string | null;
+    logo?: string | null;
+    cover?: string | null;
+    address?: {
+      line1?: string | null;
+      line2?: string | null;
+      subdistrict?: string | null;
+      district?: string | null;
+      city?: string | null;
+      state?: string | null;
+      postalCode?: string | null;
+      country?: string | null;
+    };
+  }) => apiPatch("/api/seller/shop", a),
+  // R2 presign/confirm for shop logo + cover. The backend mints the key itself
+  // (`shop/{shopId}/logo.webp`) after proving the caller owns that shop, and
+  // `confirm` derives the purpose from the key — the client never chooses.
+  "api.seller.uploadPresign": (a: {
+    filename: string;
+    contentType: string;
+    purpose: "shop-logo" | "shop-cover";
+    shopId: string;
+  }) => apiPost("/api/upload/presign", a),
+  "api.seller.uploadConfirm": (a: { objectKey: string }) => apiPost("/api/upload/confirm", a),
   "api.commerce.listProducts": (a) => {
     if (a?.mine) return apiGet("/api/seller/products");
     return apiGet("/api/products/catalog");

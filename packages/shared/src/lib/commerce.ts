@@ -128,6 +128,18 @@ export interface ProductVariant {
   images?: { id: string; url: string; alt?: string; sortOrder?: number }[];
 }
 
+/** Structured shop address, as `GET /api/seller/profile` returns it. */
+export interface StoreShopAddress {
+  line1: string | null;
+  line2: string | null;
+  subdistrict: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  country: string | null;
+}
+
 export interface StoreShop {
   id: string;
   sellerId: string;
@@ -136,11 +148,22 @@ export interface StoreShop {
   description: string | null;
   imageUrl: string | null;
   phone: string | null;
-  address: string | null;
+  /**
+   * Structured address from the seller profile endpoint. Legacy payloads (the
+   * public shop list) still send a string, so both shapes are accepted.
+   */
+  address: StoreShopAddress | string | null;
   announcement: string | null;
   status: "active" | "suspended" | "closed";
   commissionRate: number;
   currency: string;
+  /** Shop media — written only by `POST /api/upload/confirm`. */
+  logo?: string | null;
+  cover?: string | null;
+  /** Free-form shop category text (<= 100 chars); no taxonomy table exists. */
+  category?: string | null;
+  rating?: number | null;
+  productCount?: number;
   /** Seller/shop verification status */
   verificationStatus?: VerificationStatus;
   /** Unix ms */

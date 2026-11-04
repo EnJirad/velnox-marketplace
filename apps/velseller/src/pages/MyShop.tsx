@@ -369,7 +369,7 @@ export default function MyShop() {
       <AppHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
-        <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-400">
+        <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-500">
           <Package className="size-4 text-[#10B981]" aria-hidden="true" />
           {t("sellerDash.shop.eyebrow")}
         </p>
@@ -383,7 +383,7 @@ export default function MyShop() {
               <BadgePercent className="size-5 text-slate-600" aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="text-xs text-slate-400">{t("sellerDash.shop.cardFee")}</p>
+              <p className="text-xs text-slate-500">{t("sellerDash.shop.cardFee")}</p>
               <p className="text-sm font-semibold text-slate-900">
                 {t("sellerDash.shop.cardFeeValue", {
                   rate: (shop.commissionRate * 100).toLocaleString(),
@@ -397,7 +397,7 @@ export default function MyShop() {
               <ShieldCheck className="size-5 text-[#10B981]" aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="text-xs text-slate-400">{t("sellerDash.shop.cardReturnPolicy")}</p>
+              <p className="text-xs text-slate-500">{t("sellerDash.shop.cardReturnPolicy")}</p>
               <p className="text-sm font-semibold text-slate-900">
                 {t("sellerDash.shop.cardReturnValue")}
               </p>
@@ -409,7 +409,7 @@ export default function MyShop() {
               <ShieldCheck className="size-5 text-emerald-700" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-xs text-slate-400">{t("verification.sellerVerificationTitle")}</p>
+              <p className="text-xs text-slate-500">{t("verification.sellerVerificationTitle")}</p>
               <p className="text-sm font-semibold text-slate-900">
                 {verificationStatus === "pending"
                   ? t("sellerDash.shop.verifyPendingHint")
@@ -421,7 +421,7 @@ export default function MyShop() {
             {verificationStatus !== "pending" && verificationStatus !== "verified" && (
               <Button
                 variant="ghost"
-                className="h-11 shrink-0 px-3 text-xs font-medium text-[#10B981] hover:bg-emerald-50"
+                className="h-11 shrink-0 px-3 text-xs font-medium text-[#047857] hover:bg-emerald-50"
                 onClick={() => {
                   setVerifyAtEvidence(false);
                   setVerifyTarget({ kind: "seller" });
@@ -449,7 +449,7 @@ export default function MyShop() {
             <div className="flex w-full items-center gap-2 sm:w-auto">
               <div className="relative flex-1 sm:w-64">
                 <Search
-                  className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
+                  className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
                   aria-hidden="true"
                 />
                 <Input
@@ -491,7 +491,7 @@ export default function MyShop() {
                   }`}
                 >
                   {filter.label}
-                  <span className={active ? "text-white/80" : "text-slate-400"}>{filter.count}</span>
+                  <span className={active ? "text-white/80" : "text-slate-500"}>{filter.count}</span>
                 </button>
               );
             })}
@@ -597,7 +597,7 @@ export default function MyShop() {
                               <p className="truncate text-sm font-semibold text-slate-900">
                                 {product.name}
                               </p>
-                              <p className="truncate text-xs text-slate-400">
+                              <p className="truncate text-xs text-slate-500">
                                 {PRODUCT_CATEGORY_META[
                                   (product.categorySlug ?? product.category) as StoreProduct["category"]
                                 ]?.label ?? product.categorySlug ?? product.category}
@@ -607,7 +607,7 @@ export default function MyShop() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900">
                           {formatBaht(product.price)}
-                          <span className="text-xs font-normal text-slate-400"> / {product.unit}</span>
+                          <span className="text-xs font-normal text-slate-500"> / {product.unit}</span>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm tabular-nums text-slate-600">
                           {available}
@@ -652,7 +652,7 @@ export default function MyShop() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="size-11 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                              className="size-11 text-slate-500 hover:bg-red-50 hover:text-red-600"
                               onClick={() => setDeleting(product)}
                               aria-label={t("sellerDash.shop.deleteAria", { name: product.name })}
                             >
@@ -690,7 +690,7 @@ export default function MyShop() {
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-900">{product.name}</p>
-                        <p className="mt-0.5 truncate text-xs text-slate-400">
+                        <p className="mt-0.5 truncate text-xs text-slate-500">
                           {PRODUCT_CATEGORY_META[
                             (product.categorySlug ?? product.category) as StoreProduct["category"]
                           ]?.label ?? product.categorySlug ?? product.category}
@@ -701,9 +701,9 @@ export default function MyShop() {
                         <div className="mt-1.5 flex flex-wrap items-center gap-2">
                           <p className="text-sm font-bold tabular-nums text-slate-900">
                             {formatBaht(product.price)}
-                            <span className="text-xs font-normal text-slate-400"> / {product.unit}</span>
+                            <span className="text-xs font-normal text-slate-500"> / {product.unit}</span>
                           </p>
-                          <span className="text-xs text-slate-400">
+                          <span className="text-xs text-slate-500">
                             · {t("sellerDash.shop.mobileStock", { available })}
                           </span>
                           {renderStatus(product)}
@@ -713,7 +713,7 @@ export default function MyShop() {
                     <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
                       <Button
                         size="sm"
-                        className="h-11 flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-400"
+                        className="h-11 flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-500"
                         onClick={() => void handleTogglePublish(product)}
                         disabled={
                           togglingId === product.id ||
@@ -746,7 +746,7 @@ export default function MyShop() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-11 shrink-0 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        className="size-11 shrink-0 text-slate-500 hover:bg-red-50 hover:text-red-600"
                         onClick={() => setDeleting(product)}
                         aria-label={t("sellerDash.shop.deleteAria", { name: product.name })}
                       >
