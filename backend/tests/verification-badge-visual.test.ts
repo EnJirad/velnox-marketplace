@@ -44,11 +44,15 @@ describe("no user-facing V badge is rendered", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("the seller shop page shows status text, not a V glyph", () => {
-    const shopPage = read("apps/velseller/src/pages/MyShop.tsx");
-    expect(shopPage).not.toMatch(/>\s*V\s*</);
+  test("the seller shop surface shows status text, not a V glyph", () => {
+    // Part 1 split the page into `components/shop/*`; the invariant is about the
+    // whole seller-shop surface, so it is asserted over the surface, not one file.
+    const shopSurface = ["apps/velseller/src/pages/MyShop.tsx", ...walk("apps/velseller/src/components/shop")]
+      .map(read)
+      .join("\n");
+    expect(shopSurface).not.toMatch(/>\s*V\s*</);
     // Business status is still surfaced as text.
-    expect(shopPage).toContain("VerificationStatusLabel");
+    expect(shopSurface).toContain("VerificationStatusLabel");
   });
 });
 
