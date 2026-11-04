@@ -412,3 +412,9 @@ owner withheld commit/push permission.
 | [`archive/AI_Handoff-2026-11-02-section-110-marketplace-audit.md`](./archive/AI_Handoff-2026-11-02-section-110-marketplace-audit.md) | handoff §110 — Production marketplace audit (2026-11-02) | Moved **verbatim** on 2026-11-02 (headroom for §114). |
 | [`archive/AI_Handoff-2026-11-02-section-111-replay-blocked.md`](./archive/AI_Handoff-2026-11-02-section-111-replay-blocked.md) | §111 replay harness blocked (2026-11-02) | moved verbatim for headroom |
 | [`archive/AI_Handoff-2026-11-02-section-112-refund-replay.md`](./archive/AI_Handoff-2026-11-02-section-112-refund-replay.md) | §112 refund/replay green (2026-11-02) | moved verbatim for headroom |
+
+### 2026-11-02 — Full Handoff Archive (compact migration)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`archive/AI_HANDOFF_2026-11-02_FULL.md`](./archive/AI_HANDOFF_2026-11-02_FULL.md) | Complete AI_HANDOFF.md as it stood before compact migration | All sections §1–§158, full history, verification notes, environment facts. Preserved verbatim. New canonical handoff is compact (`.ai/AI_HANDOFF.md`). |

@@ -18,20 +18,32 @@ Every agent session follows:
 1. **Synchronize with the GitHub remote** — establish local vs remote state before
    reading or editing anything (`.ai/AI_RULES.md` §0). The sandbox is temporary and
    may be stale; it is never the source of truth.
-2. Read `.ai/office/QUICK_START.md`  ← **NEW: single-page startup entry point**
-3. Read `.ai/AI_RULES.md`
-4. Read `.ai/AI_HANDOFF.md` (compact)
-5. Identify the assigned task
-6. Read that task's brief from `.ai/tasks/active/`
-7. Read ONLY the context files listed by the task
-8. Inspect the actual source files required by the task
-9. Make the smallest safe change
-10. Run the task-specific verification (`.ai/context/testing.md`)
-11. Check stop conditions
-12. Write the session record into `.ai/history/YYYY-MM-DD-<topic>.md` — **mandatory for every session**, including investigations, failed fixes and BLOCKED work (`.ai/AI_RULES.md` §19); read it back to confirm it exists
-13. Update `.ai/AI_HANDOFF.md`
-14. Produce a concise task report with the resulting git SHA
-15. Commit only verified changes (`.ai/context/workflow.md`)
+2. Read `.ai/office/QUICK_START.md` — single-page startup entry point (~500 tokens)
+3. Receive the user's task
+4. Classify the task (T1/T2/T3) — auto via task router
+5. Start the correct workflow immediately
+6. Retrieve additional context only when needed
+
+**Do NOT read the full rulebook or handoff unless the task requires it.**
+
+Detailed workflow:
+
+- **T1 (Quick)**: AI 01 executes immediately, no AI 02
+- **T2 (Standard)**: AI 02 plans → AI 01 implements → AI 02 QA
+- **T3 (Critical)**: Full two-agent workflow with all safety checks
+
+For T2/T3 tasks:
+1. Identify the assigned task
+2. Read that task's brief from `.ai/tasks/active/`
+3. Read ONLY the context files listed by the task
+4. Inspect the actual source files required by the task
+5. Make the smallest safe change
+6. Run the task-specific verification (`.ai/context/testing.md`)
+7. Check stop conditions
+8. Write the session record into `.ai/history/YYYY-MM-DD-<topic>.md` — **mandatory for every session**, including investigations, failed fixes and BLOCKED work (`.ai/AI_RULES.md` §19); read it back to confirm it exists
+9. Update `.ai/AI_HANDOFF.md`
+10. Produce a concise task report with the resulting git SHA
+11. Commit only verified changes (`.ai/context/workflow.md`)
 
 Never answer with only "done", and never report a check you did not run. Production Neon is never
 connected to by an agent — hand the owner read-only SQL instead (`.ai/AI_RULES.md` §17).
@@ -42,11 +54,13 @@ connected to by an agent — hand the owner read-only SQL instead (`.ai/AI_RULES
 
 ## Context Loading Policy
 
-**Always read**
+**Startup (always):**
+- `.ai/office/QUICK_START.md` — single-page entry point (~500 tokens)
 
-- `.ai/AI_RULES.md`
-- `.ai/AI_HANDOFF.md`
-- the current task brief
+**Per-task (progressive):**
+- Current task brief from `.ai/tasks/active/`
+- Only the context files listed by the task brief
+- Actual source files required by the task
 
 **Read only when referenced by the task** — the named context set:
 

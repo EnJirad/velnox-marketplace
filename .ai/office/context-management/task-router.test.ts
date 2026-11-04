@@ -56,6 +56,64 @@ describe('Task Router', () => {
       const result = classifyTask('Modify payment logic', ['backend/lib/payment-config.ts']);
       expect(result.level).toBe('T3');
     });
+
+    // Safety tests - critical file patterns should override superficial simplicity
+    test('critical file with simple request forces T3', () => {
+      const result = classifyTask('Fix a typo', ['backend/routes/auth.ts']);
+      expect(result.level).toBe('T3');
+      expect(result.confidence).toBe(1.0);
+    });
+
+    test('critical file with simple request forces T3 for payment', () => {
+      const result = classifyTask('Update text', ['backend/lib/payment-config.ts']);
+      expect(result.level).toBe('T3');
+      expect(result.confidence).toBe(1.0);
+    });
+
+    test('database schema file forces T3', () => {
+      const result = classifyTask('Small change', ['db/schema.sql']);
+      expect(result.level).toBe('T3');
+      expect(result.confidence).toBe(1.0);
+    });
+
+    test('run-sqleditor file forces T3', () => {
+      const result = classifyTask('Minor update', ['db/run-sqleditor.sql']);
+      expect(result.level).toBe('T3');
+      expect(result.confidence).toBe(1.0);
+    });
+
+    test('checkout page forces T3', () => {
+      const result = classifyTask('Fix spacing', ['apps/velshop/src/pages/ShopCheckout.tsx']);
+      expect(result.level).toBe('T3');
+    });
+
+    test('seller verification component forces T3', () => {
+      const result = classifyTask('Change color', ['apps/velcenter/src/components/SellerVerificationQueue.tsx']);
+      expect(result.level).toBe('T3');
+    });
+
+    // Ambiguous task should default to T2 (safe fallback)
+    test('ambiguous task defaults to T2', () => {
+      const result = classifyTask('Do something with the thing');
+      expect(result.level).toBe('T2');
+      expect(result.requiresAI02).toBe(true);
+    });
+
+    test('low confidence T1 upgraded to T2', () => {
+      const result = classifyTask('Fix it');
+      expect(result.level).toBe('T2');
+      expect(result.reasoning).toContain('defaulted to T2');
+    });
+
+    test('low confidence but T3 keywords keeps T3', () => {
+      const result = classifyTask('Auth maybe');
+      expect(result.level).toBe('T3');
+    });
+
+    test('mixed T1 and T2 keywords picks higher score', () => {
+      const result = classifyTask('Fix the feature and add new component');
+      expect(['T1', 'T2']).toContain(result.level);
+    });
   });
 
   describe('getContextSelectionForLevel', () => {

@@ -7,30 +7,41 @@ for implementation, you do not return a plan — you build it.
 AI 02 is your subagent (`task` tool, foreground only). It plans and it performs
 independent QA. You implement. You never write the QA verdict yourself.
 
+## Startup (Minimal)
+
+1. Read `.ai/office/QUICK_START.md` (single-page entry point, ~500 tokens)
+2. Receive the user's task
+3. Classify the task using T1/T2/T3 routing (auto)
+4. Start the correct workflow immediately
+5. Retrieve additional context only when needed
+
 ## Protocol per user request
 
 ```
-1  CLASSIFY   implementation request | planning-only | analysis-only
-2  PLAN       delegate Phase A to AI 02 (architect.md + task prompt)
-3  REVIEW     read the Task Brief; resolve ambiguities; proceed or ask the user
-4  IMPLEMENT  write the code in the real workspace, per the brief
-5  VERIFY     run the brief's test cases yourself; quote real exit codes
-6  REPORT     tell AI 02 implementation is complete (files changed, commands run)
-7  QA         delegate Phase B to AI 02
-8  FIX        fix every valid defect; re-run tests; QA again
-9  REPEAT     until QA PASS, a genuine blocker, or correction budget (default 5)
-10 SHIP       git safety checks → commit → push → verify remote SHA
-11 REPORT     final report to the user with evidence
+1  CLASSIFY   T1 (quick) | T2 (standard) | T3 (critical) — auto via task router
+2  T1: EXECUTE immediately, verify, ship
+3  T2: PLAN       delegate Phase A to AI 02 (architect.md + task prompt)
+4  T2: REVIEW     read the Task Brief; resolve ambiguities; proceed or ask the user
+5  T2: IMPLEMENT  write the code in the real workspace, per the brief
+6  T2: VERIFY     run the brief's test cases yourself; quote real exit codes
+7  T2: REPORT     tell AI 02 implementation is complete (files changed, commands run)
+8  T2: QA         delegate Phase B to AI 02
+9  T2: FIX        fix every valid defect; re-run tests; QA again
+10 T2: REPEAT     until QA PASS, a genuine blocker, or correction budget (default 5)
+11 T3: Full two-agent workflow with all safety checks
+12 SHIP       git safety checks → commit → push → verify remote SHA
+13 REPORT     final report to the user with evidence
 ```
 
-### Classification
+### Classification (Auto — AI 01 uses task router)
 
-- **"Fix X", "build X", "improve X"** → full workflow (plan → implement → QA).
-- **"Plan X", "design X"** → Phase A only; return the Task Brief to the user.
-  Do not implement.
-- **"Analyze X", "audit X"** → read-only analysis by AI 02; no file changes.
+- **T1 — QUICK**: typo, translation, color, spacing, small isolated fix → AI 01 handles immediately, no AI 02
+- **T2 — STANDARD**: new feature, multi-file change, subsystem improvement → AI 02 plans → AI 01 implements → AI 02 QA
+- **T3 — CRITICAL**: auth, payment, database schema, financial logic, security → Full two-agent workflow with all safety checks
 
-### Delegation
+**AI 01 selects the level automatically.** Do not ask the user.
+
+### Delegation (T2/T3 only)
 
 - `task` tool, **foreground** (`background: false`) — background delegates are
   read-only. One delegation at a time; one writer.

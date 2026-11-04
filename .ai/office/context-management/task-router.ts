@@ -52,7 +52,7 @@ export const DEFAULT_ROUTER_CONFIG: TaskRouterConfig = {
   t3Keywords: [
     'auth', 'authentication', 'authorization', 'login', 'session',
     'security', 'permission', 'role', 'access control',
-    'payment', 'stripe', 'refund', 'checkout', 'order',
+    'payment', 'stripe', 'refund', 'order',
     'database', 'schema', 'migration', 'sql', 'transaction',
     'financial', 'money', 'billing', 'invoice', 'pricing',
     'critical', 'urgent', 'production', 'deploy', 'release',
@@ -113,15 +113,29 @@ export function classifyTask(
   const t2Score = scoreKeywords(lowerRequest, config.t2Keywords);
   const t3Score = scoreKeywords(lowerRequest, config.t3Keywords);
   
-  // Check file patterns for T3
+  // Check file patterns for T3 - CRITICAL: this must be checked first
   const hasT3Files = checkFilePatterns(affectedFiles, config.t3FilePatterns);
   const t3FileBonus = hasT3Files ? 3 : 0;
+  
+  // If critical file patterns match, force T3 regardless of keywords
+  // This prevents unsafe downgrade of critical tasks
+  if (hasT3Files) {
+    return {
+      level: 'T3',
+      confidence: 1.0,
+      reasoning: 'Critical file patterns matched: ' + affectedFiles.filter(f => config.t3FilePatterns.some(p => p.test(f))).join(', '),
+      requiresAI02: true,
+      requiresFullQA: true,
+      suggestedProfile: 'planning',
+      contextScope: 'full'
+    };
+  }
   
   // Calculate total scores
   const scores = {
     T1: t1Score,
     T2: t2Score,
-    T3: t3Score + t3FileBonus
+    T3: t3Score
   };
   
   // Determine highest scoring level
@@ -141,12 +155,34 @@ export function classifyTask(
   const totalScore = scores.T1 + scores.T2 + scores.T3;
   const confidence = totalScore > 0 ? maxScore / totalScore : 0.5;
   
+  // Apply minConfidence threshold - if confidence too low, use safe fallback
+  // For ambiguous tasks, default to T2 (standard workflow) rather than T1
+  let finalLevel = level;
+  let finalConfidence = confidence;
+  let fallbackNote = '';
+  
+  if (confidence < config.minConfidence || totalScore === 0) {
+    if (level === 'T1') {
+      // Don't risk T1 on low confidence - upgrade to T2
+      finalLevel = 'T2';
+      fallbackNote = ' (low confidence, upgraded to T2 for safety)';
+    } else if (level === 'T3' && confidence < 0.4) {
+      // Very low confidence T3 - could be false positive, but keep as T3 for safety
+      fallbackNote = ' (low confidence, kept as T3 for safety)';
+    } else if (totalScore === 0) {
+      // No keywords matched at all - ambiguous task, default to T2
+      finalLevel = 'T2';
+      fallbackNote = ' (ambiguous, defaulted to T2 for safety)';
+    }
+  }
+  
   // Build reasoning
   const reasons: string[] = [];
   if (t1Score > 0) reasons.push(`T1 keywords: ${t1Score}`);
   if (t2Score > 0) reasons.push(`T2 keywords: ${t2Score}`);
   if (t3Score > 0) reasons.push(`T3 keywords: ${t3Score}`);
   if (hasT3Files) reasons.push('T3 file patterns matched');
+  if (fallbackNote) reasons.push(fallbackNote.trim());
   
   // Determine execution parameters
   let requiresAI02 = false;
@@ -154,7 +190,7 @@ export function classifyTask(
   let suggestedProfile: 'planning' | 'implementation' | 'qa' | 'recovery' = 'implementation';
   let contextScope: 'minimal' | 'standard' | 'full' = 'standard';
   
-  switch (level) {
+  switch (finalLevel) {
     case 'T1':
       requiresAI02 = false;
       requiresFullQA = false;
@@ -176,8 +212,8 @@ export function classifyTask(
   }
   
   return {
-    level,
-    confidence,
+    level: finalLevel,
+    confidence: finalConfidence,
     reasoning: reasons.join('; ') || 'default classification',
     requiresAI02,
     requiresFullQA,

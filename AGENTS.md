@@ -46,6 +46,19 @@ so archive superseded sections instead of growing it. Policy: `.ai/history/READM
 
 **No duplicate authority:** the rulebook, handoff, and context docs live only under
 `.ai/`. Root-level `AI_RULES.md` / `AI_Handoff.md` were removed (2026-09-25) — do not
+recreate them; write rules and handoff state only under `.ai/`.text/backend.md` |
+| Fix realtime / live updates | `.ai/context/realtime.md` |
+| Fix styling / theme / mobile | `.ai/context/frontend.md` |
+| Full audit | `.ai/context/architecture.md` then subsystems as needed |
+
+History is **reference only** — do not load it automatically:
+`.ai/history/AI_Handoff_Archive.md` (dated index) → `.ai/history/archive/` (full
+records). `.ai/AI_HANDOFF.md` holds current state + remaining gaps only and must
+stay small — this environment's file-edit tools stop matching past roughly 55 KB,
+so archive superseded sections instead of growing it. Policy: `.ai/history/README.md`.
+
+**No duplicate authority:** the rulebook, handoff, and context docs live only under
+`.ai/`. Root-level `AI_RULES.md` / `AI_Handoff.md` were removed (2026-09-25) — do not
 recreate them; write rules and handoff state only under `.ai/`.ntext/frontend.md` |
 | Full audit | `.ai/context/architecture.md` then subsystems as needed |
 
