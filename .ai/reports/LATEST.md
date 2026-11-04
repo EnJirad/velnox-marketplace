@@ -1,117 +1,130 @@
-# AI Office Task Report — velseller-my-shop-part-1
+# AI Report — Part 1.1: Shop completion, QA and contract alignment
 
-**Timestamp:** 2026-11-04
-**Classification:** T2 (UI feature, no schema/payment/auth change)
-**Objective:** Part 1 of the seller roadmap — redesign and complete My Shop.
-**Status:** COMPLETED (browser/responsive verification BLOCKED — see §7)
-**Starting branch / SHA:** `main` @ `11360a6299cc608b68df3fdfae7bfe0b6496ac95`
+**Date:** 2026-11-04 · **Branch:** `main` · **Classification:** T2 (no schema change)
+**Starting SHA:** `cdbad7ad322c9e10b78478a0613ad07034fe00e1`
+**Status:** COMPLETE except browser/visual QA (BLOCKED — see §6)
 
-## 1. Summary of changes
+## 1. Headline finding
 
-- `MyShop.tsx` (1139 → 809 lines) reduced to composition + data loading + product
-  moderation. The three state branches (loading / failed / no shop / not approved)
-  are explicit; previously a failed profile request was indistinguishable from
-  "you have no shop" and fell through to the onboarding form.
-- **Hardcoded Thai removed from the UI.** The onboarding form and the verification
-  wizard were Thai-only (`grep -P "[\x{0E00}-\x{0E7F}]"` = 39 lines). All four
-  seller-shop files now report **0** Thai characters; copy lives under
-  `sellerDash.shop.*` in th / en / my.
-- New `components/shop/ShopOnboarding.tsx` — open-shop form, inline validation,
-  44px controls, i18n.
-- New `components/shop/ShopIdentityCard.tsx` — storefront identity (banner, logo,
-  name, description, slug, phone) with `View shop` (velshop `/shop/{slug}`) and
-  the **first UI for `PATCH /api/seller/shop`**, previously an unused endpoint.
-- New `components/shop/ShopVerificationDialog.tsx` — two-step wizard. The old
-  step 1 collected first/last name, phone and address that **were never sent to
-  any endpoint**; that PII collection is gone and the step is now a requirements
-  checklist. Evidence upload/confirm/hydrate/submit behaviour is unchanged.
-- Product list: loading skeleton, failure state with retry, distinct empty states
-  ("no products" vs "no products with this filter"), server-shaped status filter
-  chips, desktop table + mobile cards, 44px touch targets throughout.
+The shop application could never succeed. `POST /api/seller/apply` requires
+`firstName`, `lastName`, `phone`, `shopName` **and** exactly three identity
+document purposes (`id_card`, `id_card_back`, `selfie_id` — `backend/routes/seller.ts:40,121-137`), but the
+Phase-1 form sent only the shop fields. Every submission returned 400. This
+release aligns the form with the endpoint instead of weakening the endpoint.
 
-## 2. Files changed
+## 2. What was completed
 
-| File | Change |
-|---|---|
-| `apps/velseller/src/pages/MyShop.tsx` | rewritten (composition) |
-| `apps/velseller/src/components/shop/ShopOnboarding.tsx` | new |
-| `apps/velseller/src/components/shop/ShopIdentityCard.tsx` | new |
-| `apps/velseller/src/components/shop/ShopVerificationDialog.tsx` | new |
-| `packages/shared/src/lib/api-routes.ts` | `api.seller.updateShop` binding |
-| `packages/shared/src/lib/i18n/locales/index.ts` | 48 keys × 3 locales (patch objects) |
-| `backend/tests/verification-badge-visual.test.ts` | assertion widened to the split surface |
+| Area | Before | Now |
+|---|---|---|
+| Application | 4 fields, guaranteed 400 | 2-step wizard: shop (name, slug, description, category, phone, address) → identity (first/last name, phone, 3 documents) |
+| Shop edit | name, description, phone | + category, structured address (line 1, subdistrict, district, province, postal code, validated 5 digits) |
+| Logo / cover | no UI (backend existed) | upload, replace, remove via `POST /api/upload/presign` (`shop-logo`/`shop-cover`) → R2 PUT → `POST /api/upload/confirm` |
+| Verification | 2 documents, 1 required | same three purposes as the application; submit needs all three |
+| Failed saves | dialog state discarded | dialog stays open with typed values; media upload failure keeps the previous URL |
+| Contrast | `#10B981` / `slate-400` on white ≈ 2.5:1 | hints/labels on `slate-500` and `#047857` |
 
-## 3. API and database changes
+## 3. Files changed
 
-- **No backend change.** No schema change, no migration, no new endpoint.
-- New client binding calls the existing `PATCH /api/seller/shop`, which resolves
-  the shop from the session (`sellers.user_id`) — the client never sends a shop id.
+- `apps/velseller/src/components/shop/ShopOnboarding.tsx` — application wizard
+- `apps/velseller/src/components/shop/ShopIdentityCard.tsx` — category, address, media
+- `apps/velseller/src/components/shop/ShopMediaField.tsx` — **new**, R2 logo/cover
+- `apps/velseller/src/components/shop/ShopVerificationDialog.tsx` — three documents
+- `apps/velseller/src/pages/MyShop.tsx` — contrast + wiring only
+- `packages/shared/src/lib/api-routes.ts` — `uploadPresign`, `uploadConfirm`, wider `updateShop` args
+- `packages/shared/src/lib/commerce.ts` — `StoreShop` gains `logo`, `cover`, `category`, `rating`, `productCount`, typed address
+- `packages/shared/src/lib/i18n/locales/index.ts` — 31 keys × 3 locales (1681 total)
+- `backend/tests/seller-shop-surface.test.ts` — **new**, 11 source contracts
+- `backend/tests/test-database-isolation.test.ts` — probe binary + loader env
 
-## 4. Authorization and ownership
+## 4. API and database
 
-- Shop edit: backend ownership (`shops JOIN sellers WHERE s.user_id = $1`), 404 if
-  no shop. Client sends only name/description/phone.
-- Verification submit: unchanged endpoint; it rejects empty evidence and verifies
-  every object key belongs to the caller (`media.uploaded_by`).
-- Products: unchanged `GET/PATCH/DELETE /api/seller/products*`, shop-scoped.
+**No schema change, no migration, no new endpoint.** Every call existed already:
+`POST /api/seller/apply`, `PATCH /api/seller/shop`, `POST /api/upload/presign`,
+`POST /api/upload/confirm`, `POST /api/seller/verification`,
+`GET /api/seller/profile`.
+
+Ownership: `PATCH /api/seller/shop` resolves the shop from `sellers.user_id`
+(client sends no id); presign proves `shops JOIN sellers WHERE s.user_id = $1`
+before minting `shop/{shopId}/logo.webp`; confirm re-derives the purpose from the
+key, re-checks ownership and inspects the stored object.
 
 ## 5. Tests actually executed
 
 | Command | Result |
 |---|---|
 | `bun run typecheck` (4 apps) | exit 0 |
-| `bun run i18n:check` | exit 0 — `th=1650 en=1650 my=1650` |
-| `bun run build:velseller` | exit 0 — `✓ built in 7.30s` |
-| `bun test backend/tests` | 1224 pass / 389 skip / **8 fail** |
+| `bun run i18n:check` | exit 0 — `th=1681 en=1681 my=1681` |
+| `bun run build:velseller` | exit 0 — `✓ built in 11.39s` |
+| `bun test backend/tests` | **1243 pass / 389 skip / 0 fail** |
+| `bun test backend/tests/seller-shop-surface.test.ts` | 11 pass |
+| `bun test backend/tests/test-database-isolation.test.ts` | 39 pass |
 | `git diff --check` | exit 0 |
 
-The 8 failures are the pre-existing `test-database-isolation` probes
-(`process.execPath` = linker on Android), identical before and after this change.
+Skips are DB-gated suites without `TEST_DATABASE_URL`.
 
-Two static source-contract tests failed on the first run because the code they
-assert on moved into `components/shop/*`:
-`notification-flow` (expects `setVerifyTarget({ kind: "seller" })` in the page)
-and `verification-badge-visual` (expects the seller-shop surface to render
-`VerificationStatusLabel`, never a bare `V`). The notification assertion is now
-satisfied by real code (the page owns `verifyTarget`); the badge assertion was
-widened to the whole `pages/MyShop.tsx + components/shop/*` surface. Both are
-green and the underlying invariants still hold.
+## 6. Browser and responsive QA — BLOCKED
 
-## 6. Browser / responsive verification
+`http://127.0.0.1:5184/seller/shop` → `302 /auth?returnTo=%2Fseller%2Fshop`.
+No seller session exists: login is Google OAuth against the production backend
+and the only database available is production, which agents must never write.
+Console: zero errors on the auth route.
 
-**BLOCKED.** `/seller/shop` redirects to `/auth?returnTo=%2Fseller%2Fshop`; no
-seller session and no test database are available in this environment, so the
-authenticated dashboard cannot be rendered. The dev server did boot cleanly with
-**zero console errors** on the auth route (shared i18n chunk loads).
+**Not verified by a rendered page:** authenticated load, edit, upload, refresh
+persistence, and the 360 / 390 / 768 / 1024 / 1440 breakpoints. No screenshots
+exist for this change and none are claimed.
 
-Not verified by a rendered page: 360 / 390 / 430 / 768 / 1024 / 1280 / 1440
-breakpoints. Layout is composed mobile-first (single column → `sm:grid-cols-3` →
-`md:` table / card switch) and every control is ≥44px, but that is static
-evidence, not a render.
+Static evidence only: single column → `sm:grid-cols-2` → `md:` table/card switch,
+`min-h-11`/`size-11` on every control, dialogs clamped to `max-h-[90vh]` with
+internal scroll, `overflow-x-auto` on the filter row.
 
-## 7. Remaining limitations
+## 7. Impeccable skill — usage and review evidence
 
-1. Responsive/browser verification requires an owner-authenticated seller session.
-2. `POST /api/seller/verification` requires ≥1 evidence file; the wizard enforces
-   that client-side too, but the two required document *types*
-   (`id_card`, `id_card_back`, `selfie_id`) are only enforced by
-   `POST /api/seller/apply` — the verification submit accepts any single file.
-   Aligning those two contracts is a backend decision, out of Part 1 scope.
-3. Shop identity editing covers name / description / phone. Category, address,
-   logo and cover are accepted by the endpoint but still have no UI.
-4. Part 2 (Orders) not started, as instructed.
+- Skill loaded and followed; **its `context` launcher cannot run here**:
+  `impeccable context` → `has unexpected e_type: 2` (arm64 launcher unavailable).
+  Reported as a blocker instead of silently substituting an unreviewed design.
+- Directed reading instead: `VELNOX_DESIGN_THEME.md` (white surfaces, slate text,
+  `#10B981` accent, dark primary), `references/craft-floor.md`.
+- Applied from the craft floor: contrast on real tokens (two failures found and
+  fixed), one authored states model (loading skeleton → error+retry → empty →
+  content), no decorative gradients beyond the existing brand band, 44px targets,
+  focus-visible rings, `aria-current="step"` on the wizard, `role="alert"` on
+  validation messages, no emoji-as-icon.
+- Banned patterns avoided: no gradient text, no coloured left-border cards, no
+  hard offset shadows, no section numbers as decoration.
 
-## 8. AI 02 status
+## 8. The eight previous backend failures — classified
 
-**BLOCKED — three attempts this session**, none produced output:
-`context_length_exceeded` (272000) on the first, then twice
+**ENVIRONMENT (two layers), not a regression.** Reproduced first, then fixed in
+the test helper only:
+
+1. `process.execPath` = `/apex/com.android.runtime/bin/linker64`; the probe spawned
+   the dynamic linker instead of Bun (`process.argv0` is the real binary).
+2. The probe env was stripped to `PATH/HOME/NODE_ENV`, so Bun aborted with
+   `CANNOT LINK EXECUTABLE … library "libicui18n.so.78" not found`.
+
+`runBunProbe` now prefers `argv0` and forwards `LD_LIBRARY_PATH`, `PREFIX`,
+`TMPDIR` (paths, not credentials; DB URLs still come only from `databaseEnv`).
+Result: 8 fail → **0 fail**, and the production-DB refusal guard now really runs
+instead of failing for the wrong reason. No assertion was relaxed.
+
+## 9. Remaining blockers and limits
+
+1. Browser/responsive verification needs an owner-authenticated seller session.
+2. Shop `category` is free text (≤100 chars) because `shops.category` has no
+   taxonomy table; a select needs an owner-approved vocabulary first.
+3. Address country is fixed to `TH`; no multi-country rule exists.
+4. Logo/cover removal writes `NULL` through `PATCH /api/seller/shop`; the R2
+   object is left in place (no delete endpoint) — documented, not silently hidden.
+5. Part 2 not started.
+
+## 10. AI 02 verdict
+
+**BLOCKED — no independent review.** Four delegations this session, all failed
+before producing output: one `context_length_exceeded` (272000) and three
 `Subagent failed: Tenixe-Api is outside this chat's allowed fallback routes`.
-All investigation, planning and review in this task were performed by AI 01 and
-are **not** independent QA.
+Planning, implementation and review are AI 01's own and are **not** independent QA.
 
-## 9. Final commit
+## 11. Commits
 
-- Feature commit: `d3d33fb2777e55b3b1165b0829c49a3f90b632bc`
-  (`feat(velseller): split My Shop into identity, onboarding and verification`)
-- This report and the handoff note are committed immediately after it; the branch
-  tip is that documentation commit on `main`.
+- `ed74ae47431027d56f56028b5d794a52f8670235` — feature + tests
+- this report — documentation commit immediately after
