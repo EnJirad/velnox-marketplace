@@ -99,6 +99,22 @@ describe("shop media uses the existing R2 pipeline", () => {
   });
 });
 
+describe("a pending applicant is an application state, not an error", () => {
+  test("403 from the approved-only profile endpoint falls back to the status endpoint", () => {
+    // `requireApprovedSeller` refuses every non-approved seller, including a
+    // pending or rejected applicant (backend/middleware/seller.ts).
+    expect(page).toContain("error.status === 403");
+    expect(page).toContain("mySellerStatus");
+    expect(page).toContain('setProfileState("denied")');
+  });
+
+  test("the gate renders from the server-computed application status", () => {
+    expect(page).toContain("renderGate(application.status, application.reason)");
+    // Never a client-supplied status: no writer for `status` in the page.
+    expect(page).not.toMatch(/setApplication\(\{\s*status:\s*form\./);
+  });
+});
+
 describe("verification asks for the full identity set", () => {
   test("the dialog collects front, back and selfie", () => {
     for (const purpose of ["id_card", "id_card_back", "selfie_id"]) {

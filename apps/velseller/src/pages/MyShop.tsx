@@ -53,7 +53,7 @@ import {
   TableHeader,
   TableRow,
 } from "@velnox/shared/components/ui/table";
-import { api, useAction } from "@velnox/shared/lib/api-routes";
+import { ApiError, api, useAction } from "@velnox/shared/lib/api-routes";
 import {
   PRODUCT_CATEGORY_META,
   formatBaht,
@@ -79,12 +79,21 @@ export default function MyShop() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const mySellerProfile = useAction(api.commerce.mySellerProfile);
+  const mySellerStatus = useAction(api.commerce.mySellerStatus);
   const listProducts = useAction(api.commerce.listProducts);
   const setStatus = useAction(api.commerce.setProductStatusAction);
   const deleteProduct = useAction(api.commerce.deleteProductAction);
 
   /** `undefined` = still loading, `null` = the request failed, object = loaded. */
   const [profile, setProfile] = useState<SellerProfile | null | undefined>(undefined);
+  /**
+   * `GET /api/seller/profile` is guarded by `requireApprovedSeller`, so every
+   * applicant who is not yet approved gets 403. The page must not read that as
+   * "broken": it asks `GET /api/seller/status` (reachable for pending cases) and
+   * renders the real application state instead.
+   */
+  const [application, setApplication] = useState<{ status: string; reason: string | null } | null>(null);
+  const [profileState, setProfileState] = useState<"loading" | "ok" | "denied" | "failed">("loading");
   const [products, setProducts] = useState<StoreProduct[] | undefined>(undefined);
   const [productsFailed, setProductsFailed] = useState(false);
 
@@ -99,14 +108,36 @@ export default function MyShop() {
   const [verifyAtEvidence, setVerifyAtEvidence] = useState(false);
 
   const loadProfile = useCallback(async () => {
+    setProfileState("loading");
     try {
       const data = await mySellerProfile();
       setProfile(data ?? null);
+      setProfileState("ok");
     } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        // Not approved yet — that is an application state, not a failure.
+        try {
+          const status = await mySellerStatus();
+          setApplication(
+            status?.status
+              ? {
+                  status: String(status.status),
+                  reason: status.rejectionReason ?? status.correctionReason ?? null,
+                }
+              : null,
+          );
+          setProfile(null);
+          setProfileState("denied");
+        } catch (statusError) {
+          console.error("Seller status error:", statusError);
+          setProfileState("failed");
+        }
+        return;
+      }
       console.error("Seller profile error:", error);
-      setProfile(null);
+      setProfileState("failed");
     }
-  }, [mySellerProfile]);
+  }, [mySellerProfile, mySellerStatus]);
 
   const loadProducts = useCallback(async () => {
     setProductsFailed(false);
@@ -265,8 +296,62 @@ export default function MyShop() {
   const availableOf = (product: StoreProduct) =>
     product.inventory?.available ?? product.inventory?.quantity ?? 0;
 
+  /**
+   * Non-approved sellers see their real application state — never a fake shop.
+   * `status` comes from `sellers.status` (profile or status endpoint), never
+   * from the client.
+   */
+  const renderGate = (status: string, reason: string | null) => {
+    const pending = status === "pending" || status === "under_review";
+    const rejected = status === "rejected" || status === "needs_correction";
+    const suspended = status === "suspended";
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+        <AppHeader />
+        <main className="mx-auto w-full max-w-xl px-4 py-12 sm:px-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+            <span
+              className={`mx-auto flex size-14 items-center justify-center rounded-2xl ${
+                pending ? "bg-amber-50" : "bg-rose-50"
+              }`}
+            >
+              {pending ? (
+                <Clock className="size-7 text-amber-500" aria-hidden="true" />
+              ) : (
+                <XCircle className="size-7 text-rose-500" aria-hidden="true" />
+              )}
+            </span>
+            <h1 className="mt-5 text-xl font-bold tracking-tight text-slate-900">
+              {suspended
+                ? t("gate.sellerSuspendedTitle")
+                : pending
+                  ? t("gate.sellerPendingTitle")
+                  : t("gate.sellerRejectedTitle")}
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              {suspended
+                ? t("gate.sellerSuspendedDesc")
+                : pending
+                  ? t("gate.sellerPendingDesc")
+                  : t("gate.sellerRejectedDesc")}
+            </p>
+            {reason && (rejected || suspended) && (
+              <p className="mt-4 rounded-[10px] bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+                {t("gate.sellerRejectedReason", { reason })}
+              </p>
+            )}
+            <Button variant="ghost" className="mt-6 w-full text-slate-500" asChild>
+              <a href={SITE_URLS.velshop}>{t("gate.sellerBackToShop")}</a>
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  };
+
+
   // ------------------------------------------------------------- states
-  if (profile === undefined) {
+  if (profileState === "loading") {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
         <AppHeader />
@@ -279,7 +364,7 @@ export default function MyShop() {
     );
   }
 
-  if (profile === null) {
+  if (profileState === "failed") {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
         <AppHeader />
@@ -303,6 +388,40 @@ export default function MyShop() {
     );
   }
 
+  // ------------------------------------------------- application under review
+  if (profileState === "denied") {
+    // No seller row at all → the application form is the correct next step.
+    if (!application) {
+      return (
+        <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+          <AppHeader />
+          <ShopOnboarding onOpened={loadProfile} />
+        </div>
+      );
+    }
+    return renderGate(application.status, application.reason);
+  }
+
+
+  // `profileState === "ok"` guarantees a payload; this keeps the type honest.
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+        <AppHeader />
+        <main className="mx-auto w-full max-w-lg px-4 py-12 sm:px-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">
+              {t("sellerDash.shop.productsLoadFailed")}
+            </h1>
+            <Button className="mt-6 h-11" onClick={() => void loadProfile()}>
+              {t("sellerDash.shop.retry")}
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // ---------------------------------------------------------------- onboarding
   if (!shop) {
     return (
@@ -315,50 +434,7 @@ export default function MyShop() {
 
   // ------------------------------------------------- approval gate (spec §11)
   if (profile.seller.status !== "approved") {
-    const pending = profile.seller.status === "pending";
-    const rejected = profile.seller.status === "rejected";
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
-        <AppHeader />
-        <main className="mx-auto w-full max-w-xl px-4 py-12 sm:px-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
-            <span
-              className={`mx-auto flex size-14 items-center justify-center rounded-2xl ${
-                pending ? "bg-amber-50" : "bg-rose-50"
-              }`}
-            >
-              {pending ? (
-                <Clock className="size-7 text-amber-500" aria-hidden="true" />
-              ) : (
-                <XCircle className="size-7 text-rose-500" aria-hidden="true" />
-              )}
-            </span>
-            <h1 className="mt-5 text-xl font-bold tracking-tight text-slate-900">
-              {profile.seller.status === "suspended"
-                ? t("gate.sellerSuspendedTitle")
-                : pending
-                  ? t("gate.sellerPendingTitle")
-                  : t("gate.sellerRejectedTitle")}
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              {profile.seller.status === "suspended"
-                ? t("gate.sellerSuspendedDesc")
-                : pending
-                  ? t("gate.sellerPendingDesc")
-                  : t("gate.sellerRejectedDesc")}
-            </p>
-            {rejected && profile.seller.rejectionReason && (
-              <p className="mt-4 rounded-[10px] bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
-                {t("gate.sellerRejectedReason", { reason: profile.seller.rejectionReason })}
-              </p>
-            )}
-            <Button variant="ghost" className="mt-6 w-full text-slate-500" asChild>
-              <a href={SITE_URLS.velshop}>{t("gate.sellerBackToShop")}</a>
-            </Button>
-          </div>
-        </main>
-      </div>
-    );
+    return renderGate(profile.seller.status, profile.seller.rejectionReason ?? null);
   }
 
   // ---------------------------------------------------------------- dashboard
