@@ -1,4 +1,4 @@
-# AI Report — Proxy hardening + VelCenter QA
+# AI Report — Cookie exposure removal, write-mode proof, VelCenter owner QA
 
 **Date:** 2026-11-04
 
@@ -7,110 +7,125 @@
 | | |
 |---|---|
 | Branch | `main` |
-| Starting SHA | `a87f4b53b77222b52dc7022d10b0a15eac954afe` |
-| Hardening commit | `502ce94dfd5178da99e1a08adc361e92eea39786` |
-| Final SHA | this report's commit (immediately after `502ce94`) |
-| Working tree | clean before and after; no unrelated file touched |
+| Starting SHA | `e1f0a8b` |
+| Hardening commit | `c52cd839494cb5818dd3e444dbf629cf1bf54d10` |
+| Final SHA | this report's commit (immediately after `c52cd83`) |
+| Working tree | clean; only the files listed below touched |
 
-## B. Security audit
+## B. Cookie security
 
-| # | Finding | Severity | Fix |
-|---|---|---|---|
-| 1 | Any local caller reaching port 3001 received the production session cookie on every `/api/*` request — no caller auth, no method limit | **Critical** | per-run access gate + `GET`/`HEAD` allowlist |
-| 2 | Origin/Referer were rewritten to a deployed frontend, impersonating a trusted origin and defeating the backend origin guard | **High** | no spoofing; the backend accepts `GET`/`HEAD` without Origin (`backend/middleware/origin-guard.ts:12`) |
-| 3 | Upstream `Set-Cookie` was forwarded to the browser | **High** | response `set-cookie` stripped |
-| 4 | All methods and bodies were proxied | **High** | `405` for anything but `GET`/`HEAD`, never forwarded |
-| 5 | No Host/Origin/Sec-Fetch-Site validation | Medium | explicit loopback allowlists |
-| 6 | Cookie store permissions unchecked at runtime | Low | refuse to start unless the store is `0600`; expired accounts refuse at startup |
+**Raw output removed.** `cookies.mjs` can no longer emit a session cookie:
 
-Residual risks (accepted, documented): the gate token is stored in
-`.ai/secrets/proxy-access-token` (0600, gitignored) and is only as strong as the
-device's file permissions; the proxy still translates a real production session
-into local HTTP, so it must only be run on a trusted device.
+| Mode | Before | Now |
+|---|---|---|
+| bare `<account>` | printed `velnox_session=…` | refuses: "raw cookie output is disabled" |
+| `--header` | printed a full `Cookie:` header | removed |
+| `--curl <url>` | embedded the cookie in a runnable command | removed |
+| `<account> --check` | identity JSON | unchanged — role/name/expiry only |
+| `--status` | — | expiry + permissions + git-ignore state |
+| `--export-file` | — | human-only (`ALLOW_COOKIE_EXPORT=1`), writes a 0600 file, refuses the secrets dir |
 
-## C. Cookie store and proxy
+Guards kept: tracked-file refusal, `--check` refuses expired sessions, error
+messages never include a value, no URL is generated with credentials.
 
-**Safe mode is enforced, not described.** `authorizeRequest()` is the single
-decision point; `createProxyServer()` calls it before any upstream fetch.
+Evidence: 7 CLI tests (`proxy-write-mode.test.ts`) run the helper as a process
+and assert its **output** never contains the stored token.
 
-- Methods: `GET`, `HEAD` → forwarded. `POST/PUT/PATCH/DELETE/OPTIONS/CONNECT/
-  TRACE/PROPFIND` → `405`, upstream counter unchanged in tests.
-- Gate: `/?access=<token>` → `302` + `velnox_proxy_gate` (`HttpOnly`,
-  `SameSite=Strict`, 1 h) and the token is removed from the URL. Without it,
-  `/api/*` → `401`.
-- Host/Origin: only `127.0.0.1:PORT` / `localhost:PORT`; a foreign `Origin` or
-  `Sec-Fetch-Site: cross-site` → `403`.
-- Cookie handling: client cookies, `Origin`, `Referer`, `Authorization` are
-  dropped; exactly one stored cookie is added for `/api/*`.
-- Logging: `method path -> status (ms)`, path only, no query string, no headers.
-- Writes: `PROXY_ALLOW_WRITES=1` **and** a non-production `apiBase`, else the
-  server throws at construction. No isolated backend exists, so write mode was
-  never enabled.
-- Lifecycle: `SIGINT`/`SIGTERM` stop the server; the test suite proves the port
-  is closed after `stop()`.
+Storage: `.ai/secrets/` is gitignored (`git check-ignore` asserted in tests),
+store is `0600`, and the test fails if the mode is anything else.
 
-**Automated tests:** `backend/tests/proxy-security.test.ts` — 30 pass, against a
-local echo upstream (never production). TRACE/CONNECT are asserted over a raw
-socket because `fetch()` refuses to send them.
+## C. Write mode
 
-**Browser-side session test:** after clearing a stale JS-visible
-`velnox_session` from the cookie jar, `document.cookie` is empty and
-`/api/auth/me` still answers `200`. The browser holds no session cookie; the
-proxy injects it server-side. (The stale entry was produced by the *pre-hardening*
-proxy, which had not stripped `Set-Cookie`; that path is now impossible.)
+Fail-closed. Safe mode is the default and only `GET`/`HEAD` reach the backend.
 
-## D. VelCenter browser QA
+Write mode requires **all** of:
 
-- **Authenticated role available:** `seller` only (verified via `GET /api/auth/me`).
-  No owner/admin/staff session exists in the store.
-- **UI:** `http://localhost:3001/` renders the intended company-only screen
-  ("velcenter เป็นพื้นที่เฉพาะบริษัท…" + back link). No admin surface leaks.
-- **API authorization:** `GET /api/admin/overview` with the seller session →
-  `403 FORBIDDEN`. Server-side role enforcement holds; navigation is not the
-  control.
-- **Dashboard, orders, sellers, verifications, categories, banners, staff,
-  audit:** **BLOCKED** — they need an Admin/Owner/Staff account.
-- **Responsive 360/390/768/1024/1440:** **NOT VERIFIED** — the in-app WebView has
-  no resize control and the Chrome DevTools MCP cannot start here
-  (`Cannot download a binary for the provided platform: android (arm64)`).
-- No production write was attempted; every call in this task was `GET`.
+1. `PROXY_ALLOW_WRITES=1`
+2. `PROXY_TEST_ENV_ID` (`^[a-z0-9][a-z0-9-]{2,31}$`, no "prod")
+3. `PROXY_TEST_API_BASE` — `http://` + `localhost`/`127.0.0.1` + port 1024–65535
+4. `PROXY_TEST_DB_PROOF` — a 0600 JSON file with
+   `environment: "test"`, `writesApproved: true`, `disposable: true`,
+   matching `envId` and `apiBase`, `databaseUrlHost` loopback, future `expiresAt`
+
+Rejected and tested: writes disabled by default; bare flag; missing/blank env id;
+"prod" env id; the known production API; a `.vercel.app` alias; unknown remote
+host; URL credentials; `https` to loopback; privileged port; missing proof;
+group-readable proof; malformed JSON; non-test environment; `writesApproved:false`;
+non-disposable DB; env-id mismatch; API-base mismatch; remote database host;
+expired proof. A fully proven local stack is the only accepted case.
+
+Also fixed during this pass: a bare `allowWrites: true` without a verified
+`writeMode` used to construct a proxy over the production API — it now throws
+`NO_VERIFIED_TEST_ENVIRONMENT`.
+
+## D. VelCenter QA — genuine owner session
+
+Identity from `GET /api/auth/me`: **role `owner`** (the store entry formerly
+labelled "customer" is the site owner; renamed to `owner`).
+
+**Verified in the browser** (`http://localhost:3001/`, safe mode, read-only):
+
+- Shell renders: header, owner chip ("เจ้าของบริษัท"), 12-module tablist
+  (ภาพรวม · แชท · ออเดอร์ · Intelligence · สินค้า · พ่อค้า · หมวดหมู่ ·
+  ผู้ใช้ & ลูกค้า · Audit Logs · ตรวจสอบยอดเงิน · การตลาด · ตั้งค่าระบบ).
+- Dashboard shows real data, not placeholders: revenue ฿419.3, 5 orders,
+  2 approved shops, 2 products, 1 low-stock, 1 reorder-due, intelligence summary.
+- 12 admin API calls observed in the proxy log, all `200`
+  (`overview`, `dashboard/counts`, `market-overview`, `verifications`, `users`,
+  `settings`, `permissions`, `bootstrap-status`, `seller/status`, catalog).
+
+**API-level module check** (owner cookie, read-only `GET`): `admin/orders`,
+`admin/sellers`, `admin/verifications`, `admin/permissions`, `admin/audit-logs`,
+`admin/dashboard/counts`, `admin/payment-incidents`, `admin/categories` → all `200`.
+
+**Module UI: NOT VERIFIED.** The drawer opens and the tab buttons receive the
+click (hit-test confirms the button is the top element at the click point), but
+`aria-selected` stays on ภาพรวม — the panel never switches. That is a harness
+limitation of the hidden WebView's synthetic clicks, or a real drawer-click bug;
+it was not resolved here, so no module screenshot or per-module UI claim is made.
+
+**Responsive: NOT VERIFIED** — the WebView cannot resize and the Chrome DevTools
+MCP cannot start on this platform (`Cannot download a binary for the provided
+platform: android (arm64)`).
+
+No write was performed: every request in this task was `GET`.
 
 ## E. Test results
 
 | Item | Status |
 |---|---|
-| Proxy safe mode, gate, origin, hygiene, lifecycle | **AUTOMATED TEST PASSED** (30) |
-| Full backend suite | **AUTOMATED TEST PASSED** — 1273 pass / 389 skip / 0 fail |
-| Typecheck (4 apps) | exit 0 |
-| Builds (`velcenter`, `velseller`, `velshop`, relative-API) | BUILD PASSED |
-| VelCenter with Admin session | **BLOCKED** |
-| VelCenter seller/unauth behaviour | BROWSER VERIFIED |
-| Responsive | **NOT VERIFIED** |
-| Impeccable execution | **BLOCKED** (engine is ET_EXEC arm64; bionic rejects it) |
+| Cookie-output exposure (7 CLI tests) | **AUTOMATED TEST PASSED** |
+| Write-mode rejection matrix + acceptance (22 tests) | **AUTOMATED TEST PASSED** |
+| Proxy safe-mode suite (30 tests, unchanged) | **AUTOMATED TEST PASSED** |
+| Full backend suite | **AUTOMATED TEST PASSED** — 1693 pass / 389 skip / 0 fail |
+| `typecheck` (all apps) | PASS |
+| `velcenter` production build | PASS |
+| `git diff --check` | PASS |
+| VelCenter dashboard (owner) | BROWSER VERIFIED |
+| VelCenter modules UI | NOT VERIFIED (tab switching did not register) |
+| Responsive | NOT VERIFIED |
+| Impeccable | NOT APPLICABLE this change (no UI change); engine still blocked |
 
-## F. AI Office verification
+## F. AI 02 review
 
-- **AI 02 plan:** completed and used. It independently ranked the three top risks
-  (unauthenticated cookie injection, Origin impersonation, unbounded methods) —
-  all three were real and are fixed.
-- **AI 01 implementation:** safe-mode rewrite, gate, allowlists, hygiene, tests.
-- **AI 02 final review: PASS**, after three rounds. Its first verdict was **FAIL**
-  and it was right twice: the method tests carried a duplicate `headers` key (so
-  the gate was missing), the "access token never reaches the upstream" test never
-  sent a token, the cookie-mode check did not demand exactly `0600`, and one test
-  name claimed more than it asserted. All four were fixed (merged headers, a real
-  `/?access=` redirect test, exact mode, honest names) and AI 02 then returned
-  **PASS**.
+- **Plan (accepted):** remove the three raw-cookie modes, replace curl usage with
+  a request-runner/proxy, and make write mode a proof-file gate rather than one
+  URL comparison. Adopted almost verbatim.
+- **Independent final review of `c52cd83`: PASS.** It confirmed (1) no normal CLI
+  path prints a cookie, (2) no path enables a write against a non-loopback or
+  unproven target, (3) the tests assert those properties, noting the cookie tests
+  are representative rather than exhaustive.
+- Earlier in the same session AI 02 returned **FAIL** on the previous proxy test
+  set; the four gaps it named were fixed before this commit.
 
-## G. Remaining work
+## G. Remaining risks
 
-1. **VelCenter admin QA** needs an owner/admin/staff session in
-   `.ai/secrets/browser-cookies.json` (sign in yourself; never paste the token).
-2. **Responsive verification** needs a browser that can resize — unavailable on
-   this device (both the in-app WebView and the DevTools MCP are blocked).
-3. **Impeccable** needs an arm64 PIE engine build upstream; nothing in this repo
-   can execute it.
-4. **AI 02 final review** is done (PASS); re-run only if the proxy changes again.
-5. Pre-existing product finding, unchanged here: two seller-application UIs
-   (`RequireRole.tsx` 4-step vs `ShopOnboarding.tsx` 2-step) — one must go, by
-   owner decision.
+1. A *verified* test deployment could still be misconfigured to point at
+   production internally; the proof file cannot see inside that service.
+2. An isolated test database can contain real data; isolation ≠ safety.
+3. VelCenter module UI is unverified — needs a browser whose clicks reach the
+   tablist (or a fix if this is a genuine drawer bug).
+4. Responsive testing is blocked on this device (no resize capability).
+5. Impeccable remains blocked (arm64 `ET_EXEC` engine).
+6. Two seller-application UIs still coexist (`RequireRole.tsx` vs
+   `ShopOnboarding.tsx`) — owner decision needed.
