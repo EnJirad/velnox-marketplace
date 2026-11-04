@@ -26,6 +26,8 @@ T3 — CRITICAL       → Full two-agent workflow with all safety checks
 
 ## Essential Safety Rules (Always Apply)
 
+These are loaded for **every** task level, including T1. Full text: `.ai/office/ESSENTIAL_RULES.md`.
+
 1. **GitHub remote is truth** — `git fetch origin` and compare SHAs before editing (§0 AI_RULES)
 2. **Neon → Backend API → Frontend** — Frontend never touches DB or holds secrets
 3. **Schema changes are double-booked** — update both `db/schema.sql` AND `db/run-sqleditor.sql`
@@ -37,21 +39,19 @@ T3 — CRITICAL       → Full two-agent workflow with all safety checks
 
 | Phase | Load |
 |-------|------|
-| **Startup** | This file only (~500 tokens) |
-| **Task classification** | Relevant subsystem doc + affected source files |
-| **T2/T3 Planning** | AI 02 receives: task spec + relevant docs + source paths + constraints |
-| **Implementation** | Only files being changed + their direct dependencies |
+| **Startup** | This file only |
+| **Every task** | `.ai/office/ESSENTIAL_RULES.md` (always) |
+| **T1** | Essential rules + affected source files. No full rulebook, no AI 02. |
+| **T2** | + `.ai/AI_RULES.md`, architecture, agent roles, inferred subsystem doc |
+| **T3** | + full rulebook + handoff + all inferred subsystem docs |
 | **QA** | Test commands + acceptance criteria + changed files |
 
-**Never auto-load:** entire `.ai/` tree, full history, completed tasks, unrelated agent instructions, archive files.
+**Never auto-load:** entire `.ai/` tree, full history, completed tasks, unrelated agent instructions, archive files, past reports.
 
-## Handoff (Compact)
+## Handoff and Reports
 
-`.ai/AI_HANDOFF.md` = current state only:
-- Latest verified commit
-- Active tasks + unresolved issues  
-- Important recent decisions
-- Pointers to history (not the history itself)
+- `.ai/AI_HANDOFF.md` — current state only (active tasks, unresolved issues, decisions, pointers). Never history.
+- `.ai/reports/LATEST.md` — **one** canonical report, overwritten on each completed task. There is no dated report archive; git history covers code changes. Only read it when it is relevant to the current task.
 
 ## Quick Reference
 
@@ -70,8 +70,10 @@ DB:       run db/run-sqleditor.sql once in Neon SQL Editor
 
 | Need | Read |
 |------|------|
+| Always-on safety rules | `.ai/office/ESSENTIAL_RULES.md` |
 | Full rules | `.ai/AI_RULES.md` |
 | Current state | `.ai/AI_HANDOFF.md` |
+| Latest task report | `.ai/reports/LATEST.md` |
 | File locations | `.ai/context/project-map.md` |
 | Subsystem docs | `.ai/context/<topic>.md` (see table below) |
 | Architecture | `.ai/office/ARCHITECTURE.md` |
@@ -100,10 +102,12 @@ Every repo-changing task ends with ALL:
 
 ```
 ☐ Implementation complete
-☐ Validation passed (typecheck / tests / diff --check)
+☐ Validation passed (typecheck / tests / i18n / diff --check)
+☐ Independent AI 02 QA PASS (T2/T3 only)
 ☐ Commit created
 ☐ Push to origin/<branch> verified (local SHA == remote SHA)
-☐ .ai/AI_HANDOFF.md updated
+☐ .ai/reports/LATEST.md overwritten with this task's report
+☐ .ai/AI_HANDOFF.md updated if project state changed
 ☐ Working tree clean
 ```
 

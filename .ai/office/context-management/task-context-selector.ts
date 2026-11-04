@@ -5,6 +5,9 @@
  * sending the entire conversation history or project context.
  */
 
+import { readFile } from 'fs/promises';
+import { join, resolve } from 'path';
+
 import { ContextBudgetManager, ContextBudget } from './context-budget';
 import { ContextCompactor, Message } from './context-compaction';
 
@@ -30,6 +33,7 @@ export interface ProjectDocument {
 
 export interface ContextSelectionOptions {
   includeCoreRules: boolean;
+  includeEssentialRules: boolean;
   includeTaskSpec: boolean;
   includeProjectDocs: string[]; // specific doc paths
   includeSourceCode: string[]; // specific file paths
@@ -55,14 +59,19 @@ const CORE_DOCS = [
   { path: '.ai/office/agents/architect.md', title: 'AI 02 Architect Role', relevance: 'core' as const },
 ];
 
+/** Compact always-on rule set. Loaded at every task level, including T1. */
+const ESSENTIAL_RULES_PATH = '.ai/office/ESSENTIAL_RULES.md';
+
 export class TaskContextSelector {
   private budgetManager: ContextBudgetManager;
   private compactor: ContextCompactor;
   private projectDocsCache: Map<string, ProjectDocument> = new Map();
+  private workspaceRoot: string;
 
-  constructor(budgetManager: ContextBudgetManager) {
+  constructor(budgetManager: ContextBudgetManager, workspaceRoot?: string) {
     this.budgetManager = budgetManager;
     this.compactor = new ContextCompactor(budgetManager);
+    this.workspaceRoot = workspaceRoot ?? resolve(process.cwd());
   }
 
   /**
@@ -76,6 +85,7 @@ export class TaskContextSelector {
   ): Promise<SelectionResult> {
     const opts: ContextSelectionOptions = {
       includeCoreRules: true,
+      includeEssentialRules: true,
       includeTaskSpec: true,
       includeProjectDocs: [],
       includeSourceCode: [],
@@ -93,7 +103,22 @@ export class TaskContextSelector {
     const includedSource: string[] = [];
     let excludedCount = 0;
 
-    // 1. Core system instructions (always included, compacted)
+    // 0. Essential safety rules — ALWAYS present, at every task level.
+    //    T1 skips the full rulebook (includeCoreRules=false) but must never
+    //    lose these: git safety, authz, financial integrity, verification.
+    if (opts.includeEssentialRules !== false) {
+      const essentialContent = await this.readFile(ESSENTIAL_RULES_PATH);
+      if (essentialContent) {
+        messages.push({
+          role: 'system',
+          content: `## Essential Safety Rules (always apply)\n\n${essentialContent}`
+        });
+        usedTokens += this.estimateTokens(essentialContent);
+        includedDocs.push(ESSENTIAL_RULES_PATH);
+      }
+    }
+
+    // 1. Core system instructions (T2/T3 full rulebook, compacted)
     if (opts.includeCoreRules) {
       const coreMessages = await this.loadCoreDocuments();
       for (const msg of coreMessages) {
@@ -295,11 +320,11 @@ export class TaskContextSelector {
   }
 
   private async readFile(path: string): Promise<string | null> {
-    // In the actual implementation, this would read from the workspace
-    // For now, return null - the actual file reading happens in the agent
+    // Real filesystem read, relative to the workspace root.
+    // Cached by the caller for project documents; essential rules are small
+    // enough (≈1 KB of tokens) to re-read per request.
     try {
-      // This is a placeholder - actual implementation uses the file system tools
-      return null;
+      return await readFile(join(this.workspaceRoot, path), 'utf8');
     } catch {
       return null;
     }

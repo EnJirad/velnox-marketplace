@@ -124,6 +124,19 @@ describe('Task Router', () => {
       expect(selection.includeProjectDocs).toHaveLength(0);
     });
 
+    test('essential safety rules are enabled at every level', () => {
+      for (const level of ['T1', 'T2', 'T3'] as const) {
+        const selection = getContextSelectionForLevel(level, 'anything');
+        expect(selection.includeEssentialRules).toBe(true);
+      }
+    });
+
+    test('T1 skips the full rulebook but keeps essential rules', () => {
+      const selection = getContextSelectionForLevel('T1', 'Fix typo');
+      expect(selection.includeCoreRules).toBe(false);
+      expect(selection.includeEssentialRules).toBe(true);
+    });
+
     test('T2 uses standard context', () => {
       const selection = getContextSelectionForLevel('T2', 'Add feature');
       expect(selection.includeCoreRules).toBe(true);

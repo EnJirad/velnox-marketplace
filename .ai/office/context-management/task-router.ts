@@ -228,6 +228,7 @@ export function getContextSelectionForLevel(
   affectedFiles: string[] = []
 ): {
   includeCoreRules: boolean;
+  includeEssentialRules: boolean;
   includeTaskSpec: boolean;
   includeProjectDocs: string[];
   includeSourceCode: string[];
@@ -236,7 +237,10 @@ export function getContextSelectionForLevel(
   includeCurrentInstruction: boolean;
 } {
   const base = {
+    // Full core documents (AI_RULES + architecture + both agent roles).
     includeCoreRules: true,
+    // Compact always-on safety rules: loaded at EVERY level, including T1.
+    includeEssentialRules: true,
     includeTaskSpec: !!taskSpec,
     includeProjectDocs: [] as string[],
     includeSourceCode: affectedFiles,
@@ -251,7 +255,9 @@ export function getContextSelectionForLevel(
         ...base,
         includeProjectDocs: [],
         includeRecentHistory: 1,
-        includeCoreRules: false // Only essential safety rules
+        // T1 skips the full rulebook, NOT the essential safety rules.
+        includeCoreRules: false,
+        includeEssentialRules: true
       };
     case 'T2':
       return {

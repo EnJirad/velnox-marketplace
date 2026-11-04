@@ -201,6 +201,7 @@ Conventional-ish: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. No vagu
 
 - After significant work, update `.ai/AI_HANDOFF.md` (current state + remaining gaps only — see `.ai/history/README.md`) and, when needed, `.ai/context/<subsystem>.md`, `INSTALLATION.md`, or this file.
 - `.ai/AI_HANDOFF.md` **must stay small**: this environment's file-edit tools stop matching past roughly 55 KB, after which the file can no longer be edited in place. Do not grow it past ~40 KB — move superseded sections to `.ai/history/AI_Handoff_Archive.md` (dated index) and, when long, to `.ai/history/archive/`.
+- The task report is one file, `.ai/reports/LATEST.md`, overwritten per task (§18 MANDATORY CHANGE REPORT). No work exists only in chat.
 - `.ai/AI_HANDOFF.md` is never more authoritative than source.
 - Every task — including an investigation, a production check or a BLOCKED session — leaves a dated
   entry in `.ai/history/` (see **§19 MANDATORY DEVELOPMENT MEMORY**). No work exists only in chat.
@@ -250,8 +251,12 @@ Housekeeping facts that keep the checklist honest:
 **Every task that changes this repository must leave a record under `.ai/`.** Finishing with an edit
 and no report is a rule violation, not a shortcut.
 
-**Location:** one file per significant task — `.ai/history/YYYY-MM-DD-<slug>.md`. Grouped work may
-share a file; unrelated tasks may not.
+**Location:** exactly one file — `.ai/reports/LATEST.md`. Every completed task **overwrites** it.
+There is no dated report archive and no per-session report directory to accumulate. Git history is
+the durable record of code changes; `LATEST.md` is the current one.
+
+Files already under `.ai/history/` are a **read-only legacy archive**. Do not add to them, do not
+delete them, and never load them at startup.
 
 **The report contains at least these 20 fields:**
 
@@ -279,8 +284,8 @@ you do not know, write `UNKNOWN` / `NOT VERIFIED` / `NOT RUN`.
 2. inspect each changed file
 3. run the verification the change actually needs
 4. summarise PASS / FAIL / WARNING / BLOCKED — honestly
-5. write the Change Report into .ai/history/
-6. update .ai/AI_HANDOFF.md if project state moved (§15)
+5. overwrite `.ai/reports/LATEST.md` with the Change Report (§18 fields)
+6. update `.ai/AI_HANDOFF.md` if project state moved (§15)
 7. confirm the report file exists (read it back; do not assume)
 8. report the resulting git SHA
 9. state the next concrete step
@@ -296,9 +301,9 @@ text stays verbatim and gains an index row; deleting real history to shorten a f
 sessions and across time. The repository — not a chat transcript — is the memory. An agent that cannot
 explain what happened last time by reading `.ai/` has failed this rule.
 
-### 19.1 When a history entry is REQUIRED
+### 19.1 When a report entry is REQUIRED
 
-Write an entry in `.ai/history/YYYY-MM-DD-<topic>.md` whenever you:
+Overwrite `.ai/reports/LATEST.md` whenever you:
 
 - edit, create or delete any file; change configuration, schema, migration, API, auth, UI or infrastructure;
 - run tests, builds, typechecks or a deployment;
@@ -306,8 +311,14 @@ Write an entry in `.ai/history/YYYY-MM-DD-<topic>.md` whenever you:
 - discover, fix, or *fail to fix* a bug; make an architectural decision; find a limitation;
 - get blocked by missing credentials, tools, access or approvals.
 
-**No code change is not an excuse.** An important investigation, a failed fix, or a BLOCKED session must be
-recorded just as carefully — the next agent needs to know what was already tried and why it failed.
+**No code change is not an excuse.** An important investigation, a failed fix, or a BLOCKED session
+must be recorded — the next agent needs to know what was already tried and why it failed. That
+information belongs in `LATEST.md` while it is current, and in `.ai/AI_HANDOFF.md` when it becomes
+durable project state.
+
+**What must NOT go in `LATEST.md`** (it is the current report, not a knowledge base): architecture
+rules, subsystem specifications, active task plans, unresolved defects that outlive the task. Those
+belong in `.ai/AI_HANDOFF.md` or `.ai/context/<topic>.md`.
 
 ### 19.2 Required format
 
@@ -356,6 +367,10 @@ and should NOT do. Detail belongs in the history entry; the handoff links to it.
 
 ### 19.6 Startup for the next agent
 
-Read, in order: `AGENTS.md` → this file → `.ai/AI_HANDOFF.md` → the newest relevant
-`.ai/history/` entries → the subsystem doc → the source. Continue from the documented state; do not
-repeat a documented failed approach without a written reason.
+Read, in order: `.ai/office/QUICK_START.md` → `.ai/office/ESSENTIAL_RULES.md` →
+`.ai/AI_HANDOFF.md` → the subsystem doc for the area you touch → the source code.
+
+Load `.ai/AI_RULES.md` (this file) in full only for **T2/T3** work or when a rule is in question.
+Do **not** load `.ai/history/` or `.ai/reports/` at startup; open `LATEST.md` only when the current
+task depends on what was just done. Continue from the documented state; do not repeat a documented
+failed approach without a written reason.

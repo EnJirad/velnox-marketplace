@@ -1,24 +1,26 @@
-# Velnox AI Handoff — Current State (Compact)
+# Velnox AI Handoff — Current State
 
-**Last updated:** 2026-11-02 · **Branch:** `main` · **Latest verified commit:** `7f6b1b4` (Product upload guards + lifecycle verification)
+**Last verified:** 2026-11-04 · **Branch:** `main` · **HEAD:** see `git rev-parse HEAD` (do not trust a SHA written here — it goes stale after every commit)
 
 ## 1. Current Project State
 
-**WORKING** — All core systems operational. 4/4 apps typecheck, i18n parity (1339×3), builds pass.
+**WORKING** — 4/4 apps typecheck, i18n parity (1602 × 3), AI Office test suite green.
 
 ### Active Tasks
-- None currently assigned
+- None assigned.
 
 ### Important Unresolved Issues
-1. **Responsive verification BLOCKED** — CDP cannot install on android/arm64; 360/390/430/768/1024/1280/1440 breakpoints NOT VERIFIED
-2. **Production DB Verify BLOCKED** — Missing `NEON_PRODUCTION_DATABASE_URL` 
-3. **8 test-database-isolation probes fail** — Android/Termux env limitation (`process.execPath` = linker), not code defects
+1. **Responsive verification BLOCKED** — CDP cannot install on android/arm64; 360/390/430/768/1024/1280/1440 breakpoints NOT VERIFIED.
+2. **Production DB verify BLOCKED** — `NEON_PRODUCTION_DATABASE_URL` not available to agents.
+3. **8 `test-database-isolation` probes fail** — Android/Termux `process.execPath` = linker; environmental, not a code defect.
 
 ### Important Recent Decisions
-- Announcement carousel lazy-loading fixed (active slide now `eager`)
-- Payment rail switching recovered; Stripe PromptPay E2E works with test keys
-- VelCenter mobile nav offset fixed; drawer root cause resolved
-- Velseller product editor image lifecycle verified with real R2 uploads
+- **AI Office fast-start (2026-11-04).** Startup is one page: `.ai/office/QUICK_START.md`. Task routing T1/T2/T3 is auto-selected; T1 skips AI 02 planning.
+- **Essential safety rules are always loaded** from `.ai/office/ESSENTIAL_RULES.md` at every level — including T1. T1 skips the full rulebook, never the safety rules.
+- **One canonical report:** `.ai/reports/LATEST.md`, overwritten per task. No dated report archive; git history is the durable record.
+- **Compact handoff** (this file). The pre-compaction 105 KB handoff is preserved verbatim at `.ai/history/archive/AI_HANDOFF_2026-11-02_FULL.md`.
+- Announcement carousel: active slide loads `eager` (was `lazy`), which fixed the invisible banner image.
+- VelCenter mobile nav offset fixed; drawer root cause resolved.
 
 ---
 
@@ -26,42 +28,37 @@
 
 | Need | Location |
 |------|----------|
-| Full history index | `.ai/history/AI_Handoff_Archive.md` |
+| Startup (read first) | `.ai/office/QUICK_START.md` |
+| Always-on safety rules | `.ai/office/ESSENTIAL_RULES.md` |
+| Full rulebook | `.ai/AI_RULES.md` |
+| Latest task report | `.ai/reports/LATEST.md` |
+| History index | `.ai/history/AI_Handoff_Archive.md` |
 | Verbatim archive | `.ai/history/archive/` |
-| Verification system | `.ai/context/verification.md` |
 | Subsystem docs | `.ai/context/<topic>.md` |
-| Architecture | `.ai/office/ARCHITECTURE.md` |
-| Agent roles | `.ai/office/agents/` |
+| AI Office architecture | `.ai/office/ARCHITECTURE.md` |
+| Agent roles | `.ai/office/agents/developer.md` · `architect.md` |
 
 ---
 
-## 3. Current Git State
+## 3. Runtime limits (must be stated honestly)
 
-```
-Local HEAD:  7f6b1b44fc0344335124091679cbf74a692c6a2b
-Remote main: 7f6b1b44fc0344335124091679cbf74a692c6a2b
-Status:      IN SYNC
-```
+- The Android Harness **request builder is not in this repository.** `.ai/office/context-management/` is a real, tested library, but whether the live session calls it is controlled by Harness settings, not by this workspace. Do not claim the runtime uses it without evidence.
+- AI 01 selects the routing level and acts on it by following `.ai/office/agents/developer.md`. The router constrains the *decision and its context payload*, not the platform's tool dispatch.
+- `bun test` needs the `./` prefix on this host (bun 1.4.4).
 
 ---
 
 ## 4. Environment Notes
 
-- `TEST_DATABASE_URL` required for DB tests (skips when unset)
-- Production Neon = `DATABASE_URL` — never write to it from tests
-- `bun test` needs `./` prefix on this host (bun 1.4.4)
-- `bun run lint` / `format` are placeholders
-- 8 known environmental test failures (not code defects)
+- `TEST_DATABASE_URL` is the only database a test may write to; DB tests **skip** when unset.
+- `DATABASE_URL` points at production Neon — never write to it from a test.
+- `bun run lint` / `bun run format` are placeholders; they prove nothing.
 
 ---
 
 ## 5. Next Agent Should
 
-1. `git fetch origin` and verify sync before any editing
-2. Read this handoff + relevant subsystem doc + source code
-3. Do NOT load full history — use archive pointers when needed
-4. Follow task routing: T1→immediate, T2→plan→implement→QA, T3→full workflow
-
----
-
-*For detailed session records, see `.ai/history/2026-11-02-*.md` and the archive index.*
+1. `git fetch origin`; compare `HEAD` with `origin/main`. Behind → `git pull --ff-only`. Diverged → STOP.
+2. Read `.ai/office/QUICK_START.md`, then only the subsystem doc the task touches.
+3. Classify T1/T2/T3 and follow the matching workflow — do not read the full history.
+4. Update `.ai/reports/LATEST.md` (overwrite) and this handoff when state changes.

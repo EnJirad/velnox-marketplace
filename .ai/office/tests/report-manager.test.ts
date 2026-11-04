@@ -1,11 +1,24 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { 
-  writeLatestReport, 
-  readLatestReport, 
-  getLatestReportSummary, 
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+// Isolate the report directory so these tests never touch the real
+// `.ai/reports/LATEST.md`. Must be set before the module is imported.
+const TEST_DIR = await mkdtemp(join(tmpdir(), 'ai-office-reports-'));
+process.env.AI_REPORT_DIR = TEST_DIR;
+
+const {
+  writeLatestReport,
+  readLatestReport,
+  getLatestReportSummary,
   clearLatestReport,
-  TaskReport 
-} from '../report-manager';
+} = await import('../report-manager');
+type TaskReport = import('../report-manager').TaskReport;
+
+afterAll(async () => {
+  await rm(TEST_DIR, { recursive: true, force: true });
+});
 
 describe('Report Manager', () => {
   beforeEach(async () => {

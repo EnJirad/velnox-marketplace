@@ -40,8 +40,8 @@ For T2/T3 tasks:
 5. Make the smallest safe change
 6. Run the task-specific verification (`.ai/context/testing.md`)
 7. Check stop conditions
-8. Write the session record into `.ai/history/YYYY-MM-DD-<topic>.md` — **mandatory for every session**, including investigations, failed fixes and BLOCKED work (`.ai/AI_RULES.md` §19); read it back to confirm it exists
-9. Update `.ai/AI_HANDOFF.md`
+8. Overwrite `.ai/reports/LATEST.md` with the Change Report — **mandatory for every session**, including investigations, failed fixes and BLOCKED work (`.ai/AI_RULES.md` §18/§19); read it back to confirm
+9. Update `.ai/AI_HANDOFF.md` when project state moved
 10. Produce a concise task report with the resulting git SHA
 11. Commit only verified changes (`.ai/context/workflow.md`)
 
@@ -93,9 +93,9 @@ Subsystem reference docs follow the same rule — only when the task names that 
 **Never load automatically**
 
 - unrelated task briefs
-- completed task reports
+- completed task reports or anything under `.ai/history/`
+- `.ai/reports/LATEST.md` (open only when the current task depends on what was just done)
 - unrelated source directories
-- historical documentation (`.ai/history/`)
 - entire repository
 - generated files (`*_generated/`, `dist/`)
 - dependency directories (`node_modules/`)
@@ -134,18 +134,27 @@ Never omit a file merely to make the task faster if that file is required to ver
 
 ```
 .ai/
-├── AI_RULES.md        canonical rulebook — mandatory
-├── AI_HANDOFF.md      current state + remaining gaps — keep it small
-├── README.md          this file
-├── context/           load on demand (see tables above)
+├── AI_RULES.md          canonical rulebook — full read only for T2/T3
+├── AI_HANDOFF.md        current state + unresolved issues — keep it small
+├── README.md            this file
+├── reports/
+│   └── LATEST.md        ONE canonical report, overwritten per task
+├── context/             load on demand (see tables above)
+├── office/
+│   ├── QUICK_START.md        startup entry point
+│   ├── ESSENTIAL_RULES.md    always-on safety rules (every level)
+│   ├── ARCHITECTURE.md · RUNBOOK.md · DECISIONS.md
+│   ├── agents/               developer.md (AI 01) · architect.md (AI 02)
+│   ├── context-management/   task-router · context-budget · compaction · selector
+│   └── report-manager.ts     single-report writer
 ├── tasks/
-│   ├── TEMPLATE.md    brief format
-│   ├── active/        assigned work — read the current brief
-│   └── completed/     finished reports — never auto-loaded
-└── history/           reference only — never auto-loaded
+│   ├── TEMPLATE.md      brief format
+│   ├── active/          assigned work — read the current brief
+│   └── completed/       finished reports — never auto-loaded
+└── history/             reference only — never auto-loaded
     ├── AI_Handoff_Archive.md   dated index of superseded work
-    ├── YYYY-MM-DD-*.md         mandatory Change Reports (§18) — one per repo-changing task
-    └── archive/                verbatim long-form records
+    ├── YYYY-MM-DD-*.md         legacy session records (read-only)
+    └── archive/                verbatim long-form records + reports-legacy/
 ```
 
 Related: `AGENTS.md` (root entry point), `INSTALLATION.md` (setup), `VELNOX_DESIGN_THEME.md` (design source of truth).
