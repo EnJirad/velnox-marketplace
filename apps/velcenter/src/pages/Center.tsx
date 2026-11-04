@@ -315,6 +315,16 @@ export default function Center() {
       { replace: true },
     );
   };
+  /**
+   * Navigation triggers respond to a plain `click` as well as Radix's
+   * `mousedown` activation. Assistive technology and synthetic activation send
+   * `click` only, so mousedown-only switching left the tab rail inert for them
+   * (and for automated browser QA).
+   */
+  const selectTab = (next: Tab) => {
+    setTab(next);
+    setNavOpen(false);
+  };
 
 // CPNS: aggregate marketplace interest (privacy-safe — no personal data).
   const marketInsightsAction = useAction(api.memory.marketInsights);
@@ -1175,10 +1185,7 @@ export default function Center() {
 
         <Tabs
           value={tab}
-          onValueChange={(v) => {
-            setTab(v as Tab);
-            setNavOpen(false);
-          }}
+          onValueChange={(v) => selectTab(v as Tab)}
           className={`mt-6 md:grid md:items-start md:gap-6 md:[&>[role=tabpanel]]:col-start-2 md:[&>[role=tabpanel]]:min-w-0 ${
             navCollapsed ? "md:grid-cols-[4.5rem_minmax(0,1fr)]" : "md:grid-cols-[15rem_minmax(0,1fr)]"
           }`}
@@ -1221,13 +1228,13 @@ export default function Center() {
                 in the drawer and the expanded rail; the collapsed rail keeps
                 them for screen readers only (R4) — each tab still has an
                 accessible name because the icon alone is not a name. */}
-            <TabsTrigger value="overview" className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="overview" onClick={() => selectTab("overview")} className="gap-1.5 rounded-[10px]">
               <TrendingUp className="size-4" /> <span className="nav-label">{t("center.nav.overview")}</span>
             </TabsTrigger>
-            <TabsTrigger value="chat" className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="chat" onClick={() => selectTab("chat")} className="gap-1.5 rounded-[10px]">
               <MessageCircle className="size-4" /> <span className="nav-label">{t("center.nav.chat")}</span>
             </TabsTrigger>
-            <TabsTrigger value="orders" className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="orders" onClick={() => selectTab("orders")} className="gap-1.5 rounded-[10px]">
               <ShoppingBag className="size-4" /> <span className="nav-label">{t("center.nav.orders")}</span>
               {/*
                 The badge must not depend on how many rows happen to be loaded:
@@ -1241,7 +1248,7 @@ export default function Center() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="intel" className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="intel" onClick={() => selectTab("intel")} className="gap-1.5 rounded-[10px]">
               <BrainCircuit className="size-4" /> <span className="nav-label">{t("center.nav.intel")}</span>
               {dueCount > 0 && (
                 <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
@@ -1249,7 +1256,7 @@ export default function Center() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="products" className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="products" onClick={() => selectTab("products")} className="gap-1.5 rounded-[10px]">
               <Package className="size-4" /> <span className="nav-label">{t("center.nav.products")}</span>
               {pendingProducts > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
@@ -1257,7 +1264,7 @@ export default function Center() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="sellers" className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="sellers" onClick={() => selectTab("sellers")} className="gap-1.5 rounded-[10px]">
               <Store className="size-4" /> <span className="nav-label">{t("center.nav.sellers")}</span>
               {pendingSellers > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
@@ -1266,33 +1273,33 @@ export default function Center() {
               )}
             </TabsTrigger>
             {canSee("categories") && (
-              <TabsTrigger value="categories" className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="categories" onClick={() => selectTab("categories")} className="gap-1.5 rounded-[10px]">
                 <Tag className="size-4" /> <span className="nav-label">{t("center.nav.categories")}</span>
               </TabsTrigger>
             )}
 
             {canSee("staff") && (
-              <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="staff" onClick={() => selectTab("staff")} className="gap-1.5 rounded-[10px]">
                 <Users className="size-4" /> <span className="nav-label">ผู้ใช้ & ลูกค้า</span>
               </TabsTrigger>
             )}
             {canSee("audit") && (
-              <TabsTrigger value="audit" className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="audit" onClick={() => selectTab("audit")} className="gap-1.5 rounded-[10px]">
                 <History className="size-4" /> <span className="nav-label">Audit Logs</span>
               </TabsTrigger>
             )}
             {canSee("incidents") && (
-              <TabsTrigger value="incidents" className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="incidents" onClick={() => selectTab("incidents")} className="gap-1.5 rounded-[10px]">
                 <AlertTriangle className="size-4" /> <span className="nav-label">ตรวจสอบยอดเงิน</span>
               </TabsTrigger>
             )}
             {canSee("marketing") && (
-              <TabsTrigger value="marketing" className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="marketing" onClick={() => selectTab("marketing")} className="gap-1.5 rounded-[10px]">
                 <Megaphone className="size-4" /> <span className="nav-label">{t("marketing.navLabel")}</span>
               </TabsTrigger>
             )}
             {canSee("settings") && (
-              <TabsTrigger value="settings" className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="settings" onClick={() => selectTab("settings")} className="gap-1.5 rounded-[10px]">
                 <Settings className="size-4" /> <span className="nav-label">ตั้งค่าระบบ</span>
               </TabsTrigger>
             )}
