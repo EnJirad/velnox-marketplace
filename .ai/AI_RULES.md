@@ -2,7 +2,7 @@
 
 > **For AI agents.** Canonical location: `.ai/AI_RULES.md`. Authority: `AGENTS.md` → this file → `.ai/context/project-map.md` → `.ai/context/<subsystem>.md` → actual source code. When docs conflict with source, source wins — then update the docs.
 >
-> The agent workspace, startup protocol, and context-loading policy are defined in `.ai/README.md`.
+> The agent workspace and startup protocol are defined in `.ai/office/QUICK_START.md`. Context-loading policy is in `.ai/README.md`.
 
 ---
 

@@ -8,12 +8,12 @@ Multi-vendor marketplace. Four Vercel frontends → one Render backend (Express 
 
 ## Progressive Context Loading — START HERE
 
-The canonical agent workspace is **`.ai/`**. Startup protocol, context-loading policy, and task-brief format: `.ai/README.md`.
+The canonical agent workspace is **`.ai/`**. **New sessions start with `.ai/office/QUICK_START.md`** — it contains the essential entry point (~500 tokens). Load additional context only when required.
 
 ```
-1. AGENTS.md                          ← always (this file)
-2. .ai/AI_RULES.md                    ← when changing code
-3. .ai/AI_HANDOFF.md                  ← current state + remaining gaps
+1. .ai/office/QUICK_START.md          ← ALWAYS (this is the new startup entry point)
+2. .ai/AI_RULES.md                    ← when changing code (full rulebook)
+3. .ai/AI_HANDOFF.md                  ← current state + remaining gaps (compact)
 4. .ai/context/project-map.md         ← to locate files
 5. .ai/context/<subsystem>.md         ← only the subsystem you touch
 6. Actual source code                 ← authoritative implementation
@@ -36,6 +36,17 @@ Do NOT read every doc file. Load the smallest useful set.
 | Fix API / backend / authz | `.ai/context/backend.md` |
 | Fix realtime / live updates | `.ai/context/realtime.md` |
 | Fix styling / theme / mobile | `.ai/context/frontend.md` |
+| Full audit | `.ai/context/architecture.md` then subsystems as needed |
+
+History is **reference only** — do not load it automatically:
+`.ai/history/AI_Handoff_Archive.md` (dated index) → `.ai/history/archive/` (full
+records). `.ai/AI_HANDOFF.md` holds current state + remaining gaps only and must
+stay small — this environment's file-edit tools stop matching past roughly 55 KB,
+so archive superseded sections instead of growing it. Policy: `.ai/history/README.md`.
+
+**No duplicate authority:** the rulebook, handoff, and context docs live only under
+`.ai/`. Root-level `AI_RULES.md` / `AI_Handoff.md` were removed (2026-09-25) — do not
+recreate them; write rules and handoff state only under `.ai/`.ntext/frontend.md` |
 | Full audit | `.ai/context/architecture.md` then subsystems as needed |
 
 History is **reference only** — do not load it automatically:

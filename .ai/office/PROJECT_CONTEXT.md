@@ -16,9 +16,9 @@ truth) and Cloudflare R2 (binary storage). Google OAuth + JWT. Languages:
 
 | # | File | Why |
 |---|------|-----|
-| 1 | `AGENTS.md` | rules every task must follow |
+| 1 | `.ai/office/QUICK_START.md` | new single-page startup entry point |
 | 2 | `.ai/AI_RULES.md` | §0 remote sync, §14 commit/push, §19 history record |
-| 3 | `.ai/AI_HANDOFF.md` | current state + remaining gaps |
+| 3 | `.ai/AI_HANDOFF.md` | current state + remaining gaps (compact) |
 | 4 | `.ai/context/project-map.md` | where anything lives |
 | 5 | `.ai/context/<subsystem>.md` | only the subsystem being touched |
 | 6 | the actual source | authoritative implementation |

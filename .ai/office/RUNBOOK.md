@@ -26,13 +26,15 @@ subagents are read-only — implementation-adjacent work stays foreground.
 ## 3. Give the system a task
 
 Open a **Code** chat on `velnox-marketplace-81f20048` and just ask in normal
-language. AI 01 classifies the request:
+language. AI 01 classifies the request using intelligent task routing:
 
-| You say | AI 01 does |
+| Task Type | AI 01 does |
 |---|---|
-| "Fix X", "Build X", "Improve X" | full loop: AI 02 plans → AI 01 implements → AI 02 QA → fix → … → QA PASS → commit + push |
-| "Plan X", "Design X" | AI 02 produces a Task Brief; returned to you; **no code written** |
-| "Analyze X", "Audit X" | read-only analysis; **no file changes** |
+| **T1 — Quick** (typo, translation, color, spacing, small isolated fix) | Handles immediately, no AI 02 delegation |
+| **T2 — Standard** (new feature, multi-file change, subsystem improvement) | AI 02 plans → AI 01 implements → AI 02 QA |
+| **T3 — Critical** (auth, payment, database schema, financial, security) | Full two-agent workflow with all safety checks |
+
+**AI 01 selects the level automatically.** Do not ask the user to select.
 
 Example kickoff (works verbatim):
 
@@ -41,11 +43,11 @@ Use the AI Office two-agent workflow (.ai/office/).
 
 Task: <describe ONE concrete outcome>
 
-You are AI 01, the main developer: delegate planning to AI 02 via the `task`
-tool using .ai/office/agents/architect.md, implement the approved brief,
-run the checks yourself, then have AI 02 do independent QA and fix every
-valid defect until QA PASS (max 5 correction rounds). Commit and push only
-after an independent QA PASS and the git safety checks.
+You are AI 01, the main developer: classify the task, delegate planning 
+to AI 02 if needed (T2/T3), implement the approved brief, run the checks 
+yourself, then have AI 02 do independent QA and fix every valid defect 
+until QA PASS (max 5 correction rounds). Commit and push only after an 
+independent QA PASS and the git safety checks.
 ```
 
 No manual copying between agents: the `task` call and `.ai/office/` files carry

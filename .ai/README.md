@@ -18,20 +18,20 @@ Every agent session follows:
 1. **Synchronize with the GitHub remote** — establish local vs remote state before
    reading or editing anything (`.ai/AI_RULES.md` §0). The sandbox is temporary and
    may be stale; it is never the source of truth.
-2. Read `.ai/AI_RULES.md`
-3. Read `.ai/AI_HANDOFF.md`
-4. Read the newest relevant entries in `.ai/history/` before touching the area they cover (`.ai/AI_HANDOFF.md` + `.ai/AI_RULES.md` §19)
-4. Identify the assigned task
-5. Read that task's brief from `.ai/tasks/active/`
-6. Read ONLY the context files listed by the task
-7. Inspect the actual source files required by the task
-8. Make the smallest safe change
-9. Run the task-specific verification (`.ai/context/testing.md`)
-10. Check stop conditions
-11. Write the session record into `.ai/history/YYYY-MM-DD-<topic>.md` — **mandatory for every session**, including investigations, failed fixes and BLOCKED work (`.ai/AI_RULES.md` §19); read it back to confirm it exists
-12. Update `.ai/AI_HANDOFF.md`
-13. Produce a concise task report with the resulting git SHA
-14. Commit only verified changes (`.ai/context/workflow.md`)
+2. Read `.ai/office/QUICK_START.md`  ← **NEW: single-page startup entry point**
+3. Read `.ai/AI_RULES.md`
+4. Read `.ai/AI_HANDOFF.md` (compact)
+5. Identify the assigned task
+6. Read that task's brief from `.ai/tasks/active/`
+7. Read ONLY the context files listed by the task
+8. Inspect the actual source files required by the task
+9. Make the smallest safe change
+10. Run the task-specific verification (`.ai/context/testing.md`)
+11. Check stop conditions
+12. Write the session record into `.ai/history/YYYY-MM-DD-<topic>.md` — **mandatory for every session**, including investigations, failed fixes and BLOCKED work (`.ai/AI_RULES.md` §19); read it back to confirm it exists
+13. Update `.ai/AI_HANDOFF.md`
+14. Produce a concise task report with the resulting git SHA
+15. Commit only verified changes (`.ai/context/workflow.md`)
 
 Never answer with only "done", and never report a check you did not run. Production Neon is never
 connected to by an agent — hand the owner read-only SQL instead (`.ai/AI_RULES.md` §17).

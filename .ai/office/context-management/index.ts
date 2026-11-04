@@ -9,6 +9,7 @@
 import { ContextBudgetManager, ContextBudget, ModelConfig, getEffectiveLimit } from './context-budget';
 import { ContextCompactor, Message, CompactionOptions, emergencyCompact } from './context-compaction';
 import { TaskContextSelector, TaskContext, ContextSelectionOptions, SelectionResult, CONTEXT_PROFILES } from './task-context-selector';
+import { classifyTask, TaskClassification, getContextSelectionForLevel, TaskLevel } from './task-router';
 
 export interface AIOfficeConfig {
   modelId: string;
@@ -21,6 +22,10 @@ export interface AIOfficeConfig {
     maxCompletionTokens?: number;
   };
   compactionOptions?: Partial<CompactionOptions>;
+  // Task routing
+  taskRequest?: string;
+  affectedFiles?: string[];
+  autoRoute?: boolean;
 }
 
 export interface ContextManagerState {
@@ -46,6 +51,9 @@ export interface BuildRequestResult {
   };
 }
 
+export type { TaskLevel, TaskClassification } from './task-router';
+export { getContextSelectionForLevel, classifyTask } from './task-router';
+
 export class AIOfficeContextManager {
   private budgetManager: ContextBudgetManager;
   private compactor: ContextCompactor;
@@ -65,9 +73,18 @@ export class AIOfficeContextManager {
       provider: config.provider,
     };
     
+    // Auto-classify task if request provided
+    let taskClassification: TaskClassification | null = null;
+    if (config.autoRoute && config.taskRequest) {
+      taskClassification = classifyTask(config.taskRequest, config.affectedFiles || []);
+      // Override phase if T1 (no planning needed)
+      if (taskClassification.level === 'T1') {
+        config.phase = 'implementation';
+      }
+    }
+    
     // Override the budget manager's model config
     this.budgetManager = new ContextBudgetManager(config.modelId, config.budgetConfig);
-    // Manually set the effective model config based on gateway
     (this.budgetManager as any).currentModel = modelConfig;
     
     this.compactor = new ContextCompactor(this.budgetManager, config.compactionOptions);
@@ -80,7 +97,7 @@ export class AIOfficeContextManager {
         currentStep: 'Starting',
         completedSteps: [],
         remainingSteps: [],
-        changedFiles: [],
+        changedFiles: config.affectedFiles || [],
         importantDecisions: [],
         failedAttempts: [],
         testResults: [],
@@ -91,6 +108,9 @@ export class AIOfficeContextManager {
       lastCompactionTurn: 0,
       totalTokensSaved: 0,
     };
+    
+    // Store classification for later use
+    (this as any).taskClassification = taskClassification;
   }
 
   /**
@@ -121,12 +141,31 @@ export class AIOfficeContextManager {
   async buildRequest(
     options: Partial<ContextSelectionOptions> = {}
   ): Promise<BuildRequestResult> {
-    const profile = CONTEXT_PROFILES[this.state.taskContext.phase] || CONTEXT_PROFILES.planning;
-    const mergedOptions: ContextSelectionOptions = {
-      ...profile,
-      ...options,
-      maxTokens: options.maxTokens || this.budgetManager.getMaxPromptTokens(),
-    };
+    // Check if we have a task classification from auto-routing
+    const taskClassification = (this as any).taskClassification as TaskClassification | null;
+    
+    let mergedOptions: ContextSelectionOptions;
+    
+    if (taskClassification && this.config.autoRoute) {
+      // Use task-router's context selection based on level
+      mergedOptions = {
+        ...getContextSelectionForLevel(
+          taskClassification.level,
+          this.config.taskRequest,
+          this.config.affectedFiles || []
+        ),
+        ...options,
+        maxTokens: options.maxTokens || this.budgetManager.getMaxPromptTokens(),
+      };
+    } else {
+      // Fall back to phase-based profiles
+      const profile = CONTEXT_PROFILES[this.state.taskContext.phase] || CONTEXT_PROFILES.planning;
+      mergedOptions = {
+        ...profile,
+        ...options,
+        maxTokens: options.maxTokens || this.budgetManager.getMaxPromptTokens(),
+      };
+    }
 
     const originalMessageCount = this.state.messageHistory.length;
     const originalTokens = this.estimateTotalTokens(this.state.messageHistory);
@@ -169,7 +208,7 @@ export class AIOfficeContextManager {
         originalTokens,
         finalTokens,
         compactionApplied,
-        selectionSummary: selection.selectionSummary,
+        selectionSummary: selection.selectionSummary + (taskClassification ? ` | Level: ${taskClassification.level} (${taskClassification.confidence.toFixed(0)}%)` : ''),
         withinBudget: finalTokens <= selection.budget.maxPromptTokens,
       },
     };
@@ -209,6 +248,13 @@ export class AIOfficeContextManager {
   }
 
   /**
+   * Get the task classification if available
+   */
+  getTaskClassification(): TaskClassification | null {
+    return (this as any).taskClassification || null;
+  }
+
+  /**
    * Clear history (for new task)
    */
   clearHistory(): void {
@@ -216,6 +262,7 @@ export class AIOfficeContextManager {
     this.state.turnCount = 0;
     this.state.currentInstruction = '';
     this.selector.clearCache();
+    (this as any).taskClassification = null;
   }
 }
 
@@ -225,7 +272,12 @@ export class AIOfficeContextManager {
 export function createAIOfficeContextManager(
   modelId: string = 'claude-haiku-5-5',
   provider: string = 'tenixe',
-  taskId?: string
+  taskId?: string,
+  options?: {
+    taskRequest?: string;
+    affectedFiles?: string[];
+    autoRoute?: boolean;
+  }
 ): AIOfficeContextManager {
   return new AIOfficeContextManager({
     modelId,
@@ -246,6 +298,9 @@ export function createAIOfficeContextManager(
       maxToolOutputChars: 2000,
       summarizeOldTurns: true,
     },
+    taskRequest: options?.taskRequest,
+    affectedFiles: options?.affectedFiles,
+    autoRoute: options?.autoRoute ?? true,
   });
 }
 
