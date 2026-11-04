@@ -1,130 +1,155 @@
-# AI Report — Part 1.1: Shop completion, QA and contract alignment
+# AI Report — Part 1.2: My Shop final verification & independent QA
 
-**Date:** 2026-11-04 · **Branch:** `main` · **Classification:** T2 (no schema change)
-**Starting SHA:** `cdbad7ad322c9e10b78478a0613ad07034fe00e1`
-**Status:** COMPLETE except browser/visual QA (BLOCKED — see §6)
+**Date:** 2026-11-04 · **Branch:** `main`
+**Starting SHA:** `7e2d6e8ce3ec5ec2c921dffe4b18dcb908d84adf`
+**Outcome:** **PARTIALLY VERIFIED** — all code, contract and test criteria PASS;
+browser and responsive verification remain **BLOCKED** (no seller authentication
+path exists in this environment).
 
-## 1. Headline finding
+## 1. Confirmed defect found and fixed
 
-The shop application could never succeed. `POST /api/seller/apply` requires
-`firstName`, `lastName`, `phone`, `shopName` **and** exactly three identity
-document purposes (`id_card`, `id_card_back`, `selfie_id` — `backend/routes/seller.ts:40,121-137`), but the
-Phase-1 form sent only the shop fields. Every submission returned 400. This
-release aligns the form with the endpoint instead of weakening the endpoint.
+`GET /api/seller/profile` is guarded by `requireApprovedSeller`
+(`backend/middleware/seller.ts:78-87`), which refuses **every** non-approved
+seller with 403. `MyShop.tsx` treated any failure as "could not load", so a
+pending, rejected or suspended applicant never saw their application state — the
+gate branch was unreachable.
 
-## 2. What was completed
+Fix (`7a0e305`): a 403 is now read as an application state, not an error. The
+page calls `GET /api/seller/status` (reachable while under review), renders the
+gate from the server-computed `sellers.status`, and keeps the retry card for real
+transport failures. No auth check was weakened; no status is accepted from the
+client.
 
-| Area | Before | Now |
-|---|---|---|
-| Application | 4 fields, guaranteed 400 | 2-step wizard: shop (name, slug, description, category, phone, address) → identity (first/last name, phone, 3 documents) |
-| Shop edit | name, description, phone | + category, structured address (line 1, subdistrict, district, province, postal code, validated 5 digits) |
-| Logo / cover | no UI (backend existed) | upload, replace, remove via `POST /api/upload/presign` (`shop-logo`/`shop-cover`) → R2 PUT → `POST /api/upload/confirm` |
-| Verification | 2 documents, 1 required | same three purposes as the application; submit needs all three |
-| Failed saves | dialog state discarded | dialog stays open with typed values; media upload failure keeps the previous URL |
-| Contrast | `#10B981` / `slate-400` on white ≈ 2.5:1 | hints/labels on `slate-500` and `#047857` |
+Evidence: `bun test backend/tests/seller-shop-surface.test.ts` → 13 pass,
+including two new contracts for the fallback.
 
-## 3. Files changed
+## 2. Impeccable skill — execution evidence and launcher diagnosis
 
-- `apps/velseller/src/components/shop/ShopOnboarding.tsx` — application wizard
-- `apps/velseller/src/components/shop/ShopIdentityCard.tsx` — category, address, media
-- `apps/velseller/src/components/shop/ShopMediaField.tsx` — **new**, R2 logo/cover
-- `apps/velseller/src/components/shop/ShopVerificationDialog.tsx` — three documents
-- `apps/velseller/src/pages/MyShop.tsx` — contrast + wiring only
-- `packages/shared/src/lib/api-routes.ts` — `uploadPresign`, `uploadConfirm`, wider `updateShop` args
-- `packages/shared/src/lib/commerce.ts` — `StoreShop` gains `logo`, `cover`, `category`, `rating`, `productCount`, typed address
-- `packages/shared/src/lib/i18n/locales/index.ts` — 31 keys × 3 locales (1681 total)
-- `backend/tests/seller-shop-surface.test.ts` — **new**, 11 source contracts
-- `backend/tests/test-database-isolation.test.ts` — probe binary + loader env
+**Conclusion: NOT EXECUTED. The engine cannot run on this platform.** Reading the
+references is not execution; no UI change in Part 1.2 was justified by an
+Impeccable run, so no visual work was performed.
 
-## 4. API and database
-
-**No schema change, no migration, no new endpoint.** Every call existed already:
-`POST /api/seller/apply`, `PATCH /api/seller/shop`, `POST /api/upload/presign`,
-`POST /api/upload/confirm`, `POST /api/seller/verification`,
-`GET /api/seller/profile`.
-
-Ownership: `PATCH /api/seller/shop` resolves the shop from `sellers.user_id`
-(client sends no id); presign proves `shops JOIN sellers WHERE s.user_id = $1`
-before minting `shop/{shopId}/logo.webp`; confirm re-derives the purpose from the
-key, re-checks ownership and inspects the stored object.
-
-## 5. Tests actually executed
+Commands run and results:
 
 | Command | Result |
 |---|---|
-| `bun run typecheck` (4 apps) | exit 0 |
+| `scripts/impeccable context` | `error: "…/.impeccable/bin/0.1.18/impeccable" has unexpected e_type: 2` |
+| `file`-free ELF header read (`od -An -tx1 -N20`) | `7f 45 4c 46 02 01 01 00 … 02 00 b7 00` |
+| `uname` | `Linux` / `aarch64` |
+
+Diagnosis, from the bytes rather than from the message:
+
+- `scripts/impeccable` is a valid **POSIX sh launcher**, not a binary. It resolves
+  `$IMPECCABLE_BIN` → sibling `bin/$os-$arch` → `~/.impeccable/bin/impeccable` →
+  `PATH` → a sha256-verified download from the official release channel.
+- `os=linux`, `arch=arm64`, so the selected asset is `impeccable-linux-arm64`.
+- The installed engine is ELF64, little-endian, **e_machine `0xB7` = AArch64**, and
+  **e_type `0x0002` = ET_EXEC (non-PIE)**.
+- Android's bionic loader only accepts `ET_DYN`; it rejects a fixed-address
+  `ET_EXEC` with exactly `has unexpected e_type: 2`. This is an upstream asset
+  incompatibility, not a packaging error, a permission problem, or a wrong
+  invocation: the file is `-rwx------`, owned by the app UID, and the launcher
+  reaches it correctly.
+- The launcher exposes no Android path and no JavaScript entry point, so there is
+  no supported alternative entry to use. No binary was downloaded or substituted,
+  no wrapper was fabricated, and the skill's own files were not modified.
+
+Consequence: `IMPECCABLE EXECUTED` = **BLOCKED**. Static review only
+(`VELNOX_DESIGN_THEME.md` tokens, craft-floor rules already applied in 1.1).
+
+## 3. Browser verification — BLOCKED (structural)
+
+Method attempted, without handling any credential:
+
+1. `bun run dev:velseller -- --port 5185` → `GET /` = 200, `GET /seller/shop` = 200.
+2. Navigate `http://127.0.0.1:5185/seller/shop` → **`302` to
+   `/auth?returnTo=%2Fseller%2Fshop`**, page renders "continue with Google".
+3. Console errors: none.
+
+Why no safe session exists:
+
+- Seller login is Google OAuth only; the backend has **no** dev/test seller login.
+  The only password endpoint, `POST /api/auth/member-login`
+  (`backend/routes/auth.ts:286-352`), rejects any role outside
+  `owner|admin|staff` — sellers cannot use it.
+- `TEST_DATABASE_URL` and `DATABASE_URL` are unset; the only database reachable
+  from the owner is production, which an agent must never write.
+
+Consequence: **BROWSER VERIFIED = BLOCKED**, **RESPONSIVE VERIFIED = BLOCKED**
+(360 / 390 / 768 / 1024 / 1440). No screenshot or interaction is claimed.
+
+New finding, correcting earlier reports: **PostgreSQL binaries are present**
+(`postgres`, `initdb`, `pg_ctl` on PATH), so an isolated test database is
+technically possible for a future task. It would not unblock browser QA on its
+own, because the missing piece is authentication, not storage.
+
+## 4. API and ownership verification (source-inspected)
+
+| # | Claim | Verdict | Evidence |
+|---|---|---|---|
+| 1 | Auth required | PASS | all six routes carry `requireAuth` |
+| 2 | Ownership from session | PASS | `seller.ts:528,611` resolve `sellers.user_id`; `upload.ts:317` joins on `s.user_id` |
+| 3 | Client ids cannot redirect a write | PASS | `PATCH /api/seller/shop` reads no shop/seller id |
+| 4 | Keys cannot be forged | PASS | presign mints `shop/{shopId}/{kind}.webp` server-side after ownership proof |
+| 5 | Confirm re-verifies | PASS | `upload.ts:431-443` ownership check **before** any write; `:472-480` then updates the column |
+| 6 | Bad type/size rejected | PASS | `ALLOWED_TYPES` at presign; `isUploadTooLarge` + `isStoredContentTypeAllowed` at confirm |
+| 7 | Identity docs private | PASS | `GET /api/seller/status` exposes `identityEvidenceCount` only |
+| 8 | Verification state unforgeable | PASS | submit sets `pending` server-side; reads come from `sellers.status` |
+| 9 | Omitted fields preserved | PASS | dynamic `SET` list — only provided keys are written |
+| 10 | No false success | PASS | every failure path returns 4xx/5xx before the success payload |
+
+Defect found: none in the backend. The only defect was the frontend gate above.
+
+## 5. Automated tests (re-run on current source)
+
+| Command | Result |
+|---|---|
+| `bun run typecheck` | exit 0 (4/4 apps) |
 | `bun run i18n:check` | exit 0 — `th=1681 en=1681 my=1681` |
-| `bun run build:velseller` | exit 0 — `✓ built in 11.39s` |
-| `bun test backend/tests` | **1243 pass / 389 skip / 0 fail** |
-| `bun test backend/tests/seller-shop-surface.test.ts` | 11 pass |
+| `bun run build:velseller` | exit 0 — `✓ built in 8.95s` |
+| `bun test backend/tests` | **1245 pass / 389 skip / 0 fail** |
+| `bun test backend/tests/seller-shop-surface.test.ts` | 13 pass |
 | `bun test backend/tests/test-database-isolation.test.ts` | 39 pass |
 | `git diff --check` | exit 0 |
 
-Skips are DB-gated suites without `TEST_DATABASE_URL`.
+The 389 skips are DB-gated suites; no test database was configured, and none was
+reported as passing.
 
-## 6. Browser and responsive QA — BLOCKED
+## 6. AI 02 — independent QA
 
-`http://127.0.0.1:5184/seller/shop` → `302 /auth?returnTo=%2Fseller%2Fshop`.
-No seller session exists: login is Google OAuth against the production backend
-and the only database available is production, which agents must never write.
-Console: zero errors on the auth route.
+Two delegations actually completed and were verified against source, not claims:
 
-**Not verified by a rendered page:** authenticated load, edit, upload, refresh
-persistence, and the 360 / 390 / 768 / 1024 / 1440 breakpoints. No screenshots
-exist for this change and none are claimed.
+1. **Pre-fix audit** — independently confirmed the 403/gate defect
+   (`MyShop.tsx:282-303` and `:316-362`) and classified upload confirmation as
+   sound (`upload.ts:411-424, 431-442, 472-480`).
+2. **Post-fix review of `7a0e305`** — verdict **PASS**: the fallback reads status
+   only from `GET /api/seller/status`; the gate branch is reachable; the approved
+   path and the retry state are intact.
 
-Static evidence only: single column → `sm:grid-cols-2` → `md:` table/card switch,
-`min-h-11`/`size-11` on every control, dialogs clamped to `max-h-[90vh]` with
-internal scroll, `overflow-x-auto` on the filter row.
+Earlier delegation attempts in this project failed on provider routing
+(`Tenixe-Api is outside this chat's allowed fallback routes`); the two above are
+real, and their findings are reproduced in §1 and §4.
 
-## 7. Impeccable skill — usage and review evidence
+## 7. Acceptance status
 
-- Skill loaded and followed; **its `context` launcher cannot run here**:
-  `impeccable context` → `has unexpected e_type: 2` (arm64 launcher unavailable).
-  Reported as a blocker instead of silently substituting an unreviewed design.
-- Directed reading instead: `VELNOX_DESIGN_THEME.md` (white surfaces, slate text,
-  `#10B981` accent, dark primary), `references/craft-floor.md`.
-- Applied from the craft floor: contrast on real tokens (two failures found and
-  fixed), one authored states model (loading skeleton → error+retry → empty →
-  content), no decorative gradients beyond the existing brand band, 44px targets,
-  focus-visible rings, `aria-current="step"` on the wizard, `role="alert"` on
-  validation messages, no emoji-as-icon.
-- Banned patterns avoided: no gradient text, no coloured left-border cards, no
-  hard offset shadows, no section numbers as decoration.
+| Criterion | Status |
+|---|---|
+| Functionality matches approved requirements | IMPLEMENTED |
+| Shop info edits against real backend | IMPLEMENTED (source + contract tests) |
+| Logo/cover persist through R2 | IMPLEMENTED (source + contract tests; not browser-verified) |
+| Application/verification contracts correct | IMPLEMENTED (13 contract tests) |
+| Ownership/authorization preserved | PASS (10/10 source checks) |
+| Automated tests | AUTOMATED TEST PASSED (0 fail) |
+| Production build | BUILD PASSED |
+| Browser verification | **BLOCKED** |
+| Responsive verification | **BLOCKED** |
+| Impeccable executed | **BLOCKED** (engine cannot run on Android arm64) |
+| AI 02 independent QA | PASSED (on `7a0e305`) |
 
-## 8. The eight previous backend failures — classified
+Part 1.2 is **PARTIALLY VERIFIED**: everything provable without a seller session
+passes; the three blocked items are environmental and are named above.
 
-**ENVIRONMENT (two layers), not a regression.** Reproduced first, then fixed in
-the test helper only:
+## 8. Commits
 
-1. `process.execPath` = `/apex/com.android.runtime/bin/linker64`; the probe spawned
-   the dynamic linker instead of Bun (`process.argv0` is the real binary).
-2. The probe env was stripped to `PATH/HOME/NODE_ENV`, so Bun aborted with
-   `CANNOT LINK EXECUTABLE … library "libicui18n.so.78" not found`.
-
-`runBunProbe` now prefers `argv0` and forwards `LD_LIBRARY_PATH`, `PREFIX`,
-`TMPDIR` (paths, not credentials; DB URLs still come only from `databaseEnv`).
-Result: 8 fail → **0 fail**, and the production-DB refusal guard now really runs
-instead of failing for the wrong reason. No assertion was relaxed.
-
-## 9. Remaining blockers and limits
-
-1. Browser/responsive verification needs an owner-authenticated seller session.
-2. Shop `category` is free text (≤100 chars) because `shops.category` has no
-   taxonomy table; a select needs an owner-approved vocabulary first.
-3. Address country is fixed to `TH`; no multi-country rule exists.
-4. Logo/cover removal writes `NULL` through `PATCH /api/seller/shop`; the R2
-   object is left in place (no delete endpoint) — documented, not silently hidden.
-5. Part 2 not started.
-
-## 10. AI 02 verdict
-
-**BLOCKED — no independent review.** Four delegations this session, all failed
-before producing output: one `context_length_exceeded` (272000) and three
-`Subagent failed: Tenixe-Api is outside this chat's allowed fallback routes`.
-Planning, implementation and review are AI 01's own and are **not** independent QA.
-
-## 11. Commits
-
-- `ed74ae47431027d56f56028b5d794a52f8670235` — feature + tests
+- `7a0e3050ed0bba40e7b8a93a8fc2734cd413f2b3` — 403 gate fix + 2 contract tests
 - this report — documentation commit immediately after
