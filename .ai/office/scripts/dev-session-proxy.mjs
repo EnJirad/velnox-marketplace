@@ -84,6 +84,7 @@ export function authorizeRequest({
   accessToken,
   port,
   allowWrites = false,
+  writeMode = null,
   gateToken,
 }) {
   const loopback = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
@@ -106,6 +107,95 @@ export function authorizeRequest({
   return { ok: true };
 }
 
+
+const PRODUCTION_HOST_DENYLIST = [
+  "velnox-api.onrender.com",
+  "velnox.com",
+  "www.velnox.com",
+  "shop.velnox.com",
+  "seller.velnox.com",
+  "velcenter.velnox.com",
+];
+const PRODUCTION_SUFFIXES = [".onrender.com", ".vercel.app", ".velnox.com"];
+
+/** A loopback API base is the only proof of isolation this device can verify. */
+function parseLoopbackBase(raw) {
+  let url;
+  try {
+    url = new URL(String(raw));
+  } catch {
+    return { ok: false, code: "BAD_API_URL" };
+  }
+  if (url.username || url.password) return { ok: false, code: "CREDENTIALS_IN_URL" };
+
+  const hostname = url.hostname;
+  // Production is named before protocol/locality so a deployed URL reports as
+  // production, not as a generic protocol error.
+  if (PRODUCTION_HOST_DENYLIST.includes(hostname)) return { ok: false, code: "PRODUCTION_HOST" };
+  if (PRODUCTION_SUFFIXES.some((suffix) => hostname.endsWith(suffix))) return { ok: false, code: "PRODUCTION_HOST" };
+  if (url.protocol !== "http:") return { ok: false, code: "BAD_PROTOCOL" };
+  if (hostname !== "127.0.0.1" && hostname !== "localhost") return { ok: false, code: "NOT_LOOPBACK" };
+
+  const port = Number(url.port);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) return { ok: false, code: "BAD_PORT" };
+  if (url.pathname !== "/" && url.pathname !== "") return { ok: false, code: "BAD_PATH" };
+  return { ok: true, base: `${url.protocol}//${hostname}:${port}` };
+}
+
+/**
+ * Fail-closed write-mode gate. Returns `{ ok:true, apiBase, envId }` only when
+ * every isolation claim is present AND self-consistent; otherwise a refusal
+ * code. Nothing here writes, and no partial credit is given.
+ */
+export function validateWriteMode({ env = process.env, readFile = readFileSync, stat = statSync } = {}) {
+  if (env.PROXY_ALLOW_WRITES !== "1") return { ok: false, code: "WRITES_DISABLED" };
+
+  const envId = String(env.PROXY_TEST_ENV_ID ?? "");
+  if (!/^[a-z0-9][a-z0-9-]{2,31}$/.test(envId) || envId.includes("prod")) {
+    return { ok: false, code: "BAD_ENV_ID" };
+  }
+
+  const rawBase = env.PROXY_TEST_API_BASE;
+  if (!rawBase) return { ok: false, code: "NO_TEST_API_BASE" };
+  const parsed = parseLoopbackBase(rawBase);
+  if (!parsed.ok) return { ok: false, code: parsed.code };
+
+  const proofPath = env.PROXY_TEST_DB_PROOF;
+  if (!proofPath) return { ok: false, code: "NO_PROOF" };
+
+  let mode;
+  try {
+    mode = stat(proofPath).mode & 0o777;
+  } catch {
+    return { ok: false, code: "PROOF_UNREADABLE" };
+  }
+  if (mode !== 0o600) return { ok: false, code: "PROOF_PERMISSIONS" };
+
+  let proof;
+  try {
+    proof = JSON.parse(readFile(proofPath, "utf8"));
+  } catch {
+    return { ok: false, code: "PROOF_MALFORMED" };
+  }
+
+  if (proof.environment !== "test") return { ok: false, code: "NOT_TEST_ENV" };
+  if (proof.writesApproved !== true) return { ok: false, code: "WRITES_NOT_APPROVED" };
+  if (proof.disposable !== true) return { ok: false, code: "DB_NOT_DISPOSABLE" };
+  if (String(proof.envId ?? "") !== envId) return { ok: false, code: "ENV_ID_MISMATCH" };
+  if (String(proof.apiBase ?? "") !== parsed.base) return { ok: false, code: "API_BASE_MISMATCH" };
+
+  const dbHost = String(proof.databaseUrlHost ?? "");
+  if (dbHost !== "127.0.0.1" && dbHost !== "localhost") return { ok: false, code: "DB_NOT_ISOLATED" };
+  if (PRODUCTION_HOST_DENYLIST.includes(dbHost) || PRODUCTION_SUFFIXES.some((suffix) => dbHost.endsWith(suffix))) {
+    return { ok: false, code: "DB_PRODUCTION" };
+  }
+
+  const expires = Date.parse(String(proof.expiresAt ?? ""));
+  if (!Number.isFinite(expires) || expires < Date.now()) return { ok: false, code: "PROOF_EXPIRED" };
+
+  return { ok: true, apiBase: parsed.base, envId };
+}
+
 function loadStore() {
   const store = JSON.parse(readFileSync(STORE, "utf8"));
   const mode = statSync(STORE).mode & 0o777;
@@ -119,6 +209,7 @@ export function createProxyServer({
   appDir = "apps/velseller",
   distDir: distOverride = null,
   allowWrites = false,
+  writeMode = null,
   gateToken = randomBytes(32).toString("hex"),
   store = null,
   fetchImpl = fetch,
@@ -134,10 +225,10 @@ export function createProxyServer({
     throw new Error(`cookie for "${accountKey}" expired at ${account.expiresAt}`);
   }
 
-  const apiBase = data.apiBase ?? DEFAULT_API_BASE;
-  if (allowWrites && apiBase === DEFAULT_API_BASE) {
-    throw new Error("refusing write mode against the production API");
-  }
+  // Fail closed: writes exist only when a verified isolated environment was
+  // proven by validateWriteMode(). A bare boolean is never enough.
+  if (allowWrites && !writeMode?.ok) throw new Error("write mode refused: NO_VERIFIED_TEST_ENVIRONMENT");
+  const apiBase = writeMode?.apiBase ?? data.apiBase ?? DEFAULT_API_BASE;
 
   const distDir = distOverride ?? resolve(repoRoot, appDir, "dist");
   if (!existsSync(distDir)) throw new Error(`missing ${distDir} — build the app first`);
@@ -249,14 +340,26 @@ function main() {
   const accountKey = process.argv[2] ?? "seller";
   const port = Number(process.argv[3] ?? 3001);
   const appDir = process.argv[4] ?? "apps/velseller";
-  const allowWrites = process.env.PROXY_ALLOW_WRITES === "1";
+  const requestedWrites = process.env.PROXY_ALLOW_WRITES === "1";
+  const writeMode = requestedWrites ? validateWriteMode() : null;
+  if (requestedWrites && !writeMode.ok) {
+    console.error(`proxy: write mode refused (${writeMode.code}) — staying in SAFE MODE`);
+  }
+  const allowWrites = Boolean(writeMode?.ok);
 
   const gateToken = process.env.PROXY_ACCESS_TOKEN || randomBytes(32).toString("hex");
   mkdirSync(SECRETS, { recursive: true, mode: 0o700 });
   writeFileSync(TOKEN_FILE, gateToken + "\n", { mode: 0o600 });
   chmodSync(TOKEN_FILE, 0o600);
 
-  const { server, apiBase } = createProxyServer({ port, accountKey, appDir, allowWrites, gateToken });
+  const { server, apiBase } = createProxyServer({
+    port,
+    accountKey,
+    appDir,
+    allowWrites,
+    gateToken,
+    writeMode: writeMode?.ok ? writeMode : null,
+  });
 
   console.log(`proxy: http://127.0.0.1:${port}  account=${accountKey}  api=${apiBase}  mode=${allowWrites ? "WRITE-TEST" : "SAFE (GET/HEAD)"}`);
   console.log(`proxy: access token file ${TOKEN_FILE} (0600) — open /?access=<token>`);

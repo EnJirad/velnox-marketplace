@@ -70,15 +70,17 @@ password, a token, or a pasted cookie.
 - **Store:** `.ai/secrets/browser-cookies.json` — **gitignored**, live production
   sessions. Never commit it, never print a token, never screenshot a cookie.
   (`.ai/secrets/` is the only place in this repo allowed to hold one.)
-- **Read it with the helper**, never by re-typing a token:
-  `bun .ai/office/scripts/cookies.mjs` lists accounts (no secrets),
-  `… <account>` prints `velnox_session=…` for `curl -b`,
-  `… <account> --curl <url>`, `… <account> --check` verifies against
-  `GET /api/auth/me`.
+- **The helper cannot print a cookie.** `bun .ai/office/scripts/cookies.mjs`
+  lists accounts, `--status` shows expiry + git-ignore state, and
+  `<account> --check` prints identity only. Raw-cookie modes (`--header`,
+  `--curl`, bare account) were removed; `--export-file` requires a human to set
+  `ALLOW_COOKIE_EXPORT=1` and writes a 0600 file. Use the proxy, not a token.
 - **Safe mode is the default.** The proxy forwards only `GET` and `HEAD`; every
-  other method is `405` and never reaches the backend. Writes require
-  `PROXY_ALLOW_WRITES=1` **and** a non-production API base — enabling write mode
-  against the production API throws at startup.
+  other method is `405` and never reaches the backend. Write mode is fail-closed:
+  it needs `PROXY_ALLOW_WRITES=1`, `PROXY_TEST_ENV_ID`, a loopback
+  `PROXY_TEST_API_BASE`, and a `PROXY_TEST_DB_PROOF` file (0600) proving
+  `environment: test`, `disposable: true`, a loopback database host, matching
+  env id + API base, and a future expiry. Any gap → safe mode.
 - **Access gate.** `/api/*` needs the per-run token: open
   `/?access=<token>` once (token file `.ai/secrets/proxy-access-token`, mode 0600);
   it becomes an httpOnly `SameSite=Strict` cookie. Host, Origin and

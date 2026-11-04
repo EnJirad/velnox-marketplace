@@ -268,17 +268,17 @@ describe("session validity", () => {
     ).toThrow(/expired/);
   });
 
-  test("write mode refuses the production API", () => {
+  test("a bare write flag is refused without a verified environment", () => {
     expect(() =>
       createProxyServer({
         port: 4113,
         accountKey: "seller",
-        allowWrites: true,
+        allowWrites: true, // a boolean alone must never enable writes
         gateToken: GATE,
         store: { ...testStore, apiBase: "https://velnox-api.onrender.com" },
         distDir: join(root, "apps", "velseller", "dist"),
       }),
-    ).toThrow(/production API/);
+    ).toThrow(/NO_VERIFIED_TEST_ENVIRONMENT/);
   });
 
   test("constant-time compare rejects length and empty mismatches", () => {
