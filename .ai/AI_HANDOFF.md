@@ -4,10 +4,11 @@
 
 ## 1. Current Project State
 
-**WORKING** — 4/4 apps typecheck, i18n parity (1602 × 3), AI Office test suite green.
+**WORKING** — 4/4 apps typecheck, i18n parity (1650 × 3), AI Office test suite green,
+`backend/tests` 1224 pass / 389 skip / 8 environment-only failures.
 
 ### Active Tasks
-- None assigned.
+- Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
 
 ### Important Unresolved Issues
 1. **Responsive verification BLOCKED** — CDP cannot install on android/arm64; 360/390/430/768/1024/1280/1440 breakpoints NOT VERIFIED.
@@ -15,6 +16,10 @@
 3. **8 `test-database-isolation` probes fail** — Android/Termux `process.execPath` = linker; environmental, not a code defect.
 
 ### Important Recent Decisions
+- **Seller Part 1 shipped (2026-11-04).** My Shop split into `components/shop/*`
+  (`ShopOnboarding`, `ShopIdentityCard`, `ShopVerificationDialog`); all seller-shop
+  copy lives in `sellerDash.shop.*` (0 inline Thai left); `PATCH /api/seller/shop`
+  now has a UI for name/description/phone. Report: `.ai/reports/LATEST.md`.
 - **AI Office fast-start (2026-11-04).** Startup is one page: `.ai/office/QUICK_START.md`. Task routing T1/T2/T3 is auto-selected; T1 skips AI 02 planning.
 - **Essential safety rules are always loaded** from `.ai/office/ESSENTIAL_RULES.md` at every level — including T1. T1 skips the full rulebook, never the safety rules.
 - **One canonical report:** `.ai/reports/LATEST.md`, overwritten per task. No dated report archive; git history is the durable record.
