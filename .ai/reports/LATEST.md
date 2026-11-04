@@ -1,184 +1,116 @@
-# AI Report — Part 1.2: My Shop final verification & independent QA
+# AI Report — Proxy hardening + VelCenter QA
 
-**Date:** 2026-11-04 · **Branch:** `main`
-**Starting SHA:** `7e2d6e8ce3ec5ec2c921dffe4b18dcb908d84adf`
-**Outcome:** **PARTIALLY VERIFIED** — all code, contract and test criteria PASS;
-browser and responsive verification remain **BLOCKED** (no seller authentication
-path exists in this environment).
+**Date:** 2026-11-04
 
-## 1. Confirmed defect found and fixed
+## A. Repository state
 
-`GET /api/seller/profile` is guarded by `requireApprovedSeller`
-(`backend/middleware/seller.ts:78-87`), which refuses **every** non-approved
-seller with 403. `MyShop.tsx` treated any failure as "could not load", so a
-pending, rejected or suspended applicant never saw their application state — the
-gate branch was unreachable.
-
-Fix (`7a0e305`): a 403 is now read as an application state, not an error. The
-page calls `GET /api/seller/status` (reachable while under review), renders the
-gate from the server-computed `sellers.status`, and keeps the retry card for real
-transport failures. No auth check was weakened; no status is accepted from the
-client.
-
-Evidence: `bun test backend/tests/seller-shop-surface.test.ts` → 13 pass,
-including two new contracts for the fallback.
-
-## 2. Impeccable skill — execution evidence and launcher diagnosis
-
-**Conclusion: NOT EXECUTED. The engine cannot run on this platform.** Reading the
-references is not execution; no UI change in Part 1.2 was justified by an
-Impeccable run, so no visual work was performed.
-
-Commands run and results:
-
-| Command | Result |
+| | |
 |---|---|
-| `scripts/impeccable context` | `error: "…/.impeccable/bin/0.1.18/impeccable" has unexpected e_type: 2` |
-| `file`-free ELF header read (`od -An -tx1 -N20`) | `7f 45 4c 46 02 01 01 00 … 02 00 b7 00` |
-| `uname` | `Linux` / `aarch64` |
+| Branch | `main` |
+| Starting SHA | `a87f4b53b77222b52dc7022d10b0a15eac954afe` |
+| Hardening commit | `502ce94dfd5178da99e1a08adc361e92eea39786` |
+| Final SHA | this report's commit (immediately after `502ce94`) |
+| Working tree | clean before and after; no unrelated file touched |
 
-Diagnosis, from the bytes rather than from the message:
+## B. Security audit
 
-- `scripts/impeccable` is a valid **POSIX sh launcher**, not a binary. It resolves
-  `$IMPECCABLE_BIN` → sibling `bin/$os-$arch` → `~/.impeccable/bin/impeccable` →
-  `PATH` → a sha256-verified download from the official release channel.
-- `os=linux`, `arch=arm64`, so the selected asset is `impeccable-linux-arm64`.
-- The installed engine is ELF64, little-endian, **e_machine `0xB7` = AArch64**, and
-  **e_type `0x0002` = ET_EXEC (non-PIE)**.
-- Android's bionic loader only accepts `ET_DYN`; it rejects a fixed-address
-  `ET_EXEC` with exactly `has unexpected e_type: 2`. This is an upstream asset
-  incompatibility, not a packaging error, a permission problem, or a wrong
-  invocation: the file is `-rwx------`, owned by the app UID, and the launcher
-  reaches it correctly.
-- The launcher exposes no Android path and no JavaScript entry point, so there is
-  no supported alternative entry to use. No binary was downloaded or substituted,
-  no wrapper was fabricated, and the skill's own files were not modified.
-
-Consequence: `IMPECCABLE EXECUTED` = **BLOCKED**. Static review only
-(`VELNOX_DESIGN_THEME.md` tokens, craft-floor rules already applied in 1.1).
-
-## 3. Browser verification — BLOCKED (structural)
-
-Method attempted, without handling any credential:
-
-1. `bun run dev:velseller -- --port 5185` → `GET /` = 200, `GET /seller/shop` = 200.
-2. Navigate `http://127.0.0.1:5185/seller/shop` → **`302` to
-   `/auth?returnTo=%2Fseller%2Fshop`**, page renders "continue with Google".
-3. Console errors: none.
-
-Why no safe session exists:
-
-- Seller login is Google OAuth only; the backend has **no** dev/test seller login.
-  The only password endpoint, `POST /api/auth/member-login`
-  (`backend/routes/auth.ts:286-352`), rejects any role outside
-  `owner|admin|staff` — sellers cannot use it.
-- `TEST_DATABASE_URL` and `DATABASE_URL` are unset; the only database reachable
-  from the owner is production, which an agent must never write.
-
-Consequence: **BROWSER VERIFIED = BLOCKED**, **RESPONSIVE VERIFIED = BLOCKED**
-(360 / 390 / 768 / 1024 / 1440). No screenshot or interaction is claimed.
-
-New finding, correcting earlier reports: **PostgreSQL binaries are present**
-(`postgres`, `initdb`, `pg_ctl` on PATH), so an isolated test database is
-technically possible for a future task. It would not unblock browser QA on its
-own, because the missing piece is authentication, not storage.
-
-## 4. API and ownership verification (source-inspected)
-
-| # | Claim | Verdict | Evidence |
+| # | Finding | Severity | Fix |
 |---|---|---|---|
-| 1 | Auth required | PASS | all six routes carry `requireAuth` |
-| 2 | Ownership from session | PASS | `seller.ts:528,611` resolve `sellers.user_id`; `upload.ts:317` joins on `s.user_id` |
-| 3 | Client ids cannot redirect a write | PASS | `PATCH /api/seller/shop` reads no shop/seller id |
-| 4 | Keys cannot be forged | PASS | presign mints `shop/{shopId}/{kind}.webp` server-side after ownership proof |
-| 5 | Confirm re-verifies | PASS | `upload.ts:431-443` ownership check **before** any write; `:472-480` then updates the column |
-| 6 | Bad type/size rejected | PASS | `ALLOWED_TYPES` at presign; `isUploadTooLarge` + `isStoredContentTypeAllowed` at confirm |
-| 7 | Identity docs private | PASS | `GET /api/seller/status` exposes `identityEvidenceCount` only |
-| 8 | Verification state unforgeable | PASS | submit sets `pending` server-side; reads come from `sellers.status` |
-| 9 | Omitted fields preserved | PASS | dynamic `SET` list — only provided keys are written |
-| 10 | No false success | PASS | every failure path returns 4xx/5xx before the success payload |
+| 1 | Any local caller reaching port 3001 received the production session cookie on every `/api/*` request — no caller auth, no method limit | **Critical** | per-run access gate + `GET`/`HEAD` allowlist |
+| 2 | Origin/Referer were rewritten to a deployed frontend, impersonating a trusted origin and defeating the backend origin guard | **High** | no spoofing; the backend accepts `GET`/`HEAD` without Origin (`backend/middleware/origin-guard.ts:12`) |
+| 3 | Upstream `Set-Cookie` was forwarded to the browser | **High** | response `set-cookie` stripped |
+| 4 | All methods and bodies were proxied | **High** | `405` for anything but `GET`/`HEAD`, never forwarded |
+| 5 | No Host/Origin/Sec-Fetch-Site validation | Medium | explicit loopback allowlists |
+| 6 | Cookie store permissions unchecked at runtime | Low | refuse to start unless the store is `0600`; expired accounts refuse at startup |
 
-Defect found: none in the backend. The only defect was the frontend gate above.
+Residual risks (accepted, documented): the gate token is stored in
+`.ai/secrets/proxy-access-token` (0600, gitignored) and is only as strong as the
+device's file permissions; the proxy still translates a real production session
+into local HTTP, so it must only be run on a trusted device.
 
-## 5. Automated tests (re-run on current source)
+## C. Cookie store and proxy
 
-| Command | Result |
+**Safe mode is enforced, not described.** `authorizeRequest()` is the single
+decision point; `createProxyServer()` calls it before any upstream fetch.
+
+- Methods: `GET`, `HEAD` → forwarded. `POST/PUT/PATCH/DELETE/OPTIONS/CONNECT/
+  TRACE/PROPFIND` → `405`, upstream counter unchanged in tests.
+- Gate: `/?access=<token>` → `302` + `velnox_proxy_gate` (`HttpOnly`,
+  `SameSite=Strict`, 1 h) and the token is removed from the URL. Without it,
+  `/api/*` → `401`.
+- Host/Origin: only `127.0.0.1:PORT` / `localhost:PORT`; a foreign `Origin` or
+  `Sec-Fetch-Site: cross-site` → `403`.
+- Cookie handling: client cookies, `Origin`, `Referer`, `Authorization` are
+  dropped; exactly one stored cookie is added for `/api/*`.
+- Logging: `method path -> status (ms)`, path only, no query string, no headers.
+- Writes: `PROXY_ALLOW_WRITES=1` **and** a non-production `apiBase`, else the
+  server throws at construction. No isolated backend exists, so write mode was
+  never enabled.
+- Lifecycle: `SIGINT`/`SIGTERM` stop the server; the test suite proves the port
+  is closed after `stop()`.
+
+**Automated tests:** `backend/tests/proxy-security.test.ts` — 30 pass, against a
+local echo upstream (never production). TRACE/CONNECT are asserted over a raw
+socket because `fetch()` refuses to send them.
+
+**Browser-side session test:** after clearing a stale JS-visible
+`velnox_session` from the cookie jar, `document.cookie` is empty and
+`/api/auth/me` still answers `200`. The browser holds no session cookie; the
+proxy injects it server-side. (The stale entry was produced by the *pre-hardening*
+proxy, which had not stripped `Set-Cookie`; that path is now impossible.)
+
+## D. VelCenter browser QA
+
+- **Authenticated role available:** `seller` only (verified via `GET /api/auth/me`).
+  No owner/admin/staff session exists in the store.
+- **UI:** `http://localhost:3001/` renders the intended company-only screen
+  ("velcenter เป็นพื้นที่เฉพาะบริษัท…" + back link). No admin surface leaks.
+- **API authorization:** `GET /api/admin/overview` with the seller session →
+  `403 FORBIDDEN`. Server-side role enforcement holds; navigation is not the
+  control.
+- **Dashboard, orders, sellers, verifications, categories, banners, staff,
+  audit:** **BLOCKED** — they need an Admin/Owner/Staff account.
+- **Responsive 360/390/768/1024/1440:** **NOT VERIFIED** — the in-app WebView has
+  no resize control and the Chrome DevTools MCP cannot start here
+  (`Cannot download a binary for the provided platform: android (arm64)`).
+- No production write was attempted; every call in this task was `GET`.
+
+## E. Test results
+
+| Item | Status |
 |---|---|
-| `bun run typecheck` | exit 0 (4/4 apps) |
-| `bun run i18n:check` | exit 0 — `th=1681 en=1681 my=1681` |
-| `bun run build:velseller` | exit 0 — `✓ built in 8.95s` |
-| `bun test backend/tests` | **1245 pass / 389 skip / 0 fail** |
-| `bun test backend/tests/seller-shop-surface.test.ts` | 13 pass |
-| `bun test backend/tests/test-database-isolation.test.ts` | 39 pass |
-| `git diff --check` | exit 0 |
+| Proxy safe mode, gate, origin, hygiene, lifecycle | **AUTOMATED TEST PASSED** (30) |
+| Full backend suite | **AUTOMATED TEST PASSED** — 1273 pass / 389 skip / 0 fail |
+| Typecheck (4 apps) | exit 0 |
+| Builds (`velcenter`, `velseller`, `velshop`, relative-API) | BUILD PASSED |
+| VelCenter with Admin session | **BLOCKED** |
+| VelCenter seller/unauth behaviour | BROWSER VERIFIED |
+| Responsive | **NOT VERIFIED** |
+| Impeccable execution | **BLOCKED** (engine is ET_EXEC arm64; bionic rejects it) |
 
-The 389 skips are DB-gated suites; no test database was configured, and none was
-reported as passing.
+## F. AI Office verification
 
-## 6. AI 02 — independent QA
+- **AI 02 plan:** completed and used. It independently ranked the three top risks
+  (unauthenticated cookie injection, Origin impersonation, unbounded methods) —
+  all three were real and are fixed.
+- **AI 01 implementation:** safe-mode rewrite, gate, allowlists, hygiene, tests.
+- **AI 02 final review: PASS**, after three rounds. Its first verdict was **FAIL**
+  and it was right twice: the method tests carried a duplicate `headers` key (so
+  the gate was missing), the "access token never reaches the upstream" test never
+  sent a token, the cookie-mode check did not demand exactly `0600`, and one test
+  name claimed more than it asserted. All four were fixed (merged headers, a real
+  `/?access=` redirect test, exact mode, honest names) and AI 02 then returned
+  **PASS**.
 
-Two delegations actually completed and were verified against source, not claims:
+## G. Remaining work
 
-1. **Pre-fix audit** — independently confirmed the 403/gate defect
-   (`MyShop.tsx:282-303` and `:316-362`) and classified upload confirmation as
-   sound (`upload.ts:411-424, 431-442, 472-480`).
-2. **Post-fix review of `7a0e305`** — verdict **PASS**: the fallback reads status
-   only from `GET /api/seller/status`; the gate branch is reachable; the approved
-   path and the retry state are intact.
-
-Earlier delegation attempts in this project failed on provider routing
-(`Tenixe-Api is outside this chat's allowed fallback routes`); the two above are
-real, and their findings are reproduced in §1 and §4.
-
-## 7. Acceptance status
-
-| Criterion | Status |
-|---|---|
-| Functionality matches approved requirements | IMPLEMENTED |
-| Shop info edits against real backend | IMPLEMENTED (source + contract tests) |
-| Logo/cover persist through R2 | IMPLEMENTED (source + contract tests; not browser-verified) |
-| Application/verification contracts correct | IMPLEMENTED (13 contract tests) |
-| Ownership/authorization preserved | PASS (10/10 source checks) |
-| Automated tests | AUTOMATED TEST PASSED (0 fail) |
-| Production build | BUILD PASSED |
-| Browser verification | **BLOCKED** |
-| Responsive verification | **BLOCKED** |
-| Impeccable executed | **BLOCKED** (engine cannot run on Android arm64) |
-| AI 02 independent QA | PASSED (on `7a0e305`) |
-
-Part 1.2 is **PARTIALLY VERIFIED**: everything provable without a seller session
-passes; the three blocked items are environmental and are named above.
-
-## 8. Commits
-
-- `7a0e3050ed0bba40e7b8a93a8fc2734cd413f2b3` — 403 gate fix + 2 contract tests
-- this report — documentation commit immediately after
-
----
-
-## 12. Addendum — browser verification unblocked, three defects fixed
-
-A local cookie store plus an authenticated preview proxy removed the blocker
-that §3 reported. No credential was pasted into the chat again, no auth check was
-weakened, and the proxy talks to the real backend.
-
-Method: `VITE_API_URL= bun run build:velseller` → `dev-session-proxy.mjs seller
-3001` → `http://localhost:3001/seller/shop`, signed in as the `seller` account
-from the cookie store (`GET /api/auth/me` = 200, role `seller`).
-
-**First authenticated render exposed three defects, all now fixed (`d2695b5`):**
-
-| Defect | Cause | Fix |
-|---|---|---|
-| `NaN% ต่อชิ้น` | `GET /api/seller/profile` never returned `commissionRate` | endpoint returns it; UI shows "not set" when absent |
-| Shop shown as **ปิดร้าน** (closed) | payload had no `status`; the badge defaulted to closed | status returned; badge hidden when genuinely unknown |
-| Raw key `sellerDash.shop.togglePublish` | `togglePublish` / `togglePending` missing from th/en | keys added (th/en/my) |
-
-Re-verified after the fix in the same session: page shows `ยังไม่ระบุ`, no false
-status badge, `เปิดขาย` label, real shop `SUPER GADGET ZENE`, 2 products, filter
-counts, verified badge.
-
-Status changes: **BROWSER VERIFIED** (load, existing shop, products, filters,
-i18n, states). **RESPONSIVE VERIFIED** still NOT VERIFIED — the in-app browser
-has no resize control, so 360/390/768/1024/1440 remain unproven.
-**IMPECCABLE EXECUTED** remains BLOCKED (engine is ET_EXEC arm64; see §2).
+1. **VelCenter admin QA** needs an owner/admin/staff session in
+   `.ai/secrets/browser-cookies.json` (sign in yourself; never paste the token).
+2. **Responsive verification** needs a browser that can resize — unavailable on
+   this device (both the in-app WebView and the DevTools MCP are blocked).
+3. **Impeccable** needs an arm64 PIE engine build upstream; nothing in this repo
+   can execute it.
+4. **AI 02 final review** is done (PASS); re-run only if the proxy changes again.
+5. Pre-existing product finding, unchanged here: two seller-application UIs
+   (`RequireRole.tsx` 4-step vs `ShopOnboarding.tsx` 2-step) — one must go, by
+   owner decision.

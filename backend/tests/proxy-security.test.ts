@@ -10,6 +10,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { statSync } from "node:fs";
 import { createProxyServer, authorizeRequest, safeEqual } from "../../.ai/office/scripts/dev-session-proxy.mjs";
 
 const root = join(import.meta.dir, "..", "..");
@@ -27,7 +28,7 @@ beforeAll(() => {
     hostname: "127.0.0.1",
     fetch(req) {
       const url = new URL(req.url);
-      seen.push({ method: req.method, path: url.pathname, cookie: req.headers.get("cookie") });
+      seen.push({ method: req.method, path: url.pathname, url: `${url.pathname}${url.search}`, cookie: req.headers.get("cookie") });
       return new Response(JSON.stringify({ ok: true, path: url.pathname }), {
         status: 200,
         headers: {
@@ -94,8 +95,7 @@ describe("safe mode — method allowlist", () => {
       const before = seen.length;
       const res = await fetch(`${base}/api/seller/shop`, {
         method,
-        headers: gateHeaders,
-        headers: { "content-type": "application/json" },
+        headers: { ...gateHeaders, "content-type": "application/json" },
         body: method === "GET" || method === "HEAD" ? undefined : "{}",
       });
       expect(res.status).toBe(405);
@@ -105,7 +105,39 @@ describe("safe mode — method allowlist", () => {
   }
 });
 
-describe("safe mode — unusual methods", () => {
+describe("safe mode — unusual methods over a raw socket", () => {
+  test("TRACE is answered 405 and never reaches the upstream", async () => {
+    const before = seen.length;
+    const raw = `TRACE /api/auth/me HTTP/1.1\r\nHost: localhost:${PORT}\r\nCookie: velnox_proxy_gate=${GATE}\r\nConnection: close\r\n\r\n`;
+    const response = await new Promise((resolve, reject) => {
+      let data = "";
+      const socket = Bun.connect({
+        hostname: "127.0.0.1",
+        port: PORT,
+        socket: {
+          open(s) {
+            s.write(raw);
+          },
+          data(_s, chunk) {
+            data += new TextDecoder().decode(chunk);
+          },
+          close() {
+            resolve(data);
+          },
+          error(_s, err) {
+            reject(err);
+          },
+        },
+      });
+      setTimeout(() => resolve(data), 3000);
+      void socket;
+    });
+    expect(String(response)).toContain("HTTP/1.1 405");
+    expect(seen.length).toBe(before);
+  });
+});
+
+describe("safe mode — unusual methods (decision only)", () => {
   // fetch() refuses to send TRACE/CONNECT, so the decision function is asserted.
   for (const method of ["TRACE", "CONNECT", "PROPFIND"]) {
     test(`${method} is not an allowed method`, () => {
@@ -153,10 +185,13 @@ describe("safe mode — local access gate", () => {
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
-  test("the access token never reaches the upstream request", async () => {
-    await fetch(`${base}/api/auth/me`, { headers: gateHeaders });
-    const last = seen[seen.length - 1];
-    expect(last.path).toBe("/api/auth/me");
+  test("a valid ?access= token never reaches the upstream (cookie only)", async () => {
+    const before = seen.length;
+    const res = await fetch(`${base}/?access=${GATE}`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location") ?? "").not.toContain("access");
+    expect(seen.length).toBe(before); // the redirect is answered locally
+    expect(seen.some((entry) => entry.url.includes("access"))).toBe(false);
   });
 });
 
@@ -207,7 +242,7 @@ describe("safe mode — response hygiene", () => {
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
-  test("the session value never appears in a response body", async () => {
+  test("an /api response body never contains the session value", async () => {
     const res = await fetch(`${base}/api/auth/me`, { headers: gateHeaders });
     const body = await res.text();
     expect(body).not.toContain(SECRET_COOKIE);
@@ -263,8 +298,17 @@ describe("storage and lifecycle", () => {
     expect(out).toContain(".ai/secrets/");
   });
 
-  test("the token file path is inside the ignored secrets directory", () => {
-    expect(".ai/secrets/proxy-access-token".startsWith(".ai/secrets/")).toBe(true);
+  test("the proxy access-token file is excluded from git", () => {
+    const out = execFileSync("git", ["check-ignore", "-v", ".ai/secrets/proxy-access-token"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(out).toContain(".ai/secrets/");
+  });
+
+  test("the cookie store must be 0600", () => {
+    const mode = statSync(join(root, ".ai", "secrets", "browser-cookies.json")).mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 
   test("stopping the proxy closes the port", async () => {
