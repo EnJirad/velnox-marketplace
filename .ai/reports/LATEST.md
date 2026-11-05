@@ -1,9 +1,9 @@
 # Phase 1 — Full Ecosystem UI/UX Audit + Phase 2 Implementation Progress
 
 **Date:** 2026-11-05 · **Branch:** `main` · **Starting SHA:** `3eaa5fd30d019f9eb4f6f16252445a205948e996`
-**Head SHA:** `6ec20f125cc288f3c08347aedd3b8b35d0bafeae` (pushed to origin/main)
+**Head SHA:** `1fe29a60ac821a598702c407f46fe2e74d2dde62` (pushed to origin/main)
 **4/4 typecheck:** PASS | **4/4 builds:** PASS
-**i18n parity:** 1704 × 3 keys (th/en/my) ✅
+**i18n parity:** 1715 × 3 keys (th/en/my) ✅
 
 **IMPECCABLE: BLOCKED** — ARM64 binary unavailable (`unexpected e_type: 2`). Manual design review performed.
 
@@ -39,6 +39,39 @@
 - Removed `ShopFooter` import from `ShopHome.tsx` (was rendering null)
 - Removed unused Lucide imports (`ArrowRight`, `PackageSearch`, `RotateCcw` where unused)
 - `ShopFooter` component kept (exported null) — 19 other pages still import it
+
+---
+
+## Thaimart-Style Redesign (2026-11-05) ✅ COMPLETE
+
+Reference: https://thaimart.com (inspected live via browser)
+
+### VelShop — Thaimart-inspired Homepage
+| Component | Path | What it does |
+|-----------|------|--------------|
+| `TopBanner` | `apps/velshop/src/components/shop/TopBanner.tsx` | Emerald gradient banner "เริ่มธุรกิจของคุณกับ Velnox · สมัครฟรี ไม่มีค่าธรรมเนียม" + CTA → velseller; session-dismissible |
+| `CategoryStrip` | `apps/velshop/src/components/shop/CategoryStrip.tsx` | Horizontal scrollable pill chips (ทั้งหมด + categories) with native scroll arrows, aria roles, uploaded image icons |
+| `LiveSection` | `apps/velshop/src/components/shop/LiveSection.tsx` | LIVE NOW + upcoming horizontal stream cards (placeholder — no live infra, renders only when streams exist) |
+
+### VelShop Homepage order (mirrors Thaimart):
+1. Top banner (seller CTA) — in ShopHeader, all pages
+2. Announcement carousel
+3. Horizontal category strip
+4. LIVE section
+5. Promo strip
+6. Product rails (trending, new) + full grid
+
+### VelCenter — Category Icon Upload
+- Form dialog now has image upload (presign category-icon → R2 PUT → confirm), WebP-compressed ≤256px, preview + delete
+- Category tree rows render uploaded icon thumbnails
+- Backend: new `category-icon` upload purpose (settings.manage gated), key `categories/{id}/icon.webp`, confirm writes `categories.icon`
+- Storefront category strip + ShopCategories read `categories.icon` from `/api/categories/stats` and render the uploaded image
+
+### Shared
+- `SITE_URLS` corrected to real production domains (velshop/velseller/velcenter/velnox-theta)
+- i18n: th/en/my `topBanner`, `categoryStrip`, `liveSection` (1715×3 parity)
+
+**Status:** Typecheck 4/4 PASS · Builds 4/4 PASS · i18n parity PASS · pushed `1fe29a6`
 
 ---
 
