@@ -14,7 +14,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
-  BadgePercent,
   Clock,
   Eye,
   EyeOff,
@@ -24,7 +23,6 @@ import {
   Pencil,
   Plus,
   Search,
-  ShieldCheck,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -450,68 +448,7 @@ export default function MyShop() {
           {t("sellerDash.shop.eyebrow")}
         </p>
 
-        <ShopIdentityCard shop={shop} verificationStatus={verificationStatus} onUpdated={loadProfile} />
-
-        {/* facts: what the seller is charged, what is covered, whether verified */}
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
-            <span className="flex size-10 items-center justify-center rounded-[10px] bg-slate-100">
-              <BadgePercent className="size-5 text-slate-600" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-xs text-slate-500">{t("sellerDash.shop.cardFee")}</p>
-              <p className="text-sm font-semibold text-slate-900">
-                {Number.isFinite(shop.commissionRate)
-                  ? t("sellerDash.shop.cardFeeValue", {
-                      rate: (shop.commissionRate * 100).toLocaleString(),
-                    })
-                  : t("sellerDash.shop.cardFeeUnknown")}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
-            <span className="flex size-10 items-center justify-center rounded-[10px] bg-[#ECFDF5]">
-              <ShieldCheck className="size-5 text-[#10B981]" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-xs text-slate-500">{t("sellerDash.shop.cardReturnPolicy")}</p>
-              <p className="text-sm font-semibold text-slate-900">
-                {t("sellerDash.shop.cardReturnValue")}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
-            <span className="flex size-10 items-center justify-center rounded-[10px] bg-emerald-50">
-              <ShieldCheck className="size-5 text-emerald-700" aria-hidden="true" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-slate-500">{t("verification.sellerVerificationTitle")}</p>
-              <p className="text-sm font-semibold text-slate-900">
-                {verificationStatus === "pending"
-                  ? t("sellerDash.shop.verifyPendingHint")
-                  : verificationStatus === "verified"
-                    ? t("sellerDash.shop.verifyVerifiedText")
-                    : t("verification.sellerVerificationBadge")}
-              </p>
-            </div>
-            {verificationStatus !== "pending" && verificationStatus !== "verified" && (
-              <Button
-                variant="ghost"
-                className="h-11 shrink-0 px-3 text-xs font-medium text-[#047857] hover:bg-emerald-50"
-                onClick={() => {
-                  setVerifyAtEvidence(false);
-                  setVerifyTarget({ kind: "seller" });
-                }}
-              >
-                {verificationStatus === "rejected"
-                  ? t("verification.resubmitForVerification")
-                  : t("verification.submitForVerification")}
-              </Button>
-            )}
-          </div>
-        </div>
+        {/* products — removed identity/fee/verification cards (moved to Profile tab) */}
 
         {/* products */}
         <section className="mt-8" aria-labelledby="shop-products-title">
