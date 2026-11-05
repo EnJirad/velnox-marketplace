@@ -311,6 +311,15 @@ export default function ShopCart() {
                                 {line.variantOptionLabels}
                               </p>
                             )}
+                            {line.wholesale && line.packSize != null && (
+                              <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[11px] font-semibold text-[#047857]">
+                                {t("cart.wholesaleBadge", {
+                                  packs: line.packs ?? 0,
+                                  size: line.packSize,
+                                  price: line.pricePerPack ?? "",
+                                })}
+                              </p>
+                            )}
                             <p className="mt-0.5 text-xs text-slate-400">
                               {formatBaht(line.price)} {t("cart.perUnit", { unit: line.unit })}
                               {line.qty >= line.stock && (
@@ -464,6 +473,15 @@ export default function ShopCart() {
                             <p className="mt-0.5 text-xs tabular-nums text-slate-400">
                               {formatBaht(line.price)} × {line.qty}
                             </p>
+                            {line.wholesale && line.packSize != null && (
+                              <p className="mt-0.5 text-[11px] font-semibold text-[#047857]">
+                                {t("cart.wholesaleBadge", {
+                                  packs: line.packs ?? 0,
+                                  size: line.packSize,
+                                  price: line.pricePerPack ?? "",
+                                })}
+                              </p>
+                            )}
                           </div>
                           <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
                             {formatBaht(line.qty * line.price)}

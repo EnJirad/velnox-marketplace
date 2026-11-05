@@ -13,16 +13,17 @@ Date: 2026-11-05 · Branch `main`
 | Buyer gate (business verification, API) | IMPLEMENTED (submit/read/review) |
 | Seller tier configuration (API) | IMPLEMENTED (atomic replace, ownership + validation) |
 | Checkout / quote / order snapshot / stock | IMPLEMENTED |
-| Storefront + seller + VelCenter **UI** | **NOT IMPLEMENTED** (blocked — §8) |
+| VelShop cart wholesale badge | IMPLEMENTED (server-fed, `cart.wholesaleBadge`) |
+| Seller tier screen + VelCenter review screen | **NOT IMPLEMENTED** (§8) |
 | DB-gated integration tests | WRITTEN, **SKIPPED locally** (no disposable DB) |
 | AI 02 independent review | **BLOCKED** (delegation fails, §9) |
 | Browser QA | **BLOCKED** |
 | Impeccable | **BLOCKED** |
 
-Wholesale pack pricing is therefore **complete on the server contract and NOT
-complete as a product**: there is no screen yet through which a seller sets a
-pack price or a buyer applies for a business account. Nothing in this report
-claims otherwise.
+Wholesale pack pricing is therefore **complete on the server contract, visible in
+the cart, and NOT complete as a product**: a seller still has no screen to set a
+pack price, and a buyer still has no screen to apply for a business account (both
+exist as validated APIs). Nothing in this report claims otherwise.
 
 ## 2. Approved business contract
 
@@ -142,11 +143,12 @@ f74d518 feat(db): wholesale tiers + business verification schema (Part 2)
 
 ## 8. BLOCKED — UI and every check that needs a live stack
 
-- **UI is not built.** There is no seller screen for tiers, no storefront
-  indication of pack size / pack price / applied tier, and no VelCenter review
-  screen. The APIs exist and are validated; the surfaces do not. Shipping P0's
-  checkout already renders server totals, so a wholesale order will display the
-  correct amount — but the customer cannot see *why* it is cheaper.
+- **Seller and admin screens are missing.** There is no seller screen for tiers
+  and no VelCenter review screen. The APIs exist and are validated; those two
+  surfaces do not. The **cart** now shows the tier (pack size, pack count, price
+  per pack) and prices every line at the live server amount, so a wholesale order
+  displays the correct numbers; the product page still does not advertise
+  "buy N as a pack" before it is in the cart.
 - **DB-gated tests cannot run.** `initdb` cannot complete on this device
   (documented in the previous report), so `TEST_DATABASE_URL` has no target and
   418 tests skip, including all 14 written here.
@@ -191,7 +193,7 @@ flow.
 
 1. Seller UI: wholesale tiers inside the product editor (pack size, tiers, preview
    of the per-pack price).
-2. VelShop: pack badge + "ซื้อเป็นแพ็ค" explainer on product/cart/checkout lines
+2. VelShop product page: "ซื้อเป็นแพ็ค" explainer before the item is in the cart
    (the quote endpoint already returns `lines[].packSize/packs/pricePerPack`).
 3. VelCenter: business verification queue with signed evidence URLs.
 4. Run the 14 DB-gated tests on a disposable PostgreSQL and paste the counts here.

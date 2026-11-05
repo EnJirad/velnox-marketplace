@@ -1647,6 +1647,19 @@ const mySellerShippingUx = {
   shippingPlatformDefault: "ပလက်ဖောင်း မူလတန်ဖိုး",
 };
 
+// ─── Wholesale pack display (cart) ─────────────────────────────────────────
+// A cart line priced at a wholesale tier says WHY it is cheaper: how many packs,
+// how many units per pack, and the pack price the server charged.
+const thCartWholesaleUx = {
+  wholesaleBadge: "{packs} แพ็ค × {size} ชิ้น · ฿{price}/แพ็ค",
+};
+const enCartWholesaleUx = {
+  wholesaleBadge: "{packs} packs × {size} units · ฿{price}/pack",
+};
+const myCartWholesaleUx = {
+  wholesaleBadge: "{packs} ပါဆယ် × {size} လုံး · ฿{price}/ပါဆယ်",
+};
+
 export const translations: Record<Language, Dict> = {
   th: {
     ...th,
@@ -1658,6 +1671,7 @@ export const translations: Record<Language, Dict> = {
     },
     center: thCenterUi,
     checkout: { ...th.checkout, ...thPaymentUx, ...thShippingUx },
+    cart: { ...th.cart, ...thCartWholesaleUx },
     chat: { ...th.chat, ...thChatUi },
     verification: { ...th.verification, ...thVerificationCopy },
     categories: { ...th.categories, ...thCategoriesCopy },
@@ -1677,6 +1691,7 @@ export const translations: Record<Language, Dict> = {
     },
     center: enCenterUi,
     checkout: { ...en.checkout, ...enPaymentUx, ...enShippingUx },
+    cart: { ...en.cart, ...enCartWholesaleUx },
     chat: { ...en.chat, ...enChatUi },
     verification: { ...en.verification, ...enVerificationCopy },
     categories: { ...en.categories, ...enCategoriesCopy },
@@ -1708,6 +1723,7 @@ export const translations: Record<Language, Dict> = {
     productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
     center: myCenterUi,
     checkout: { ...myBase.checkout, ...myPaymentUx, ...myShippingUx },
+    cart: { ...myBase.cart, ...myCartWholesaleUx },
     chat: { ...myChatPatch.chat, ...myChatUi },
     sellerChat: myChatPatch.sellerChat,
     notifications: { ...myBase.notifications, ...myNotifyPatch },

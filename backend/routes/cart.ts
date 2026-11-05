@@ -42,6 +42,7 @@ import {
   loadShopShippingConfigs,
 } from "../lib/shipping-quote-store.js";
 import { add, multiplyByQuantity, parseDecimal, subtract, toMoneyString } from "../lib/money.js";
+import { priceLine } from "../lib/wholesale.js";
 // The ONE order-row lock and the money-outranks-cancel rule (see the module
 // header: every transaction writing orders + payments takes the order lock
 // first, so cancellation and the Stripe webhook can never deadlock).
@@ -352,7 +353,64 @@ export function setupCartRoutes(app: Express): void {
       const cartId = await ensureCart(userId);
 
       const rows = await fetchCartItems(cartId);
-      const items = rows.map(formatCartRow);
+
+      // ── Live pricing for the cart screen ─────────────────────────────────
+      // The cart shows what checkout will actually charge: the CURRENT server
+      // price, with a wholesale tier applied when the buyer is a verified
+      // business and the quantity is a whole number of packs. The stored
+      // `cart_items.price` is a snapshot and is never the amount charged, so
+      // displaying it made the cart disagree with checkout after any price or
+      // tier change. Quantities, tiers and the buyer's status are read here —
+      // never taken from the client.
+      const businessRes = await query(
+        `SELECT status FROM business_verifications WHERE user_id = $1`,
+        [userId],
+      );
+      const buyerIsVerifiedBusiness = businessRes.rows[0]?.status === "verified";
+
+      const items = await Promise.all(
+        rows.map(async (row: any) => {
+          const base = formatCartRow(row);
+          const variantId = row.variant_id ?? null;
+          const priceRow = variantId
+            ? await query(`SELECT price FROM product_variants WHERE id = $1`, [variantId])
+            : await query(`SELECT price FROM products WHERE id = $1`, [row.product_id]);
+          const retail = priceRow.rows[0]?.price;
+          if (retail == null) return base;
+
+          const tierRes = await query(
+            `SELECT pack_size, min_packs, price_per_pack
+               FROM wholesale_tiers
+              WHERE product_id = $1
+                AND ((variant_id = $2) OR (variant_id IS NULL AND $2 IS NULL))
+              ORDER BY min_packs ASC`,
+            [row.product_id, variantId],
+          );
+          const tiers = tierRes.rows.map((t: any) => ({
+            packSize: Number(t.pack_size),
+            minPacks: Number(t.min_packs),
+            pricePerPack: String(t.price_per_pack),
+          }));
+          const priced = priceLine(
+            Number(row.quantity),
+            String(retail),
+            buyerIsVerifiedBusiness ? tiers : [],
+            buyerIsVerifiedBusiness,
+          );
+          return {
+            ...base,
+            // The price the server would charge per unit right now.
+            priceSnapshot: Number(priced.unitPriceMoney),
+            lineTotal: Number(priced.lineTotalMoney),
+            wholesale: priced.wholesale,
+            packSize: priced.packSize,
+            packs: priced.packs,
+            pricePerPack: priced.tierPricePerPack,
+            wholesaleReason: priced.reason,
+            buyerIsVerifiedBusiness,
+          };
+        }),
+      );
       res.json({ success: true, data: { items } });
     } catch (err) {
       console.error("[cart] get error:", err);

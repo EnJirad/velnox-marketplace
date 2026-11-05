@@ -18,6 +18,12 @@ import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
 export interface CartLine {
   id: string;
   productId: string;
+  /** True when the server priced this line at a wholesale pack tier. */
+  wholesale?: boolean;
+  packSize?: number | null;
+  packs?: number | null;
+  pricePerPack?: string | null;
+  wholesaleReason?: string | null;
   variantId: string | null;
   variantName?: string | null;
   variantSku?: string | null;
@@ -74,6 +80,12 @@ function toLine(item: {
   shopId?: string | null;
   shopName?: string;
   productImageUrl?: string;
+  /** Server-resolved wholesale annotation (null/absent for a retail line). */
+  wholesale?: boolean;
+  packSize?: number | null;
+  packs?: number | null;
+  pricePerPack?: string | null;
+  wholesaleReason?: string | null;
 }): CartLine {
   return {
     id: item.id,
@@ -92,6 +104,11 @@ function toLine(item: {
     shopId: item.shopId ?? null,
     shopName: item.shopName,
     imageUrl: item.productImageUrl,
+    wholesale: item.wholesale === true,
+    packSize: item.packSize ?? null,
+    packs: item.packs ?? null,
+    pricePerPack: item.pricePerPack ?? null,
+    wholesaleReason: item.wholesaleReason ?? null,
   };
 }
 
