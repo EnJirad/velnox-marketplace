@@ -1,276 +1,198 @@
-# P0 — Shipping fee & server-authoritative shipping quote
+# Phase 2 — Shipping-adjacent wholesale pricing: pack prices, buyer gate, order snapshot
 
-Date: 2026-11-05 · Branch `main` · BASE `7f01075dad8dfba6ec6c3f36e9329976989c4786`
+Date: 2026-11-05 · Branch `main`
+**Starting SHA:** `96cce629ac1b405ea456526b4ad6548b2305e663` (= `origin/main`, clean tree)
+**Final SHA:** see the commit that carries this report (`git log -1`).
 
-## 1. Root cause of `shipping_fee = 0`
+## 1. Status summary (read this first)
 
-There was **no shipping price anywhere in the system** — not in the schema, not in
-the seller UI, not on the server. Confirmed against source, not the audit text:
-
-| # | Cause | Evidence (before this change) |
-|---|---|---|
-| 1 | Order creation wrote only `total_amount`; `subtotal`, `shipping_fee`, `discount` kept their `0` defaults | `backend/routes/cart.ts` `insertOrderWithUniqueNumber` INSERT column list |
-| 2 | The checkout screen printed a hard-coded "ส่งฟรี" (free) row and totalled only `qty × price` | `apps/velshop/src/pages/ShopCheckout.tsx` summary block, `checkoutTotal` |
-| 3 | The backend had no shipping endpoint at all — `POST /api/customer/checkout` accepted no fee and produced none | route list in `cart.ts` (11 routes, none shipping) |
-| 4 | `shops` had **no** shipping columns, so a seller could not express a fee | `db/schema.sql` `shops` table |
-| 5 | The client sent a meaningless `shippingMethod: "standard"` that the backend ignored | `ShopCheckout.tsx` checkout payload |
-| 6 | Order totals therefore omitted delivery, while order *items* did not | `orders.total_amount` was the item sum only |
-
-Nothing on the backend ever accepted a client-supplied fee (there was nowhere to
-put one), so the defect was **missing pricing**, not tampering — the manipulation
-surface only becomes relevant once a fee exists, and it is closed in Part 4.
-
-## 2. Financial contract (authoritative)
-
-Per shop shipment — exactly one `orders` row and one `shipments` row:
-
-```
-subtotal      = Σ (current server unit price × integer quantity)   exact decimal
-shipping_fee  = the shop's shipping rule                            exact decimal
-discount      = 0.00   (no shop-level discount system exists in checkout)
-total_amount  = subtotal − discount + shipping_fee
-```
-
-Per purchase (`checkout_groups.total_amount`) = `Σ per-shop total_amount`, which is
-what Stripe/PromptPay is asked to charge (`payments.amount`; Stripe line items are
-built from `orders.total_amount` / the group total — `backend/routes/stripe.ts`).
-
-Money is carried as decimal **strings** and computed through `backend/lib/money.ts`
-(exact rationals over `bigint`, one round-half-up at the boundary). No float is
-part of an authoritative amount. Currency THB, `NUMERIC(12,2)`.
-
-Quote lifecycle: TTL **15 minutes**, server clock, sha-256 **fingerprint** of
-`(currency, address id, per line: product / variant / quantity / server price / shop)`.
-The quote is a *claim* checkout re-derives and compares; it is consumed exactly once
-(`UPDATE … WHERE consumed_at IS NULL AND expires_at > NOW()`), so two concurrent
-submits cannot both spend it.
-
-## 3. Business rule approved for this scope
-
-No carrier API exists and no product carries weight/dimension data, so a real rate
-engine would have meant inventing numbers. Large Thai marketplaces (Shopee, Lazada,
-TikTok Shop) charge **one delivery per seller** because each seller ships their own
-parcel, and let the seller set that channel's fee. That structure is what is
-implemented — with the numbers explicit and configurable, never hard-coded in the UI:
-
-| Source | Meaning |
+| Area | Status |
 |---|---|
-| `shops.shipping_fee = NULL` | use the platform default (`SHIPPING_FLAT_FEE_THB`, else **50.00**) |
-| `shops.shipping_fee = 0` | the seller ships free (explicit) |
-| `shops.shipping_fee > 0` | that flat fee per parcel |
-| `shops.free_shipping_threshold` | free once that shop's item subtotal reaches it (NULL = no automatic free shipping) |
+| Pricing engine (`lib/wholesale.ts`) | IMPLEMENTED + tested (21 assertions) |
+| Schema (`wholesale_tiers`, `business_verifications`, `business_verification_history`, `order_items.wholesale_*`) | IMPLEMENTED, snapshot + reconciler at parity |
+| Buyer gate (business verification, API) | IMPLEMENTED (submit/read/review) |
+| Seller tier configuration (API) | IMPLEMENTED (atomic replace, ownership + validation) |
+| Checkout / quote / order snapshot / stock | IMPLEMENTED |
+| Storefront + seller + VelCenter **UI** | **NOT IMPLEMENTED** (blocked — §8) |
+| DB-gated integration tests | WRITTEN, **SKIPPED locally** (no disposable DB) |
+| AI 02 independent review | **BLOCKED** (delegation fails, §9) |
+| Browser QA | **BLOCKED** |
+| Impeccable | **BLOCKED** |
 
-**Limitation, stated plainly:** there is no zone/weight/volumetric/carrier rate, no
-provider integration, and no tracking API. The fee is a per-shop flat rate. *Web
-verification of the marketplace comparison was not possible this session* (search
-engines returned no results / HTTP 429 and the Shopee help URL 404'd), so the
-comparison above is general market practice, not a citation.
+Wholesale pack pricing is therefore **complete on the server contract and NOT
+complete as a product**: there is no screen yet through which a seller sets a
+pack price or a buyer applies for a business account. Nothing in this report
+claims otherwise.
 
-## 4. API changes
+## 2. Approved business contract
 
-**New** `POST /api/customer/shipping/quote` (`backend/routes/shipping.ts`, auth required)
+Owner decisions taken this session (recorded because they are not derivable from
+the codebase):
 
-```jsonc
-// request — the client may only NAME what it wants priced
-{ "addressId": "<uuid>", "cartItemIds": ["<uuid>"], "buyNow": { "productId": "...", "variantId": null, "quantity": 2 } }
-// 200
-{ "success": true, "data": {
-    "quoteId": "<uuid>", "expiresAt": "…", "expiresInSeconds": 900,
-    "method": "shop_flat_rate", "currency": "THB",
-    "subtotal": "59.97", "discount": "0.00", "shippingTotal": "25.00", "total": "84.97",
-    "itemCount": 3,
-    "shops": [{ "shopId": "…", "shopName": "…", "subtotal": "59.97", "shippingFee": "25.00",
-                "freeShipping": false, "reason": "shop_flat_rate", "method": "shop_flat_rate", "itemCount": 3 }] } }
+1. **Per-unit price of record.** A seller configures a pack size N and a price
+   per pack; the engine converts that to an exact per-unit rational
+   (`price_per_pack / pack_size`) and rounds only the final line amount.
+2. **Partial packs are retail** (rule A). Wholesale applies only when
+   `units % pack_size === 0` **and** the pack count reaches the seller's lowest
+   `min_packs`. Anything else is priced at retail — never refused, never blended.
+3. **Only a verified business account sees wholesale prices.** A normal customer,
+   a pending applicant and a rejected/suspended applicant all pay retail. This
+   requirement was added by the owner and supersedes the task template's ban on
+   "Phase 3 — Wholesale Shop Accounts"; the phase ships **only the verification
+   gate**, not a B2B storefront.
+4. **Verification bar = the seller's bar** (owner Spec A): commercial
+   registration number (13 digits), shop-front photo, authorised person ID photo,
+   bank book, reviewed per account in VelCenter by `sellers.manage`.
+5. **Tier selection:** the tier with the greatest `min_packs ≤ packs`.
+6. **Inventory deducts units**, never packs.
+6. **A tier edit never rewrites history:** the order stores the pack size, pack
+   count and pack price it was sold at.
+
+## 2a. Business rules → implementation map
+
+| Rule | Where |
+|---|---|
+| tier resolution, per-unit math, partial-pack policy | `backend/lib/wholesale.ts` |
+| buyer status resolved per request | `backend/lib/checkout-lines.ts` (`business_verifications`) |
+| exact line amount in quote + order | `QuotedLine.lineTotal` (`lib/shipping.ts`), `order_items.subtotal` |
+| fingerprint includes pack identity | `shippingFingerprint` |
+| seller validation + atomic replace | `backend/routes/wholesale.ts` |
+| verification lifecycle | `backend/routes/business-verification.ts` |
+
+## 3. Database changes (additive, reversible)
+
+- `wholesale_tiers(id, product_id, variant_id, pack_size, min_packs, price_per_pack, …)`
+  with `CHECK` guards (`pack_size` 2..1000, `min_packs` ≥ 1, `price_per_pack > 0`)
+  and `idx_wholesale_tiers_unique` on `(product_id, COALESCE(variant_id, zero-uuid), min_packs)`.
+- `business_verifications(user_id UNIQUE, status CHECK, business_name, business_type,
+  registration_number, evidence_urls JSONB, submitted_at, reviewed_at, reviewed_by,
+  rejection_reason, review_note, …)`.
+- `business_verification_history(verification_id, action, note, created_at)`.
+- `order_items.wholesale_pack_size INTEGER`, `wholesale_packs INTEGER`,
+  `wholesale_tier_price NUMERIC(12,2)`.
+
+Both `db/schema.sql` and `db/run-sqleditor.sql` updated; the parity + drift suites
+pass (`db-run-sqleditor-reconciler` 21/21, `schema-drift` 8/8). **No production
+migration was executed**, and none may be run by an agent.
+
+## 4. What the engine guarantees
+
+```
+units      = cart line quantity (integer)
+pack_size  = wholesale_tiers.pack_size for (product, variant)      — NULL => retail
+packs      = units / pack_size                                     — integer only
+eligible   = buyer verified AND pack_size set AND units % pack_size == 0
+             AND packs >= min(min_packs for that scope)
+tier       = greatest min_packs <= packs
+line_amount= packs × price_per_pack        (exact; never unit_price × units)
+unit_price = line_amount / units           (2 dp, display only)
 ```
 
-Refusals: `400 CLIENT_AMOUNT_NOT_ACCEPTED`, `400 ADDRESS_REQUIRED`,
-`403 ADDRESS_NOT_FOUND`, `422 SHIPPING_DESTINATION_UNSUPPORTED` (only `TH` is
-priceable), `400 SHIPPING_EMPTY_CART`, plus the existing product/stock codes.
+`100.00 per pack of 3` therefore charges **100.00** for 3 units, not 33.33 × 3 =
+99.99, and `orders.subtotal` equals the sum of `order_items.subtotal` because the
+quote sums the same exact line amounts it later persists. `order_items.price`
+keeps the 2-decimal per-unit value for existing readers and is explicitly **not**
+the basis of the line total; a test asserts both halves of that statement.
 
-**Changed** `POST /api/customer/checkout`
-- accepts `shippingQuoteId`; a **supplied** quote is rejected with `409`
-  `SHIPPING_QUOTE_INVALID | _USED | _EXPIRED | _STALE` when it does not match.
-- refuses any client money field with `400 CLIENT_AMOUNT_NOT_ACCEPTED`
-  (`shippingFee`, `shipping_fee`, `shippingTotal`, `subtotal`, `total`,
-  `totalAmount`, `amount`, `discount`) — refused, not ignored.
-- persists `subtotal`, `shipping_fee`, `discount`, `total_amount`, `shipping_quote_id`;
-  the group total includes delivery.
-- when no quote id is sent (API clients, older builds) the server **mints and
-  redeems** a quote from the same computation, so no order can carry a client
-  price either way. The VelShop UI always sends one, which is what makes "the
-  customer saw this fee before paying" true for real users.
+## 5. Tests
 
-**Changed** `PATCH /api/seller/shop` — accepts `shippingFee` / `freeShippingThreshold`
-(`null` = platform default, `0` = free, ≤2 decimals, bounded); `GET /api/seller/profile`
-returns `shipping: { fee, freeShippingThreshold }`.
+**Executed here, passing**
 
-**Changed** order payloads — `shippingMethod` is `"shop_flat_rate"` only when a quote
-actually priced the order, `null` for legacy orders (customer list/detail, seller
-list/detail).
+| Suite | Result |
+|---|---|
+| `backend/tests/wholesale-pricing.test.ts` | **21 pass** — retail regression, gate, one pack exact, 99.99×7 precision, tier boundaries (1/4/5/9/10/25 packs), partial packs, below-minimum, fingerprint change on tier edit, cheapest-from display, invalid input |
+| `backend/tests/wholesale-tiers.test.ts` | **15 pass** — every validation refusal (pack size, min packs, price 0/negative/3-dp, duplicate min_packs, mixed pack sizes in one scope, foreign variant, >20 tiers, non-array), plus one-pack-size-per-scope and product-vs-variant scopes |
+| `backend/tests/db-run-sqleditor-reconciler.test.ts` | 21 pass |
+| `backend/tests/schema-drift.test.ts` | 8 pass |
+| full `bun test ./backend/tests` | **1376 pass / 418 skip / 1 fail** |
 
-## 5. Database changes (additive, reversible)
+The single failure is the pre-existing, timing-sensitive
+`proxy-write-mode.test.ts > --check prints identity only` case (5 s timeout under
+full-suite load; it passes when that file runs alone, 29/29). It is unrelated to
+this change and was not loosened.
 
-1. `shops.shipping_fee NUMERIC(12,2) NULL`, `shops.free_shipping_threshold NUMERIC(12,2) NULL`
-2. `orders.shipping_quote_id UUID NULL` + FK → `shipping_quotes(id) ON DELETE SET NULL`
-3. `shipping_quotes` table — `user_id`, `address_id`, `fingerprint`, `currency`,
-   `subtotal`, `shipping_total`, `total_amount`, `breakdown JSONB`, `expires_at`,
-   `consumed_at`, `checkout_group_id`, `created_at`, with
-   `CHECK (total_amount = subtotal + shipping_total)` and non-negative checks;
-   indexes `(user_id, created_at DESC)` and partial `(expires_at) WHERE consumed_at IS NULL`.
+**Written but SKIPPED (no disposable database on this device)**
 
-Both `db/schema.sql` and `db/run-sqleditor.sql` updated (reconciler parity test passes:
-21/21). Existing orders/payments untouched; every column is nullable, so the change is
-reversible with `DROP COLUMN` / `DROP TABLE` and **no production migration was run**
-(and must not be run by an agent).
+`backend/tests/wholesale-checkout-integrity.test.ts` — 14 DB-gated cases:
+retail regression, the five-state gate matrix, one pack = 100.00, tier
+boundaries, partial packs, below-minimum, invalid seller input leaves no rows,
+cross-seller refusal, unit-level stock deduction, exact `order_items` snapshot,
+history immutability after a tier edit, quote↔order consistency, stale quote
+after losing verification, client money manipulation. These have **never been
+executed**; they are not evidence of anything yet.
 
-## 6. Checkout changes (VelShop)
-
-`ShopCheckout.tsx` now: requests the quote whenever the address, the selected lines or
-their quantity/price change (debounced, stale responses discarded by sequence);
-auto-refreshes shortly before expiry; renders **subtotal → discount (only when non-zero)
-→ delivery → total** exclusively from server strings; shows "ฟรีค่าจัดส่ง" **only** for a
-valid quote whose delivery is exactly `0.00` (and says whether that is a seller choice or
-a threshold); shows a spinner while pricing, an actionable **Retry** on failure, and an
-em dash instead of a total when no quote exists; blocks submit until a quote is ready and
-sends `shippingQuoteId`, never a number. A `409` quote refusal re-quotes and asks the
-customer to review the new total instead of retrying the charge.
-
-## 7. Order & payment integrity
-
-- Order rows are written from `buildShippingQuote(...)` output only; the per-shop
-  amount map is a hard lookup (a missing shop now **throws** instead of writing 0).
-- `total_amount = subtotal − discount + shipping_fee` is computed term by term.
-- Before responding, the persisted per-shop totals are compared with the quote total
-  and a mismatch **rolls the checkout back** (`CHECKOUT_TOTAL_MISMATCH`).
-- Idempotency (`checkout_requests`), the order-row lock, payment reservation and the
-  Stripe webhook path are unchanged; Stripe still derives the charge from the stored
-  order/group amount, so payment, order and group agree by construction and by check.
-
-## 8. Seller / fulfilment compatibility
-
-`PATCH /api/seller/shop` writes the shop's fee (validated server-side), `My Shop` shows
-`ใช้ค่าเริ่มต้นของแพลตฟอร์ม` / `ฟรี` / the amount plus the free threshold, and the edit
-dialog exposes both fields with an invalid-input message. Seller order list/detail
-already carried `subtotal` / `discount` / `shippingFee` / `total`; they now carry real
-numbers plus `shippingMethod`. Ownership checks are untouched (seller detail is scoped
-by `sh_shops.seller_id`). No carrier/tracking integration was invented.
-
-## 9. Tests
-
-`backend/tests/shipping-quote.test.ts` — **33 pass, 0 fail** (runs with no database):
-the rule (default / flat / explicit free / threshold / corrupt negative), exact decimal
-totals (`19.99 × 3 + 50 = 109.97`, `0.10 × 3 + 0.20 = 0.50`), multi-shop one-fee-per-shop,
-empty cart and invalid quantity/price refusals, fingerprint stability and change on
-quantity/price/address, platform-default env handling, TTL, and **8 route-level refusals**
-of client money (`shippingFee = 0`, arbitrary fee, `total`, `totalAmount`, `amount`,
-`subtotal`, `discount`) plus the quote endpoint's own refusals.
-
-`backend/tests/checkout-shipping-integrity.test.ts` — **15 tests, all SKIPPED here**
-(DB-gated): non-zero fee persisted with the invariant, explicit free quote, platform
-default, unsupported destination, expired quote (no order created), quantity changed,
-price changed, seller fee changed, quote reuse, foreign quote, multi-shop sum vs group,
-no-quote server pricing, client fee/total manipulation, decimal precision end to end,
-seller visibility + stranger refusal. Scenario coverage of the 18 requested items:
-implemented in these two files, except 12–13 (payment creation failure / retry) and 15
-(refund/cancel), which are already covered by the existing untouched suites
-(`payment-*`, `checkout-payment-flow`, `customer-order-cancel`, `payment-refund-replay`).
-
-## 10. Evidence — commands and results
+## 6. Commands and results
 
 | Check | Command | Result |
 |---|---|---|
 | Backend types | `cd backend && bun run typecheck` | exit 0 |
-| All apps types | `bun run typecheck` | exit 0 (velshop, velseller, velcenter, velnox) |
-| Backend suite | `bun test ./backend/tests` | **1340 pass, 404 skip, 1 fail** |
-| New unit suite | `bun test ./backend/tests/shipping-quote.test.ts` | 33 pass |
-| Schema parity | `bun test ./backend/tests/db-run-sqleditor-reconciler.test.ts` | 21 pass |
-| Schema drift | `bun test ./backend/tests/schema-drift.test.ts` | 8 pass |
+| All apps | `bun run typecheck` | exit 0 (4/4) |
 | VelShop build | `bun run build:velshop` | exit 0 |
 | VelSeller build | `bun run build:velseller` | exit 0 |
-| i18n parity | `bun run i18n:check` | `th=1702 en=1702 my=1702` |
+| i18n | `bun run i18n:check` | `th=1702 en=1702 my=1702` |
 | Whitespace | `git diff --check` | clean |
 
-The single failure is the pre-existing timing-sensitive `proxy-write-mode.test.ts >
---check prints identity only` case (5 s timeout under full-suite load; it **passes**
-when the file runs alone: 29/29). It is unrelated to this change and was not
-"fixed" by loosening it.
+## 7. Commits
 
-## 11. Browser E2E — BLOCKED
+```
+f74d518 feat(db): wholesale tiers + business verification schema (Part 2)
+0fd951d feat(checkout): server-authoritative wholesale pricing in quote + checkout (Part 4)
+080f72e feat(seller): wholesale tier config + business verification gate (Part 3)
+```
 
-BLOCKED: **no reachable PostgreSQL for a local backend.** `initdb` cannot complete on
-this device (two attempts, 120 s and 600 s, hang at "selecting default max_connections";
-the engine also rejects `--describe-config`), so a disposable database — and therefore
-a local API, a genuine test account and an order-writing flow — could not be started.
-No production write, no live payment and no production order mutation was performed.
+## 8. BLOCKED — UI and every check that needs a live stack
 
-What was verified instead: the built VelShop bundle was served locally
-(`apps/velshop/dist` on `127.0.0.1:8100`) and loaded in the in-app browser —
-`/checkout` correctly redirects an unauthenticated visitor to `/auth`, the bundle
-executes with no console/runtime error, and the new copy compiles into the shipped
-JS. That is **not** an E2E of the purchase flow.
+- **UI is not built.** There is no seller screen for tiers, no storefront
+  indication of pack size / pack price / applied tier, and no VelCenter review
+  screen. The APIs exist and are validated; the surfaces do not. Shipping P0's
+  checkout already renders server totals, so a wholesale order will display the
+  correct amount — but the customer cannot see *why* it is cheaper.
+- **DB-gated tests cannot run.** `initdb` cannot complete on this device
+  (documented in the previous report), so `TEST_DATABASE_URL` has no target and
+  418 tests skip, including all 14 written here.
+- **Browser QA is impossible** for the same reason plus no authenticated
+  seller/business account in a local stack.
+- **Impeccable cannot execute:** `impeccable --version` fails with
+  `unexpected e_type: 2` on this device. **IMPECCABLE: BLOCKED.** No UI review
+  claim is made.
 
-## 12. Impeccable — NOT EXECUTED (engine unavailable), manual review performed
+## 9. AI 02 — independent review BLOCKED
 
-The launcher is unusable on this device:
-`/data/user/0/com.androidharness.app/files/skills/impeccable/scripts/impeccable --version`
-→ `error: ".../.impeccable/bin/0.1.18/impeccable" has unexpected e_type: 2`.
-Per the skill's degraded path I loaded `VELNOX_DESIGN_THEME.md` (the repo's design
-source of truth — there is no `DESIGN.md`/`PRODUCT.md`) and `references/craft-floor.md`,
-then reviewed the changed surface against the floor:
+Delegation failed with the exact error:
 
-- **Contrast:** label `slate-500` on white (4.76:1) ✓; "free delivery" moved from
-  `#059669` (3.99:1, below 4.5 for 12 px) to `#047857` (≈4.9:1) ✓; error text
-  `rose-700` on `rose-50` ≈5.6:1 ✓; em-dash placeholder is `aria-hidden` decoration.
-- **States:** loading (spinner + `aria-live`), error (`role="alert"` + actionable
-  retry), empty (no address → "Choose an address" control), disabled submit while
-  unpriced ✓.
-- **Depth/spacing/type:** unchanged card system, one authored status row set per
-  group, tabular numerals for money, no new shadows or gradients.
-- **Bans:** no gradient text, no kicker, no nested cards, no emoji-as-icon, no
-  left-border accents ✓.
-- Motion: none added (a price refresh is a state change, not an animation).
+```
+[400] This model's maximum context length was exceeded.
+The maximum supported context is 272000 tokens.
+```
 
-**IMPECCABLE: BLOCKED** — the engine never ran; the review above is manual and is
-not evidence of engine execution.
+The instruction "AI 02 must independently approve" therefore **cannot be
+satisfied in this environment**. What follows is AI 01's own review, labelled as
+such and **not** presented as independent sign-off:
 
-## 13. AI 02 — independent review (executed, 5 findings, 4 fixed)
-
-AI 02 (`task`, read-only, prompt scoped to the five shipping/pricing files) returned a
-verdict. Its findings and dispositions:
-
-| Finding | Disposition |
+| Point | Self-check |
 |---|---|
-| Per-shop amount fallback could silently write a 0 THB order while the group charged the full amount | **Fixed** — missing shop now throws (`SHIPPING_QUOTE_SHOP_MISMATCH`) |
-| Group and order totals were derived independently with no assertion | **Fixed** — persisted sum is compared with the quote total; mismatch rolls back |
-| Fingerprint used the client's spelling of the address id while quotes store `String(address.id)` | **Fixed** — checkout now fingerprints the DB-resolved address id |
-| `total_amount` ignored the `discount` term of the documented contract | **Fixed** — computed term by term with `subtract` |
-| Float appears in display-only conversions (`Number()` for JSON responses / rendered money) | **Accepted, documented** — authoritative arithmetic is exact; only the wire/display layer converts |
-| No-quote checkout may carry no address (fee still charged) | Accepted by design: the flat rule is destination-independent, and the UI always sends an address |
+| Client cannot set price/pack/tier/discount/total | PASS — pricing reads DB rows only; `CLIENT_MONEY_FIELDS` refuses `shippingFee`/`total`/`amount`/`discount`/…; no route reads a client tier during pricing |
+| Only `verified` unlocks wholesale, resolved per request | PASS — `checkout-lines` queries `business_verifications` on every pricing pass |
+| Exact line amount reaches `order_items.subtotal` | PASS — `QuotedLine.lineTotal` → `order_items.subtotal`; quote sums the same values |
+| Inventory deducts units | PASS — untouched code path uses `item.quantity` |
+| Seller can only write own tiers; table is never half-valid | PASS — ownership via `shops.seller_id`, whole-list validation, single transaction |
+| Fingerprint changes on tier/verification change | PASS — pack identity is hashed |
+| Partial packs fall back to retail | PASS — `priceLine` returns `retail_partial_pack` |
 
-## 14. Status by category
+Residual risks I can see: (a) `order_items.price` cannot reproduce the exact line
+amount for a pack whose per-unit value is not 2-decimal — documented in code and
+pinned by a test, but any future report that recomputes revenue from
+`price × quantity` will be a cent short per such line; (b) the gate is per user,
+so a business account can buy at wholesale for any seller's product — that is the
+approved rule, not an oversight; (c) no UI means no human has yet exercised the
+flow.
 
-**IMPLEMENTED** — quote library + store, `POST /api/customer/shipping/quote`,
-checkout re-derivation and persistence, single-use quote redemption, group total with
-delivery, seller shipping configuration (API + Velseller UI), order payloads carrying
-`shippingMethod`, i18n (th/en/my), schema + reconciler.
+## 10. Remaining work (honest backlog)
 
-**AUTOMATED TESTS** — 33 unit/route tests pass; 15 DB-gated integration tests written
-and skipped locally; full backend suite green apart from one pre-existing flaky case.
-
-**BUILD** — velShop and velseller production builds exit 0; all four apps typecheck.
-
-**BROWSER E2E** — **BLOCKED** (no disposable database on this device).
-
-**SECURITY VERIFICATION** — no auth/authz change; client money refused before any DB
-read; quote lookup is ownership-scoped; single-use redemption is atomic; no cookie
-output, write-mode or safe-mode change; no secret printed; `git diff --check` clean.
-
-**BLOCKED** — browser E2E purchase journey; execution of the 15 DB-gated tests;
-Impeccable engine execution; production migration (never run by an agent).
-
-**NOT VERIFIED** — Stripe/PromptPay settlement against a charged amount including
-shipping (no payment was created anywhere); seller-side visual confirmation; live
-mobile layout at 320 px (no authenticated session locally).
-
-Commit SHA: `3728b36` — the commit that contains every code, schema and test
-change described above (short sha; `git show 3728b36`).
+1. Seller UI: wholesale tiers inside the product editor (pack size, tiers, preview
+   of the per-pack price).
+2. VelShop: pack badge + "ซื้อเป็นแพ็ค" explainer on product/cart/checkout lines
+   (the quote endpoint already returns `lines[].packSize/packs/pricePerPack`).
+3. VelCenter: business verification queue with signed evidence URLs.
+4. Run the 14 DB-gated tests on a disposable PostgreSQL and paste the counts here.
+5. Then, and only then, browser QA of the three journeys.
