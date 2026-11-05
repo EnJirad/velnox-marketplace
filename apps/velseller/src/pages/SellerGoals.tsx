@@ -214,52 +214,6 @@ export default function SellerGoals() {
 
         {!failed ? (
           <>
-            {/* Business snapshot — real income report values */}
-            <section className="mt-7">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                {t("sellerPerf.businessTitle")}
-              </h2>
-              <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <MetricCard
-                  icon={TrendingUp}
-                  tone="emerald"
-                  label={t("sellerDash.income.kpiGross")}
-                  value={income ? formatBaht(income.gross) : null}
-                  loading={loading}
-                  caption={t("sellerDash.income.kpiGrossSub", {
-                    count: income ? statsUnits(income) : 0,
-                  })}
-                />
-                <MetricCard
-                  icon={Wallet}
-                  iconTone="text-sky-600"
-                  chipClass="bg-sky-50 text-sky-600 ring-sky-600/10"
-                  label={t("sellerDash.income.kpiPayout")}
-                  value={income ? formatBaht(income.payout) : null}
-                  loading={loading}
-                  caption={t("sellerDash.income.kpiPayoutSub")}
-                />
-                <MetricCard
-                  icon={PackageCheck}
-                  iconTone="text-amber-600"
-                  chipClass="bg-amber-50 text-amber-600 ring-amber-600/10"
-                  label={t("sellerPerf.unitsLabel")}
-                  value={income ? formatNumber(income.grossCount) : null}
-                  loading={loading}
-                  caption={t("sellerDash.goals.summaryNote")}
-                />
-                <MetricCard
-                  icon={AlertTriangle}
-                  iconTone="text-rose-600"
-                  chipClass="bg-rose-50 text-rose-600 ring-rose-600/10"
-                  label={t("sellerDash.income.kpiReturns")}
-                  value={income ? formatBaht(income.returns) : null}
-                  loading={loading}
-                  caption={t("sellerDash.income.feeFootnote")}
-                />
-              </div>
-            </section>
-
             {/* Goals summary */}
             <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">

@@ -67,26 +67,26 @@ export default function Income() {
 
   const { gross, grossCount, returns, returnCount, commission, commissionRate, returnRate, returnCoverage, payout, transactions } = report ?? { gross: 0, grossCount: 0, returns: 0, returnCount: 0, commission: 0, commissionRate: 3, returnRate: 0, returnCoverage: 0, payout: 0, transactions: [] as TransactionRow[] };
 
-  // Simulated period breakdown for demo purposes when real period data is unavailable
+  // Evenly-distributed period breakdown (no random values)
   const periodData = useMemo(() => {
-    const now = Date.now();
-    const DAY = 86400000;
     const points = period === "daily" ? 7 : period === "weekly" ? 4 : 6;
+    const dayGross = gross / points;
+    const dayRet = returns / points;
     return Array.from({ length: points }, (_, i) => {
+      const now = Date.now();
+      const DAY = 86400000;
       const date = new Date(now - (points - 1 - i) * (period === "monthly" ? 30 : period === "weekly" ? 7 : 1) * DAY);
       const label = period === "daily" ? date.toLocaleDateString("th-TH", { weekday: "short", day: "numeric" })
         : period === "weekly" ? `สัปดาห์ ${i + 1}` : date.toLocaleDateString("th-TH", { month: "short" });
-      const val = Math.round((gross / points) * (0.7 + Math.random() * 0.6));
-      const ret = Math.round(val * (returnRate * (0.5 + Math.random())));
-      return { label, value: val, returns: ret };
+      return { label, value: Math.round(dayGross), returns: Math.round(dayRet) };
     });
-  }, [period, gross, returnRate]);
+  }, [period, gross, returns]);
 
   const maxVal = Math.max(...periodData.map(d => d.value), 1);
   const maxRet = Math.max(...periodData.map(d => d.returns), 1);
 
-  // Return overage: any period where returnRate > 0.10
-  const overageAmount = Math.max(0, returns - gross * 0.1);
+  // Return overage per policy: 10% coverage
+  const overageAmount = Math.max(0, returns - gross * returnCoverage);
   const overageDays = period === "daily" ? 7 : period === "weekly" ? 4 : 1;
 
   const periodLabels: Record<Period, string> = { daily: "รายวัน", weekly: "รายสัปดาห์", monthly: "รายเดือน" };
