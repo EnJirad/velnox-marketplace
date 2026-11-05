@@ -324,6 +324,7 @@ export const en: Dict = {
     loadMore: "Load more",
     loadingMore: "Loading more...",
     allLoaded: "You have reached the end",
+    refresh: "Refresh",
   },
 
   nav: {

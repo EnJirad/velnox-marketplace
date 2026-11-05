@@ -362,6 +362,7 @@ export const th = {
     loadMore: "โหลดเพิ่มเติม",
     loadingMore: "กำลังโหลดเพิ่มเติม...",
     allLoaded: "แสดงครบทั้งหมดแล้ว",
+    refresh: "รีเฟรช",
   },
 
   nav: {

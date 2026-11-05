@@ -328,6 +328,7 @@ export const my = {
     loadMore: "ထပ်မံဖွင့်မည်",
     loadingMore: "ထပ်မံဖွင့်နေသည်...",
     allLoaded: "အားလုံး ပြသပြီးပါပြီ",
+    refresh: "ပြန်ရွှေ့",
   },
 
   nav: {
