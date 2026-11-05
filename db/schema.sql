@@ -449,6 +449,67 @@ CREATE TABLE IF NOT EXISTS shipping_quotes (
 CREATE INDEX IF NOT EXISTS idx_shipping_quotes_user ON shipping_quotes (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_shipping_quotes_expiry ON shipping_quotes (expires_at) WHERE consumed_at IS NULL;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_shipping_quote_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_shipping_quote_id_fkey FOREIGN KEY (shipping_quote_id) REFERENCES shipping_quotes(id) ON DELETE SET NULL; END IF; END $$;
+
+-- ─── Wholesale pack pricing (Phase 2) ───────────────────────────────────────
+-- A seller sells a product by the PACK (pack size N units) at a pack price that
+-- may depend on how many packs are bought. One row per (product, variant, tier);
+-- `variant_id NULL` means the product's own tiers. Prices are per PACK in
+-- NUMERIC(12,2); backend/lib/wholesale.ts converts to an exact per-unit rational
+-- and rounds only the final line amount.
+--
+-- Rules: wholesale applies only when units % pack_size = 0, the pack count
+-- reaches the seller's minimum, and the buyer's business account is verified.
+-- Any incomplete-pack quantity is priced at retail.
+CREATE TABLE IF NOT EXISTS wholesale_tiers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE CASCADE,
+  pack_size INTEGER NOT NULL CHECK (pack_size >= 2 AND pack_size <= 1000),
+  min_packs INTEGER NOT NULL CHECK (min_packs >= 1 AND min_packs <= 100000),
+  price_per_pack NUMERIC(12, 2) NOT NULL CHECK (price_per_pack > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_wholesale_tiers_product ON wholesale_tiers (product_id);
+-- One tier per (product, variant, min_packs). The COALESCE makes "the product's
+-- own tiers" collide like any other row instead of escaping a UNIQUE that treats
+-- NULLs as distinct.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wholesale_tiers_unique
+  ON wholesale_tiers (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), min_packs);
+
+-- ─── Business (wholesale buyer) verification ────────────────────────────────
+-- One row per account that asked to be treated as a business. Only `verified`
+-- unlocks wholesale prices, and the status is resolved SERVER-SIDE on every
+-- pricing request — never read from the client. Evidence reuses the existing
+-- purpose-guarded verification/evidence upload path.
+CREATE TABLE IF NOT EXISTS business_verifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'unverified'
+    CHECK (status IN ('unverified', 'pending', 'verified', 'rejected', 'suspended')),
+  business_name TEXT,
+  business_type TEXT,
+  registration_number TEXT,
+  evidence_urls JSONB DEFAULT '[]',
+  submitted_at TIMESTAMPTZ,
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  rejection_reason TEXT,
+  review_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_business_verifications_status
+  ON business_verifications (status, submitted_at DESC);
+CREATE TABLE IF NOT EXISTS business_verification_history (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  verification_id UUID NOT NULL REFERENCES business_verifications(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_business_verification_history_verification
+  ON business_verification_history (verification_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -462,6 +523,12 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity INTEGER NOT NULL DEFAULT 1,
   price NUMERIC(12, 2) NOT NULL,
   subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  -- Wholesale snapshot: the pack identity that produced this line, so a later
+  -- seller price edit can never rewrite what was bought. `subtotal` holds the
+  -- EXACT amount (packs × tier price); `price` is the 2-dp display value.
+  wholesale_pack_size INTEGER,
+  wholesale_packs INTEGER,
+  wholesale_tier_price NUMERIC(12, 2),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id);

@@ -440,6 +440,40 @@ CREATE TABLE IF NOT EXISTS shipping_quotes (
   CONSTRAINT shipping_quotes_total_adds_up
     CHECK (total_amount = subtotal + shipping_total)
 );
+CREATE TABLE IF NOT EXISTS wholesale_tiers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE CASCADE,
+  pack_size INTEGER NOT NULL CHECK (pack_size >= 2 AND pack_size <= 1000),
+  min_packs INTEGER NOT NULL CHECK (min_packs >= 1 AND min_packs <= 100000),
+  price_per_pack NUMERIC(12, 2) NOT NULL CHECK (price_per_pack > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS business_verifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'unverified'
+    CHECK (status IN ('unverified', 'pending', 'verified', 'rejected', 'suspended')),
+  business_name TEXT,
+  business_type TEXT,
+  registration_number TEXT,
+  evidence_urls JSONB DEFAULT '[]',
+  submitted_at TIMESTAMPTZ,
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  rejection_reason TEXT,
+  review_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS business_verification_history (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  verification_id UUID NOT NULL REFERENCES business_verifications(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -453,6 +487,12 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity INTEGER NOT NULL DEFAULT 1,
   price NUMERIC(12, 2) NOT NULL,
   subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  -- Wholesale snapshot: the pack identity that produced this line, so a later
+  -- seller price edit can never rewrite what was bought. `subtotal` holds the
+  -- EXACT amount (packs × tier price); `price` is the 2-dp display value.
+  wholesale_pack_size INTEGER,
+  wholesale_packs INTEGER,
+  wholesale_tier_price NUMERIC(12, 2),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS shipments (
@@ -1455,7 +1495,43 @@ ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS product_name TEXT DEFAUL
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1 NOT NULL;
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS price NUMERIC(12, 2);
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS subtotal NUMERIC(12, 2) DEFAULT 0 NOT NULL;
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS wholesale_pack_size INTEGER;
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS wholesale_packs INTEGER;
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS wholesale_tier_price NUMERIC(12, 2);
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+
+-- Wholesale pack pricing (Phase 2)
+ALTER TABLE public.wholesale_tiers ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
+ALTER TABLE public.wholesale_tiers ADD COLUMN IF NOT EXISTS product_id UUID;
+ALTER TABLE public.wholesale_tiers ADD COLUMN IF NOT EXISTS variant_id UUID;
+ALTER TABLE public.wholesale_tiers ADD COLUMN IF NOT EXISTS pack_size INTEGER;
+ALTER TABLE public.wholesale_tiers ADD COLUMN IF NOT EXISTS min_packs INTEGER;
+ALTER TABLE public.wholesale_tiers ADD COLUMN IF NOT EXISTS price_per_pack NUMERIC(12, 2);
+ALTER TABLE public.wholesale_tiers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+ALTER TABLE public.wholesale_tiers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+
+-- Business (wholesale buyer) verification
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'unverified' NOT NULL;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS business_name TEXT;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS business_type TEXT;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS registration_number TEXT;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS evidence_urls JSONB DEFAULT '[]';
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS reviewed_by UUID;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS review_note TEXT;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+ALTER TABLE public.business_verifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+
+-- Business verification history
+ALTER TABLE public.business_verification_history ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
+ALTER TABLE public.business_verification_history ADD COLUMN IF NOT EXISTS verification_id UUID;
+ALTER TABLE public.business_verification_history ADD COLUMN IF NOT EXISTS action TEXT;
+ALTER TABLE public.business_verification_history ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE public.business_verification_history ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
 ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS order_id UUID;
@@ -2960,6 +3036,13 @@ CREATE INDEX IF NOT EXISTS idx_shipping_quotes_user ON public.shipping_quotes (u
 CREATE INDEX IF NOT EXISTS idx_shipping_quotes_expiry ON public.shipping_quotes (expires_at) WHERE consumed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON public.order_items (order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_shop ON public.order_items (shop_id);
+CREATE INDEX IF NOT EXISTS idx_wholesale_tiers_product ON public.wholesale_tiers (product_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wholesale_tiers_unique
+  ON public.wholesale_tiers (product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), min_packs);
+CREATE INDEX IF NOT EXISTS idx_business_verifications_status
+  ON public.business_verifications (status, submitted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_business_verification_history_verification
+  ON public.business_verification_history (verification_id, created_at DESC);
 -- P1-2: ONE CANONICAL SHIPMENT PER ORDER (audit finding P1-2).
 --
 -- WHY THE INDEX IS GUARDED RATHER THAN BARE
@@ -3770,6 +3853,19 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema =
   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'shipping_quote_id')
   AND to_regclass('public.shipping_quotes') IS NOT NULL THEN
   ALTER TABLE public.orders ADD CONSTRAINT orders_shipping_quote_id_fkey FOREIGN KEY (shipping_quote_id) REFERENCES public.shipping_quotes(id) ON DELETE SET NULL;
+END IF; END $$;
+
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'wholesale_tiers_product_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'wholesale_tiers' AND column_name = 'product_id') AND to_regclass('public.products') IS NOT NULL THEN
+  ALTER TABLE public.wholesale_tiers ADD CONSTRAINT wholesale_tiers_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'wholesale_tiers_variant_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'wholesale_tiers' AND column_name = 'variant_id') AND to_regclass('public.product_variants') IS NOT NULL THEN
+  ALTER TABLE public.wholesale_tiers ADD CONSTRAINT wholesale_tiers_variant_id_fkey FOREIGN KEY (variant_id) REFERENCES public.product_variants(id) ON DELETE CASCADE;
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'business_verifications_user_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'business_verifications' AND column_name = 'user_id') AND to_regclass('public.users') IS NOT NULL THEN
+  ALTER TABLE public.business_verifications ADD CONSTRAINT business_verifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'business_verification_history_verification_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'business_verification_history' AND column_name = 'verification_id') AND to_regclass('public.business_verifications') IS NOT NULL THEN
+  ALTER TABLE public.business_verification_history ADD CONSTRAINT business_verification_history_verification_id_fkey FOREIGN KEY (verification_id) REFERENCES public.business_verifications(id) ON DELETE CASCADE;
 END IF; END $$;
 
 -- ============================================================================
