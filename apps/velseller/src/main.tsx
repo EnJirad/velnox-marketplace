@@ -64,6 +64,7 @@ const SellerOrderDetail = lazy(() => import("@/pages/SellerOrderDetail"));
 const SellerChat = lazy(() => import("@/pages/SellerChat"));
 const SellerProfile = lazy(() => import("@/pages/SellerProfile"));
 const Income = lazy(() => import("@/pages/Income"));
+const IncomeGrossDetail = lazy(() => import("@/pages/IncomeGrossDetail"));
 const AuthPage = lazy(() => import("@velnox/shared/pages/Auth"));
 const NotFound = lazy(() => import("@velnox/shared/pages/NotFound"));
 
@@ -128,6 +129,14 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireRole role="seller">
                 <Income />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/seller/income/gross"
+            element={
+              <RequireRole role="seller">
+                <IncomeGrossDetail />
               </RequireRole>
             }
           />

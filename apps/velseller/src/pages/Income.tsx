@@ -24,6 +24,7 @@ import {
   BarChart3, PieChart, ArrowUpRight, CalendarDays, PackageSearch,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "react-router";
 
 const pct = (value: number) => `${(value * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
 
@@ -126,15 +127,15 @@ export default function Income() {
           </div>
         ) : (
           <>
-            {/* ── KPI Cards ────────────────────────────────────── */}
+            {/* ── KPI Cards (clickable → drill-down detail) ────── */}
             <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                { icon: TrendingUp, label: t("sellerDash.income.kpiGross"), value: formatBaht(gross), sub: t("sellerDash.income.kpiGrossSub", { count: grossCount }), color: "text-emerald-600", bg: "bg-emerald-50" },
-                { icon: TrendingDown, label: t("sellerDash.income.kpiReturns"), value: formatBaht(returns), sub: t("sellerDash.income.kpiReturnsSub", { rate: pct(returnRate), count: returnCount }), color: "text-amber-600", bg: "bg-amber-50" },
-                { icon: BadgePercent, label: t("sellerDash.income.kpiFee"), value: `-${formatBaht(commission)}`, sub: t("sellerDash.income.kpiFeeSub"), color: "text-slate-600", bg: "bg-slate-50" },
-                { icon: Wallet, label: t("sellerDash.income.kpiPayout"), value: formatBaht(payout), sub: t("sellerDash.income.kpiPayoutSub"), color: "text-emerald-700", bg: "bg-emerald-50" },
-              ].map(({ icon: Icon, label, value, sub, color, bg }) => (
-                <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                { href: "/seller/income/gross", icon: TrendingUp, label: t("sellerDash.income.kpiGross"), value: formatBaht(gross), sub: t("sellerDash.income.kpiGrossSub", { count: grossCount }), color: "text-emerald-600", bg: "bg-emerald-50" },
+                { href: "/seller/income/returns", icon: TrendingDown, label: t("sellerDash.income.kpiReturns"), value: formatBaht(returns), sub: t("sellerDash.income.kpiReturnsSub", { rate: pct(returnRate), count: returnCount }), color: "text-amber-600", bg: "bg-amber-50" },
+                { href: "/seller/income/commission", icon: BadgePercent, label: t("sellerDash.income.kpiFee"), value: `-${formatBaht(commission)}`, sub: t("sellerDash.income.kpiFeeSub"), color: "text-slate-600", bg: "bg-slate-50" },
+                { href: "/seller/income/payout", icon: Wallet, label: t("sellerDash.income.kpiPayout"), value: formatBaht(payout), sub: t("sellerDash.income.kpiPayoutSub"), color: "text-emerald-700", bg: "bg-emerald-50" },
+              ].map(({ href, icon: Icon, label, value, sub, color, bg }) => (
+                <Link key={label} to={href} className="group rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
                   <span className={`flex size-9 items-center justify-center rounded-[10px] ${bg} ${color} mb-3`}>
                     <Icon className="size-4.5" />
                   </span>
@@ -143,7 +144,10 @@ export default function Income() {
                     {value}
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>
-                </div>
+                  <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-emerald-600 opacity-0 transition-opacity group-hover:opacity-100">
+                    ดูรายละเอียด <ChevronRight className="size-3" />
+                  </p>
+                </Link>
               ))}
             </section>
 
