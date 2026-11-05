@@ -932,6 +932,17 @@ export function setupCartRoutes(app: Express): void {
         shopName: item.shop_name ?? null,
         quantity: Number(item.quantity),
         unitPrice: String(item.price),
+        // Exact line amount (wholesale: packs × tier price) and the pack
+        // identity, so the quote, the order row and the payment all describe
+        // the same money.
+        lineTotal: item.lineTotalMoney ?? undefined,
+        wholesale: item.wholesale
+          ? {
+              packSize: item.wholesalePackSize ?? null,
+              packs: item.wholesalePacks ?? null,
+              tierPrice: item.wholesaleTierPrice ?? null,
+            }
+          : null,
       }));
 
       let authoritativeQuote;
@@ -1158,8 +1169,9 @@ export function setupCartRoutes(app: Express): void {
 
           // Create order items + decrease stock
           for (const item of shopItems) {
-            // Exact per-line money: unit price × integer quantity, rounded ONCE.
-            const subtotal = toMoneyString(
+            // Fallback amount for a retail line; a wholesale line always carries
+            // its exact `lineTotalMoney` (see the INSERT below).
+            const subtotal = item.lineTotalMoney ?? toMoneyString(
               multiplyByQuantity(parseDecimal(String(item.price)), Number(item.quantity)),
             );
 
@@ -1190,10 +1202,12 @@ export function setupCartRoutes(app: Express): void {
               } catch { /* variant table may not exist */ }
             }
 
+            // `subtotal` is the EXACT line amount (wholesale: packs × tier price);
+            // the wholesale_* columns keep the pack identity that produced it.
             await client.query(
-              `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, image_url_snapshot, variant_id, variant_name_snapshot, quantity, price, subtotal)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-              [orderId, item.product_id, item.shop_id || null, item.product_name, item.product_name, item.product_image_url || null, item.variant_id || null, variantNameSnapshot, item.quantity, item.price, subtotal],
+              `INSERT INTO order_items (order_id, product_id, shop_id, product_name, product_name_snapshot, image_url_snapshot, variant_id, variant_name_snapshot, quantity, price, subtotal, wholesale_pack_size, wholesale_packs, wholesale_tier_price)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+              [orderId, item.product_id, item.shop_id || null, item.product_name, item.product_name, item.product_image_url || null, item.variant_id || null, variantNameSnapshot, item.quantity, item.price, item.lineTotalMoney ?? subtotal, item.wholesale ? item.wholesalePackSize ?? null : null, item.wholesale ? item.wholesalePacks ?? null : null, item.wholesale ? item.wholesaleTierPrice ?? null : null],
             );
 
             // Decrease stock: if variant, use atomic variant stock decrement; otherwise use inventory

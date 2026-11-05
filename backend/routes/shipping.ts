@@ -133,7 +133,18 @@ export function setupShippingRoutes(app: Express): void {
         shopId: item.shop_id ?? null,
         shopName: item.shop_name ?? null,
         quantity: Number(item.quantity),
+        // `loadCheckoutLines` re-resolved the CURRENT server price (retail, or a
+        // wholesale tier for a verified business buyer) — the quote is priced
+        // with exactly what checkout will persist.
         unitPrice: String(item.price),
+        lineTotal: item.lineTotalMoney ?? undefined,
+        wholesale: item.wholesale
+          ? {
+              packSize: item.wholesalePackSize ?? null,
+              packs: item.wholesalePacks ?? null,
+              tierPrice: item.wholesaleTierPrice ?? null,
+            }
+          : null,
       }));
 
       const shopIds = [...new Set(quotedLines.map((line) => line.shopId ?? "unknown"))];
@@ -173,6 +184,20 @@ export function setupShippingRoutes(app: Express): void {
           total: quote.total,
           itemCount: quote.itemCount,
           shops: quote.shops,
+          // Per LINE breakdown so the storefront can show pack size, packs and
+          // whether a tier applied. Display only: checkout re-derives all of it.
+          lines: items.map((item: any) => ({
+            productId: String(item.product_id),
+            variantId: item.variant_id ?? null,
+            quantity: Number(item.quantity),
+            unitPrice: String(item.price),
+            lineTotal: item.lineTotalMoney ?? null,
+            wholesale: item.wholesale === true,
+            packSize: item.wholesalePackSize ?? null,
+            packs: item.wholesalePacks ?? null,
+            pricePerPack: item.wholesaleTierPrice ?? null,
+            reason: item.wholesaleReason ?? null,
+          })),
         },
       });
     } catch (err) {

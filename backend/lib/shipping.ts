@@ -109,6 +109,30 @@ export interface QuotedLine {
   quantity: number;
   /** Decimal string, already resolved from `products.price` / variant price. */
   unitPrice: string;
+  /**
+   * The wholesale pack identity that produced `unitPrice`, when a tier applied.
+   *
+   * `unitPrice` alone is a 2-decimal value: `100.00 per pack of 3` is 33.33, so
+   * two different tiers can round to the same fingerprint. Carrying the pack
+   * size, the pack price and the pack count makes a tier edit (or a business
+   * account losing its verification) change the hash — a stale quote is then
+   * refused instead of being honoured at the old pack price.
+   */
+  wholesale?: {
+    packSize: number | null;
+    packs: number | null;
+    tierPrice: string | null;
+  } | null;
+  /**
+   * The EXACT amount this line costs, when the caller already computed it.
+   *
+   * A wholesale line is `packs × price_per_pack`; its per-unit price is that
+   * value divided by the pack size and is only representable at 2 decimals, so
+   * `unitPrice × quantity` can be a cent short (100.00 per pack of 3 →
+   * 33.33 × 3 = 99.99). Summing the exact line totals is what keeps
+   * `orders.subtotal` equal to the sum of `order_items.subtotal`.
+   */
+  lineTotal?: string;
 }
 
 export interface ShopShippingQuote {
@@ -257,6 +281,15 @@ export function buildShippingQuote(
     if (unit.num < 0n) {
       throw new ShippingError("SHIPPING_LINE_INVALID", "A cart line has an invalid price.");
     }
+    // Exact line amount: the caller's exact figure when it has one (wholesale),
+    // otherwise `unit price × quantity`. Never re-derive a wholesale line from
+    // its rounded per-unit price.
+    const lineAmount = line.lineTotal != null
+      ? parseDecimal(String(line.lineTotal))
+      : multiplyByQuantity(unit, line.quantity);
+    if (lineAmount.num < 0n) {
+      throw new ShippingError("SHIPPING_LINE_INVALID", "A cart line has an invalid amount.");
+    }
     const key = line.shopId ?? "";
     if (!subtotalByShop.has(key)) {
       order.push(key);
@@ -264,10 +297,7 @@ export function buildShippingQuote(
       countByShop.set(key, 0);
       nameByShop.set(key, line.shopName ?? configByShop.get(key)?.shopName ?? null);
     }
-    subtotalByShop.set(
-      key,
-      add(subtotalByShop.get(key) ?? ZERO, multiplyByQuantity(unit, line.quantity)),
-    );
+    subtotalByShop.set(key, add(subtotalByShop.get(key) ?? ZERO, lineAmount));
     countByShop.set(key, (countByShop.get(key) ?? 0) + line.quantity);
   }
 
@@ -343,6 +373,10 @@ export function shippingFingerprint(
       String(line.quantity),
       toMoneyString(parseDecimal(String(line.unitPrice))),
       line.shopId ?? "",
+      // Exact pack identity: null for retail, "pack|price|count" for wholesale.
+      line.wholesale
+        ? `${line.wholesale.packSize ?? ""}|${line.wholesale.tierPrice ?? ""}|${line.wholesale.packs ?? ""}`
+        : "",
     ].join("|"))
     .sort();
   const payload = JSON.stringify({

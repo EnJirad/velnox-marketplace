@@ -25,6 +25,7 @@
  */
 import { query } from "../db/index.js";
 import { validateCheckoutQuantity } from "./inventory.js";
+import { priceLine, type WholesaleTier } from "./wholesale.js";
 
 /** A 4xx the caller must return verbatim; never a priced order. */
 export interface CheckoutLineFailure {
@@ -131,10 +132,73 @@ export async function loadCheckoutLines(
     return { ok: false, error: { status: 400, code: "EMPTY_CART", message: "Cart is empty" } };
   }
 
+  // ── Wholesale context (resolved SERVER-SIDE, per request) ──────────────
+  // The buyer's status is read from the database here, never taken from the
+  // client and never cached in a token: a suspended business falls back to
+  // retail on its very next pricing pass.
+  const businessRes = await query(
+    `SELECT status FROM business_verifications WHERE user_id = $1`,
+    [userId],
+  );
+  const buyerIsVerifiedBusiness = businessRes.rows[0]?.status === "verified";
+
+  for (const item of items) {
+    item.buyerIsVerifiedBusiness = buyerIsVerifiedBusiness;
+    item.wholesaleTiers = await loadWholesaleTiers(item.product_id, item.variant_id ?? null);
+  }
+
   const validation = await validateAndPriceLines(items);
   if (!validation.ok) return validation;
 
   return { ok: true, value: { cartId, items, priceChanged: validation.priceChanged } };
+}
+
+/**
+ * The seller's tiers for exactly this (product, variant) pair.
+ *
+ * `variant_id` NULL means the PRODUCT's tiers — the same pair the seller saved
+ * from the wholesale editor — so a variant without tiers is never silently
+ * priced with another variant's pack.
+ */
+async function loadWholesaleTiers(
+  productId: string,
+  variantId: string | null,
+): Promise<WholesaleTier[]> {
+  const result = await query(
+    `SELECT pack_size, min_packs, price_per_pack
+       FROM wholesale_tiers
+      WHERE product_id = $1
+        AND ((variant_id = $2) OR (variant_id IS NULL AND $2 IS NULL))
+      ORDER BY min_packs ASC`,
+    [productId, variantId],
+  );
+  return result.rows.map((row: any) => ({
+    packSize: Number(row.pack_size),
+    minPacks: Number(row.min_packs),
+    pricePerPack: String(row.price_per_pack),
+  }));
+}
+
+/**
+ * Price one line through the wholesale rule and record the outcome ON the row.
+ *
+ * `retailPrice` is the CURRENT server price (variant price for a variant line,
+ * product price otherwise). `item.price` keeps the 2-decimal per-unit value for
+ * display and legacy readers; `item.lineTotalMoney` is the EXACT amount that
+ * becomes `order_items.subtotal`, and the pack identity is carried so the order
+ * can snapshot it.
+ */
+function applyWholesalePricing(item: any, retailPrice: string): void {
+  const tiers: WholesaleTier[] = item.wholesaleTiers ?? [];
+  const verified = item.buyerIsVerifiedBusiness === true;
+  const priced = priceLine(Number(item.quantity), retailPrice, verified ? tiers : [], verified);
+  item.price = priced.unitPriceMoney;
+  item.lineTotalMoney = priced.lineTotalMoney;
+  item.wholesale = priced.wholesale;
+  item.wholesalePackSize = priced.packSize;
+  item.wholesalePacks = priced.packs;
+  item.wholesaleTierPrice = priced.tierPricePerPack;
+  item.wholesaleReason = priced.reason;
 }
 
 /**
@@ -226,6 +290,8 @@ export async function validateAndPriceLines(
         item.price = variantPrice;
         priceChanged = true;
       }
+      applyWholesalePricing(item, String(v.price));
+      if (item.wholesale) priceChanged = true;
     } else {
       const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
       if (item.quantity > available) {
@@ -244,6 +310,8 @@ export async function validateAndPriceLines(
         item.price = productPrice;
         priceChanged = true;
       }
+      applyWholesalePricing(item, String(item.product_price));
+      if (item.wholesale) priceChanged = true;
     }
   }
 
