@@ -1,7 +1,6 @@
 import { CartDrawer } from "@/components/shop/CartDrawer";
 import { LanguageSwitcher } from "@/components/shop/LanguageSwitcher";
 import { NotificationBell } from "@/components/shop/NotificationBell";
-import { TopBanner } from "@/components/shop/TopBanner";
 import { Logo, LogoMark } from "@velnox/shared/components/Logo";
 import { Button } from "@velnox/shared/components/ui/button";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -35,23 +34,6 @@ export function ShopHeader() {
   const [cartOpen, setCartOpen] = useState(false);
   // Real server-derived unread chat count; null while unknown → no badge.
   const { count: chatUnread } = useChatUnread("customer");
-  // Top banner dismiss state — session-scoped.
-  const [bannerVisible, setBannerVisible] = useState(() => {
-    try {
-      return sessionStorage.getItem("velnox_top_banner_dismissed") !== "1";
-    } catch {
-      return true;
-    }
-  });
-
-  const dismissBanner = () => {
-    setBannerVisible(false);
-    try {
-      sessionStorage.setItem("velnox_top_banner_dismissed", "1");
-    } catch {
-      // ignore
-    }
-  };
 
   const onProducts = location.pathname === "/products";
   // Search belongs to the storefront (Home) only. The Marketplace renders its own
@@ -104,9 +86,6 @@ export function ShopHeader() {
 
   return (
     <header className="sticky top-0 z-40">
-      {/* Thaimart-style top banner — seller CTA */}
-      {bannerVisible && <TopBanner onDismiss={dismissBanner} />}
-
       {/* Mobile brand bar — the reference app shell */}
       <div className="bg-[#10B981] md:hidden">
         <div className="mx-auto flex h-14 w-full items-center gap-2 px-3">

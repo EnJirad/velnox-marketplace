@@ -49,7 +49,7 @@ export function LiveSection({ streams, title = "ไลฟ์สดตอนน�
               to={viewAllHref}
               className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors"
             >
-              {t("common.viewAll")}
+              {t("thaimartUi.liveSection.viewAll")}
               <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M5 12h14M12 5l7 7-7 7" />
               </svg>
@@ -65,7 +65,7 @@ export function LiveSection({ streams, title = "ไลฟ์สดตอนน�
                 <span className="absolute inset-0 rounded-full bg-red-600 animate-ping" />
                 <span className="absolute inset-0 rounded-full bg-red-600" />
               </span>
-              <span>{t("liveSection.liveNowLabel")}</span>
+              <span>{t("thaimartUi.liveSection.liveNowLabel")}</span>
             </div>
             <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
               {liveStreams.map((stream) => (
@@ -80,7 +80,7 @@ export function LiveSection({ streams, title = "ไลฟ์สดตอนน�
           <div>
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-3">
               <Clock className="size-3.5" />
-              <span>{t("liveSection.upcoming")}</span>
+              <span>{t("thaimartUi.liveSection.upcoming")}</span>
             </div>
             <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
               {upcomingStreams.map((stream) => (
@@ -120,7 +120,7 @@ function LiveStreamCard({ stream, isLive }: { stream: LiveStream; isLive: boolea
         {isLive && (
           <span className="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-red-600 px-2 py-1 text-[10px] font-bold text-white">
             <span className="size-1.5 rounded-full bg-white animate-pulse" />
-            <span>{t("liveSection.liveNow")}</span>
+            <span>{t("thaimartUi.liveSection.liveNow")}</span>
           </span>
         )}
 
@@ -164,7 +164,7 @@ function LiveStreamCard({ stream, isLive }: { stream: LiveStream; isLive: boolea
         {stream.productCount && stream.productCount > 0 && (
           <div className="flex items-center gap-1 text-[11px] text-emerald-600">
             <Play className="size-2.5" />
-            <span>{t("liveSection.productsCount", { count: stream.productCount })}</span>
+            <span>{t("thaimartUi.liveSection.productsCount", { count: stream.productCount })}</span>
           </div>
         )}
       </div>

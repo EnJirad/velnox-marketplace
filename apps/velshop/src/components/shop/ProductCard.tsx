@@ -10,6 +10,7 @@ interface ProductCardProps {
   onOpen?: (product: StoreProduct) => void;
   /** @deprecated — ATC moved to Product Detail only. Kept for backward compat. */
   onAdd?: (product: StoreProduct) => void;
+  /** @deprecated — top-left badge removed per design decision (2026-11-05). No-op. */
   badgeLabel?: string;
   wishlisted?: boolean;
   onWishlist?: (product: StoreProduct) => void;
@@ -68,9 +69,6 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
           );
         })()}
         {/* V Badge removed per design decision — product cards no longer show the seller verification badge */}
-        <span className="absolute left-2 top-2 z-10 rounded bg-[#10B981] px-1.5 py-0.5 text-[9px] font-semibold text-white">
-          {badgeLabel}
-        </span>
         {onWishlist && (
           <button
             type="button"

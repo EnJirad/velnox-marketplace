@@ -6,7 +6,7 @@ import { SITE_URLS } from "@velnox/shared/lib/sites";
 /**
  * Top banner — Thaimart style.
  * "เริ่มธุรกิจของคุณกับ Velnox" with CTA to seller registration.
- * Dismissible, shows once per session unless dismissed.
+ * Homepage-only (rendered by ShopHome below the ad carousel), session-dismissible.
  */
 export function TopBanner({ onDismiss }: { onDismiss?: () => void }) {
   const { t } = useLanguage();
@@ -20,10 +20,10 @@ export function TopBanner({ onDismiss }: { onDismiss?: () => void }) {
           </span>
           <div className="min-w-0">
             <p className="font-semibold text-sm sm:text-base truncate">
-              {t("topBanner.title", { platform: "Velnox" })}
+              {t("thaimartUi.topBanner.title", { platform: "Velnox" })}
             </p>
             <p className="text-[11px] sm:text-xs opacity-90 truncate">
-              {t("topBanner.subtitle")}
+              {t("thaimartUi.topBanner.subtitle")}
             </p>
           </div>
         </div>
@@ -35,7 +35,7 @@ export function TopBanner({ onDismiss }: { onDismiss?: () => void }) {
           rel="noopener noreferrer"
         >
           <Store className="size-3.5" />
-          {t("topBanner.cta")}
+          {t("thaimartUi.topBanner.cta")}
           <ArrowRight className="size-3.5" />
         </Link>
 
@@ -43,7 +43,7 @@ export function TopBanner({ onDismiss }: { onDismiss?: () => void }) {
           <button
             type="button"
             onClick={onDismiss}
-            aria-label={t("topBanner.dismiss")}
+            aria-label={t("thaimartUi.topBanner.dismiss")}
             className="shrink-0 flex size-8 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
           >
             <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

@@ -3,6 +3,7 @@ import { AnnouncementCarousel, type Announcement } from "@/components/shop/Annou
 import { HomePromoStrip, type PromoStripBanner } from "@/components/shop/HomePromoStrip";
 import { CategoryStrip } from "@/components/shop/CategoryStrip";
 import { LiveSection } from "@/components/shop/LiveSection";
+import { TopBanner } from "@/components/shop/TopBanner";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { Button } from "@velnox/shared/components/ui/button";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -178,6 +179,23 @@ export default function ShopHome() {
   const categoryTree = useAction(api.customer.categoryTreeAction);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
+
+  // Top seller-CTA banner — homepage only, session-dismissible.
+  const [bannerVisible, setBannerVisible] = useState(() => {
+    try {
+      return sessionStorage.getItem("velnox_top_banner_dismissed") !== "1";
+    } catch {
+      return true;
+    }
+  });
+  const dismissBanner = () => {
+    setBannerVisible(false);
+    try {
+      sessionStorage.setItem("velnox_top_banner_dismissed", "1");
+    } catch {
+      // ignore
+    }
+  };
 
   // Localized category name map (slug → display_name)
   const [catNameMap, setCatNameMap] = useState<Map<string, string>>(new Map());
@@ -389,6 +407,10 @@ export default function ShopHome() {
         </div>
       </section>
 
+      {/* Thaimart-style top banner — seller CTA, sits BELOW the ad carousel,
+          homepage only, session-dismissible */}
+      {bannerVisible && <TopBanner onDismiss={dismissBanner} />}
+
       {/* Thaimart-style horizontal category strip — clean pill chips */}
       {!productsData.loading && popularCategories.length > 0 && (
         <CategoryStrip
@@ -413,8 +435,9 @@ export default function ShopHome() {
         />
       )}
 
-      {/* LIVE shopping section — Thaimart style (placeholder — no live infra yet) */}
-      <LiveSection streams={[]} title={t("liveSection.liveNowLabel")} viewAllHref="/products" />
+      {/* LIVE shopping section — Thaimart style (placeholder — no live infra yet,
+          renders nothing until real stream data exists) */}
+      <LiveSection streams={[]} title={t("thaimartUi.liveSection.liveNowLabel")} viewAllHref="/products" />
 
       {/* Admin-managed promo strip (banner contract v2, home_strip placement) */}
       <HomePromoStrip banners={stripBanners} />
