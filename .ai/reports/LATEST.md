@@ -272,4 +272,5 @@ Impeccable engine execution; production migration (never run by an agent).
 shipping (no payment was created anywhere); seller-side visual confirmation; live
 mobile layout at 320 px (no authenticated session locally).
 
-Commit SHA: `1fca88e64d8703a8df572a9b3e31c0f5036c551b`
+Commit SHA: `3728b36` — the commit that contains every code, schema and test
+change described above (short sha; `git show 3728b36`).
