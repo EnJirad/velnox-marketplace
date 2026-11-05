@@ -568,6 +568,9 @@ export const CHANNELS = {
    * frontends' shipping-status badges can react without polling.
    */
   SHIPMENT_UPDATED: "shipment:updated",
+  /** A business verification was approved/rejected/suspended. Sent to the
+   *  applicant's own user channel; the pricing gate still re-reads the row. */
+  BUSINESS_VERIFICATION_UPDATED: "business_verification:updated",
 } as const;
 
 /**

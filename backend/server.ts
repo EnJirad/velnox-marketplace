@@ -18,6 +18,8 @@ import { setupGoogleAuth } from "./routes/auth.js";
 import { setupUploadRoutes } from "./routes/upload.js";
 import { setupSellerRoutes } from "./routes/seller.js";
 import { setupProductRoutes } from "./routes/products.js";
+import { registerWholesaleRoutes } from "./routes/wholesale.js";
+import { registerBusinessVerificationRoutes } from "./routes/business-verification.js";
 import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
@@ -420,6 +422,12 @@ setupSellerOrderRoutes(app);
 
 // ─── Products (CRUD, images, catalog) ────────────────────
 setupProductRoutes(app);
+
+// ─── Wholesale tiers (seller configuration) ───────────────
+registerWholesaleRoutes(app);
+
+// ─── Business verification (wholesale buyer gate) ─────────
+registerBusinessVerificationRoutes(app);
 
 // ─── Cart, Wishlist, Orders ──────────────────────────────
 setupCartRoutes(app);
