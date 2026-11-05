@@ -18,6 +18,29 @@ export const th = {
     cancelledNotice: "ออเดอร์นี้ถูกยกเลิกแล้ว — ไม่สามารถชำระเงินสำหรับออเดอร์นี้ได้อีก",
   },
   /**
+   * Thaimart-style UI components (topBanner, categoryStrip, liveSection).
+   * Added 2026-11-05 for the Thaimart-style redesign.
+   */
+  thaimartUi: {
+    topBanner: {
+      title: "เริ่มธุรกิจของคุณกับ {platform}",
+      subtitle: "สมัครฟรี ไม่มีค่าธรรมเนียม · เข้าระบบร้านค้า",
+      cta: "สมัครเป็นเซลเลอร์",
+      dismiss: "ปิด",
+    },
+    categoryStrip: {
+      all: "ทั้งหมด",
+      ariaLabel: "หมวดหมู่สินค้า",
+    },
+    liveSection: {
+      liveNow: "กำลังไลฟ์",
+      upcoming: "กำลังจะมาถึง",
+      liveNowLabel: "LIVE NOW",
+      productsCount: "{count} สินค้า",
+      viewAll: "ดูทั้งหมด",
+    },
+  },
+  /**
    * Seller dashboard copy (Income, SellerGoals, MyShop chrome) — added
    * 2026-11-02 (VELSELLER-DASH-01). These pages were the last seller surfaces
    * with hard-coded Thai copy. Lives near the top like `orderCancel` because

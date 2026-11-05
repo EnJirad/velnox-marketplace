@@ -1,6 +1,8 @@
 import { ProductCard } from "@/components/shop/ProductCard";
 import { AnnouncementCarousel, type Announcement } from "@/components/shop/AnnouncementCarousel";
 import { HomePromoStrip, type PromoStripBanner } from "@/components/shop/HomePromoStrip";
+import { CategoryStrip } from "@/components/shop/CategoryStrip";
+import { LiveSection } from "@/components/shop/LiveSection";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { Button } from "@velnox/shared/components/ui/button";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -179,19 +181,26 @@ export default function ShopHome() {
 
   // Localized category name map (slug → display_name)
   const [catNameMap, setCatNameMap] = useState<Map<string, string>>(new Map());
+  // Real category icons uploaded via VelCenter (categories.icon = R2 URL).
+  const [catIconMap, setCatIconMap] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     let alive = true;
     categoryTree({ lang }).then((tree: any[]) => {
       if (!alive || !Array.isArray(tree)) return;
       const m = new Map<string, string>();
+      const im = new Map<string, string>();
       const walk = (nodes: any[]) => {
         for (const n of nodes) {
           if (n.slug) m.set(n.slug, n.display_name ?? n.name);
+          if (n.slug && typeof n.icon === "string" && (n.icon.startsWith("http") || n.icon.startsWith("data:"))) {
+            im.set(n.slug, n.icon);
+          }
           if (n.children?.length) walk(n.children);
         }
       };
       walk(tree);
       setCatNameMap(m);
+      setCatIconMap(im);
     }).catch(() => {});
     return () => { alive = false; };
   }, [categoryTree, lang]);
@@ -380,41 +389,32 @@ export default function ShopHome() {
         </div>
       </section>
 
+      {/* Thaimart-style horizontal category strip — clean pill chips */}
       {!productsData.loading && popularCategories.length > 0 && (
-        <section className="border-b border-slate-100 bg-white">
-          <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5">
-            <SectionHeader
-              icon={Package}
-              title={t("home.categoriesTitle")}
-              description={t("home.categoriesDesc")}
-              viewAllHref="/categories"
-              viewAllLabel={t("home.viewAllCategories")}
-            />
-            <div className="mt-3 grid grid-cols-4 gap-x-2 gap-y-3 sm:grid-cols-6 sm:gap-y-4 lg:grid-cols-6">
-              {popularCategories.map(([id, count]) => {
-                const Icon = (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package;
-                const meta = (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id];
-                return (
-                  <Link
-                    key={id}
-                    to={`/products?category=${id}`}
-                    onClick={() => handleCategory(id as StoreProductCategory)}
-                    aria-label={`${catNameMap.get(id) ?? meta?.label ?? id} — ${t("home.categoryCount", { count })}`}
-                    className="group flex min-w-0 flex-col items-center gap-1.5 rounded-xl py-1 transition-colors"
-                  >
-                    <span className="flex size-14 items-center justify-center rounded-full bg-[#F1F5F9] text-slate-700 ring-1 ring-slate-200 transition-colors group-hover:bg-[#ECFDF5] group-hover:text-[#10B981] group-hover:ring-[#10B981]/30 group-focus-visible:ring-2 group-focus-visible:ring-[#10B981]">
-                      <Icon className="size-[22px]" />
-                    </span>
-                    <span className="w-full truncate text-center text-[11px] font-medium leading-4 text-slate-600 group-hover:text-slate-900">
-                      {catNameMap.get(id) ?? meta?.label ?? id}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        </section>
+        <CategoryStrip
+          categories={popularCategories.map(([id, count]) => ({
+            id: id as StoreProductCategory,
+            label: catNameMap.get(id) ?? (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id]?.label ?? id,
+            imageUrl: catIconMap.get(id),
+            icon: (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package,
+            count,
+          }))}
+          activeCategory="all"
+          onCategoryChange={(id) => {
+            if (id === "all") {
+              handleCategory("all" as StoreProductCategory);
+              navigate("/products");
+            } else {
+              handleCategory(id as StoreProductCategory);
+              navigate(`/products?category=${id}`);
+            }
+          }}
+          allLabel={t("thaimartUi.categoryStrip.all")}
+        />
       )}
+
+      {/* LIVE shopping section — Thaimart style (placeholder — no live infra yet) */}
+      <LiveSection streams={[]} title={t("liveSection.liveNowLabel")} viewAllHref="/products" />
 
       {/* Admin-managed promo strip (banner contract v2, home_strip placement) */}
       <HomePromoStrip banners={stripBanners} />

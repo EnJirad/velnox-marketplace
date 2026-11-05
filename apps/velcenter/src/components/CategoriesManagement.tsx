@@ -11,7 +11,8 @@
  * - Localized names
  */
 import { api } from "@velnox/shared/lib/api-routes";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { apiBaseUrl } from "@velnox/shared/lib/sites";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { onCenterEvent } from "../lib/center-events";
 import {
   Plus,
@@ -26,6 +27,7 @@ import {
   Eye,
   EyeOff,
   FolderTree,
+  ImagePlus,
 } from "lucide-react";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
@@ -99,6 +101,8 @@ export default function CategoriesManagement() {
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<CategoryNode | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [iconUploading, setIconUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadCategories = useCallback(async () => {
     setLoading(true);
@@ -242,7 +246,91 @@ export default function CategoriesManagement() {
     }
   };
 
-  const handleToggleActive = async (cat: CategoryNode) => {
+  const handleIconUpload = async (file: File) => {
+    // Determine the category id: when creating a NEW category, the icon is
+    // uploaded after the category row exists, so gate upload on edit-mode only
+    // OR use a temp local preview for new categories.
+    if (!editingCategory) {
+      // New category — just show local preview; upload happens on save
+      const reader = new FileReader();
+      reader.onload = () => setForm((p) => ({ ...p, icon: String(reader.result) }));
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    setIconUploading(true);
+    try {
+      // Presign for category-icon purpose with categoryId
+      const res = await fetch(`${apiBaseUrl}/upload/presign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          filename: "icon.webp",
+          contentType: "image/webp",
+          purpose: "category-icon",
+          categoryId: editingCategory.id,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? "Failed to get upload URL");
+      }
+      const { uploadUrl, objectKey, publicUrl } = json.data;
+
+      // PUT the file bytes to R2
+      const webpBlob = await compressToWebP(file);
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "image/webp" },
+        body: webpBlob,
+      });
+      if (!putRes.ok) throw new Error("Failed to upload to R2");
+
+      // Confirm → backend writes categories.icon = publicUrl
+      const confirmRes = await fetch(`${apiBaseUrl}/upload/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ objectKey }),
+      });
+      const confirmJson = await confirmRes.json();
+      if (!confirmRes.ok || !confirmJson.success) throw new Error("Confirm failed");
+
+      setForm((p) => ({ ...p, icon: publicUrl }));
+      toast.success("อัปโหลดไอคอนสำเร็จ");
+      void loadCategories();
+    } catch (err: any) {
+      toast.error(err?.message ?? "อัปโหลดไอคอนไม่สำเร็จ");
+    } finally {
+      setIconUploading(false);
+    }
+  };
+
+  const compressToWebP = async (file: File): Promise<Blob> => {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      const MAX = 128;
+      const scale = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height));
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("No canvas context");
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/webp", 0.9)
+      );
+      bitmap.close();
+      if (!blob) throw new Error("WebP conversion failed");
+      return blob;
+    } catch {
+      // Fallback: send original file
+      return file;
+    }
+  };
+
+const handleToggleActive = async (cat: CategoryNode) => {
     try {
       await api.centerAdmin.updateCategory({
         categoryId: cat.id,
@@ -394,12 +482,60 @@ export default function CategoriesManagement() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>Icon</Label>
-                <Input
-                  value={form.icon}
-                  onChange={(e) => setForm((p) => ({ ...p, icon: e.target.value }))}
-                  placeholder="lucide icon name"
-                />
+                <Label>ไอคอน (รูปภาพ)</Label>
+                <div className="flex items-center gap-2">
+                  {form.icon && (
+                    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-emerald-50 ring-1 ring-emerald-100">
+                      {form.icon.startsWith("data:") || form.icon.startsWith("http") ? (
+                        <img src={form.icon} alt="" className="size-full object-cover" />
+                      ) : (
+                        <span className="text-xs font-bold text-emerald-700">
+                          {form.icon}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleIconUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-slate-200 text-slate-600"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={iconUploading}
+                  >
+                    {iconUploading ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <ImagePlus className="size-3.5" />
+                    )}
+                    {iconUploading ? "อัปโหลด..." : "เลือกไฟล์"}
+                  </Button>
+                  {form.icon && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-400 hover:text-red-500"
+                      onClick={() => setForm((p) => ({ ...p, icon: "" }))}
+                    >
+                      ลบ
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  รูปสี่เหลี่ยมจัตุรัส ขนาดไม่เกิน 256px · WebP/PNG/JPG · จะแสดงในหน้าร้านค้า
+                </p>
               </div>
             </div>
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
@@ -546,7 +682,14 @@ function CategoryRow({
 
         {/* Name + slug */}
         <div className="min-w-0 flex-1">
-          <span className="text-sm font-medium text-slate-900">{category.display_name ?? category.name}</span>
+          <div className="flex items-center gap-1.5">
+            {category.icon && (category.icon.startsWith("http") || category.icon.startsWith("data:")) ? (
+              <img src={category.icon} alt="" className="size-5 rounded object-cover" />
+            ) : Number(category.sort_order) > 0 && (
+              <span className="size-5" />
+            )}
+            <span className="truncate text-sm font-medium text-slate-900">{category.display_name ?? category.name}</span>
+          </div>
           <span className="ml-2 text-xs text-slate-400">/{category.slug}</span>
         </div>
 

@@ -15,6 +15,26 @@ export const my = {
     cancelledNotice:
       "ဤမှာယူမှုကို ဖျက်သိမ်းလိုက်ပြီ — ဤမှာယူမှုအတွက် ငွေပေးချေနိုင်တော့မည် မဟုတ်ပါ",
   },
+  /** Thaimart-style UI components. */
+  thaimartUi: {
+    topBanner: {
+      title: "သင့်ရဲ့စီးပွားရေးကို {platform} ဖြင့် စတင်ပါ",
+      subtitle: "အခမဲ့မှတ်ပုံတင်ခြင်း · အခကြေးငွေမရှိ · ဆိုင်ထဲဝင်ရောက်ပါ",
+      cta: "ရောင်းသူဖြစ်ရန်",
+      dismiss: "ပိတ်ရန်",
+    },
+    categoryStrip: {
+      all: "အားလုံး",
+      ariaLabel: "ထုတ်ကုန်အမျိုးအစားများ",
+    },
+    liveSection: {
+      liveNow: "အသက်ဝင်နေသည်",
+      upcoming: "လာမည့်အစီအစဉ်",
+      liveNowLabel: "LIVE NOW",
+      productsCount: "ပစ္စည်း {count} ခု",
+      viewAll: "အားလုံးကြည့်ရန်",
+    },
+  },
   /** Seller dashboard copy (Income, SellerGoals, MyShop chrome) — see the Thai dictionary for the key shape. */
   sellerDash: {
     income: {

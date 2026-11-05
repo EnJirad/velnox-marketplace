@@ -15,10 +15,10 @@
  * browser by Vite. Never store secrets in VITE_* variables.
  */
 export const SITE_URLS = {
-  corporate: import.meta.env.VITE_CORPORATE_URL ?? "https://velnox.com",
-  velshop: import.meta.env.VITE_VELSHOP_URL ?? "https://shop.velnox.com",
-  velseller: import.meta.env.VITE_VELSELLER_URL ?? "https://seller.velnox.com",
-  velcenter: import.meta.env.VITE_VELCENTER_URL ?? "https://center.velnx.com",
+  corporate: import.meta.env.VITE_CORPORATE_URL ?? "https://velnox-theta.vercel.app",
+  velshop: import.meta.env.VITE_VELSHOP_URL ?? "https://velshop.vercel.app",
+  velseller: import.meta.env.VITE_VELSELLER_URL ?? "https://velseller.vercel.app",
+  velcenter: import.meta.env.VITE_VELCENTER_URL ?? "https://velcenter.vercel.app",
 } as const;
 
 export type SiteId = keyof typeof SITE_URLS;

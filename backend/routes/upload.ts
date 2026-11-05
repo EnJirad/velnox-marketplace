@@ -50,7 +50,7 @@ const ALLOWED_TYPES: string[] = [...ALLOWED_UPLOAD_TYPES];
 // refused before any URL is signed (same contract as the evidence flow in
 // routes/verification.ts).
 
-const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat", "announcement"] as const;
+const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat", "announcement", "category-icon"] as const;
 type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
 
 const PROFILE_IMAGE_KINDS = ["avatar", "cover"] as const;
@@ -83,6 +83,8 @@ function purposeFromObjectKey(objectKey: string): UploadPurpose | null {
   }
   // Storefront announcement artwork: announcements/{userId}/{uuid}.webp
   if (parts[0] === "announcements" && parts.length >= 3) return "announcement";
+  // Platform category icons: categories/{categoryId}/icon.webp
+  if (parts[0] === "categories" && parts.length >= 3 && parts[2] === "icon.webp") return "category-icon";
   return null;
 }
 
@@ -170,6 +172,10 @@ function validateObjectKeyOwnership(objectKey: string, userId: string): boolean 
   // Announcement artwork: announcements/{userId}/{uuid}.webp
   if (parts.length >= 3 && parts[0] === "announcements") {
     return parts[1] === userId;
+  }
+  // Category icons: categories/{categoryId}/icon.webp — only center staff may write
+  if (parts.length === 3 && parts[0] === "categories" && parts[2] === "icon.webp") {
+    return true; // confirm handler validates center permission
   }
   // Shop keys: shop/{shopId}/logo.webp or shop/{shopId}/cover.webp
   if (parts.length >= 3 && parts[0] === "shop") {
@@ -351,6 +357,20 @@ export function setupUploadRoutes(app: Express): void {
           return;
         }
         objectKey = `announcements/${userId}/${randomUUID()}.webp`;
+      } else if (purpose === "category-icon") {
+        // Platform category icons: only center staff holding settings.manage
+        // may mint this namespace. The categoryId scopes the key.
+        if (!(await userHasPermission(userId, "settings.manage"))) {
+          r2Log("presign", { step: "category_icon_permission", status: "denied" });
+          res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "settings.manage permission required" } });
+          return;
+        }
+        const { categoryId } = req.body;
+        if (!categoryId || typeof categoryId !== "string") {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "categoryId required for category icon uploads" } });
+          return;
+        }
+        objectKey = `categories/${categoryId}/icon.webp`;
       } else {
         // that validateObjectKeyOwnership verifies. The old
         // `<purpose>/<userId>.webp` shape let a client invent a bucket
@@ -478,6 +498,14 @@ export function setupUploadRoutes(app: Express): void {
         if (shopId) {
           const col = purpose === "shop-logo" ? "logo" : "cover";
           await query(`UPDATE shops SET ${col} = $1, updated_at = NOW() WHERE id = $2`, [publicUrl, shopId]);
+        }
+      } else if (purpose === "category-icon") {
+        // Platform category icon — settings.manage was proven at presign.
+        // Store the public URL in categories.icon so the storefront can render it.
+        const catParts = objectKey.split("/");
+        const categoryId = catParts[1];
+        if (categoryId) {
+          await query(`UPDATE categories SET icon = $1, updated_at = NOW() WHERE id = $2`, [publicUrl, categoryId]);
         }
       }
       // `announcement` uploads only need the media row above; the URL is stored

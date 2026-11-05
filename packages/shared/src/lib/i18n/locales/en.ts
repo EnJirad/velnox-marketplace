@@ -9,6 +9,26 @@ export const en: Dict = {
       "Once cancelled this order can no longer be paid, and the stock held for it is released back for sale",
     cancelledNotice: "This order was cancelled — it can no longer be paid",
   },
+  /** Thaimart-style UI components. */
+  thaimartUi: {
+    topBanner: {
+      title: "Start your business with {platform}",
+      subtitle: "Free signup · No fees · Access your shop",
+      cta: "Become a seller",
+      dismiss: "Dismiss",
+    },
+    categoryStrip: {
+      all: "All",
+      ariaLabel: "Product categories",
+    },
+    liveSection: {
+      liveNow: "Live now",
+      upcoming: "Upcoming",
+      liveNowLabel: "LIVE NOW",
+      productsCount: "{count} products",
+      viewAll: "View all",
+    },
+  },
   /** Seller dashboard copy (Income, SellerGoals, MyShop chrome) — see the Thai dictionary for the key shape. */
   sellerDash: {
     income: {

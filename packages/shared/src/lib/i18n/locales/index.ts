@@ -1574,6 +1574,10 @@ const mySellerShopExt = {
   verifyVerifiedText: "ဤဆိုင် အတည်ပြုပြီးဖြစ်သည်",
 };
 
+// ─── Thaimart-style UI components (topBanner, categoryStrip, liveSection) ────
+// The keys live in the `thaimartUi` top-level namespace of th.ts/en.ts/my.ts.
+// No patch needed here — full parity via the locale files.
+
 // ─── Server-authoritative shipping (quote- and order-pricing copy) ─────────
 // Added here, not in the locale files, so a single patch lights up th/en/my at
 // once and the huge `my.ts` is not edited by hand.
