@@ -539,6 +539,8 @@ export function setupSellerRoutes(app: Express): void {
                 sh.category as shop_category,
                 sh.address_line1, sh.address_line2, sh.subdistrict, sh.district,
                 sh.city, sh.state, sh.postal_code, sh.country, sh.phone as shop_phone, sh.email as shop_email,
+                sh.shipping_fee as shop_shipping_fee,
+                sh.free_shipping_threshold as shop_free_shipping_threshold,
                 ss.settings as seller_settings
          FROM sellers s
          LEFT JOIN shops sh ON sh.seller_id = s.id
@@ -583,6 +585,15 @@ export function setupSellerRoutes(app: Express): void {
             },
             phone: row.shop_phone || null,
             email: row.shop_email || null,
+            // The shop's delivery pricing, exactly as the quote endpoint reads
+            // it (NULL fee = platform default, 0 = the shop ships free).
+            shipping: {
+              fee: row.shop_shipping_fee != null ? Number(row.shop_shipping_fee) : null,
+              freeShippingThreshold:
+                row.shop_free_shipping_threshold != null
+                  ? Number(row.shop_free_shipping_threshold)
+                  : null,
+            },
           }
         : null;
 
@@ -625,6 +636,8 @@ export function setupSellerRoutes(app: Express): void {
         email,
         logo,
         cover,
+        shippingFee,
+        freeShippingThreshold,
       } = req.body;
 
       // Verify ownership: get seller → shop
@@ -698,6 +711,50 @@ export function setupSellerRoutes(app: Express): void {
         vals.push(cover || null);
       }
 
+      // ── Delivery pricing ────────────────────────────────────────────────
+      // The seller sets the flat fee for ONE parcel from their own shop (the
+      // same shape the large Thai marketplaces use, where every seller ships
+      // their own order). `null` means "use the platform default", which is
+      // never 0 — free shipping must be an explicit choice, so it can never be
+      // the accidental result of an unset field.
+      const parseMoneyField = (
+        value: unknown,
+        label: string,
+        max: number,
+      ): { ok: true; value: string | null } | { ok: false; message: string } => {
+        if (value === null) return { ok: true, value: null };
+        if (value === undefined) return { ok: true, value: null };
+        const text = String(value).trim();
+        if (text === "") return { ok: true, value: null };
+        if (!/^\d{1,7}(\.\d{1,2})?$/.test(text)) {
+          return { ok: false, message: `${label} must be a number with at most 2 decimals.` };
+        }
+        const amount = Number(text);
+        if (!Number.isFinite(amount) || amount < 0 || amount > max) {
+          return { ok: false, message: `${label} must be between 0 and ${max}.` };
+        }
+        return { ok: true, value: amount.toFixed(2) };
+      };
+
+      if (shippingFee !== undefined) {
+        const parsed = parseMoneyField(shippingFee, "Shipping fee", 10000);
+        if (!parsed.ok) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.message } });
+          return;
+        }
+        sets.push(`shipping_fee = $${idx++}`);
+        vals.push(parsed.value);
+      }
+      if (freeShippingThreshold !== undefined) {
+        const parsed = parseMoneyField(freeShippingThreshold, "Free shipping threshold", 1000000);
+        if (!parsed.ok) {
+          res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.message } });
+          return;
+        }
+        sets.push(`free_shipping_threshold = $${idx++}`);
+        vals.push(parsed.value);
+      }
+
       if (sets.length === 0) {
         res.status(400).json({
           success: false,
@@ -718,7 +775,8 @@ export function setupSellerRoutes(app: Express): void {
       const updated = await query(
         `SELECT id, name, slug, description, logo, cover, rating, product_count,
                 category, address_line1, address_line2, subdistrict, district,
-                city, state, postal_code, country, phone, email
+                city, state, postal_code, country, phone, email,
+                shipping_fee, free_shipping_threshold
          FROM shops WHERE id = $1`,
         [shopId],
       );
@@ -748,6 +806,11 @@ export function setupSellerRoutes(app: Express): void {
           },
           phone: r.phone || null,
           email: r.email || null,
+          shipping: {
+            fee: r.shipping_fee != null ? Number(r.shipping_fee) : null,
+            freeShippingThreshold:
+              r.free_shipping_threshold != null ? Number(r.free_shipping_threshold) : null,
+          },
         },
       });
     } catch (err) {

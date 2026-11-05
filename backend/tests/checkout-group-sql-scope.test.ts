@@ -192,7 +192,11 @@ describe("every checkout_group_id reference resolves inside its own SQL scope", 
       // row on the group, so its refund has no `order_id` to hang on and must name
       // the group instead. That is a second OWNER of the same edge, not a second
       // source of truth — the value is always copied from `orders.checkout_group_id`.
-      const owner = ["orders", "payments", "refunds"].some((t) => inScope.has(t));
+      // `shipping_quotes` is the same shape as `refunds`: a quote records WHICH
+      // group it priced (`checkout_group_id` + `consumed_at`), so it owns the
+      // column too. It is a record of a charge, never a second source of truth
+      // about which orders belong together.
+      const owner = ["orders", "payments", "refunds", "shipping_quotes"].some((t) => inScope.has(t));
       if (owner) continue;
       offenders.push(`${file}:${line}  scope=[${[...inScope].join(", ")}]`);
     }

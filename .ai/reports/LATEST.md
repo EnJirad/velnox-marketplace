@@ -1,319 +1,275 @@
-# Velnox Marketplace — Master Progress Audit
+# P0 — Shipping fee & server-authoritative shipping quote
 
-Audit date: 2026-11-04 · Read-only · Branch `main`
+Date: 2026-11-05 · Branch `main` · BASE `7f01075dad8dfba6ec6c3f36e9329976989c4786`
 
-## 1. Executive summary
+## 1. Root cause of `shipping_fee = 0`
 
-The marketplace is a real, working three-sided system: a customer storefront, a
-seller console, and an operations centre over one Express/WebSocket backend and a
-64-table Neon schema. 174 API routes exist and are wired to real frontends; there
-is no mock layer.
+There was **no shipping price anywhere in the system** — not in the schema, not in
+the seller UI, not on the server. Confirmed against source, not the audit text:
 
-**What actually works end to end:** browse → product → variant → cart → checkout
-(PromptPay/Stripe test mode) → order → seller fulfilment → shipment → customer
-tracking → income report → admin oversight. Verified in a browser this session.
+| # | Cause | Evidence (before this change) |
+|---|---|---|
+| 1 | Order creation wrote only `total_amount`; `subtotal`, `shipping_fee`, `discount` kept their `0` defaults | `backend/routes/cart.ts` `insertOrderWithUniqueNumber` INSERT column list |
+| 2 | The checkout screen printed a hard-coded "ส่งฟรี" (free) row and totalled only `qty × price` | `apps/velshop/src/pages/ShopCheckout.tsx` summary block, `checkoutTotal` |
+| 3 | The backend had no shipping endpoint at all — `POST /api/customer/checkout` accepted no fee and produced none | route list in `cart.ts` (11 routes, none shipping) |
+| 4 | `shops` had **no** shipping columns, so a seller could not express a fee | `db/schema.sql` `shops` table |
+| 5 | The client sent a meaningless `shippingMethod: "standard"` that the backend ignored | `ShopCheckout.tsx` checkout payload |
+| 6 | Order totals therefore omitted delivery, while order *items* did not | `orders.total_amount` was the item sum only |
 
-**What does not exist despite being documented or schema'd:** wholesale pack
-pricing, community shop accounts, restock ordering, a shipping-rate engine,
-returns workflow, payouts/settlements, customer review submission, Convex.
+Nothing on the backend ever accepted a client-supplied fee (there was nowhere to
+put one), so the defect was **missing pricing**, not tampering — the manipulation
+surface only becomes relevant once a fee exists, and it is closed in Part 4.
 
-**Financial defect (P0):** every order is created with `shipping_fee = 0`; the
-checkout UI hard-codes "shipping free". Revenue and seller income are therefore
-understated by whatever shipping should cost.
+## 2. Financial contract (authoritative)
 
-## 2. Latest repository commit
-
-`ff69d51` (main) — clean working tree, local == remote. Audited tree includes
-`63d7b0a` (VelCenter nav fix) and `b205112` (cookie/write-mode hardening).
-
-## 3. Project structure
+Per shop shipment — exactly one `orders` row and one `shipments` row:
 
 ```
-apps/velshop     22 routes   customer storefront
-apps/velseller   11 routes   seller console
-apps/velcenter    3 routes   one shell + 12 tab modules
-apps/velnox      12 routes   corporate/marketing
-backend          174 endpoints across 16 route modules + ws
-packages/shared  UI kit, i18n (th/en/my, 1706 keys), api-routes
-db               schema.sql + run-sqleditor.sql (64 tables, 148 indexes)
+subtotal      = Σ (current server unit price × integer quantity)   exact decimal
+shipping_fee  = the shop's shipping rule                            exact decimal
+discount      = 0.00   (no shop-level discount system exists in checkout)
+total_amount  = subtotal − discount + shipping_fee
 ```
 
-## 4. Overall application status
+Per purchase (`checkout_groups.total_amount`) = `Σ per-shop total_amount`, which is
+what Stripe/PromptPay is asked to charge (`payments.amount`; Stripe line items are
+built from `orders.total_amount` / the group total — `backend/routes/stripe.ts`).
 
-| Application | Status |
+Money is carried as decimal **strings** and computed through `backend/lib/money.ts`
+(exact rationals over `bigint`, one round-half-up at the boundary). No float is
+part of an authoritative amount. Currency THB, `NUMERIC(12,2)`.
+
+Quote lifecycle: TTL **15 minutes**, server clock, sha-256 **fingerprint** of
+`(currency, address id, per line: product / variant / quantity / server price / shop)`.
+The quote is a *claim* checkout re-derives and compares; it is consumed exactly once
+(`UPDATE … WHERE consumed_at IS NULL AND expires_at > NOW()`), so two concurrent
+submits cannot both spend it.
+
+## 3. Business rule approved for this scope
+
+No carrier API exists and no product carries weight/dimension data, so a real rate
+engine would have meant inventing numbers. Large Thai marketplaces (Shopee, Lazada,
+TikTok Shop) charge **one delivery per seller** because each seller ships their own
+parcel, and let the seller set that channel's fee. That structure is what is
+implemented — with the numbers explicit and configurable, never hard-coded in the UI:
+
+| Source | Meaning |
 |---|---|
-| VelShop | IMPLEMENTED — NOT FULLY VERIFIED (checkout money defect) |
-| Velseller | PARTIAL (shipping engine, returns, payouts missing) |
-| VelCenter | IMPLEMENTED — NOT FULLY VERIFIED (dashboard/orders/sellers verified) |
-| Velnox Corporate | IMPLEMENTED (informational site) |
-| Backend API | IMPLEMENTED — NOT FULLY VERIFIED |
-| Database | IMPLEMENTED (3 orphan tables, see §10) |
-| Convex | NOT IMPLEMENTED (no code, no dependency) |
-| Cloudflare R2 | IMPLEMENTED (no deletion path) |
-| Stripe / PromptPay | IMPLEMENTED (test mode only) |
+| `shops.shipping_fee = NULL` | use the platform default (`SHIPPING_FLAT_FEE_THB`, else **50.00**) |
+| `shops.shipping_fee = 0` | the seller ships free (explicit) |
+| `shops.shipping_fee > 0` | that flat fee per parcel |
+| `shops.free_shipping_threshold` | free once that shop's item subtotal reaches it (NULL = no automatic free shipping) |
 
-## 5. VelShop feature matrix
+**Limitation, stated plainly:** there is no zone/weight/volumetric/carrier rate, no
+provider integration, and no tracking API. The fee is a per-shop flat rate. *Web
+verification of the marketplace comparison was not possible this session* (search
+engines returned no results / HTTP 429 and the Shopee help URL 404'd), so the
+comparison above is general market practice, not a citation.
 
-| Feature | Status | Evidence |
-|---|---|---|
-| Homepage | VERIFIED COMPLETE | browser: announcements (4), categories, trending card |
-| Announcements/banners | VERIFIED COMPLETE | `announcements.ts`; carousel rendered |
-| Categories | VERIFIED COMPLETE | `/categories`, `/products?category=` |
-| Listing / search / filters | VERIFIED COMPLETE | `/products` (search, filter, sort, "พบ 1 สินค้า") |
-| Product detail | VERIFIED COMPLETE | gallery, price, stock 18, tabs |
-| Variants | VERIFIED COMPLETE | selection sheet, live total, cart badge 1 |
-| Cart | VERIFIED COMPLETE | `cart.ts` 11 routes; empty state + add verified |
-| Checkout | **PARTIAL** | `cart.ts:117` inserts no `shipping_fee`; `ShopCheckout.tsx:791` hard-codes free shipping |
-| Addresses | IMPLEMENTED — NOT FULLY VERIFIED | `ShopAddresses.tsx` |
-| Auth / Google | IMPLEMENTED — NOT FULLY VERIFIED | `auth.ts`, OAuth tests (3) |
-| Profile / avatar | IMPLEMENTED — NOT FULLY VERIFIED | `ShopProfile.tsx`, `upload.ts` avatar |
-| Wishlist | IMPLEMENTED — NOT FULLY VERIFIED | `ShopWishlist.tsx`, `cart.ts` wishlist routes |
-| Reviews — display | VERIFIED COMPLETE | `GET /api/products/:productId/reviews` |
-| Reviews — submission | IMPLEMENTED — NOT FULLY VERIFIED | `POST /api/products/:productId/reviews` (`products.ts:3211`), UI `submitReview` in `ShopProductDetail.tsx:388`; not exercised in a browser |
-| Orders / tracking | IMPLEMENTED — NOT FULLY VERIFIED | `cart.ts` order routes; `ShopTracking.tsx` |
-| Notifications | IMPLEMENTED — NOT FULLY VERIFIED | bell (badge count observed) |
-| Chat/support | VERIFIED COMPLETE | `/chat` conversations, unread, tabs |
-| i18n (th/en/my) | VERIFIED COMPLETE | `i18n:check` 1706 × 3 |
-| Responsive | NOT VERIFIED | see §19 |
+## 4. API changes
 
-## 6. Velseller feature matrix
+**New** `POST /api/customer/shipping/quote` (`backend/routes/shipping.ts`, auth required)
 
-| Feature | Status | Evidence |
-|---|---|---|
-| Registration / application | IMPLEMENTED | **two** UIs: `RequireRole.tsx` (4-step) + `ShopOnboarding.tsx` (2-step) |
-| Verification / ID upload | VERIFIED COMPLETE | `verification.ts` 10 routes, 3 purposes enforced |
-| My Shop | VERIFIED COMPLETE | browser: identity, address, 2 products, filters |
-| Logo / cover (R2) | IMPLEMENTED — NOT FULLY VERIFIED | presign/confirm `shop-logo`/`shop-cover` |
-| Products CRUD + variants | IMPLEMENTED — NOT FULLY VERIFIED | 40 routes in `products.ts` |
-| Inventory | VERIFIED COMPLETE | `inventory.ts` reserve/commit/release; tests |
-| Orders / detail | VERIFIED COMPLETE | browser: 7 filters, 5 real orders, transitions |
-| Shipping (manual) | IMPLEMENTED | carrier + tracking number, `shipments` one-per-order |
-| Shipping **engine** (rates/zones/volumetric) | **NOT IMPLEMENTED** | no tables, no endpoints |
-| Tracking events | PARTIAL | `tracking_events` read only — nothing writes it |
-| Income / fees | VERIFIED COMPLETE | browser: 3% fee ฿12.58, return 23.8%, net ฿348.65 |
-| Shipping cost in income | NOT IMPLEMENTED | no field |
-| Returns | **NOT IMPLEMENTED** | `order_returns` table unused |
-| Payouts | **NOT IMPLEMENTED** | `settlements` table unused |
-| Goals / performance | VERIFIED COMPLETE | `seller-intelligence.ts` + tests |
-| Profile / settings | PARTIAL | 3 sections only |
-| Permissions | IMPLEMENTED | `requireApprovedSeller`, ownership tests |
-
-## 7. VelCenter feature matrix
-
-| Module | Status | Evidence |
-|---|---|---|
-| Auth + role gate | VERIFIED COMPLETE | seller → company-only screen; `/api/admin/overview` → 403 |
-| Navigation | **FIXED + VERIFIED** | `63d7b0a`; click → `?tab=orders` → real orders |
-| Dashboard | VERIFIED COMPLETE | ฿419.3, 5 orders, 2 shops, 2 products, low-stock 1 |
-| Orders | VERIFIED COMPLETE | `?tab=orders`, 5 orders with status controls |
-| Sellers / verification | VERIFIED COMPLETE | `?tab=sellers` queue + search + filter |
-| Products / categories / users / staff / audit / incidents / marketing / settings | IMPLEMENTED — NOT FULLY VERIFIED | `center.ts` 20 routes; tabs wired but not clicked through |
-| Intelligence | IMPLEMENTED — NOT FULLY VERIFIED | `/api/admin/market-overview` 200 |
-| Chat | IMPLEMENTED — NOT FULLY VERIFIED | `center-chat.ts` 8 routes |
-| Responsive | NOT VERIFIED | §19 |
-
-## 8. Velnox Corporate
-
-12 routes, static/marketing: home, ecosystem, contact, static pages. All
-informational; no commerce backend. Brand tokens consistent with
-`VELNOX_DESIGN_THEME.md`. Links to the three apps exist. Status: IMPLEMENTED
-(informational), NOT browser-verified this task.
-
-## 9. Backend API audit
-
-- 174 `/api/*` routes; 16 modules. Auth: httpOnly `SameSite=None; Secure` cookie,
-  7-day JWT (`auth.ts:263-272`); staff password login separate.
-- Cross-site defence: `createOriginGuard` (`server.ts:86`) + rate limiting
-  (`server.ts:90`).
-- Ownership: seller routes resolve `sellers.user_id`; uploads prove shop ownership
-  before minting keys (`upload.ts:431-443`).
-- Payment webhook: signature-verified and idempotent (`stripe.ts:8,41`).
-- Gaps: no returns endpoints, no payout/settlement endpoints, no review-creation
-  endpoint, no shipping-rate endpoint, no tracking-event writer.
-- Duplicate logic: two seller-application flows (frontend), one `apply` endpoint.
-
-## 10. Neon database audit
-
-- 64 tables, 148 indexes, 20 `NUMERIC(12,2)` money columns — correct precision.
-- FK integrity across orders/payments/shipments/items; one-shipment-per-order
-  enforced by unique index; stock movement audited (`inventory_movements`).
-- **Orphan tables:** `order_returns` has **no** read or write anywhere; `settlements`
-  appears only in a `stripe.ts` comment and `ledger_entries` only in tests — schema
-  ahead of implementation, a drift risk. (Corrected after AI 02 review.)
-- `db/schema.sql` and `db/run-sqleditor.sql` both maintained (no drift check ran
-  here — no test database; production never touched).
-
-## 11. Convex audit
-
-No `convex/` directory, no dependency in any `package.json`, no client calls.
-Realtime is the backend's own WebSocket (`realtime/index.ts`). The brief's
-"Convex = realtime/intelligence" is **documentation that the source does not
-support**. Activity/intelligence lives in Postgres (`behavioral_events`,
-`customer_events`) and `center.ts`.
-
-## 12. Cloudflare R2 audit
-
-Presign/confirm with purpose allowlist (`avatar`, `cover`, `shop-logo`,
-`shop-cover`, `chat`, `announcement`); server mints keys; confirm re-checks
-ownership, object size and MIME. Client converts to WebP before upload.
-**Gaps:** no delete path (replaced logo/cover and deleted products leave objects);
-no orphan sweep job found.
-
-## 13. Payment audit
-
-Stripe test mode (card + PromptPay), checkout session creation, signature-verified
-webhook, idempotent status transitions, refund endpoint (webhook-confirmed),
-payment incidents + reservation scheduler. **Not verified against production**;
-no live transaction attempted. Shipping fee never charged — checkout totals are
-product-only.
-
-## 14. Security audit
-
-| Control | State |
-|---|---|
-| Cookie store | `.ai/secrets/`, gitignored, `0600`, refuses tracked file |
-| Cookie helper | cannot print a cookie; export is human-gated |
-| Proxy safe mode | GET/HEAD only, 405 + never forwarded |
-| Access gate | per-run token, httpOnly SameSite=Strict |
-| Host/Origin/Sec-Fetch-Site | allowlisted; cross-site refused |
-| Write mode | proof-file gate; production refused; bare flag refused |
-| Session | httpOnly, Secure in prod, 7 days |
-| Role boundary | middleware-derived; seller 403 on admin API |
-| Secrets in reports | none |
-
-All hardening from `502ce94`/`c52cd83` intact; 63 security tests green.
-
-## 15. Architecture audit
-
-- Single backend gateway is respected: no frontend touches Neon or R2 directly.
-- Two seller-application UIs remain the main duplication (P1).
-- `tracking_events`, `order_returns`, `settlements`, `ledger_entries` are unused
-  structures — either build them or drop them (decision, not cleanup).
-- VelCenter uses one component file (`Center.tsx`, 2701 lines) with 12 tabs — a
-  maintainability risk, not a defect.
-
-## 16. Documentation audit
-
-- `AGENTS.md` still contains a triplicated "Progressive Context Loading" block and
-  two corrupted fragments (`.ai/.text/backend.md`, `.ai/.ntext/frontend.md`).
-- Brief mentions Convex; repository has none (§11).
-- Brief names "NestJS"; backend is Express (`backend/server.ts`).
-- Root-level `AI_RULES.md` / `AI_Handoff.md` correctly absent.
-
-## 17. Automated test results
-
-| Command | Result |
-|---|---|
-| `bun run typecheck` (4 apps) | exit 0 |
-| `bun test backend/tests` | **1308 pass / 389 skip / 0 fail** (3 consecutive runs) |
-| one earlier full run | 1 fail, not reproducible; flaky test suspected (proxy/port timing) |
-| `bun test … proxy-security … proxy-write-mode … velcenter-nav` | 63 pass |
-| `git diff --check` | exit 0 |
-
-389 skips are DB-gated suites; no `TEST_DATABASE_URL` configured.
-
-## 18. Browser E2E results
-
-Owner (`role: owner`) and seller sessions, local authenticated proxy, read-only.
-
-| App | Pages actually rendered |
-|---|---|
-| VelShop | home, /products, product detail + variant sheet + add-to-cart, empty cart, chat, 404 |
-| Velseller | /seller/shop, /seller/orders, order detail, /seller/income |
-| VelCenter | dashboard, `?tab=orders`, `?tab=sellers` |
-| VelCenter (seller role) | company-only screen + 403 on admin API |
-| Velnox Corporate | not opened this task |
-
-No screenshot capability (hidden surface); evidence is DOM text + URL transitions.
-
-## 19. Responsive QA results
-
-**All five widths NOT VERIFIED** (360/390/768/1024/1440): the in-app WebView has
-no resize control; `mcp__chrome_devtools__*` cannot start on android/arm64; an
-in-page iframe harness timed out. Only the device viewport (~492 px) was rendered.
-
-## 20. Impeccable execution evidence
-
+```jsonc
+// request — the client may only NAME what it wants priced
+{ "addressId": "<uuid>", "cartItemIds": ["<uuid>"], "buyNow": { "productId": "...", "variantId": null, "quantity": 2 } }
+// 200
+{ "success": true, "data": {
+    "quoteId": "<uuid>", "expiresAt": "…", "expiresInSeconds": 900,
+    "method": "shop_flat_rate", "currency": "THB",
+    "subtotal": "59.97", "discount": "0.00", "shippingTotal": "25.00", "total": "84.97",
+    "itemCount": 3,
+    "shops": [{ "shopId": "…", "shopName": "…", "subtotal": "59.97", "shippingFee": "25.00",
+                "freeShipping": false, "reason": "shop_flat_rate", "method": "shop_flat_rate", "itemCount": 3 }] } }
 ```
-scripts/impeccable context → error: "…impeccable" has unexpected e_type: 2
-ELF header: 7f 45 4c 46 02 01 01 00 … 02 00 b7 00  (ET_EXEC, AArch64)
-```
-No supported alternative entry point exists; no binary was substituted.
-**IMPECCABLE: BLOCKED.** No UI redesign performed.
 
-## 21. Wholesale roadmap status
+Refusals: `400 CLIENT_AMOUNT_NOT_ACCEPTED`, `400 ADDRESS_REQUIRED`,
+`403 ADDRESS_NOT_FOUND`, `422 SHIPPING_DESTINATION_UNSUPPORTED` (only `TH` is
+priceable), `400 SHIPPING_EMPTY_CART`, plus the existing product/stock codes.
 
-| Phase | Status | Evidence |
+**Changed** `POST /api/customer/checkout`
+- accepts `shippingQuoteId`; a **supplied** quote is rejected with `409`
+  `SHIPPING_QUOTE_INVALID | _USED | _EXPIRED | _STALE` when it does not match.
+- refuses any client money field with `400 CLIENT_AMOUNT_NOT_ACCEPTED`
+  (`shippingFee`, `shipping_fee`, `shippingTotal`, `subtotal`, `total`,
+  `totalAmount`, `amount`, `discount`) — refused, not ignored.
+- persists `subtotal`, `shipping_fee`, `discount`, `total_amount`, `shipping_quote_id`;
+  the group total includes delivery.
+- when no quote id is sent (API clients, older builds) the server **mints and
+  redeems** a quote from the same computation, so no order can carry a client
+  price either way. The VelShop UI always sends one, which is what makes "the
+  customer saw this fee before paying" true for real users.
+
+**Changed** `PATCH /api/seller/shop` — accepts `shippingFee` / `freeShippingThreshold`
+(`null` = platform default, `0` = free, ≤2 decimals, bounded); `GET /api/seller/profile`
+returns `shipping: { fee, freeShippingThreshold }`.
+
+**Changed** order payloads — `shippingMethod` is `"shop_flat_rate"` only when a quote
+actually priced the order, `null` for legacy orders (customer list/detail, seller
+list/detail).
+
+## 5. Database changes (additive, reversible)
+
+1. `shops.shipping_fee NUMERIC(12,2) NULL`, `shops.free_shipping_threshold NUMERIC(12,2) NULL`
+2. `orders.shipping_quote_id UUID NULL` + FK → `shipping_quotes(id) ON DELETE SET NULL`
+3. `shipping_quotes` table — `user_id`, `address_id`, `fingerprint`, `currency`,
+   `subtotal`, `shipping_total`, `total_amount`, `breakdown JSONB`, `expires_at`,
+   `consumed_at`, `checkout_group_id`, `created_at`, with
+   `CHECK (total_amount = subtotal + shipping_total)` and non-negative checks;
+   indexes `(user_id, created_at DESC)` and partial `(expires_at) WHERE consumed_at IS NULL`.
+
+Both `db/schema.sql` and `db/run-sqleditor.sql` updated (reconciler parity test passes:
+21/21). Existing orders/payments untouched; every column is nullable, so the change is
+reversible with `DROP COLUMN` / `DROP TABLE` and **no production migration was run**
+(and must not be run by an agent).
+
+## 6. Checkout changes (VelShop)
+
+`ShopCheckout.tsx` now: requests the quote whenever the address, the selected lines or
+their quantity/price change (debounced, stale responses discarded by sequence);
+auto-refreshes shortly before expiry; renders **subtotal → discount (only when non-zero)
+→ delivery → total** exclusively from server strings; shows "ฟรีค่าจัดส่ง" **only** for a
+valid quote whose delivery is exactly `0.00` (and says whether that is a seller choice or
+a threshold); shows a spinner while pricing, an actionable **Retry** on failure, and an
+em dash instead of a total when no quote exists; blocks submit until a quote is ready and
+sends `shippingQuoteId`, never a number. A `409` quote refusal re-quotes and asks the
+customer to review the new total instead of retrying the charge.
+
+## 7. Order & payment integrity
+
+- Order rows are written from `buildShippingQuote(...)` output only; the per-shop
+  amount map is a hard lookup (a missing shop now **throws** instead of writing 0).
+- `total_amount = subtotal − discount + shipping_fee` is computed term by term.
+- Before responding, the persisted per-shop totals are compared with the quote total
+  and a mismatch **rolls the checkout back** (`CHECKOUT_TOTAL_MISMATCH`).
+- Idempotency (`checkout_requests`), the order-row lock, payment reservation and the
+  Stripe webhook path are unchanged; Stripe still derives the charge from the stored
+  order/group amount, so payment, order and group agree by construction and by check.
+
+## 8. Seller / fulfilment compatibility
+
+`PATCH /api/seller/shop` writes the shop's fee (validated server-side), `My Shop` shows
+`ใช้ค่าเริ่มต้นของแพลตฟอร์ม` / `ฟรี` / the amount plus the free threshold, and the edit
+dialog exposes both fields with an invalid-input message. Seller order list/detail
+already carried `subtotal` / `discount` / `shippingFee` / `total`; they now carry real
+numbers plus `shippingMethod`. Ownership checks are untouched (seller detail is scoped
+by `sh_shops.seller_id`). No carrier/tracking integration was invented.
+
+## 9. Tests
+
+`backend/tests/shipping-quote.test.ts` — **33 pass, 0 fail** (runs with no database):
+the rule (default / flat / explicit free / threshold / corrupt negative), exact decimal
+totals (`19.99 × 3 + 50 = 109.97`, `0.10 × 3 + 0.20 = 0.50`), multi-shop one-fee-per-shop,
+empty cart and invalid quantity/price refusals, fingerprint stability and change on
+quantity/price/address, platform-default env handling, TTL, and **8 route-level refusals**
+of client money (`shippingFee = 0`, arbitrary fee, `total`, `totalAmount`, `amount`,
+`subtotal`, `discount`) plus the quote endpoint's own refusals.
+
+`backend/tests/checkout-shipping-integrity.test.ts` — **15 tests, all SKIPPED here**
+(DB-gated): non-zero fee persisted with the invariant, explicit free quote, platform
+default, unsupported destination, expired quote (no order created), quantity changed,
+price changed, seller fee changed, quote reuse, foreign quote, multi-shop sum vs group,
+no-quote server pricing, client fee/total manipulation, decimal precision end to end,
+seller visibility + stranger refusal. Scenario coverage of the 18 requested items:
+implemented in these two files, except 12–13 (payment creation failure / retry) and 15
+(refund/cancel), which are already covered by the existing untouched suites
+(`payment-*`, `checkout-payment-flow`, `customer-order-cancel`, `payment-refund-replay`).
+
+## 10. Evidence — commands and results
+
+| Check | Command | Result |
 |---|---|---|
-| 1 — Marketplace foundation | IMPLEMENTED — NOT FULLY VERIFIED | commerce works; shipping fee + returns gaps |
-| 2 — Pack pricing | **NOT IMPLEMENTED** | zero references to pack price/pieces/min packs |
-| 3 — Shop accounts | **NOT IMPLEMENTED** | no account/membership model |
-| 4 — Restock workflow | **PARTIAL** | `Reorder.tsx` suggests restock, no pack ordering |
+| Backend types | `cd backend && bun run typecheck` | exit 0 |
+| All apps types | `bun run typecheck` | exit 0 (velshop, velseller, velcenter, velnox) |
+| Backend suite | `bun test ./backend/tests` | **1340 pass, 404 skip, 1 fail** |
+| New unit suite | `bun test ./backend/tests/shipping-quote.test.ts` | 33 pass |
+| Schema parity | `bun test ./backend/tests/db-run-sqleditor-reconciler.test.ts` | 21 pass |
+| Schema drift | `bun test ./backend/tests/schema-drift.test.ts` | 8 pass |
+| VelShop build | `bun run build:velshop` | exit 0 |
+| VelSeller build | `bun run build:velseller` | exit 0 |
+| i18n parity | `bun run i18n:check` | `th=1702 en=1702 my=1702` |
+| Whitespace | `git diff --check` | clean |
 
-## 22. Critical bugs
+The single failure is the pre-existing timing-sensitive `proxy-write-mode.test.ts >
+--check prints identity only` case (5 s timeout under full-suite load; it **passes**
+when the file runs alone: 29/29). It is unrelated to this change and was not
+"fixed" by loosening it.
 
-1. **Shipping fee is always 0** — `cart.ts:117` (insert), `ShopCheckout.tsx:791`,
-   `ShopCheckout.tsx:929`. Orders under-charge; income is understated. P0.
-2. **`tracking_events` never written** — customer tracking page can only ever show
-   the shipment's static status (P1).
-3. **Flaky backend test** — one non-reproducible failure in 4 full runs (P2).
+## 11. Browser E2E — BLOCKED
 
-## 23. Missing features
+BLOCKED: **no reachable PostgreSQL for a local backend.** `initdb` cannot complete on
+this device (two attempts, 120 s and 600 s, hang at "selecting default max_connections";
+the engine also rejects `--describe-config`), so a disposable database — and therefore
+a local API, a genuine test account and an order-writing flow — could not be started.
+No production write, no live payment and no production order mutation was performed.
 
-Returns workflow · payouts/settlements · shipping-rate engine · wholesale phases
-2–4 · Convex (documented, absent) · R2 object deletion · browser-verified shop
-media management in the seller UI.
+What was verified instead: the built VelShop bundle was served locally
+(`apps/velshop/dist` on `127.0.0.1:8100`) and loaded in the in-app browser —
+`/checkout` correctly redirects an unauthenticated visitor to `/auth`, the bundle
+executes with no console/runtime error, and the new copy compiles into the shipped
+JS. That is **not** an E2E of the purchase flow.
 
-## 24. Blocked items
+## 12. Impeccable — NOT EXECUTED (engine unavailable), manual review performed
 
-- Responsive QA (no resize path).
-- Impeccable execution (arm64 engine).
-- Production payment verification (test mode only; no live transaction allowed).
-- DB-gated suites (no test database; Postgres `initdb` hangs on this device).
-- Velnox Corporate browser pass (not opened in this audit).
+The launcher is unusable on this device:
+`/data/user/0/com.androidharness.app/files/skills/impeccable/scripts/impeccable --version`
+→ `error: ".../.impeccable/bin/0.1.18/impeccable" has unexpected e_type: 2`.
+Per the skill's degraded path I loaded `VELNOX_DESIGN_THEME.md` (the repo's design
+source of truth — there is no `DESIGN.md`/`PRODUCT.md`) and `references/craft-floor.md`,
+then reviewed the changed surface against the floor:
 
-## 25. Not verified items
+- **Contrast:** label `slate-500` on white (4.76:1) ✓; "free delivery" moved from
+  `#059669` (3.99:1, below 4.5 for 12 px) to `#047857` (≈4.9:1) ✓; error text
+  `rose-700` on `rose-50` ≈5.6:1 ✓; em-dash placeholder is `aria-hidden` decoration.
+- **States:** loading (spinner + `aria-live`), error (`role="alert"` + actionable
+  retry), empty (no address → "Choose an address" control), disabled submit while
+  unpriced ✓.
+- **Depth/spacing/type:** unchanged card system, one authored status row set per
+  group, tabular numerals for money, no new shadows or gradients.
+- **Bans:** no gradient text, no kicker, no nested cards, no emoji-as-icon, no
+  left-border accents ✓.
+- Motion: none added (a price refresh is a state change, not an animation).
 
-Nine VelCenter modules not clicked · VelShop checkout/profile/addresses/wishlist/
-notifications · seller logo/cover upload · corporate site · all responsive widths.
+**IMPECCABLE: BLOCKED** — the engine never ran; the review above is manual and is
+not evidence of engine execution.
 
-## 26. Recommended development priorities
+## 13. AI 02 — independent review (executed, 5 findings, 4 fixed)
 
-**P0**
-1. Compute and persist `shipping_fee` (server-authoritative), show it at checkout —
-   `cart.ts`, `ShopCheckout.tsx`, `orders.shipping_fee`. Acceptance: order total =
-   items + shipping; seller income includes it.
-2. Gate checkout totals on a server quote; never ship `shippingFee: 0` as a
-   constant.
+AI 02 (`task`, read-only, prompt scoped to the five shipping/pricing files) returned a
+verdict. Its findings and dispositions:
 
-**P1**
-3. Returns workflow (`order_returns` exists; add endpoints/UI or drop the table).
-4. Payouts/settlements (same decision).
-5. Single seller-application UI (delete one of the two).
-6. Write `tracking_events` on shipment transitions.
+| Finding | Disposition |
+|---|---|
+| Per-shop amount fallback could silently write a 0 THB order while the group charged the full amount | **Fixed** — missing shop now throws (`SHIPPING_QUOTE_SHOP_MISMATCH`) |
+| Group and order totals were derived independently with no assertion | **Fixed** — persisted sum is compared with the quote total; mismatch rolls back |
+| Fingerprint used the client's spelling of the address id while quotes store `String(address.id)` | **Fixed** — checkout now fingerprints the DB-resolved address id |
+| `total_amount` ignored the `discount` term of the documented contract | **Fixed** — computed term by term with `subtract` |
+| Float appears in display-only conversions (`Number()` for JSON responses / rendered money) | **Accepted, documented** — authoritative arithmetic is exact; only the wire/display layer converts |
+| No-quote checkout may carry no address (fee still charged) | Accepted by design: the flat rule is destination-independent, and the UI always sends an address |
 
-**P2**
-8. VelCenter module-by-module browser QA + responsive harness.
-9. `AGENTS.md` repair (duplicates/corrupted lines).
-10. R2 orphan cleanup (delete on replace/delete).
+## 14. Status by category
 
-**P3**
-11. Wholesale phase 2 (pack pricing) once P0/P1 money paths are trustworthy.
+**IMPLEMENTED** — quote library + store, `POST /api/customer/shipping/quote`,
+checkout re-derivation and persistence, single-use quote redemption, group total with
+delivery, seller shipping configuration (API + Velseller UI), order payloads carrying
+`shippingMethod`, i18n (th/en/my), schema + reconciler.
 
-## 27. AI 02 independent review
+**AUTOMATED TESTS** — 33 unit/route tests pass; 15 DB-gated integration tests written
+and skipped locally; full backend suite green apart from one pre-existing flaky case.
 
-AI 02 fact-checked six load-bearing claims against source. **One was wrong and
-was corrected in this report**: product-review creation exists
-(`products.ts:3211` POST + `submitReview` in `ShopProductDetail.tsx:388`), so the
-"reviews are read-only" finding was removed and the matrix row changed to
-IMPLEMENTED — NOT FULLY VERIFIED.
+**BUILD** — velShop and velseller production builds exit 0; all four apps typecheck.
 
-Verdicts: shipping_fee = 0 → **CORRECT**; `order_returns` unused → **CORRECT**
-(settlements/ledger re-worded to "no runtime writer"); Convex absent →
-**CORRECT for code/dependencies**, re-worded because "anywhere in the repo" is
-broader than what was checked; `tracking_events` read-only → **CORRECT**; review
-creation missing → **WRONG, fixed**; 174 routes → **CORRECT**.
+**BROWSER E2E** — **BLOCKED** (no disposable database on this device).
 
-No other claim was challenged. Remaining findings are evidence-backed but not all
-independently re-derived (the full 64-table and 174-route inventories were
-produced by AI 01's queries).
+**SECURITY VERIFICATION** — no auth/authz change; client money refused before any DB
+read; quote lookup is ownership-scoped; single-use redemption is atomic; no cookie
+output, write-mode or safe-mode change; no secret printed; `git diff --check` clean.
+
+**BLOCKED** — browser E2E purchase journey; execution of the 15 DB-gated tests;
+Impeccable engine execution; production migration (never run by an agent).
+
+**NOT VERIFIED** — Stripe/PromptPay settlement against a charged amount including
+shipping (no payment was created anywhere); seller-side visual confirmation; live
+mobile layout at 320 px (no authenticated session locally).
+
+Commit SHA: `1fca88e64d8703a8df572a9b3e31c0f5036c551b`

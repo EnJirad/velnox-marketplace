@@ -52,6 +52,9 @@ const root = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
 const CART_ROUTE = "backend/routes/cart.ts";
+// The checkout/quote line resolution was extracted so the shipping quote and
+// checkout price the SAME rows. The structural contract lives there now.
+const CHECKOUT_LINES = "backend/lib/checkout-lines.ts";
 const CHECKOUT_PAGE = "apps/velshop/src/pages/ShopCheckout.tsx";
 const PRODUCT_DETAIL = "apps/velshop/src/pages/ShopProductDetail.tsx";
 const SELECTION_SHEET = "apps/velshop/src/components/shop/ProductSelectionSheet.tsx";
@@ -81,14 +84,15 @@ describe("buy now — the request contract", () => {
   });
 
   test("the buy-now line is loaded from the product tables, not from a cart row", () => {
+    const lines = read(CHECKOUT_LINES);
     // The row comes from `products` (+ `inventory`, `product_variants`).
-    expect(cart).toMatch(
+    expect(lines).toMatch(
       /FROM products p[\s\S]{0,400}LEFT JOIN product_variants pv ON pv\.product_id = p\.id AND pv\.id = \$2/,
     );
     // The synthetic line has no cart row: nothing can be deleted or overwritten
     // in the cart by this purchase.
-    expect(cart).toMatch(/\/\/ A synthetic line: it has no cart row[\s\S]{0,220}id: null/);
-    // …and the cleanup only ever deletes REAL cart ids.
+    expect(lines).toMatch(/\/\/ A synthetic line: it has no cart row[\s\S]{0,220}id: null/);
+    // …and the cleanup only ever deletes REAL cart ids (still in the route).
     expect(cart).toContain(
       '.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)',
     );
@@ -97,8 +101,15 @@ describe("buy now — the request contract", () => {
   });
 
   test("the order total is computed server-side from price × quantity", () => {
-    expect(cart).toContain("totalAmount += parseFloat(item.price) * item.quantity;");
-    expect(cart).toContain("const subtotal = parseFloat(item.price) * item.quantity;");
+    // No float accumulation survives: the amount charged is the exact-decimal
+    // product of the server price and the integer quantity, and the order total
+    // is derived from that plus the authoritative delivery fee.
+    expect(cart).not.toContain("totalAmount += parseFloat(item.price) * item.quantity;");
+    expect(cart).toContain("multiplyByQuantity(parseDecimal(String(item.price)), Number(item.quantity))");
+    expect(cart).toContain("const subtotalAmount = shopAmounts.subtotal;");
+    // The persisted total follows the documented contract, term by term.
+    expect(cart).toContain("subtract(parseDecimal(subtotalAmount), parseDecimal(discountAmount))");
+    expect(cart).toContain("parseDecimal(shippingFeeAmount)");
   });
 
   test("the storefront sends the chosen quantity and does NOT touch the cart", () => {

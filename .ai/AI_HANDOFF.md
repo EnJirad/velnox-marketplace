@@ -1,21 +1,34 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-04 · **Branch:** `main` · **HEAD:** see `git rev-parse HEAD` (do not trust a SHA written here — it goes stale after every commit)
+**Last verified:** 2026-11-05 · **Branch:** `main` · **HEAD:** see `git rev-parse HEAD` (do not trust a SHA written here — it goes stale after every commit)
 
 ## 1. Current Project State
 
-**WORKING** — 4/4 apps typecheck, i18n parity (1650 × 3), AI Office test suite green,
-`backend/tests` 1224 pass / 389 skip / 8 environment-only failures.
+**WORKING** — 4/4 apps typecheck, i18n parity (1702 × 3), velShop + velseller production
+builds green, `backend/tests` 1340 pass / 404 skip / 1 pre-existing flaky case
+(`proxy-write-mode` `--check`, which passes when the file runs alone).
 
 ### Active Tasks
 - Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
+- Shipping P0 (fee + quote) — **implemented and committed**; browser E2E and the 15
+  DB-gated shipping tests are BLOCKED (no disposable PostgreSQL on this device).
 
 ### Important Unresolved Issues
-1. **Responsive verification BLOCKED** — CDP cannot install on android/arm64; 360/390/430/768/1024/1280/1440 breakpoints NOT VERIFIED.
-2. **Production DB verify BLOCKED** — `NEON_PRODUCTION_DATABASE_URL` not available to agents.
-3. **8 `test-database-isolation` probes fail** — Android/Termux `process.execPath` = linker; environmental, not a code defect.
+1. **No local PostgreSQL** — `initdb` hangs at "selecting default max_connections"
+   (Android), so every `TEST_DATABASE_URL`-gated suite skips here, including the new
+   `checkout-shipping-integrity.test.ts` and any local end-to-end purchase journey.
+2. **Responsive verification BLOCKED** — CDP cannot install on android/arm64.
+3. **Production DB verify BLOCKED** — `NEON_PRODUCTION_DATABASE_URL` not available to agents.
+4. **Impeccable engine BLOCKED** — `impeccable --version` fails with
+   `unexpected e_type: 2`; UI review falls back to `VELNOX_DESIGN_THEME.md` + craft-floor.
 
 ### Important Recent Decisions
+- **Shipping is server-priced (2026-11-05).** One flat fee per shop shipment
+  (`shops.shipping_fee`; NULL = platform default `SHIPPING_FLAT_FEE_THB` or 50.00,
+  0 = free; optional `free_shipping_threshold`). Quotes live in `shipping_quotes`
+  (15 min TTL, cart + address fingerprint, single use). Checkout refuses every
+  client money field and persists `subtotal − discount + shipping_fee`; a supplied
+  quote is rejected when stale/expired/foreign, and a missing one is minted server-side.
 - **Seller Part 1 shipped (2026-11-04).** My Shop split into `components/shop/*`
   (`ShopOnboarding`, `ShopIdentityCard`, `ShopVerificationDialog`); all seller-shop
   copy lives in `sellerDash.shop.*` (0 inline Thai left); `PATCH /api/seller/shop`

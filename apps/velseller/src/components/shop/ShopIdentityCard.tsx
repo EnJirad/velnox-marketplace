@@ -13,7 +13,7 @@
  * seller's shop. Every field here exists in `shops` — nothing is invented.
  */
 import { useState } from "react";
-import { ExternalLink, Loader2, MapPin, Pencil, Store } from "lucide-react";
+import { ExternalLink, Loader2, MapPin, Pencil, Store, Truck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@velnox/shared/components/ui/badge";
@@ -34,6 +34,7 @@ import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { SITE_URLS } from "@velnox/shared/lib/sites";
 import type { StoreShop, StoreShopAddress, VerificationStatus } from "@velnox/shared/lib/commerce";
+import { formatBaht } from "@velnox/shared/lib/commerce";
 
 import { ShopMediaField } from "./ShopMediaField";
 
@@ -74,6 +75,11 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
     phone: shop.phone ?? "",
     category: shop.category ?? "",
     address: readAddress(shop.address),
+    // Delivery pricing. Blank means "not configured": the platform default is
+    // applied server-side and is NEVER silently 0 (see lib/shipping.ts).
+    shippingFee: shop.shipping?.fee != null ? String(shop.shipping.fee) : "",
+    freeShippingThreshold:
+      shop.shipping?.freeShippingThreshold != null ? String(shop.shipping.freeShippingThreshold) : "",
   }));
 
   const shopHref = shop.slug ? `${SITE_URLS.velshop}/shop/${shop.slug}` : null;
@@ -94,6 +100,9 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
       phone: shop.phone ?? "",
       category: shop.category ?? "",
       address: readAddress(shop.address),
+      shippingFee: shop.shipping?.fee != null ? String(shop.shipping.fee) : "",
+      freeShippingThreshold:
+        shop.shipping?.freeShippingThreshold != null ? String(shop.shipping.freeShippingThreshold) : "",
     });
     setLogo(shop.logo ?? null);
     setCover(shop.cover ?? null);
@@ -108,8 +117,15 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
     form.address.postalCode !== "" &&
     !/^\d{5}$/.test(String(form.address.postalCode));
 
+  // Only 0-9999999 with at most 2 decimals can be stored, and only what the
+  // backend accepts is sent — a rejected value keeps the dialog open.
+  const moneyFieldInvalid = (value: string) =>
+    value.trim() !== "" && !/^\d{1,7}(\.\d{1,2})?$/.test(value.trim());
+  const shippingInvalid =
+    moneyFieldInvalid(form.shippingFee) || moneyFieldInvalid(form.freeShippingThreshold);
+
   const handleSave = async () => {
-    if (!form.name.trim() || postalInvalid) return;
+    if (!form.name.trim() || postalInvalid || shippingInvalid) return;
     setSaving(true);
     try {
       await updateShop({
@@ -127,6 +143,10 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
           postalCode: form.address.postalCode?.trim() || null,
           country: form.address.country?.trim() || "TH",
         },
+        // Blank = NULL = "use the platform default"; 0 = "this shop ships free".
+        shippingFee: form.shippingFee.trim() === "" ? null : Number(form.shippingFee.trim()),
+        freeShippingThreshold:
+          form.freeShippingThreshold.trim() === "" ? null : Number(form.freeShippingThreshold.trim()),
       });
       toast.success(t("sellerDash.shop.savedToast"));
       setEditing(false);
@@ -223,6 +243,26 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                 <dd className="font-medium text-slate-700">velshop/shop/{shop.slug}</dd>
               </div>
             )}
+            {/* The delivery charge the customer will actually be quoted. */}
+            <div className="flex items-start gap-1.5">
+              <dt className="flex shrink-0 items-center gap-1 text-slate-500">
+                <Truck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                {t("sellerDash.shop.shippingTitle")}
+              </dt>
+              <dd className="min-w-0 text-slate-600">
+                {shop.shipping?.fee == null
+                  ? t("sellerDash.shop.shippingPlatformDefault")
+                  : shop.shipping.fee === 0
+                    ? t("checkout.shippingFree")
+                    : formatBaht(shop.shipping.fee)}
+                {shop.shipping?.freeShippingThreshold != null && shop.shipping.fee !== 0 && (
+                  <span className="text-slate-400">
+                    {" · "}
+                    {t("sellerDash.shop.freeShippingThreshold")} {formatBaht(shop.shipping.freeShippingThreshold)}
+                  </span>
+                )}
+              </dd>
+            </div>
           </dl>
         )}
       </div>
@@ -379,6 +419,54 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                 </div>
               </div>
             </fieldset>
+
+            {/* ── Delivery pricing ──────────────────────────────────────── */}
+            <fieldset className="grid gap-3">
+              <legend className="text-sm font-semibold text-slate-900">
+                {t("sellerDash.shop.shippingTitle")}
+              </legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-shop-shipping-fee">{t("sellerDash.shop.shippingFee")}</Label>
+                  <Input
+                    id="edit-shop-shipping-fee"
+                    value={form.shippingFee}
+                    onChange={(e) => setForm((prev) => ({ ...prev, shippingFee: e.target.value }))}
+                    inputMode="decimal"
+                    placeholder="50"
+                    className="h-11 rounded-[10px] tabular-nums"
+                    aria-describedby="edit-shop-shipping-fee-hint"
+                    aria-invalid={moneyFieldInvalid(form.shippingFee) || undefined}
+                  />
+                  <p id="edit-shop-shipping-fee-hint" className="text-xs leading-5 text-slate-400">
+                    {t("sellerDash.shop.shippingFeeHint")}
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-shop-free-threshold">
+                    {t("sellerDash.shop.freeShippingThreshold")}
+                  </Label>
+                  <Input
+                    id="edit-shop-free-threshold"
+                    value={form.freeShippingThreshold}
+                    onChange={(e) => setForm((prev) => ({ ...prev, freeShippingThreshold: e.target.value }))}
+                    inputMode="decimal"
+                    placeholder="1000"
+                    className="h-11 rounded-[10px] tabular-nums"
+                    aria-describedby="edit-shop-free-threshold-hint"
+                    aria-invalid={moneyFieldInvalid(form.freeShippingThreshold) || undefined}
+                  />
+                  <p id="edit-shop-free-threshold-hint" className="text-xs leading-5 text-slate-400">
+                    {t("sellerDash.shop.freeShippingThresholdHint")}
+                  </p>
+                </div>
+              </div>
+              {shippingInvalid && (
+                <p role="alert" className="text-xs font-medium text-rose-600">
+                  {t("sellerDash.shop.shippingInvalid")}
+                </p>
+              )}
+            </fieldset>
           </div>
 
           <DialogFooter className="gap-2">
@@ -388,7 +476,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
             <Button
               className="h-11 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
               onClick={() => void handleSave()}
-              disabled={saving || !form.name.trim() || postalInvalid}
+              disabled={saving || !form.name.trim() || postalInvalid || shippingInvalid}
             >
               {saving && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               {saving ? t("sellerDash.shop.saving") : t("sellerDash.shop.save")}

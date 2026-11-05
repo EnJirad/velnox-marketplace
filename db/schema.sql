@@ -194,6 +194,12 @@ CREATE TABLE IF NOT EXISTS shops (
   state TEXT,
   postal_code TEXT,
   country TEXT NOT NULL DEFAULT 'TH',
+  -- Shipping configuration for this shop (see backend/lib/shipping.ts).
+  -- NULL  = "use the platform default fee" (never silently 0).
+  -- 0     = the seller ships free.
+  -- free_shipping_threshold = free once this shop's item subtotal reaches it.
+  shipping_fee NUMERIC(12, 2),
+  free_shipping_threshold NUMERIC(12, 2),
   phone TEXT,
   email TEXT,
   category TEXT,
@@ -363,6 +369,9 @@ CREATE TABLE IF NOT EXISTS orders (
   currency TEXT NOT NULL DEFAULT 'THB',
   shipping_address_id UUID REFERENCES addresses(id),
   shipping_address JSONB,
+  -- The redeemed quote that priced this order (see db/schema.sql
+  -- shipping_quotes). NULL on orders created before the quote flow existed.
+  shipping_quote_id UUID,
   notes TEXT,
   inventory_released BOOLEAN NOT NULL DEFAULT FALSE,
   payment_expires_at TIMESTAMPTZ,
@@ -404,6 +413,42 @@ CREATE TABLE IF NOT EXISTS checkout_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_order ON checkout_requests (order_id);
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_user ON checkout_requests (user_id);
+-- ─── Shipping quotes ────────────────────────────────────────────────────────
+-- A server-minted delivery price for one exact cart + one exact address, with
+-- an expiry and a one-time redemption. `orders.shipping_quote_id` records which
+-- quote priced which order.
+--
+-- `fingerprint` is the sha256 of (currency, address id, every line's product /
+-- variant / quantity / server unit price / shop). Checkout recomputes it from
+-- the rows it is about to insert, so a quote can only be redeemed against the
+-- cart it was quoted for.
+--
+-- `total_amount = subtotal + shipping_total` is asserted by the database, which
+-- makes a quote that does not add up impossible to store. (There is no
+-- shop-level discount today; if one is added, this constraint must be widened
+-- in the same change as the formula.)
+CREATE TABLE IF NOT EXISTS shipping_quotes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  address_id UUID REFERENCES addresses(id) ON DELETE SET NULL,
+  fingerprint TEXT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  shipping_total NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  breakdown JSONB,
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  checkout_group_id UUID REFERENCES checkout_groups(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT shipping_quotes_amounts_non_negative
+    CHECK (subtotal >= 0 AND shipping_total >= 0 AND total_amount >= 0),
+  CONSTRAINT shipping_quotes_total_adds_up
+    CHECK (total_amount = subtotal + shipping_total)
+);
+CREATE INDEX IF NOT EXISTS idx_shipping_quotes_user ON shipping_quotes (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_shipping_quotes_expiry ON shipping_quotes (expires_at) WHERE consumed_at IS NULL;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_shipping_quote_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_shipping_quote_id_fkey FOREIGN KEY (shipping_quote_id) REFERENCES shipping_quotes(id) ON DELETE SET NULL; END IF; END $$;
 CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,

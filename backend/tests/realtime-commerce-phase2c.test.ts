@@ -96,7 +96,11 @@ describe("order:created is published after the commit, once per real creation", 
   test("one event per created order — a multi-shop purchase announces every shop's order", () => {
     // `createdOrders` holds one entry per shop order, so the loop publishes one
     // addressed event per order (there is no single global "purchase" feed).
-    expect(cart).toContain("createdOrders.push({ orderId, orderNumber, shopId");
+    // The push is multi-line now (it carries the authoritative subtotal,
+    // delivery fee and total per shop), so the property is pinned structurally:
+    // one entry per shop order, then one addressed event per entry.
+    expect(cart).toMatch(/createdOrders\.push\(\{[\s\S]{0,200}orderId,[\s\S]{0,40}orderNumber,[\s\S]{0,40}shopId,/);
+    expect(cart).toMatch(/for \(const created of createdOrders\)[\s\S]{0,200}publishOrderEvent\("order:created"/);
   });
 });
 

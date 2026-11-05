@@ -190,6 +190,9 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.customer.updateCartItemAction": (a) => apiPut(`/api/customer/cart/item/${a.cartItemId}`, a),
   "api.customer.removeCartItemAction": (a) => apiDelete(`/api/customer/cart/item/${a.cartItemId}`),
   "api.customer.checkoutAction": (a) => apiPost("/api/customer/checkout", a),
+  // Server-authoritative delivery price. Always POST + fresh: a cached quote is
+  // an expired quote, and an expired quote is refused at checkout.
+  "api.customer.shippingQuoteAction": (a) => apiPost("/api/customer/shipping/quote", a),
   "api.customer.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),
   "api.customer.orderDetail": (a) => apiGet(`/api/customer/orders/${a.orderId}`),
   "api.customer.myWishlist": () => apiGet("/api/customer/wishlist"),

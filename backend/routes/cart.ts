@@ -22,6 +22,26 @@ import { requireAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { normalizeAddressSnapshot } from "../lib/order-address.js";
 import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity } from "../lib/inventory.js";
+// Server-authoritative shipping. The quote endpoint and checkout price the SAME
+// rows through `lib/checkout-lines.ts`; the money itself is computed only in
+// `lib/shipping.ts` (exact decimals through `lib/money.ts`, never a float).
+import { loadCheckoutLines } from "../lib/checkout-lines.js";
+import {
+  SHIPPING_METHOD,
+  ShippingError,
+  buildShippingQuote,
+  shippingFingerprint,
+  shippingQuoteExpiry,
+  type QuotedLine,
+} from "../lib/shipping.js";
+import {
+  attachShippingQuoteToGroup,
+  consumeShippingQuote,
+  insertShippingQuote,
+  loadShippingQuote,
+  loadShopShippingConfigs,
+} from "../lib/shipping-quote-store.js";
+import { add, multiplyByQuantity, parseDecimal, subtract, toMoneyString } from "../lib/money.js";
 // The ONE order-row lock and the money-outranks-cancel rule (see the module
 // header: every transaction writing orders + payments takes the order lock
 // first, so cancellation and the Stripe webhook can never deadlock).
@@ -81,6 +101,26 @@ function param(req: Request, key: string): string {
 const ORDER_NUMBER_ATTEMPTS = 5;
 
 /**
+ * Body fields a client must NEVER set on checkout.
+ *
+ * `orders.subtotal`, `orders.shipping_fee` and `orders.total_amount` are
+ * computed from the database and from the shop's shipping configuration. A
+ * payload that carries one of these is refused with 400 instead of being
+ * silently ignored, so an attempt to pin a manipulated price fails visibly (and
+ * is covered by a test) rather than looking accepted.
+ */
+const CLIENT_MONEY_FIELDS = [
+  "shippingFee",
+  "shipping_fee",
+  "shippingTotal",
+  "subtotal",
+  "total",
+  "totalAmount",
+  "amount",
+  "discount",
+] as const;
+
+/**
  * Create the order row with a fresh human-readable number, retrying the ONE
  * collision the unique index can produce.
  *
@@ -98,7 +138,16 @@ async function insertOrderWithUniqueNumber(
   client: { query: (sql: string, params?: unknown[]) => Promise<any> },    params: {
     userId: string;
     shopId: string;
-    totalAmount: number;
+    /** Authoritative item subtotal for this shop, exact decimal string. */
+    subtotal: string;
+    /** Authoritative delivery charge for this shop, exact decimal string. */
+    shippingFee: string;
+    /** No shop-level discount system exists; stored explicitly as 0.00. */
+    discount: string;
+    /** subtotal − discount + shippingFee, computed by the caller. */
+    totalAmount: string;
+    /** The redeemed quote that priced this order (audit link). */
+    shippingQuoteId: string | null;
     shippingAddressId: string | null;
     addressSnapshot: string | null;
     notes: string | null;
@@ -114,21 +163,32 @@ async function insertOrderWithUniqueNumber(
       // yet" is `pending`, which is the value this statement hard-coded before
       // the axes existed, so every existing reader sees the same column value.
       const orderResult = await client.query(
-        `INSERT INTO orders (user_id, shop_id, order_number, status, order_state, fulfillment_status, total_amount, currency, shipping_address_id, shipping_address, notes, checkout_group_id)
-         VALUES ($1, $2, $3, $9, $10, $11, $4, 'THB', $5, $6, $7, $8)
+        // The four money columns are written EXPLICITLY on every order. Before
+        // this, only `total_amount` was inserted, so `subtotal` and
+        // `shipping_fee` kept their 0 defaults and every downstream money view
+        // (customer receipt, seller income, the Stripe line items) described a
+        // purchase that never added up.
+        `INSERT INTO orders (user_id, shop_id, order_number, status, order_state, fulfillment_status,
+                             subtotal, shipping_fee, discount, total_amount, currency,
+                             shipping_address_id, shipping_address, notes, checkout_group_id, shipping_quote_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'THB', $11, $12, $13, $14, $15)
          RETURNING id, order_number, created_at`,
         [
           params.userId,
           params.shopId,
           generateOrderNumber(),
+          projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES }),
+          NEW_ORDER_AXES.orderState,
+          NEW_ORDER_AXES.fulfillmentStatus,
+          params.subtotal,
+          params.shippingFee,
+          params.discount,
           params.totalAmount,
           params.shippingAddressId,
           params.addressSnapshot,
           params.notes,
           params.checkoutGroupId,
-          projectOrderStatus({ paymentState: "unpaid", ...NEW_ORDER_AXES }),
-          NEW_ORDER_AXES.orderState,
-          NEW_ORDER_AXES.fulfillmentStatus,
+          params.shippingQuoteId,
         ],
       );
       await client.query("RELEASE SAVEPOINT order_number_attempt");
@@ -698,6 +758,25 @@ export function setupCartRoutes(app: Express): void {
       // (legacy) — accept both. The snapshot is ALWAYS built server-side from the
       // owned address row; a client-supplied `shippingAddress` object is never trusted.
       const body = req.body ?? {};
+
+      // ── No client money, ever ────────────────────────────────────────────
+      // Prices are computed from the database and from the shop's shipping
+      // configuration. A payload that tries to state one is REFUSED rather than
+      // ignored, so a manipulated request fails loudly instead of producing a
+      // quietly different charge.
+      for (const field of CLIENT_MONEY_FIELDS) {
+        if (body[field] !== undefined && body[field] !== null && body[field] !== "") {
+          res.status(400).json({
+            success: false,
+            error: {
+              code: "CLIENT_AMOUNT_NOT_ACCEPTED",
+              message: `The client cannot supply "${field}": amounts are computed by the server.`,
+            },
+          });
+          return;
+        }
+      }
+
       const shippingAddressId = (body.shippingAddressId ?? body.addressId) as string | undefined;
       const notes = body.notes as string | undefined;
       const cartItemIds = body.cartItemIds as string[] | undefined;
@@ -782,6 +861,13 @@ export function setupCartRoutes(app: Express): void {
       // Resolve + ownership-check the address BEFORE the transaction so the
       // snapshot is written from the database row, not from client input.
       let serverAddressSnapshot: Record<string, unknown> | null = null;
+      /**
+       * The address id as the DATABASE returned it, never the client's spelling.
+       * The quote fingerprint is built from this value, so an id sent with
+       * different casing (or simply echoed from an older payload) cannot make a
+       * valid quote look stale.
+       */
+      let serverAddressId: string | null = null;
       if (shippingAddressId && typeof shippingAddressId === "string") {
         const addrResult = await query(
           `SELECT id, label, recipient_name, phone, line1, line2, subdistrict, district, city, state, postal_code, country
@@ -796,186 +882,25 @@ export function setupCartRoutes(app: Express): void {
           return;
         }
         serverAddressSnapshot = orderAddressSnapshot(addrResult.rows[0]);
+        serverAddressId = String(addrResult.rows[0].id);
       }
 
       // Get cart. Buy Now does not need one: a customer can buy a product
       // directly without ever having added anything to the cart.
-      const cartResult = await query("SELECT id FROM carts WHERE user_id = $1", [userId]);
-      const cartId: string | null = cartResult.rows[0]?.id ?? null;
-      if (!cartId && !buyNow) {
-        res.status(400).json({ success: false, error: { code: "EMPTY_CART", message: "Cart is empty" } });
+      //
+      // The resolution lives in lib/checkout-lines.ts because the shipping quote
+      // endpoint prices the SAME rows. One copy of "which rows am I charging,
+      // and at what price" is what makes the quoted amount and the charged
+      // amount impossible to disagree.
+      const loadedLines = await loadCheckoutLines(userId, cartItemIds, buyNow);
+      if (!loadedLines.ok) {
+        res.status(loadedLines.error.status).json({
+          success: false,
+          error: { code: loadedLines.error.code, message: loadedLines.error.message },
+        });
         return;
       }
-
-      // Get cart items with product details (include image for snapshot).
-      // Buy Now loads its ONE line from the product tables — never from a cart
-      // row — so the cart is untouched and the quantity is exactly the one the
-      // customer chose (it used to be the cart line's quantity, which made a
-      // "Buy Now 1" charge an existing cart quantity of 3).
-      let itemsResult;
-      if (buyNow) {
-        const productRes = await query(
-          `SELECT p.id AS product_id, p.name AS product_name, p.shop_id,
-                  p.status AS product_status, p.price AS product_price, p.unit,
-                  i.quantity AS stock_qty, i.reserved,
-                  sh.name AS shop_name,
-                  (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url,
-                  pv.id AS variant_id, pv.price AS variant_price, pv.stock AS variant_stock,
-                  pv.status AS variant_status
-           FROM products p
-           LEFT JOIN inventory i ON i.product_id = p.id
-           LEFT JOIN shops sh ON p.shop_id = sh.id
-           LEFT JOIN product_variants pv ON pv.product_id = p.id AND pv.id = $2
-           WHERE p.id = $1`,
-          [buyNow.productId, buyNow.variantId],
-        );
-        const row = productRes.rows[0];
-        if (!row) {
-          res.status(400).json({
-            success: false,
-            error: { code: "PRODUCT_UNAVAILABLE", message: "This product is no longer available" },
-          });
-          return;
-        }
-        if (buyNow.variantId && !row.variant_id) {
-          res.status(400).json({
-            success: false,
-            error: { code: "VARIANT_NOT_FOUND", message: "The selected variant was not found" },
-          });
-          return;
-        }
-        itemsResult = {
-          rows: [
-            {
-              ...row,
-              // A synthetic line: it has no cart row, so nothing is deleted from
-              // the cart at the end of the transaction.
-              id: null,
-              cart_id: null,
-              quantity: buyNow.quantity,
-              price: row.variant_id ? (row.variant_price ?? row.product_price) : row.product_price,
-            },
-          ],
-        };
-      } else if (Array.isArray(cartItemIds) && cartItemIds.length > 0) {
-        itemsResult = await query(
-          `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
-                  p.price AS product_price, p.unit,
-                  i.quantity AS stock_qty, i.reserved,
-                  sh.name AS shop_name,
-                  (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-           FROM cart_items ci
-           JOIN products p ON ci.product_id = p.id
-           LEFT JOIN inventory i ON i.product_id = p.id
-           LEFT JOIN shops sh ON p.shop_id = sh.id
-           WHERE ci.cart_id = $1 AND ci.id = ANY($2)`,
-          [cartId, cartItemIds],
-        );
-      } else {
-        itemsResult = await query(
-          `SELECT ci.*, p.name AS product_name, p.shop_id, p.status AS product_status,
-                  p.price AS product_price, p.unit,
-                  i.quantity AS stock_qty, i.reserved,
-                  sh.name AS shop_name,
-                  (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order ASC LIMIT 1) AS product_image_url
-           FROM cart_items ci
-           JOIN products p ON ci.product_id = p.id
-           LEFT JOIN inventory i ON i.product_id = p.id
-           LEFT JOIN shops sh ON p.shop_id = sh.id
-           WHERE ci.cart_id = $1`,
-          [cartId],
-        );
-      }
-
-      if (itemsResult.rows.length === 0) {
-        res.status(400).json({ success: false, error: { code: "EMPTY_CART", message: "Cart is empty" } });
-        return;
-      }
-
-      // Validate all items — variant-aware stock check. Also re-read the CURRENT
-      // server price for every item: the final price must never come from a stale
-      // cart snapshot. If a price changed, we charge the current price and flag it
-      // so the client can tell the customer (never silently charge either side).
-      const items = itemsResult.rows;
-      let priceChanged = false;
-      for (const item of items) {
-        // Server-side quantity validation — never trust the frontend.
-        const qtyError = validateCheckoutQuantity(item.quantity);
-        if (qtyError) {
-          res.status(400).json({
-            success: false,
-            error: { code: "VALIDATION_ERROR", message: `Invalid quantity for "${item.product_name}": ${qtyError}` },
-          });
-          return;
-        }
-        if (item.product_status !== "published") {
-          res.status(400).json({
-            success: false,
-            error: { code: "PRODUCT_UNAVAILABLE", message: `Product "${item.product_name}" is no longer available` },
-          });
-          return;
-        }
-        if (item.variant_id) {
-          // Variant stock is source of truth — must succeed or stop checkout
-          let varStock;
-          try {
-            varStock = await query(
-              `SELECT stock, status, price FROM product_variants WHERE id = $1`,
-              [item.variant_id],
-            );
-          } catch (varErr: any) {
-            res.status(503).json({
-              success: false,
-              error: { code: "STOCK_UNAVAILABLE", message: `Stock information is unavailable for "${item.product_name}". Please try again later.` },
-            });
-            return;
-          }
-          if (varStock.rows.length === 0) {
-            res.status(400).json({
-              success: false,
-              error: { code: "VARIANT_NOT_FOUND", message: `Variant for "${item.product_name}" was not found.` },
-            });
-            return;
-          }
-          const v = varStock.rows[0];
-          const variantStock = Number(v.stock);
-          if (v.stock == null || !Number.isFinite(variantStock)) {
-            res.status(503).json({
-              success: false,
-              error: { code: "STOCK_UNAVAILABLE", message: `Stock data is unavailable for "${item.product_name}". Please try again later.` },
-            });
-            return;
-          }
-          if (v.status !== "active" || item.quantity > variantStock) {
-            res.status(400).json({
-              success: false,
-              error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}" (variant: ${variantStock} available)` },
-            });
-            return;
-          }
-          // Price revalidation — charge the CURRENT variant price, never a stale snapshot.
-          const variantPrice = Number(v.price);
-          if (Number.isFinite(variantPrice) && variantPrice >= 0 && Math.abs(variantPrice - parseFloat(item.price)) > 0.005) {
-            item.price = variantPrice;
-            priceChanged = true;
-          }
-        } else {
-          const available = (item.stock_qty ?? 0) - (item.reserved ?? 0);
-          if (item.quantity > available) {
-            res.status(400).json({
-              success: false,
-              error: { code: "INSUFFICIENT_STOCK", message: `Insufficient stock for "${item.product_name}"` },
-            });
-            return;
-          }
-          // Price revalidation for non-variant products.
-          const productPrice = Number(item.product_price);
-          if (Number.isFinite(productPrice) && productPrice >= 0 && Math.abs(productPrice - parseFloat(item.price)) > 0.005) {
-            item.price = productPrice;
-            priceChanged = true;
-          }
-        }
-      }
+      const { cartId, items, priceChanged } = loadedLines.value;
 
       // Group items by shop
       const shopMap = new Map<string, typeof items>();
@@ -986,16 +911,143 @@ export function setupCartRoutes(app: Express): void {
         shopMap.set(shopId, list);
       }
 
+      // ── The authoritative shipping quote ─────────────────────────────────
+      // The customer's quote is a CLAIM about a number the server already
+      // computed. Checkout re-derives the whole pricing from the rows it is
+      // about to insert and then compares: a quote that no longer matches the
+      // cart, the prices or the address is refused instead of trusted.
+      //
+      // WHEN NO QUOTE ID IS SENT (API clients, older builds) the order is still
+      // priced here — the server mints a quote from the SAME computation and
+      // redeems it immediately — so no order can carry a client price either
+      // way. The VelShop checkout always sends one, which is what makes "the
+      // customer saw this delivery fee before paying" true for real users.
+      let shippingQuoteId = typeof body.shippingQuoteId === "string" ? body.shippingQuoteId.trim() : "";
+
+      const shopShippingConfigs = await loadShopShippingConfigs([...shopMap.keys()]);
+      const quotedLines: QuotedLine[] = items.map((item: any) => ({
+        productId: String(item.product_id),
+        variantId: item.variant_id ?? null,
+        shopId: item.shop_id ?? null,
+        shopName: item.shop_name ?? null,
+        quantity: Number(item.quantity),
+        unitPrice: String(item.price),
+      }));
+
+      let authoritativeQuote;
+      try {
+        authoritativeQuote = buildShippingQuote(quotedLines, shopShippingConfigs);
+      } catch (shipErr) {
+        if (shipErr instanceof ShippingError) {
+          res.status(400).json({
+            success: false,
+            error: { code: shipErr.code, message: shipErr.message },
+          });
+          return;
+        }
+        throw shipErr;
+      }
+      const cartFingerprint = shippingFingerprint(quotedLines, serverAddressId);
+
+      // A quote supplied by the client must MATCH this cart exactly; when none
+      // is supplied the order is still priced here and the quote is minted from
+      // the same computation, so no order can ever carry a client price.
+      if (shippingQuoteId) {
+        const storedQuote = await loadShippingQuote(shippingQuoteId, userId);
+        if (!storedQuote) {
+          res.status(409).json({
+            success: false,
+            error: {
+              code: "SHIPPING_QUOTE_INVALID",
+              message: "The shipping quote is not valid for this account. Please refresh the checkout page.",
+            },
+          });
+          return;
+        }
+        if (storedQuote.consumedAt) {
+          res.status(409).json({
+            success: false,
+            error: {
+              code: "SHIPPING_QUOTE_USED",
+              message: "This shipping quote was already used for another order. Please refresh the checkout page.",
+            },
+          });
+          return;
+        }
+        if (new Date(storedQuote.expiresAt).getTime() <= Date.now()) {
+          res.status(409).json({
+            success: false,
+            error: {
+              code: "SHIPPING_QUOTE_EXPIRED",
+              message: "The shipping quote has expired. Please refresh the checkout page to get a new one.",
+            },
+          });
+          return;
+        }
+        if (storedQuote.fingerprint !== cartFingerprint) {
+          res.status(409).json({
+            success: false,
+            error: {
+              code: "SHIPPING_QUOTE_STALE",
+              message: "Your cart or delivery address changed after the quote. Please review the new total before paying.",
+            },
+          });
+          return;
+        }
+        // The stored totals must equal what the server would compute NOW. This is
+        // what makes a quote un-replayable after a seller changes their fee.
+        if (
+          storedQuote.subtotal !== authoritativeQuote.subtotal ||
+          storedQuote.shippingTotal !== authoritativeQuote.shippingTotal ||
+          storedQuote.totalAmount !== authoritativeQuote.total ||
+          storedQuote.currency !== authoritativeQuote.currency
+        ) {
+          res.status(409).json({
+            success: false,
+            error: {
+              code: "SHIPPING_QUOTE_STALE",
+              message: "Shipping or prices changed after the quote. Please review the new total before paying.",
+            },
+          });
+          return;
+        }
+      } else {
+        const minted = await insertShippingQuote({
+          userId,
+          addressId: serverAddressId,
+          fingerprint: cartFingerprint,
+          quote: authoritativeQuote,
+          expiresAt: shippingQuoteExpiry(),
+        });
+        shippingQuoteId = minted.id;
+      }
+
+      /** Per-shop authoritative amounts, keyed exactly like `shopMap`. */
+      const shippingByShop = new Map<string, { subtotal: string; shippingFee: string }>();
+      for (const shopQuote of authoritativeQuote.shops) {
+        shippingByShop.set(shopQuote.shopId ?? "unknown", {
+          subtotal: shopQuote.subtotal,
+          shippingFee: shopQuote.shippingFee,
+        });
+      }
+
       // Create orders (one per shop)
       const createdOrders: any[] = [];
       let responseData: any = null;
       /** The group row for this purchase — created with the first order. */
       let checkoutGroupId: string | null = null;
-      /** The purchase total, accumulated once from the cart lines. */
-      let groupTotal = 0;
-
       /** Internal marker: this request key was already claimed — respond with the stored result. */
       class DuplicateCheckoutError extends Error {}
+
+      /** The quote could not be redeemed at commit time (expired or already used). */
+      class ShippingQuoteRedeemError extends Error {
+        constructor(
+          readonly code: string,
+          message: string,
+        ) {
+          super(message);
+        }
+      }
 
       try {
       await withTransaction(async (client) => {
@@ -1022,12 +1074,46 @@ export function setupCartRoutes(app: Express): void {
           }
         }
 
+        // Redeem the quote exactly once, inside this transaction. The UPDATE's
+        // WHERE clause is the arbitration point: two concurrent checkouts can
+        // never both spend the same quote, and an expired quote cannot be
+        // redeemed by clock skew.
+        const quoteRedeemed = await consumeShippingQuote(client, shippingQuoteId, userId);
+        if (!quoteRedeemed) {
+          throw new ShippingQuoteRedeemError(
+            "SHIPPING_QUOTE_EXPIRED",
+            "The shipping quote has expired or was already used. Please refresh the checkout page.",
+          );
+        }
+
         for (const [shopId, shopItems] of shopMap) {
-          // Calculate total from DB prices (not client-provided)
-          let totalAmount = 0;
-          for (const item of shopItems) {
-            totalAmount += parseFloat(item.price) * item.quantity;
+          // ── Authoritative per-shop money ────────────────────────────────
+          // `subtotal` and `shipping_fee` both come from the same computation the
+          // quote was built from, and `total_amount` is their exact sum. This
+          // triple is the ONLY number payment derives from — a client cannot
+          // reach it, and the invariant is pinned by tests:
+          //     total_amount = subtotal − discount + shipping_fee
+          const shopAmounts = shippingByShop.get(shopId);
+          if (!shopAmounts) {
+            // A cart shop with no priced quote line would write a 0 THB order
+            // while the group still charged the full amount. That can only mean
+            // the quote and the cart disagreed, so refuse rather than persist a
+            // number nobody computed.
+            throw new Error(`SHIPPING_QUOTE_SHOP_MISMATCH: ${shopId}`);
           }
+          const subtotalAmount = shopAmounts.subtotal;
+          const shippingFeeAmount = shopAmounts.shippingFee;
+          const discountAmount = "0.00";
+          // total_amount = subtotal − discount + shipping_fee, exactly as the
+          // contract in lib/shipping.ts states. `discount` is 0 today (no
+          // shop-level discount exists in checkout); subtracting it here means
+          // adding one later cannot silently break the invariant.
+          const totalAmount = toMoneyString(
+            add(
+              subtract(parseDecimal(subtotalAmount), parseDecimal(discountAmount)),
+              parseDecimal(shippingFeeAmount),
+            ),
+          );
 
           // ── The checkout group ──────────────────────────────────────────
           // One customer purchase is ONE row here, however many shops it
@@ -1039,29 +1125,30 @@ export function setupCartRoutes(app: Express): void {
           // no orphan group behind.
           if (checkoutGroupId === null) {
             const totalItemCount = items.reduce((s: number, i: any) => s + i.quantity, 0);
+            // The group amount is the purchase total INCLUDING delivery, taken
+            // from the authoritative quote, so Stripe/PromptPay is asked to
+            // charge exactly what the order rows add up to.
             const groupRes = await client.query(
               `INSERT INTO checkout_groups (user_id, total_amount, currency, item_count, shop_count)
-               VALUES ($1, 0, 'THB', $2, $3)
+               VALUES ($1, $2, 'THB', $3, $4)
                RETURNING id`,
-              [userId, totalItemCount, shopMap.size],
+              [userId, authoritativeQuote.total, totalItemCount, shopMap.size],
             );
             checkoutGroupId = String(groupRes.rows[0].id);
-            groupTotal = items.reduce(
-              (s: number, i: any) => s + parseFloat(i.price) * i.quantity,
-              0,
-            );
-            await client.query(
-              `UPDATE checkout_groups SET total_amount = $2 WHERE id = $1`,
-              [checkoutGroupId, groupTotal],
-            );
+            // Audit link: which quote priced this purchase.
+            await attachShippingQuoteToGroup(client, shippingQuoteId, checkoutGroupId);
           }
 
           // Create order (with a numeric-only, collision-checked order number)
           const orderResult = await insertOrderWithUniqueNumber(client, {
             userId,
             shopId,
+            subtotal: subtotalAmount,
+            shippingFee: shippingFeeAmount,
+            discount: discountAmount,
             totalAmount,
-            shippingAddressId: shippingAddressId || null,
+            shippingQuoteId,
+            shippingAddressId: serverAddressId,
             addressSnapshot: serverAddressSnapshot ? JSON.stringify(serverAddressSnapshot) : null,
             notes: notes || null,
             checkoutGroupId,
@@ -1071,7 +1158,10 @@ export function setupCartRoutes(app: Express): void {
 
           // Create order items + decrease stock
           for (const item of shopItems) {
-            const subtotal = parseFloat(item.price) * item.quantity;
+            // Exact per-line money: unit price × integer quantity, rounded ONCE.
+            const subtotal = toMoneyString(
+              multiplyByQuantity(parseDecimal(String(item.price)), Number(item.quantity)),
+            );
 
             // Load variant info for snapshot
             let variantNameSnapshot: string | null = null;
@@ -1130,7 +1220,15 @@ export function setupCartRoutes(app: Express): void {
             }
           }
 
-          createdOrders.push({ orderId, orderNumber, shopId, shopName: shopItems[0]?.shop_name ?? '', subtotal: totalAmount, shippingFee: 0, total: totalAmount });
+          createdOrders.push({
+            orderId,
+            orderNumber,
+            shopId,
+            shopName: shopItems[0]?.shop_name ?? '',
+            subtotal: subtotalAmount,
+            shippingFee: shippingFeeAmount,
+            total: totalAmount,
+          });
 
           // COD orders get a real payments row (method 'cod', provider 'cod', status 'pending')
           // so order list/detail can report paymentStatus. This branch is only
@@ -1180,7 +1278,21 @@ export function setupCartRoutes(app: Express): void {
         // is the real grouping key and is what new code should use.
         const parentOrderId = createdOrders[0]?.orderId ?? '';
         const parentOrderNumber = createdOrders[0]?.orderNumber ?? '';
-        const totalAll = createdOrders.reduce((s, o) => s + o.total, 0);
+        // The purchase total is the sum of what was actually persisted, so the
+        // group amount, the order rows and this response can never disagree.
+        const groupTotalWithShipping = toMoneyString(
+          createdOrders.reduce((sum, o) => add(sum, parseDecimal(String(o.total))), parseDecimal("0.00")),
+        );
+        const totalAll = Number(groupTotalWithShipping);
+        // The purchase must ADD UP before anything is answered or charged: the
+        // persisted per-shop totals have to equal the amount the group (and
+        // therefore the payment) will use. A mismatch rolls the whole checkout
+        // back rather than committing an order that cannot be reconciled.
+        if (groupTotalWithShipping !== authoritativeQuote.total) {
+          throw new Error(
+            `CHECKOUT_TOTAL_MISMATCH: orders=${groupTotalWithShipping} quote=${authoritativeQuote.total}`,
+          );
+        }
         const itemCount = items.reduce((s: number, i: any) => s + i.quantity, 0);
         const summaryItems = items.map((i: any) => ({
           productId: i.product_id,
@@ -1217,6 +1329,16 @@ export function setupCartRoutes(app: Express): void {
         }
       });
       } catch (err) {
+        // A quote that could not be redeemed inside the transaction (expired, or
+        // already spent by a concurrent submit) is a safe refusal, never a 500:
+        // nothing was written and the customer must fetch a new quote.
+        if (err instanceof ShippingQuoteRedeemError) {
+          res.status(409).json({
+            success: false,
+            error: { code: err.code, message: err.message },
+          });
+          return;
+        }
         if (err instanceof DuplicateCheckoutError) {
           if (responseData) {
             res.json({ success: true, data: responseData });
@@ -1232,7 +1354,6 @@ export function setupCartRoutes(app: Express): void {
         }
         throw err;
       }
-
       // ── Publish AFTER the commit ─────────────────────────────────────────
       // Every row created above is durable at this point, and a failed request
       // never reaches here (the failure paths answer and return inside the
@@ -1334,7 +1455,9 @@ export function setupCartRoutes(app: Express): void {
           // assuming one. Null when there is no window or no policy row.
           reservationMinutes: r.reservation_policy?.reservationMinutes ?? null,
           shippingStatus: r.shipping_status,
-          shippingMethod: null,
+          // One implemented method (flat per-shop fee, priced server-side).
+          // Null on orders that predate quotes, so no legacy order claims one.
+          shippingMethod: r.shipping_quote_id ? SHIPPING_METHOD : null,
           trackingNumber: null,
           subtotal: parseFloat(r.subtotal) || 0,
           discount: parseFloat(r.discount) || 0,
@@ -1425,7 +1548,7 @@ export function setupCartRoutes(app: Express): void {
           // See the list route: the reservation length for the progress bar.
           reservationMinutes: order.reservation_policy?.reservationMinutes ?? null,
           shippingStatus: order.shipping_status,
-          shippingMethod: null,
+          shippingMethod: order.shipping_quote_id ? SHIPPING_METHOD : null,
           trackingNumber: shipments[0]?.trackingNumber ?? null,
           subtotal: parseFloat(order.subtotal) || 0,
           discount: parseFloat(order.discount) || 0,

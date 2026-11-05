@@ -1568,17 +1568,96 @@ const mySellerShopExt = {
   verifyVerifiedText: "ဤဆိုင် အတည်ပြုပြီးဖြစ်သည်",
 };
 
+// ─── Server-authoritative shipping (quote- and order-pricing copy) ─────────
+// Added here, not in the locale files, so a single patch lights up th/en/my at
+// once and the huge `my.ts` is not edited by hand.
+const thShippingUx = {
+  shippingFree: "ฟรีค่าจัดส่ง",
+  shippingFreeThreshold: "ฟรีค่าจัดส่ง (ครบยอดที่กำหนด)",
+  shippingCalculating: "กำลังคำนวณค่าจัดส่ง…",
+  shippingRetry: "ลองใหม่",
+  shippingPickAddress: "เลือกที่อยู่ก่อน",
+  shippingPerShop: "(แยกตาม {count} ร้าน)",
+  shippingUnavailable: "คำนวณค่าจัดส่งไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+  shippingQuoteRequired: "กรุณารอระบบคำนวณค่าจัดส่งก่อนชำระเงิน",
+  shippingQuoteRefresh: "ค่าจัดส่งหรือราคาสินค้าเปลี่ยนแล้ว กรุณาตรวจยอดใหม่ก่อนชำระเงิน",
+  shippingDestinationUnsupported: "ยังไม่รองรับการจัดส่งไปยังที่อยู่นี้",
+  discount: "ส่วนลด",
+};
+
+const enShippingUx = {
+  shippingFree: "Free delivery",
+  shippingFreeThreshold: "Free delivery (threshold met)",
+  shippingCalculating: "Calculating delivery…",
+  shippingRetry: "Retry",
+  shippingPickAddress: "Choose an address",
+  shippingPerShop: "({count} shops)",
+  shippingUnavailable: "Could not calculate delivery. Please try again.",
+  shippingQuoteRequired: "Please wait for the delivery fee before paying.",
+  shippingQuoteRefresh: "Delivery or prices changed — review the new total before paying.",
+  shippingDestinationUnsupported: "We cannot deliver to this address yet.",
+  discount: "Discount",
+};
+
+const myShippingUx = {
+  shippingFree: "ပို့ဆောင်ခ အခမဲ့",
+  shippingFreeThreshold: "ပို့ဆောင်ခ အခမဲ့ (သတ်မှတ်ပမာဏ ပြည့်ပါပြီ)",
+  shippingCalculating: "ပို့ဆောင်ခ တွက်ချက်နေသည်…",
+  shippingRetry: "ထပ်စမ်းပါ",
+  shippingPickAddress: "လိပ်စာ ရွေးပါ",
+  shippingPerShop: "(ဆိုင် {count} ခု)",
+  shippingUnavailable: "ပို့ဆောင်ခ တွက်၍ မရပါ။ ထပ်စမ်းပါ။",
+  shippingQuoteRequired: "ငွေမပေးမီ ပို့ဆောင်ခ တွက်ချက်ပြီးသည်အထိ စောင့်ပါ။",
+  shippingQuoteRefresh: "ပို့ဆောင်ခ သို့မဟုတ် ဈေးနှုန်း ပြောင်းသွားသည်။ ငွေမပေးမီ စုစုပေါင်း ပြန်စစ်ပါ။",
+  shippingDestinationUnsupported: "ဤလိပ်စာသို့ ပို့၍ မရသေးပါ။",
+  discount: "လျှော့စျေး",
+};
+
+// Seller-facing delivery configuration (Velseller → My Shop).
+const thSellerShippingUx = {
+  shippingTitle: "การจัดส่งของร้าน",
+  shippingFee: "ค่าจัดส่งต่อพัสดุ (บาท)",
+  shippingFeeHint: "เว้นว่าง = ใช้ค่าเริ่มต้นของแพลตฟอร์ม · ใส่ 0 = ส่งฟรี",
+  freeShippingThreshold: "ส่งฟรีเมื่อซื้อครบ (บาท)",
+  freeShippingThresholdHint: "เว้นว่าง = ไม่มีเงื่อนไขส่งฟรี",
+  shippingSaved: "บันทึกการตั้งค่าจัดส่งแล้ว",
+  shippingInvalid: "กรุณากรอกตัวเลข 0 ขึ้นไป (ทศนิยมไม่เกิน 2 ตำแหน่ง)",
+  shippingPlatformDefault: "ใช้ค่าเริ่มต้นของแพลตฟอร์ม",
+};
+
+const enSellerShippingUx = {
+  shippingTitle: "Delivery settings",
+  shippingFee: "Delivery fee per parcel (THB)",
+  shippingFeeHint: "Blank = platform default · 0 = free delivery",
+  freeShippingThreshold: "Free delivery over (THB)",
+  freeShippingThresholdHint: "Blank = no free-delivery threshold",
+  shippingSaved: "Delivery settings saved",
+  shippingInvalid: "Enter a number of 0 or more with at most 2 decimals.",
+  shippingPlatformDefault: "Platform default",
+};
+
+const mySellerShippingUx = {
+  shippingTitle: "ဆိုင် ပို့ဆောင်ရေး",
+  shippingFee: "ပါဆယ်တစ်ခု ပို့ဆောင်ခ (ဘတ်)",
+  shippingFeeHint: "ဗလာထားလျှင် = ပလက်ဖောင်း မူလတန်ဖိုး · 0 = အခမဲ့",
+  freeShippingThreshold: "ဤပမာဏ ပြည့်လျှင် ပို့ဆောင်ခ အခမဲ့ (ဘတ်)",
+  freeShippingThresholdHint: "ဗလာထားလျှင် = အခမဲ့ သတ်မှတ်ချက် မရှိ",
+  shippingSaved: "ပို့ဆောင်ရေး သိမ်းပြီး",
+  shippingInvalid: "0 နှင့်အထက် ဂဏန်း ထည့်ပါ (ဒသမ ၂ လုံးအထိ)",
+  shippingPlatformDefault: "ပလက်ဖောင်း မူလတန်ဖိုး",
+};
+
 export const translations: Record<Language, Dict> = {
   th: {
     ...th,
     sellerPerf: thSellerPerf,
     sellerDash: {
       ...th.sellerDash,
-      shop: { ...th.sellerDash.shop, ...thSellerShopExt },
+      shop: { ...th.sellerDash.shop, ...thSellerShopExt, ...thSellerShippingUx },
       goals: { ...th.sellerDash.goals, ...thGoalLabels },
     },
     center: thCenterUi,
-    checkout: { ...th.checkout, ...thPaymentUx },
+    checkout: { ...th.checkout, ...thPaymentUx, ...thShippingUx },
     chat: { ...th.chat, ...thChatUi },
     verification: { ...th.verification, ...thVerificationCopy },
     categories: { ...th.categories, ...thCategoriesCopy },
@@ -1593,11 +1672,11 @@ export const translations: Record<Language, Dict> = {
     sellerPerf: enSellerPerf,
     sellerDash: {
       ...en.sellerDash,
-      shop: { ...en.sellerDash.shop, ...enSellerShopExt },
+      shop: { ...en.sellerDash.shop, ...enSellerShopExt, ...enSellerShippingUx },
       goals: { ...en.sellerDash.goals, ...enGoalLabels },
     },
     center: enCenterUi,
-    checkout: { ...en.checkout, ...enPaymentUx },
+    checkout: { ...en.checkout, ...enPaymentUx, ...enShippingUx },
     chat: { ...en.chat, ...enChatUi },
     verification: { ...en.verification, ...enVerificationCopy },
     categories: { ...en.categories, ...enCategoriesCopy },
@@ -1612,7 +1691,7 @@ export const translations: Record<Language, Dict> = {
     sellerPerf: mySellerPerf,
     sellerDash: {
       ...myBase.sellerDash,
-      shop: { ...myBase.sellerDash.shop, ...mySellerShopExt },
+      shop: { ...myBase.sellerDash.shop, ...mySellerShopExt, ...mySellerShippingUx },
       goals: { ...myBase.sellerDash.goals, ...myGoalLabels },
     },
     ...myOrderPatch,
@@ -1628,7 +1707,7 @@ export const translations: Record<Language, Dict> = {
     shopDetail: { ...myBase.shopDetail, ...myShopPatch.shopDetail },
     productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
     center: myCenterUi,
-    checkout: { ...myBase.checkout, ...myPaymentUx },
+    checkout: { ...myBase.checkout, ...myPaymentUx, ...myShippingUx },
     chat: { ...myChatPatch.chat, ...myChatUi },
     sellerChat: myChatPatch.sellerChat,
     notifications: { ...myBase.notifications, ...myNotifyPatch },

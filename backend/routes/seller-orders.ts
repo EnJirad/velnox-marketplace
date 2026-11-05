@@ -66,6 +66,9 @@ import { ORDER_PAYMENT_STATUS_SQL, coveringPaymentsForOrder } from "../lib/payme
 // single transition helper (`order-shipment.ts`), shared verbatim with the
 // VelCenter route so the two surfaces cannot disagree about a parcel move.
 import { isShipmentStatus } from "../lib/order-shipment-states.js";
+// The one implemented delivery method — imported, never re-typed, so the label
+// the seller sees cannot drift from the method the quote endpoint priced.
+import { SHIPPING_METHOD } from "../lib/shipping.js";
 import { transitionShipment, type ShipmentTransitionResult } from "../lib/order-shipment.js";
 
 function param(req: Request, key: string): string {
@@ -321,7 +324,7 @@ export function setupSellerOrderRoutes(app: Express): void {
         `SELECT DISTINCT o.id, o.user_id, o.order_number, o.status, o.subtotal,
                 o.shipping_fee, o.discount, o.total_amount, o.currency,
                 o.shipping_address, o.notes, o.created_at, o.updated_at,
-                o.checkout_group_id,
+                o.checkout_group_id, o.shipping_quote_id,
                 sh.name AS shop_name, sh.slug AS shop_slug,
                 ${ORDER_PAYMENT_STATUS_SQL} AS payment_status,
                 COALESCE((SELECT status FROM shipments WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1), 'none') AS shipping_status
@@ -371,7 +374,10 @@ export function setupSellerOrderRoutes(app: Express): void {
           status: normalizeSellerOrderStatus(r.status),
           paymentStatus: r.payment_status,
           shippingStatus: r.shipping_status,
-          shippingMethod: null,
+          // One implemented method: a flat per-shop delivery fee priced by the
+          // server. Reported only when a real quote priced the order, so a
+          // legacy order (fee 0, no quote) never claims a method it never had.
+          shippingMethod: r.shipping_quote_id ? SHIPPING_METHOD : null,
           trackingNumber: null,
           subtotal: parseFloat(r.subtotal) || 0,
           discount: parseFloat(r.discount) || 0,
@@ -473,7 +479,7 @@ export function setupSellerOrderRoutes(app: Express): void {
           status: normalizeSellerOrderStatus(order.status),
           paymentStatus: order.payment_status,
           shippingStatus: order.shipping_status,
-          shippingMethod: null,
+          shippingMethod: order.shipping_quote_id ? SHIPPING_METHOD : null,
           trackingNumber: shipments[0]?.trackingNumber ?? null,
           subtotal: parseFloat(order.subtotal) || 0,
           discount: parseFloat(order.discount) || 0,

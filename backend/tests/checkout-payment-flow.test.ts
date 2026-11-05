@@ -277,8 +277,12 @@ describe("ShopCheckout — one press goes order → Stripe → redirect", () => 
 
   test("the submit buttons show the preparing state and disable while it runs", () => {
     expect(src).toContain('t("checkout.preparingPayment")');
-    // Both the desktop and the mobile CTA are disabled while submitting.
-    expect(src.match(/disabled=\{submitting \|\| checkoutCount === 0 \|\| addresses === null\}/g) ?? []).toHaveLength(2);
+    // Both the desktop and the mobile CTA are disabled while submitting, AND
+    // while there is no redeemable delivery quote (a total the server has not
+    // priced must never be payable).
+    expect(
+      src.match(/disabled=\{submitting \|\| checkoutCount === 0 \|\| addresses === null \|\| !quoteReady\}/g) ?? [],
+    ).toHaveLength(2);
     // The empty-cart screen must not steal the view mid-redirect.
     expect(src).toContain("!syncing && !authLoading && !submitting && isAuthenticated");
   });

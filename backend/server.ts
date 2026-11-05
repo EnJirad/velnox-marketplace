@@ -13,6 +13,7 @@ import { describeDatabaseIdentity } from "./db/index.js";
 import { setupRoutes } from "./routes/index.js";
 import { setupAdminRoutes } from "./routes/admin.js";
 import { setupCartRoutes } from "./routes/cart.js";
+import { setupShippingRoutes } from "./routes/shipping.js";
 import { setupGoogleAuth } from "./routes/auth.js";
 import { setupUploadRoutes } from "./routes/upload.js";
 import { setupSellerRoutes } from "./routes/seller.js";
@@ -422,6 +423,9 @@ setupProductRoutes(app);
 
 // ─── Cart, Wishlist, Orders ──────────────────────────────
 setupCartRoutes(app);
+
+// ─── Shipping quotes (server-authoritative delivery pricing) ─────────────
+setupShippingRoutes(app);
 
 // ─── Stripe Payments ──────────────────────────────────────
 setupStripeRoutes(app);

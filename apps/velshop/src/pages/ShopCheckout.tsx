@@ -104,6 +104,50 @@ interface CheckoutResult {
 }
 
 /**
+ * The backend's refusals that mean "the price you were shown is no longer the
+ * price this cart costs". Each one is answered by fetching a new quote and
+ * showing it, never by resubmitting the order.
+ */
+const QUOTE_FAILURE_CODES = new Set([
+  "SHIPPING_QUOTE_REQUIRED",
+  "SHIPPING_QUOTE_INVALID",
+  "SHIPPING_QUOTE_USED",
+  "SHIPPING_QUOTE_EXPIRED",
+  "SHIPPING_QUOTE_STALE",
+]);
+
+/**
+ * The server's delivery price for EXACTLY this cart and this address.
+ *
+ * Every money field is a decimal STRING computed by the backend (see
+ * `backend/lib/shipping.ts`); the page only formats it. There is no client-side
+ * total arithmetic anywhere in this flow — a number this page could compute
+ * would be a number it could get wrong, and the customer pays the server's.
+ */
+interface ShippingQuotePayload {
+  quoteId: string;
+  expiresAt: string;
+  expiresInSeconds: number;
+  method: string;
+  currency: string;
+  subtotal: string;
+  discount: string;
+  shippingTotal: string;
+  total: string;
+  itemCount: number;
+  shops: Array<{
+    shopId: string | null;
+    shopName: string | null;
+    subtotal: string;
+    shippingFee: string;
+    freeShipping: boolean;
+    reason: string;
+    method: string;
+    itemCount: number;
+  }>;
+}
+
+/**
  * Payment methods are DISCOVERED from the backend — never hardcoded here.
  *
  * The backend only returns a method it currently accepts (test-mode Stripe
@@ -170,6 +214,106 @@ function AddressPickerCard({ a, active, onClick, t }: {
       <p className="mt-1 min-w-0 truncate text-sm leading-5 text-slate-600" title={formatAddress(a)} style={{ overflowWrap: "anywhere" }}>{formatAddress(a)}</p>
       <p className="mt-0.5 min-w-0 truncate text-xs text-slate-400" title={`${a.recipientName} · ${a.phone}`} style={{ overflowWrap: "anywhere" }}>{a.recipientName} · {a.phone}</p>
     </button>
+  );
+}
+
+/* ── Price summary (server numbers only) ───────────────────────────────── */
+
+/**
+ * Renders subtotal → delivery → total from the SERVER quote.
+ *
+ * Three rules, in order of importance:
+ *   1. Nothing here is arithmetic — every figure is `quote.*` formatted.
+ *   2. "Free shipping" appears only when a valid quote returned 0.00, and the
+ *      reason is shown, so it never looks like a default.
+ *   3. While the quote is missing or failed, the total is an em dash with an
+ *      actionable retry, never 0 and never the item sum.
+ */
+function PriceSummary({
+  quote,
+  status,
+  error,
+  onRetry,
+  itemCount,
+  t,
+  size = "sm",
+}: {
+  quote: ShippingQuotePayload | null;
+  status: "idle" | "loading" | "error";
+  error: string | null;
+  onRetry: () => void;
+  itemCount: number;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  size?: "sm" | "lg";
+}) {
+  const rowClass = "flex min-w-0 items-center justify-between gap-2";
+  const labelClass = "min-w-0 truncate text-slate-500";
+  const valueClass = "shrink-0 tabular-nums text-slate-900";
+  const totalClass = size === "lg"
+    ? "shrink-0 text-2xl font-bold tabular-nums tracking-tight text-slate-900"
+    : "shrink-0 text-lg font-bold tabular-nums tracking-tight text-slate-900";
+  const dash = <span className="text-slate-300" aria-hidden="true">—</span>;
+
+  const shippingValue = (() => {
+    if (status === "loading" && !quote) {
+      return (
+        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-slate-400" aria-live="polite">
+          <Loader2 className="size-3 animate-spin" />
+          {t("checkout.shippingCalculating")}
+        </span>
+      );
+    }
+    if (!quote) {
+      return (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-1 text-xs font-semibold text-[#0f766e] underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/40"
+        >
+          {status === "error" ? t("checkout.shippingRetry") : t("checkout.shippingPickAddress")}
+        </button>
+      );
+    }
+    if (Number(quote.shippingTotal) === 0) {
+      const reason = quote.shops.some((s) => s.reason === "free_shipping_threshold")
+        ? t("checkout.shippingFreeThreshold")
+        : t("checkout.shippingFree");
+      return <span className="shrink-0 text-xs font-semibold text-[#047857]">{reason}</span>;
+    }
+    return <span className={valueClass}>{formatBaht(Number(quote.shippingTotal))}</span>;
+  })();
+
+  return (
+    <div className="space-y-2 text-sm">
+      <div className={rowClass}>
+        <span className={labelClass}>{t("checkout.itemsCount", { count: itemCount })}</span>
+        <span className={valueClass}>{quote ? formatBaht(Number(quote.subtotal)) : dash}</span>
+      </div>
+      {quote && Number(quote.discount) > 0 && (
+        <div className={rowClass}>
+          <span className={labelClass}>{t("checkout.discount")}</span>
+          <span className="shrink-0 tabular-nums text-[#047857]">-{formatBaht(Number(quote.discount))}</span>
+        </div>
+      )}
+      <div className={rowClass}>
+        <span className={labelClass}>
+          {t("checkout.shipping")}
+          {quote && quote.shops.length > 1 && (
+            <span className="ml-1 text-[11px] text-slate-400">{t("checkout.shippingPerShop", { count: quote.shops.length })}</span>
+          )}
+        </span>
+        {shippingValue}
+      </div>
+      <div className={`${rowClass} border-t border-slate-100 pt-3`}>
+        <span className="min-w-0 truncate text-sm font-medium text-slate-600">{t("checkout.total")}</span>
+        <span className={totalClass}>{quote ? formatBaht(Number(quote.total)) : dash}</span>
+      </div>
+      {error && (
+        <p role="alert" className="rounded-lg bg-rose-50 px-2.5 py-2 text-[11px] leading-4 text-rose-700">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -318,6 +462,111 @@ export default function ShopCheckout() {
   const checkoutTotal = useMemo(() => checkoutLines.reduce((s, l) => s + l.qty * l.price, 0), [checkoutLines]);
   const checkoutCount = useMemo(() => checkoutLines.reduce((s, l) => s + l.qty, 0), [checkoutLines]);
 
+  /* ── Delivery quote: the ONLY source of shipping and of the payable total ──
+   *
+   * The page used to print "free shipping" and post an order with shipping 0.
+   * Now every number the customer is asked to pay comes back from the server,
+   * and the quote id travels with the order so checkout can redeem it. The
+   * quote is re-requested whenever the address or the selected lines change
+   * (fingerprint mismatch would otherwise be refused at submit), and it is
+   * refreshed automatically when it expires.
+   */
+  const shippingQuoteAction = useAction(api.customer.shippingQuoteAction);
+  const [quote, setQuote] = useState<ShippingQuotePayload | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteNonce, setQuoteNonce] = useState(0);
+  const quoteSeq = useRef(0);
+
+  const buyNowQuantity = Math.max(1, Number(navState.buyNowQty) || checkoutLines[0]?.qty || 1);
+
+  const quoteRequest = useMemo(() => {
+    if (!selectedAddressId || checkoutLines.length === 0) return null;
+    if (navState.buyNow && navState.buyNowProductId) {
+      return {
+        addressId: selectedAddressId,
+        buyNow: {
+          productId: navState.buyNowProductId,
+          variantId: navState.buyNowVariantId ?? null,
+          quantity: buyNowQuantity,
+        },
+      } as Record<string, unknown>;
+    }
+    if (navState.selectedCartItems && navState.selectedCartItems.length > 0) {
+      return { addressId: selectedAddressId, cartItemIds: navState.selectedCartItems } as Record<string, unknown>;
+    }
+    return { addressId: selectedAddressId } as Record<string, unknown>;
+  }, [selectedAddressId, navState.buyNow, navState.buyNowProductId, navState.buyNowVariantId, navState.selectedCartItems, checkoutLines.length, buyNowQuantity]);
+
+  // Stable identity for "the same request": re-quote when the address, the
+  // selected lines or their quantities/prices change — not on every render.
+  const quoteSignature = useMemo(
+    () => JSON.stringify([quoteRequest, checkoutLines.map((l) => [l.id, l.qty, l.price])]),
+    [quoteRequest, checkoutLines],
+  );
+
+  const shippingQuoteRef = useRef(shippingQuoteAction);
+  shippingQuoteRef.current = shippingQuoteAction;
+  const tRef = useRef(t);
+  tRef.current = t;
+
+  useEffect(() => {
+    if (!quoteRequest) {
+      setQuote(null);
+      setQuoteStatus("idle");
+      setQuoteError(null);
+      return;
+    }
+    const seq = ++quoteSeq.current;
+    setQuoteStatus("loading");
+    setQuoteError(null);
+    // Small debounce: changing quantity on the cart screen or tapping through
+    // addresses must not fire a request per keystroke.
+    const timer = setTimeout(() => {
+      // Read through refs: the action and translator are rebuilt on render, and
+      // depending on them directly would re-run this effect (and re-quote) on
+      // every render.
+      shippingQuoteRef.current(quoteRequest)
+        .then((res: unknown) => {
+          if (seq !== quoteSeq.current) return;
+          const payload = res as ShippingQuotePayload;
+          if (!payload || typeof payload.quoteId !== "string") {
+            // A response without a quote id cannot be redeemed — treat it as a
+            // failure rather than showing a total the server will not honour.
+            setQuote(null);
+            setQuoteStatus("error");
+            setQuoteError(tRef.current("checkout.shippingUnavailable"));
+            return;
+          }
+          setQuote(payload);
+          setQuoteStatus("idle");
+        })
+        .catch((err: unknown) => {
+          if (seq !== quoteSeq.current) return;
+          setQuote(null);
+          setQuoteStatus("error");
+          setQuoteError(
+            err instanceof Error && err.message ? err.message : tRef.current("checkout.shippingUnavailable"),
+          );
+        });
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [quoteSignature, quoteNonce]);
+
+  // Refresh shortly BEFORE expiry, so a customer who keeps the tab open pays the
+  // fee the server currently holds instead of discovering an expired quote at
+  // submit.
+  useEffect(() => {
+    if (!quote) return;
+    const msLeft = new Date(quote.expiresAt).getTime() - Date.now();
+    const timer = setTimeout(() => setQuoteNonce((n) => n + 1), Math.max(0, msLeft - 2000));
+    return () => clearTimeout(timer);
+  }, [quote]);
+
+  const quoteReady = quote !== null && quoteStatus === "idle";
+
+  const refreshQuote = useCallback(() => setQuoteNonce((n) => n + 1), []);
+
   const enabledMethods = useMemo(() => (methodOptions ?? []).filter((m) => m.enabled), [methodOptions]);
   const disabledMethods = useMemo(() => (methodOptions ?? []).filter((m) => !m.enabled), [methodOptions]);
   const isStripeMethod = paymentMethod === "CARD" || paymentMethod === "PROMPTPAY";
@@ -387,6 +636,9 @@ export default function ShopCheckout() {
     if (!selectedAddressId) { toast.error(t("checkout.selectAddress")); return; }
     if (!hasGps) { toast.error(t("checkout.gpsRequired")); return; }
     if (!paymentMethod) { toast.error(t("paymentMethods.unavailable")); return; }
+    // No quote, no order. The server requires it (428) and the customer must
+    // have SEEN the delivery charge before being asked to pay it.
+    if (!quoteReady || !quote) { toast.error(t("checkout.shippingQuoteRequired")); return; }
 
     submitRef.current = true;
     setSubmitting(true);
@@ -407,7 +659,10 @@ export default function ShopCheckout() {
       const checkoutPayload: Record<string, unknown> = {
         addressId: selectedAddressId,
         paymentMethod: chosenMethod,
-        shippingMethod: "standard",
+        // The redeemed quote: it is the ONLY thing that carries the amount the
+        // server agreed to charge. No total, subtotal or shipping fee is ever
+        // sent from this page.
+        shippingQuoteId: quote.quoteId,
         requestId: requestIdRef.current ?? crypto.randomUUID(),
       };
       if (navState.buyNow && navState.buyNowProductId) {
@@ -454,6 +709,18 @@ export default function ShopCheckout() {
       }
     } catch (err) {
       console.error("Checkout error:", err);
+      const errorCode =
+        err && typeof err === "object" && "code" in err ? String((err as { code?: unknown }).code ?? "") : "";
+      // A quote that went stale between render and submit is the ONE failure
+      // this page can repair by itself — but it must re-price and show the new
+      // total, never silently retry the charge at a different amount.
+      if (QUOTE_FAILURE_CODES.has(errorCode)) {
+        setQuote(null);
+        setQuoteStatus("loading");
+        setQuoteNonce((n) => n + 1);
+        toast.error(t("checkout.shippingQuoteRefresh"));
+        return;
+      }
       const message = err instanceof Error ? err.message : t("checkout.failed");
       if (order && stripeFlow) {
         // The order WAS created: the purchase stands, only the payment page
@@ -783,18 +1050,16 @@ export default function ShopCheckout() {
             </div>
           </section>
 
-          {/* ── Summary ── */}
+          {/* ── Summary (mobile) ── */}
           <section className="border-t border-slate-100 bg-white px-4 py-3">
-            <div className="space-y-1.5 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">{t("checkout.shipping")}</span>
-                <span className="text-slate-400">{t("checkout.shippingFree")}</span>
-              </div>
-              <div className="flex items-center justify-between border-t border-slate-100 pt-2">
-                <span className="font-medium text-slate-900">{t("checkout.total")}</span>
-                <span className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(checkoutTotal)}</span>
-              </div>
-            </div>
+            <PriceSummary
+              quote={quote}
+              status={quoteStatus}
+              error={quoteStatus === "error" ? quoteError : null}
+              onRetry={refreshQuote}
+              itemCount={checkoutCount}
+              t={t}
+            />
             <p className="mt-2 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
           </section>
         </div>
@@ -919,22 +1184,19 @@ export default function ShopCheckout() {
                   </div>
                 ))}
               </div>
-              <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-sm">
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-slate-500">{t("checkout.itemsCount", { count: checkoutCount })}</span>
-                  <span className="shrink-0 font-medium tabular-nums text-slate-900">{formatBaht(checkoutTotal)}</span>
-                </div>
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-slate-500">{t("checkout.shipping")}</span>
-                  <span className="shrink-0 text-slate-400">{t("checkout.shippingFree")}</span>
-                </div>
-                <div className="flex min-w-0 items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                  <span className="min-w-0 truncate text-sm font-medium text-slate-500">{t("checkout.total")}</span>
-                  <span className="shrink-0 text-2xl font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(checkoutTotal)}</span>
-                </div>
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <PriceSummary
+                  quote={quote}
+                  status={quoteStatus}
+                  error={quoteStatus === "error" ? quoteError : null}
+                  onRetry={refreshQuote}
+                  itemCount={checkoutCount}
+                  t={t}
+                  size="lg"
+                />
               </div>
-              <Button className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null} aria-busy={submitting}>
-                {submitting ? (<><Loader2 className="size-4 animate-spin" />{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</>) : (<><ShieldCheck className="size-4" />{t("checkout.submit", { total: formatBaht(checkoutTotal) })}</>)}
+              <Button className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null || !quoteReady} aria-busy={submitting}>
+                {submitting ? (<><Loader2 className="size-4 animate-spin" />{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</>) : (<><ShieldCheck className="size-4" />{t("checkout.submit", { total: quote ? formatBaht(Number(quote.total)) : "—" })}</>)}
               </Button>
               <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
             </div>
@@ -948,10 +1210,10 @@ export default function ShopCheckout() {
           <div className="mx-auto flex w-full max-w-md items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-[0_10px_34px_rgba(15,23,42,0.16)] backdrop-blur sm:p-3">
             <div className="min-w-0 shrink-0">
               <p className="text-[11px] text-slate-400">{t("checkout.total")}</p>
-              <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{formatBaht(checkoutTotal)}</p>
+              <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{quote ? formatBaht(Number(quote.total)) : "—"}</p>
             </div>
-            <Button className="h-11 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800" style={{ minWidth: 0, flexShrink: 1 }} onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null} aria-busy={submitting}>
-              {submitting ? (<><Loader2 className="size-4 shrink-0 animate-spin" /><span className="min-w-0 truncate">{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</span></>) : (<><ShieldCheck className="size-4 shrink-0" /><span className="min-w-0 truncate">{t("checkout.submit", { total: formatBaht(checkoutTotal) })}</span></>)}
+            <Button className="h-11 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800" style={{ minWidth: 0, flexShrink: 1 }} onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null || !quoteReady} aria-busy={submitting}>
+              {submitting ? (<><Loader2 className="size-4 shrink-0 animate-spin" /><span className="min-w-0 truncate">{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</span></>) : (<><ShieldCheck className="size-4 shrink-0" /><span className="min-w-0 truncate">{t("checkout.submit", { total: quote ? formatBaht(Number(quote.total)) : "—" })}</span></>)}
             </Button>
           </div>
         </div>

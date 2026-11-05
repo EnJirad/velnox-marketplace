@@ -162,6 +162,14 @@ export interface StoreShop {
   cover?: string | null;
   /** Free-form shop category text (<= 100 chars); no taxonomy table exists. */
   category?: string | null;
+  /**
+   * Delivery pricing for this shop, as the server holds it.
+   * `fee: null` = platform default (never 0), `fee: 0` = the shop ships free.
+   */
+  shipping?: {
+    fee: number | null;
+    freeShippingThreshold: number | null;
+  };
   rating?: number | null;
   productCount?: number;
   /** Seller/shop verification status */

@@ -236,6 +236,12 @@ CREATE TABLE IF NOT EXISTS shops (
   state TEXT,
   postal_code TEXT,
   country TEXT NOT NULL DEFAULT 'TH',
+  -- Shipping configuration for this shop (see backend/lib/shipping.ts).
+  -- NULL  = "use the platform default fee" (never silently 0).
+  -- 0     = the seller ships free.
+  -- free_shipping_threshold = free once this shop's item subtotal reaches it.
+  shipping_fee NUMERIC(12, 2),
+  free_shipping_threshold NUMERIC(12, 2),
   phone TEXT,
   email TEXT,
   category TEXT,
@@ -380,6 +386,9 @@ CREATE TABLE IF NOT EXISTS orders (
   currency TEXT NOT NULL DEFAULT 'THB',
   shipping_address_id UUID REFERENCES addresses(id),
   shipping_address JSONB,
+  -- The redeemed quote that priced this order (see db/schema.sql
+  -- shipping_quotes). NULL on orders created before the quote flow existed.
+  shipping_quote_id UUID,
   notes TEXT,
   inventory_released BOOLEAN NOT NULL DEFAULT FALSE,
   payment_expires_at TIMESTAMPTZ,
@@ -409,6 +418,27 @@ CREATE TABLE IF NOT EXISTS checkout_requests (
   response JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT checkout_requests_user_scope_key UNIQUE (user_id, scope, request_key)
+);
+-- Shipping quotes: one server-minted delivery price for one exact cart and one
+-- exact address, redeemable once. See db/schema.sql for the contract.
+CREATE TABLE IF NOT EXISTS shipping_quotes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  address_id UUID REFERENCES addresses(id) ON DELETE SET NULL,
+  fingerprint TEXT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'THB',
+  subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  shipping_total NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  breakdown JSONB,
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  checkout_group_id UUID REFERENCES checkout_groups(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT shipping_quotes_amounts_non_negative
+    CHECK (subtotal >= 0 AND shipping_total >= 0 AND total_amount >= 0),
+  CONSTRAINT shipping_quotes_total_adds_up
+    CHECK (total_amount = subtotal + shipping_total)
 );
 CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -1244,6 +1274,8 @@ ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS country TEXT DEFAULT 'TH' NOT 
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS shipping_fee NUMERIC(12, 2);
+ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS free_shipping_threshold NUMERIC(12, 2);
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
@@ -1377,6 +1409,7 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS inventory_released BOOLEAN DE
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS reservation_policy JSONB;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS checkout_group_id UUID;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS shipping_quote_id UUID;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
@@ -1395,6 +1428,20 @@ ALTER TABLE public.checkout_requests ADD COLUMN IF NOT EXISTS scope TEXT DEFAULT
 ALTER TABLE public.checkout_requests ADD COLUMN IF NOT EXISTS order_id UUID;
 ALTER TABLE public.checkout_requests ADD COLUMN IF NOT EXISTS response JSONB;
 ALTER TABLE public.checkout_requests ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+-- Shipping quotes (server-authoritative delivery pricing, see lib/shipping.ts).
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS address_id UUID;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS fingerprint TEXT;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'THB' NOT NULL;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS subtotal NUMERIC(12, 2) DEFAULT 0 NOT NULL;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS shipping_total NUMERIC(12, 2) DEFAULT 0 NOT NULL;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12, 2) DEFAULT 0 NOT NULL;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS breakdown JSONB;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMPTZ;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS checkout_group_id UUID;
+ALTER TABLE public.shipping_quotes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS order_id UUID;
@@ -2909,6 +2956,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_checkout_group ON public.orders (checkout_
 CREATE INDEX IF NOT EXISTS idx_checkout_groups_user ON public.checkout_groups (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_order ON public.checkout_requests (order_id);
 CREATE INDEX IF NOT EXISTS idx_checkout_requests_user ON public.checkout_requests (user_id);
+CREATE INDEX IF NOT EXISTS idx_shipping_quotes_user ON public.shipping_quotes (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_shipping_quotes_expiry ON public.shipping_quotes (expires_at) WHERE consumed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON public.order_items (order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_shop ON public.order_items (shop_id);
 -- P1-2: ONE CANONICAL SHIPMENT PER ORDER (audit finding P1-2).
@@ -3716,6 +3765,11 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_c
   AND to_regclass('public.checkout_groups') IS NOT NULL THEN
   ALTER TABLE public.orders ADD CONSTRAINT orders_checkout_group_id_fkey
     FOREIGN KEY (checkout_group_id) REFERENCES checkout_groups(id) ON DELETE SET NULL;
+END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'orders_shipping_quote_id_fkey')
+  AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'shipping_quote_id')
+  AND to_regclass('public.shipping_quotes') IS NOT NULL THEN
+  ALTER TABLE public.orders ADD CONSTRAINT orders_shipping_quote_id_fkey FOREIGN KEY (shipping_quote_id) REFERENCES public.shipping_quotes(id) ON DELETE SET NULL;
 END IF; END $$;
 
 -- ============================================================================
