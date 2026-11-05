@@ -7,8 +7,12 @@
 **WORKING** — 4/4 apps typecheck, i18n parity (1704 × 3), 4/4 builds pass, all commits pushed to origin/main.
 
 ### Active Tasks
-- **Phase 2 UI/UX Overhaul** — **Group 1 complete** (shared components + VelShop homepage/products)
-  - Next: Group 2 (Catalog & Product Detail), Group 3 (Cart & Checkout), Group 4 (Account & Polish)
+- **Phase 2 UI/UX Overhaul** — **Group 1 complete** (shared components + VelShop homepage/products) ✅ VERIFIED
+  - **Group 2 in progress**: Created shared `ProductGrid` component (server-paginated, reusable) ✅
+    - Integrated into `ShopProducts.tsx` — replaces manual grid + pagination logic
+    - Typecheck + build PASS
+  - Next: GalleryLightbox for Product Detail; integrate ProductGrid into ShopHome rails
+- Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
 - Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
 - Shipping P0 (fee + quote) — **implemented and committed**; production schema reconciled
   2026-11-05 (money table + shop columns now exist in Neon).

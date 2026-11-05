@@ -1,7 +1,7 @@
 # Phase 1 — Full Ecosystem UI/UX Audit + Phase 2 Implementation Progress
 
 **Date:** 2026-11-05 · **Branch:** `main` · **Starting SHA:** `3eaa5fd30d019f9eb4f6f16252445a205948e996`
-**Head SHA:** `3afffca2ffe8674703278c77afe820a95d81aa1e` (pushed to origin/main)
+**Head SHA:** check `git rev-parse HEAD` (to be updated after commit)
 **4/4 typecheck:** PASS | **4/4 builds:** PASS
 **i18n parity:** 1704 × 3 keys (th/en/my) ✅
 
@@ -26,7 +26,14 @@
 | Page | Changes |
 |------|---------|
 | `ShopHome.tsx` | All 5 product rails now use `SectionHeader`; loading/empty states use shared components; removed dead `ShopFooter` import |
-| `ShopProducts.tsx` | Loading skeleton → `ProductGridSkeleton`; empty/error states → `EmptyState`; removed unused Lucide imports |
+| `ShopProducts.tsx` | Loading skeleton → `ProductGridSkeleton`; empty/error states → `EmptyState`; removed unused Lucide imports; **migrated to shared `ProductGrid` component** |
+
+### New Shared Component (Group 2)
+| Component | Path | Status |
+|-----------|------|--------|
+| `ProductGrid` | `packages/shared/src/components/shop/ProductGrid.tsx` | ✅ |
+| | Server-paginated product grid with SectionHeader, load-more, loading/empty/error states | |
+| | Replaces manual grid logic in ShopProducts.tsx | |
 
 ### Dead Code Removal
 - Removed `ShopFooter` import from `ShopHome.tsx` (was rendering null)

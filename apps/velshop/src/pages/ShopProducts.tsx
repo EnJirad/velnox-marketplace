@@ -44,8 +44,7 @@ import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { ProductGridSkeleton } from "@velnox/shared/components/ui/loading-skeleton";
-import { EmptyState } from "@velnox/shared/components/ui/empty-state";
+import { ProductGrid } from "@velnox/shared/components/shop/ProductGrid";
 
 const PAGE_SIZE = 24;
 
@@ -564,89 +563,37 @@ export default function ShopProducts() {
 
             {/* Grid */}
             <div className="mt-5">
-              {loading ? (
-                <ProductGridSkeleton count={8} />
-              ) : data && data.items.length === 0 ? (
-                <EmptyState
-                  icon={Search}
-                  title={t("products.noResultsTitle")}
-                  description={t("products.noResultsDesc")}
-                  size="lg"
-                />
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-                    {(data?.items ?? []).map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        onOpen={(p) => {
-                          track("PRODUCT_CLICK", {
-                            entityId: p.id,
-                            value: p.name,
-                            context: { category: p.category },
-                          });
-                          navigate(`/products/${p.id}`);
-                        }}
-                        onAdd={(p) => {
-                          const available = p.inventory?.available ?? p.inventory?.quantity ?? 0;
-                          add(
-                            { id: p.id, name: p.name, unit: p.unit, price: p.price, stock: available },
-                            1,
-                          );
-                          toast.success(t("cart.added"));
-                        }}
-                        wishlisted={wishlistIds.has(product.id)}
-                        onWishlist={handleWishlist}
-                        wishToggling={wishTogglingId === product.id}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Pagination */}
-                  {totalPages > 1 && (
-                    <div className="mt-8 flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        disabled={page <= 1}
-                        onClick={() => updateParam("page", String(page - 1))}
-                        className="flex size-10 items-center justify-center rounded-[10px] border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:opacity-40"
-                        aria-label={t("products.prevPage")}
-                      >
-                        <ChevronLeft className="size-4" />
-                      </button>
-                      {pageNumbers[0] > 1 && <span className="px-1 text-xs text-slate-400">…</span>}
-                      {pageNumbers.map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => updateParam("page", String(p))}
-                          className={`flex size-10 items-center justify-center rounded-[10px] text-sm font-medium transition-colors ${
-                            p === page
-                              ? "bg-slate-900 text-white"
-                              : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                          }`}
-                          aria-label={t("products.page", { n: p })}
-                        >
-                          {p}
-                        </button>
-                      ))}
-                      {pageNumbers[pageNumbers.length - 1] < totalPages && (
-                        <span className="px-1 text-xs text-slate-400">…</span>
-                      )}
-                      <button
-                        type="button"
-                        disabled={page >= totalPages}
-                        onClick={() => updateParam("page", String(page + 1))}
-                        className="flex size-10 items-center justify-center rounded-[10px] border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:opacity-40"
-                        aria-label={t("products.nextPage")}
-                      >
-                        <ChevronRight className="size-4" />
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
+              <ProductGrid
+                category={category as StoreProductCategory}
+                query={q}
+                sortBy={sortBy}
+                shopId={shopId}
+                minPrice={minPrice}
+                maxPrice={maxPrice}
+                inStock={inStock}
+                verifiedOnly={verifiedOnly}
+                title={t("products.title")}
+                description={t("products.eyebrow")}
+                onProductClick={(product) => {
+                  track("PRODUCT_CLICK", {
+                    entityId: product.id,
+                    value: product.name,
+                    context: { category: product.category },
+                  });
+                  navigate(`/products/${product.id}`);
+                }}
+                onAddToCart={(product) => {
+                  const available = product.inventory?.available ?? product.inventory?.quantity ?? 0;
+                  add(
+                    { id: product.id, name: product.name, unit: product.unit, price: product.price, stock: available },
+                    1,
+                  );
+                  toast.success(t("cart.added"));
+                }}
+                wishlistIds={wishlistIds}
+                onWishlistToggle={handleWishlist}
+                wishTogglingId={wishTogglingId}
+              />
             </div>
           </div>
         </div>
