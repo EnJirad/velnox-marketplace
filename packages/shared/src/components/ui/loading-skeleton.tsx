@@ -95,5 +95,20 @@ export function OrderListSkeleton({ count = 5 }: { count?: number }) {
 
 /** Convenience: table skeleton */
 export function TableSkeleton({ columns = 6, rows = 4 }: { columns?: number; rows?: number }) {
-  return <LoadingSkeleton variant="table" count={rows} />;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <div className="grid gap-4 p-4 bg-slate-50 border-b border-slate-200">
+        {Array.from({ length: columns }, (_, i) => (
+          <div key={i} className="h-4 rounded bg-slate-100" style={{ width: i === 0 ? "60%" : "80%" }} />
+        ))}
+      </div>
+      {Array.from({ length: rows }, (_, row) => (
+        <div key={row} className="grid gap-4 p-4 border-b border-slate-100 last:border-0">
+          {Array.from({ length: columns }, (_, i) => (
+            <div key={i} className="h-4 rounded bg-slate-50" style={{ width: i === 0 ? "60%" : "80%" }} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 }

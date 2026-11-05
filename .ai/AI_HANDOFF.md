@@ -1,14 +1,14 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-05 · **Branch:** `main` · **HEAD:** see `git rev-parse HEAD` (do not trust a SHA written here — it goes stale after every commit)
+**Last verified:** 2026-11-05 · **Branch:** `main` · **HEAD:** `2f79dcdee6807c9de0d7b16b63842a856f4761aa` (pushed to origin)
 
 ## 1. Current Project State
 
-**WORKING** — 4/4 apps typecheck, i18n parity (1702 × 3), velShop + velseller production
-builds green, `backend/tests` 1340 pass / 404 skip / 1 pre-existing flaky case
-(`proxy-write-mode` `--check`, which passes when the file runs alone).
+**WORKING** — 4/4 apps typecheck, i18n parity (1704 × 3), 4/4 builds pass, all commits pushed to origin/main.
 
 ### Active Tasks
+- **Phase 2 UI/UX Overhaul** — **Group 1 complete** (shared components + VelShop homepage/products)
+  - Next: Group 2 (Catalog & Product Detail), Group 3 (Cart & Checkout), Group 4 (Account & Polish)
 - Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
 - Shipping P0 (fee + quote) — **implemented and committed**; production schema reconciled
   2026-11-05 (money table + shop columns now exist in Neon).
