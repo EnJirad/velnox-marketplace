@@ -67,6 +67,7 @@ import { useAction } from "@velnox/shared/lib/api-routes";
 import { SectionHeader } from "@velnox/shared/components/ui/section-header";
 import { ProductGridSkeleton } from "@velnox/shared/components/ui/loading-skeleton";
 import { EmptyState } from "@velnox/shared/components/ui/empty-state";
+import { HorizontalRail, RailCard } from "@/components/shop/HorizontalRail";
 
 interface RecommendedRow {
   product: StoreProduct;
@@ -464,59 +465,63 @@ export default function ShopHome() {
       )}
 
       {CUSTOMER_MEMORY_ENABLED && !authLoading && isAuthenticated && !regularsData.loading && showRegulars && (
-        <section className="border-b border-slate-100 bg-white">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <SectionHeader
-              icon={History}
-              title={t("home.continueShoppingTitle")}
-              description={t("home.continueShoppingDesc")}
-            />
-            <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{regulars.slice(0, 4).map(({ product }: any) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-regulars")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
-          </div>
-        </section>
+        <HorizontalRail
+          icon={History}
+          title={t("home.continueShoppingTitle")}
+          description={t("home.continueShoppingDesc")}
+        >
+          {regulars.slice(0, 10).map(({ product }: any) => (
+            <RailCard key={product.id}>
+              <ProductCard compact product={product} onOpen={(p) => openProduct(p, "home-regulars")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />
+            </RailCard>
+          ))}
+        </HorizontalRail>
       )}
 
       {CUSTOMER_MEMORY_ENABLED && !authLoading && recommendations.length > 0 && (
-        <section className="border-b border-slate-100 bg-white">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <SectionHeader
-              icon={Sparkles}
-              title={recommendData.data?.source === "personal" ? t("home.recsPersonal") : t("home.recsPopular")}
-              description={recommendData.data?.source === "personal" ? t("home.recsPersonalDesc") : t("home.recsPopularDesc")}
-            />
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{recommendations.slice(0, 8).map(({ product }) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-recommended")} onAdd={handleAdd} badgeLabel={t("home.badgeRecommended")} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
-          </div>
-        </section>
+        <HorizontalRail
+          icon={Sparkles}
+          title={recommendData.data?.source === "personal" ? t("home.recsPersonal") : t("home.recsPopular")}
+          description={recommendData.data?.source === "personal" ? t("home.recsPersonalDesc") : t("home.recsPopularDesc")}
+        >
+          {recommendations.slice(0, 10).map(({ product }) => (
+            <RailCard key={product.id}>
+              <ProductCard product={product} onOpen={(p) => openProduct(p, "home-recommended")} onAdd={handleAdd} badgeLabel={t("home.badgeRecommended")} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />
+            </RailCard>
+          ))}
+        </HorizontalRail>
       )}
 
       {!productsData.loading && popularProducts.length > 0 && (
-        <section className="border-b border-slate-100 bg-white">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <SectionHeader
-              icon={TrendingUp}
-              title={t("home.trendingTitle")}
-              description={t("home.trendingDesc")}
-              viewAllHref="/products?sort=popular"
-              viewAllLabel={t("common.viewAll")}
-            />
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{popularProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
-          </div>
-        </section>
+        <HorizontalRail
+          icon={TrendingUp}
+          title={t("home.trendingTitle")}
+          description={t("home.trendingDesc")}
+          viewAllHref="/products?sort=popular"
+          viewAllLabel={t("common.viewAll")}
+        >
+          {popularProducts.slice(0, 12).map((product) => (
+            <RailCard key={product.id}>
+              <ProductCard product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />
+            </RailCard>
+          ))}
+        </HorizontalRail>
       )}
 
       {!productsData.loading && newProducts.length > 0 && (
-        <section className="border-b border-slate-100 bg-white">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <SectionHeader
-              icon={Sparkles}
-              title={t("home.newTitle")}
-              description={t("home.newDesc")}
-              viewAllHref="/products?sort=newest"
-              viewAllLabel={t("common.viewAll")}
-            />
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{newProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-new")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
-          </div>
-        </section>
+        <HorizontalRail
+          icon={Sparkles}
+          title={t("home.newTitle")}
+          description={t("home.newDesc")}
+          viewAllHref="/products?sort=newest"
+          viewAllLabel={t("common.viewAll")}
+        >
+          {newProducts.slice(0, 12).map((product) => (
+            <RailCard key={product.id}>
+              <ProductCard product={product} onOpen={(p) => openProduct(p, "home-new")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />
+            </RailCard>
+          ))}
+        </HorizontalRail>
       )}
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
