@@ -10,25 +10,34 @@ builds green, `backend/tests` 1340 pass / 404 skip / 1 pre-existing flaky case
 
 ### Active Tasks
 - Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
-- Shipping P0 (fee + quote) — **implemented and committed**; browser E2E and the 15
-  DB-gated shipping tests are BLOCKED (no disposable PostgreSQL on this device).
+- Shipping P0 (fee + quote) — **implemented and committed**; production schema reconciled
+  2026-11-05 (money table + shop columns now exist in Neon).
+- **35.00 THB flat default per shop** is the owner-approved placeholder until a carrier
+  API exists (`PLATFORM_DEFAULT_FLAT_FEE`); per-shop `shops.shipping_fee` still wins.
+  Browser E2E of the checkout screen and the 15 DB-gated shipping tests are BLOCKED
+  (no disposable PostgreSQL on this device).
 
 ### Important Unresolved Issues
 1. **No local PostgreSQL** — `initdb` hangs at "selecting default max_connections"
    (Android), so every `TEST_DATABASE_URL`-gated suite skips here, including the new
    `checkout-shipping-integrity.test.ts` and any local end-to-end purchase journey.
 2. **Responsive verification BLOCKED** — CDP cannot install on android/arm64.
-3. **Production DB verify BLOCKED** — `NEON_PRODUCTION_DATABASE_URL` not available to agents.
+3. **Production DB access is indirect** — no `psql` connection string for agents, but
+   production can be READ through the Neon MCP (`wandering-glitter-94857012`) and
+   WRITTEN only through the manual `production-db-migrate.yml` reconcile workflow.
 4. **Impeccable engine BLOCKED** — `impeccable --version` fails with
    `unexpected e_type: 2`; UI review falls back to `VELNOX_DESIGN_THEME.md` + craft-floor.
 
 ### Important Recent Decisions
 - **Shipping is server-priced (2026-11-05).** One flat fee per shop shipment
-  (`shops.shipping_fee`; NULL = platform default `SHIPPING_FLAT_FEE_THB` or 50.00,
+  (`shops.shipping_fee`; NULL = platform default `SHIPPING_FLAT_FEE_THB` or 35.00,
   0 = free; optional `free_shipping_threshold`). Quotes live in `shipping_quotes`
   (15 min TTL, cart + address fingerprint, single use). Checkout refuses every
   client money field and persists `subtotal − discount + shipping_fee`; a supplied
   quote is rejected when stale/expired/foreign, and a missing one is minted server-side.
+  Production was missing the whole shipping schema until the 2026-11-05 reconcile
+  (`pg_constraint.constraint_schema` guards aborted every earlier run); that is the
+  cause of the reported checkout error "Could not calculate shipping for this cart".
 - **Seller Part 1 shipped (2026-11-04).** My Shop split into `components/shop/*`
   (`ShopOnboarding`, `ShopIdentityCard`, `ShopVerificationDialog`); all seller-shop
   copy lives in `sellerDash.shop.*` (0 inline Thai left); `PATCH /api/seller/shop`
