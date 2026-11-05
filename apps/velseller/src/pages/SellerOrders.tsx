@@ -12,7 +12,7 @@ import {
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
-  AlertTriangle, ChevronRight, Inbox, Loader2, RefreshCw,
+  AlertTriangle, ChevronRight, Inbox, Loader2, RefreshCw, Search,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -37,6 +37,7 @@ export default function SellerOrders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const requestFilter = useRef<StatusFilter>("all");
@@ -95,8 +96,26 @@ export default function SellerOrders() {
         </div>
 
         <section className="mt-6">
+          {/* Status filter chips + Search bar */}
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t("sellerOrders.filterAll") + "..."}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+              />
+            </div>
+            <Button variant="outline" size="sm" className="shrink-0 border-slate-200 text-slate-600 h-10"
+              onClick={() => { setLoading(true); void load().finally(() => setLoading(false)); }}>
+              <RefreshCw className="mr-1.5 size-3.5" /> {t("common.refresh")}
+            </Button>
+          </div>
+
           {/* Status filter chips — horizontally scrollable on mobile */}
-          <div className="flex gap-2 overflow-x-auto pb-2" role="group" aria-label={t("sellerOrders.colStatus")}>
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-2" role="group" aria-label={t("sellerOrders.colStatus")}>
             {statusFilters.map((v) => {
               const active = statusFilter === v;
               return (

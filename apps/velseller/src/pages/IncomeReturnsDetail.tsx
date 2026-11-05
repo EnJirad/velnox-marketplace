@@ -1,0 +1,224 @@
+/**
+ * IncomeReturnsDetail — Returns Detail page
+ * Drill-down page from Income KPI card showing return rates and returned items
+ */
+import { AppHeader } from "@velnox/shared/components/AppHeader";
+import { Badge } from "@velnox/shared/components/ui/badge";
+import { Button } from "@velnox/shared/components/ui/button";
+import { api, useAction } from "@velnox/shared/lib/api-routes";
+import {
+  formatBaht, formatIsoDate, getOrderStatusMeta,
+  shortOrderNumber, type StoreOrder, type StoreOrderItem,
+} from "@velnox/shared/lib/commerce";
+import { useLanguage } from "@velnox/shared/lib/i18n";
+import {
+  AlertTriangle, ChevronLeft, PackageCheck, PackageSearch,
+  RefreshCw, TrendingDown,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router";
+
+type Period = "daily" | "weekly" | "monthly";
+
+interface TransactionRow {
+  order: StoreOrder; items: StoreOrderItem[]; subtotal: number; pending: boolean;
+}
+
+interface IncomeReport {
+  gross: number; grossCount: number; returns: number; returnCount: number;
+  commission: number; commissionRate: number; returnRate: number;
+  returnCoverage: number; payout: number; transactions: TransactionRow[];
+}
+
+const periodLabels: Record<Period, string> = { daily: "\u0E23\u0E32\u0E22\u0E27\u0E31\u0E19", weekly: "\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C", monthly: "\u0E23\u0E32\u0E22\u0E40\u0E14\u0E37\u0E2D\u0E19" };
+
+export default function IncomeReturnsDetail() {
+  const { t } = useLanguage();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sellerIncome = useAction(api.commerce.sellerIncomeReport);
+
+  const period = (searchParams.get("period") ?? "daily") as Period;
+
+  const [report, setReport] = useState<IncomeReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const r = await sellerIncome({ period });
+      setReport(r as IncomeReport);
+      setError(false);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [sellerIncome, period]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const periodData = useMemo(() => {
+    if (!report) return [];
+    const days = period === "daily" ? 7 : period === "weekly" ? 8 : 6;
+    return Array.from({ length: days }, (_, i) => {
+      const date = new Date();
+      if (period === "daily") date.setDate(date.getDate() - i);
+      else if (period === "weekly") date.setDate(date.getDate() - i * 7);
+      else date.setMonth(date.getMonth() - i);
+      const dayGross = report.gross / days;
+      const dayReturns = report.returns / days;
+      return {
+        label: formatIsoDate(date.toISOString()),
+        value: Math.max(0, dayGross),
+        returns: Math.max(0, dayReturns),
+      };
+    }).reverse();
+  }, [report, period]);
+
+  const maxVal = useMemo(() => Math.max(...periodData.map(d => d.value), 1), [periodData]);
+
+  const handlePeriodChange = (p: Period) => {
+    setSearchParams({ period: p });
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <AppHeader />
+      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => window.history.back()} className="p-1.5">
+              <ChevronLeft className="size-4" />
+            </Button>
+            <div>
+              <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
+                <PackageSearch className="size-4 text-amber-500" /> {t("sellerDash.income.eyebrow")}
+              </p>
+              <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                {t("sellerDash.income.returnsDetail.title")}
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">{t("sellerDash.income.returnsDetail.subtitle")}</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" className="border-slate-200 text-slate-600"
+            onClick={() => { setLoading(true); load().finally(() => setLoading(false)); }}>
+            <RefreshCw className="mr-1.5 size-3.5" /> {t("common.refresh")}
+          </Button>
+        </div>
+
+        {loading ? (
+          <div className="mt-8 space-y-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[...Array(4)].map((_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl border border-slate-200 bg-white" />)}
+            </div>
+          </div>
+        ) : error ? (
+          <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-amber-50"><AlertTriangle className="size-7 text-amber-600" /></span>
+            <h2 className="mt-4 text-lg font-semibold text-slate-900">{t("sellerDash.income.errorTitle")}</h2>
+            <p className="mt-1 text-sm text-slate-500">{t("sellerDash.income.errorDesc")}</p>
+            <Button className="mt-6 bg-slate-900 text-white hover:bg-slate-800"
+              onClick={() => { setLoading(true); load().finally(() => setLoading(false)); }}>
+              <RefreshCw className="mr-1.5 size-4" />{t("sellerDash.income.retry")}
+            </Button>
+          </div>
+        ) : report ? (
+          <>
+            {/* ── Summary KPIs ────────────────────────────────────── */}
+            <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { icon: TrendingDown, label: t("sellerDash.income.returnsDetail.rateTitle"), value: `${(report.returnRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`, sub: t("sellerDash.income.kpiReturnsSub", { rate: `${(report.returnRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`, count: report.returnCount }), color: "text-amber-600", bg: "bg-amber-50" },
+                { icon: AlertTriangle, label: t("sellerDash.income.returnsDetail.overThreshold"), value: report.returnRate > report.returnCoverage ? "Yes" : "No", sub: `\u0E40\u0E01\u0E13\u0E11\u0E4C ${(report.returnCoverage * 100).toLocaleString("th-TH", { maximumFractionDigits: 0 })}%`, color: report.returnRate > report.returnCoverage ? "text-red-600" : "text-emerald-600", bg: report.returnRate > report.returnCoverage ? "bg-red-50" : "bg-emerald-50" },
+                { icon: PackageCheck, label: t("sellerDash.income.kpiReturns"), value: formatBaht(report.returns), sub: t("sellerDash.income.kpiReturnsSub", { rate: `${(report.returnRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`, count: report.returnCount }), color: "text-amber-700", bg: "bg-amber-50" },
+                { icon: PackageSearch, label: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E15\u0E35\u0E01\u0E25\u0E31\u0E1A", value: report.returnCount.toLocaleString("th-TH"), sub: `\u0E08\u0E32\u0E01 ${report.grossCount.toLocaleString("th-TH")} \u0E0A\u0E34\u0E49\u0E19`, color: "text-slate-600", bg: "bg-slate-50" },
+              ].map(({ icon: Icon, label, value, sub, color, bg }) => (
+                <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                  <span className={`flex size-9 items-center justify-center rounded-[10px] ${bg} ${color} mb-3`}>
+                    <Icon className="size-4.5" />
+                  </span>
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className={`mt-1 text-xl font-bold tabular-nums tracking-tight ${color}`}>{value}</p>
+                  <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>
+                </div>
+              ))}
+            </section>
+
+            {/* ── Period Selector + Chart ─────────────────────────── */}
+            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <TrendingDown className="size-4 text-amber-500" /> {t("sellerDash.income.returnsDetail.chartTitle", { period: periodLabels[period] })}
+                </h2>
+                <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                  {(["daily", "weekly", "monthly"] as Period[]).map((p) => (
+                    <button key={p} onClick={() => handlePeriodChange(p)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${period === p ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                      {periodLabels[p]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-6">
+                <div className="flex items-end gap-1.5 h-32 sm:h-40" role="img" aria-label={`${periodLabels[period]} return rate chart`}>
+                  {periodData.map((d, i) => {
+                    const retRate = d.value > 0 ? d.returns / d.value : 0;
+                    return (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+                        <span className="text-[10px] font-semibold tabular-nums text-slate-900">
+                          {retRate > 0 ? `${(retRate * 100).toFixed(1)}%` : "0%"}
+                        </span>
+                        <div className="w-full rounded-t-md bg-gradient-to-t from-amber-400 to-red-500 transition-all"
+                          style={{ height: `${Math.min(retRate * 100, 100)}%` }} />
+                        <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+
+            {/* ── Returns Table ───────────────────────────────────── */}
+            <section className="mt-6 rounded-2xl border border-slate-200 bg-white overflow-hidden">
+              <div className="p-5 border-b border-slate-100">
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <PackageSearch className="size-4 text-amber-500" /> {t("sellerDash.income.returnsDetail.tableTitle")}
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">{t("sellerDash.income.txCount", { count: report.transactions.length })}</p>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {report.transactions.flatMap((tx) =>
+                  tx.items.map((item) => (
+                    <div key={`${tx.order.id}-${item.id}`} className="p-4 sm:p-5 hover:bg-slate-50/60 transition-colors">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div>
+                          <p className="text-sm font-semibold tabular-nums text-slate-900">
+                            {shortOrderNumber(tx.order.orderNumber)}
+                          </p>
+                          <p className="text-xs text-slate-400">{formatIsoDate(tx.order.createdAt)}</p>
+                        </div>
+                        <Badge variant="secondary" className={`text-xs ${getOrderStatusMeta(tx.order.status)?.badge ?? "bg-slate-100"}`}>
+                          {getOrderStatusMeta(tx.order.status)?.label ?? tx.order.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-700 truncate">{item.productName}</p>
+                          <p className="text-xs text-slate-400">{item.quantity} x {formatBaht(item.unitPrice)}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-semibold tabular-nums text-amber-700">{formatBaht(item.quantity * item.unitPrice)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          </>
+        ) : null}
+      </main>
+    </div>
+  );
+}

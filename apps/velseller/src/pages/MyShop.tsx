@@ -725,10 +725,10 @@ export default function MyShop() {
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
                       <Button
                         size="sm"
-                        className="h-11 flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-500"
+                        className="h-11 flex-none gap-1.5 bg-[#10B981] text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-500 min-w-0 px-3"
                         onClick={() => void handleTogglePublish(product)}
                         disabled={
                           togglingId === product.id ||
@@ -743,20 +743,20 @@ export default function MyShop() {
                         ) : (
                           <Eye className="size-3.5" aria-hidden="true" />
                         )}
-                        {toggleLabel(product)}
+                        <span className="hidden sm:inline">{toggleLabel(product)}</span>
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-11 flex-1 gap-1.5 border-slate-200 text-slate-600"
+                        className="size-11 shrink-0 border-slate-200 text-slate-600"
                         onClick={() => {
                           setEditing(product);
                           setFormOpen(true);
                         }}
                         disabled={terminal(product)}
+                        aria-label={t("sellerDash.shop.actionEdit")}
                       >
-                        <Pencil className="size-3.5" aria-hidden="true" />
-                        {t("sellerDash.shop.actionEdit")}
+                        <Pencil className="size-4" aria-hidden="true" />
                       </Button>
                       <Button
                         variant="ghost"

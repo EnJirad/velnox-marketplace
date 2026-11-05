@@ -15,6 +15,7 @@ import { AppHeader } from "@velnox/shared/components/AppHeader";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import { type VerificationStatus } from "@velnox/shared/lib/commerce";
 import { apiBaseUrl } from "@velnox/shared/lib/sites";
+import { formatBaht } from "@velnox/shared/lib/commerce";
 import { compressImage } from "@velnox/shared/lib/image-optimize";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useLanguage } from "@velnox/shared/lib/i18n";
@@ -23,7 +24,7 @@ import {
   LogOut, MessageCircle, ChevronRight, BadgePercent, FileText,
   Package, TrendingUp, HelpCircle, Settings2, UserCircle,
   ArrowUpRight, CheckCircle2, Clock, AlertTriangle, Ban,
-  Pen, ImagePlus,
+  Pen, ImagePlus, Bell, Globe, DollarSign, ShoppingCart,
 } from "lucide-react";
 
 const API_BASE = apiBaseUrl;
@@ -94,6 +95,11 @@ export default function SellerProfile() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [activeTab, setActiveTab] = useState<"shop" | "settings" | "policies">("shop");
+  const [notifications, setNotifications] = useState({
+    notifyNewOrder: true,
+    notifyReturn: true,
+    notifyPromotion: false,
+  });
 
   const [form, setForm] = useState<FormData>({
     name: "", description: "", category: "", phone: "",
@@ -328,6 +334,71 @@ export default function SellerProfile() {
               )}
             </section>
 
+            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-4">
+                <Settings2 className="size-4 text-emerald-500" /> การตั้งค่าร้านค้า
+              </h2>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between py-1">
+                  <div className="flex items-center gap-2">
+                    <Globe className="size-4 text-slate-400" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">ภาษาหน้าร้าน</p>
+                      <p className="text-xs text-slate-400">ไทย (ค่าเริ่มต้น)</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="size-4 text-slate-300" />
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="size-4 text-slate-400" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">สกุลเงิน</p>
+                      <p className="text-xs text-slate-400">THB (บาท)</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="size-4 text-slate-300" />
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <div className="flex items-center gap-2">
+                    <ShoppingCart className="size-4 text-slate-400" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">ค่าจัดส่งเริ่มต้น</p>
+                      <p className="text-xs text-slate-400">{shop?.shipping?.fee != null ? `${formatBaht(shop.shipping.fee)}` : "ยังไม่ระบุ"}</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="size-4 text-slate-300" />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-4">
+                <Bell className="size-4 text-emerald-500" /> การแจ้งเตือน
+              </h2>
+              <div className="space-y-3">
+                {[
+                  { key: "notifyNewOrder" as const, label: "ออเดอร์ใหม่", desc: "เมื่อมีลูกค้าสั่งซื้อสินค้า" },
+                  { key: "notifyReturn" as const, label: "การตีกลับ", desc: "เมื่อมีสินค้าถูกตีกลับ" },
+                  { key: "notifyPromotion" as const, label: "โปรโมชั่น", desc: "ข่าวสารและโปรโมชั่นจาก Velnox" },
+                ].map(({ key, label, desc }) => (
+                  <div key={key} className="flex items-center justify-between py-1">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{label}</p>
+                      <p className="text-xs text-slate-400">{desc}</p>
+                    </div>
+                    <div role="switch" aria-checked={notifications[key]} tabIndex={0}
+                      className={`relative inline-flex h-6 w-10 cursor-pointer items-center rounded-full transition-colors ${notifications[key] ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                      onClick={() => setNotifications(prev => ({ ...prev, [key]: !prev[key] }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setNotifications(prev => ({ ...prev, [key]: !prev[key] })); }}}>
+                      <span className={`inline-block size-4 transform rounded-full bg-white transition-transform shadow-sm ${notifications[key] ? 'translate-x-[18px]' : 'translate-x-[2px]'}`} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Help */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-4">
                 <HelpCircle className="size-4 text-emerald-500" /> คำแนะนำ
