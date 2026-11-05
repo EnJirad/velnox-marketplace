@@ -19,7 +19,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@velnox/shared/components/ui/sheet";
-import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
@@ -35,7 +34,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
-  PackageSearch,
   RotateCcw,
   Search,
   SlidersHorizontal,
@@ -46,6 +44,8 @@ import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
+import { ProductGridSkeleton } from "@velnox/shared/components/ui/loading-skeleton";
+import { EmptyState } from "@velnox/shared/components/ui/empty-state";
 
 const PAGE_SIZE = 24;
 
@@ -447,7 +447,7 @@ export default function ShopProducts() {
       <section className="border-b border-slate-100 bg-white">
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-            <PackageSearch className="size-4 text-[#10B981]" />
+            <Search className="size-4 text-[#10B981]" />
             {t("products.eyebrow")}
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
@@ -565,34 +565,14 @@ export default function ShopProducts() {
             {/* Grid */}
             <div className="mt-5">
               {loading ? (
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <Skeleton key={i} className="h-64 rounded-xl" />
-                  ))}
-                </div>
-              ) : error ? (
-                <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-                  <PackageSearch className="size-8 text-slate-300" />
-                  <h2 className="mt-4 text-lg font-semibold text-slate-900">{t("products.errorTitle")}</h2>
-                  <p className="mt-1.5 text-sm text-slate-500">{t("common.error")}</p>
-                  <Button className="mt-6 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
-                    {t("common.retry")}
-                  </Button>
-                </div>
+                <ProductGridSkeleton count={8} />
               ) : data && data.items.length === 0 ? (
-                <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-                  <Search className="size-8 text-slate-300" />
-                  <h2 className="mt-4 text-lg font-semibold text-slate-900">{t("products.noResultsTitle")}</h2>
-                  <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
-                    {t("products.noResultsDesc")}
-                  </p>
-                  {hasFilters && (
-                    <Button variant="outline" className="mt-6 gap-1.5 border-slate-200 text-slate-600" onClick={resetFilters}>
-                      <RotateCcw className="size-3.5" />
-                      {t("products.clearFilters")}
-                    </Button>
-                  )}
-                </div>
+                <EmptyState
+                  icon={Search}
+                  title={t("products.noResultsTitle")}
+                  description={t("products.noResultsDesc")}
+                  size="lg"
+                />
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">

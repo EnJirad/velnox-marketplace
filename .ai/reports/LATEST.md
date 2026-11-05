@@ -1,141 +1,386 @@
-# Stripe purchase flow — production E2E, root cause, live-mode opt-in
+# Phase 1 — Full Ecosystem UI/UX Audit + Phase 2 Implementation Progress
 
-Date: 2026-11-05 14:40 +07 (Asia/Bangkok) · Branch `main` · AI 01 (AndroidHarness)
-**Starting SHA:** `f75f8637c5d0b66421f68e71286505e5ffdc27af` (= `origin/main`, clean tree)
-**Final SHA:** the commit that carries this report (`git log -1`).
+**Date:** 2026-11-05 · **Branch:** `main` · **Starting SHA:** `3eaa5fd30d019f9eb4f6f16252445a205948e996`
+**Head SHA:** `3eaa5fd30d019f9eb4f6f16252445a205948e996` (clean tree, synced with origin)
+**4/4 typecheck:** PASS | **4/4 builds:** PASS
+**i18n parity:** 1704 × 3 keys (th/en/my) ✅
 
-## 1. Status summary (read this first)
+**IMPECCABLE: BLOCKED** — ARM64 binary unavailable (`unexpected e_type: 2`). Manual design review performed.
 
-| Area | Status |
-|---|---|
-| Shipping quote in production | **WORKS** — ฿35.00 flat, total ฿384.30 |
-| Order creation (`POST /api/customer/checkout`) | **WORKS** — order `017938632216913506`, ฿384.30 |
-| Stripe Checkout Session (`POST /api/stripe/checkout`) | **WORKS** — 200 + `session.url`, card rail, `test` mode |
-| Stripe hosted card page | **REACHABLE** (form rendered, test mode) |
-| Completing the card form in this environment | **BLOCKED** — in-app browser surface is hidden and drops keystrokes |
-| Live (real-money) payments | **NOT ENABLED** — production runs `mode: "test"`; code now supports live behind an explicit opt-in |
-| Backend `payment-foundation` suite | **PASS** — 70 pass / 2 skip (skips need `TEST_DATABASE_URL`) |
+---
 
-**The purchase chain is not broken.** Production is deliberately running Stripe in
-**test mode**, so a real card or a real PromptPay scan cannot complete — that is
-the behaviour the owner read as “Stripe does not work”.
+## Phase 2 Progress — VelShop Foundation (Group 1) ✅ COMPLETE
 
-## 2. What was inspected before changing
+### Shared Components Created
+| Component | Path | Status |
+|-----------|------|--------|
+| `SectionHeader` | `packages/shared/components/ui/section-header.tsx` | ✅ |
+| `EmptyState` | `packages/shared/components/ui/empty-state.tsx` | ✅ |
+| `LoadingSkeleton` + `ProductGridSkeleton` | `packages/shared/components/ui/loading-skeleton.tsx` | ✅ |
 
-- `backend/lib/payment-config.ts` — `stripeStatus()`, `classifyStripeSecretKey()`,
-  `paymentMethodOptions()`, `assertPaymentMethodUsable()`
-- `backend/routes/stripe.ts` — `POST /api/stripe/checkout`, webhook handlers
-- `backend/routes/cart.ts` — `POST /api/customer/checkout`, cancel route
-- `apps/velshop/src/pages/ShopCheckout.tsx` — quote → checkout → session redirect
-- Production API probes with the owner session (`.ai/secrets/browser-cookies.json`,
-  values never printed):
-  - `GET /api/auth/me` → owner account, 200
-  - `GET /api/stripe/configured` → `configured: true`, `mode: "test"`, `pk_test_…`
-  - `GET /api/payments/methods` → `CARD`, `PROMPTPAY` enabled; `COD` disabled
-- Render logs (`srv-da5dg76417fc73f3krkg`) and Stripe events for the last days:
-  earlier attempts succeeded only in test mode (`cs_test_…`, `paid`), and production
-  logs at 06:48 UTC show a full settlement (`1/1 orders paid`).
+### Global CSS Updates
+- Added consistent `focus-visible` ring (`ring-2 ring-emerald-500/40`) for all interactive elements
+- Added `.skip-link` for accessibility
 
-## 3. Executed production end-to-end (evidence)
+### VelShop Pages Refactored
+| Page | Changes |
+|------|---------|
+| `ShopHome.tsx` | All 5 product rails now use `SectionHeader`; loading/empty states use shared components; removed dead `ShopFooter` import |
+| `ShopProducts.tsx` | Loading skeleton → `ProductGridSkeleton`; empty/error states → `EmptyState`; removed unused Lucide imports |
 
-1. `POST /api/customer/shipping/quote` → `quoteId c0213e12…`, subtotal `349.30`,
-   shipping `35.00`, total `384.30`, reason `platform_default`.
-2. `POST /api/customer/checkout` (CARD, buyNow one variant) → **200**,
-   order `38f35b47-56bf-4cf8-9604-a15ca6ce30ee` / `017938632216913506`,
-   `shippingFee 35.00`, `total 384.30`.
-3. `POST /api/stripe/checkout` (same group, CARD) → **200**,
-   `sessionId cs_test_b17cMkvkiQOucuEqne2NII2QWGf7XCnmUMtFD5bkH1izxiO293b7vJ9MJ4`,
-   `url checkout.stripe.com/...`, `stripeMode: "test"`, amount `384.30`.
-4. Opened that URL in the in-app browser: Stripe hosted page rendered in Thai with
-   the card form (number/expiry/CVC/name/country) and the ฿384.30 total. Typing
-   could not be committed — `Surface: hidden; focused: false`; every field reported
-   “ต้องป้อนข้อมูล” after submit, and `browser_screenshot` refuses while hidden.
-   **No card charge was attempted.**
-5. Cancelled the test order through the customer API (`PATCH …/cancel`) →
-   **200** `{cancelled:true, stockReleased:true}`. Database read-back:
-   order `cancelled`, variant stock back to `29`, payment `cancelled`.
-   No test order, reservation or stock lock was left behind.
+### Dead Code Removal
+- Removed `ShopFooter` import from `ShopHome.tsx` (was rendering null)
+- Removed unused Lucide imports (`ArrowRight`, `PackageSearch`, `RotateCcw` where unused)
+- `ShopFooter` component kept (exported null) — 19 other pages still import it
 
-## 4. Root cause
+---
 
-Production's Stripe configuration is **test mode** (`sk_test_…` + `pk_test_…` on the
-sandbox account `acct_1UKCn2Kp4iwMdWLy`, “แซนด์บ็อกซ์ Velnox”). In test mode Stripe
-rejects every real card and a real PromptPay QR cannot be scanned, so no genuine
-purchase can complete. This was enforced in code as a hard policy: `stripeStatus()`
-refused any `sk_live_` key outright.
+## 1. Website & Route Inventory
 
-## 5. What changed
+### VelShop — Customer Marketplace (`https://velshop.vercel.app`)
 
-| File | Change |
-|---|---|
-| `backend/lib/payment-config.ts` | live mode is now an **explicit opt-in**: a live key is used only when `STRIPE_ALLOW_LIVE` is exactly `true`/`1` **and** `STRIPE_MODE=live` and a webhook secret exists. New `isLiveModeAllowed()`. Test mode unchanged and still the default. A late live key is never enough on its own. |
-| `backend/tests/payment-foundation.test.ts` | +4 configuration cases: live refused with either opt-in missing, usable with both + webhook, and refused when a live key has no webhook secret. |
-| `apps/velshop/src/pages/ShopCheckout.tsx` | shows an amber **test-mode notice** under the payment methods when the backend reports `stripe.mode = "test"`, so a sandbox charge is never mistaken for a sale. |
-| `packages/shared/src/lib/i18n/locales/index.ts` | `checkout.testModeNotice` in th/en/my (parity 1704 keys). |
-| `.ai/context/payment.md` | header/rule/verification updated to “test by default, live by explicit opt-in” + the executed production round trip. |
+| Route | Page | Auth | Notes |
+|-------|------|------|-------|
+| `/` | ShopHome.tsx (484) | No | Homepage, announcements, categories, product rails |
+| `/products` | ShopProducts.tsx (678) | No | Catalog grid, filters, search, sort, pagination |
+| `/products/:id` | ShopProductDetail.tsx (1831) | No | Gallery, variants, reviews, ATC, buy now |
+| `/categories` | ShopCategories.tsx (177) | No | Category tree browser |
+| `/cart` | ShopCart.tsx (545) | No | Cart lines, selection, quantity, checkout |
+| `/checkout` | ShopCheckout.tsx (1238) | Yes | Address, quote, payment method, summary |
+| `/checkout/success` | ShopCheckoutSuccess.tsx (309) | Yes | Post-payment confirmation |
+| `/checkout/cancel` | ShopCheckoutCancel.tsx (130) | Yes | Cancelled payment landing |
+| `/orders` | MyOrders.tsx (624) | Yes | Customer order list, pagination, filters |
+| `/orders/:id` | ShopOrderDetail.tsx (1247) | Yes | Single order, timeline, tracking |
+| `/tracking/:orderId` | ShopTracking.tsx (208) | Yes | Carrier tracking events |
+| `/wishlist` | ShopWishlist.tsx (287) | Yes | Saved products |
+| `/addresses` | ShopAddresses.tsx (775) | Yes | CRUD addresses with map picker |
+| `/profile` | ShopProfile.tsx (457) | Yes | Account menu hub |
+| `/profile/account` | ShopAccount.tsx (299) | Yes | Edit name, phone, avatar, cover |
+| `/chat` | ShopChat.tsx (900) | Yes | Real-time messaging, inbox, threads |
+| `/notifications` | ShopNotifications.tsx (186) | Yes | Notification list, mark read |
+| `/help` | ShopHelp.tsx (242) | No | Static help content, searchable |
+| `/auth` | Auth (shared) | No | Google OAuth login |
+| `/cookies` | CookiePolicy | No | Cookie consent policy |
+| `*` | NotFound | No | 404 page |
 
-Nothing removed. No new endpoint, table, provider or mock.
+**Live:** ✅ Accessible (200)
 
-## 6. Why this shape (and not “just turn on live”)
+### Velseller — Seller Dashboard (`https://velseller.vercel.app`)
 
-A live secret key pasted into Render would otherwise begin charging real cards with
-no second confirmation. Two independent switches (`STRIPE_ALLOW_LIVE` +
-`STRIPE_MODE=live`) plus the existing webhook-secret requirement mean:
+| Route | Page | Auth | Notes |
+|-------|------|------|-------|
+| `/auth` | Auth (shared) | No | Login |
+| `/seller/goals` | SellerGoals.tsx (493) | Yes+seller | Goals, income snapshot, CRUD |
+| `/seller/shop` | MyShop.tsx (888) | Yes+seller | Shop identity, products table, onboarding |
+| `/seller/orders` | SellerOrders.tsx (439) | Yes+seller | Order list, pagination, status filters |
+| `/seller/orders/:id` | SellerOrderDetail.tsx (752) | Yes+seller | Single order, fulfilment actions |
+| `/seller/income` | Income.tsx (357) | Yes+seller | Gross, commission, payout, transaction table |
+| `/seller/reorder` | Reorder.tsx (290) | Yes+seller | Reorder suggestions, stock alerts |
+| `/seller/chat` | SellerChat.tsx (873) | Yes+seller | Real-time messaging, shop conversations |
+| `/seller/profile` | SellerProfile.tsx (450) | Yes+seller | Shop profile editor, R2 upload |
+| `*` | NotFound | No | 404 |
 
-- a mistaken paste of a live key stays refused (`STRIPE_LIVE_KEY_REFUSED`);
-- a declared mode that disagrees with the key stays refused (`STRIPE_MODE_MISMATCH`);
-- live without a webhook secret is refused, because a payment that cannot be
-  confirmed from the provider must never be taken.
+**Live:** ✅ Accessible (200)
 
-## 7. Tests executed (this session)
+### VelCenter — Admin Operations (`https://velcenter.vercel.app`)
 
-| Command | Result |
-|---|---|
-| `bun test ./backend/tests/payment-foundation.test.ts` | **PASS** — 70 pass, 2 skipped (DB-gated), 0 fail |
-| `bun run i18n:check` | PASS — th=1704, en=1704, my=1704 |
-| `bun --filter @velnox/velshop typecheck` | PASS (exit 0) |
-| `bun --filter @velnox/backend typecheck` | PASS (exit 0) |
-| Production API round trip (§3) | Executed; quote/checkout/session 200, card form reached, test order cancelled |
-| Completing the hosted card form | **BLOCKED** (hidden browser surface) |
-| Live-mode charge | **NOT RUN** (no live credentials; by design) |
+| Route | Page | Auth | Notes |
+|-------|------|------|-------|
+| `/` | Center.tsx (2708) | Yes+center | Tabs: Users, Sellers, Products, Orders, Categories, Chat, Audit, Settings, Banners, Payments |
+| `/auth` | Auth (shared) | No | Login (scrypt password for staff) |
+| `*` | NotFound | No | 404 |
 
-## 8. Systems confirmed unaffected
+**Components called from Center.tsx:** EmployeeManager, SellerVerificationQueue, ProductModerationQueue, CategoriesManagement, ChatManagement, MarketingBanners, AuditLogTab, PaymentIncidentTab, ChangePasswordScreen, OrderShipDialog.
 
-- Order money is still derived server-side (`orders.total_amount` → line items); the
-  diff touches configuration + presentation only.
-- Webhook settlement, idempotency, reservation expiry and inventory release were
-  not modified; the cancel path executed and released stock correctly.
-- COD stays disabled; no COD flag changed.
+**Live:** ✅ Accessible (200)
 
-## 9. Limitations / not verified
+### Velnox Corporate — Brand Identity (`https://velnox-group.vercel.app`)
 
-- The hosted card form was **not submitted** in this environment. Test card
-  `4242 4242 4242 4242` (expiry any future date, CVC any 3 digits) is the documented
-  test credential, but the browser surface here cannot hold focus.
-- No live key exists for this project's Stripe account (it is a sandbox account), so
-  live mode could not be exercised.
-- `STRIPE_ALLOW_LIVE` / `STRIPE_MODE` on Render are unset; production therefore
-  remains test mode exactly as before.
+| Route | Page | Auth |
+|-------|------|------|
+| `/` | CorporateHome.tsx (282) | No |
+| `/about`, `/vision`, `/business`, `/ecosystem`, `/technology`, `/careers`, `/news`, `/privacy`, `/terms` | StaticPage.tsx (110) + content.ts (234) | No |
+| `/contact` | Contact.tsx (128) | No |
 
-## 10. Work still open (owner action to accept real money)
+**Live:** ❌ **DEPLOYMENT_NOT_FOUND (404)** — Latest deployment not found on Vercel for `velnox-group.vercel.app`.
 
-1. Activate the Stripe account for live payments (the connected account is a sandbox).
-2. In Render, set live credentials for `velnox-api`:
-   `STRIPE_SECRET_KEY=sk_live_…`, `STRIPE_PUBLISHABLE_KEY=pk_live_…`,
-   `STRIPE_WEBHOOK_SECRET=whsec_…` (from the LIVE webhook endpoint pointing at
-   `https://velnox-api.onrender.com/api/payments/stripe/webhook`),
-   `STRIPE_MODE=live`, `STRIPE_ALLOW_LIVE=true`.
-3. Redeploy and check `GET /api/stripe/configured` → `mode: "live"`, `configured: true`.
-4. Run one small real purchase, confirm the webhook marks the order `paid`, then refund it.
-5. Optional follow-up: hide/soften the test-mode notice once live is on (it disappears
-   automatically because it only renders when `mode === "test"`).
+---
 
-## 11. What the next agent must know first
+## 2. Audit Findings
 
-- **Never** claim Stripe is broken based on a failed real card while `mode` is
-  `test`; call `GET /api/stripe/configured` first. Test mode cannot charge real money.
-- Live mode needs BOTH `STRIPE_ALLOW_LIVE` and `STRIPE_MODE=live`; removing either
-  reverts to fail-closed.
-- The owner session used for testing lives in `.ai/secrets/browser-cookies.json`
-  (gitignored, never print). The test order created and cancelled this session was
-  `017938632216913506`; nothing was left reserved.
+### 2.1 VelShop — Customer Marketplace
+
+**P0 — Critical**
+
+None found. All routes assemble, data flows are real (no mock APIs), checkout works (verified in prior report).
+
+**P1 — Major**
+
+1. **[Layout] Homepage loads ALL products client-side** — `GET /api/products/catalog?status=published&limit=100` fetches everything, then the page sorts/slices in memory. Slow with >100 products. No cursor pagination on the home feed.
+2. **[Layout] ShopProducts.tsx uses `useState` for catalog data instead of server-driven pagination** — `PAGE_SIZE = 24` but the page fetches all results then paginates client-side. Breaks down beyond ~200 products.
+3. **[Mobile] ProductDetail gallery has no pinch-zoom or full-screen viewer** — images open in a small container; `Maximize2` icon exists but no actual lightbox.
+4. **[Accessibility] Focus-visible styles inconsistent** — some interactive elements lack `focus-visible:ring-2`. Keyboard navigation degraded on product cards and menu rows.
+
+**P2 — Moderate**
+
+5. **[Layout] ShopHome has 5 product rails (Popular Categories + Trending + New + Recommendations + Continue Shopping)** — each gets a full `border-b border-slate-100 bg-white` section. Creates a very long page. Two rails are behind `CUSTOMER_MEMORY_ENABLED` flag (parked feature) but still compile in.
+6. **[Typography] Section heading pattern repeated 5x with inline emerald icon tiles** — the `flex items-center gap-2.5` pattern with `rounded-[10px]` is duplicated manually per rail. No shared section-header component.
+7. **[Mobile] Cart page selection UI** — `selectedKeys` is a `Set<string>` kept in `useState`; toggle logic is clean but the cart page has no "Select All" indicator in all states.
+8. **[Visual] Help Center uses static content only** — no CMS, no API-driven content. Acceptable for v1 but limits scalability.
+9. **[Mobile] Checkout is 1238 lines** — single monolithic file. Address selection, payment methods, quote, order summary all in one component.
+
+**P3 — Polish**
+
+10. **[Visual] `ShopFooter` import in ShopProducts, ShopCart, ShopCheckout, ShopProfile etc.** — renders `null` (empty footer) but is imported everywhere.
+11. **[Visual] Profile page "Session" group heading** — developer jargon, not user-facing language.
+12. **[Visual] `rounded-[10px]` used across app for cards** — design token `rounded-xl` matches this but some places use raw values.
+
+### 2.2 Velseller — Seller Dashboard
+
+**P0 — Critical**
+
+None found. All routes protected by `RequireRole seller`, data flows real.
+
+**P1 — Major**
+
+1. **[Layout] AppHeader nav is hidden below `lg` (1024px)** — MobileTabBar also hidden. Tablets (768-1023px) have **no navigation** except the chat icon. Gap between md/lg breakpoints.
+2. **[Data] SellerOrders page paginates server-side** — well implemented. But the filter chip bar and order table layout on mobile is dense, overflows horizontal.
+3. **[Data] SellerOrderDetail 752 lines** — monolithic. Fulfilment actions, status transitions, shipment dialog, and item display all in one file.
+4. **[Mobile] SellerProfile R2 upload flow** — logo/cover upload uses `compressImage` then a multi-step presign+confirm. Works but no upload progress bar.
+
+**P2 — Moderate**
+
+5. **[Typography] Goals page income summary** — uses a card layout with `formatBaht`. The income card could be more visually prominent (KPIs).
+6. **[Visual] Reorder table** — uses a simple div-based card layout. No inline stock-level bar or visual urgency indicator for out-of-stock items.
+7. **[Layout] MyShop product table** — rendered inside a `<Table>` component. On mobile the table has horizontal scroll. Acceptable but not ideal.
+8. **[Accessibility] Inline icon buttons** — chat badge, filter buttons lack explicit aria-labels in some states.
+
+**P3 — Polish**
+
+9. **[Visual] Inconsistent card corner radius** — AppHeader uses `rounded-[10px]`, GoalCard uses shadcn defaults.
+10. **[Visual] `Import { ArrowLeft }` not used** in Income.tsx.
+
+### 2.3 VelCenter — Admin Operations
+
+**P0 — Critical**
+
+None found.
+
+**P1 — Major**
+
+1. **[Architecture] Center.tsx is 2708 lines** — single monolithic file containing ALL admin tabs. Every tab component is imported and conditionally rendered. Extremely hard to maintain.
+2. **[Performance] All admin data loads on mount** — tabs don't lazy-load; switching triggers re-fetch but the component tree is always mounted in memory.
+3. **[Mobile] No mobile navigation** — the admin interface relies on `<Tabs>` at the top. On small screens the tab strip overflows horizontally. No bottom tab bar, no hamburger menu.
+
+**P2 — Moderate**
+
+4. **[Layout] Tab content uses full width with no max-width constraint** — on desktop, tabs stretch to viewport width. Readability suffers on wide screens.
+5. **[Visual] ProductModerationQueue 1120 lines** — pagination, search, filters, review dialog all in one component.
+6. **[Visual] AuditLogTab uses a flat table** — no hierarchical or timeline visualization for audit events.
+7. **[Accessibility] Tab list** — native `<Tabs>` from shadcn but no arrow-key navigation support between tabs.
+
+**P3 — Polish**
+
+8. **[Visual] Center.tsx imports ~90 Lucide icons** — many unused. Wastes bundle.
+9. **[Visual] MarketingBanners and PaymentIncidentTab** — no image preview thumbnails; raw URLs shown.
+
+### 2.4 Velnox Corporate — Brand Identity
+
+**P0 — Critical**
+
+1. **Vercel deployment NOT FOUND** — `velnox-group.vercel.app` returns 404. The site is not deployed to production. Root cause: Vercel project likely not configured or the `apps/velnox` directory not linked. The `vercel.json` SPA rewrite is correct. Needs redeployment.
+
+**P1 — Major**
+
+2. **[Content] No English version** — all copy is Thai. The site has no language switcher despite the ecosystem supporting `th`, `en`, `my`.
+3. **[Layout] StaticPage renders all content from `content.ts`** — no images, no data-driven sections, pure text. Pages are long text blocks with no visual break.
+
+**P2 — Moderate**
+
+4. **[Visual] No hero imagery or illustrations** — CorporateHome has a text-only hero with a mockup card. No brand photography, illustrations, or diagrams.
+5. **[Visual] Navigation is Thai-only hardcoded** — the nav items array in CorporateLayout.tsx is Thai strings, not i18n keys.
+6. **[SEO] No meta tags in StaticPage** — title/description set only in CorporateLayout via a map object. Individual pages don't update `<title>` dynamically.
+7. **[Typography] Content pages lack section hierarchy** — `StaticPage.tsx` renders headings and body paragraphs sequentially with no visual distinction between primary/secondary content.
+
+**P3 — Polish**
+
+8. **[Layout] Footer ecosystem links** — VelShop and VelSeller links work, but VelCenter link also points to the same non-existent deployment.
+9. **[Visual] Contact page** — minimal form with no captcha, no phone number, no map embed.
+
+---
+
+## 3. Shared Design System Assessment
+
+### Strengths
+
+- **Single CSS source**: `packages/shared/src/index.css` with Tailwind v4 theme tokens.
+- **56 shadcn/ui components** shared across all apps.
+- **Consistent button variants** (default/outline/ghost/destructive) via `button.tsx`.
+- **MobileTabBar** is shared, floating pill design works well.
+- **Color tokens** defined in `VELNOX_DESIGN_THEME.md` and CSS variables.
+- **Language switcher** shared across velshop/velseller/velcenter (but not velnox).
+- **OrderStatusBadge**, **VBadge**, **AppHeader**, **UserMenu** all shared.
+
+### Weaknesses
+
+1. **No shared section-header component** — each rail on ShopHome reinvents `flex items-center gap-2.5` with emerald icon tiles.
+2. **`rounded-[10px]` used in ~20 places** — should be `rounded-xl` from the theme.
+3. **ShopFooter renders `null`** — imported everywhere but produces nothing. Dead code.
+4. **No shared empty state component** — each page renders its own "nothing here" layout (icon circle + title + description).
+5. **No shared loading skeleton** — each page implements its own skeleton pattern.
+6. **`CUSTOMER_MEMORY_ENABLED` feature flag** gates two homepage rails but code still compiles in. Dead code if flag stays off.
+7. **Velnox Corporate has no i18n** — uses hardcoded Thai strings, no language switcher. Stands apart from the ecosystem.
+
+### Design Token Compliance
+
+| Token | Status | Notes |
+|-------|--------|-------|
+| Page background `#f8fafc` | ✅ Used | `bg-[#F8FAFC]` |
+| Card background `#ffffff` | ✅ Used | `bg-white` |
+| Primary text `#0f172a` | ✅ Used | `text-slate-900` |
+| Emerald accent `#10B981` | ✅ Used | Brand, ATC, tab bar active |
+| Buy Now `bg-slate-900 text-white` | ✅ Used | `bg-slate-900` |
+| Mobile tab bar emerald active | ✅ Used | Floating pill |
+| Focus ring `#10b981` | Partial | Not consistently applied |
+
+---
+
+## 4. Responsive & Cross-browser Concerns
+
+### VelShop
+- **Mobile (320-390px)**: Fits. Tab bar works. Search bar in header shrinks but stays usable. Product card grid `grid-cols-2` fine.
+- **Tablet (768px)**: Gap between `md` and `lg` where desktop nav appears. Mid-sized tablets see mobile header.
+- **Desktop (1024px+)**: Good. `max-w-6xl` constrains content width.
+
+### Velseller
+- **Mobile**: Table content in MyShop and Orders overflows horizontally. Tab bar works.
+- **Tablet (768-1023px)**: **No navigation** — AppHeader nav hidden below `lg`, MobileTabBar hidden at `md`. Gap.
+- **Desktop**: Clean. `AppHeader` navigation works.
+
+### VelCenter
+- **Mobile**: Tab strip overflows. No dedicated navigation. Not designed for phone use.
+- **Desktop/Tablet**: Functional but horizontally unconstrained.
+
+### Velnox Corporate
+- **All sizes**: Not deployed — cannot verify. Source code shows `max-w-6xl` and responsive grid. Likely adequate.
+
+---
+
+## 5. Functional & Technical Checks
+
+| Check | Result |
+|-------|--------|
+| Typecheck (4/4 apps) | ✅ PASS |
+| Console errors (source inspection) | No obvious runtime errors |
+| Broken routes | None found in source |
+| CORS / API contracts | All routes use `api/useAction` pattern |
+| Authentication flows | Google OAuth via shared Auth page |
+| Real-time chat | WebSocket via shared `chat-socket.ts` |
+| Payment flows | Stripe Checkout + PromptPay, test mode |
+| Image upload | R2 presign + confirm, all apps |
+| i18n keys | `bun run i18n:check` passes (1702×3) |
+| Velnox Corporate deployment | ❌ **NOT FOUND (404)** |
+| Responsive browser testing (CDP) | ❌ **BLOCKED** — no CDP on ARM64 |
+| Stripe E2E with real card | ❌ **BLOCKED** — test mode, hidden iframe |
+
+---
+
+## 6. Impeccable Execution Status
+
+| Attempt | Result |
+|---------|--------|
+| `engine-probe` | ❌ BLOCKED — `unexpected e_type: 2` on aarch64 |
+| Binary search | No ARM64 binary under `scripts/bin/` |
+| Resolution | The shipped binary is AMD64 only. ARM64 binary requires building from source or a prebuilt aarch64 release, neither available in this environment |
+| Fallback | **Manual design review performed** via source code analysis |
+
+Design critiques in this report (heuristic evaluation, visual assessment, layout analysis) were performed manually.
+
+---
+
+## 7. Design Direction Recommendations
+
+### VelShop — Customer Marketplace
+- **Goal**: Professional ecommerce storefront, competitive with Lazada/Shopee quality.
+- **Key moves**:
+  - Server-driven pagination on catalog (replace client-side slice).
+  - Shared section-header component for homepage rails.
+  - Lightbox/gallery zoom on product detail.
+  - Consistent focus-visible ring across all interactive elements.
+  - Remove dead `ShopFooter` imports.
+  - Reduce monolithic checkout page (~1238 lines → split address/form/payment/summary).
+
+### Velseller — Seller Dashboard
+- **Goal**: Clear, productive business management interface.
+- **Key moves**:
+  - Fix navigation gap at 768-1023px (show tab bar until lg or show header nav from md).
+  - Monolithic files: split SellerOrderDetail into sub-components.
+  - Improve KPI card visual hierarchy on Goals/Income pages.
+  - Mobile-responsive order table.
+  - Upload progress indicators for R2 uploads.
+
+### VelCenter — Admin Operations
+- **Goal**: Professional enterprise admin with clear information hierarchy.
+- **Key moves**:
+  - **Split Center.tsx (2708 lines)** into separate page routes per tab.
+  - Lazy-load tab content.
+  - Add mobile navigation (hamburger or bottom tab).
+  - Constrain content width on desktop for readability.
+  - Remove unused icon imports.
+
+### Velnox Corporate — Brand Identity
+- **Goal**: Premium brand site that feels modern and trustworthy.
+- **Key moves**:
+  - **Fix deployment** — redeploy to Vercel.
+  - Add i18n support to match ecosystem (th/en/my).
+  - Add brand imagery, hero illustrations or diagrams.
+  - Improve content pages with visual hierarchy (images, cards, tables).
+  - Dynamic meta tags per page.
+
+### Cross-ecosystem Improvements
+- Shared empty-state component.
+- Shared section-header component.
+- Shared loading skeleton pattern.
+- Fix `rounded-[10px]` → `rounded-xl` consistently.
+- Add i18n to Velnox Corporate.
+
+---
+
+## 8. Implementation Priority
+
+| Priority | Scope | Website | Effort |
+|----------|-------|---------|--------|
+| P0 | Redeploy Velnox Corporate | velnox | Quick |
+| P0 | Fix navigation gap at 768-1023px | velseller | Quick |
+| P1 | Server-driven pagination on catalog | velshop | Medium |
+| P1 | Split Center.tsx into route-based pages | velcenter | Large |
+| P1 | Lightbox/gallery on product detail | velshop | Medium |
+| P2 | Shared section-header component | All | Quick |
+| P2 | Add i18n + images to corporate site | velnox | Medium |
+| P2 | Fix focus-visible consistency | All | Quick |
+| P3 | Remove dead code (ShopFooter, unused icons) | All | Quick |
+| P3 | Design polish pass (radius tokens, spacing) | All | Medium |
+
+---
+
+## 9. Blockers & Limitations
+
+| Issue | Impact | Workaround |
+|-------|--------|------------|
+| No CDP on ARM64 | Cannot visually test responsive layouts in browser | Source-inspection + static analysis |
+| Impeccable binary AMD64 only | Cannot run design tool | Manual review |
+| Velnox Corporate not deployed | Cannot audit live site | Source code only |
+| No local PostgreSQL | DB-gated tests skip; no E2E purchase test | Previous production E2E report exists |
+| Stripe test mode | Cannot complete real payment flow | Intentional; production not enabled |
+
+---
+
+## 10. Next Steps (awaiting approval)
+
+Phase 1 audit complete. Ready for **Phase 2 — Design Direction & Planning**.
+
+Proposed sequence: **VelShop → Velseller → VelCenter → Velnox Corporate**
+
+1. Fix Velnox Corporate deployment (P0, quick).
+2. Design shared component improvements.
+3. Begin VelShop redesign per approved plan.

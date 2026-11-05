@@ -1,7 +1,6 @@
 import { ProductCard } from "@/components/shop/ProductCard";
 import { AnnouncementCarousel, type Announcement } from "@/components/shop/AnnouncementCarousel";
 import { HomePromoStrip, type PromoStripBanner } from "@/components/shop/HomePromoStrip";
-import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { Button } from "@velnox/shared/components/ui/button";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -17,7 +16,6 @@ import { useTracking } from "@velnox/shared/lib/track";
 import { CUSTOMER_MEMORY_ENABLED } from "@velnox/shared/lib/features";
 import {
   Armchair,
-  ArrowRight,
   Baby,
   BellRing,
   BookOpen,
@@ -63,6 +61,9 @@ import { toast } from "sonner";
 import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
+import { SectionHeader } from "@velnox/shared/components/ui/section-header";
+import { ProductGridSkeleton } from "@velnox/shared/components/ui/loading-skeleton";
+import { EmptyState } from "@velnox/shared/components/ui/empty-state";
 
 interface RecommendedRow {
   product: StoreProduct;
@@ -382,10 +383,13 @@ export default function ShopHome() {
       {!productsData.loading && popularCategories.length > 0 && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5">
-            <div className="flex items-end justify-between gap-3">
-              <div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.categoriesTitle")}</h2><p className="mt-0.5 text-xs text-slate-400">{t("home.categoriesDesc")}</p></div>
-              <Link to="/categories" onClick={() => track("CATEGORY_VIEW", { value: "all", context: { label: "explore" } })} className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("home.viewAllCategories")}<ArrowRight className="size-3.5" /></Link>
-            </div>
+            <SectionHeader
+              icon={Package}
+              title={t("home.categoriesTitle")}
+              description={t("home.categoriesDesc")}
+              viewAllHref="/categories"
+              viewAllLabel={t("home.viewAllCategories")}
+            />
             <div className="mt-3 grid grid-cols-4 gap-x-2 gap-y-3 sm:grid-cols-6 sm:gap-y-4 lg:grid-cols-6">
               {popularCategories.map(([id, count]) => {
                 const Icon = (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package;
@@ -418,7 +422,11 @@ export default function ShopHome() {
       {CUSTOMER_MEMORY_ENABLED && !authLoading && isAuthenticated && !remindersData.loading && showReorder && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><BellRing className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.reorderDueTitle")}</h2><p className="text-xs text-slate-400">{t("home.reorderDueDesc")}</p></div></div>
+            <SectionHeader
+              icon={BellRing}
+              title={t("home.reorderDueTitle")}
+              description={t("home.reorderDueDesc")}
+            />
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {reminders.map((r: any) => (
                 <div key={r.product.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-[#10B981]/40">
@@ -435,7 +443,11 @@ export default function ShopHome() {
       {CUSTOMER_MEMORY_ENABLED && !authLoading && isAuthenticated && !regularsData.loading && showRegulars && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><History className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.continueShoppingTitle")}</h2><p className="text-xs text-slate-400">{t("home.continueShoppingDesc")}</p></div></div>
+            <SectionHeader
+              icon={History}
+              title={t("home.continueShoppingTitle")}
+              description={t("home.continueShoppingDesc")}
+            />
             <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{regulars.slice(0, 4).map(({ product }: any) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-regulars")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
@@ -444,7 +456,11 @@ export default function ShopHome() {
       {CUSTOMER_MEMORY_ENABLED && !authLoading && recommendations.length > 0 && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><Sparkles className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{recommendData.data?.source === "personal" ? t("home.recsPersonal") : t("home.recsPopular")}</h2><p className="text-xs text-slate-400">{recommendData.data?.source === "personal" ? t("home.recsPersonalDesc") : t("home.recsPopularDesc")}</p></div></div>
+            <SectionHeader
+              icon={Sparkles}
+              title={recommendData.data?.source === "personal" ? t("home.recsPersonal") : t("home.recsPopular")}
+              description={recommendData.data?.source === "personal" ? t("home.recsPersonalDesc") : t("home.recsPopularDesc")}
+            />
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{recommendations.slice(0, 8).map(({ product }) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-recommended")} onAdd={handleAdd} badgeLabel={t("home.badgeRecommended")} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
@@ -453,10 +469,13 @@ export default function ShopHome() {
       {!productsData.loading && popularProducts.length > 0 && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><TrendingUp className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.trendingTitle")}</h2><p className="text-xs text-slate-400">{t("home.trendingDesc")}</p></div></div>
-              <Link to="/products?sort=popular" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("common.viewAll")}<ArrowRight className="size-3.5" /></Link>
-            </div>
+            <SectionHeader
+              icon={TrendingUp}
+              title={t("home.trendingTitle")}
+              description={t("home.trendingDesc")}
+              viewAllHref="/products?sort=popular"
+              viewAllLabel={t("common.viewAll")}
+            />
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{popularProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
@@ -465,19 +484,44 @@ export default function ShopHome() {
       {!productsData.loading && newProducts.length > 0 && (
         <section className="border-b border-slate-100 bg-white">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-[10px] bg-[#ECFDF5]"><Sparkles className="size-4 text-[#10B981]" /></span><div><h2 className="text-base font-bold tracking-tight text-slate-900">{t("home.newTitle")}</h2><p className="text-xs text-slate-400">{t("home.newDesc")}</p></div></div>
-              <Link to="/products?sort=newest" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] hover:text-emerald-700">{t("common.viewAll")}<ArrowRight className="size-3.5" /></Link>
-            </div>
+            <SectionHeader
+              icon={Sparkles}
+              title={t("home.newTitle")}
+              description={t("home.newDesc")}
+              viewAllHref="/products?sort=newest"
+              viewAllLabel={t("common.viewAll")}
+            />
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{newProducts.map((product) => (<ProductCard key={product.id} product={product} onOpen={(p) => openProduct(p, "home-new")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />))}</div>
           </div>
         </section>
       )}
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-        {productsData.loading ? (<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => (<div key={i} className="h-64 animate-pulse rounded-xl border border-slate-200 bg-white" />))}</div>) : products.length === 0 ? (<div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]"><ShoppingBag className="size-7 text-[#10B981]" /></span><h2 className="mt-5 text-lg font-semibold text-slate-900">{t("home.emptyTitle")}</h2><p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("home.emptyDesc")}</p></div>) : null}
+        {productsData.loading ? (
+          <ProductGridSkeleton count={8} />
+        ) : products.length === 0 ? (
+          <EmptyState
+            icon={ShoppingBag}
+            title={t("home.emptyTitle")}
+            description={t("home.emptyDesc")}
+            size="lg"
+          />
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {products.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                onOpen={(p) => openProduct(p, "home-all")}
+                onAdd={handleAdd}
+                wishlisted={wishlistIds.has(product.id)}
+                onWishlist={handleWishlist}
+                wishToggling={wishTogglingId === product.id}
+              />
+            ))}
+          </div>
+        )}
       </main>
-      <ShopFooter />
 
     </div>
   );

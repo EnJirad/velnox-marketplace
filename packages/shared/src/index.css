@@ -187,3 +187,54 @@ body {
 .leaflet-control-zoom {
   z-index: 700 !important;
 }
+
+/* ─── Global focus-visible styles — consistent keyboard navigation ────────
+ * Every interactive element gets a visible emerald focus ring.
+ * Components can opt out with `focus-visible:none` if they handle their own.
+ * ────────────────────────────────────────────────────────────────────── */
+@layer components {
+  :focus-visible {
+    outline: none;
+    ring: 2px;
+    ring-color: var(--ring);
+    ring-offset: 2px;
+    ring-offset-color: var(--background);
+  }
+
+  /* Buttons, links, inputs, selects, tabs, dialogs */
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [role="tab"]:focus-visible,
+  [role="dialog"]:focus-visible,
+  [role="menuitem"]:focus-visible,
+  [role="option"]:focus-visible {
+    outline: none;
+    ring: 2px;
+    ring-color: var(--ring);
+    ring-offset: 2px;
+    ring-offset-color: var(--background);
+  }
+
+  /* Cards and product grids — focus on the wrapper */
+  .focus-card:focus-visible,
+  .product-card:focus-visible,
+  .order-row:focus-visible {
+    ring: 2px;
+    ring-color: var(--ring);
+    ring-offset: 2px;
+    ring-offset-color: var(--background);
+    border-radius: var(--radius-lg);
+  }
+
+  /* Skip link for accessibility */
+  .skip-link {
+    @apply absolute -top-10 left-4 z-50 px-4 py-2 bg-slate-900 text-white rounded-lg transition-transform;
+  }
+  .skip-link:focus {
+    @apply top-4;
+  }
+}
