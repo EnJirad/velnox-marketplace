@@ -1192,18 +1192,24 @@ const thPaymentUx = {
     "คำสั่งซื้อนี้อยู่นอกช่วงเวลาชำระเงินแล้ว — กรุณาสร้างคำสั่งซื้อใหม่หรือติดต่อร้านค้า",
   paymentAlreadyInProgress:
     "มีรายการชำระเงินที่เปิดอยู่ ระบบกำลังพาคุณกลับไปยังหน้าชำระเงินเดิม",
+  testModeNotice:
+    "โหมดทดสอบ — ระบบยังไม่ตัดเงินจริง ใช้บัตรทดสอบ 4242 4242 4242 4242 เพื่อทดลองชำระเงิน",
 };
 const enPaymentUx = {
   paymentNoLongerAvailable:
     "This order is no longer within its payment window — start a new order or contact the shop",
   paymentAlreadyInProgress:
     "A payment is already in progress — taking you back to that payment page",
+  testModeNotice:
+    "Test mode — no real money is charged. Use test card 4242 4242 4242 4242 to try the payment flow.",
 };
 const myPaymentUx = {
   paymentNoLongerAvailable:
     "ဤအမှာစာသည် ငွေပေးချေရန် အချိန်ကုန်ဆုံးသွားပါပြီ — အမှာစာအသစ် ပြုလုပ်ပါ",
   paymentAlreadyInProgress:
     "ငွေပေးချေမှု တစ်ခု လုပ်ဆောင်နေပြီး ဖြစ်သည် — ထိုစာမျက်နှာသို့ ပြန်ပို့နေသည်",
+  testModeNotice:
+    "စမ်းသပ်မုဒ် — ငွေအမှန် မဖြတ်ပါ။ 4242 4242 4242 4242 စမ်းသပ်ကတ်ကို အသုံးပြုပါ။",
 };
 
 /** VelCenter shell copy (2026-11-02). */

@@ -344,6 +344,8 @@ export default function ShopCheckout() {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [methodOptions, setMethodOptions] = useState<PaymentMethodOption[] | null>(null);
+  /** `test` or `live`; shown only so a sandbox charge is never mistaken for a sale. */
+  const [stripeMode, setStripeMode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<CheckoutResult | null>(null);
   /**
@@ -388,6 +390,7 @@ export default function ShopCheckout() {
         if (cancelled) return;
         const options = Array.isArray(res?.methods) ? res.methods : [];
         setMethodOptions(options);
+        setStripeMode(typeof res?.stripe?.mode === "string" ? res.stripe.mode : null);
         const firstEnabled = options.find((m) => m.enabled);
         setPaymentMethod((prev) =>
           prev && options.some((m) => m.id === prev && m.enabled) ? prev : (firstEnabled?.id ?? ""),
@@ -1047,6 +1050,11 @@ export default function ShopCheckout() {
               {methodOptions !== null && enabledMethods.length === 0 && (
                 <p className="py-3 text-xs text-slate-400">{t("paymentMethods.unavailable")}</p>
               )}
+              {stripeMode === "test" && enabledMethods.length > 0 && (
+                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800" role="status">
+                  {t("checkout.testModeNotice")}
+                </p>
+              )}
             </div>
           </section>
 
@@ -1146,6 +1154,11 @@ export default function ShopCheckout() {
               </div>
               {methodOptions !== null && enabledMethods.length === 0 && (
                 <p className="mt-3 text-xs text-amber-700">{t("paymentMethods.unavailable")}</p>
+              )}
+              {stripeMode === "test" && enabledMethods.length > 0 && (
+                <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800" role="status">
+                  {t("checkout.testModeNotice")}
+                </p>
               )}
               <p className="mt-3 min-w-0 truncate text-xs text-slate-400" title={user?.email ? t("checkout.confirmAccount", { email: user.email }) : undefined} style={{ overflowWrap: "anywhere" }}>
                 {user?.email ? t("checkout.confirmAccount", { email: user.email }) : t("checkout.confirmAccount", { email: "" })}

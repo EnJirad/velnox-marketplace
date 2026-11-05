@@ -1,10 +1,11 @@
-# PAYMENT — Stripe (TEST MODE ONLY), Card + PromptPay, COD OFF
+# PAYMENT — Stripe (TEST MODE BY DEFAULT, live by explicit opt-in), Card + PromptPay, COD OFF
 
 ## Purpose
 
 Take money for an order through Stripe Checkout, reconcile the result from
-webhooks, and keep order / payment / inventory state honest. **Stripe TEST MODE
-ONLY** — a live-looking secret key is refused, never used.
+webhooks, and keep order / payment / inventory state honest. **Test mode is the
+default. Live mode requires two independent opt-ins** (`STRIPE_ALLOW_LIVE` and
+`STRIPE_MODE=live`); a live key alone is refused, never used.
 
 ## Source Locations
 
@@ -78,8 +79,10 @@ is the backend's promise:
 
 ## Rules (do not weaken)
 
-- **Test mode only.** `classifyStripeSecretKey()` accepts `sk_/rk_test_`; live **and**
-  unrecognized values are refused. `STRIPE_MODE` disagreeing with the key → refused.
+- **Test mode by default; live is an explicit opt-in.** `classifyStripeSecretKey()` accepts
+  `sk_/rk_test_`; a live secret is used only when `STRIPE_ALLOW_LIVE` is the literal
+  `true`/`1` **and** `STRIPE_MODE=live` (and a webhook secret exists). Any other
+  combination — live key alone, opt-in without the declared mode — is refused.
   A missing `STRIPE_WEBHOOK_SECRET` means "payment unavailable" (no fallback).
 - **The charge is DERIVED, never accepted.** `buildCheckoutLineItems()` builds the
   Stripe lines from `orders.total_amount` + currency; a shipping/fee remainder becomes
@@ -140,8 +143,8 @@ is the backend's promise:
   customer-selectable can never be true while the rail is off. `method=COD` →
   **403 `PAYMENT_METHOD_DISABLED`** before any order/payment/shipment/settlement write,
   independently of Stripe's state.
-- The secret key never leaves server-side callers; only a **test** publishable key can
-  reach a browser.
+- The secret key never leaves server-side callers; only a publishable key that
+  matches the accepted mode can reach a browser.
 
 ## Verification
 
@@ -158,7 +161,15 @@ is the backend's promise:
   own `stripeStatus()` still reports
   `{"usable":false,"mode":null,"reason":"STRIPE_NOT_CONFIGURED"}` with COD off —
   **no PaymentIntent, PromptPay QR, webhook delivery or refund has ever been
-  executed**. Executed and passing instead: live-key refusal, fail-closed COD flags,
+  executed**. **2026-11-05 — a production test-mode round trip WAS executed** through
+  the API with a real session: shipping quote (฿35.00) → `POST /api/customer/checkout`
+  (order ฿384.30) → `POST /api/stripe/checkout` → Stripe Checkout Session
+  `cs_test_b17cMkv…` (card, host `checkout.stripe.com`). The order was then cancelled
+  through the customer API: stock released, payment `cancelled`, session expired.
+  **Not executed:** completing that session's card form in a browser (the in-app
+  browser surface is hidden and would not accept typing), and therefore no LIVE-mode
+  charge. Executed and passing instead: live-key refusal (both opt-ins absent),
+  fail-closed COD flags,
   webhook signature reject **and** accept, webhook duplicate delivery
   (`payment_events` claim), and the DB-gated *a refused COD attempt writes nothing*.
   Still **CODE VERIFIED only → BLOCKED**: checkout request-key replay, the

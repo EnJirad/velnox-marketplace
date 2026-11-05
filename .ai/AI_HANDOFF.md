@@ -25,10 +25,22 @@ builds green, `backend/tests` 1340 pass / 404 skip / 1 pre-existing flaky case
 3. **Production DB access is indirect** — no `psql` connection string for agents, but
    production can be READ through the Neon MCP (`wandering-glitter-94857012`) and
    WRITTEN only through the manual `production-db-migrate.yml` reconcile workflow.
+4. **Stripe live payments are NOT enabled** — the connected Stripe account is a
+   sandbox; production has test keys only. Real money needs live keys +
+   `STRIPE_MODE=live` + `STRIPE_ALLOW_LIVE=true` in Render (see
+   `.ai/context/payment.md` and `.ai/reports/LATEST.md` §10).
 4. **Impeccable engine BLOCKED** — `impeccable --version` fails with
    `unexpected e_type: 2`; UI review falls back to `VELNOX_DESIGN_THEME.md` + craft-floor.
 
 ### Important Recent Decisions
+- **Stripe live mode is now an explicit opt-in (2026-11-05).** Production runs
+  Stripe **test mode** (`/api/stripe/configured` → `mode:"test"`), so real cards /
+  real PromptPay cannot complete — that was the reported “cannot pay”. A live key is
+  used only with `STRIPE_ALLOW_LIVE=true` (or `1`) **and** `STRIPE_MODE=live` plus a
+  webhook secret (`backend/lib/payment-config.ts`). Storefront shows
+  `checkout.testModeNotice` while mode is `test`. A production test-mode round trip
+  (quote ฿35 → order ฿384.30 → `cs_test_…` session) was executed and the test order
+  cancelled; the hosted card form could not be completed here (hidden browser).
 - **Shipping is server-priced (2026-11-05).** One flat fee per shop shipment
   (`shops.shipping_fee`; NULL = platform default `SHIPPING_FLAT_FEE_THB` or 35.00,
   0 = free; optional `free_shipping_threshold`). Quotes live in `shipping_quotes`

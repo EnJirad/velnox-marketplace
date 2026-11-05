@@ -5,8 +5,10 @@
  * Every payment route reads its answer from here so the rules cannot drift
  * apart between endpoints. The safety model:
  *
- *   • **Stripe TEST MODE ONLY.** A live-looking secret key is *refused*, not
- *     used. It is never a warning, never a fallback.
+ *   • **TEST MODE BY DEFAULT; live mode is an explicit opt-in.** A live secret
+ *     key is refused unless the operator sets `STRIPE_ALLOW_LIVE` to the exact
+ *     literal `true`/`1` AND declares `STRIPE_MODE=live`. A live key alone is
+ *     never enough — pasting one into Render can never start charging cards.
  *   • **No silent fallback.** A missing key, an unrecognized key format, a
  *     declared `STRIPE_MODE` that disagrees with the key, or a missing webhook
  *     secret all resolve to "payment unavailable". There is no path that
@@ -129,6 +131,19 @@ export function classifyStripePublishableKey(key: string | null): StripeMode | n
   return null;
 }
 
+/**
+ * Has the operator explicitly allowed LIVE payments?
+ *
+ * Fails **closed**, exactly like the COD flags: only the literal `true`/`1`
+ * counts. This is the second key that must turn for a live secret to be used,
+ * so a live key pasted into the dashboard by mistake cannot take real money on
+ * its own.
+ */
+export function isLiveModeAllowed(): boolean {
+  const raw = envString("STRIPE_ALLOW_LIVE")?.toLowerCase() ?? null;
+  return raw === "true" || raw === "1";
+}
+
 /** Machine-readable reasons a deployment cannot take a Stripe payment. */
 export type StripeUnavailableReason =
   | "STRIPE_NOT_CONFIGURED"
@@ -138,9 +153,9 @@ export type StripeUnavailableReason =
   | "STRIPE_WEBHOOK_NOT_CONFIGURED";
 
 export interface StripeStatus {
-  /** A test secret key is present and usable. */
+  /** A secret key is present, mode-consistent and usable. */
   usable: boolean;
-  /** Always `"test"` when `usable` — live mode is never reported as usable. */
+  /** The mode actually accepted: `test`, or `live` with the explicit opt-in. */
   mode: StripeMode | null;
   /** Publishable (browser-safe) key, or null. Never a secret key. */
   publishableKey: string | null;
@@ -179,8 +194,31 @@ export function stripeStatus(): StripeStatus {
   };
 
   if (!secret) return { ...base, reason: "STRIPE_NOT_CONFIGURED" };
-  if (secretMode === "live") return { ...base, reason: "STRIPE_LIVE_KEY_REFUSED" };
   if (secretMode === null) return { ...base, reason: "STRIPE_KEY_UNRECOGNIZED" };
+
+  if (secretMode === "live") {
+    // Two independent opt-ins are required before real money can move:
+    // `STRIPE_ALLOW_LIVE` (a pasted key alone must never charge a card) and
+    // `STRIPE_MODE=live` (the operator's declared intent matches the key).
+    if (!isLiveModeAllowed()) return { ...base, reason: "STRIPE_LIVE_KEY_REFUSED" };
+    if (declaredMode !== "live") return { ...base, mode: "live", reason: "STRIPE_MODE_MISMATCH" };
+    if (!webhookConfigured) {
+      return { ...base, mode: "live", reason: "STRIPE_WEBHOOK_NOT_CONFIGURED" };
+    }
+    // Hosted Checkout redirects with `session.url`, so a missing/mismatched
+    // publishable key does not block a live charge; it is reported so the
+    // dashboard can be corrected before an embedded form ever needs it.
+    return {
+      ...base,
+      usable: true,
+      mode: "live",
+      publishableKey: publishableMode === "live" ? publishable : null,
+      publishableKeyMatchesMode: publishableMode === "live",
+      reason: null,
+    };
+  }
+
+  // ── Test mode (the default) ─────────────────────────────────────────────
   // An explicit STRIPE_MODE that disagrees with the key means the operator's
   // intent and the credential do not match. Refuse rather than pick a winner.
   if (declaredMode !== null && declaredMode !== "test") {

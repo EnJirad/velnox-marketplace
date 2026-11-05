@@ -1,132 +1,141 @@
-# Shipping default 35 THB + production reconciler repair
+# Stripe purchase flow — production E2E, root cause, live-mode opt-in
 
-Date: 2026-11-05 13:50 +07 (Asia/Bangkok) · Branch `main` · AI 01 (AndroidHarness)
-**Starting SHA:** `5aeafb1b4de4605c9ff64ad1c50d030a796fcab3` (= `origin/main`, clean tree)
-**Final SHA:** the commit that carries this report (`git log -1`); the code fix itself is `e9ff182`.
+Date: 2026-11-05 14:40 +07 (Asia/Bangkok) · Branch `main` · AI 01 (AndroidHarness)
+**Starting SHA:** `f75f8637c5d0b66421f68e71286505e5ffdc27af` (= `origin/main`, clean tree)
+**Final SHA:** the commit that carries this report (`git log -1`).
 
-## 1. Purpose
+## 1. Status summary (read this first)
 
-Symptom reported from the VelShop checkout screen: **“Could not calculate shipping
-for this cart.”** — the shipping row never resolved, so the payable total and the
-submit button stayed at `—` and no order could be placed.
+| Area | Status |
+|---|---|
+| Shipping quote in production | **WORKS** — ฿35.00 flat, total ฿384.30 |
+| Order creation (`POST /api/customer/checkout`) | **WORKS** — order `017938632216913506`, ฿384.30 |
+| Stripe Checkout Session (`POST /api/stripe/checkout`) | **WORKS** — 200 + `session.url`, card rail, `test` mode |
+| Stripe hosted card page | **REACHABLE** (form rendered, test mode) |
+| Completing the card form in this environment | **BLOCKED** — in-app browser surface is hidden and drops keystrokes |
+| Live (real-money) payments | **NOT ENABLED** — production runs `mode: "test"`; code now supports live behind an explicit opt-in |
+| Backend `payment-foundation` suite | **PASS** — 70 pass / 2 skip (skips need `TEST_DATABASE_URL`) |
 
-Two independent causes, both fixed here:
-
-1. **Schema drift in production.** The quote endpoint selects
-   `shops.shipping_fee` / `shops.free_shipping_threshold`, inserts into
-   `shipping_quotes` and sets `orders.shipping_quote_id`. None of those objects
-   existed in the production Neon database, so `POST /api/customer/shipping/quote`
-   threw `42703 column "shipping_fee" ... does not exist` and the route's catch-all
-   returned the reported 500 message.
-2. **Wrong platform default.** The business default was 50.00 THB. The owner
-   decision for this phase is a **flat 35.00 THB** default per shop shipment
-   until a carrier integration exists; sellers can still override per shop.
+**The purchase chain is not broken.** Production is deliberately running Stripe in
+**test mode**, so a real card or a real PromptPay scan cannot complete — that is
+the behaviour the owner read as “Stripe does not work”.
 
 ## 2. What was inspected before changing
 
-- `backend/routes/shipping.ts` (the 500 is the route's `catch` branch)
-- `backend/lib/shipping.ts` (`PLATFORM_DEFAULT_FLAT_FEE`, `platformDefaultFee()`)
-- `backend/lib/shipping-quote-store.ts` (the exact `shops` query)
-- `db/schema.sql` (canonical snapshot: `shops.shipping_fee`,
-  `shops.free_shipping_threshold`, `orders.shipping_quote_id`, `shipping_quotes`)
-- `db/run-sqleditor.sql` (rerunnable reconciler + the guarded `ADD CONSTRAINT` blocks)
-- `.github/workflows/production-db-migrate.yml` (the only sanctioned production writer)
-- Production Neon (project `wandering-glitter-94857012`) — read-only probes showed
-  `to_regclass('public.shipping_quotes') = null`, `shop_cols = 0`, `order_quote_col = 0`
-- Production API `/api/health` → 200 and `POST /api/customer/shipping/quote` → 401
-  (route exists; auth runs before the query)
+- `backend/lib/payment-config.ts` — `stripeStatus()`, `classifyStripeSecretKey()`,
+  `paymentMethodOptions()`, `assertPaymentMethodUsable()`
+- `backend/routes/stripe.ts` — `POST /api/stripe/checkout`, webhook handlers
+- `backend/routes/cart.ts` — `POST /api/customer/checkout`, cancel route
+- `apps/velshop/src/pages/ShopCheckout.tsx` — quote → checkout → session redirect
+- Production API probes with the owner session (`.ai/secrets/browser-cookies.json`,
+  values never printed):
+  - `GET /api/auth/me` → owner account, 200
+  - `GET /api/stripe/configured` → `configured: true`, `mode: "test"`, `pk_test_…`
+  - `GET /api/payments/methods` → `CARD`, `PROMPTPAY` enabled; `COD` disabled
+- Render logs (`srv-da5dg76417fc73f3krkg`) and Stripe events for the last days:
+  earlier attempts succeeded only in test mode (`cs_test_…`, `paid`), and production
+  logs at 06:48 UTC show a full settlement (`1/1 orders paid`).
 
-## 3. Files touched
+## 3. Executed production end-to-end (evidence)
+
+1. `POST /api/customer/shipping/quote` → `quoteId c0213e12…`, subtotal `349.30`,
+   shipping `35.00`, total `384.30`, reason `platform_default`.
+2. `POST /api/customer/checkout` (CARD, buyNow one variant) → **200**,
+   order `38f35b47-56bf-4cf8-9604-a15ca6ce30ee` / `017938632216913506`,
+   `shippingFee 35.00`, `total 384.30`.
+3. `POST /api/stripe/checkout` (same group, CARD) → **200**,
+   `sessionId cs_test_b17cMkvkiQOucuEqne2NII2QWGf7XCnmUMtFD5bkH1izxiO293b7vJ9MJ4`,
+   `url checkout.stripe.com/...`, `stripeMode: "test"`, amount `384.30`.
+4. Opened that URL in the in-app browser: Stripe hosted page rendered in Thai with
+   the card form (number/expiry/CVC/name/country) and the ฿384.30 total. Typing
+   could not be committed — `Surface: hidden; focused: false`; every field reported
+   “ต้องป้อนข้อมูล” after submit, and `browser_screenshot` refuses while hidden.
+   **No card charge was attempted.**
+5. Cancelled the test order through the customer API (`PATCH …/cancel`) →
+   **200** `{cancelled:true, stockReleased:true}`. Database read-back:
+   order `cancelled`, variant stock back to `29`, payment `cancelled`.
+   No test order, reservation or stock lock was left behind.
+
+## 4. Root cause
+
+Production's Stripe configuration is **test mode** (`sk_test_…` + `pk_test_…` on the
+sandbox account `acct_1UKCn2Kp4iwMdWLy`, “แซนด์บ็อกซ์ Velnox”). In test mode Stripe
+rejects every real card and a real PromptPay QR cannot be scanned, so no genuine
+purchase can complete. This was enforced in code as a hard policy: `stripeStatus()`
+refused any `sk_live_` key outright.
+
+## 5. What changed
 
 | File | Change |
 |---|---|
-| `backend/lib/shipping.ts` | `PLATFORM_DEFAULT_FLAT_FEE` 50.00 → **35.00**; comment states the carrier-integration rationale |
-| `backend/tests/shipping-quote.test.ts` | the assertion that pinned `"50.00"` now pins `"35.00"` |
-| `db/run-sqleditor.sql` | 5 guarded `ADD CONSTRAINT` blocks used `pg_constraint.constraint_schema` (a column that does not exist); replaced with `connamespace = 'public'::regnamespace` |
-| `.ai/AI_HANDOFF.md` | shipping default + production-schema status |
-| `.ai/reports/LATEST.md` | this report (overwrites the previous task report) |
+| `backend/lib/payment-config.ts` | live mode is now an **explicit opt-in**: a live key is used only when `STRIPE_ALLOW_LIVE` is exactly `true`/`1` **and** `STRIPE_MODE=live` and a webhook secret exists. New `isLiveModeAllowed()`. Test mode unchanged and still the default. A late live key is never enough on its own. |
+| `backend/tests/payment-foundation.test.ts` | +4 configuration cases: live refused with either opt-in missing, usable with both + webhook, and refused when a live key has no webhook secret. |
+| `apps/velshop/src/pages/ShopCheckout.tsx` | shows an amber **test-mode notice** under the payment methods when the backend reports `stripe.mode = "test"`, so a sandbox charge is never mistaken for a sale. |
+| `packages/shared/src/lib/i18n/locales/index.ts` | `checkout.testModeNotice` in th/en/my (parity 1704 keys). |
+| `.ai/context/payment.md` | header/rule/verification updated to “test by default, live by explicit opt-in” + the executed production round trip. |
 
-Nothing was removed. No new table, endpoint, component or mock was introduced.
+Nothing removed. No new endpoint, table, provider or mock.
 
-## 4. Why the reconciler fix was mandatory
+## 6. Why this shape (and not “just turn on live”)
 
-The production reconcile run failed at `db/run-sqleditor.sql:3856`:
+A live secret key pasted into Render would otherwise begin charging real cards with
+no second confirmation. Two independent switches (`STRIPE_ALLOW_LIVE` +
+`STRIPE_MODE=live`) plus the existing webhook-secret requirement mean:
 
-```
-ERROR:  column "constraint_schema" does not exist
-QUERY:  NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() ...)
-```
+- a mistaken paste of a live key stays refused (`STRIPE_LIVE_KEY_REFUSED`);
+- a declared mode that disagrees with the key stays refused (`STRIPE_MODE_MISMATCH`);
+- live without a webhook secret is refused, because a payment that cannot be
+  confirmed from the provider must never be taken.
 
-`psql --single-transaction` therefore rolled the whole reconcile back — including
-the earlier, correct `ALTER TABLE shops ADD COLUMN shipping_fee` statements. That
-is why `shipping_quotes` was still absent after a "successful" past run.
-`pg_constraint` has `conname` + `connamespace`; the schema predicate now uses
-`connamespace = 'public'::regnamespace`.
-
-## 5. Production action (executed, verified)
-
-1. `gh workflow run production-db-migrate.yml -f confirm="reconcile production"`
-   → run `41981905749` — **completed success**.
-2. Read-back against production Neon after the run:
-
-| Object | Result |
-|---|---|
-| `to_regclass('public.shipping_quotes')` | `shipping_quotes` |
-| `shops` shipping columns present | 2 of 2 |
-| `orders.shipping_quote_id` | present |
-| `shipping_quotes_total_adds_up`, `orders_shipping_quote_id_fkey` | both present |
-| the store's exact query (`SELECT id, name, shipping_fee, free_shipping_threshold FROM shops WHERE id = ANY($1::uuid[])`) | executes, no `42703` |
-| `shops` rows | 2 shops, both `shipping_fee IS NULL` → priced at the platform default 35.00 |
-
-The first dispatch (`41981322276`) failed on the guard bug above and committed
-nothing (single transaction).
-
-## 6. Tests / checks actually run
+## 7. Tests executed (this session)
 
 | Command | Result |
 |---|---|
-| `bun test ./backend/tests/shipping-quote.test.ts` | **PASS** — 33 pass, 0 fail, 73 assertions |
-| `bun test ./backend/tests/db-run-sqleditor-reconciler.test.ts` | PASS — 21 pass, 0 fail |
+| `bun test ./backend/tests/payment-foundation.test.ts` | **PASS** — 70 pass, 2 skipped (DB-gated), 0 fail |
+| `bun run i18n:check` | PASS — th=1704, en=1704, my=1704 |
+| `bun --filter @velnox/velshop typecheck` | PASS (exit 0) |
 | `bun --filter @velnox/backend typecheck` | PASS (exit 0) |
-| `git diff --check` | clean |
-| `gh run view 41981905749` | success |
-| Production Neon read-back (§5) | PASS |
+| Production API round trip (§3) | Executed; quote/checkout/session 200, card form reached, test order cancelled |
+| Completing the hosted card form | **BLOCKED** (hidden browser surface) |
+| Live-mode charge | **NOT RUN** (no live credentials; by design) |
 
-## 7. Systems confirmed unaffected
+## 8. Systems confirmed unaffected
 
-- No frontend file changed: the checkout page already renders
-  `quote.shippingTotal` and every shop-level reason; it never holds a fee.
-- No auth, payment, inventory, order-state or realtime code was touched; the diff
-  is one constant, one assertion and five SQL predicates.
-- `db/schema.sql` already declared every object, so snapshot and reconciler stay
-  at parity (the reconciler test proves the file remains additive and guarded).
+- Order money is still derived server-side (`orders.total_amount` → line items); the
+  diff touches configuration + presentation only.
+- Webhook settlement, idempotency, reservation expiry and inventory release were
+  not modified; the cancel path executed and released stock correctly.
+- COD stays disabled; no COD flag changed.
 
-## 8. Limitations / not verified
+## 9. Limitations / not verified
 
-- **No authenticated end-to-end quote/cart/checkout run** was executed. The route
-  returns 401 without a session and no production credentials are available to
-  this agent, so the UI confirmation (shipping row showing ฿35.00 and the submit
-  button enabling) is **NOT VERIFIED** here.
-- Render deploy of `e9ff182` was not inspected (no Render workspace selected in
-  this session); Render auto-deploys `main`, and the constant only affects the
-  quote's fee value, not its ability to run.
-- `TEST_DATABASE_URL` is still unset on this device, so the DB-gated suites
-  (`checkout-shipping-integrity.test.ts` etc.) still skip.
-- `SHIPPING_FLAT_FEE_THB` on Render is unset; if it is ever set, it overrides the
-  35.00 default by design.
+- The hosted card form was **not submitted** in this environment. Test card
+  `4242 4242 4242 4242` (expiry any future date, CVC any 3 digits) is the documented
+  test credential, but the browser surface here cannot hold focus.
+- No live key exists for this project's Stripe account (it is a sandbox account), so
+  live mode could not be exercised.
+- `STRIPE_ALLOW_LIVE` / `STRIPE_MODE` on Render are unset; production therefore
+  remains test mode exactly as before.
 
-## 9. Work still open
+## 10. Work still open (owner action to accept real money)
 
-1. Confirm the checkout screen end-to-end with a real session (expect `ค่าจัดส่ง ฿35.00`
-   for both current shops, total = item subtotal + 35.00, and an enabled submit button).
-2. Seller-side UI to set `shops.shipping_fee` / `free_shipping_threshold` — still absent.
-3. Carrier/zone/weight rates — deliberately out of scope; the flat default is the placeholder.
+1. Activate the Stripe account for live payments (the connected account is a sandbox).
+2. In Render, set live credentials for `velnox-api`:
+   `STRIPE_SECRET_KEY=sk_live_…`, `STRIPE_PUBLISHABLE_KEY=pk_live_…`,
+   `STRIPE_WEBHOOK_SECRET=whsec_…` (from the LIVE webhook endpoint pointing at
+   `https://velnox-api.onrender.com/api/payments/stripe/webhook`),
+   `STRIPE_MODE=live`, `STRIPE_ALLOW_LIVE=true`.
+3. Redeploy and check `GET /api/stripe/configured` → `mode: "live"`, `configured: true`.
+4. Run one small real purchase, confirm the webhook marks the order `paid`, then refund it.
+5. Optional follow-up: hide/soften the test-mode notice once live is on (it disappears
+   automatically because it only renders when `mode === "test"`).
 
-## 10. What the next agent must know first
+## 11. What the next agent must know first
 
-- Production schema is now **in sync** for shipping; the reconcile workflow is the
-  only sanctioned writer and it is **manual** (`workflow_dispatch` + confirm phrase).
-- The 35.00 default lives in exactly one place: `backend/lib/shipping.ts`
-  (`PLATFORM_DEFAULT_FLAT_FEE`); tests pin it, so changing it needs both edits.
-- Never reintroduce `pg_constraint.constraint_schema`; the reconciler test suite
-  and a real reconcile run are the only proofs.
+- **Never** claim Stripe is broken based on a failed real card while `mode` is
+  `test`; call `GET /api/stripe/configured` first. Test mode cannot charge real money.
+- Live mode needs BOTH `STRIPE_ALLOW_LIVE` and `STRIPE_MODE=live`; removing either
+  reverts to fail-closed.
+- The owner session used for testing lives in `.ai/secrets/browser-cookies.json`
+  (gitignored, never print). The test order created and cancelled this session was
+  `017938632216913506`; nothing was left reserved.

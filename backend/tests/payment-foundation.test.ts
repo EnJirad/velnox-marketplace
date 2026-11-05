@@ -32,6 +32,7 @@ import {
   customerSelectablePaymentMethods,
   isCodCustomerSelectable,
   isCodEnabled,
+  isLiveModeAllowed,
   normalizePaymentMethod,
   paymentMethodOptions,
   stripePaymentMethodType,
@@ -52,6 +53,7 @@ const PAYMENT_ENV_KEYS = [
   "STRIPE_PUBLISHABLE_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "STRIPE_MODE",
+  "STRIPE_ALLOW_LIVE",
   "COD_ENABLED",
   "COD_CUSTOMER_SELECTABLE",
 ] as const;
@@ -142,6 +144,59 @@ describe("stripe configuration", () => {
     expect(status.reason).toBe("STRIPE_LIVE_KEY_REFUSED");
     // A live publishable key must not be handed to a browser either.
     expect(status.publishableKey).toBeNull();
+  });
+
+  test("live mode is refused unless BOTH opt-ins agree", () => {
+    // Opt-in alone, no declared mode: refused, because the operator's intent
+    // and the key do not yet agree.
+    setPaymentEnv({
+      STRIPE_SECRET_KEY: "sk_live_000000000000000000000000",
+      STRIPE_PUBLISHABLE_KEY: "pk_live_000000000000000000000000",
+      STRIPE_WEBHOOK_SECRET: TEST_WEBHOOK_SECRET,
+      STRIPE_ALLOW_LIVE: "true",
+    });
+    expect(stripeStatus().usable).toBe(false);
+    expect(stripeStatus().reason).toBe("STRIPE_MODE_MISMATCH");
+    expect(isLiveModeAllowed()).toBe(true);
+
+    // Declared mode alone, no explicit opt-in: refused just like before.
+    setPaymentEnv({
+      STRIPE_SECRET_KEY: "sk_live_000000000000000000000000",
+      STRIPE_PUBLISHABLE_KEY: "pk_live_000000000000000000000000",
+      STRIPE_WEBHOOK_SECRET: TEST_WEBHOOK_SECRET,
+      STRIPE_MODE: "live",
+    });
+    expect(stripeStatus().usable).toBe(false);
+    expect(stripeStatus().reason).toBe("STRIPE_LIVE_KEY_REFUSED");
+    expect(isLiveModeAllowed()).toBe(false);
+  });
+
+  test("a live key with both opt-ins and a webhook secret is usable in live mode", () => {
+    setPaymentEnv({
+      STRIPE_SECRET_KEY: "sk_live_000000000000000000000000",
+      STRIPE_PUBLISHABLE_KEY: "pk_live_000000000000000000000000",
+      STRIPE_WEBHOOK_SECRET: TEST_WEBHOOK_SECRET,
+      STRIPE_MODE: "live",
+      STRIPE_ALLOW_LIVE: "1",
+    });
+    const status = stripeStatus();
+    expect(status.usable).toBe(true);
+    expect(status.mode).toBe("live");
+    expect(status.publishableKeyMatchesMode).toBe(true);
+    expect(status.reason).toBeNull();
+    // The live key never reaches a browser payload; it is not even returned.
+    expect(status.publishableKey).not.toContain("sk_live");
+  });
+
+  test("a live key without a webhook secret cannot be confirmed, so it is refused", () => {
+    setPaymentEnv({
+      STRIPE_SECRET_KEY: "sk_live_000000000000000000000000",
+      STRIPE_PUBLISHABLE_KEY: "pk_live_000000000000000000000000",
+      STRIPE_MODE: "live",
+      STRIPE_ALLOW_LIVE: "true",
+    });
+    expect(stripeStatus().usable).toBe(false);
+    expect(stripeStatus().reason).toBe("STRIPE_WEBHOOK_NOT_CONFIGURED");
   });
 
   test("a live publishable key alone never makes the deployment usable", () => {
@@ -332,7 +387,7 @@ describe("assertPaymentMethodUsable", () => {
     expect(assertPaymentMethodUsable("PROMPTPAY").ok).toBe(true);
   });
 
-  test("Card is unavailable under a live key rather than silently using it", () => {
+  test("Card is unavailable under a live key without the live opt-in", () => {
     setPaymentEnv({ ...TEST_STRIPE_ENV, STRIPE_SECRET_KEY: "sk_live_000000000000000000000000" });
     const result = assertPaymentMethodUsable("CARD");
     expect(result.ok).toBe(false);
