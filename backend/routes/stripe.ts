@@ -1079,7 +1079,7 @@ async function openCheckoutGroupSession(args: {
 
   console.log(
     `[stripe] checkout session ${session.id} opened for checkout group ${groupId} ` +
-      `(${orders.length} orders, ${method}, ${currency} ${expectedMinor / 100}, test mode)`,
+      `(${orders.length} orders, ${method}, ${currency} ${expectedMinor / 100}, ${stripeStatus().mode ?? "unknown"} mode)`,
   );
   res.json({ success: true, data });
 }
@@ -2560,7 +2560,7 @@ export function setupStripeRoutes(app: Express): void {
       await rememberResponse(data);
 
       console.log(
-        `[stripe] checkout session ${session.id} opened for order ${orderId} (${method}, ${currency} ${expectedMinor / 100}, test mode)`,
+        `[stripe] checkout session ${session.id} opened for order ${orderId} (${method}, ${currency} ${expectedMinor / 100}, ${stripeStatus().mode ?? "unknown"} mode)`,
       );
       res.json({ success: true, data });
     } catch (err) {
@@ -2605,10 +2605,10 @@ export function setupStripeRoutes(app: Express): void {
       const webhookSecret = stripeWebhookSecret();
 
       if (!s || !webhookSecret) {
-        // Without a verifiable test-mode configuration this endpoint cannot
+        // Without a verifiable Stripe configuration this endpoint cannot
         // distinguish a real Stripe event from a forgery, so it refuses rather
-        // than acknowledging events it cannot validate.
-        console.warn("[stripe webhook] Stripe test mode is not configured — refusing webhook");
+        // than acknowledging events it cannot validate. Applies to test AND live.
+        console.warn("[stripe webhook] Stripe is not configured — refusing webhook");
         res.status(503).json({ error: "Stripe webhook is not configured" });
         return;
       }
