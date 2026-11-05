@@ -43,7 +43,8 @@
  *   • `shops.free_shipping_threshold`  — optional per-shop "free over X".
  *                                        NULL = no automatic free shipping.
  *   • `SHIPPING_FLAT_FEE_THB` env      — platform default used when the seller
- *                                        has not configured a fee.
+ *                                        has not configured a fee. Default 35.00
+ *                                        THB until a carrier integration exists.
  *
  * Free shipping is therefore never implied: it happens ONLY when the shop's
  * stored fee is exactly 0 or the shop's own threshold is reached, and the
@@ -79,7 +80,7 @@ export const SHIPPING_QUOTE_TTL_MINUTES = 15;
  * no configured fee. Owner-approved business value; overridable per deployment
  * with `SHIPPING_FLAT_FEE_THB` and per shop in `shops.shipping_fee`.
  */
-export const PLATFORM_DEFAULT_FLAT_FEE = "50.00";
+export const PLATFORM_DEFAULT_FLAT_FEE = "35.00";
 
 /** Destinations the flat-rate rule can price. Anything else is refused. */
 export const SUPPORTED_DESTINATIONS = ["TH"] as const;

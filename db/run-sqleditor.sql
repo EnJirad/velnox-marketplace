@@ -3849,22 +3849,22 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_c
   ALTER TABLE public.orders ADD CONSTRAINT orders_checkout_group_id_fkey
     FOREIGN KEY (checkout_group_id) REFERENCES checkout_groups(id) ON DELETE SET NULL;
 END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'orders_shipping_quote_id_fkey')
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND conname = 'orders_shipping_quote_id_fkey')
   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'shipping_quote_id')
   AND to_regclass('public.shipping_quotes') IS NOT NULL THEN
   ALTER TABLE public.orders ADD CONSTRAINT orders_shipping_quote_id_fkey FOREIGN KEY (shipping_quote_id) REFERENCES public.shipping_quotes(id) ON DELETE SET NULL;
 END IF; END $$;
 
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'wholesale_tiers_product_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'wholesale_tiers' AND column_name = 'product_id') AND to_regclass('public.products') IS NOT NULL THEN
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND conname = 'wholesale_tiers_product_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'wholesale_tiers' AND column_name = 'product_id') AND to_regclass('public.products') IS NOT NULL THEN
   ALTER TABLE public.wholesale_tiers ADD CONSTRAINT wholesale_tiers_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
 END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'wholesale_tiers_variant_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'wholesale_tiers' AND column_name = 'variant_id') AND to_regclass('public.product_variants') IS NOT NULL THEN
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND conname = 'wholesale_tiers_variant_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'wholesale_tiers' AND column_name = 'variant_id') AND to_regclass('public.product_variants') IS NOT NULL THEN
   ALTER TABLE public.wholesale_tiers ADD CONSTRAINT wholesale_tiers_variant_id_fkey FOREIGN KEY (variant_id) REFERENCES public.product_variants(id) ON DELETE CASCADE;
 END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'business_verifications_user_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'business_verifications' AND column_name = 'user_id') AND to_regclass('public.users') IS NOT NULL THEN
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND conname = 'business_verifications_user_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'business_verifications' AND column_name = 'user_id') AND to_regclass('public.users') IS NOT NULL THEN
   ALTER TABLE public.business_verifications ADD CONSTRAINT business_verifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE constraint_schema = current_schema() AND conname = 'business_verification_history_verification_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'business_verification_history' AND column_name = 'verification_id') AND to_regclass('public.business_verifications') IS NOT NULL THEN
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND conname = 'business_verification_history_verification_id_fkey') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'business_verification_history' AND column_name = 'verification_id') AND to_regclass('public.business_verifications') IS NOT NULL THEN
   ALTER TABLE public.business_verification_history ADD CONSTRAINT business_verification_history_verification_id_fkey FOREIGN KEY (verification_id) REFERENCES public.business_verifications(id) ON DELETE CASCADE;
 END IF; END $$;
 

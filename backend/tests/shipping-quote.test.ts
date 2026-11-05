@@ -74,7 +74,7 @@ describe("the shipping rule (computeShopShipping)", () => {
     const { fee, reason } = computeShopShipping(shop(SHOP_A, null), subtotal("100.00"));
     expect(reason).toBe("platform_default");
     expect(fee).toEqual(parseDecimal(PLATFORM_DEFAULT_FLAT_FEE));
-    expect(`50.00`).toBe(PLATFORM_DEFAULT_FLAT_FEE);
+    expect(`35.00`).toBe(PLATFORM_DEFAULT_FLAT_FEE);
   });
 
   test("a configured flat fee is used as stored", () => {
