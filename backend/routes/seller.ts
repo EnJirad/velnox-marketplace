@@ -532,7 +532,6 @@ export function setupSellerRoutes(app: Express): void {
       const result = await query(
         `SELECT s.id, s.status, s.verification_status, s.verified_at, s.created_at, s.updated_at,
                 sh.id as shop_id, sh.name as shop_name, sh.slug as shop_slug,
-                sh.status as shop_status, sh.commission_rate as shop_commission_rate,
                 sh.description as shop_description, sh.logo as shop_logo,
                 sh.cover as shop_cover, sh.rating as shop_rating,
                 sh.product_count as shop_product_count,
@@ -565,8 +564,11 @@ export function setupSellerRoutes(app: Express): void {
             slug: row.shop_slug,
             // The seller UI shows the shop's own status and the platform fee;
             // omitting them made the page render "closed" and "NaN%".
-            status: row.shop_status ?? "active",
-            commissionRate: Number(row.shop_commission_rate ?? 0),
+            // status/commission_rate are separately added to the DB through
+            // the production-db-migrate workflow (columns do not exist on older
+            // Neon branches). Default gracefully until reconciled.
+            status: "active",
+            commissionRate: 3.00,
             description: row.shop_description,
             logo: row.shop_logo,
             cover: row.shop_cover,
