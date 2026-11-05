@@ -278,7 +278,7 @@ export default function SellerProfile() {
             <div className="space-y-1 rounded-2xl border border-slate-200 bg-white overflow-hidden">
               {[
                 { icon: MessageCircle, label: "แชทกับลูกค้า", desc: "ตอบคำถามจากลูกค้า", to: "/seller/chat", chevron: true },
-                { icon: FileText, label: "ดูหน้าร้านค้า", desc: "VelShop: SUPER GADGET ZENE", to: `https://velshop.vercel.app/shops/${shop?.id}`, external: true },
+                { icon: FileText, label: "ดูหน้าร้านค้า", desc: "VelShop: SUPER GADGET ZENE", to: `https://velshop.vercel.app/shops/${shop?.slug ?? shop?.id}`, external: true },
               ].map(({ icon: Icon, label, desc, to, external, chevron }) => (
                 external ? (
                   <a key={label} href={to} target="_blank" rel="noopener noreferrer"
