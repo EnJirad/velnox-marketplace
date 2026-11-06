@@ -33,9 +33,14 @@ export interface QueuedRequest {
   error?: string;
   retryCount: number;
   maxRetries: number;
+  abortController?: AbortController;
   abortSignal?: AbortSignal;
   resolve: (value: any) => void;
   reject: (reason: any) => void;
+  // Track if slot has been released to prevent double-release
+  _slotReleased?: boolean;
+  // Track if a retry is pending after error handling
+  _retryPending?: boolean;
 }
 
 export interface SchedulerState {
@@ -150,9 +155,11 @@ export class GlobalRequestScheduler {
       enqueuedAt: new Date().toISOString(),
       retryCount: 0,
       maxRetries,
+      abortController,
       abortSignal: abortController.signal,
       resolve: () => {},
       reject: () => {},
+      _slotReleased: false,
     };
 
     // Store executor on the request object
@@ -221,7 +228,6 @@ export class GlobalRequestScheduler {
 
     } catch (error: any) {
       await this.handleError(request, error);
-      return;
     } finally {
       await this.releaseSlot(request);
     }
@@ -262,7 +268,7 @@ export class GlobalRequestScheduler {
       // Exclude the current request since it will be the active one during retry
       await this.waitForActiveRequestCompletion(5000, request.id);
       
-      // Re-queue with same priority
+      // Wait for the backoff delay
       await new Promise(resolve => setTimeout(resolve, delayMs));
       
       if (request.abortSignal.aborted) {
@@ -272,9 +278,12 @@ export class GlobalRequestScheduler {
         return;
       }
 
+      // Reset slot release flag for retry
+      request._slotReleased = false;
+
       // Re-queue at front for retry
+      request.status = 'QUEUED';
       this.queue.unshift(request);
-      this.processQueue();
       return;
     }
 
@@ -327,6 +336,12 @@ export class GlobalRequestScheduler {
    * Release the active slot and process next request
    */
   private async releaseSlot(completedRequest: QueuedRequest): Promise<void> {
+    // Prevent double-release
+    if (completedRequest._slotReleased) {
+      return;
+    }
+    completedRequest._slotReleased = true;
+
     const previousRequest = this.activeRequest;
     this.activeRequest = null;
 
@@ -351,7 +366,7 @@ export class GlobalRequestScheduler {
     if (index >= 0) {
       const request = this.queue.splice(index, 1)[0];
       request.status = 'CANCELLED';
-      request.abortSignal?.abort?.();
+      request.abortController?.abort();
       request.reject(new Error('Request cancelled by user'));
       this.emit({ type: 'CANCELLED', request });
       this.emit({ type: 'STATE_CHANGED', state: this.getState() });
@@ -366,7 +381,7 @@ export class GlobalRequestScheduler {
   async cancelActive(): Promise<boolean> {
     if (!this.activeRequest) return false;
     
-    this.activeRequest.abortSignal?.abort?.();
+    this.activeRequest.abortController?.abort();
     // The executor should handle abort and reject
     // We'll wait for it to settle
     return true;
@@ -476,12 +491,14 @@ export class GlobalRequestScheduler {
       scheduler.lastError = 'Application restarted - active request was interrupted';
     }
     
-    // Restore queued requests (without promise resolvers)
+    // Restore queued requests (without promise resolvers and executors)
     scheduler.queue = (data.queue || []).map((r: any) => ({
       ...r,
+      abortController: new AbortController(),
       abortSignal: new AbortController().signal,
       resolve: () => {},
       reject: () => {},
+      _slotReleased: false,
     })).filter(r => r.status === 'QUEUED' || r.status === 'WAITING_FOR_SLOT' || r.status === 'RETRY_WAIT');
     
     return scheduler;

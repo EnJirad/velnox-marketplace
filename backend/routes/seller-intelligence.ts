@@ -21,6 +21,9 @@ import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import {
   computeIncomeReport,
+  computePurchaseStats,
+  estimatedNextPurchase,
+  reorderConfidence,
   round2,
   SELLER_COMMISSION_RATE,
   SELLER_RETURN_COVERAGE,

@@ -226,6 +226,8 @@ CREATE TABLE IF NOT EXISTS shops (
   description TEXT,
   logo TEXT,
   cover TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  commission_rate NUMERIC(5, 2) DEFAULT 3.00,
   rating NUMERIC(3, 2),
   product_count INTEGER NOT NULL DEFAULT 0,
   address_line1 TEXT,
