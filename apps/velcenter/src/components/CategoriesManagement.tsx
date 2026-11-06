@@ -51,6 +51,121 @@ import {
 } from "@velnox/shared/components/ui/dialog";
 import { toast } from "sonner";
 
+/**
+ * Lucide Icon Picker - searchable dropdown for Lucide icon names
+ */
+function LucideIconPicker({
+  value,
+  onChange,
+  placeholder = "พิมพ์ชื่อไอคอน...",
+}: {
+  value: string;
+  onChange: (name: string) => void;
+  placeholder?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Common Lucide icon names (subset of most used)
+  const lucideIcons = useMemo(() => [
+    "camera", "store", "package", "shopping-bag", "shopping-cart", "truck",
+    "heart", "star", "gem", "crown", "gift", "ticket", "tag", "ticket",
+    "home", "building", "building-2", "warehouse", "factory", "shop",
+    "phone", "smartphone", "tablet", "laptop", "monitor", "cpu", "hard-drive",
+    "headphones", "music", "video", "camera", "image", "film", "mic",
+    "book", "book-open", "graduation-cap", "pen", "pencil", "scissors",
+    "folder", "file", "archive", "database", "server", "cloud", "globe",
+    "map", "map-pin", "navigation", "compass", "anchor", "ship", "plane",
+    "car", "bike", "bus", "train", "truck", "van", "package", "box",
+    "bag", "briefcase", "wallet", "credit-card", "coins", "dollar-sign",
+    "piggy-bank", "receipt", "invoice", "calculator", "chart", "bar-chart",
+    "pie-chart", "trending-up", "trending-down", "activity", "zap", "battery",
+    "plug", "wifi", "bluetooth", "settings", "cog", "tool", "hammer",
+    "wrench", "screwdriver", "paintbrush", "palette", "brush", "spray-can",
+    "user", "users", "user-plus", "user-minus", "user-check", "user-x",
+    "shield", "shield-check", "shield-alert", "lock", "unlock", "key",
+    "eye", "eye-off", "search", "zoom-in", "zoom-out", "filter", "funnel",
+    "list", "grid", "layout", "columns", "rows", "split", "maximize",
+    "minimize", "fullscreen", "rotate-cw", "rotate-ccw", "flip-h", "flip-v",
+    "arrow-up", "arrow-down", "arrow-left", "arrow-right", "arrow-up-left",
+    "arrow-up-right", "arrow-down-left", "arrow-down-right", "chevron-up",
+    "chevron-down", "chevron-left", "chevron-right", "menu", "x", "plus",
+    "minus", "check", "check-circle", "alert-circle", "alert-triangle",
+    "info", "help-circle", "question-circle", "loader", "refresh-cw",
+    "refresh-ccw", "repeat", "shuffle", "skip-back", "skip-forward",
+    "play", "pause", "stop", "square", "circle", "triangle", "hexagon",
+    "octagon", "star", "heart", "thumb-up", "thumb-down", "flag",
+    "bookmark", "bell", "bell-off", "mail", "message", "send", "reply",
+    "share", "share-2", "link", "unlink", "anchor", "paperclip", "clipboard",
+    "copy", "cut", "paste", "save", "download", "upload", "cloud-download",
+    "cloud-upload", "hard-drive", "memory-stick", "printer", "scanner",
+    "fax", "phone", "voicemail", "contact", "address-book", "calendar",
+    "clock", "timer", "stopwatch", "alarm", "calendar-plus", "calendar-minus",
+    "calendar-x", "calendar-check", "calendar-heart", "calendar-search",
+  ], []);
+
+  const filteredIcons = useMemo(() => {
+    if (!search) return lucideIcons.slice(0, 30);
+    return lucideIcons.filter((name) =>
+      name.toLowerCase().includes(search.toLowerCase())
+    ).slice(0, 30);
+  }, [search]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (inputRef.current && !inputRef.current.contains(e.target as Node) &&
+          listRef.current && !listRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative" ref={listRef}>
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          onChange(e.target.value);
+        }}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setTimeout(() => setIsOpen(false), 150)}
+        placeholder={placeholder}
+        className="w-full"
+      />
+      {isOpen && search && (
+        <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg divide-y divide-slate-100">
+          {filteredIcons.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => {
+                onChange(name);
+                setSearch(name);
+                setIsOpen(false);
+                inputRef.current?.blur();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <span className="text-emerald-600">{name}</span>
+            </button>
+          ))}
+          {filteredIcons.length === 0 && (
+            <div className="px-3 py-2 text-sm text-slate-400 text-center">
+              ไม่พบไอคอน "{search}"
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface CategoryNode {
   id: string;
   name: string;
@@ -72,6 +187,7 @@ type CategoryForm = {
   name: string;
   slug: string;
   icon: string;
+  iconRaw: string;
   parent_id: string;
   sort_order: number;
   description: string;
@@ -82,6 +198,7 @@ const defaultForm: CategoryForm = {
   name: "",
   slug: "",
   icon: "",
+  iconRaw: "",
   parent_id: "",
   sort_order: 0,
   description: "",
@@ -181,6 +298,7 @@ export default function CategoriesManagement() {
       ...defaultForm,
       parent_id: parentId ?? "",
       sort_order: 0,
+      iconRaw: "",
     });
     setDialogOpen(true);
   };
@@ -191,6 +309,7 @@ export default function CategoriesManagement() {
       name: cat.name,
       slug: cat.slug,
       icon: cat.icon ?? "",
+      iconRaw: "",
       parent_id: cat.parent_id ?? "",
       sort_order: cat.sort_order,
       description: cat.description ?? "",
@@ -499,44 +618,65 @@ const handleToggleActive = async (cat: CategoryNode) => {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>ไอคอน (วางโค้ด SVG หรือลิงก์รูปภาพ)</Label>
-                <div className="space-y-2">
-                  {/* URL Input for SVG code, image URL, or uploaded file */}
+                <Label>ไอคอน</Label>
+                
+                {/* Lucide Icon Picker - Primary method */}
+                <div>
+                  <LucideIconPicker
+                    value={form.icon}
+                    onChange={(name) => setForm((p) => ({ ...p, icon: name }))}
+                    placeholder="พิมพ์ชื่อไอคอน เช่น camera, store, package..."
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    ใช้ชื่อไอคอน Lucide (เช่น camera, store, package, shopping-bag, truck, heart, star)
+                    · ดูชื่อทั้งหมดที่ <a href="https://lucide.dev/icons/" target="_blank" rel="noopener" className="text-emerald-600 hover:underline">lucide.dev/icons</a>
+                  </p>
+                </div>
+
+                {/* Fallback: Raw SVG / Image URL / Upload */}
+                <div className="border-t pt-3 space-y-2">
+                  <p className="text-[11px] text-slate-400">หรือใช้วิธีอื่น:</p>
+                  
                   <div className="relative">
                     <Input
-                      value={form.icon}
-                      onChange={(e) => setForm((p) => ({ ...p, icon: e.target.value }))}
-                      placeholder="วางโค้ด SVG (เริ่มต้นด้วย <svg...) หรือลิงก์รูปภาพ https://..."
+                      value={form.iconRaw}
+                      onChange={(e) => setForm((p) => ({ ...p, iconRaw: e.target.value, icon: e.target.value }))}
+                      placeholder="วางโค้ด SVG (<svg...>) หรือลิงก์รูปภาพ (https://...)"
                       className="w-full"
                     />
-                    {form.icon && (
+                    {(form.iconRaw || form.icon) && (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"
-                        onClick={() => setForm((p) => ({ ...p, icon: "" }))}
+                        onClick={() => setForm((p) => ({ ...p, iconRaw: "", icon: "" }))}
                       >
                         <X className="size-4" />
                       </Button>
                     )}
                   </div>
                   <p className="text-[11px] text-slate-400">
-                    รองรับ: โค้ด SVG ตรงๆ (paste ได้เลย) · ลิงก์รูปภาพ (SVG/PNG/JPG) · ไฟล์อัปโหลดด้านล่าง · แนะนำ 24x24px
+                    รองรับ: โค้ด SVG ตรงๆ · ลิงก์รูปภาพ (SVG/PNG/JPG) · ไฟล์อัปโหลดด้านล่าง · แนะนำ 24x24px
                   </p>
+
                   {/* Preview */}
-                  {form.icon && (
+                  {(form.iconRaw || form.icon) && (
                     <div className="flex items-center gap-2">
                       <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-emerald-50 ring-1 ring-emerald-100">
                         {(() => {
-                          const icon = form.icon;
+                          const icon = form.iconRaw || form.icon;
                           // Raw SVG code
                           if (icon.trim().startsWith("<svg")) {
                             return (
                               <div
                                 className="size-full"
                                 dangerouslySetInnerHTML={{
-                                  __html: icon.replace(/width="\d+"/, 'width="20"').replace(/height="\d+"/, 'height="20"'),
+                                  __html: icon
+                                    .replace(/width="\d+"/, 'width="20"')
+                                    .replace(/height="\d+"/, 'height="20"')
+                                    .replace(/class="[^"]*"/g, '')
+                                    .replace(/stroke="currentColor"/g, 'stroke="#10B981"'),
                                 }}
                               />
                             );
@@ -545,7 +685,7 @@ const handleToggleActive = async (cat: CategoryNode) => {
                           if (icon.startsWith("data:") || icon.startsWith("http")) {
                             return <img src={icon} alt="Icon preview" className="size-full object-contain p-1" />;
                           }
-                          // Lucide icon name or other
+                          // Lucide icon name - render via lucide-react
                           return <span className="text-xs font-bold text-emerald-700">{icon}</span>;
                         })()}
                       </span>
@@ -554,12 +694,13 @@ const handleToggleActive = async (cat: CategoryNode) => {
                         variant="ghost"
                         size="sm"
                         className="text-slate-400 hover:text-red-500"
-                        onClick={() => setForm((p) => ({ ...p, icon: "" }))}
+                        onClick={() => setForm((p) => ({ ...p, iconRaw: "", icon: "" }))}
                       >
                         ลบ
                       </Button>
                     </div>
                   )}
+
                   {/* File upload */}
                   <div className="flex items-center gap-2">
                     <input
