@@ -102,11 +102,19 @@ describe("Storefront rendering (BAN-02/03/09/10, BAN-08)", () => {
     expect(homeSrc).not.toContain("row.linkUrl");
   });
 
-  test("the promo strip renders home_strip banners and nothing when empty", () => {
-    expect(homeSrc).toContain('<HomePromoStrip banners={stripBanners} />');
-    expect(homeSrc).toContain('row.placement === "home_strip"');
-    expect(stripSrc).toContain("const shown = banners.slice(0, 1);");
-    expect(stripSrc).toContain("if (shown.length === 0) return null;");
+  test("the promo strip (HomePromoStrip) removed in simplified home design — only Hero carousel + Category Strip + Featured Rail + Product Grid remain", () => {
+    // Simplified design: Hero (AnnouncementCarousel) + CategoryStrip + HorizontalRail + Product Grid
+    // HomePromoStrip no longer rendered on homepage
+    expect(homeSrc).not.toContain('<HomePromoStrip');
+    expect(homeSrc).not.toContain('stripBanners');
+    // Hero carousel still filters to home_hero
+    expect(homeSrc).toContain('(row.placement ?? "home_hero") === "home_hero"');
+    // CategoryStrip still present
+    expect(homeSrc).toContain('<CategoryStrip');
+    // Single Featured Rail present
+    expect(homeSrc).toContain('<HorizontalRail');
+    // Product Grid present
+    expect(homeSrc).toContain('grid grid-cols-2');
     expect(stripSrc).not.toMatch(/placeholder\.com|picsum\.photos/);
   });
 

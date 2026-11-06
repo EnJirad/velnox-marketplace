@@ -1,11 +1,7 @@
 import { ProductCard } from "@/components/shop/ProductCard";
 import { AnnouncementCarousel, type Announcement } from "@/components/shop/AnnouncementCarousel";
-import { HomePromoStrip, type PromoStripBanner } from "@/components/shop/HomePromoStrip";
 import { CategoryStrip } from "@/components/shop/CategoryStrip";
-import { LiveSection } from "@/components/shop/LiveSection";
-import { TopBanner } from "@/components/shop/TopBanner";
 import { ShopHeader } from "@/components/shop/ShopHeader";
-import { Button } from "@velnox/shared/components/ui/button";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
@@ -16,11 +12,9 @@ import {
 } from "@velnox/shared/lib/commerce";
 import { setSeo } from "@/lib/seo";
 import { useTracking } from "@velnox/shared/lib/track";
-import { CUSTOMER_MEMORY_ENABLED } from "@velnox/shared/lib/features";
 import {
   Armchair,
   Baby,
-  BellRing,
   BookOpen,
   Briefcase,
   Car,
@@ -33,7 +27,6 @@ import {
   Gem,
   Headphones,
   Heart,
-  History,
   Home,
   Laptop,
   Map as MapIcon,
@@ -64,17 +57,9 @@ import { toast } from "sonner";
 import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
-import { SectionHeader } from "@velnox/shared/components/ui/section-header";
 import { ProductGridSkeleton } from "@velnox/shared/components/ui/loading-skeleton";
 import { EmptyState } from "@velnox/shared/components/ui/empty-state";
 import { HorizontalRail, RailCard } from "@/components/shop/HorizontalRail";
-
-interface RecommendedRow {
-  product: StoreProduct;
-  score: number;
-  reasons: string[];
-  views: number;
-}
 
 const CATEGORY_ICONS: Partial<Record<StoreProductCategory, LucideIcon>> = {
   general: Package,
@@ -149,54 +134,12 @@ export default function ShopHome() {
   const productsData = useCommerceData(
     useCallback(() => apiGet<any[]>("/api/products/catalog?status=published&limit=100"), []),
   );
-  // PARKED (2026-10-14): the three personalised rails below are Customer Memory
-  // features, so while the module is off their requests are not issued at all —
-  // the empty result is exactly what these rails already render when a call
-  // fails. Disabling the flag restores the original fetches unchanged.
-  const recommendData = useCommerceData(
-    useCallback(async () => {
-      if (!CUSTOMER_MEMORY_ENABLED) return { items: [], source: "popular" };
-      try { return await apiGet<any>("/api/memory/recommendations?limit=8"); }
-      catch { return { items: [], source: "popular" }; }
-    }, []),
-  );
-  const regularsData = useCommerceData(
-    useCallback(async () => {
-      if (!CUSTOMER_MEMORY_ENABLED) return [];
-      try { return await apiGet<any[]>("/api/commerce/regulars"); }
-      catch { return []; }
-    }, []),
-  );
-  const remindersData = useCommerceData(
-    useCallback(async () => {
-      if (!CUSTOMER_MEMORY_ENABLED) return [];
-      try { return await apiGet<any[]>("/api/memory/reminders"); }
-      catch { return []; }
-    }, []),
-  );
 
   const toggleWishlist = useAction(api.customer.toggleWishlistAction);
   const myWishlist = useAction(api.customer.myWishlist);
   const categoryTree = useAction(api.customer.categoryTreeAction);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [wishTogglingId, setWishTogglingId] = useState<string | null>(null);
-
-  // Top seller-CTA banner — homepage only, session-dismissible.
-  const [bannerVisible, setBannerVisible] = useState(() => {
-    try {
-      return sessionStorage.getItem("velnox_top_banner_dismissed") !== "1";
-    } catch {
-      return true;
-    }
-  });
-  const dismissBanner = () => {
-    setBannerVisible(false);
-    try {
-      sessionStorage.setItem("velnox_top_banner_dismissed", "1");
-    } catch {
-      // ignore
-    }
-  };
 
   // Localized category name map (slug → display_name)
   const [catNameMap, setCatNameMap] = useState<Map<string, string>>(new Map());
@@ -235,12 +178,6 @@ export default function ShopHome() {
   }, [isAuthenticated, myWishlist]);
 
   const products = useMemo(() => productsData.data ?? [], [productsData.data]);
-  const recommendations = useMemo(
-    () => (recommendData.data?.items ?? []) as RecommendedRow[],
-    [recommendData.data],
-  );
-  const regulars = useMemo(() => regularsData.data ?? [], [regularsData.data]);
-  const reminders = useMemo(() => remindersData.data ?? [], [remindersData.data]);
 
   const popularCategories = useMemo(() => {
     const counts = new globalThis.Map<string, number>();
@@ -252,18 +189,6 @@ export default function ShopHome() {
     () => [...products].sort((a, b) => (b.soldCount ?? 0) - (a.soldCount ?? 0) || b.createdAt - a.createdAt).slice(0, 8),
     [products],
   );
-
-  // Banner target = the category with the most published products (real count).
-  const bannerCategory = popularCategories[0] ?? null;
-
-  // "New arrivals" = newest real listings, minus anything already shown above.
-  const newProducts = useMemo(() => {
-    const shown = new Set(popularProducts.map((p) => p.id));
-    return [...products]
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .filter((p) => !shown.has(p.id))
-      .slice(0, 8);
-  }, [products, popularProducts]);
 
   // Owner-managed banners (VelCenter → Marketing) come from
   // GET /api/announcements. With none published, the storefront falls back to
@@ -335,27 +260,6 @@ export default function ShopHome() {
     return fallback;
   }, [announcementsData.data, products, t]);
 
-  const stripBanners = useMemo<PromoStripBanner[]>(() => {
-    const remote = (announcementsData.data ?? []) as any[];
-    return remote
-      .filter((row) => row && row.placement === "home_strip")
-      .map((row): PromoStripBanner | null => {
-        const title = typeof row.title === "string" ? row.title.trim() : "";
-        const subtitle = typeof row.subtitle === "string" ? row.subtitle.trim() : "";
-        const imageUrl = typeof row.imageUrl === "string" && row.imageUrl ? row.imageUrl : null;
-        if (!title && !subtitle && !imageUrl) return null;
-        return {
-          id: String(row.id ?? title ?? imageUrl),
-          title,
-          subtitle,
-          imageUrl,
-          href: typeof row.ctaUrl === "string" && row.ctaUrl ? row.ctaUrl : undefined,
-          ctaLabel: typeof row.ctaLabel === "string" && row.ctaLabel ? row.ctaLabel : null,
-        };
-      })
-      .filter((item): item is PromoStripBanner => item !== null);
-  }, [announcementsData.data]);
-
   const handleCategory = (id: StoreProductCategory) => {
     track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: catNameMap.get(id) ?? PRODUCT_CATEGORY_META[id]?.label ?? id } });
   };
@@ -393,26 +297,18 @@ export default function ShopHome() {
 
   useEffect(() => { setSeo({ title: t("home.seoTitle", { shop: "VelShop" }), description: t("home.seoDesc", { tagline: "ซื้อขายของจริง ปลีกและส่ง ในที่เดียว" }) }); }, [t]);
 
-  const showReorder = reminders.length > 0;
-  const showRegulars = !showReorder && regulars.length > 0;
-
   return (
     <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
 
-      {/* Announcement / promotion carousel — platform-level messages only.
-          Content is derived from real storefront data; no campaign system exists. */}
+      {/* Hero — Announcement Carousel (single slot, platform-level messages only) */}
       <section className="bg-white">
         <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6 sm:pt-4">
           <AnnouncementCarousel items={announcements} />
         </div>
       </section>
 
-      {/* Thaimart-style top banner — seller CTA, sits BELOW the ad carousel,
-          homepage only, session-dismissible */}
-      {bannerVisible && <TopBanner onDismiss={dismissBanner} />}
-
-      {/* Thaimart-style horizontal category strip — clean pill chips */}
+      {/* Category Strip — horizontal scrollable pills, max 6 categories */}
       {!productsData.loading && popularCategories.length > 0 && (
         <CategoryStrip
           categories={popularCategories.map(([id, count]) => ({
@@ -436,62 +332,7 @@ export default function ShopHome() {
         />
       )}
 
-      {/* LIVE shopping section — Thaimart style (placeholder — no live infra yet,
-          renders nothing until real stream data exists) */}
-      <LiveSection streams={[]} title={t("thaimartUi.liveSection.liveNowLabel")} viewAllHref="/products" />
-
-      {/* Admin-managed promo strip (banner contract v2, home_strip placement) */}
-      <HomePromoStrip banners={stripBanners} />
-
-      {CUSTOMER_MEMORY_ENABLED && !authLoading && isAuthenticated && !remindersData.loading && showReorder && (
-        <section className="border-b border-slate-100 bg-white">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-            <SectionHeader
-              icon={BellRing}
-              title={t("home.reorderDueTitle")}
-              description={t("home.reorderDueDesc")}
-            />
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {reminders.map((r: any) => (
-                <div key={r.product.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-[#10B981]/40">
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-xl">{r.emoji}</span>
-                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-900">{r.product.name}</p><p className="mt-0.5 text-xs text-slate-400">{t("home.reorderDueEvery", { days: r.avgCycleDays, times: r.times })}</p><p className="mt-0.5 text-xs font-medium text-emerald-700">{r.daysLeft < 0 ? t("home.reorderDueOverdue", { days: Math.abs(r.daysLeft) }) : r.daysLeft === 0 ? t("home.reorderDueToday") : t("home.reorderDueInDays", { days: r.daysLeft })}</p></div>
-                  <Button size="sm" className="shrink-0 gap-1.5 bg-[#10B981] text-white hover:bg-emerald-700" onClick={() => handleAdd(r.product)}>{t("home.reorderDueBuy")}</Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {CUSTOMER_MEMORY_ENABLED && !authLoading && isAuthenticated && !regularsData.loading && showRegulars && (
-        <HorizontalRail
-          icon={History}
-          title={t("home.continueShoppingTitle")}
-          description={t("home.continueShoppingDesc")}
-        >
-          {regulars.slice(0, 10).map(({ product }: any) => (
-            <RailCard key={product.id}>
-              <ProductCard compact product={product} onOpen={(p) => openProduct(p, "home-regulars")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />
-            </RailCard>
-          ))}
-        </HorizontalRail>
-      )}
-
-      {CUSTOMER_MEMORY_ENABLED && !authLoading && recommendations.length > 0 && (
-        <HorizontalRail
-          icon={Sparkles}
-          title={recommendData.data?.source === "personal" ? t("home.recsPersonal") : t("home.recsPopular")}
-          description={recommendData.data?.source === "personal" ? t("home.recsPersonalDesc") : t("home.recsPopularDesc")}
-        >
-          {recommendations.slice(0, 10).map(({ product }) => (
-            <RailCard key={product.id}>
-              <ProductCard product={product} onOpen={(p) => openProduct(p, "home-recommended")} onAdd={handleAdd} badgeLabel={t("home.badgeRecommended")} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />
-            </RailCard>
-          ))}
-        </HorizontalRail>
-      )}
-
+      {/* Single Featured Rail — Popular products (best sellers) */}
       {!productsData.loading && popularProducts.length > 0 && (
         <HorizontalRail
           icon={TrendingUp}
@@ -500,7 +341,7 @@ export default function ShopHome() {
           viewAllHref="/products?sort=popular"
           viewAllLabel={t("common.viewAll")}
         >
-          {popularProducts.slice(0, 12).map((product) => (
+          {popularProducts.slice(0, 10).map((product) => (
             <RailCard key={product.id}>
               <ProductCard product={product} onOpen={(p) => openProduct(p, "home-trending")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />
             </RailCard>
@@ -508,22 +349,7 @@ export default function ShopHome() {
         </HorizontalRail>
       )}
 
-      {!productsData.loading && newProducts.length > 0 && (
-        <HorizontalRail
-          icon={Sparkles}
-          title={t("home.newTitle")}
-          description={t("home.newDesc")}
-          viewAllHref="/products?sort=newest"
-          viewAllLabel={t("common.viewAll")}
-        >
-          {newProducts.slice(0, 12).map((product) => (
-            <RailCard key={product.id}>
-              <ProductCard product={product} onOpen={(p) => openProduct(p, "home-new")} onAdd={handleAdd} wishlisted={wishlistIds.has(product.id)} onWishlist={handleWishlist} wishToggling={wishTogglingId === product.id} />
-            </RailCard>
-          ))}
-        </HorizontalRail>
-      )}
-
+      {/* Product Grid — 8 items + View All link */}
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
         {productsData.loading ? (
           <ProductGridSkeleton count={8} />
@@ -535,19 +361,32 @@ export default function ShopHome() {
             size="lg"
           />
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {products.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onOpen={(p) => openProduct(p, "home-all")}
-                onAdd={handleAdd}
-                wishlisted={wishlistIds.has(product.id)}
-                onWishlist={handleWishlist}
-                wishToggling={wishTogglingId === product.id}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {products.slice(0, 8).map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onOpen={(p) => openProduct(p, "home-all")}
+                  onAdd={handleAdd}
+                  wishlisted={wishlistIds.has(product.id)}
+                  onWishlist={handleWishlist}
+                  wishToggling={wishTogglingId === product.id}
+                />
+              ))}
+            </div>
+            {products.length > 8 && (
+              <div className="mt-6 text-center">
+                <Link
+                  to="/products"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-[#10B981] hover:text-emerald-700"
+                >
+                  {t("common.viewAll")}
+                  <TrendingUp className="size-4" />
+                </Link>
+              </div>
+            )}
+          </>
         )}
       </main>
 
