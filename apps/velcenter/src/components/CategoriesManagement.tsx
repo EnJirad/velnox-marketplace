@@ -28,6 +28,7 @@ import {
   EyeOff,
   FolderTree,
   ImagePlus,
+  X,
 } from "lucide-react";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
@@ -498,27 +499,55 @@ const handleToggleActive = async (cat: CategoryNode) => {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>ไอคอน (รูปภาพหรือลิงก์ SVG)</Label>
+                <Label>ไอคอน (วางโค้ด SVG หรือลิงก์รูปภาพ)</Label>
                 <div className="space-y-2">
-                  {/* URL Input for SVG or image link */}
-                  <Input
-                    value={form.icon}
-                    onChange={(e) => setForm((p) => ({ ...p, icon: e.target.value }))}
-                    placeholder="https://example.com/icon.svg หรือวางลิงก์รูปภาพ"
-                    className="w-full"
-                  />
+                  {/* URL Input for SVG code, image URL, or uploaded file */}
+                  <div className="relative">
+                    <Input
+                      value={form.icon}
+                      onChange={(e) => setForm((p) => ({ ...p, icon: e.target.value }))}
+                      placeholder="วางโค้ด SVG (เริ่มต้นด้วย <svg...) หรือลิงก์รูปภาพ https://..."
+                      className="w-full"
+                    />
+                    {form.icon && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"
+                        onClick={() => setForm((p) => ({ ...p, icon: "" }))}
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    )}
+                  </div>
                   <p className="text-[11px] text-slate-400">
-                    รองรับ: ไฟล์ SVG/PNG/JPG (อัปโหลดด้านล่าง) หรือลิงก์ SVG/PNG (กรอกข้างบน) · แนะนำ 24x24px
+                    รองรับ: โค้ด SVG ตรงๆ (paste ได้เลย) · ลิงก์รูปภาพ (SVG/PNG/JPG) · ไฟล์อัปโหลดด้านล่าง · แนะนำ 24x24px
                   </p>
                   {/* Preview */}
                   {form.icon && (
                     <div className="flex items-center gap-2">
                       <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-emerald-50 ring-1 ring-emerald-100">
-                        {(form.icon.startsWith("data:") || form.icon.startsWith("http")) ? (
-                          <img src={form.icon} alt="Icon preview" className="size-full object-contain p-1" />
-                        ) : (
-                          <span className="text-xs font-bold text-emerald-700">{form.icon}</span>
-                        )}
+                        {(() => {
+                          const icon = form.icon;
+                          // Raw SVG code
+                          if (icon.trim().startsWith("<svg")) {
+                            return (
+                              <div
+                                className="size-full"
+                                dangerouslySetInnerHTML={{
+                                  __html: icon.replace(/width="\d+"/, 'width="20"').replace(/height="\d+"/, 'height="20"'),
+                                }}
+                              />
+                            );
+                          }
+                          // Data URL or HTTP URL
+                          if (icon.startsWith("data:") || icon.startsWith("http")) {
+                            return <img src={icon} alt="Icon preview" className="size-full object-contain p-1" />;
+                          }
+                          // Lucide icon name or other
+                          return <span className="text-xs font-bold text-emerald-700">{icon}</span>;
+                        })()}
                       </span>
                       <Button
                         type="button"
