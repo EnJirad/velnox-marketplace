@@ -102,11 +102,13 @@ describe("Storefront rendering (BAN-02/03/09/10, BAN-08)", () => {
     expect(homeSrc).not.toContain("row.linkUrl");
   });
 
-  test("the promo strip (HomePromoStrip) removed in simplified home design — only Hero carousel + Category Strip + Featured Rail + Product Grid remain", () => {
-    // Simplified design: Hero (AnnouncementCarousel) + CategoryStrip + HorizontalRail + Product Grid
+  test("the promo strip (HomePromoStrip) removed in simplified home design — Hero carousel + TopBanner + Category Strip + Featured Rail + Product Grid remain", () => {
+    // Simplified design: Hero (AnnouncementCarousel) + TopBanner + CategoryStrip + HorizontalRail + Product Grid
     // HomePromoStrip no longer rendered on homepage
     expect(homeSrc).not.toContain('<HomePromoStrip');
     expect(homeSrc).not.toContain('stripBanners');
+    // TopBanner present (Seller CTA)
+    expect(homeSrc).toContain('<TopBanner');
     // Hero carousel still filters to home_hero
     expect(homeSrc).toContain('(row.placement ?? "home_hero") === "home_hero"');
     // CategoryStrip still present

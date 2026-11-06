@@ -1,6 +1,7 @@
 import { ProductCard } from "@/components/shop/ProductCard";
 import { AnnouncementCarousel, type Announcement } from "@/components/shop/AnnouncementCarousel";
 import { CategoryStrip } from "@/components/shop/CategoryStrip";
+import { TopBanner } from "@/components/shop/TopBanner";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCart } from "@/lib/cart";
@@ -307,6 +308,9 @@ export default function ShopHome() {
           <AnnouncementCarousel items={announcements} />
         </div>
       </section>
+
+      {/* Top Seller CTA Banner — rounded emerald card, session-dismissible */}
+      <TopBanner />
 
       {/* Category Strip — horizontal scrollable pills, max 6 categories */}
       {!productsData.loading && popularCategories.length > 0 && (
